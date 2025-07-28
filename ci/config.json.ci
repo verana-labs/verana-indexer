@@ -1,0 +1,409 @@
+{
+  "chainId": "aura-testnet-2",
+  "chainName": "aura",
+  "networkPrefixAddress": "aura",
+  "consensusPrefixAddress": "valcons",
+  "validatorPrefixAddress": "valoper",
+  "networkDenom": "utaura",
+  "evmOnly": false,
+  "jobRetryAttempt": 5,
+  "jobRetryBackoff": 1000,
+  "crawlValidator": {
+    "millisecondCrawl": null,
+    "queryPageLimit": 100,
+    "patternCrawl": "30 */2 * * * *"
+  },
+  "cw721": {
+    "key": "cw721",
+    "blocksPerCall": 100,
+    "millisecondRepeatJob": 2000,
+    "startBlock": 0,
+    "millisecondRepeatJobMedia": 10000,
+    "mediaPerBatch": 10,
+    "timeRefreshCw721Stats": "1 * * * *",
+    "reindexing": {
+      "limitRecordGet": 500
+    },
+    "concurrencyHandleTokenMedia": 10
+  },
+  "crawlBlock": {
+    "millisecondCrawl": 5000,
+    "blocksPerCall": 100,
+    "startBlock": 4860000,
+    "saveRawLog": true
+  },
+  "crawlTransaction": {
+    "key": "crawlTransaction",
+    "millisecondCrawl": 5000,
+    "blocksPerCall": 100,
+    "chunkSize": 1000
+  },
+  "handleCoinTransfer": {
+    "key": "handleCoinTransfer",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 3000,
+    "chunkSize": 1000
+  },
+  "handleTransaction": {
+    "key": "handleTransaction",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 5000,
+    "txsPerCall": 100,
+    "saveRawLog": true,
+    "lastEventsTypeTx": ["tx", "ethereum_tx"]
+  },
+  "crawlSigningInfo": {
+    "millisecondCrawl": null,
+    "patternCrawl": "0 */1 * * * *"
+  },
+  "handleAddress": {
+    "key": "handleAddress",
+    "millisecondCrawl": 5000,
+    "blocksPerCall": 100
+  },
+  "crawlAccount": {
+    "handleVestingAccount": {
+      "millisecondCrawl": 30000
+    }
+  },
+  "evmCrawlInternalTx": {
+    "key": "evmCrawlInternalTx",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 3000,
+    "chunkSize": 1000
+  },
+  "crawlProposal": {
+    "key": "crawlProposal",
+    "blocksPerCall": 100,
+    "crawlProposal": {
+      "millisecondCrawl": 5000
+    },
+    "handleNotEnoughDepositProposal": {
+      "millisecondCrawl": 30000
+    },
+    "handleEndedProposal": {
+      "millisecondCrawl": 30000
+    }
+  },
+  "crawlTallyProposal": {
+    "millisecondCrawl": 10000
+  },
+  "countVoteProposal": {
+    "millisecondCrawl": 5000
+  },
+  "handleStakeEvent": {
+    "key": "handleStakeEvent",
+    "millisecondCrawl": 5000,
+    "blocksPerCall": 100
+  },
+  "crawlCodeId": {
+    "key": "crawlCodeId",
+    "millisecondCrawl": 5000,
+    "blocksPerCall": 100
+  },
+  "handleAuthzTx": {
+    "key": "handleAuthzTx",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 5000
+  },
+  "crawlSmartContract": {
+    "millisecondCrawl": 5000,
+    "key": "crawlSmartContract",
+    "blocksPerCall": 100
+  },
+  "crawlGenesis": {
+    "accountsPerBatch": 3000,
+    "proposalsPerBatch": 3000,
+    "codesPerBatch": 5000,
+    "smartContractsPerBatch": 5000,
+    "feeGrantsPerBatch": 5000
+  },
+  "handleVoteTx": {
+    "key": "handleVoteTx",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 5000
+  },
+  "crawlDelegators": {
+    "millisecondCrawl": 3600000,
+    "queryPageLimit": 100,
+    "txMsgPageLimit": 100
+  },
+  "crawlContractEvent": {
+    "key": "crawlContractEvent",
+    "blocksPerCall": 100,
+    "millisecondRepeatJob": 2000
+  },
+  "cw20": {
+    "blocksPerCall": 100,
+    "millisecondRepeatJob": 2000,
+    "key": "cw20",
+    "reindexHistory": {
+      "limitRecordGet": 500
+    }
+  },
+  "dashboardStatistics": {
+    "millisecondCrawl": 10000,
+    "queryPageLimit": 100
+  },
+  "graphiqlApi": {
+    "hasuraRole": "internal_service",
+    "hasuraGraphQL": "https://indexer-v2.dev.aurascan.io/v1/graphql",
+    "depthLimit": 3,
+    "rootWhereDepthLimit": 2,
+    "subWhereDepthLimit": 1,
+    "rateLimitWindow": 60000,
+    "rateLimitQuery": 30,
+    "queryNeedWhereModel": [
+      "event_attribute",
+      "view_event_attribute_value_index"
+    ],
+    "queryNeedWhereRelation": ["event_attributes", "event_attribute_index"],
+    "queryNeedWhereCondition": ["block_height"],
+    "queryHeightRangeLimit": 10000
+  },
+  "feegrant": {
+    "updateFeegrant": {
+      "millisecondRepeatJob": 2000,
+      "limitPerCall": 2000
+    },
+    "millisecondRepeatJob": 2000,
+    "key": "feegrant",
+    "blocksPerCall": 1000
+  },
+  "crawlValidatorImage": {
+    "timeCrawImage": "0 0 * * *",
+    "milliSecondDelayRetry": 300000
+  },
+  "migrationEvmEventToPartition": {
+    "startId": 0,
+    "endId": 100000000,
+    "step": 100000000
+  },
+  "migrationBlockToPartition": {
+    "startId": 100000000,
+    "endId": 200000000,
+    "step": 100000000
+  },
+  "migrationEventToPartition": {
+    "startId": 0,
+    "endId": 1000000000,
+    "step": 200000000,
+    "limitRecordGet": 10000,
+    "chunkSizeInsert": 1000
+  },
+  "migrationTransactionToPartition": {
+    "startId": 100000000,
+    "endId": 200000000,
+    "step": 100000000,
+    "limitRecordGet": 10000,
+    "chunkSizeInsert": 1000,
+    "statementTimeout": 600000
+  },
+  "migrationEventAttributeToPartition": {
+    "startBlock": 0,
+    "endBlock": 13000000,
+    "step": 13000000,
+    "limitRecordGet": 10000,
+    "chunkSizeInsert": 1000
+  },
+  "migrationTransactionMessageToPartition": {
+    "startId": 100000000,
+    "endId": 200000000,
+    "step": 100000000,
+    "limitRecordGet": 10000,
+    "chunkSizeInsert": 1000,
+    "statementTimeout": 600000
+  },
+  "jobCheckNeedCreateEventAttributePartition": {
+    "range": 100000,
+    "step": 10000,
+    "millisecondCrawl": 10000,
+    "templateTable": "event_attribute"
+  },
+  "jobCrawlEvmEvent": {
+    "millisecondCrawl": 5000,
+    "blocksPerCall": 50,
+    "chunkSize": 1000,
+    "concurrencyHandle": 1
+  },
+  "jobCheckNeedCreateEvmEventPartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "evm_event"
+  },
+  "jobCheckNeedCreateBlockPartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "block"
+  },
+  "jobCheckNeedCreateEventPartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "event"
+  },
+  "jobRenameEventTable": {
+    "millisecondRepeat": 10000
+  },
+  "jobCreateConstraintInEventPartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 600000
+    },
+    "statementTimeout": 600000
+  },
+  "jobCheckNeedCreateTransactionPartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "transaction"
+  },
+  "jobCheckNeedCreateTransactionMessagePartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "transaction_message"
+  },
+  "httpBatchRequest": {
+    "dispatchMilisecond": 1000,
+    "batchSizeLimit": 10
+  },
+  "dailyStatistics": {
+    "recordsPerCall": 100
+  },
+  "accountStatistics": {
+    "numberOfTopRecords": 10,
+    "dayRange": [3, 15, 30]
+  },
+  "dailyStatsJobs": {
+    "jobPattern": "0 0 0 * * ?"
+  },
+  "jobRedecodeTx": {
+    "limitRecordGet": 100
+  },
+  "jobReassignMsgIndexToEvent": {
+    "millisecondCrawl": 1000,
+    "blocksPerCall": 100
+  },
+  "crawlIbcTao": {
+    "key": "crawlIbcTao",
+    "millisecondRepeatJob": 2000,
+    "blocksPerCall": 100
+  },
+  "servicesManager": {
+    "healthCheckLimit": 100
+  },
+  "crawlIbcApp": {
+    "key": "crawlIbcApp",
+    "millisecondRepeatJob": 2000,
+    "blocksPerCall": 100
+  },
+  "jobUpdateSenderInTxMessages": {
+    "millisecondCrawl": 1000,
+    "blocksPerCall": 1000
+  },
+  "crawlIbcIcs20": {
+    "key": "crawlIbcIcs20",
+    "millisecondRepeatJob": 2000,
+    "blocksPerCall": 100,
+    "port": "transfer"
+  },
+  "jobCreateConstraintInTransactionPartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 600000
+    },
+    "statementTimeout": 600000
+  },
+  "jobCreateConstraintInEvmEventPartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 600000
+    },
+    "statementTimeout": 600000
+  },
+  "jobCreateConstraintInEventPartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 600000
+    },
+    "statementTimeout": 600000
+  },
+  "jobCreateConstraintInTransactionMessagePartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 10000
+    },
+    "statementTimeout": 600000
+  },
+  "jobUpdateTxCountInBlock": {
+    "millisecondCrawl": 1000,
+    "blocksPerCall": 100
+  },
+  "jobUpdateAssets": {
+    "millisecondRepeatJob": 10000,
+    "lcdRecordGet": 5
+  },
+  "handleTransactionEVM": {
+    "key": "handleTransactionEVM",
+    "blocksPerCall": 10000,
+    "millisecondCrawl": 1000,
+    "chunkSize": 1000
+  },
+  "createEVMTransactionPartition": {
+    "endId": 200000000,
+    "step": 100000000,
+    "limitRecordGet": 10000,
+    "chunkSizeInsert": 1000,
+    "statementTimeout": 600000
+  },
+  "jobCheckNeedCreateEVMTransactionPartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "evm_transaction"
+  },
+  "jobCreateConstraintInEVMTransactionPartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 10000
+    },
+    "statementTimeout": 600000
+  },
+  "crawlSmartContractEVM": {
+    "key": "crawlSmartContractEVM",
+    "blocksPerCall": 10000,
+    "millisecondCrawl": 1000
+  },
+  "jobVerifyContractEVM": {
+    "configUploadFile": {
+      "files": 1,
+      "fileSize": 10000000
+    },
+    "millisecondCrawl": 1000,
+    "recordsPerCall": 100,
+    "solcRepo": null
+  },
+  "erc20": {
+    "key": "erc20",
+    "blocksPerCall": 100,
+    "millisecondRepeatJob": 5000,
+    "chunkSizeInsert": 1000,
+    "wrapExtensionContract": ["0xe974cc14c93fc6077b0d65f98832b846c5454a0b"]
+  },
+  "erc721": {
+    "key": "erc721",
+    "blocksPerCall": 100,
+    "millisecondRepeatJob": 2000,
+    "chunkSizeInsert": 1000,
+    "mediaPerBatch": 10,
+    "concurrencyHandleTokenMedia": 10,
+    "timeRefreshErc721Stats": "1 * * * *"
+  },
+  "jobRefreshMViewAccountBalanceStatistic": {
+    "timeRefreshMViewAccountBalanceStatistic": "*/10 * * * *"
+  },
+  "crawlEvmProxyHistory": {
+    "key": "crawlEvmProxyHistory",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 2000
+  },
+  "jobSyncSourcify": {
+    "millisecondCrawl": 2000,
+    "recordsPerCall": 100
+  },
+  "viemConfig": {
+    "multicall": {
+      "batchSize": 10,
+      "waitMilisecond": 1000
+    },
+    "transport": {
+      "batchSize": 10,
+      "waitMilisecond": 1000
+    }
+  }
+}
