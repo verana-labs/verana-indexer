@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import config from '../config.json' assert { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 import { BULL_JOB_NAME } from '../src/common';
 export async function up(knex: Knex): Promise<void> {
   console.log('Migrating event_attribute to use partition');
@@ -69,8 +69,7 @@ export async function up(knex: Knex): Promise<void> {
       // attach partition to table event_attribute
       await knex
         .raw(
-          `alter table event_attribute attach partition ${tableName} for values from (${i}) to (${
-            i + step
+          `alter table event_attribute attach partition ${tableName} for values from (${i}) to (${i + step
           })`
         )
         .transacting(trx);

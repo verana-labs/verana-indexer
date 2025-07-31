@@ -1,5 +1,5 @@
 {
-  "name": "Horoscope",
+  "name": "verana-indexer",
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
@@ -9,19 +9,18 @@
   },
   "scripts": {
     "clean": "rimraf ./dist/",
-    "docker": "npm run up && npm run db:migrate:latest",
-    "start": "cd dist ; node --es-module-specifier-resolution=node ../node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./src/moleculer.config.js",
-    "dev": "ts-node -r tsconfig-paths/register ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
+    "docker": "npm run up && npm run db:migrate:latest && npm run watch",
+    "start": "cd dist && node --es-module-specifier-resolution=node ../node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./src/moleculer.config.js",
+    "dev": "cross-env NODE_OPTIONS=--loader=ts-node/esm node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts",
     "watch": "nodemon",
-    "db:migrate:sourcify": "cross-env PGHOST=localhost PGPORT=5433 PGUSER=phamphong PGPASSWORD=phamphong9981 PGDATABASE=horoscope_dev_auratestnet1 node --loader ts-node/esm --no-warnings ./node_modules/knex/bin/cli.js migrate:latest --knexfile knexfile.ts",
-    "db:migrate:make": "ts-node ./node_modules/.bin/knex migrate:make --knexfile knexfile.ts -x ts",
-    "db:migrate:latest": "env DOTENV_CONFIG_PATH=./.env node --loader ts-node/esm --no-warnings --require dotenv/config ./node_modules/knex/bin/cli.js migrate:latest",
-    "db:migrate:rollback": "env DOTENV_CONFIG_PATH=./.env ts-node --require dotenv/config ./node_modules/.bin/knex migrate:rollback",
+    "db:migrate:make": "cross-env NODE_OPTIONS=\"--loader ts-node/esm\" knex migrate:make --knexfile knexfile.ts -x ts",
+    "db:migrate:latest": "cross-env  node --loader ts-node/esm ./node_modules/knex/bin/cli.js migrate:latest --knexfile knexfile.ts",
+    "db:migrate:rollback": "cross-env NODE_OPTIONS=\"--loader ts-node/esm\" knex migrate:rollback --knexfile knexfile.ts",
     "db:migrate:test:latest": "env DOTENV_CONFIG_PATH=./.env NODE_ENV=test ts-node --require dotenv/config ./node_modules/.bin/knex migrate:latest",
     "db:migrate:test:rollback": "env DOTENV_CONFIG_PATH=./.env NODE_ENV=test ts-node --require dotenv/config ./node_modules/.bin/knex migrate:rollback",
     "db:seed:make": "env DOTENV_CONFIG_PATH=./.env ts-node --require dotenv/config ./node_modules/.bin/knex seed:make",
-    "build": "npm run clean; tsc --project tsconfig.build.json",
-    "up": "docker-compose up --build -d",
+    "build": "npm run clean && tsc --project tsconfig.build.json",
+    "up": "docker-compose up -d",
     "stop": "docker-compose stop",
     "prepare": "husky install",
     "jest": "NODE_OPTIONS='--loader ts-node/esm' jest",
@@ -41,7 +40,7 @@
     "watch": [
       "src"
     ],
-    "exec": "ts-node -r tsconfig-paths/register ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
+    "exec": "node --loader ts-node/esm --experimental-specifier-resolution=node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
     "ext": "ts, js"
   },
   "dependencies": {
@@ -92,6 +91,7 @@
     "moleculer-web": "^0.10.5",
     "mysql": "^2.18.1",
     "node-fetch": "^3.3.2",
+    "nodemon": "^3.1.10",
     "objection": "^3.0.1",
     "parse-uri": "^1.0.7",
     "pg": "^8.8.0",
@@ -115,14 +115,14 @@
     "@types/jest-when": "^3.5.2",
     "@types/lodash": "^4.14.191",
     "@types/mkdirp": "^1.0.2",
-    "@types/node": "^18.11.11",
+    "@types/node": "^18.19.120",
     "@types/stream-chain": "^2.0.1",
     "@types/stream-json": "^1.7.3",
     "@types/underscore": "^1.11.4",
     "@typescript-eslint/eslint-plugin": "^5.40.1",
     "@typescript-eslint/parser": "^5.40.1",
     "ajv-formats": "^2.1.1",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.0.0",
     "eslint": "^8.25.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-config-airbnb-typescript": "^17.0.0",
@@ -137,8 +137,20 @@
     "moleculer-repl": "^0.7.3",
     "prettier": "^2.7.1",
     "ts-jest": "^29.0.3",
-    "ts-node": "^10.9.1",
+    "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.1.1",
-    "typescript": "^5.4.2"
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node",
+    "transpileOnly": true,
+    "compilerOptions": {
+      "module": "NodeNext",
+      "moduleResolution": "NodeNext"
+    }
   }
 }

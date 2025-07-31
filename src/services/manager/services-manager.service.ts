@@ -3,15 +3,15 @@ import {
   Service,
 } from '@ourparentcenter/moleculer-decorators-extended';
 import { Context, ServiceBroker } from 'moleculer';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import { BlockCheckpoint } from '../../models';
 
-// @Service({
-//   name: SERVICE.V1.ServicesManager.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.ServicesManager.key,
+  version: 1,
+})
 export default class ServicesManagerService extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

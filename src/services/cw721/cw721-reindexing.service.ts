@@ -4,7 +4,7 @@ import {
 } from '@ourparentcenter/moleculer-decorators-extended';
 import { Context, ServiceBroker } from 'moleculer';
 import _ from 'lodash';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
@@ -34,10 +34,10 @@ export const REINDEX_TYPE = {
   HISTORY: 'history',
 };
 
-// @Service({
-//   name: SERVICE.V1.CW721ReindexingService.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.CW721ReindexingService.key,
+  version: 1,
+})
 export default class CW721ReindexingService extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

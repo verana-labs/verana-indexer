@@ -9,7 +9,7 @@ import {
   getAllEvent,
 } from '../../mock-data/event.mock';
 import { insertFakeTxWithInputId } from '../../mock-data/transaction.mock';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 
 @Describe('Test migrate data from event table to event partition table')
 export default class MigrateDateEventTableSpec {

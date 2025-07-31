@@ -19,7 +19,7 @@ import {
   REDIS_KEY,
   SERVICE,
 } from '../../common';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import knex from '../../common/utils/db_connection';
 
@@ -213,7 +213,7 @@ export default class AccountStatisticsService extends BullableService {
           ) {
             const addrReceived =
               event[
-                EventAttribute.ATTRIBUTE_COMPOSITE_KEY.COIN_RECEIVED_RECEIVER
+              EventAttribute.ATTRIBUTE_COMPOSITE_KEY.COIN_RECEIVED_RECEIVER
               ];
             const amountReceived = parseCoins(
               event[EventAttribute.ATTRIBUTE_COMPOSITE_KEY.COIN_RECEIVED_AMOUNT]
@@ -260,7 +260,7 @@ export default class AccountStatisticsService extends BullableService {
         .map(
           (event) =>
             event[
-              EventAttribute.ATTRIBUTE_COMPOSITE_KEY.USE_FEEGRANT_GRANTEE
+            EventAttribute.ATTRIBUTE_COMPOSITE_KEY.USE_FEEGRANT_GRANTEE
             ] ?? event[EventAttribute.ATTRIBUTE_COMPOSITE_KEY.TX_FEE_PAYER]
         )
         .forEach((address) => {
@@ -284,7 +284,7 @@ export default class AccountStatisticsService extends BullableService {
           ) {
             addr =
               event[
-                EventAttribute.ATTRIBUTE_COMPOSITE_KEY.USE_FEEGRANT_GRANTEE
+              EventAttribute.ATTRIBUTE_COMPOSITE_KEY.USE_FEEGRANT_GRANTEE
               ];
           }
 

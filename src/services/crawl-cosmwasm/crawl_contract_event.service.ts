@@ -5,7 +5,7 @@ import _ from 'lodash';
 import { SmartContractEvent } from '../../models/smart_contract_event';
 import knex from '../../common/utils/db_connection';
 import { getContractActivities } from '../../common/utils/smart_contract';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,

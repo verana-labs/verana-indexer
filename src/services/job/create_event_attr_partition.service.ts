@@ -4,7 +4,7 @@ import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
 import { BlockCheckpoint } from '../../models';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 
 @Service({
   name: SERVICE.V1.JobService.CreateEventAttrPartition.key,
@@ -71,7 +71,7 @@ export default class CreateEventAttrPartitionJob extends BullableService {
     if (blockHeightCrawledCheckpoint && eventAttrPartitionCheckpoint) {
       if (
         blockHeightCrawledCheckpoint.height +
-          config.jobCheckNeedCreateEventAttributePartition.range >=
+        config.jobCheckNeedCreateEventAttributePartition.range >=
         eventAttrPartitionCheckpoint.height
       ) {
         this.logger.info('creating job create event attribute partition');

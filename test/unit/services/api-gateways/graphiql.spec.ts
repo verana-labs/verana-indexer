@@ -3,7 +3,7 @@ import { ServiceBroker } from 'moleculer';
 import GraphiQLService from '../../../../src/services/api-gateways/graphiql.service';
 import { ResponseDto } from '../../../../src/common/types/response-api';
 import { ErrorCode, ErrorMessage } from '../../../../src/common/types/errors';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 
 @Describe('Test graphiql api service')
 export default class GraphiQLTest {

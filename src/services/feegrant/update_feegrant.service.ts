@@ -4,7 +4,7 @@ import { ServiceBroker } from 'moleculer';
 import { Knex } from 'knex';
 import { Feegrant, FeegrantHistory } from '../../models';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, Config, SERVICE } from '../../common';
 import { FEEGRANT_ACTION } from './feegrant.service';
@@ -44,10 +44,8 @@ export default class UpdateFeegrantService extends BullableService {
       .limit(config.feegrant.updateFeegrant.limitPerCall);
     if (unprocessFeegrantHistories.length > 0) {
       this.logger.info(
-        `handle unprocess feegrant event from ${
-          unprocessFeegrantHistories[0].id
-        } to ${
-          unprocessFeegrantHistories[unprocessFeegrantHistories.length - 1].id
+        `handle unprocess feegrant event from ${unprocessFeegrantHistories[0].id
+        } to ${unprocessFeegrantHistories[unprocessFeegrantHistories.length - 1].id
         }`
       );
       const originalFeegrants = await Feegrant.query()

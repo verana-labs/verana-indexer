@@ -7,7 +7,7 @@ import Long from 'long';
 import { ServiceBroker } from 'moleculer';
 import _ from 'lodash';
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   ABCI_QUERY_PATH,

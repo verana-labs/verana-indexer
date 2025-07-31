@@ -5,7 +5,7 @@ import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
 import { Event } from '../../models';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 
 @Service({
   name: SERVICE.V1.JobService.CreateEventPartition.key,
@@ -28,7 +28,7 @@ export default class CreateEventPartitionJob extends BullableService {
   } | null> {
     if (
       !latestEvent ||
-      BigNumber(latestEvent.id)
+      BigNumber(latestEvent?.id)
         .mod(config.migrationEventToPartition.step)
         .lt(config.migrationEventToPartition.step / 2)
     )
@@ -39,7 +39,7 @@ export default class CreateEventPartitionJob extends BullableService {
      */
     const stepMultiple =
       Math.floor(
-        BigNumber(latestEvent.id)
+        BigNumber(latestEvent?.id)
           .div(config.migrationEventToPartition.step)
           .toNumber()
       ) + 1;

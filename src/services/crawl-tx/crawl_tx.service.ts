@@ -27,7 +27,7 @@ import {
   TransactionMessage,
 } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
@@ -66,6 +66,8 @@ export default class CrawlTxService extends BullableService {
     }
     const listTxRaw = await this.getListRawTx(startBlock, endBlock);
     const listdecodedTx = await this.decodeListRawTx(listTxRaw);
+    this.logger.warn(`listdecodedTx: ${JSON.stringify(listdecodedTx)}`);
+    this.logger.warn(`listTxRaw: ${JSON.stringify(listTxRaw)}`);
     await knex.transaction(async (trx) => {
       await this.insertTxDecoded(listdecodedTx, trx);
       if (blockCheckpoint) {
@@ -128,7 +130,7 @@ export default class CrawlTxService extends BullableService {
       .where('height', '>', startBlock)
       .andWhere('height', '<=', endBlock)
       .orderBy('height', 'asc');
-    this.logger.debug(blocks);
+    // this.logger.warn(blocks);
     const promises: any[] = [];
 
     const getBlockInfo = async (
@@ -144,6 +146,7 @@ export default class CrawlTxService extends BullableService {
           per_page: perPage,
         })
       );
+      // this.logger.warn(`getBlockInfo: ${JSON.stringify(blockInfo)}`);
       return {
         txs: blockInfo.result.txs,
         tx_count: Number(blockInfo.result.total_count),
@@ -225,7 +228,7 @@ export default class CrawlTxService extends BullableService {
 
           // parse tx to format LCD return
           listTx.txs.forEach((tx: any) => {
-            this.logger.debug(`Handle txhash ${tx.hash}`);
+            this.logger.warn(`Handle txhash ${tx.hash}`);
             if (mapExistedTx.get(tx.hash)) {
               return;
             }
@@ -304,7 +307,7 @@ export default class CrawlTxService extends BullableService {
             try {
               parsedTx.tx_response.logs = JSON.parse(tx.tx_result.log);
             } catch (error) {
-              this.logger.debug('tx fail');
+              this.logger.warn('tx fail');
             }
             listHandleTx.push(parsedTx);
           });
@@ -323,12 +326,12 @@ export default class CrawlTxService extends BullableService {
     listTxDecoded: { listTx: any; height: number; timestamp: string }[],
     transactionDB: Knex.Transaction
   ) {
-    this.logger.debug(listTxDecoded);
+    this.logger.warn(listTxDecoded);
     const listTxModel: any[] = [];
     listTxDecoded.forEach((payloadBlock) => {
       const { listTx, height, timestamp } = payloadBlock;
       listTx.forEach((tx: any) => {
-        this.logger.debug(tx, timestamp);
+        this.logger.warn(tx, timestamp);
 
         const txInsert = {
           ...Transaction.fromJson({
@@ -356,7 +359,7 @@ export default class CrawlTxService extends BullableService {
         listTxModel,
         config.crawlTransaction.chunkSize
       );
-      this.logger.debug('result insert tx', resultInsert);
+      this.logger.warn('result insert tx', resultInsert);
     }
   }
 
@@ -365,7 +368,7 @@ export default class CrawlTxService extends BullableService {
     listDecodedTx: Transaction[],
     transactionDB: Knex.Transaction
   ) {
-    this.logger.debug(listDecodedTx);
+    this.logger.warn(listDecodedTx);
     const listEventModel: any[] = [];
     const listMsgModel: any[] = [];
     listDecodedTx.forEach((tx) => {
@@ -380,7 +383,7 @@ export default class CrawlTxService extends BullableService {
           )
         );
       } catch (error) {
-        this.logger.debug(
+        this.logger.warn(
           'txhash not has sender event: ',
           rawLogTx.tx_response.txhash
         );
@@ -402,8 +405,8 @@ export default class CrawlTxService extends BullableService {
               index,
               composite_key: attribute?.key
                 ? `${event.type}.${this._registry.decodeAttribute(
-                    attribute?.key
-                  )}`
+                  attribute?.key
+                )}`
                 : null,
               key: attribute?.key
                 ? this._registry.decodeAttribute(attribute?.key)
@@ -432,13 +435,13 @@ export default class CrawlTxService extends BullableService {
       const resultInsertEvents = await Event.query()
         .insertGraph(listEventModel, { allowRefs: true })
         .transacting(transactionDB);
-      this.logger.debug('result insert events:', resultInsertEvents);
+      this.logger.warn('result insert events:', resultInsertEvents);
     }
     if (listMsgModel.length) {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
-      this.logger.debug('result insert messages:', resultInsertMsgs);
+      this.logger.warn('result insert messages:', resultInsertMsgs);
     }
   }
 
@@ -498,7 +501,7 @@ export default class CrawlTxService extends BullableService {
     const returnEvents: any[] = [];
     // if this is failed tx, then no need to set index msg
     if (!tx.tx_response.logs) {
-      this.logger.debug('Failed tx, no need to set index msg');
+      this.logger.warn('Failed tx, no need to set index msg');
       return [];
     }
     let reachLastEventTypeTx = false;

@@ -69,7 +69,7 @@ typings/
 
 # Don't track transpiled files
 dist/
-package-lock.json
+
 # personal vscode config
 .vscode/settings.json
 

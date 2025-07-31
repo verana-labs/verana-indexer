@@ -2,7 +2,10 @@
   "extends": "./tsconfig-base.json",
   "compilerOptions": {
     "target": "ES6",
-    "rootDirs": ["./src", "./test"],
+    "rootDirs": [
+      "./src",
+      "./test"
+    ],
     "module": "ESNEXT",
     "outDir": "dist",
     "forceConsistentCasingInFileNames": true,
@@ -13,11 +16,18 @@
     "moduleResolution": "Node",
     "resolveJsonModule": true,
     "paths": {
-      "src/*": ["./src/*"],
-      "test/*": ["./test/*"]
+      "src/*": [
+        "./src/*"
+      ],
+      "test/*": [
+        "./test/*"
+      ]
     }
   },
-  "exclude": ["node_modules", "dist"],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ],
   "ts-node": {
     "esm": true,
     // avoid need to specify extension when input

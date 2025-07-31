@@ -4,7 +4,7 @@ import {
 } from '@ourparentcenter/moleculer-decorators-extended';
 import _ from 'lodash';
 import { Context, ServiceBroker } from 'moleculer';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, IContextUpdateCw20, SERVICE } from '../../common';
 import {
@@ -25,10 +25,10 @@ interface ICw20ReindexingParams {
   contractAddress: string;
   smartContractId: number;
 }
-// @Service({
-//   name: SERVICE.V1.Cw20ReindexingService.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.Cw20ReindexingService.key,
+  version: 1,
+})
 export default class Cw20ReindexingContract extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

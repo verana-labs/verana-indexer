@@ -9,7 +9,7 @@ import { ServiceBroker } from 'moleculer';
 import knex from '../../../../src/common/utils/db_connection';
 import CreateEventPartitionJob from '../../../../src/services/job/create_event_partition.service';
 import { Event } from '../../../../src/models';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 
 @Describe('Test create event partition')
 export default class CreateTableEventPartitionSpec {

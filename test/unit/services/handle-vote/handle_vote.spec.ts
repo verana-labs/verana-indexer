@@ -10,11 +10,11 @@ import {
   Transaction,
   Vote,
 } from '../../../../src/models';
-import tx_fixture_vote from './tx_vote.fixture.json' assert { type: 'json' };
-import tx_fixture_multi_vote from './tx_multi_vote.fixture.json' assert { type: 'json' };
-import tx_fixture_vote_authz from './tx_vote_authz.fixture.json' assert { type: 'json' };
-import tx_fixture_vote_option_yes from './tx_vote_change_option_yes.fixture.json' assert { type: 'json' };
-import tx_fixture_vote_option_no from './tx_vote_change_option_no.fixture.json' assert { type: 'json' };
+import tx_fixture_vote from './tx_vote.fixture.json' with { type: 'json' };
+import tx_fixture_multi_vote from './tx_multi_vote.fixture.json' with { type: 'json' };
+import tx_fixture_vote_authz from './tx_vote_authz.fixture.json' with { type: 'json' };
+import tx_fixture_vote_option_yes from './tx_vote_change_option_yes.fixture.json' with { type: 'json' };
+import tx_fixture_vote_option_no from './tx_vote_change_option_no.fixture.json' with { type: 'json' };
 import HandleAuthzTxService from '../../../../src/services/crawl-tx/handle_authz_tx.service';
 
 @Describe('Test handle voting tx service')

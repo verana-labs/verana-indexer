@@ -10,7 +10,7 @@ import {
   Transaction,
 } from '../../../../src/models';
 import CrawlIbcIcs20 from '../../../../src/services/ibc/crawl_ibc_ics20.service';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 import { getAttributeFrom } from '../../../../src/common/utils/smart_contract';
 
 const PORT = config.crawlIbcIcs20.port;
@@ -239,8 +239,7 @@ export default class CrawlIbcIcs20Test {
         getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.AMOUNT)
       );
       expect(result?.denom).toEqual(
-        `${ibcMessage.dst_port_id}/${
-          ibcMessage.dst_channel_id
+        `${ibcMessage.dst_port_id}/${ibcMessage.dst_channel_id
         }/${getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.DENOM)}`
       );
       expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS);

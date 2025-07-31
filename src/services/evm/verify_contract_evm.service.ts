@@ -21,8 +21,8 @@ import { createHash } from 'crypto';
 import { Context, ServiceBroker } from 'moleculer';
 import { lt } from 'semver';
 import { keccak256, toBytes } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
-import networks from '../../../network.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import knex from '../../common/utils/db_connection';
 import { BlockCheckpoint, EVMContractVerification } from '../../models';
@@ -32,10 +32,10 @@ import { SolidityCompiler } from './solidity_compiler';
 const HARDHAT_OUTPUT_FORMAT_REGEX = /"hh-sol-build-info-1"/;
 const NESTED_METADATA_REGEX =
   /"{\\"compiler\\":{\\"version\\".*?},\\"version\\":1}"/;
-// @Service({
-//   name: SERVICE.V1.VerifyContractEVM.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.VerifyContractEVM.key,
+  version: 1,
+})
 export default class VerifyContractEVM extends BullableService {
   private _sourcifyChain!: pkg.SourcifyChain;
 

@@ -6,7 +6,7 @@ import { Knex } from 'knex';
 import _ from 'lodash';
 import { Context, ServiceBroker } from 'moleculer';
 import { PublicClient, getContract } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { SERVICE as COSMOS_SERVICE, Config } from '../../common';
 import knex from '../../common/utils/db_connection';
@@ -20,10 +20,10 @@ import { Erc20Reindexer } from './erc20_reindex';
 import { convertEthAddressToBech32Address } from './utils';
 
 const { NODE_ENV } = Config;
-// @Service({
-//   name: EVM_SERVICE.V1.Erc20.key,
-//   version: 1,
-// })
+@Service({
+  name: EVM_SERVICE.V1.Erc20.key,
+  version: 1,
+})
 export default class Erc20Service extends BullableService {
   viemClient!: PublicClient;
 

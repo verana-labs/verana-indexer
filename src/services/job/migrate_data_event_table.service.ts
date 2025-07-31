@@ -4,7 +4,7 @@ import { ServiceBroker } from 'moleculer';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import { BlockCheckpoint, Event } from '../../models';
 
 @Service({
@@ -67,7 +67,7 @@ export default class MigrateDataEventTableJob extends BullableService {
       }
 
       const trx = await knex.transaction();
-      currentIdMigrated = Number(events[events.length - 1].id);
+      currentIdMigrated = Number(events[events.length - 1]?.id);
 
       try {
         await trx.batchInsert(
@@ -141,6 +141,7 @@ export default class MigrateDataEventTableJob extends BullableService {
     const currentLatestEventId = await Event.query()
       .orderBy('id', 'DESC')
       .first();
+    // .limit(1);
 
     if (!currentLatestEventId) {
       this.logger.info('Error start job migrate event data', {
@@ -150,7 +151,7 @@ export default class MigrateDataEventTableJob extends BullableService {
     }
 
     const startId = currentCheckPointJob.height;
-    const endId = Number(currentLatestEventId[0].id);
+    const endId = Number(currentLatestEventId[0]?.id);
 
     // Create partition for event_partition
     await this.createPartitionForEventPartition(

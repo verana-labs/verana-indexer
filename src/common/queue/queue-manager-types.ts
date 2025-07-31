@@ -3,10 +3,16 @@ import { JobsOptions } from 'bullmq';
 export interface QueueOptions {
   queueName: string;
   jobName?: string;
+  jobType?: string;
   // redisUrl?: string;
   // reuseRedis?: boolean;
   prefix?: string;
+  attempts?: number;
   concurrency: number;
+  backoff: {
+    type: string
+    delay: number,
+  },
 }
 
 export type JobOption = JobsOptions;

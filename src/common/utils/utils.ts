@@ -41,19 +41,22 @@ export default class Utils {
     return false;
   }
 
-  public static flattenObject(obj: any): any {
-    return Object.keys(obj).reduce((acc, k) => {
+  public static flattenObject(obj: any): Record<string, any> {
+    return Object.keys(obj).reduce<Record<string, any>>((acc, k) => {
       if (
         typeof obj[k] === 'object' &&
         !Array.isArray(obj[k]) &&
         obj[k] &&
         k !== 'pub_key'
-      )
+      ) {
         Object.assign(acc, Utils.flattenObject(obj[k]));
-      else acc[k] = obj[k];
+      } else {
+        acc[k] = obj[k];
+      }
       return acc;
     }, {});
   }
+
 
   public static camelizeKeys(obj: any): any {
     if (Array.isArray(obj)) {
@@ -84,8 +87,8 @@ export default class Utils {
       ? (object.kind &&
         object.kind === 'ObjectField' &&
         !object.name.value.match('^_.')
-          ? 1
-          : 0) + Math.max(-1, ...Object.values(object).map(Utils.getDepth))
+        ? 1
+        : 0) + Math.max(-1, ...Object.values(object).map(Utils.getDepth))
       : 0;
   }
 

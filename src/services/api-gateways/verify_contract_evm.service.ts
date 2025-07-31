@@ -3,12 +3,12 @@ import { Post, Service } from '@ourparentcenter/moleculer-decorators-extended';
 import moleculer, { Context, ServiceBroker } from 'moleculer';
 import BaseService from '../../base/base.service';
 import { SERVICE } from '../evm/constant';
-import networks from '../../../network.json' assert { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 
-// @Service({
-//   name: 'verify-contract-evm',
-//   version: 1,
-// })
+@Service({
+  name: 'verify-contract-evm',
+  version: 1,
+})
 export default class VerifyContractEVM extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

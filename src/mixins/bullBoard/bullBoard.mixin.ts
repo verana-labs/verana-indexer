@@ -9,7 +9,7 @@ import { ExpressAdapter } from '@bull-board/express';
 import * as redisuri from 'redisuri';
 import { BULL_JOB_NAME, Config } from '../../common';
 import { BULL_JOB_NAME as EVM_BULL_JOB_NAME } from '../../services/evm/constant';
-import network from '../../../network.json' assert { type: 'json' };
+import network from '../../../network.json' with { type: 'json' };
 import { DEFAULT_PREFIX } from '../../base/bullable.service';
 
 export const bullBoardMixin = () => ({

@@ -1,13 +1,13 @@
 import { Context, ServiceBroker } from 'moleculer';
 import { Get, Service } from '@ourparentcenter/moleculer-decorators-extended';
 import BaseService from '../../base/base.service';
-import networks from '../../../network.json' assert { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 import { SERVICE } from '../evm/constant';
 
-// @Service({
-//   name: 'evm-proxy',
-//   version: 2,
-// })
+@Service({
+  name: 'evm-proxy',
+  version: 2,
+})
 export default class EvmProxy extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

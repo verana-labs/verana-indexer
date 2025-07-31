@@ -12,10 +12,10 @@ import { EVMSmartContract, EvmProxyHistory } from '../../models';
 import { SERVICE } from './constant';
 import { ContractHelper } from './helpers/contract_helper';
 
-// @Service({
-//   name: SERVICE.V2.EvmProxyService.key,
-//   version: 2,
-// })
+@Service({
+  name: SERVICE.V2.EvmProxyService.key,
+  version: 2,
+})
 export default class EVMProxy extends BaseService {
   viemClient!: PublicClient;
 

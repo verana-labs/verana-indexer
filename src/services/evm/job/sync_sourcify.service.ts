@@ -4,16 +4,15 @@ import _ from 'lodash';
 import { SourcifyMatch } from '../../../models/sourcify';
 import { BlockCheckpoint, EVMContractVerification } from '../../../models';
 import BullableService, { QueueHandler } from '../../../base/bullable.service';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 import { SERVICE, BULL_JOB_NAME } from '../constant';
-import networks from '../../../../network.json' assert { type: 'json' };
+import networks from '../../../../network.json' with { type: 'json' };
 import knex from '../../../common/utils/db_connection';
 
 // @Service({
 //   name: SERVICE.V1.JobService.SyncSourcify.key,
 //   version: 1,
 // })
-
 export default class SyncSourcify extends BullableService {
   @QueueHandler({
     queueName: BULL_JOB_NAME.SYNC_SOURCIFY,
@@ -52,7 +51,7 @@ export default class SyncSourcify extends BullableService {
       .filter(
         (sourcifyMatch) =>
           sourcifyMatch.verified_contract.contract_deployment.chain_id ===
-            currentChain.EVMchainId.toString() &&
+          currentChain.EVMchainId.toString() &&
           (sourcifyMatch.runtime_match === 'perfect' ||
             sourcifyMatch.runtime_match === 'partial')
       )

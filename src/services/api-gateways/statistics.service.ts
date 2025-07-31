@@ -5,12 +5,12 @@ import {
 } from '@ourparentcenter/moleculer-decorators-extended';
 import { Context, ServiceBroker } from 'moleculer';
 import BaseService from '../../base/base.service';
-import networks from '../../../network.json' assert { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 
-// @Service({
-//   name: 'statistics',
-//   version: 2,
-// })
+@Service({
+  name: 'statistics',
+  version: 2,
+})
 export default class StatisticsService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

@@ -6,7 +6,7 @@ import { inspect } from 'util';
 import InterNamespaceMiddleware from './middlewares/internamespace';
 import { Config } from './common';
 import MoleculerRetryableError = Errors.MoleculerRetryableError;
-import networks from '../network.json' assert { type: 'json' };
+import networks from '../network.json' with { type: 'json' };
 
 // TODO: Set default value for common config (TRACING_TYPE ...)
 
@@ -253,10 +253,11 @@ const brokerConfig: BrokerOptions = {
   middlewares: [
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    Config.ADD_INTER_NAMESPACE_MIDDLEWARE
+    // Config.ADD_INTER_NAMESPACE_MIDDLEWARE
+    true
       ? InterNamespaceMiddleware(
-          networks.map((network) => network.moleculerNamespace)
-        )
+        networks.map((network) => network.moleculerNamespace)
+      )
       : null,
   ],
   // Register custom REPL commands.

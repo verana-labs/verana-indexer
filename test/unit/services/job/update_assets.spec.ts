@@ -7,7 +7,7 @@ import {
 } from '@jest-decorated/core';
 import _ from 'lodash';
 import { ServiceBroker } from 'moleculer';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 import knex from '../../../../src/common/utils/db_connection';
 import { Code, Cw20Contract } from '../../../../src/models';
 import { Asset } from '../../../../src/models/asset';

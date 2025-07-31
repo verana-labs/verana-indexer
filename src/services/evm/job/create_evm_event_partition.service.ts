@@ -5,12 +5,12 @@ import BullableService, { QueueHandler } from '../../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../constant';
 import knex from '../../../common/utils/db_connection';
 import { EvmEvent } from '../../../models';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 
-// @Service({
-//   name: SERVICE.V1.JobService.CreateEvmEventPartition.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.JobService.CreateEvmEventPartition.key,
+  version: 1,
+})
 export default class CreateEvmEventPartitionJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
@@ -51,9 +51,8 @@ export default class CreateEvmEventPartitionJob extends BullableService {
     const toEvmEventId = fromEvmEventId.plus(
       config.migrationEvmEventToPartition.step
     );
-    const partitionName = `${
-      EvmEvent.tableName
-    }_partition_${fromEvmEventId.toString()}_${toEvmEventId.toString()}`;
+    const partitionName = `${EvmEvent.tableName
+      }_partition_${fromEvmEventId.toString()}_${toEvmEventId.toString()}`;
 
     // Check partition exist or not
     const existPartition = await knex.raw(`

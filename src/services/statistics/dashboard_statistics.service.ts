@@ -19,7 +19,7 @@ import {
   chainIdConfigOnServer,
   getLcdClient,
 } from '../../common';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 
 @Service({
@@ -53,7 +53,7 @@ export default class DashboardStatisticsService extends BullableService {
       const transactionsInfo = await Transaction.query()
         .where('height', '<=', crawlTxJobInfo.height)
         .count();
-      console.log(transactionsInfo);
+      this.logger.warn(transactionsInfo, 'transactionsInfo');
       const totalTransaction = transactionsInfo ? transactionsInfo[0].count : 0;
       await Statistic.query().insert({
         key: StatisticKey.TotalTransaction,
@@ -166,13 +166,13 @@ export default class DashboardStatisticsService extends BullableService {
       .forEach((val) => {
         bondedTokens += BigInt(val.tokens);
       });
-    const totalAura = supply.amount.amount;
+    const totalAura = supply?.amount?.amount;
 
     const dashboardStatistics = {
       total_blocks: totalBlocks?.height,
       community_pool: communityPool.pool.find(
         (pool: DecCoinSDKType) => pool.denom === config.networkDenom
-      )?.amount || "0",
+      )?.amount || '0',
       total_transactions: Number(totalTxs),
       total_validators: totalValidators.length,
       total_active_validators: totalValidators.filter(
@@ -186,14 +186,14 @@ export default class DashboardStatisticsService extends BullableService {
       total_aura: totalAura,
       staking_apr: inflation
         ? Number(
-            BigNumber(inflation.inflation)
-              .multipliedBy(
-                BigNumber(1 - Number(distribution.params.community_tax))
-              )
-              .multipliedBy(BigNumber(totalAura))
-              .dividedBy(BigNumber(bondedTokens.toString()))
-              .multipliedBy(100)
-          )
+          BigNumber(inflation.inflation)
+            .multipliedBy(
+              BigNumber(1 - Number(distribution.params.community_tax))
+            )
+            .multipliedBy(BigNumber(totalAura))
+            .dividedBy(BigNumber(bondedTokens.toString()))
+            .multipliedBy(100)
+        )
         : 0,
     };
 

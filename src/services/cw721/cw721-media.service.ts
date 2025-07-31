@@ -17,7 +17,7 @@ import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import parse from 'parse-uri';
 import axios, { AxiosError } from 'axios';
 import { AWSError } from 'aws-sdk';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
@@ -70,10 +70,10 @@ interface IMetadata {
 }
 const s3Client = S3Service.connectS3();
 
-// @Service({
-//   name: SERVICE.V1.Cw721.UpdateMedia.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.Cw721.UpdateMedia.key,
+  version: 1,
+})
 export default class Cw721MediaService extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
@@ -146,8 +146,7 @@ export default class Cw721MediaService extends BullableService {
       );
     if (tokensUnprocess.length > 0) {
       this.logger.info(
-        `from id (token) ${tokensUnprocess[0].cw721_token_id} to id (token) ${
-          tokensUnprocess[tokensUnprocess.length - 1].cw721_token_id
+        `from id (token) ${tokensUnprocess[0].cw721_token_id} to id (token) ${tokensUnprocess[tokensUnprocess.length - 1].cw721_token_id
         }`
       );
       // get token_uri and extension

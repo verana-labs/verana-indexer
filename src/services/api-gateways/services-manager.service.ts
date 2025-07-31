@@ -1,6 +1,6 @@
 import { Get, Service } from '@ourparentcenter/moleculer-decorators-extended';
 import { Context, ServiceBroker } from 'moleculer';
-import networks from '../../../network.json' assert { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 import BaseService from '../../base/base.service';
 import { BULL_JOB_NAME } from '../../common';
 

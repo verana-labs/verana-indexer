@@ -10,7 +10,7 @@ import fs from 'fs';
 import { exec, spawnSync } from 'child_process';
 import semver from 'semver';
 import { Worker, WorkerOptions } from 'worker_threads';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 
 const HOST_SOLC_REPO = ' https://binaries.soliditylang.org/';
 export class SolidityCompiler implements ISolidityCompiler {

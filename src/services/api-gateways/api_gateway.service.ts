@@ -12,7 +12,7 @@ import { ServiceBroker } from 'moleculer';
 import { Service } from '@ourparentcenter/moleculer-decorators-extended';
 import BaseService from '../../base/base.service';
 import { bullBoardMixin } from '../../mixins/bullBoard/bullBoard.mixin';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 
 @Service({
   mixins: [ApiGateway, bullBoardMixin()],

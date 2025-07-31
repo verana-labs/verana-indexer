@@ -21,7 +21,7 @@ class DefaultValue {
 }
 
 export class BullQueueProvider implements QueueProvider {
-  private _queues = {};
+  private _queues: Record<string, Queue> = {};
 
   private _workers: Worker[] = [];
 

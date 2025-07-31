@@ -9,7 +9,7 @@ import knex from '../../common/utils/db_connection';
 import { CW20Holder, Cw20Contract, Cw20Activity } from '../../models';
 import { BULL_JOB_NAME, IContextUpdateCw20, SERVICE } from '../../common';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import { CW20_ACTION } from './cw20.service';
 
 export interface ICw20UpdateByContractParam {
@@ -18,10 +18,10 @@ export interface ICw20UpdateByContractParam {
   endBlock: number;
 }
 
-// @Service({
-//   name: SERVICE.V1.Cw20UpdateByContract.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.Cw20UpdateByContract.key,
+  version: 1,
+})
 export default class Cw20UpdateByContractService extends BullableService {
   _blocksPerBatch!: number;
 

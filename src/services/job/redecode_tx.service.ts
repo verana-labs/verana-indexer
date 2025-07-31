@@ -10,7 +10,7 @@ import axios from 'axios';
 import { Transaction, TransactionMessage } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE, Config } from '../../common';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import ChainRegistry from '../../common/utils/chain.registry';
 import Utils from '../../common/utils/utils';
 import knex from '../../common/utils/db_connection';

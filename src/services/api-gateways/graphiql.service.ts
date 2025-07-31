@@ -6,8 +6,8 @@ import { DefinitionNode, FieldNode, OperationDefinitionNode } from 'graphql';
 import BaseService from '../../base/base.service';
 import { IContextGraphQLQuery, Config } from '../../common';
 import { ResponseDto } from '../../common/types/response-api';
-import config from '../../../config.json' assert { type: 'json' };
-import queryWhitelist from '../../../graphql-query-whitelist.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
+import queryWhitelist from '../../../graphql-query-whitelist.json' with { type: 'json' };
 import { ErrorCode, ErrorMessage } from '../../common/types/errors';
 import Utils from '../../common/utils/utils';
 

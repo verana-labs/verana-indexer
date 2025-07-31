@@ -3,7 +3,7 @@ import { Context, ServiceBroker } from 'moleculer';
 import { SERVICE } from '../../common';
 import { SERVICE as EVM_SERVICE } from '../evm/constant';
 import BaseService from '../../base/base.service';
-import networks from '../../../network.json' assert { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 
 @Service({
   name: 'job',

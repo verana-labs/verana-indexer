@@ -5,7 +5,7 @@ function InterNamespaceMiddleware(opts: any) {
   if (!Array.isArray(opts)) throw new Error('Must be an Array');
 
   let thisBroker: ServiceBroker;
-  const brokers = {};
+  const brokers: Record<string, ServiceBroker> = {};
 
   return {
     created(broker: ServiceBroker) {
