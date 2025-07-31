@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import config from '../config.json' assert { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 
 export async function up(knex: Knex): Promise<void> {
   await knex.transaction(async (trx) => {
@@ -63,8 +63,7 @@ export async function up(knex: Knex): Promise<void> {
         .transacting(trx);
       await knex
         .raw(
-          `ALTER TABLE block ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${
-            i + step
+          `ALTER TABLE block ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step
           })`
         )
         .transacting(trx);
@@ -72,4 +71,4 @@ export async function up(knex: Knex): Promise<void> {
   });
 }
 
-export async function down(knex: Knex): Promise<void> {}
+export async function down(knex: Knex): Promise<void> { }

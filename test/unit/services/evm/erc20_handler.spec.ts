@@ -9,7 +9,7 @@ import {
 import { Dictionary } from 'lodash';
 import { ServiceBroker } from 'moleculer';
 import { decodeAbiParameters, encodeAbiParameters, fromHex, toHex } from 'viem';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 import knex from '../../../../src/common/utils/db_connection';
 import {
   Block,

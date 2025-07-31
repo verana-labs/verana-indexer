@@ -10,7 +10,7 @@ import { cosmos } from '@aura-nw/aurajs';
 import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import { Proposal } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
@@ -23,10 +23,10 @@ import {
 } from '../../common';
 import Utils from '../../common/utils/utils';
 
-// @Service({
-//   name: SERVICE.V1.CrawlTallyProposalService.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.CrawlTallyProposalService.key,
+  version: 1,
+})
 export default class CrawlTallyProposalService extends BullableService {
   private _lcdClient!: IProviderJSClientFactory;
 
@@ -114,7 +114,7 @@ export default class CrawlTallyProposalService extends BullableService {
                 BigInt(tally.abstain) +
                 BigInt(tally.noWithVeto)) *
                 BigInt(100000000)) /
-                BigInt(pool.pool.bonded_tokens)
+              BigInt(pool.pool.bonded_tokens)
             ) / 1000000;
         }
 

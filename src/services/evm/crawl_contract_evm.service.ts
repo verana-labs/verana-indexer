@@ -3,7 +3,7 @@ import { whatsabi } from '@shazow/whatsabi';
 import _, { Dictionary } from 'lodash';
 import { ServiceBroker } from 'moleculer';
 import { PublicClient, keccak256 } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import knex from '../../common/utils/db_connection';
 import { getViemClient } from '../../common/utils/etherjs_client';
@@ -20,10 +20,10 @@ import {
 } from './constant';
 import { ContractHelper } from './helpers/contract_helper';
 
-// @Service({
-//   name: SERVICE.V1.CrawlSmartContractEVM.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.CrawlSmartContractEVM.key,
+  version: 1,
+})
 export default class CrawlSmartContractEVMService extends BullableService {
   viemClient!: PublicClient;
 

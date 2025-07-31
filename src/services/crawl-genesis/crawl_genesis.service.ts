@@ -37,14 +37,14 @@ import {
   REDIS_KEY,
   SERVICE,
 } from '../../common';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import { ALLOWANCE_TYPE, FEEGRANT_STATUS } from '../feegrant/feegrant.service';
 
-// @Service({
-//   name: SERVICE.V1.CrawlGenesisService.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.CrawlGenesisService.key,
+  version: 1,
+})
 export default class CrawlGenesisService extends BullableService {
   private _httpBatchClient: HttpBatchClient;
 
@@ -705,7 +705,7 @@ export default class CrawlGenesisService extends BullableService {
             client_state: genClient.client_state,
             consensus_state:
               consensusStates.consensus_states[
-                consensusStates.consensus_states.length - 1
+              consensusStates.consensus_states.length - 1
               ],
             client_type: genClient.client_id.substring(
               0,
@@ -908,13 +908,12 @@ export default class CrawlGenesisService extends BullableService {
     );
 
     if (
-      checkpoint.length < this.genesisJobs.length ||
-      checkpoint.find((check) => check.height !== 1)
+      checkpoint?.length < this?.genesisJobs?.length ||
+      checkpoint?.find((check) => check?.height !== 1)
     ) {
       this.logger.info('Crawl genesis jobs are still processing');
-      return;
     }
-    process.exit();
+    // process.exit();
   }
 
   public async _start() {

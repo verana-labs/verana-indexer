@@ -7,7 +7,7 @@ import _, { Dictionary } from 'lodash';
 import { Context, ServiceBroker } from 'moleculer';
 import { Queue } from 'bullmq';
 import { Knex } from 'knex';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   Config,
@@ -35,10 +35,10 @@ export interface ICw721ReindexingHistoryParams {
   prevId: number;
   contractAddress: string;
 }
-// @Service({
-//   name: SERVICE.V1.Cw721.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.Cw721.key,
+  version: 1,
+})
 export default class Cw721HandlerService extends BullableService {
   _httpBatchClient!: HttpBatchClient;
 

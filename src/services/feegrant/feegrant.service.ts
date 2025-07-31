@@ -9,7 +9,7 @@ import {
   Feegrant,
   FeegrantHistory,
 } from '../../models';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, Config, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
@@ -38,10 +38,10 @@ export const FEEGRANT_STATUS = {
   FAIL: 'Fail',
 };
 
-// @Service({
-//   name: SERVICE.V1.Feegrant.HandleFeegrantHistoryService.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.Feegrant.HandleFeegrantHistoryService.key,
+  version: 1,
+})
 export default class HandleFeegrantHistoryService extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
@@ -59,7 +59,7 @@ export default class HandleFeegrantHistoryService extends BullableService {
         [BULL_JOB_NAME.HANDLE_TRANSACTION],
         config.feegrant.key
       );
-    this.logger.info(`startBlock: ${startBlock} to endBlock: ${endBlock}`);
+    this.logger.warn(`startBlock: ${startBlock} to endBlock: ${endBlock}`);
     if (startBlock >= endBlock) return;
     const { newFeegrants, newHistories } = await this.getFeegrantEvents(
       startBlock,
@@ -200,15 +200,15 @@ export default class HandleFeegrantHistoryService extends BullableService {
               e.action === FEEGRANT_ACTION.USE &&
               e.tx_id === feegrantEvent.transaction.id &&
               e.granter ===
-                getAttributeFrom(
-                  feegrantEvent.attributes,
-                  EventAttribute.ATTRIBUTE_KEY.GRANTER
-                ) &&
+              getAttributeFrom(
+                feegrantEvent.attributes,
+                EventAttribute.ATTRIBUTE_KEY.GRANTER
+              ) &&
               e.grantee ===
-                getAttributeFrom(
-                  feegrantEvent.attributes,
-                  EventAttribute.ATTRIBUTE_KEY.GRANTEE
-                )
+              getAttributeFrom(
+                feegrantEvent.attributes,
+                EventAttribute.ATTRIBUTE_KEY.GRANTEE
+              )
           );
           newHistories[index].action = FEEGRANT_ACTION.USE_UP;
         }

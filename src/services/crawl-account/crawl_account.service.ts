@@ -35,7 +35,7 @@ import {
   PubkeyType,
 } from '../../common';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import { Account, AccountVesting } from '../../models';
 import ChainRegistry from '../../common/utils/chain.registry';
 import Utils from '../../common/utils/utils';
@@ -113,8 +113,8 @@ export default class CrawlAccountService extends BullableService {
         (res) =>
           res.result.response.code === 0
             ? cosmos.auth.v1beta1.QueryAccountResponse.decode(
-                fromBase64(res.result.response.value)
-              )
+              fromBase64(res.result.response.value)
+            )
             : null
       );
       const accountAuths = accountAuthsRes.map((acc) =>

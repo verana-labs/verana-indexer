@@ -15,8 +15,8 @@ import {
   Validator,
 } from '../../../../src/models';
 import CrawlDelegatorsService from '../../../../src/services/crawl-validator/crawl_delegators.service';
-import config from '../../../../config.json' assert { type: 'json' };
-import network from '../../../../network.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
+import network from '../../../../network.json' with { type: 'json' };
 import {
   defaultSendFee,
   defaultSigningClientOptions,

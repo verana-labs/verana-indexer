@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import config from '../config.json' assert { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 
 export async function up(knex: Knex): Promise<void> {
   console.log('Migrating transaction_message to use partition');
@@ -61,8 +61,7 @@ export async function up(knex: Knex): Promise<void> {
         .transacting(trx);
       await knex
         .raw(
-          `ALTER TABLE transaction_message ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${
-            i + step
+          `ALTER TABLE transaction_message ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step
           })`
         )
         .transacting(trx);

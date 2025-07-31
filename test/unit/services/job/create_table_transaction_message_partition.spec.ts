@@ -3,7 +3,7 @@ import { ServiceBroker } from 'moleculer';
 import knex from '../../../../src/common/utils/db_connection';
 import CreateTransactionMessagePartitionJob from '../../../../src/services/job/create_transaction_message_partition.service';
 import { TransactionMessage } from '../../../../src/models';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 
 @Describe('Test create transaction message partition')
 export default class CreateTableTransactionMessagePartitionSpec {

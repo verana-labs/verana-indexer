@@ -7,13 +7,13 @@ import { ethers } from 'ethers';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { IAddressesParam } from '../../common';
 import { BULL_JOB_NAME, SERVICE } from './constant';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import { EVMContractVerification, EvmSignatureMapping } from '../../models';
 
-// @Service({
-//   name: SERVICE.V1.SignatureMappingEVM.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.SignatureMappingEVM.key,
+  version: 1,
+})
 export default class EvmSignatureMappingJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

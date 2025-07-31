@@ -17,7 +17,7 @@ import {
   IStatisticsParam,
   SERVICE,
 } from '../../common';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import Utils from '../../common/utils/utils';
 

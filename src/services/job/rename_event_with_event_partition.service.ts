@@ -9,7 +9,7 @@ import BullableService, {
 import { BULL_JOB_NAME, SERVICE, Config } from '../../common';
 import knex from '../../common/utils/db_connection';
 import { BlockCheckpoint, Event } from '../../models';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 
 @Service({
   name: SERVICE.V1.JobService.RenameEventPartitionToEvent.key,

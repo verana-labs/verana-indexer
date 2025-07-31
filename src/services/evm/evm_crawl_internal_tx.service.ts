@@ -8,14 +8,14 @@ import {
 } from '../../models';
 import { BULL_JOB_NAME, SERVICE } from './constant';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
-import networks from '../../../network.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 
-// @Service({
-//   name: SERVICE.V1.EVMCrawlInternalTx.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.EVMCrawlInternalTx.key,
+  version: 1,
+})
 export default class EvmCrawlInternalTxService extends BullableService {
   private selectedChain: any = networks.find(
     (network) => network.chainId === config.chainId

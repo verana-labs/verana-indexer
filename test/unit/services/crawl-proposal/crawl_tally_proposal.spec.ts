@@ -11,8 +11,8 @@ import { cosmos } from '@aura-nw/aurajs';
 import Long from 'long';
 import { Proposal } from '../../../../src/models';
 import CrawlTallyProposalService from '../../../../src/services/crawl-proposal/crawl_tally_proposal.service';
-import config from '../../../../config.json' assert { type: 'json' };
-import network from '../../../../network.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
+import network from '../../../../network.json' with { type: 'json' };
 import {
   defaultSendFee,
   defaultSigningClientOptions,

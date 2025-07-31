@@ -8,7 +8,7 @@ import {
   Transaction,
 } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 
 @Service({
@@ -44,7 +44,7 @@ export default class CoinTransferService extends BullableService {
         events: [],
       };
     });
-
+    this.logger.warn(`Found ${transactions.length} transactions from height ${fromHeight} to ${toHeight}`);
     const minTransactionId = transactions[0].id;
     const maxTransactionId = transactions[transactions.length - 1].id;
     const events = await Event.query()
@@ -110,7 +110,7 @@ export default class CoinTransferService extends BullableService {
         if (
           event.attributes.length !== 3 &&
           tx.messages[event.tx_msg_index].type !==
-            '/cosmos.bank.v1beta1.MsgMultiSend' &&
+          '/cosmos.bank.v1beta1.MsgMultiSend' &&
           !(
             event.attributes.length === 4 &&
             event.attributes.map((attr) => attr.key).includes('authz_msg_index')

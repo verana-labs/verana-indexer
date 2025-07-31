@@ -9,10 +9,10 @@ import { EVMContractVerification, EVMSmartContract } from '../../../models';
 import BullableService, { QueueHandler } from '../../../base/bullable.service';
 import { SERVICE, BULL_JOB_NAME } from '../constant';
 
-// @Service({
-//   name: SERVICE.V1.JobService.InsertVerifyByCodeHash.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.JobService.InsertVerifyByCodeHash.key,
+  version: 1,
+})
 export default class InsertVerifyByCodeHash extends BullableService {
   @QueueHandler({
     queueName: BULL_JOB_NAME.INSERT_VERIFY_BY_CODEHASH,

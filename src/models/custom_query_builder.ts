@@ -44,20 +44,20 @@ export default class CustomQueryBuilder<
   // Private ultility functions
   private isHardDel(forceFlag: boolean) {
     // TODO: Need to refactor how to access property/method of modelClass
-    return forceFlag || !this.modelClass()['softDelete'];
+    return forceFlag || !(this.modelClass() as any).softDelete;
   }
 
   private getDelColum() {
-    return this.modelClass()['delColumn'];
+    return (this.modelClass() as any).delColumn;
   }
 
   /**
    * Soft delte a record by update it's 'delete_at' column
    */
   private softDel() {
-    const patchData = {};
+    const patchData: { [key: string]: any } = {};
     patchData[this.getDelColum()] = knex.fn.now();
-    return this.patch(patchData);
+    return this.patch(patchData as any);
     // const res = this.patch(patchData);
     // console.log(JSON.stringify(res));
     // return res;

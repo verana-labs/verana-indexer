@@ -6,7 +6,7 @@ import { Knex } from 'knex';
 import _, { Dictionary } from 'lodash';
 import { Context, ServiceBroker } from 'moleculer';
 import { PublicClient, getContract } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { Config } from '../../common';
 import knex from '../../common/utils/db_connection';
@@ -30,10 +30,10 @@ import {
 import * as Erc721MediaHandler from './erc721_media_handler';
 
 const { NODE_ENV } = Config;
-// @Service({
-//   name: SERVICE.V1.Erc721.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.Erc721.key,
+  version: 1,
+})
 export default class Erc721Service extends BullableService {
   viemClient!: PublicClient;
 
@@ -187,8 +187,7 @@ export default class Erc721Service extends BullableService {
       .limit(config.erc721.mediaPerBatch);
     if (tokensUnprocess.length > 0) {
       this.logger.info(
-        `from id (token) ${tokensUnprocess[0].id} to id (token) ${
-          tokensUnprocess[tokensUnprocess.length - 1].id
+        `from id (token) ${tokensUnprocess[0].id} to id (token) ${tokensUnprocess[tokensUnprocess.length - 1].id
         }`
       );
       // get batch token_uri before start processing for each
@@ -344,7 +343,7 @@ export default class Erc721Service extends BullableService {
       erc721Activities.forEach((activity) => {
         const token =
           updatedTokens[
-            `${activity.erc721_contract_address}_${activity.token_id}`
+          `${activity.erc721_contract_address}_${activity.token_id}`
           ];
         if (token) {
           // eslint-disable-next-line no-param-reassign

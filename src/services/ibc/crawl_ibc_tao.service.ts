@@ -3,7 +3,7 @@ import { ServiceBroker } from 'moleculer';
 import { Knex } from 'knex';
 import _ from 'lodash';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import {

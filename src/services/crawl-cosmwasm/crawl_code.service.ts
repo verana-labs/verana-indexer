@@ -32,7 +32,7 @@ import {
   SERVICE,
   getHttpBatchClient,
 } from '../../common';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import knex from '../../common/utils/db_connection';
 

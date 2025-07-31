@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import config from '../config.json' assert { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 import CW721Activity from '../src/models/cw721_tx';
 import { getAttributeFrom } from '../src/common/utils/smart_contract';
 import { EventAttribute } from '../src/models';
@@ -52,4 +52,4 @@ export async function up(knex: Knex): Promise<void> {
   });
 }
 
-export async function down(knex: Knex): Promise<void> {}
+export async function down(knex: Knex): Promise<void> { }

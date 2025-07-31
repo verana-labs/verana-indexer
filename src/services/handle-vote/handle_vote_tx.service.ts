@@ -3,13 +3,13 @@ import { ServiceBroker } from 'moleculer';
 import { BlockCheckpoint, TransactionMessage, Vote } from '../../models';
 import { BULL_JOB_NAME, MSG_TYPE, SERVICE } from '../../common/constant';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 
-// @Service({
-//   name: SERVICE.V1.HandleVoteTx.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.HandleVoteTx.key,
+  version: 1,
+})
 export default class HandleTxVoteService extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

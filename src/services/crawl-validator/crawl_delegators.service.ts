@@ -13,7 +13,7 @@ import BigNumber from 'bignumber.js';
 import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import { QueryValidatorDelegationsResponse } from '@aura-nw/aurajs/types/codegen/cosmos/staking/v1beta1/query';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import {
   BULL_JOB_NAME,
   getHttpBatchClient,
@@ -180,8 +180,8 @@ export default class CrawlDelegatorsService extends BullableService {
       const delegations: QueryValidatorDelegationsResponse | null =
         resultCallApi.result.response.code === 0
           ? cosmos.staking.v1beta1.QueryValidatorDelegationsResponse.decode(
-              fromBase64(resultCallApi.result.response.value)
-            )
+            fromBase64(resultCallApi.result.response.value)
+          )
           : null;
 
       if (!delegations) break;

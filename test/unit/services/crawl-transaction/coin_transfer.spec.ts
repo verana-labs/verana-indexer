@@ -10,9 +10,9 @@ import { BULL_JOB_NAME } from '../../../../src/common';
 import knex from '../../../../src/common/utils/db_connection';
 import CoinTransferService from '../../../../src/services/crawl-tx/coin_transfer.service';
 import CrawlTxService from '../../../../src/services/crawl-tx/crawl_tx.service';
-import single_tx_coin_transfer from './single_tx_coin_transfer.json' assert { type: 'json' };
-import multiple_tx_coin_transfer from './multiple_tx_coin_transfer.json' assert { type: 'json' };
-import authz_tx_coin_transfer from './authz_tx_coin_transfer.json' assert { type: 'json' };
+import single_tx_coin_transfer from './single_tx_coin_transfer.json' with { type: 'json' };
+import multiple_tx_coin_transfer from './multiple_tx_coin_transfer.json' with { type: 'json' };
+import authz_tx_coin_transfer from './authz_tx_coin_transfer.json' with { type: 'json' };
 import ChainRegistry from '../../../../src/common/utils/chain.registry';
 import { getProviderRegistry } from '../../../../src/common/utils/provider.registry';
 

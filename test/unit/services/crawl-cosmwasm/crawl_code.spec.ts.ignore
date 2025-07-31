@@ -10,8 +10,8 @@ import fs from 'fs';
 import _ from 'lodash';
 import { BULL_JOB_NAME } from '../../../../src/common';
 import CrawlCodeService from '../../../../src/services/crawl-cosmwasm/crawl_code.service';
-import config from '../../../../config.json' assert { type: 'json' };
-import network from '../../../../network.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
+import network from '../../../../network.json' with { type: 'json' };
 import {
   defaultSendFee,
   defaultSigningClientOptions,

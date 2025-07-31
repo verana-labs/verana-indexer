@@ -11,8 +11,8 @@ import {
 } from '../../../../src/models';
 import CrawlTxService from '../../../../src/services/crawl-tx/crawl_tx.service';
 import knex from '../../../../src/common/utils/db_connection';
-import tx_fixture from './tx.fixture.json' assert { type: 'json' };
-import tx_fixture_authz from './tx_authz.fixture.json' assert { type: 'json' };
+import tx_fixture from './tx.fixture.json' with { type: 'json' };
+import tx_fixture_authz from './tx_authz.fixture.json' with { type: 'json' };
 import ChainRegistry from '../../../../src/common/utils/chain.registry';
 import { getProviderRegistry } from '../../../../src/common/utils/provider.registry';
 

@@ -95,3 +95,4 @@ export function QueueHandler(opt: Partial<QueueOptions>) {
     target.setHandler(qOpt, target[propertyKey]);
   };
 }
+

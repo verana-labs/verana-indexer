@@ -2,7 +2,7 @@ import { fromBase64, toHex } from '@cosmjs/encoding';
 import { Service } from '@ourparentcenter/moleculer-decorators-extended';
 import { ServiceBroker } from 'moleculer';
 import { PublicClient } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME as COSMOS_BULL_JOB_NAME } from '../../common';
 import knex from '../../common/utils/db_connection';
@@ -17,10 +17,10 @@ import {
 import { BULL_JOB_NAME, MSG_TYPE, SERVICE } from './constant';
 import { convertBech32AddressToEthAddress } from './utils';
 
-// @Service({
-//   name: SERVICE.V1.HandleTransactionEVM.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.HandleTransactionEVM.key,
+  version: 1,
+})
 export default class HandleTransactionEVMService extends BullableService {
   viemClient!: PublicClient;
 

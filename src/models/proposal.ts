@@ -166,7 +166,7 @@ export class Proposal extends BaseModel {
       deposit_end_time: proposal.deposit_end_time,
       type:
         proposal.content['@type'] ??
-        proposal.messages.map((msg: string) => msg['@type']).join(','),
+        proposal.messages.map((msg: { [key: string]: any }) => msg['@type']).join(','),
       title: proposal.content.title ?? proposal.title ?? '',
       description: proposal.content.description ?? proposal.description ?? '',
       content: proposal.content,

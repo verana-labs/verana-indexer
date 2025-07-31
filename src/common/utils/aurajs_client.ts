@@ -1,6 +1,6 @@
 import { IProviderJSClientFactory } from '../types/interfaces';
-import network from '../../../network.json' assert { type: 'json' };
-import config from '../../../config.json' assert { type: 'json' };
+import network from '../../../network.json' with { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import { chainIdConfigOnServer } from '../constant';
 
 export default class AuraJsClient {

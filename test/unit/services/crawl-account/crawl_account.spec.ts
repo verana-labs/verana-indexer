@@ -24,8 +24,8 @@ import {
   AccountVesting,
 } from '../../../../src/models';
 import CrawlAccountService from '../../../../src/services/crawl-account/crawl_account.service';
-import config from '../../../../config.json' assert { type: 'json' };
-import network from '../../../../network.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
+import network from '../../../../network.json' with { type: 'json' };
 import knex from '../../../../src/common/utils/db_connection';
 
 @Describe('Test crawl_account service')

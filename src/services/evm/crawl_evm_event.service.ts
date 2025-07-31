@@ -10,13 +10,13 @@ import {
   EvmEvent,
   EVMTransaction,
 } from '../../models';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 
-// @Service({
-//   name: SERVICE.V1.JobService.CrawlEvmEvent.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.JobService.CrawlEvmEvent.key,
+  version: 1,
+})
 export default class CrawlEvmEventJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
     super(broker);

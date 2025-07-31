@@ -1,7 +1,7 @@
 import { PublicClient, createPublicClient, http } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import '../../../fetch-polyfill.js';
-import networks from '../../../network.json' assert { type: 'json' };
+import networks from '../../../network.json' with { type: 'json' };
 
 let viemClient!: PublicClient;
 

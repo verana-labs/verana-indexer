@@ -11,7 +11,7 @@ import {
   parseAbiParameters,
   toHex,
 } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import knex from '../../common/utils/db_connection';
 import { getViemClient } from '../../common/utils/etherjs_client';
@@ -43,10 +43,10 @@ const Erc1967Events = {
   },
 };
 
-// @Service({
-//   name: SERVICE.V1.CrawlEvmProxyHistory.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.CrawlEvmProxyHistory.key,
+  version: 1,
+})
 export default class CrawlProxyContractEVMService extends BullableService {
   viemClient!: PublicClient;
 

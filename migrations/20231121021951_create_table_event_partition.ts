@@ -1,5 +1,4 @@
 import { Knex } from 'knex';
-import config from '../config.json' assert { type: 'json' };
 
 export async function up(knex: Knex): Promise<void> {
   await knex.transaction(async (trx) => {
@@ -35,38 +34,6 @@ export async function up(knex: Knex): Promise<void> {
         .raw('ALTER TABLE event_partition RENAME TO event;')
         .transacting(trx);
     }
-
-    let startId = config.migrationEventToPartition.startId;
-    let endId = config.migrationEventToPartition.endId;
-    const step = config.migrationEventToPartition.step;
-    for (let i = startId; i < endId; i += step) {
-      const partitionName = `event_partition_${i}_${i + step}`;
-      await knex
-        .raw(`CREATE TABLE ${partitionName} (LIKE event INCLUDING ALL)`)
-        .transacting(trx);
-      await knex
-        .raw(
-          `ALTER TABLE event ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${
-            i + step
-          })`
-        )
-        .transacting(trx);
-    }
-
-    // FIX FOREIGN KEY CONSTRAINT AFTER TABLE RENAMES
-    // --------------------------------------------------
-    // Check if event_attribute table exists
-    // Drop incorrect foreign key constraint
-    await knex
-      .raw(
-        `
-        ALTER TABLE event_attribute 
-        DROP CONSTRAINT IF EXISTS event_attribute_partition_event_id_foreign;
-        ALTER TABLE smart_contract_event
-        DROP CONSTRAINT IF EXISTS smart_contract_event_event_id_foreign;
-      `
-      )
-      .transacting(trx);
   });
 }
 

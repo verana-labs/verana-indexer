@@ -2,7 +2,7 @@ import { Knex } from 'knex';
 import _, { Dictionary } from 'lodash';
 import Moleculer from 'moleculer';
 import { decodeAbiParameters, keccak256, toHex } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import {
   Erc20Activity,

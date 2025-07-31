@@ -21,7 +21,7 @@ import {
 import Erc20Service from '../../../../src/services/evm/erc20.service';
 import { BULL_JOB_NAME } from '../../../../src/services/evm/constant';
 import { SERVICE } from '../../../../src/common/constant';
-import config from '../../../../config.json' assert { type: 'json' };
+import config from '../../../../config.json' with { type: 'json' };
 import { convertEthAddressToBech32Address } from '../../../../src/services/evm/utils';
 
 async function cleanQueue(erc20Service: Erc20Service) {

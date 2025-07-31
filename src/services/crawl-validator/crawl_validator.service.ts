@@ -16,7 +16,7 @@ import { fromBase64, toHex } from '@cosmjs/encoding';
 import { Validator } from '../../models/validator';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import {
   ABCI_QUERY_PATH,
   BULL_JOB_NAME,
@@ -222,8 +222,8 @@ export default class CrawlValidatorService extends BullableService {
       (res: JsonRpcSuccessResponse) =>
         res.result.response.value
           ? cosmos.staking.v1beta1.QueryDelegationResponse.decode(
-              fromBase64(res.result.response.value)
-            )
+            fromBase64(res.result.response.value)
+          )
           : null
     );
 
@@ -239,7 +239,7 @@ export default class CrawlValidatorService extends BullableService {
       val.percent_voting_power =
         Number(
           (BigInt(val.tokens) * BigInt(100000000)) /
-            BigInt(pool.pool.bonded_tokens)
+          BigInt(pool.pool.bonded_tokens)
         ) / 1000000;
     });
 

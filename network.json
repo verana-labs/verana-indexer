@@ -1,73 +1,5 @@
 [
   {
-    "chainId": "xstaxy-1",
-    "RPC": [
-      "https://rpc.aura.network"
-    ],
-    "LCD": [
-      "https://lcd.aura.network"
-    ],
-    "databaseName": "local_xstaxy1",
-    "redisDBNumber": 1,
-    "moleculerNamespace": "namespace-xstaxy"
-  },
-  {
-    "chainId": "evmos_9000-4",
-    "RPC": [
-      "https://evmos-testnet-rpc.polkachu.com/"
-    ],
-    "LCD": [
-      "https://evmos-testnet-api.polkachu.com/"
-    ],
-    "databaseName": "horoscope_dev_evmos_testnet",
-    "redisDBNumber": 25,
-    "moleculerNamespace": "erascope-dev-evmos-testnet",
-    "EVMJSONRPC": [
-      "https://evmos-testnet.lava.build"
-    ],
-    "EVMchainId": 9000
-  },
-  {
-    "chainId": "euphoria-2",
-    "RPC": [
-      "https://rpc.euphoria.aura.network"
-    ],
-    "LCD": [
-      "https://lcd.euphoria.aura.network"
-    ],
-    "databaseName": "local_euphoria1",
-    "redisDBNumber": 2,
-    "moleculerNamespace": "namespace-euphoria"
-  },
-  {
-    "chainId": "serenity-testnet-001",
-    "RPC": [
-      "https://rpc.serenity.aura.network"
-    ],
-    "LCD": [
-      "https://lcd.serenity.aura.network"
-    ],
-    "databaseName": "horoscope_dev_serenitytestnet001",
-    "redisDBNumber": 3,
-    "moleculerNamespace": "namespace-serenity"
-  },
-  {
-    "chainId": "aura_6321-3",
-    "RPC": [
-      "https://rpc.euphoria.aura.network"
-    ],
-    "LCD": [
-      "https://lcd.euphoria.aura.network"
-    ],
-    "databaseName": "horoscope_dev_auratestnet1",
-    "redisDBNumber": 4,
-    "moleculerNamespace": "namespace-auratestnet",
-    "EVMJSONRPC": [
-      "https://jsonrpc.euphoria.aura.network"
-    ],
-    "EVMchainId": 6321
-  },
-  {
     "chainId": "vna-testnet-1",
     "RPC": [
       "https://rpc.testnet.verana.network/"
@@ -77,37 +9,10 @@
     ],
     "databaseName": "horoscope_dev_auratestnet1",
     "redisDBNumber": 20,
-    "moleculerNamespace": "namespace-auratestnet",
+    "moleculerNamespace": "verana-testnet",
     "EVMJSONRPC": [
       "https://api.testnet.verana.network"
     ],
     "EVMchainId": 26657
-  },
-  {
-    "chainId": "aura-testnet",
-    "RPC": [
-      "http://localhost:26657"
-    ],
-    "LCD": [
-      "http://localhost:1317"
-    ],
-    "databaseName": "horoscope_dev_auratestnet1",
-    "redisDBNumber": 5,
-    "moleculerNamespace": "namespace-auratestnet",
-    "EVMJSONRPC": [
-      "http://localhost:8545"
-    ]
-  },
-  {
-    "chainId": "cosmoshub-4",
-    "RPC": [
-      "https://cosmos-rpc.tienthuattoan.ventures"
-    ],
-    "LCD": [
-      "https://cosmos-api.tienthuattoan.ventures"
-    ],
-    "databaseName": "local_cosmoshub",
-    "redisDBNumber": 6,
-    "moleculerNamespace": "namespace-cosmoshub"
   }
 ]

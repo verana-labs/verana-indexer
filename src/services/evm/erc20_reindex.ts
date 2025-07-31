@@ -1,6 +1,6 @@
 import Moleculer from 'moleculer';
 import { getContract, PublicClient } from 'viem';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import { AccountBalance, Erc20Activity, Erc20Contract } from '../../models';
 import { Erc20Handler } from './erc20_handler';

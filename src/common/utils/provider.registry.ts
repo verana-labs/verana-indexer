@@ -1,8 +1,8 @@
-import seiTxRegistryType from '../../services/crawl-tx/registry-type/sei-network.json' assert { type: 'json' };
-import auraTxRegistryType from '../../services/crawl-tx/registry-type/aura-network.json' assert { type: 'json' };
-import evmosTxRegistryType from '../../services/crawl-tx/registry-type/evmos-network.json' assert { type: 'json' };
+import seiTxRegistryType from '../../services/crawl-tx/registry-type/sei-network.json' with { type: 'json' };
+import auraTxRegistryType from '../../services/crawl-tx/registry-type/aura-network.json' with { type: 'json' };
+import evmosTxRegistryType from '../../services/crawl-tx/registry-type/evmos-network.json' with { type: 'json' };
 import { chainIdConfigOnServer } from '../index';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 
 export interface IProviderRegistry {
   cosmos: any;

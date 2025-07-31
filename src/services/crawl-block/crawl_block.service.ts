@@ -8,7 +8,7 @@ import {
 import { CommitSigSDKType } from '@aura-nw/aurajs/types/codegen/tendermint/types/types';
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
 import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
-import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
+import { JsonRpcRequest, JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
 import {
   BULL_JOB_NAME,
   getHttpBatchClient,
@@ -18,7 +18,7 @@ import {
 } from '../../common';
 import { Block, BlockCheckpoint, Event, EventAttribute } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
@@ -102,12 +102,11 @@ export default class CrawlBlockService extends BullableService {
     try {
       const blockQueries = [];
       for (let i = startBlock; i <= endBlock; i += 1) {
-        const heightStr = i.toString();
-        // this.logger.info(`📡 Queuing RPC calls for block height: ${heightStr}`);
         try {
           const heightStr = i.toString();
 
-          let blockReq, blockResultsReq;
+          let blockReq: JsonRpcRequest | null = null;
+          let blockResultsReq: JsonRpcRequest | null = null;
           try {
             blockReq = createJsonRpcRequest('block', { height: heightStr });
             // this.logger.warn(`➡️ JSON-RPC Request [block]: ${JSON.stringify(blockReq)}`);
@@ -115,13 +114,15 @@ export default class CrawlBlockService extends BullableService {
             // this.logger.warn(`➡️ JSON-RPC Request [block_results]: ${JSON.stringify(blockResultsReq)}`);
           } catch (err) {
             this.logger.error(`❌ Failed to create JSON-RPC request at height ${heightStr}: ${err}`);
-            continue;
           }
 
-          blockQueries.push(
-            this._httpBatchClient.execute(blockReq),
-            this._httpBatchClient.execute(blockResultsReq)
-          );
+          if (blockReq && blockResultsReq) {
+            blockQueries.push(
+              this._httpBatchClient.execute(blockReq),
+              this._httpBatchClient.execute(blockResultsReq)
+            );
+          }
+
         } catch (err) {
           this.logger.error(`❌ Unexpected error preparing request at block ${i}: ${err}`);
         }
@@ -130,7 +131,7 @@ export default class CrawlBlockService extends BullableService {
 
       const blockResponses: JsonRpcSuccessResponse[] = await Promise.all(blockQueries);
 
-      this.logger.info(`blockResponses: ${JSON.stringify(blockResponses)}`);
+      // this.logger.info(`blockResponses: ${JSON.stringify(blockResponses)}`);
       const mergeBlockResponses: any[] = [];
 
       for (let i = 0; i < blockResponses?.length; i += 2) {
@@ -139,7 +140,7 @@ export default class CrawlBlockService extends BullableService {
         const blockData = blockResponses[i]?.result;
         const blockResultData = blockResponses[i + 1]?.result;
 
-        // this.logger.info(`📦 Block [${blockHeight}] fetched`);
+        this.logger.info(`📦 Block [${blockHeight}] fetched`);
         // this.logger.debug(`🧱 Block Data: ${JSON.stringify(blockData, null, 2)}`);
         // this.logger.debug(`📑 Block Results: ${JSON.stringify(blockResultData, null, 2)}`);
 
@@ -176,7 +177,7 @@ export default class CrawlBlockService extends BullableService {
     try {
       // query list existed block and mark to a map
       const listBlockHeight: number[] = [];
-      const mapExistedBlock: Map<number, boolean> = new Map();
+      const mapExistedBlock = new Map<number, boolean>();
       listBlock.forEach((block) => {
         if (block.block?.header?.height) {
           listBlockHeight.push(parseInt(block.block?.header?.height, 10));
@@ -188,15 +189,18 @@ export default class CrawlBlockService extends BullableService {
           listBlockHeight
         );
         listExistedBlock?.forEach((block) => {
-          mapExistedBlock[block?.height] = true;
+          if (block?.height != null) {
+            mapExistedBlock.set(block.height, true);
+          }
         });
       }
       // insert list block to DB
       const listBlockModel: any[] = [];
+
       listBlock.forEach((block) => {
-        if (
-          block.block?.header?.height &&
-          !mapExistedBlock[parseInt(block?.block?.header?.height, 10)]
+        const height = parseInt(block?.block?.header?.height ?? '0', 10);
+
+        if (!mapExistedBlock.get(height)
         ) {
           const events: Event[] = [];
           if (block.block_result.begin_block_events?.length > 0) {
@@ -264,13 +268,14 @@ export default class CrawlBlockService extends BullableService {
         }
       });
 
+
       if (listBlockModel.length) {
+        // this.logger.warn('listBlockModel: ', listBlockModel);
         await knex.transaction(async (trx) => {
           const result: any = await Block.query()
             .insertGraph(listBlockModel)
             .transacting(trx);
-          this.logger.debug('result insert list block: ', result);
-
+          this.logger.warn('result insert list block: ', result);
           // trigger crawl transaction job
           await this.broker.call(
             SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path

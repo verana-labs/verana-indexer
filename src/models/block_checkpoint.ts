@@ -1,4 +1,4 @@
-import config from '../../config.json' assert { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BaseModel from './base';
 
 export class BlockCheckpoint extends BaseModel {
@@ -26,7 +26,7 @@ export class BlockCheckpoint extends BaseModel {
    * @param jobName Your job name want to run
    * @param lastHeightJobNames Another one or more job that your job depending on. So if your job want to process
    * block A, it needs to wait util those jobs process success block A before your job
-   * @param configName property of config (import config from '../../../config.json' assert { type: 'json' };).
+   * @param configName property of config (import config from '../../../config.json' with { type: 'json' };).
    * it used to set step call via blocksPerCall in config
    */
   static async getCheckpoint(
@@ -59,9 +59,9 @@ export class BlockCheckpoint extends BaseModel {
     if (lastHeightCheckpoint)
       endHeight = configName
         ? Math.min(
-            startHeight + config[configName].blocksPerCall,
-            lastHeightCheckpoint.height
-          )
+          startHeight + (config as any)[configName].blocksPerCall,
+          lastHeightCheckpoint.height
+        )
         : lastHeightCheckpoint.height;
 
     return [startHeight, endHeight, updateBlockCheckpoint];

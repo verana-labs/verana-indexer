@@ -14,7 +14,7 @@ import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
 import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   ABCI_QUERY_PATH,
@@ -27,10 +27,10 @@ import {
 import { BlockCheckpoint, Proposal, EventAttribute } from '../../models';
 import Utils from '../../common/utils/utils';
 
-// @Service({
-//   name: SERVICE.V1.CrawlProposalService.key,
-//   version: 1,
-// })
+@Service({
+  name: SERVICE.V1.CrawlProposalService.key,
+  version: 1,
+})
 export default class CrawlProposalService extends BullableService {
   private _lcdClient!: IProviderJSClientFactory;
 
@@ -225,8 +225,8 @@ export default class CrawlProposalService extends BullableService {
       (res: JsonRpcSuccessResponse) =>
         res.result.response.value
           ? cosmos.gov.v1.QueryProposalResponse.decode(
-              fromBase64(res.result.response.value)
-            )
+            fromBase64(res.result.response.value)
+          )
           : null
     );
 
@@ -242,9 +242,10 @@ export default class CrawlProposalService extends BullableService {
               status:
                 Object.keys(cosmos.gov.v1.ProposalStatus).find(
                   (key) =>
-                    cosmos.gov.v1.ProposalStatus[key] ===
+                    cosmos.gov.v1.ProposalStatus[key as keyof typeof cosmos.gov.v1.ProposalStatus] ===
                     onchainPro?.proposal?.status
-                ) || '',
+                )
+                || '',
               total_deposit: onchainPro?.proposal?.totalDeposit || [],
               tally: {
                 yes: onchainPro.proposal?.finalTallyResult?.yesCount ?? '0',
@@ -310,8 +311,8 @@ export default class CrawlProposalService extends BullableService {
       (res: JsonRpcSuccessResponse) =>
         res.result.response.value
           ? cosmos.gov.v1.QueryProposalResponse.decode(
-              fromBase64(res.result.response.value)
-            )
+            fromBase64(res.result.response.value)
+          )
           : null
     );
 

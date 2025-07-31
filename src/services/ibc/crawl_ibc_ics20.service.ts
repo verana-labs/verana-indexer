@@ -2,7 +2,7 @@ import { Service } from '@ourparentcenter/moleculer-decorators-extended';
 import { Knex } from 'knex';
 import { ServiceBroker } from 'moleculer';
 import _ from 'lodash';
-import config from '../../../config.json' assert { type: 'json' };
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
