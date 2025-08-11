@@ -127,10 +127,26 @@ export const BULL_JOB_NAME = {
   JOB_CW721_UPDATE: 'job:cw721-update',
   CHECKPOINT_UPDATE_DELEGATOR: 'job:checkpoint_update_delegator',
   REFRESH_ACCOUNT_BALANCE_STATISTIC: 'refresh:account-balance-statistic',
+  JOB_CRAWL_DID: 'crawl:did-directory',
+  CP_CRAWL_DID: 'checkpoint:did-directory',
+  CP_CRAWL_DID_TXS: 'CP_CRAWL_DID_TXS',
+  JOB_CRAWL_DID_TXS: 'JOB_CRAWL_DID_TXS',
 };
 
 export const SERVICE = {
   V1: {
+    DidEventListenerService: {
+      key: 'DidEventListenerService',
+      path: 'v1.DidEventListenerService',
+    },
+    DidInitialCrawlerService: {
+      key: 'DidInitialCrawlerService',
+      path: 'v1.DidInitialCrawlerService',
+    },
+    DidDatabaseService: {
+      key: 'DidDatabaseService',
+      path: 'v1.DidDatabaseService',
+    },
     CrawlAccountService: {
       key: 'CrawlAccountService',
       name: 'v1.CrawlAccountService',
