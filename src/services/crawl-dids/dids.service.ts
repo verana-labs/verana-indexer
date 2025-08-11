@@ -5,11 +5,11 @@ import knex from '../../common/utils/db_connection';
 import { SERVICE } from '../../common';
 
 @Service({
-    name: SERVICE.V1.DIDDatabaseService.key, 
+    name: SERVICE.V1.DidDatabaseService.key, 
     version: 1
 })
 
-export default class DIDDatabaseService extends BullableService {
+export default class DidDatabaseService extends BullableService {
 
     constructor(broker: ServiceBroker) {
         super(broker);
@@ -19,7 +19,7 @@ export default class DIDDatabaseService extends BullableService {
         name: 'upsert'
     })
 
-    async upsertDID(ctx: any) {
+    async upsertDid(ctx: any) {
         const { did, controller, created, modified, exp, deposit ,height } = ctx.params;
         return await knex('dids')
             .insert({ did, controller, created, modified, exp, deposit ,height})
@@ -30,7 +30,7 @@ export default class DIDDatabaseService extends BullableService {
     @Action({
         name: 'delete'
     })
-    async deleteDID(ctx: any) {
+    async deleteDid(ctx: any) {
         const did = ctx.params.did.trim();
 
         if (!did) {
@@ -55,7 +55,7 @@ export default class DIDDatabaseService extends BullableService {
     @Action({
         name: 'get'
     })
-    async getDID(ctx: any) {
+    async getDid(ctx: any) {
         const { did } = ctx.params;
         return await knex('dids').where({ did }).first();
     }

@@ -135,17 +135,17 @@ export const BULL_JOB_NAME = {
 
 export const SERVICE = {
   V1: {
-    DIDEventListenerService: {
-      key: 'DIDEventListenerService',
-      path: 'v1.DIDEventListenerService',
+    DidEventListenerService: {
+      key: 'DidEventListenerService',
+      path: 'v1.DidEventListenerService',
     },
-    DIDInitialCrawlerService: {
-      key: 'DIDInitialCrawlerService',
-      path: 'v1.DIDInitialCrawlerService',
+    DidInitialCrawlerService: {
+      key: 'DidInitialCrawlerService',
+      path: 'v1.DidInitialCrawlerService',
     },
-    DIDDatabaseService: {
-      key: 'DIDDatabaseService',
-      path: 'v1.DIDDatabaseService',
+    DidDatabaseService: {
+      key: 'DidDatabaseService',
+      path: 'v1.DidDatabaseService',
     },
     CrawlAccountService: {
       key: 'CrawlAccountService',
@@ -375,7 +375,6 @@ export const SERVICE = {
         key: 'UpdateAssets',
         path: 'v1.UpdateAssets',
       },
-
     },
     CrawlIBCTaoService: {
       key: 'CrawlIBCTaoService',

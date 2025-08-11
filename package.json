@@ -9,7 +9,7 @@
   },
   "scripts": {
     "clean": "rimraf ./dist/",
-    "docker": "npm run up && npm run db:migrate:latest && npm run watch",
+    "docker": "npm run up && npm run db:migrate:latest && npm run dev",
     "start": "cd dist && node --es-module-specifier-resolution=node ../node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./src/moleculer.config.js",
     "dev": "cross-env NODE_OPTIONS=--loader=ts-node/esm node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts",
     "watch": "nodemon",
@@ -22,17 +22,14 @@
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "up": "docker-compose up -d",
     "stop": "docker-compose stop",
+    "down": "docker-compose down",
     "prepare": "husky install",
     "jest": "NODE_OPTIONS='--loader ts-node/esm' jest",
     "test": "docker compose up aurad -d && npm run jest -- --verbose --runInBand --forceExit && docker compose stop aurad && docker rm aurad_erascope",
     "test-ci": "npm run jest -- --verbose --runInBand --forceExit",
     "test-watch": "npm run jest --watch",
     "test-coverage": "npm run jest --coverage",
-    "lint": "echo 'Running lint for repository' && eslint .",
-    "test:verana-api": "node ./scripts/test-verana-api.js",
-    "test:did-crawler": "node ./scripts/test-did-crawler.js",
-    "dev:did-only": "cross-env NODE_OPTIONS=--loader=ts-node/esm node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts --config-file config.did-only.json",
-    "start:did-only": "cross-env NODE_OPTIONS=--loader=ts-node/esm node ./node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./src/moleculer.config.ts --config-file config.did-only.json"
+    "lint": "echo 'Running lint for repository' && eslint ."
   },
   "nodemonConfig": {
     "ignore": [

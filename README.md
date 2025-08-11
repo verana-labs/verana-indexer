@@ -101,28 +101,34 @@ An incomplete list of services is shown below:
 
 You can view detail database schema [here](./docs/database_schema.md)
 
-## Installation
 
-To install the required dependencies (PostgreSQL, Redis, Hasura), you can use Docker Compose:
+
+## Setup
+
+### 1) Install dependencies
 
 ```bash
-docker-compose up -d
+npm i
 ```
 
-This will start the PostgreSQL, Redis, and Hasura containers in the background.
-Note: Make sure the required ports are not already in use on your machine.
-
-Create an environment file `.env` from the example file `.env.example`:
+### 2) Create your environment file
 
 ```bash
 cp .env.example .env
+# then open .env and fill in the required values
 ```
 
-Start development mode
+### 3) Start infrastructure (PostgreSQL, Redis, Hasura)
 
 ```bash
-npm run dev
+npm run docker
 ```
+
+This will start the PostgreSQL, Redis, and Hasura containers in the background.
+
+> **Note:** Make sure the required ports aren’t already in use on your machine.
+
+
 
 ### Hasura metadata migration
 

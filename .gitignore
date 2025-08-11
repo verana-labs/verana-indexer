@@ -75,3 +75,4 @@ dist/
 
 .npmrc
 .yarnrc.yml
+genesis.json

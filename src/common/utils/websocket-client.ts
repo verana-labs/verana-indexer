@@ -1,11 +1,23 @@
 import WebSocket from 'ws';
 import config from '../../../config.json' with { type: 'json' };
 
+type LogFn = {
+  (obj: unknown, msg?: string, ...args: unknown[]): void;
+  (msg: string, ...args: unknown[]): void;
+};
+
+export interface Logger {
+  info: LogFn;
+  warn: LogFn;
+  error: LogFn;
+  debug: LogFn;
+}
+
 interface WebSocketOptions {
   endpoint?: string;
   subscriptionQuery: string;
   onMessage: (data: string) => void | Promise<void>;
-  logger?: any;
+  logger?: Logger; 
 }
 
 export class ReusableWebSocketClient {

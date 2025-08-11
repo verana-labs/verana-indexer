@@ -7,7 +7,7 @@ import { BULL_JOB_NAME, SERVICE } from '../../common';
 import { BlockCheckpoint } from '../../models';
 import knex from '../../common/utils/db_connection';
 
-interface DIDDocument {
+interface DidDocument {
     did: string;
     controller: string;
     created: string;
@@ -16,8 +16,8 @@ interface DIDDocument {
     deposit: string;
 }
 
-interface DIDListResponse {
-    dids: DIDDocument[];
+interface DidListResponse {
+    dids: DidDocument[];
     pagination?: {
         next_key: string | null;
         total: string;
@@ -25,11 +25,11 @@ interface DIDListResponse {
 }
 
 @Service({
-    name: SERVICE.V1.DIDInitialCrawlerService.key,
+    name: SERVICE.V1.DidInitialCrawlerService.key,
     version: 1,
-    dependencies: [SERVICE.V1.DIDDatabaseService.key]
+    dependencies: [SERVICE.V1.DidDatabaseService.key]
 })
-export default class DIDInitialCrawlerService extends BullableService {
+export default class DidInitialCrawlerService extends BullableService {
     private _apiEndpoint: string;
     private _batchSize: number;
     private _concurrency: number;
@@ -78,7 +78,7 @@ export default class DIDInitialCrawlerService extends BullableService {
         queueName: BULL_JOB_NAME.JOB_CRAWL_DID,
         jobName: BULL_JOB_NAME.JOB_CRAWL_DID,
     })
-    public async crawlDIDs(): Promise<void> {
+    public async crawlDids(): Promise<void> {
         if (this._initialSyncCompleted) {
             this.logger.debug('Initial sync already completed, skipping');
             return;
@@ -102,7 +102,7 @@ export default class DIDInitialCrawlerService extends BullableService {
 
         try {
             while (hasMore && emptyResponses < maxEmptyResponses) {
-                const response = await this.fetchDIDs(currentOffset, this._batchSize);
+                const response = await this.fetchDids(currentOffset, this._batchSize);
                 const dids = response.dids || [];
 
                 if (dids.length === 0) {
@@ -116,22 +116,22 @@ export default class DIDInitialCrawlerService extends BullableService {
                     continue;
                 }
 
-                const existingDIDs = await knex('dids')
+                const existingDids = await knex('dids')
                     .whereIn('did', dids.map(d => d.did))
                     .select('did');
-                const existingSet = new Set(existingDIDs.map(d => d.did));
-                const newDIDs = dids.filter(d => !existingSet.has(d.did));
+                const existingSet = new Set(existingDids.map(d => d.did));
+                const newDids = dids.filter(d => !existingSet.has(d.did));
 
-                if (newDIDs.length > 0) {
-                    for (let i = 0; i < newDIDs.length; i += this._concurrency) {
-                        const batch = newDIDs.slice(i, i + this._concurrency);
-                        await Promise.all(batch.map(did => this.saveDID(did,i)));
+                if (newDids.length > 0) {
+                    for (let i = 0; i < newDids.length; i += this._concurrency) {
+                        const batch = newDids.slice(i, i + this._concurrency);
+                        await Promise.all(batch.map(did => this.saveDid(did,i)));
                         processedAny = true;
                     }
-                    this.logger.info(`Processed ${newDIDs.length} new DIDs`);
+                    this.logger.info(`Processed ${newDids.length} new DIDs`);
                 }
 
-                if (newDIDs.length > 0) {
+                if (newDids.length > 0) {
                     currentOffset += dids.length;
                     await this.updateCheckpoint(currentOffset);
                     this.logger.debug(`Updated checkpoint to height ${currentOffset}`);
@@ -153,15 +153,15 @@ export default class DIDInitialCrawlerService extends BullableService {
         }
     }
 
-    private async fetchDIDs(offset: number, limit: number): Promise<DIDListResponse> {
+    private async fetchDids(offset: number, limit: number): Promise<DidListResponse> {
         const url = `${this._apiEndpoint}/verana/dd/v1/list?offset=${offset}&limit=${limit}`;
         const response = await axios.get(url, { timeout: 10000 });
         return response.data;
     }
 
-    private async saveDID(didDoc: DIDDocument,height:number): Promise<void> {
+    private async saveDid(didDoc: DidDocument,height:number): Promise<void> {
         try {
-            await this.broker.call('v1.DIDDatabaseService.upsert', {
+            await this.broker.call('v1.DidDatabaseService.upsert', {
                 did: didDoc.did,
                 height: height,
                 controller: didDoc.controller,
@@ -171,7 +171,7 @@ export default class DIDInitialCrawlerService extends BullableService {
                 deposit: didDoc.deposit
             });
         } catch (err) {
-            this.logger.error(`Failed to save DID ${didDoc.did}:`, err);
+            this.logger.error(`Failed to save Did ${didDoc.did}:`, err);
             throw err;
         }
     }
