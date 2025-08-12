@@ -89,7 +89,7 @@ export default class CrawlBlockService extends BullableService {
       10
     );
 
-    this.logger.info(`latestBlockNetwork: ${latestBlockNetwork}`);
+    // this.logger.info(`latestBlockNetwork: ${latestBlockNetwork}`);
 
     // crawl block from startBlock to endBlock
     const startBlock = this._currentBlock + 1;
@@ -98,7 +98,7 @@ export default class CrawlBlockService extends BullableService {
     if (endBlock > latestBlockNetwork) {
       endBlock = latestBlockNetwork;
     }
-    this.logger.info(`startBlock: ${startBlock} endBlock: ${endBlock}`);
+    // this.logger.info(`startBlock: ${startBlock} endBlock: ${endBlock}`);
     try {
       const blockQueries = [];
       for (let i = startBlock; i <= endBlock; i += 1) {
@@ -275,7 +275,7 @@ export default class CrawlBlockService extends BullableService {
           const result: any = await Block.query()
             .insertGraph(listBlockModel)
             .transacting(trx);
-          this.logger.warn('result insert list block: ', result);
+          // this.logger.warn('result insert list block: ', result);
           // trigger crawl transaction job
           await this.broker.call(
             SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path

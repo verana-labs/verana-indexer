@@ -22,7 +22,7 @@
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "up": "docker-compose up -d",
     "stop": "docker-compose stop",
-    "down": "docker-compose down",
+    "down": "docker-compose down && npm run docker",
     "prepare": "husky install",
     "jest": "NODE_OPTIONS='--loader ts-node/esm' jest",
     "test": "docker compose up aurad -d && npm run jest -- --verbose --runInBand --forceExit && docker compose stop aurad && docker rm aurad_erascope",
@@ -30,7 +30,7 @@
     "test-watch": "npm run jest --watch",
     "test-coverage": "npm run jest --coverage",
     "lint": "echo 'Running lint for repository' && eslint ."
-  },
+   },
   "nodemonConfig": {
     "ignore": [
       "**/*.test.ts",

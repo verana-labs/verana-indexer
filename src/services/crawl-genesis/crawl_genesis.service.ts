@@ -88,6 +88,7 @@ export default class CrawlGenesisService extends BullableService {
 
       fs.appendFileSync('genesis.json', JSON.stringify(genesis.result.genesis));
     } catch (error: any) {
+    
       if (JSON.parse(error.message).code !== -32603) {
         this.logger.error(error);
         return;
@@ -901,20 +902,20 @@ export default class CrawlGenesisService extends BullableService {
     });
   }
 
-  private async terminateProcess() {
-    const checkpoint = await BlockCheckpoint.query().whereIn(
-      'job_name',
-      this.genesisJobs
-    );
+private async terminateProcess() {
+  const checkpoint = await BlockCheckpoint.query().whereIn('job_name', this.genesisJobs);
 
-    if (
-      checkpoint?.length < this?.genesisJobs?.length ||
-      checkpoint?.find((check) => check?.height !== 1)
-    ) {
-      this.logger.info('Crawl genesis jobs are still processing');
-    }
-    // process.exit();
+  if (
+    checkpoint?.length < this?.genesisJobs?.length ||
+    checkpoint?.find((check) => check?.height !== 1)
+  ) {
+    this.logger.info('Crawl genesis jobs are still processing');
+    return;
   }
+
+  try { fs.unlinkSync('genesis.json'); } catch {}
+}
+
 
   public async _start() {
     this.createJob(

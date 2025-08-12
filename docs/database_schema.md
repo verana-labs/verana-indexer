@@ -315,84 +315,15 @@
 | denom       |                                      |
 | processed   | marked this feegrant is done or not  |
 
-### cw20_contract
+### dids
 
-| Column              | Description                             |
-| ------------------- | --------------------------------------- |
-| id                  | table's identity                        |
-| smart_contract_id   | reference to id in smart_contract table |
-| marketing_info      |                                         |
-| total_supply        |                                         |
-| symbol              |                                         |
-| minter              |                                         |
-| name                |                                         |
-| track               | mark if tracked                         |
-| last_updated_height |                                         |
-| decimal             |                                         |
-
-### cw20_activity
-
-| Column                  | Description                                   |
-| ----------------------- | --------------------------------------------- |
-| id                      | table's identity                              |
-| cw20_contract_id        | reference to id in contract table             |
-| smart_contract_event_id | reference to id in smart_contract_event table |
-| action                  | action with this contract                     |
-| sender                  | address                                       |
-| from                    |                                               |
-| to                      |                                               |
-| height                  | height activity                               |
-| amount                  |                                               |
-
-### cw20_holder
-
-| Column              | Description                            |
-| ------------------- | -------------------------------------- |
-| id                  | table's identity                       |
-| cw20_contract_id    | reference to id in cw20_contract table |
-| address             |                                        |
-| amount              |                                        |
-| last_updated_height |                                        |
-
-### cw721_contract
-
-| Column      | Description                       |
-| ----------- | --------------------------------- |
-| id          | table's identity                  |
-| contract_id | reference to id in contract table |
-| symbol      |                                   |
-| minter      |                                   |
-| track       | marked true if tracked            |
-| name        |                                   |
-| created_at  | created time                      |
-| updated_at  | updated time                      |
-
-### cw721_token
-
-| Column              | Description                                                                     |
-| ------------------- | ------------------------------------------------------------------------------- |
-| id                  | table's identity                                                                |
-| token_id            | token id                                                                        |
-| owner               | owner address                                                                   |
-| cw721_contract_id   | reference to id in cw721_contract table                                         |
-| last_updated_height |                                                                                 |
-| burned              | true if token id is burned                                                      |
-| media_info          | json field with onchain (metadata), offchain (link S3 which save media onchain) |
-| created_at          | created time                                                                    |
-| updated_at          | updated time                                                                    |
-
-### cw721_activity
-
-| Column            | Description                             |
-| ----------------- | --------------------------------------- |
-| id                | table's identity                        |
-| tx_hash           | transaction hash                        |
-| sender            | sender address                          |
-| action            |                                         |
-| cw721_contract_id | reference to id in cw721_contract table |
-| cw721_token_id    | reference to id in cw721_token table    |
-| from              | address sender                          |
-| to                | address recipient                       |
-| height            | tx height                               |
-| created_at        | created time                            |
-| updated_at        | updated time                            |
+| Column     | Description                                                                 |
+| ---------- | --------------------------------------------------------------------------- |
+| id         | Table's identity (primary key)                                              |
+| height     | Block height when the DID record was created or last updated                |
+| did        | Decentralized Identifier (DID) string                                       |
+| controller | Controller of the DID                                                       |
+| created    | Creation date/time of the DID record                                        |
+| modified   | Last modification date/time of the DID record                               |
+| exp        | Expiration date/time of the DID                                              |
+| deposit    | Deposit amount associated with the DID                                      |
