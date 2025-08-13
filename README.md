@@ -1,19 +1,25 @@
-# Horoscope v2
+# Verana Indexer
 
-Horoscope v2 is the next version of Horoscope, an indexing service for Cosmos-based blockchains.
-It can crawl all blocks and transaction, decode them to readable data, and index them into a Postgres database.
-Based on the indexed data, Horoscope offers a GraphQL API that enables users to efficiently search and retrieve data from the blockchain.
+The **Verana Indexer** is a specialized blockchain indexing service built on the [Horoscope V2](https://github.com/aura-nw/horoscope-v2/) framework, designed **exclusively** for the **Verana** decentralized trust ecosystem.
 
-Currently, it supports network built by Cosmos SDK v0.45.1 or later. The following networks are officially support by Horoscope v2:
+It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blockchains, but also plays a **critical role** in the **Verifiable Trust** architecture by enabling **DID discovery**, **verifiable credential verification**, and **trust resolution** for services and agents on the Verana network.
 
-- [Aura Network](https://github.com/aura-nw/aura)
-- [Sei](https://sei.io)
 
-> **Looking for Horoscope v1? The Horoscope v1 repository has been archived [`Horoscope v1`](https://github.com/aura-nw/Horoscope)**.
+
+## Purpose & Scope
+
+While Horoscope V2 provides the base crawling and indexing capabilities, the Verana Indexer’s scope is broader:
+
+- **Verana-Exclusive Integration** – Adapted to Verana’s governance, trust registries, and DID directory.
+- **Real-Time DID Crawling & Updating** – Listens for DID-related blockchain events to keep an up-to-date registry of verifiable services (VS) and verifiable user agents (VUA).
+- **Trust Resolution Support** – Integrates with the Trust Resolver to validate credentials and return concise Proof-of-Trust results.
+- **Service Discovery** – Feeds the DID Directory for indexing verifiable services, enabling fast search for wallets, applications, and other services.
+- **Off-chain Enriched Index** – Bridges minimal on-chain records with rich off-chain metadata for high-performance queries.
+
 
 ## Overview Architecture
 
-Horoscope v2 consists of multiple services.
+Indexer consists of multiple services.
 All services are small Node applications written in Typescript, built with [Moleculerjs](https://moleculer.services/) framework using [Moleculer TS base](https://github.com/aura-nw/moleculer-ts-base).
 The crawler servires utilize [Bull](https://github.com/OptimalBits/bull) for efficient queue management of crawling jobs.
 
@@ -22,7 +28,7 @@ An overview of the architecture is shown below:
 ```mermaid
 graph LR
 
-subgraph "Horoscope v2"
+subgraph "Verana Indexer"
   subgraph "Services"
     api-gateway["API Gateway"]
     crawl-account["crawl-account"]
@@ -64,7 +70,6 @@ subgraph "External Services"
   ipfs["IPFS"]
 end
 
-user --> api-gateway
 
 blockchain --> crawl-block
 blockchain --> cw721
@@ -72,29 +77,23 @@ blockchain --> crawl-transaction
 blockchain --> crawl-account
 blockchain --> crawl-proposal
 blockchain --> crawl-validator
-blockchain --> crawl-cosmwasm
 
-cw721 --> s3
-cw721 --> ipfs
 ```
 
-The API Gateway service is the only service that is exposed to the public.
 All services are stateless and can be scaled horizontally. Crawling jobs are queued in Redis and processed by the crawler services.
 The current state of crawling jobs is stored in the database and can be queried via the GraphQL API.
 
 ## Services
 
-An incomplete list of services is shown below:
+A list of services is shown below:
 
 - [**crawl-account**](./docs/services/crawl-account/crawl-account.md): get account auth and its balances
 - [**crawl-block**](./docs/services/crawl-block/crawl-block.md): get block from network and insert to DB
 - [**crawl-transaction**](./docs/services/crawl-transaction/crawl-tx.md): get transaction in a block and decode to readable
-- [**handle-authz-msg**](./docs/services/crawl-transaction/handle-authz-tx-msg.md): handle authz message and decode to readable
 - [**crawl-proposal**](./docs/services/crawl-proposal/crawl-proposal.md): get proposal and its status
 - [**crawl-validator**](./docs/services/crawl-validator/crawl-validator.md): get validator and their power event, signing info
 - [**crawl-genesis**](./docs/services/crawl-genesis/crawl-genesis.md): get state from genesis chunk
-- [**crawl-cosmwasm**](./docs/services/crawl-cosmwasm/crawl-smart-contract.md): get codes and contracts
-- [**cw721**](./docs/services/cw721/README.md): handle registed asset type CW721
+- [**crawl-dids**](./docs/services/crawl-did/crawl-code.md):  Crawl and updates DIDs in real time by listening to blockchain events.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
 ## Database schema

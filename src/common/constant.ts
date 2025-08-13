@@ -51,8 +51,6 @@ export const BULL_JOB_NAME = {
   HANDLE_TRANSACTION: 'handle:transaction',
   CRAWL_TRANSACTION: 'crawl:transaction',
   HANDLE_COIN_TRANSFER: 'handle:coin_transfer',
-  HANDLE_CW721_TRANSACTION: 'handle:cw721-tx',
-  REFRESH_CW721_STATS: 'refresh:cw721-stats',
   CRAWL_PROPOSAL: 'crawl:proposal',
   CRAWL_TALLY_PROPOSAL: 'crawl:tally-proposal',
   COUNT_VOTE_PROPOSAL: 'handle:count-vote-proposal',
@@ -69,13 +67,9 @@ export const BULL_JOB_NAME = {
   CRAWL_DELEGATORS: 'crawl:delegators',
   CRAWL_VALIDATOR_DELEGATORS: 'crawl:validator-delegators',
   CRAWL_CONTRACT_EVENT: 'crawl:contract-event',
-  FILTER_TOKEN_MEDIA_UNPROCESS: 'filter:cw721-token-media-unprocess',
-  HANDLE_CW721_TOKEN_MEDIA: 'handle:cw721-token-media',
-  HANDLE_CW20: 'handle:cw20',
   HANDLE_DASHBOARD_STATISTICS: 'handle:dashboard-statistics',
   UPDATE_FEEGRANT: 'update:feegrant',
   HANDLE_FEEGRANT: 'handle:feegrant',
-  CW20_UPDATE_BY_CONTRACT: 'update:cw20-by-contract',
   CRAWL_VALIDATOR_IMG: 'crawl:validator-img',
   RETRY_CRAWL_VALIDATOR_IMG: 'retry:crawl-validator-img',
   JOB_CHECK_NEED_CREATE_EVENT_ATTR_PARTITION:
@@ -87,22 +81,12 @@ export const BULL_JOB_NAME = {
   JOB_CREATE_TRANSACTION_MESSAGE_PARTITION:
     'job:create-transaction-message-partition',
   CRAWL_GENESIS_FEEGRANT: 'crawl:genesis-feegrant',
-  CRAWL_DAILY_STATISTICS: 'crawl:daily-statistics',
-  CRAWL_ACCOUNT_STATISTICS: 'crawl:account-statistics',
-  HANDLE_TOP_ACCOUNTS: 'handle:top-accounts',
-  HANDLE_DAILY_STATS_JOBS: 'handle:daily-stats-jobs',
-  REINDEX_CW721_CONTRACT: 'reindex:cw721-contract',
-  REINDEX_CW721_HISTORY: 'reindex:cw721-history',
-  HANDLE_MIGRATE_CONTRACT: 'handle:migrate-contract',
   JOB_REDECODE_TX: 'job:redecode-tx',
-  REINDEX_CW20_CONTRACT: 'reindex:cw20-contract',
-  REINDEX_CW20_HISTORY: 'reindex:cw20-history',
   CRAWL_IBC_TAO: 'crawl:ibc-tao',
   CRAWL_GENESIS_IBC_TAO: 'crawl:genesis-ibc-tao',
   REFRESH_IBC_RELAYER_STATISTIC: 'refresh:ibc-relayer-statistic',
   JOB_REASSIGN_MSG_INDEX_TO_EVENT: 'job:reassign-msg-index-to-event',
   CRAWL_IBC_APP: 'crawl:ibc-app',
-  REINDEX_HISTORY_CW721_CONTRACT: 'reindex:cw721-history-contract',
   JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION:
     'job:create-index-composite-attr-partition',
   CRAWL_IBC_ICS20: 'crawl:ibc-ics20',
@@ -126,11 +110,8 @@ export const BULL_JOB_NAME = {
   JOB_UPDATE_ASSETS: 'job:update-assets',
   JOB_CW721_UPDATE: 'job:cw721-update',
   CHECKPOINT_UPDATE_DELEGATOR: 'job:checkpoint_update_delegator',
-  REFRESH_ACCOUNT_BALANCE_STATISTIC: 'refresh:account-balance-statistic',
   JOB_CRAWL_DID: 'crawl:did-directory',
   CP_CRAWL_DID: 'checkpoint:did-directory',
-  CP_CRAWL_DID_TXS: 'CP_CRAWL_DID_TXS',
-  JOB_CRAWL_DID_TXS: 'JOB_CRAWL_DID_TXS',
 };
 
 export const SERVICE = {
@@ -261,18 +242,6 @@ export const SERVICE = {
         path: 'v1.CrawlDelegatorsService.updateAllValidator',
       },
     },
-    Cw20: {
-      key: 'Cw20Service',
-      name: 'v1.Cw20Service',
-    },
-    Cw20UpdateByContract: {
-      key: 'Cw20UpdateByContract',
-      name: 'v1.Cw20UpdateByContract',
-      UpdateByContract: {
-        key: 'UpdateByContract',
-        path: 'v1.Cw20UpdateByContract.UpdateByContract',
-      },
-    },
     DashboardStatisticsService: {
       key: 'DashboardStatisticsService',
       name: 'v1.DashboardStatisticsService',
@@ -290,14 +259,7 @@ export const SERVICE = {
     CrawlValidatorImgService: {
       key: 'CrawlValidatorImageService',
     },
-    CW721ReindexingService: {
-      key: 'Cw721ReindexingService',
-      name: 'v1.Cw721ReindexingService',
-      Reindexing: {
-        key: 'reindexing',
-        path: 'v1.Cw721ReindexingService.reindexing',
-      },
-    },
+
     JobService: {
       CreateBlockPartition: {
         key: 'CreateBlockPartition',
@@ -375,6 +337,7 @@ export const SERVICE = {
         key: 'UpdateAssets',
         path: 'v1.UpdateAssets',
       },
+
     },
     CrawlIBCTaoService: {
       key: 'CrawlIBCTaoService',

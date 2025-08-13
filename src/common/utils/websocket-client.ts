@@ -10,7 +10,7 @@ export interface Logger {
   info: LogFn;
   warn: LogFn;
   error: LogFn;
-  debug: LogFn;
+  debug?: LogFn;
 }
 
 interface WebSocketOptions {

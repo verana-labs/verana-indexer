@@ -89,7 +89,6 @@ export default class CrawlBlockService extends BullableService {
       10
     );
 
-    this.logger.info(`latestBlockNetwork: ${latestBlockNetwork}`);
 
     // crawl block from startBlock to endBlock
     const startBlock = this._currentBlock + 1;
@@ -98,7 +97,6 @@ export default class CrawlBlockService extends BullableService {
     if (endBlock > latestBlockNetwork) {
       endBlock = latestBlockNetwork;
     }
-    this.logger.info(`startBlock: ${startBlock} endBlock: ${endBlock}`);
     try {
       const blockQueries = [];
       for (let i = startBlock; i <= endBlock; i += 1) {
@@ -109,9 +107,7 @@ export default class CrawlBlockService extends BullableService {
           let blockResultsReq: JsonRpcRequest | null = null;
           try {
             blockReq = createJsonRpcRequest('block', { height: heightStr });
-            // this.logger.warn(`➡️ JSON-RPC Request [block]: ${JSON.stringify(blockReq)}`);
             blockResultsReq = createJsonRpcRequest('block_results', { height: heightStr });
-            // this.logger.warn(`➡️ JSON-RPC Request [block_results]: ${JSON.stringify(blockResultsReq)}`);
           } catch (err) {
             this.logger.error(`❌ Failed to create JSON-RPC request at height ${heightStr}: ${err}`);
           }
@@ -131,7 +127,6 @@ export default class CrawlBlockService extends BullableService {
 
       const blockResponses: JsonRpcSuccessResponse[] = await Promise.all(blockQueries);
 
-      // this.logger.info(`blockResponses: ${JSON.stringify(blockResponses)}`);
       const mergeBlockResponses: any[] = [];
 
       for (let i = 0; i < blockResponses?.length; i += 2) {
@@ -141,8 +136,6 @@ export default class CrawlBlockService extends BullableService {
         const blockResultData = blockResponses[i + 1]?.result;
 
         this.logger.info(`📦 Block [${blockHeight}] fetched`);
-        // this.logger.debug(`🧱 Block Data: ${JSON.stringify(blockData, null, 2)}`);
-        // this.logger.debug(`📑 Block Results: ${JSON.stringify(blockResultData, null, 2)}`);
 
         mergeBlockResponses.push({
           ...blockData,
@@ -270,12 +263,10 @@ export default class CrawlBlockService extends BullableService {
 
 
       if (listBlockModel.length) {
-        // this.logger.warn('listBlockModel: ', listBlockModel);
         await knex.transaction(async (trx) => {
-          const result: any = await Block.query()
+           await Block.query()
             .insertGraph(listBlockModel)
             .transacting(trx);
-          this.logger.warn('result insert list block: ', result);
           // trigger crawl transaction job
           await this.broker.call(
             SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path
