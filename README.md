@@ -1,18 +1,25 @@
-# Verana-Indexer
+# Verana Indexer
 
-Verana-Indexer is an indexing service for Cosmos-based blockchains.
-It can crawl all blocks and transaction, decode them to readable data, and index them into a Postgres database.
-Based on the indexed data, Horoscope offers a GraphQL API that enables users to efficiently search and retrieve data from the blockchain.
+The **Verana Indexer** is a specialized blockchain indexing service built on the [Horoscope V2](https://github.com/aura-nw/horoscope-v2/) framework, designed **exclusively** for the **Verana** decentralized trust ecosystem.
 
-Currently, it supports network built by Cosmos SDK v0.45.1 or later. The following networks are officially support by Verana-Indexer:
+It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blockchains, but also plays a **critical role** in the **Verifiable Trust** architecture by enabling **DID discovery**, **verifiable credential verification**, and **trust resolution** for services and agents on the Verana network.
 
-- [Aura Network](https://github.com/aura-nw/aura)
-- [Sei](https://sei.io)
-- [Verana](https://app.testnet.verana.network/)
+
+
+## Purpose & Scope
+
+While Horoscope V2 provides the base crawling and indexing capabilities, the Verana Indexer’s scope is broader:
+
+- **Verana-Exclusive Integration** – Adapted to Verana’s governance, trust registries, and DID directory.
+- **Real-Time DID Crawling & Updating** – Listens for DID-related blockchain events to keep an up-to-date registry of verifiable services (VS) and verifiable user agents (VUA).
+- **Trust Resolution Support** – Integrates with the Trust Resolver to validate credentials and return concise Proof-of-Trust results.
+- **Service Discovery** – Feeds the DID Directory for indexing verifiable services, enabling fast search for wallets, applications, and other services.
+- **Off-chain Enriched Index** – Bridges minimal on-chain records with rich off-chain metadata for high-performance queries.
+
 
 ## Overview Architecture
 
-Verana-Indexer consists of multiple services.
+Indexer consists of multiple services.
 All services are small Node applications written in Typescript, built with [Moleculerjs](https://moleculer.services/) framework using [Moleculer TS base](https://github.com/aura-nw/moleculer-ts-base).
 The crawler servires utilize [Bull](https://github.com/OptimalBits/bull) for efficient queue management of crawling jobs.
 
@@ -21,7 +28,7 @@ An overview of the architecture is shown below:
 ```mermaid
 graph LR
 
-subgraph "Verana-Indexer"
+subgraph "Verana Indexer"
   subgraph "Services"
     api-gateway["API Gateway"]
     crawl-account["crawl-account"]

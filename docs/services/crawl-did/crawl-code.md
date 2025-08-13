@@ -1,6 +1,7 @@
 # Crawl DID
 
-```sequenceDiagram
+```mermaid
+  sequenceDiagram
   autonumber
   participant A as CrawlDidService
   participant B as DB (Postgres)
