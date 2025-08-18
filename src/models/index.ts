@@ -1,4 +1,5 @@
 export * from './account';
+export * from './account_balance';
 export * from './account_vesting';
 export * from './block';
 export * from './block_checkpoint';

@@ -107,7 +107,7 @@ You can view detail database schema [here](./docs/database_schema.md)
 ### 1) Install dependencies
 
 ```bash
-npm i
+pnpm i
 ```
 
 ### 2) Create your environment file
@@ -120,7 +120,7 @@ cp .env.example .env
 ### 3) Start infrastructure (PostgreSQL, Redis, Hasura)
 
 ```bash
-npm run docker
+pnpm run docker
 ```
 
 This will start the PostgreSQL, Redis, and Hasura containers in the background.

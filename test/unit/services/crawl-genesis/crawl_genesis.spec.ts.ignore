@@ -25,7 +25,7 @@ export default class CrawlGenesisTest {
   @BeforeAll()
   async initSuite() {
     await this.broker.start();
-    await BlockCheckpoint.query().delete(true);
+    await BlockCheckpoint.query().delete();
     await BlockCheckpoint.query().insert(this.blockCheckpoint);
     this.crawlGenesisService = this.broker.createService(
       CrawlGenesisService
@@ -34,7 +34,7 @@ export default class CrawlGenesisTest {
         .getQueueManager().stopAll();
     
     await Promise.all([
-      Validator.query().delete(true),
+      Validator.query().delete(),
       knex.raw('TRUNCATE TABLE account RESTART IDENTITY CASCADE'),
     ]);
     execSync('cp ./test/unit/services/crawl-genesis/genesis.txt .');
@@ -44,8 +44,8 @@ export default class CrawlGenesisTest {
   async tearDown() {
     execSync('rm -rf genesis.txt');
     await Promise.all([
-      BlockCheckpoint.query().delete(true),
-      Validator.query().delete(true),
+      BlockCheckpoint.query().delete(),
+      Validator.query().delete(),
       knex.raw('TRUNCATE TABLE account RESTART IDENTITY CASCADE'),
     ]);
     await this.broker.stop();

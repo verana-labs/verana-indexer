@@ -49,6 +49,11 @@ export class BullQueueProvider implements QueueProvider {
         throw e;
       }
     };
+
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+
     const wo: WorkerOptions = _.defaults(
       opt,
       DefaultValue.DEFAULT_WORKER_OPTION

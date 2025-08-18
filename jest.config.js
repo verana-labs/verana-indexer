@@ -1,8 +1,25 @@
-/** @type {import('ts-jest').JestConfigWithTsJest} */
+// jest.config.cjs
 export default {
-  preset: 'ts-jest/presets/js-with-ts',
+  preset: 'ts-jest',
   testEnvironment: 'node',
-  runner: 'jest-light-runner',
-  globalSetup: './test/config/global_setup.ts',
-  globalTeardown: './test/config/global_teardown.ts',
+  testMatch: ['**/*.spec.ts'],
+  transform: {
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: 'tsconfig.json',
+        isolatedModules: true,
+        useESM: true,
+      },
+    ],
+  },
+  extensionsToTreatAsEsm: ['.ts'],
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
+  globals: {
+    'ts-jest': {
+      isolatedModules: true,
+    },
+  },
 };

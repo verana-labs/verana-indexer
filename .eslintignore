@@ -4,3 +4,9 @@
 #dangerfile.ts
 .eslintrc.cjs
 # commitlint.config.js
+jest.config.js
+commitlint.config.cjs
+# tests (ignored in lint, covered by jest)
+test/
+**/*.spec.ts
+**/*.test.ts

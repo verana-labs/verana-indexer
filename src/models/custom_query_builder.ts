@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/dot-notation */
 /* eslint-disable max-classes-per-file */
 // import {Knex} from 'knex';
-import { MaybeCompositeId, Model, Page, QueryBuilder } from 'objection';
+import { MaybeCompositeId, Model, QueryBuilder } from 'objection';
 import knex from '../common/utils/db_connection';
 // import BaseModel from './BaseModel';
 
@@ -10,13 +10,6 @@ export default class CustomQueryBuilder<
   M extends Model,
   R = M[]
 > extends QueryBuilder<M, R> {
-  ArrayQueryBuilderType!: CustomQueryBuilder<M, M[]>;
-
-  SingleQueryBuilderType!: CustomQueryBuilder<M, M>;
-
-  NumberQueryBuilderType!: CustomQueryBuilder<M, number>;
-
-  PageQueryBuilderType!: CustomQueryBuilder<M, Page<M>>;
 
   delete(forceDelete = false) {
     if (this.isHardDel(forceDelete)) return super.delete();
