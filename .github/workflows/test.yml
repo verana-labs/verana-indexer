@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: [ubuntu-latest]
+    runs-on: ubuntu-latest
 
     services:
       postgres:
@@ -40,42 +40,45 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      # Setup Node.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.1
+          registry-url: https://npm.pkg.github.com/aura-nw
+
+      # Setup pnpm
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.17.1'
-          registry-url: https://npm.pkg.github.com/aura-nw
-      - name: Cache node modules
-        id: cache-npm
+      # Cache pnpm store instead of node_modules
+      - name: Cache pnpm store
         uses: actions/cache@v3
-        env:
-          cache-name: cache-node-modules
         with:
-          path: ./node_modules
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
-      - if: ${{ steps.cache-npm.outputs.cache-hit != 'true' }}
-        name: List the state of node modules
-        continue-on-error: true
-        run: pnpm list
+            ${{ runner.os }}-pnpm-
+
+      # Install dependencies
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
       - name: Setup env
         run: cp ci/.env.ci .env
+
       - name: Setup config.json
         run: cp ci/config.json.ci config.json
+
       - name: Setup network.json
         run: cp ci/network.json.ci network.json
+
       - name: Setup code-type.json
         run: cp ci/code-type.json.ci code-type.json
+
       - name: Setup graphql-query-whitelist.json
         run: cp ci/graphql-query-whitelist.json.ci graphql-query-whitelist.json
+
       - name: Test
         env:
           NODE_ENV: test

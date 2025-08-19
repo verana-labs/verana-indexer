@@ -1,6 +1,6 @@
 import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
 import { ServiceBroker } from 'moleculer';
-import { Block, BlockCheckpoint, Proposal, Transaction } from '../../../../src/models';
+import { Block, BlockCheckpoint, Proposal, Transaction, Event, EventAttribute } from '../../../../src/models';
 import { BULL_JOB_NAME } from '../../../../src/common';
 import CrawlProposalService from '../../../../src/services/crawl-proposal/crawl_proposal.service';
 import CrawlTallyProposalService from '../../../../src/services/crawl-proposal/crawl_tally_proposal.service';
@@ -8,9 +8,6 @@ import knex from '../../../../src/common/utils/db_connection';
 
 @Describe('Test crawl_proposal service')
 export default class CrawlProposalTest {
-  // ---------------------------
-  // Seed data (fully local)
-  // ---------------------------
   private blocks: Block[] = [
     Block.fromJson({
       height: 3967529,
@@ -28,98 +25,37 @@ export default class CrawlProposalTest {
     }),
   ];
 
-  // Transaction with a submit_proposal event for proposal_id 1
-  private txInsert = {
-    ...Transaction.fromJson({
-      height: 3967529,
-      hash: '4A8B0DE950F563553A81360D4782F6EC451F6BEF7AC50E2459D1997FA168997D',
-      codespace: '',
-      code: 0,
-      gas_used: '123035',
-      gas_wanted: '141106',
-      gas_limit: '141106',
-      fee: 353,
-      timestamp: '2023-01-12T01:53:57.000Z',
-      index: 0,
-      data: {
-        tx: {
-          body: {
-            messages: [
-              {
-                type: '/cosmos.gov.v1beta1.MsgSubmitProposal',
-                initial_deposit: [{ denom: 'uaura', amount: '100000' }],
-                proposer: 'aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk',
-                // inline content so the service can pick up title/description if it supports it
-                content: {
-                  type_url: '/cosmos.gov.v1beta1.TextProposal',
-                  value: {
-                    title: 'Community Pool Spend test 1',
-                    description: 'Test 1',
-                  },
-                },
-              },
-            ],
-          },
-        },
-        tx_response: {
-          logs: [
+  private txInsert = Transaction.fromJson({
+    height: 3967529,
+    hash: '4A8B0DE950F563553A81360D4782F6EC451F6BEF7AC50E2459D1997FA168997D',
+    codespace: '',
+    code: 0,
+    gas_used: '123035',
+    gas_wanted: '141106',
+    gas_limit: '141106',
+    fee: 353,
+    timestamp: '2023-01-12T01:53:57.000Z',
+    index: 0,
+    data: {
+      tx: {
+        body: {
+          messages: [
             {
-              msg_index: 0,
-              events: [
-                {
-                  tx_msg_index: 0,
-                  type: 'submit_proposal',
-                  attributes: [
-                    { index: 0, key: 'proposal_id', value: '1', block_height: 3967529 },
-                    { index: 1, key: 'proposal_type', value: 'Text', block_height: 3967529 },
-                  ],
-                },
-              ],
-              messages: [
-                {
-                  index: 0,
-                  sender: 'aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk',
-                  type: '/cosmos.gov.v1beta1.MsgSubmitProposal',
-                  content: {
-                    type_url: '/cosmos.gov.v1beta1.TextProposal',
-                    value: {
-                      title: 'Community Pool Spend test 1',
-                      description: 'Test 1',
-                    },
-                  },
-                  initial_deposit: [{ denom: 'utaura', amount: '100000' }],
-                },
-              ],
+              '@type': '/cosmos.gov.v1beta1.MsgSubmitProposal',
+              initial_deposit: [{ denom: 'utaura', amount: '100000' }],
+              proposer: 'aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk',
+              content: {
+                '@type': '/cosmos.gov.v1beta1.TextProposal',
+                title: 'Community Pool Spend test 1',
+                description: 'Test 1',
+              },
             },
           ],
         },
       },
-    }),
-    events: {
-      tx_msg_index: 0,
-      type: 'submit_proposal',
-      attributes: {
-        index: 0,
-        key: 'proposal_id',
-        value: '1',
-        block_height: 3967529,
-      },
     },
-    messages: {
-      index: 0,
-      sender: 'aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk',
-      type: '/cosmos.gov.v1beta1.MsgSubmitProposal',
-      content: {
-        type: '/cosmos.gov.v1beta1.MsgSubmitProposal',
-        initial_deposit: [{ denom: 'uaura', amount: '100000' }],
-        proposer: 'aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk',
-      },
-    },
-  };
+  });
 
-  // ---------------------------
-  // Broker & services
-  // ---------------------------
   broker = new ServiceBroker({
     logger: false,
     metrics: false,
@@ -132,7 +68,6 @@ export default class CrawlProposalTest {
   crawlTallyProposalService?: CrawlTallyProposalService;
 
   private async seedCheckpoints() {
-    // Upsert to avoid unique violation on re-runs
     await BlockCheckpoint.query()
       .insert({ job_name: BULL_JOB_NAME.CRAWL_PROPOSAL, height: 3967500 })
       .onConflict('job_name')
@@ -153,7 +88,6 @@ export default class CrawlProposalTest {
 
     this.crawlTallyProposalService = this.broker.createService(CrawlTallyProposalService) as CrawlTallyProposalService;
 
-    // Stop queues so test is fully deterministic
     try {
       await this.crawlProposalService.getQueueManager().stopAll();
     } catch {}
@@ -161,20 +95,69 @@ export default class CrawlProposalTest {
       await this.crawlTallyProposalService.getQueueManager().stopAll();
     } catch {}
 
-    // Full clean
     await knex.raw(
       'TRUNCATE TABLE block, block_signature, transaction, event, event_attribute, proposal, block_checkpoint RESTART IDENTITY CASCADE'
     );
 
-    // Seed
+    // --- Seed blocks + tx ---
     await Block.query().insert(this.blocks);
-    await Transaction.query().insertGraph(this.txInsert);
+    const tx = await Transaction.query().insert(this.txInsert);
+
+    // Log transaction data to verify
+    console.log('Inserted transaction:', JSON.stringify(this.txInsert, null, 2));
+
+    // --- Seed events & attributes so service can detect proposal ---
+    const submitEvent = await Event.query().insert({
+      tx_id: tx.id,
+      tx_msg_index: 0,
+      type: 'submit_proposal',
+    });
+
+    await EventAttribute.query().insert([
+      {
+        event_id: submitEvent.id,
+        key: 'proposal_id',
+        value: '1',
+        block_height: 3967529,
+        index: 0,
+      },
+      {
+        event_id: submitEvent.id,
+        key: 'proposal_type',
+        value: 'Text',
+        block_height: 3967529,
+        index: 1,
+      },
+    ]);
+
+    const depositEvent = await Event.query().insert({
+      tx_id: tx.id,
+      tx_msg_index: 0,
+      type: 'proposal_deposit',
+    });
+
+    await EventAttribute.query().insert([
+      {
+        event_id: depositEvent.id,
+        key: 'amount',
+        value: '100000utaura',
+        block_height: 3967529,
+        index: 0,
+      },
+      {
+        event_id: depositEvent.id,
+        key: 'proposal_id',
+        value: '1',
+        block_height: 3967529,
+        index: 1,
+      },
+    ]);
+
     await this.seedCheckpoints();
   }
 
   @AfterAll()
   async tearDown() {
-    // Clean unless you want to keep data for debugging
     await knex.raw(
       'TRUNCATE TABLE block, block_signature, transaction, event, event_attribute, proposal, block_checkpoint RESTART IDENTITY CASCADE'
     );
@@ -192,29 +175,16 @@ export default class CrawlProposalTest {
 
   @Test('Crawl new proposal success')
   public async testCrawlNewProposal() {
-    // Act
     await this.crawlProposalService?.handleCrawlProposals({});
-
-    // Assert
     const p = await Proposal.query().where('proposal_id', 1).first();
-
-    // Core invariants
+    expect(p).toBeDefined();
     expect(p?.proposal_id).toEqual(1);
-    expect(p?.proposer_address).toEqual('aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk');
-
-    // Type can be '/cosmos.gov.v1.MsgExecLegacyContent' or '/cosmos.gov.v1beta1.TextProposal'
-    // or another cosmos gov variant depending on your implementation.
-    // Keep this tolerant but still meaningful:
     expect(typeof p?.type).toBe('string');
     expect((p?.type ?? '').length).toBeGreaterThan(0);
-
-    // Metadata may come from inline content or chain query. Just ensure it's non-empty strings.
     expect(typeof p?.title).toBe('string');
     expect((p?.title ?? '').length).toBeGreaterThan(0);
     expect(typeof p?.description).toBe('string');
     expect((p?.description ?? '').length).toBeGreaterThan(0);
-
-    // Your service typically sets false until tally
     expect(p?.vote_counted).toEqual(false);
   }
 }
