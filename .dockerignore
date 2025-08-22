@@ -121,8 +121,7 @@ test
 *.test.ts
 jest.config.js
 
-# Husky
-.husky
+
 
 # Linting
 .eslintrc.js
