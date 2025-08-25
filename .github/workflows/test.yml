@@ -40,18 +40,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Setup Node.js
       - uses: actions/setup-node@v4
         with:
           node-version: 22.17.1
           registry-url: https://npm.pkg.github.com/aura-nw
 
-      # Setup pnpm
       - uses: pnpm/action-setup@v4
         with:
-          run_install: false
+          run_install: false 
 
-      # Cache pnpm store instead of node_modules
       - name: Cache pnpm store
         uses: actions/cache@v3
         with:
@@ -60,7 +57,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
-      # Install dependencies
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

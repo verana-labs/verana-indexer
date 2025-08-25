@@ -12,20 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Install pnpm (it will respect "packageManager": "pnpm@10.14.0" in package.json)
       - uses: pnpm/action-setup@v4
         with:
-          run_install: false # don't auto-install, we’ll do it later
+          run_install: false 
 
-      # Setup Node.js (your required version)
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.17.1' # ✅ Your requested Node version
+          node-version: '22.17.1' 
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
           registry-url: https://npm.pkg.github.com/aura-nw
 
-      # Auth for GitHub Packages (if you need private @aura-nw packages)
+    
       - name: Auth for GitHub Packages
         run: |
           echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc

@@ -4,6 +4,8 @@ The **Verana Indexer** is a specialized blockchain indexing service built on the
 
 It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blockchains, but also plays a **critical role** in the **Verifiable Trust** architecture by enabling **DID discovery**, **verifiable credential verification**, and **trust resolution** for services and agents on the Verana network.
 
+
+
 ## Purpose & Scope
 
 While Horoscope V2 provides the base crawling and indexing capabilities, the Verana Indexer’s scope is broader:
@@ -13,6 +15,7 @@ While Horoscope V2 provides the base crawling and indexing capabilities, the Ver
 - **Trust Resolution Support** – Integrates with the Trust Resolver to validate credentials and return concise Proof-of-Trust results.
 - **Service Discovery** – Feeds the DID Directory for indexing verifiable services, enabling fast search for wallets, applications, and other services.
 - **Off-chain Enriched Index** – Bridges minimal on-chain records with rich off-chain metadata for high-performance queries.
+
 
 ## Overview Architecture
 
@@ -66,7 +69,6 @@ subgraph "External Services"
   ipfs["IPFS"]
 end
 
-
 blockchain --> crawl-block
 blockchain --> cw721
 blockchain --> crawl-transaction
@@ -89,12 +91,14 @@ A list of services is shown below:
 - [**crawl-proposal**](./docs/services/crawl-proposal/crawl-proposal.md): get proposal and its status
 - [**crawl-validator**](./docs/services/crawl-validator/crawl-validator.md): get validator and their power event, signing info
 - [**crawl-genesis**](./docs/services/crawl-genesis/crawl-genesis.md): get state from genesis chunk
-- [**crawl-dids**](./docs/services/crawl-did/crawl-code.md): Crawl and updates DIDs in real time by listening to blockchain events.
+- [**crawl-dids**](./docs/services/crawl-did/crawl-code.md):  Crawl and updates DIDs in real time by listening to blockchain events.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
 ## Database schema
 
 You can view detail database schema [here](./docs/database_schema.md)
+
+
 
 ## Setup
 
@@ -120,6 +124,8 @@ pnpm run docker
 This will start the PostgreSQL, Redis, and Hasura containers in the background.
 
 > **Note:** Make sure the required ports aren’t already in use on your machine.
+
+
 
 ### Hasura metadata migration
 
