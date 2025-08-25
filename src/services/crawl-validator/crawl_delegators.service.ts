@@ -196,12 +196,9 @@ export default class CrawlDelegatorsService extends BullableService {
         );
       });
 
-      if (
-        delegations.pagination?.nextKey &&
-        delegations.pagination?.nextKey.length > 0
-      )
-        request.pagination.key = delegations.pagination.nextKey;
-      else break;
+      if (delegations.pagination?.nextKey && delegations.pagination?.nextKey.length > 0) {
+        request.pagination.key = new Uint8Array(delegations.pagination.nextKey);
+      } else break;
     }
 
     return delegators ?? [];

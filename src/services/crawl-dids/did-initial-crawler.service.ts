@@ -31,8 +31,11 @@ interface DidListResponse {
 })
 export default class DidInitialCrawlerService extends BullableService {
     private _apiEndpoint: string;
+
     private _batchSize: number;
+   
     private _concurrency: number;
+    
     private _initialSyncCompleted: boolean = false;
 
     public constructor(public broker: ServiceBroker) {
@@ -125,7 +128,7 @@ export default class DidInitialCrawlerService extends BullableService {
                 if (newDids.length > 0) {
                     for (let i = 0; i < newDids.length; i += this._concurrency) {
                         const batch = newDids.slice(i, i + this._concurrency);
-                        await Promise.all(batch.map(did => this.saveDid(did,i)));
+                        await Promise.all(batch.map(did => this.saveDid(did, i)));
                         processedAny = true;
                     }
                     this.logger.info(`Processed ${newDids.length} new DIDs`);
@@ -146,7 +149,7 @@ export default class DidInitialCrawlerService extends BullableService {
                     this.logger.info('Initial sync completed (end of available DIDs)');
                 }
 
-                emptyResponses = 0; 
+                emptyResponses = 0;
             }
         } catch (error) {
             this.logger.error('DID sync failed:', error);
@@ -159,7 +162,7 @@ export default class DidInitialCrawlerService extends BullableService {
         return response.data;
     }
 
-    private async saveDid(didDoc: DidDocument,height:number): Promise<void> {
+    private async saveDid(didDoc: DidDocument, height: number): Promise<void> {
         try {
             await this.broker.call('v1.DidDatabaseService.upsert', {
                 did: didDoc.did,

@@ -2,6 +2,7 @@ import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
 import { ServiceBroker } from 'moleculer';
 import { Validator } from '../../../../src/models';
 import CrawlSigningInfoService from '../../../../src/services/crawl-validator/crawl_signing_info.service';
+import knex from '../../../../src/common/utils/db_connection';
 
 @Describe('Test crawl_signing_info service')
 export default class CrawlSigningInfoTest {
@@ -42,33 +43,40 @@ export default class CrawlSigningInfoTest {
   });
 
   broker = new ServiceBroker({ logger: false });
-
-  crawlSigningInfoService?: CrawlSigningInfoService;
+  crawlSigningInfoService!: CrawlSigningInfoService;
 
   @BeforeAll()
   async initSuite() {
+    // Ensure test schema is up-to-date
+    await knex.migrate.latest();
+
     await this.broker.start();
-    this.crawlSigningInfoService = this.broker.createService(
-      CrawlSigningInfoService
-    ) as CrawlSigningInfoService;
+    this.crawlSigningInfoService = this.broker.createService(CrawlSigningInfoService) as CrawlSigningInfoService;
+
+    // Stop background jobs for deterministic tests
     this.crawlSigningInfoService.getQueueManager().stopAll();
-    await Validator.query().delete(true);
+
+    // Clean table WITHOUT soft-delete (avoids missing delete_at errors)
+    await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+
+    // Seed
     await Validator.query().insert(this.validator);
   }
 
   @AfterAll()
   async tearDown() {
-    await Validator.query().delete(true);
+    // Clean hard + shutdown
+    await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
     await this.broker.stop();
+    await knex.destroy();
   }
 
   @Test('Crawl validator signing info success')
   public async testCrawlSigningInfo() {
-    await this.crawlSigningInfoService?.handleJob({});
+    await this.crawlSigningInfoService.handleJob({});
 
-    const updatedValidator = await Validator.query().first();
-
-    expect(updatedValidator?.start_height).toEqual(0);
-    expect(updatedValidator?.tombstoned).toEqual(false);
+    const updated = await Validator.query().first();
+    expect(updated?.start_height).toEqual(0);
+    expect(updated?.tombstoned).toEqual(false);
   }
 }

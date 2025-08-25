@@ -1,11 +1,11 @@
 {
-  "chainId": "aura-testnet-2",
+  "chainId": "vna-testnet-1",
   "chainName": "aura",
   "networkPrefixAddress": "aura",
   "consensusPrefixAddress": "valcons",
   "validatorPrefixAddress": "valoper",
-  "networkDenom": "utaura",
   "evmOnly": false,
+  "networkDenom": "utaura",
   "jobRetryAttempt": 5,
   "jobRetryBackoff": 1000,
   "crawlValidator": {
@@ -26,15 +26,31 @@
     },
     "concurrencyHandleTokenMedia": 10
   },
+  "veranaApi": "https://api.testnet.verana.network",
+  "websocket": {
+    "endpoint": "ws://node1.testnet.verana.network:26657/websocket",
+    "maxReconnectAttempts": 5, 
+    "reconnectDelay": 3000,
+    "blockSubscriptionQuery":"tm.event='Tx' AND message.module='verana'"
+  },
+  "didCrawler": {
+    "batchSize": 100,
+    "txPollInterval": 5000,
+    "pollInterval": 3000,
+    "intervalMs": 1000,
+    "chunkSize": 50,
+    "maxProcessingPerRun": 500,
+    "concurrency": 5
+  },
   "crawlBlock": {
     "millisecondCrawl": 5000,
     "blocksPerCall": 100,
-    "startBlock": 4860000,
+    "startBlock": 0,
     "saveRawLog": true
   },
   "crawlTransaction": {
     "key": "crawlTransaction",
-    "millisecondCrawl": 5000,
+    "millisecondCrawl": 1000,
     "blocksPerCall": 100,
     "chunkSize": 1000
   },
@@ -50,7 +66,10 @@
     "millisecondCrawl": 5000,
     "txsPerCall": 100,
     "saveRawLog": true,
-    "lastEventsTypeTx": ["tx", "ethereum_tx"]
+    "lastEventsTypeTx": [
+      "tx",
+      "ethereum_tx"
+    ]
   },
   "crawlSigningInfo": {
     "millisecondCrawl": null,
@@ -65,12 +84,6 @@
     "handleVestingAccount": {
       "millisecondCrawl": 30000
     }
-  },
-  "evmCrawlInternalTx": {
-    "key": "evmCrawlInternalTx",
-    "blocksPerCall": 100,
-    "millisecondCrawl": 3000,
-    "chunkSize": 1000
   },
   "crawlProposal": {
     "key": "crawlProposal",
@@ -124,14 +137,9 @@
     "millisecondCrawl": 5000
   },
   "crawlDelegators": {
-    "millisecondCrawl": 3600000,
+    "millisecondCrawl": 10000,
     "queryPageLimit": 100,
     "txMsgPageLimit": 100
-  },
-  "crawlContractEvent": {
-    "key": "crawlContractEvent",
-    "blocksPerCall": 100,
-    "millisecondRepeatJob": 2000
   },
   "cw20": {
     "blocksPerCall": 100,
@@ -141,9 +149,23 @@
       "limitRecordGet": 500
     }
   },
+  "crawlContractEvent": {
+    "key": "crawlContractEvent",
+    "blocksPerCall": 100,
+    "millisecondRepeatJob": 2000
+  },
   "dashboardStatistics": {
     "millisecondCrawl": 10000,
     "queryPageLimit": 100
+  },
+  "feegrant": {
+    "updateFeegrant": {
+      "millisecondRepeatJob": 2000,
+      "limitPerCall": 2000
+    },
+    "millisecondRepeatJob": 2000,
+    "key": "feegrant",
+    "blocksPerCall": 1000
   },
   "graphiqlApi": {
     "hasuraRole": "internal_service",
@@ -157,32 +179,18 @@
       "event_attribute",
       "view_event_attribute_value_index"
     ],
-    "queryNeedWhereRelation": ["event_attributes", "event_attribute_index"],
-    "queryNeedWhereCondition": ["block_height"],
+    "queryNeedWhereRelation": [
+      "event_attributes",
+      "event_attribute_index"
+    ],
+    "queryNeedWhereCondition": [
+      "block_height"
+    ],
     "queryHeightRangeLimit": 10000
   },
-  "feegrant": {
-    "updateFeegrant": {
-      "millisecondRepeatJob": 2000,
-      "limitPerCall": 2000
-    },
-    "millisecondRepeatJob": 2000,
-    "key": "feegrant",
-    "blocksPerCall": 1000
-  },
   "crawlValidatorImage": {
-    "timeCrawImage": "0 0 * * *",
+    "timeCrawlImage": "0 0 * * *",
     "milliSecondDelayRetry": 300000
-  },
-  "migrationEvmEventToPartition": {
-    "startId": 0,
-    "endId": 100000000,
-    "step": 100000000
-  },
-  "migrationBlockToPartition": {
-    "startId": 100000000,
-    "endId": 200000000,
-    "step": 100000000
   },
   "migrationEventToPartition": {
     "startId": 0,
@@ -198,6 +206,16 @@
     "limitRecordGet": 10000,
     "chunkSizeInsert": 1000,
     "statementTimeout": 600000
+  },
+  "migrationEvmEventToPartition": {
+    "startId": 0,
+    "endId": 100000000,
+    "step": 100000000
+  },
+  "migrationBlockToPartition": {
+    "startId": 100000000,
+    "endId": 200000000,
+    "step": 100000000
   },
   "migrationEventAttributeToPartition": {
     "startBlock": 0,
@@ -220,6 +238,9 @@
     "millisecondCrawl": 10000,
     "templateTable": "event_attribute"
   },
+  "jobRenameEventTable": {
+    "millisecondRepeat": 10000
+  },
   "jobCrawlEvmEvent": {
     "millisecondCrawl": 5000,
     "blocksPerCall": 50,
@@ -230,26 +251,17 @@
     "millisecondCrawl": 10000,
     "templateTable": "evm_event"
   },
-  "jobCheckNeedCreateBlockPartition": {
-    "millisecondCrawl": 10000,
-    "templateTable": "block"
-  },
   "jobCheckNeedCreateEventPartition": {
     "millisecondCrawl": 10000,
     "templateTable": "event"
   },
-  "jobRenameEventTable": {
-    "millisecondRepeat": 10000
-  },
-  "jobCreateConstraintInEventPartition": {
-    "jobRepeatCheckNeedCreateConstraint": {
-      "millisecondRepeatJob": 600000
-    },
-    "statementTimeout": 600000
-  },
   "jobCheckNeedCreateTransactionPartition": {
     "millisecondCrawl": 10000,
     "templateTable": "transaction"
+  },
+  "jobCheckNeedCreateBlockPartition": {
+    "millisecondCrawl": 10000,
+    "templateTable": "block"
   },
   "jobCheckNeedCreateTransactionMessagePartition": {
     "millisecondCrawl": 10000,
@@ -264,7 +276,11 @@
   },
   "accountStatistics": {
     "numberOfTopRecords": 10,
-    "dayRange": [3, 15, 30]
+    "dayRange": [
+      3,
+      15,
+      30
+    ]
   },
   "dailyStatsJobs": {
     "jobPattern": "0 0 0 * * ?"
@@ -299,7 +315,10 @@
     "blocksPerCall": 100,
     "port": "transfer"
   },
-  "jobCreateConstraintInTransactionPartition": {
+  "ibcStatistic": {
+    "timeRefreshIbcRelayerStats": "2 * * * *"
+  },
+  "jobCreateConstraintInAttrPartition": {
     "jobRepeatCheckNeedCreateConstraint": {
       "millisecondRepeatJob": 600000
     },
@@ -317,6 +336,12 @@
     },
     "statementTimeout": 600000
   },
+  "jobCreateConstraintInTransactionPartition": {
+    "jobRepeatCheckNeedCreateConstraint": {
+      "millisecondRepeatJob": 600000
+    },
+    "statementTimeout": 600000
+  },
   "jobCreateConstraintInTransactionMessagePartition": {
     "jobRepeatCheckNeedCreateConstraint": {
       "millisecondRepeatJob": 10000
@@ -324,6 +349,7 @@
     "statementTimeout": 600000
   },
   "jobUpdateTxCountInBlock": {
+    "key": "jobUpdateTxCountInBlock",
     "millisecondCrawl": 1000,
     "blocksPerCall": 100
   },
@@ -335,6 +361,12 @@
     "key": "handleTransactionEVM",
     "blocksPerCall": 10000,
     "millisecondCrawl": 1000,
+    "chunkSize": 1000
+  },
+  "evmCrawlInternalTx": {
+    "key": "evmCrawlInternalTx",
+    "blocksPerCall": 100,
+    "millisecondCrawl": 3000,
     "chunkSize": 1000
   },
   "createEVMTransactionPartition": {
@@ -362,7 +394,7 @@
   "jobVerifyContractEVM": {
     "configUploadFile": {
       "files": 1,
-      "fileSize": 10000000
+      "fileSize": 100000000
     },
     "millisecondCrawl": 1000,
     "recordsPerCall": 100,
@@ -371,9 +403,11 @@
   "erc20": {
     "key": "erc20",
     "blocksPerCall": 100,
-    "millisecondRepeatJob": 5000,
+    "millisecondRepeatJob": 2000,
     "chunkSizeInsert": 1000,
-    "wrapExtensionContract": ["0xe974cc14c93fc6077b0d65f98832b846c5454a0b"]
+    "wrapExtensionContract": [
+      ""
+    ]
   },
   "erc721": {
     "key": "erc721",
@@ -384,13 +418,13 @@
     "concurrencyHandleTokenMedia": 10,
     "timeRefreshErc721Stats": "1 * * * *"
   },
-  "jobRefreshMViewAccountBalanceStatistic": {
-    "timeRefreshMViewAccountBalanceStatistic": "*/10 * * * *"
-  },
   "crawlEvmProxyHistory": {
     "key": "crawlEvmProxyHistory",
     "blocksPerCall": 100,
     "millisecondCrawl": 2000
+  },
+  "jobRefreshMViewAccountBalanceStatistic": {
+    "timeRefreshMViewAccountBalanceStatistic": "*/10 * * * *"
   },
   "jobSyncSourcify": {
     "millisecondCrawl": 2000,
