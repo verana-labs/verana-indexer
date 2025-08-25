@@ -1,0 +1,90 @@
+name: Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13-alpine
+        env:
+          POSTGRES_PASSWORD: phamphong9981
+          POSTGRES_USER: phamphong
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:6-alpine
+        ports:
+          - 6379:6379
+
+      aurad:
+        image: auranw/local-aurad:dev_v0.7.0-3
+        ports:
+          - 1317:1317
+          - 26657:26657
+          - 9090:9090
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # Setup Node.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.1
+          registry-url: https://npm.pkg.github.com/aura-nw
+
+      # Setup pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      # Cache pnpm store instead of node_modules
+      - name: Cache pnpm store
+        uses: actions/cache@v3
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      # Install dependencies
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup env
+        run: cp ci/.env.ci .env
+
+      - name: Setup config.json
+        run: cp ci/config.json.ci config.json
+
+      - name: Setup network.json
+        run: cp ci/network.json.ci network.json
+
+      - name: Setup code-type.json
+        run: cp ci/code-type.json.ci code-type.json
+
+      - name: Setup graphql-query-whitelist.json
+        run: cp ci/graphql-query-whitelist.json.ci graphql-query-whitelist.json
+
+      - name: Test
+        env:
+          NODE_ENV: test
+          POSTGRES_PASSWORD: phamphong9981
+          POSTGRES_USER: phamphong
+          POSTGRES_DB_TEST: test
+        run: |
+          pnpm run db:migrate:test:latest
+          pnpm run test-ci

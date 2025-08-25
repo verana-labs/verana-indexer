@@ -1,0 +1,49 @@
+name: Lint
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # Install pnpm (it will respect "packageManager": "pnpm@10.14.0" in package.json)
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false # don't auto-install, we’ll do it later
+
+      # Setup Node.js (your required version)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.17.1' # ✅ Your requested Node version
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://npm.pkg.github.com/aura-nw
+
+      # Auth for GitHub Packages (if you need private @aura-nw packages)
+      - name: Auth for GitHub Packages
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
+          echo "@aura-nw:registry=https://npm.pkg.github.com" >> ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint check (PRs)
+        if: github.ref != 'refs/heads/main'
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm exec eslint "src/**/*.{ts,tsx,js}" --max-warnings=9999
+
+      - name: Lint check (main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm exec eslint "src/**/*.{ts,tsx,js}" --max-warnings=0

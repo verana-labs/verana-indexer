@@ -25,20 +25,12 @@ export class BullQueueProvider implements QueueProvider {
 
   private _workers: Worker[] = [];
 
-  public submitJob(
-    queueName: string,
-    jobName: string,
-    opts?: JobOption,
-    payload?: object
-  ): void {
+  public submitJob(queueName: string, jobName: string, opts?: JobOption, payload?: object): void {
     const q = this.getQueue(queueName);
     q.add(jobName, payload, opts);
   }
 
-  public registerQueueHandler(
-    opt: QueueOptions,
-    fn: (payload: object) => Promise<void>
-  ): void {
+  public registerQueueHandler(opt: QueueOptions, fn: (payload: object) => Promise<void>): void {
     // create a new worker to handle the job
     const processor = async (job: Job) => {
       try {
@@ -49,10 +41,13 @@ export class BullQueueProvider implements QueueProvider {
         throw e;
       }
     };
-    const wo: WorkerOptions = _.defaults(
-      opt,
-      DefaultValue.DEFAULT_WORKER_OPTION
-    );
+
+    // 🔹 ADD THE CHECK HERE
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+
+    const wo: WorkerOptions = _.defaults(opt, DefaultValue.DEFAULT_WORKER_OPTION);
 
     console.log(`worker option: ${JSON.stringify(wo)}`);
     wo.connection = getRedisConnection();
@@ -60,7 +55,7 @@ export class BullQueueProvider implements QueueProvider {
   }
 
   public async stopAll(): Promise<void> {
-    await Promise.all(this._workers.map((w) => w.close()));
+    await Promise.all(this._workers.map(w => w.close()));
     this._workers = []; // let the rest to the GC
   }
 

@@ -1,31 +1,22 @@
 # Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# pnpm
-.pnpm-store/
-.pnpm-debug.log*
+pnpm-lock.yaml
 
 # Build outputs
 dist/
 build/
-*.tsbuildinfo
+*.min.js
 
-# Environment files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-docker-compose.env
+# Generated files
+*.d.ts
+*.js.map
 
 # Logs
-logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Runtime data
 pids
@@ -38,7 +29,7 @@ coverage/
 *.lcov
 
 # nyc test coverage
-.nyc_output/
+.nyc_output
 
 # Dependency directories
 jspm_packages/
@@ -65,21 +56,24 @@ jspm_packages/
 .yarn-integrity
 
 # dotenv environment variables file
+.env
 .env.test
+.env.local
+.env.production
 
 # parcel-bundler cache (https://parceljs.org/)
-.cache/
-.parcel-cache/
+.cache
+.parcel-cache
 
 # Next.js build output
-.next/
+.next
 
 # Nuxt.js build / generate output
-.nuxt/
+.nuxt
 
 # Storybook build outputs
-.out/
-.storybook-out/
+.out
+.storybook-out
 
 # Temporary folders
 tmp/
@@ -99,34 +93,4 @@ temp/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db
-
-# Docker
-.dockerignore
-
-# CI/CD
-ci/
-
-# Test coverage
-coverage/
-*.lcov
-
-# TypeScript
-*.tsbuildinfo
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Redis dump
-dump.rdb
-
-# Backup files
-*.bak
-*.backup
-*.old
-
-# Lock files
-package-lock.json
-yarn.lock
+Thumbs.db 

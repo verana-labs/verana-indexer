@@ -1,11 +1,18 @@
 [
   {
-    "chainId": "aura-testnet-2",
-    "RPC": ["http://localhost:26657"],
-    "LCD": ["http://localhost:1317"],
+    "chainId": "vna-testnet-1",
+    "RPC": [
+      "https://rpc.testnet.verana.network/"
+    ],
+    "LCD": [
+      "https://api.testnet.verana.network"
+    ],
     "databaseName": "horoscope_dev_auratestnet1",
-    "moleculerNamespace": "namespace-auratestnet",
-    "EVMJSONRPC": ["http://localhost:8545"],
-    "EVMchainId": 0
+    "redisDBNumber": 20,
+    "moleculerNamespace": "verana-testnet",
+    "EVMJSONRPC": [
+      "https://api.testnet.verana.network"
+    ],
+    "EVMchainId": 26657
   }
 ]
