@@ -113,16 +113,13 @@ export const BULL_JOB_NAME = {
   JOB_CRAWL_DID: 'crawl:did-directory',
   CP_CRAWL_DID: 'checkpoint:did-directory',
 };
+export const DID_EVENT_TYPES = ['add_did', 'renew_did', 'touch_did', 'remove_did'];
 
 export const SERVICE = {
   V1: {
-    DidEventListenerService: {
-      key: 'DidEventListenerService',
-      path: 'v1.DidEventListenerService',
-    },
-    DidInitialCrawlerService: {
-      key: 'DidInitialCrawlerService',
-      path: 'v1.DidInitialCrawlerService',
+    ProcessDidEventsService: {
+      key: 'ProcessDidEventsService',
+      path: 'v1.ProcessDidEventsService',
     },
     DidDatabaseService: {
       key: 'DidDatabaseService',

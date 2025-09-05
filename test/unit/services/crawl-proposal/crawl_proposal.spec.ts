@@ -1,6 +1,13 @@
 import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
 import { ServiceBroker } from 'moleculer';
-import { Block, BlockCheckpoint, Proposal, Transaction, Event, EventAttribute } from '../../../../src/models';
+import {
+  Block,
+  BlockCheckpoint,
+  Proposal,
+  Transaction,
+  Event,
+  EventAttribute,
+} from '../../../../src/models';
 import { BULL_JOB_NAME } from '../../../../src/common';
 import CrawlProposalService from '../../../../src/services/crawl-proposal/crawl_proposal.service';
 import CrawlTallyProposalService from '../../../../src/services/crawl-proposal/crawl_tally_proposal.service';
@@ -84,9 +91,13 @@ export default class CrawlProposalTest {
     jest.setTimeout(60_000);
     await this.broker.start();
 
-    this.crawlProposalService = this.broker.createService(CrawlProposalService) as CrawlProposalService;
+    this.crawlProposalService = this.broker.createService(
+      CrawlProposalService
+    ) as CrawlProposalService;
 
-    this.crawlTallyProposalService = this.broker.createService(CrawlTallyProposalService) as CrawlTallyProposalService;
+    this.crawlTallyProposalService = this.broker.createService(
+      CrawlTallyProposalService
+    ) as CrawlTallyProposalService;
 
     try {
       await this.crawlProposalService.getQueueManager().stopAll();
@@ -102,6 +113,7 @@ export default class CrawlProposalTest {
     // --- Seed blocks + tx ---
     await Block.query().insert(this.blocks);
     const tx = await Transaction.query().insert(this.txInsert);
+
 
     // --- Seed events & attributes so service can detect proposal ---
     const submitEvent = await Event.query().insert({
@@ -176,7 +188,7 @@ export default class CrawlProposalTest {
     const p = await Proposal.query().where('proposal_id', 1).first();
     expect(p).toBeDefined();
     expect(p?.proposal_id).toEqual(1);
-    expect(typeof p?.type).toBe('string');
+     expect(typeof p?.type).toBe('string');
     expect((p?.type ?? '').length).toBeGreaterThan(0);
     expect(typeof p?.title).toBe('string');
     expect((p?.title ?? '').length).toBeGreaterThan(0);
