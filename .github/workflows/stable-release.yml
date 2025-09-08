@@ -47,10 +47,6 @@ jobs:
         run: |
           pnpm install
 
-      - name: Set version for apps and packages
-        run: |
-          pnpm -r --topological version "${{needs.release-please.outputs.tag_name}}"
-
       - name: Docker login
         uses: docker/login-action@v2
         with:
