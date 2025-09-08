@@ -25,6 +25,7 @@
     "stop": "docker-compose stop",
     "down": "docker-compose down",
     "jest": "jest",
+    "version": "pnpm version",
     "test": "docker compose up aurad -d && jest --verbose --runInBand --forceExit && docker compose stop aurad && docker rm aurad_erascope",
     "test-ci": "jest --verbose --runInBand --forceExit --passWithNoTests",
     "test-watch": "pnpm run jest --watch",
