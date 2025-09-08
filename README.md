@@ -66,10 +66,8 @@ subgraph "Blockchain RPC"
 end
 
 subgraph "External Services"
-  s3["AWS S3"]
   ipfs["IPFS"]
 end
-
 
 blockchain --> crawl-block
 blockchain --> cw721

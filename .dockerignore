@@ -101,7 +101,7 @@ Thumbs.db
 
 # Docker
 Dockerfile*
-docker-compose*
+docker-compose.yml
 .dockerignore
 
 # CI/CD
@@ -121,8 +121,6 @@ test
 *.test.ts
 jest.config.js
 
-# Husky
-.husky
 
 # Linting
 .eslintrc.js
