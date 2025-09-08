@@ -87,8 +87,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana-indexer:dev
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}-dev
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}-dev
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}.${{ steps.semantic.outputs.RELEASE_PATCH }}-dev
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_VERSION }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}.${{ steps.semantic.outputs.RELEASE_PATCH }}
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_VERSION }}-dev
