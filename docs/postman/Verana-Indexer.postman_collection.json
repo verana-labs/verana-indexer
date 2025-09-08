@@ -1,0 +1,188 @@
+{
+	"info": {
+		"_postman_id": "0dd70256-6f19-4385-ae94-61031d89e5df",
+		"name": "Verana-Indexer",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "41358671"
+	},
+	"item": [
+		{
+			"name": "getDID",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3000/verana/dd/v1/get/did:123:123",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"verana",
+						"dd",
+						"v1",
+						"get",
+						"did:123:123"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "getSingleDID",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/verana/dd/v1/get/did:123:123",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"verana",
+								"dd",
+								"v1",
+								"get",
+								"did:123:123"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "",
+					"header": [
+						{
+							"key": "X-Request-ID",
+							"value": "74ab0254-bde7-4597-bc95-885d57912a66"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Date",
+							"value": "Fri, 05 Sep 2025 10:31:22 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						},
+						{
+							"key": "Content-Length",
+							"value": "332"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"id\": 16,\n    \"height\": 1894041,\n    \"did\": \"did:123:123\",\n    \"controller\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n    \"created\": \"2025-09-04T15:07:13.564Z\",\n    \"modified\": \"2025-09-04T15:09:10.723Z\",\n    \"exp\": \"2027-09-04T10:07:13.564Z\",\n    \"deposit\": \"10000000\",\n    \"event_type\": \"remove_did\",\n    \"years\": \"1\",\n    \"is_deleted\": true,\n    \"deleted_at\": \"2025-09-04T15:10:15.115Z\"\n}"
+				}
+			]
+		},
+		{
+			"name": "listDID",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3000/verana/dd/v1/list?page=1&limit=100",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"verana",
+						"dd",
+						"v1",
+						"list"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "limit",
+							"value": "100"
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "listDID",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/verana/dd/v1/list?page=1&limit=100",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"verana",
+								"dd",
+								"v1",
+								"list"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "",
+					"header": [
+						{
+							"key": "X-Request-ID",
+							"value": "1fb4cb64-4378-4db1-99c3-6679811df208"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Date",
+							"value": "Fri, 05 Sep 2025 10:34:38 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						},
+						{
+							"key": "Content-Length",
+							"value": "375"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"total\": 1,\n    \"page\": 1,\n    \"limit\": 100,\n    \"items\": [\n        {\n            \"id\": 16,\n            \"height\": 1894041,\n            \"did\": \"did:123:123\",\n            \"controller\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-09-04T15:07:13.564Z\",\n            \"modified\": \"2025-09-04T15:09:10.723Z\",\n            \"exp\": \"2027-09-04T10:07:13.564Z\",\n            \"deposit\": \"10000000\",\n            \"event_type\": \"remove_did\",\n            \"years\": \"1\",\n            \"is_deleted\": true,\n            \"deleted_at\": \"2025-09-04T15:10:15.115Z\"\n        }\n    ]\n}"
+				}
+			]
+		}
+	]
+}
