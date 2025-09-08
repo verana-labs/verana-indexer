@@ -2,8 +2,7 @@ name: Dev Pre-release (semantic-release)
 
 on:
   push:
-    branches:
-      - dev
+    branches: [main, 'release/**']
 
 jobs:
   dev-release:
@@ -19,6 +18,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup node v22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Corepack pnpm
+        run: |
+          corepack enable
+
+      - name: Install dependencies
+        run: |
+          pnpm install
+
       - name: Run semantic-release
         id: semantic
         uses: codfish/semantic-release-action@v3
@@ -27,14 +39,11 @@ jobs:
         with:
           branches: |
             [
-              { "name": "main" },
-              { "name": "dev", "prerelease": "dev" }
-            ]
-          additional-packages: |
-            [
-              "@semantic-release/changelog",
-              "@semantic-release/git",
-              "@semantic-release/exec"
+              'release',
+              { 
+                name: 'main',
+                prerelease: 'dev'
+              }
             ]
           plugins: |
             [
@@ -43,28 +52,43 @@ jobs:
                 {
                   "preset": "angular",
                   "releaseRules": [
-                    { "type": "refactor", "release": "patch" }
+                    {
+                      "type": "refactor",
+                      "release": "patch"
+                    },
+                    {
+                      "type": "build",
+                      "release": "patch"
+                    }                    
                   ]
                 }
               ],
+              [
+                "@semantic-release/npm",
+                {
+                  "npmPublish": false
+                }
+              ],
               "@semantic-release/release-notes-generator",
-              "@semantic-release/changelog",
-              "@semantic-release/git",
-              "@semantic-release/exec"
             ]
 
       - name: Docker login
         uses: docker/login-action@v2
+        if: steps.semantic.outputs.new-release-published == 'true'
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          username: ${{ secrets.DOCKER_HUB_LOGIN }}
+          password: ${{ secrets.DOCKER_HUB_PWD }}
 
       - name: Build & push dev Docker image
         uses: docker/build-push-action@v5
+        if: steps.semantic.outputs.new-release-published == 'true'        
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana:dev
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana:dev-${{ github.sha }}
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}.${{ steps.semantic.outputs.RELEASE_PATCH }}
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_VERSION }}-dev
