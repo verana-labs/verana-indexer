@@ -1,24 +1,30 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import { ServiceBroker } from 'moleculer';
+import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query';
+import { fromBase64, toBase64 } from '@cosmjs/encoding';
+import { decodeTxRaw } from '@cosmjs/proto-signing';
+import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
+import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import {
   Action,
   Service,
 } from '@ourparentcenter/moleculer-decorators-extended';
-import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
-import { decodeTxRaw } from '@cosmjs/proto-signing';
-import { toBase64, fromBase64 } from '@cosmjs/encoding';
-import { Knex } from 'knex';
 import { Queue } from 'bullmq';
-import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query';
+import { Knex } from 'knex';
 import _ from 'lodash';
-import Utils from '../../common/utils/utils';
+import { ServiceBroker } from 'moleculer';
+import config from '../../../config.json' with { type: 'json' };
+import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
+  DID_EVENT_TYPES,
   getHttpBatchClient,
   getLcdClient,
-  SERVICE,
+  SERVICE
 } from '../../common';
+import ChainRegistry from '../../common/utils/chain.registry';
+import knex from '../../common/utils/db_connection';
+import { getProviderRegistry } from '../../common/utils/provider.registry';
+import Utils from '../../common/utils/utils';
 import {
   Block,
   BlockCheckpoint,
@@ -26,15 +32,12 @@ import {
   Transaction,
   TransactionMessage,
 } from '../../models';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' with { type: 'json' };
-import knex from '../../common/utils/db_connection';
-import ChainRegistry from '../../common/utils/chain.registry';
-import { getProviderRegistry } from '../../common/utils/provider.registry';
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
   version: 1,
+  dependencies: [SERVICE.V1.ProcessDidEventsService.path],
+
 })
 export default class CrawlTxService extends BullableService {
   private _httpBatchClient: HttpBatchClient;
@@ -331,7 +334,7 @@ export default class CrawlTxService extends BullableService {
     listTxDecoded.forEach((payloadBlock) => {
       const { listTx, height, timestamp } = payloadBlock;
       listTx.forEach((tx: any) => {
-        this.logger.warn(tx, timestamp);
+        this.logger.warn(tx, timestamp, "dataArray");
 
         const txInsert = {
           ...Transaction.fromJson({
@@ -373,6 +376,7 @@ export default class CrawlTxService extends BullableService {
     const listMsgModel: any[] = [];
     listDecodedTx.forEach((tx) => {
       const rawLogTx = tx.data;
+
       let sender = '';
       try {
         sender = this._registry.decodeAttribute(
@@ -442,7 +446,36 @@ export default class CrawlTxService extends BullableService {
         .insert(listMsgModel)
         .transacting(transactionDB);
       this.logger.warn('result insert messages:', resultInsertMsgs);
+
+
+      for (const tx of listDecodedTx) {
+        const rawLogTx = tx.data;
+
+        const listDidEvents = rawLogTx.tx_response?.events?.filter((event: any) =>
+          DID_EVENT_TYPES.includes(event.type)
+        );
+
+
+        if (listDidEvents?.length) {
+          const blockHeight = tx.height;
+          const timestamp = tx.timestamp;
+
+          await this.broker.call(
+            `${SERVICE.V1.ProcessDidEventsService.path}.handleDidEvents`,
+            {
+              listDidTx: listDidEvents,
+              blockHeight,
+              timestamp,
+            }
+          );
+        }
+      }
+
+
     }
+
+
+
   }
 
   private checkMappingEventToLog(tx: any) {

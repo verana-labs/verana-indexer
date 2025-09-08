@@ -26,22 +26,6 @@
     },
     "concurrencyHandleTokenMedia": 10
   },
-  "veranaApi": "https://api.testnet.verana.network",
-  "websocket": {
-    "endpoint": "ws://node1.testnet.verana.network:26657/websocket",
-    "maxReconnectAttempts": 5, 
-    "reconnectDelay": 3000,
-    "blockSubscriptionQuery":"tm.event='Tx' AND message.module='verana'"
-  },
-  "didCrawler": {
-    "batchSize": 100,
-    "txPollInterval": 5000,
-    "pollInterval": 3000,
-    "intervalMs": 1000,
-    "chunkSize": 50,
-    "maxProcessingPerRun": 500,
-    "concurrency": 5
-  },
   "crawlBlock": {
     "millisecondCrawl": 5000,
     "blocksPerCall": 100,
