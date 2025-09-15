@@ -21,9 +21,8 @@ jobs:
         id: release
         uses: googleapis/release-please-action@v4
         with:
-          release-type: node
-          package-name: verana-indexer
-          bump-minor-pre-major: true
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }}
 
   docker-release:
@@ -35,11 +34,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup node v22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Corepack pnpm
+        run: |
+          corepack enable
+          
+      - name: Install dependencies
+        run: |
+          pnpm install
+
       - name: Docker login
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          username: ${{ secrets.DOCKER_HUB_LOGIN }}
+          password: ${{ secrets.DOCKER_HUB_PWD }}
 
       - name: Build & push stable Docker images
         uses: docker/build-push-action@v5
@@ -48,5 +60,5 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana:latest
-            ${{ secrets.DOCKER_HUB_USERNAME }}/verana:${{ needs.release-please.outputs.tag_name }}
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:latest
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:${{ needs.release-please.outputs.tag_name }}
