@@ -1,7 +1,7 @@
 {
   "chainId": "vna-testnet-1",
-  "chainName": "aura",
-  "networkPrefixAddress": "aura",
+  "chainName": "verana",
+  "networkPrefixAddress": "verana",
   "consensusPrefixAddress": "valcons",
   "validatorPrefixAddress": "valoper",
   "evmOnly": false,
@@ -29,7 +29,7 @@
   "crawlBlock": {
     "millisecondCrawl": 5000,
     "blocksPerCall": 100,
-    "startBlock": 0,
+    "startBlock": 1893541,
     "saveRawLog": true
   },
   "crawlTransaction": {

@@ -17,6 +17,7 @@ import { SERVICE } from "../../common";
         aliases: {
           "GET get/:did": `${SERVICE.V1.DidDatabaseService.path}.getSingleDid`,
           "GET list": `${SERVICE.V1.DidDatabaseService.path}.getDidList`,
+          "GET history/:did": `${SERVICE.V1.DidHistoryService.path}.getByDid`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {

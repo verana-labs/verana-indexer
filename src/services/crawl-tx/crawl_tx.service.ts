@@ -23,6 +23,7 @@ import {
 } from '../../common';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
+import { readGenesis } from '../../common/utils/genesis_reader';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import Utils from '../../common/utils/utils';
 import {
@@ -32,11 +33,11 @@ import {
   Transaction,
   TransactionMessage,
 } from '../../models';
+import { calculateDidDeposit } from '../../common/utils/calculate_deposit';
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
   version: 1,
-  dependencies: [SERVICE.V1.ProcessDidEventsService.path],
 
 })
 export default class CrawlTxService extends BullableService {
@@ -445,36 +446,34 @@ export default class CrawlTxService extends BullableService {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
+
+
       this.logger.warn('result insert messages:', resultInsertMsgs);
+      const DIDfiltered = resultInsertMsgs
+        .filter((msg: any) => DID_EVENT_TYPES.includes(msg.type))
+        .map((msg: any) => {
+          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+          return {
+            type: msg.type,
+            did: msg.content?.did ?? null,
+            controller: msg.content?.controller ?? null,
+            years: msg.content?.years ?? null,
+            timestamp: parentTx?.timestamp ?? null,
+            height: parentTx?.height ?? null,
+            id: msg?.tx_id ?? null,
+          };
+        });
 
-
-      for (const tx of listDecodedTx) {
-        const rawLogTx = tx.data;
-
-        const listDidEvents = rawLogTx.tx_response?.events?.filter((event: any) =>
-          DID_EVENT_TYPES.includes(event.type)
+      if (DIDfiltered.length) {
+        await this.broker.call(
+          `${SERVICE.V1.ProcessDidEventsService.path}.handleDidEvents`,
+          {
+            listDidTx: DIDfiltered,
+          }
         );
-
-
-        if (listDidEvents?.length) {
-          const blockHeight = tx.height;
-          const timestamp = tx.timestamp;
-
-          await this.broker.call(
-            `${SERVICE.V1.ProcessDidEventsService.path}.handleDidEvents`,
-            {
-              listDidTx: listDidEvents,
-              blockHeight,
-              timestamp,
-            }
-          );
-        }
       }
 
-
     }
-
-
 
   }
 
@@ -618,9 +617,7 @@ export default class CrawlTxService extends BullableService {
   public async _start() {
     const providerRegistry = await getProviderRegistry();
     this._registry = new ChainRegistry(this.logger, providerRegistry);
-
     const lcdClient = await getLcdClient();
-    // set version cosmos sdk to registry
     const nodeInfo: GetNodeInfoResponseSDKType =
       await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
     const cosmosSdkVersion = nodeInfo.application_version?.cosmos_sdk_version;

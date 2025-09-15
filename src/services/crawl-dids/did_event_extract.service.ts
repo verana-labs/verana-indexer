@@ -1,8 +1,11 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
+import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import BullableService from "../../base/bullable.service";
-import { SERVICE } from "../../common";
+import { DID_EVENT_TYPES, SERVICE } from "../../common";
 import { addYearsToDate, formatTimestamp } from "../../common/utils/date_utils";
+
+
 
 interface DidAttribute {
     key: string;
@@ -10,7 +13,7 @@ interface DidAttribute {
 }
 
 interface DidEvent {
-    type: 'add_did' | 'touch_did' | 'renew_did' | 'remove_did' | string;
+    type: string;
     did?: string;
     attributes?: DidAttribute[];
     [key: string]: any;
@@ -27,6 +30,8 @@ interface ProcessedDidEvent {
     exp?: string;
     deposit?: string;
     years?: string;
+    id?: string;
+    changes?: any;
     [key: string]: any;
 }
 
@@ -39,80 +44,187 @@ export default class ProcessDidEventsService extends BullableService {
         super(broker);
     }
 
-    @Action({ name: "handleDidEvents" })
-    async handleDidEvents(ctx: { params: { listDidTx: DidEvent[]; blockHeight: number; timestamp: string | number } }) {
-        const { listDidTx, blockHeight, timestamp } = ctx.params;
 
-        const processedDidEvents: ProcessedDidEvent[] = listDidTx?.map((event: DidEvent) => {
-            const flatObj: ProcessedDidEvent = {
-                event_type: event.type,
-            };
-
-            if (event.type === 'add_did') {
-                flatObj.created = formatTimestamp(timestamp);
-                flatObj.modified = formatTimestamp(timestamp);
-                flatObj.deleted_at = null;
-                flatObj.height = blockHeight;
-                flatObj.is_deleted = false;
+    private computeChanges(
+        oldRec: Record<string, any>,
+        newRec: Record<string, any>
+    ): Record<string, { old: any; new: any }> {
+        const diff: Record<string, { old: any; new: any }> = {};
+        Object.keys(newRec).forEach((key) => {
+            if (newRec[key] !== oldRec[key]) {
+                diff[key] = { old: oldRec[key], new: newRec[key] };
             }
-
-            if (event.type === 'touch_did') {
-                flatObj.modified = formatTimestamp(timestamp);
-                flatObj.height = blockHeight;
-            }
-
-            event.attributes?.forEach((attr: DidAttribute) => {
-                if (attr.key === 'expiration') {
-                    flatObj.exp = formatTimestamp(attr.value);
-                } else if (!['msg_index', 'timestamp', 'block_height'].includes(attr.key)) {
-                    flatObj[attr.key] = attr.value;
-                }
-            });
-
-            if (event.did) flatObj.did = event.did;
-
-            return flatObj;
         });
+        return diff;
+    }
 
-        for (const didEvent of processedDidEvents) {
-            if (['add_did', "touch_did"].includes(didEvent.event_type)) {
-                console.log(didEvent, "customlog");
+
+
+    private async saveHistory(didEvent: ProcessedDidEvent, changes?: any) {
+        const { modified, ...cleanedEvent } = didEvent;
+        await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, {
+            ...cleanedEvent,
+            changes: changes ? JSON.stringify(changes) : null,
+        });
+    }
+
+
+    @Action({ name: "handleDidEvents" })
+    async handleDidEvents(ctx: { params: { listDidTx: DidEvent[] } }) {
+        const { listDidTx } = ctx.params;
+
+        for (const event of listDidTx) {
+            let processedEvent: ProcessedDidEvent | null = null;
+            const calculateDeposit = await calculateDidDeposit();
+            // ---------------- ADD ----------------
+            if (event.type === DID_EVENT_TYPES[0]) {
+                processedEvent = {
+                    event_type: event.type,
+                    id: event.id,
+                    did: event.did,
+                    controller: event.controller,
+                    height: event.height ?? 0,
+                    years: event.years ? String(event.years) : undefined,
+                    deposit: String(calculateDeposit) ?? "0",
+                    created: formatTimestamp(event?.timestamp),
+                    modified: formatTimestamp(event?.timestamp),
+                    exp:
+                        event.timestamp && event.years
+                            ? addYearsToDate(event.timestamp, event.years)
+                            : undefined,
+                    is_deleted: false,
+                    deleted_at: null,
+                };
+
+
+                event.attributes?.forEach((attr: DidAttribute) => {
+                    if (!["timestamp", "height"].includes(attr.key)) {
+                        processedEvent![attr.key] = attr.value;
+                    }
+                });
+
                 await this.broker.call(
                     `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
-                    didEvent
+                    processedEvent
                 );
+                await this.saveHistory(processedEvent, {});
             }
-            else if (didEvent.event_type === 'renew_did' && didEvent.did) {
-                const existingDid: ProcessedDidEvent | null = await this.broker.call(
-                    `${SERVICE.V1.DidDatabaseService.path}.get`,
-                    { did: didEvent.did }
-                );
+
+            // ---------------- RENEW ----------------
+            else if (event.type === DID_EVENT_TYPES[1] && event.did) {
+                const renewDeposit = await calculateDidDeposit(event?.years) ?? "0";
+                const existingDid: ProcessedDidEvent | null =
+                    await this.broker.call(
+                        `${SERVICE.V1.DidDatabaseService.path}.get`,
+                        { did: event.did }
+                    );
 
                 if (existingDid) {
-                    existingDid.modified = formatTimestamp(timestamp);
-                    existingDid.height = blockHeight;
-                    existingDid.event_type = didEvent.event_type;
-                    const yearsToAdd = parseInt(didEvent.years || "0");
-                    existingDid.exp = addYearsToDate(existingDid.exp, yearsToAdd);
-                    const incomingDeposit = parseInt(didEvent.deposit || "0");
-                    const existingDeposit = parseInt(existingDid.deposit || "0");
-                    existingDid.deposit = (existingDeposit + incomingDeposit).toString();
+                    const yearsToAdd = parseInt(event.years || "0");
+                    const newDeposit = String(renewDeposit) ?? "0";
+
+                    const updatedDid: ProcessedDidEvent = {
+                        ...existingDid,
+                        modified: formatTimestamp(event?.timestamp),
+                        height: event?.height ?? existingDid.height,
+                        id: event?.id ?? existingDid.id,
+                        event_type: event.type,
+                        exp: addYearsToDate(existingDid.exp, yearsToAdd),
+                        deposit: (
+                            parseInt(existingDid.deposit || "0") +
+                            parseInt(newDeposit)
+                        ).toString(),
+                        years: (
+                            parseInt(existingDid.years || "0") + yearsToAdd
+                        ).toString(),
+                    };
+
+                    const changes = this.computeChanges(
+                        existingDid,
+                        updatedDid
+                    );
 
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
-                        existingDid
+                        updatedDid
                     );
+                    await this.saveHistory(updatedDid, changes);
                 }
             }
-            else if (didEvent.event_type === 'remove_did' && didEvent.did) {
-                await this.broker.call(`${SERVICE.V1.DidDatabaseService.path}.delete`, { did: didEvent.did });
+
+            // ---------------- TOUCH ----------------
+            else if (event.type === DID_EVENT_TYPES[2] && event.did) {
+                const existingDid: ProcessedDidEvent | null =
+                    await this.broker.call(
+                        `${SERVICE.V1.DidDatabaseService.path}.get`,
+                        { did: event.did }
+                    );
+
+                if (existingDid) {
+                    const updatedDid: ProcessedDidEvent = {
+                        ...existingDid,
+                        modified: formatTimestamp(event?.timestamp),
+                        height: event?.height ?? existingDid.height,
+                        id: event?.id ?? existingDid.id,
+                        event_type: event.type,
+                    };
+
+                    const changes = this.computeChanges(
+                        existingDid,
+                        updatedDid
+                    );
+
+                    await this.broker.call(
+                        `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
+                        updatedDid
+                    );
+                    await this.saveHistory(updatedDid, changes);
+                }
+            }
+
+            // ---------------- REMOVE ----------------
+            else if (event.type === DID_EVENT_TYPES[3] && event.did) {
+                const existingDid: ProcessedDidEvent | null =
+                    await this.broker.call(
+                        `${SERVICE.V1.DidDatabaseService.path}.get`,
+                        { did: event.did }
+                    );
+
+                if (existingDid) {
+                    const deletedEvent: ProcessedDidEvent = {
+                        ...existingDid,
+                        event_type: event.type,
+                        deleted_at: formatTimestamp(event?.timestamp),
+                        is_deleted: true,
+                        height: event.height ?? existingDid.height,
+                        id: event.id ?? existingDid.id,
+                    };
+
+                    const changes = this.computeChanges(existingDid, {
+                        ...existingDid,
+                        is_deleted: true,
+                        deleted_at: formatTimestamp(event?.timestamp),
+                    });
+
+                    await this.broker.call(
+                        `${SERVICE.V1.DidDatabaseService.path}.delete`,
+                        { did: event.did }
+                    );
+
+                    await this.saveHistory(deletedEvent, changes);
+
+                    processedEvent = deletedEvent;
+                }
+            }
+
+
+            if (processedEvent) {
+                this.logger.info(
+                    "Processed DID event",
+                    JSON.stringify(processedEvent, null, 2)
+                );
             }
         }
-
-        this.logger.info(
-            'Processed and saved DID events to database.',
-            JSON.stringify(processedDidEvents, null, 2)
-        );
     }
 
     public async _start() {

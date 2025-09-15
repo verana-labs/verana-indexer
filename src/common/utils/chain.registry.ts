@@ -8,6 +8,7 @@ import { SemVer } from 'semver';
 import { MSG_TYPE } from '../index';
 import Utils from './utils';
 import { IProviderRegistry } from './provider.registry';
+import { veranaRegistry } from './veranaChain.client';
 
 export default class ChainRegistry {
   public registry!: Registry;
@@ -48,6 +49,7 @@ export default class ChainRegistry {
     this.registry = new Registry([
       ...defaultStargateTypes,
       ...wasmTypes,
+      ...veranaRegistry,
       ...this.txRegistryType.map((type: string) => [
         type,
         _.get(this, type.slice(1)),
@@ -56,6 +58,7 @@ export default class ChainRegistry {
   }
 
   public decodeMsg(msg: any): any {
+    this._logger.warn("Decoding msg:", msg);
     let result: any = {};
     if (!msg) {
       return;
@@ -65,10 +68,11 @@ export default class ChainRegistry {
       const msgType = this.registry.lookupType(
         msg.typeUrl
       ) as TsProtoGeneratedType;
+      this._logger.warn("msgType", msgType);
       if (!msgType) {
         const formattedValue =
           msg.value instanceof Uint8Array ? toBase64(msg.value) : msg.value;
-        this._logger.info(formattedValue);
+        this._logger.info("formattedValue",formattedValue);
         result.value = formattedValue;
         this._logger.error('This typeUrl is not supported');
         this._logger.error(msg.typeUrl);

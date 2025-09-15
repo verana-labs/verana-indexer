@@ -113,13 +113,17 @@ export const BULL_JOB_NAME = {
   JOB_CRAWL_DID: 'crawl:did-directory',
   CP_CRAWL_DID: 'checkpoint:did-directory',
 };
-export const DID_EVENT_TYPES = ['add_did', 'renew_did', 'touch_did', 'remove_did'];
+export const DID_EVENT_TYPES = ['/verana.dd.v1.MsgAddDID','/verana.dd.v1.MsgRenewDID', '/verana.dd.v1.MsgTouchDID', '/verana.dd.v1.MsgRemoveDID'];
 
 export const SERVICE = {
   V1: {
     ProcessDidEventsService: {
       key: 'ProcessDidEventsService',
       path: 'v1.ProcessDidEventsService',
+    },
+    DidHistoryService: {
+      key: 'DidHistoryService',
+      path: 'v1.DidHistoryService',
     },
     DidDatabaseService: {
       key: 'DidDatabaseService',
