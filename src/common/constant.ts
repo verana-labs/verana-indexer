@@ -121,6 +121,10 @@ export const SERVICE = {
       key: 'ProcessDidEventsService',
       path: 'v1.ProcessDidEventsService',
     },
+    GenesisParamsService: {
+      key: 'GenesisParamsService',
+      path: 'v1.GenesisParamsService',
+    },
     DidHistoryService: {
       key: 'DidHistoryService',
       path: 'v1.DidHistoryService',

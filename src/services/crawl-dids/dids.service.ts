@@ -3,6 +3,7 @@ import { Context, Errors, ServiceBroker } from 'moleculer';
 import BullableService from '../../base/bullable.service';
 import { SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
+import ModuleParams from '../../models/modules_params';
 
 const { MoleculerClientError, MoleculerServerError } = Errors;
 
@@ -16,7 +17,7 @@ export default class DidDatabaseService extends BullableService {
     }
 
     @Action({ name: 'upsertProcessedDid' })
-    async upsertProcessedDid(ctx: Context<{ did: string; [key: string]: unknown }>) {
+    async upsertProcessedDid(ctx: Context<{ did: string;[key: string]: unknown }>) {
         return knex('dids')
             .insert(ctx.params)
             .onConflict('did')
@@ -144,4 +145,36 @@ export default class DidDatabaseService extends BullableService {
             throw new MoleculerServerError("Internal Server Error", 500);
         }
     }
+
+
+
+    @Action({ rest: "GET params" })
+    public async getDidParams(ctx: Context) {
+        try {
+            const module = await ModuleParams.query().findOne({ module: "diddirectory" });
+
+            if (!module || !module.params) {
+                throw new MoleculerClientError(
+                    "Module parameters not found: diddirectory",
+                    404,
+                    "NOT_FOUND"
+                );
+            }
+
+            const parsedParams = typeof module.params === "string" ? JSON.parse(module.params) : module.params;
+
+            return {
+                params: parsedParams.params || {}
+            };
+        } catch (err) {
+            this.logger.error("Error fetching diddirectory params", err);
+            throw new MoleculerServerError(
+                "Internal Server Error",
+                500,
+                "INTERNAL",
+                err instanceof Error ? err.message : undefined
+            );
+        }
+    }
+
 }
