@@ -114,6 +114,7 @@ export default class CrawlProposalTest {
     await Block.query().insert(this.blocks);
     const tx = await Transaction.query().insert(this.txInsert);
 
+
     // --- Seed events & attributes so service can detect proposal ---
     const submitEvent = await Event.query().insert({
       tx_id: tx.id,

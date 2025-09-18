@@ -10,7 +10,7 @@ import { SERVICE } from "../../common";
   name: "api",
   mixins: [ApiGateway, OpenApiMixin],
   settings: {
-    port: process.env.PORT || 3000,
+    port: process.env.PORT || 3001,
     routes: [
       {
         path: "/verana/dd/v1",
@@ -19,6 +19,19 @@ import { SERVICE } from "../../common";
           "GET list": `${SERVICE.V1.DidDatabaseService.path}.getDidList`,
           "GET history/:did": `${SERVICE.V1.DidHistoryService.path}.getByDid`,
           "GET params": `${SERVICE.V1.DidDatabaseService.path}.getDidParams`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
+        },
+      },
+      {
+        path: "/verana/tr/v1",
+        aliases: {
+          "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
+          "GET list": `${SERVICE.V1.TrustRegistryDatabaseService.path}.listTrustRegistries`,
+          "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {

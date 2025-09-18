@@ -113,13 +113,29 @@ export const BULL_JOB_NAME = {
   JOB_CRAWL_DID: 'crawl:did-directory',
   CP_CRAWL_DID: 'checkpoint:did-directory',
 };
-export const DID_EVENT_TYPES = ['/verana.dd.v1.MsgAddDID','/verana.dd.v1.MsgRenewDID', '/verana.dd.v1.MsgTouchDID', '/verana.dd.v1.MsgRemoveDID'];
+export const DID_EVENT_TYPES = ['/verana.dd.v1.MsgAddDID', '/verana.dd.v1.MsgRenewDID', '/verana.dd.v1.MsgTouchDID', '/verana.dd.v1.MsgRemoveDID'];
+export const trustRegistryEvents = [
+  "/verana.tr.v1.MsgCreateTrustRegistry",
+  "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
+  "/verana.tr.v1.MsgUpdateTrustRegistry",
+  "/verana.tr.v1.MsgArchiveTrustRegistry",
+  "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
+  "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
+];
 
 export const SERVICE = {
   V1: {
     ProcessDidEventsService: {
       key: 'ProcessDidEventsService',
       path: 'v1.ProcessDidEventsService',
+    },
+    ProcessTREventsService: {
+      key: 'ProcessTREventsService',
+      path: 'v1.ProcessTREventsService',
+    },
+    TrustRegistryDatabaseService: {
+      key: 'TrustRegistryDatabaseService',
+      path: 'v1.TrustRegistryDatabaseService',
     },
     GenesisParamsService: {
       key: 'GenesisParamsService',

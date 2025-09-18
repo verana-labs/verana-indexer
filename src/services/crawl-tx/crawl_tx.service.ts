@@ -19,11 +19,11 @@ import {
   DID_EVENT_TYPES,
   getHttpBatchClient,
   getLcdClient,
-  SERVICE
+  SERVICE,
+  trustRegistryEvents
 } from '../../common';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
-import { readGenesis } from '../../common/utils/genesis_reader';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import Utils from '../../common/utils/utils';
 import {
@@ -33,7 +33,6 @@ import {
   Transaction,
   TransactionMessage,
 } from '../../models';
-import { calculateDidDeposit } from '../../common/utils/calculate_deposit';
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
@@ -395,7 +394,6 @@ export default class CrawlTxService extends BullableService {
         // this.logger.warn(error);
       }
 
-      // create list event with msg index
       const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx);
 
       const eventInsert =
@@ -442,12 +440,10 @@ export default class CrawlTxService extends BullableService {
         .transacting(transactionDB);
       this.logger.warn('result insert events:', resultInsertEvents);
     }
-    if (listMsgModel.length) {
+    if (listMsgModel?.length) {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
-
-
       this.logger.warn('result insert messages:', resultInsertMsgs);
       const DIDfiltered = resultInsertMsgs
         .filter((msg: any) => DID_EVENT_TYPES.includes(msg.type))
@@ -464,7 +460,7 @@ export default class CrawlTxService extends BullableService {
           };
         });
 
-      if (DIDfiltered.length) {
+      if (DIDfiltered?.length) {
         await this.broker.call(
           `${SERVICE.V1.ProcessDidEventsService.path}.handleDidEvents`,
           {
@@ -473,6 +469,24 @@ export default class CrawlTxService extends BullableService {
         );
       }
 
+      const trustRegistryList = resultInsertMsgs
+        .filter((msg: any) => trustRegistryEvents.includes(msg.type))
+        .map((msg: any) => {
+          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+          return {
+            type: msg.type,
+            content: msg.content ?? null,
+            timestamp: parentTx?.timestamp ?? null,
+            height: parentTx?.height ?? null,
+            id: msg?.tx_id ?? null,
+          };
+        });
+
+      if (trustRegistryList?.length) {
+        await this.broker.call(
+          `${SERVICE.V1.ProcessTREventsService.path}.handleTREvents`,
+          { trustRegistryList });
+      }
     }
 
   }
