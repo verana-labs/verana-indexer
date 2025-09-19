@@ -70,18 +70,18 @@ describe("DidDatabaseService", () => {
             } as any);
 
             const ctx: any = { params: { did: "did:example:123" } };
-            await service.getDid(ctx);
-            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, record, 200);
+            const result = await service.getDid(ctx);
+            expect(result).toEqual(record);
         });
 
-        it("should return 404 if DID not found", async () => {
+        it("should return undefined if DID not found", async () => {
             (knex as jest.Mock).mockReturnValueOnce({
                 where: jest.fn(() => ({ first: jest.fn().mockResolvedValue(undefined) })),
             } as any);
 
             const ctx: any = { params: { did: "did:example:notfound" } };
-            await service.getDid(ctx);
-            expect(ApiResponder.error).toHaveBeenCalledWith(ctx, "DID not found", 404);
+            const result = await service.getDid(ctx);
+            expect(result).toBeUndefined();
         });
     });
 
@@ -89,7 +89,7 @@ describe("DidDatabaseService", () => {
         it("should return DID if found", async () => {
             const record = { did: "did:example:123" };
             (knex as jest.Mock).mockReturnValueOnce({
-                where: jest.fn(() => ({ first: jest.fn().mockResolvedValue(record) })),
+                where: jest.fn(() => ({ select: jest.fn().mockReturnThis(), first: jest.fn().mockResolvedValue(record) })),
             } as any);
 
             const ctx: any = { params: { did: "did:example:123" } };
@@ -99,7 +99,7 @@ describe("DidDatabaseService", () => {
 
         it("should return 404 if DID not found", async () => {
             (knex as jest.Mock).mockReturnValueOnce({
-                where: jest.fn(() => ({ first: jest.fn().mockResolvedValue(undefined) })),
+                where: jest.fn(() => ({ select: jest.fn().mockReturnThis(), first: jest.fn().mockResolvedValue(undefined) })),
             } as any);
 
             const ctx: any = { params: { did: "did:example:notfound" } };
@@ -110,29 +110,23 @@ describe("DidDatabaseService", () => {
 
     describe("getDidList", () => {
         it("should return list of DIDs", async () => {
+            const items = [{ did: "did:1" }, { did: "did:2" }];
             const mockQuery = {
                 where: jest.fn().mockReturnThis(),
+                select: jest.fn().mockReturnThis(),
                 andWhere: jest.fn().mockReturnThis(),
                 andWhereRaw: jest.fn().mockReturnThis(),
-                clone: jest.fn().mockReturnThis(),
-                count: jest.fn().mockResolvedValue([{ count: "5" }]),
                 orderBy: jest.fn().mockReturnThis(),
-                limit: jest.fn().mockReturnThis(),
-                offset: jest.fn().mockResolvedValue([{ did: "did:1" }, { did: "did:2" }]),
+                limit: jest.fn().mockResolvedValue(items),
             };
             (knex as jest.Mock).mockReturnValue(mockQuery as any);
 
-            const ctx: any = { params: { page: 1, response_max_size: 10 } };
+            const ctx: any = { params: { response_max_size: 10 } };
             await service.getDidList(ctx);
 
-            expect(ApiResponder.success).toHaveBeenCalledWith(
-                ctx,
-                { total: 5, page: 1, responseMaxSize: 10, items: [{ did: "did:1" }, { did: "did:2" }] },
-                200
-            );
+            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, items, 200);
         });
     });
-
 
     describe("getDidParams", () => {
         it("should return parsed module params", async () => {

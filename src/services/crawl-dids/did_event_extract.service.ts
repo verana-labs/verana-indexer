@@ -77,10 +77,9 @@ export default class ProcessDidEventsService extends BullableService {
             let processedEvent: ProcessedDidEvent | null = null;
             const calculateDeposit = await calculateDidDeposit();
             // ---------------- ADD ----------------
-            if (event.type === DID_EVENT_TYPES[0]) {
+            if (event.type === DID_EVENT_TYPES[0] || event.type === DID_EVENT_TYPES[1]) {
                 processedEvent = {
                     event_type: event.type,
-                    id: event.id,
                     did: event.did,
                     controller: event.controller,
                     height: event.height ?? 0,
@@ -111,7 +110,7 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- RENEW ----------------
-            else if (event.type === DID_EVENT_TYPES[1] && event.did) {
+            else if (event.type === DID_EVENT_TYPES[2] || event.type === DID_EVENT_TYPES[3] && event.did) {
                 const renewDeposit = await calculateDidDeposit(event?.years) ?? "0";
                 const existingDid: ProcessedDidEvent | null =
                     await this.broker.call(
@@ -127,7 +126,6 @@ export default class ProcessDidEventsService extends BullableService {
                         ...existingDid,
                         modified: formatTimestamp(event?.timestamp),
                         height: event?.height ?? existingDid.height,
-                        id: event?.id ?? existingDid.id,
                         event_type: event.type,
                         exp: addYearsToDate(existingDid.exp, yearsToAdd),
                         deposit: (
@@ -153,19 +151,17 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- TOUCH ----------------
-            else if (event.type === DID_EVENT_TYPES[2] && event.did) {
+            else if (event.type === DID_EVENT_TYPES[4] || event.type === DID_EVENT_TYPES[5] && event.did) {
                 const existingDid: ProcessedDidEvent | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
                         { did: event.did }
                     );
-
                 if (existingDid) {
                     const updatedDid: ProcessedDidEvent = {
                         ...existingDid,
                         modified: formatTimestamp(event?.timestamp),
                         height: event?.height ?? existingDid.height,
-                        id: event?.id ?? existingDid.id,
                         event_type: event.type,
                     };
 
@@ -173,7 +169,6 @@ export default class ProcessDidEventsService extends BullableService {
                         existingDid,
                         updatedDid
                     );
-
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
                         updatedDid
@@ -183,7 +178,7 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- REMOVE ----------------
-            else if (event.type === DID_EVENT_TYPES[3] && event.did) {
+            else if (event.type === DID_EVENT_TYPES[6] || event.type === DID_EVENT_TYPES[7] && event.did) {
                 const existingDid: ProcessedDidEvent | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
@@ -197,7 +192,6 @@ export default class ProcessDidEventsService extends BullableService {
                         deleted_at: formatTimestamp(event?.timestamp),
                         is_deleted: true,
                         height: event.height ?? existingDid.height,
-                        id: event.id ?? existingDid.id,
                     };
 
                     const changes = this.computeChanges(existingDid, {

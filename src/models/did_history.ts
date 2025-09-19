@@ -12,7 +12,7 @@ export interface DidHistoryRecord {
   created?: string;
   deleted_at?: string | null;
   is_deleted?: boolean;
-  changes?: Record<string, { old: any; new: any }>; 
+  changes?: Record<string, { old: any; new: any }>;
   created_at?: Date | string;
 }
 
@@ -20,8 +20,19 @@ export const DidHistoryRepository = {
   async insertHistory(record: DidHistoryRecord): Promise<number[]> {
     return knex("did_history").insert(record).returning("id");
   },
-
   async getByDid(did: string): Promise<DidHistoryRecord[]> {
-    return knex("did_history").where({ did }).orderBy("created_at", "desc");
-  },
+    return knex("did_history")
+      .select(
+        "did",
+        "years",
+        "controller",
+        "deposit",
+        "exp",
+        "created",
+        "changes"
+      )
+      .where({ did })
+      .orderBy("created_at", "desc");
+  }
+
 };

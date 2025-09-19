@@ -17,7 +17,7 @@ export default class DidDatabaseService extends BullableService {
     }
 
     @Action({ name: "upsertProcessedDid" })
-    async upsertProcessedDid(ctx: Context<{ did: string; [key: string]: unknown }>) {
+    async upsertProcessedDid(ctx: Context<{ did: string;[key: string]: unknown }>) {
         try {
             const result = await knex("dids")
                 .insert(ctx.params)
@@ -64,26 +64,23 @@ export default class DidDatabaseService extends BullableService {
         }
     }
 
-    @Action({ name: "get" })
-    async getDid(ctx: Context<{ did: string }>) {
-        try {
-            const did = await knex("dids").where({ did: ctx.params.did }).first();
-
-            if (!did) {
-                return ApiResponder.error(ctx, "DID not found", 404);
-            }
-
-            return ApiResponder.success(ctx, did, 200);
-        } catch (err: any) {
-            this.logger.error("Error in getDid:", err);
-            return ApiResponder.error(ctx, "Internal Server Error", 500);
-        }
+    @Action({ name: 'get' })
+    async getDid(ctx: any) {
+        const { did } = ctx.params;
+        return await knex('dids').where({ did }).first();
     }
 
     @Action({ rest: "GET get/:did", params: { did: "string" } })
     async getSingleDid(ctx: Context<{ did: string }>) {
         try {
-            const did = await knex("dids").where({ did: ctx.params.did }).first();
+            const did = await knex("dids").where({ did: ctx.params.did }).select(
+                "did",
+                "controller",
+                "deposit",
+                "exp",
+                "created",
+                "modified",
+            ).first();
             if (!did) {
                 return ApiResponder.error(ctx, "Not Found", 404);
             }
@@ -94,19 +91,19 @@ export default class DidDatabaseService extends BullableService {
         }
     }
 
+  
     @Action({
         rest: "GET list",
         params: {
-            page: { type: "number", optional: true, default: 1 },
             account: { type: "string", optional: true },
             modified: { type: "string", optional: true },
-            expired: { type: "boolean", optional: true },
-            over_grace: { type: "boolean", optional: true },
-            response_max_size: { type: "number", optional: true, default: 64 }
+            expired: { type: "boolean", optional: true, convert: true },
+            over_grace: { type: "boolean", optional: true, convert: true },
+            response_max_size: { type: "number", optional: true, default: 64, convert: true }
         }
     })
+
     async getDidList(ctx: Context<{
-        page: number;
         account?: string;
         modified?: string;
         expired?: boolean;
@@ -115,7 +112,6 @@ export default class DidDatabaseService extends BullableService {
     }>) {
         try {
             const {
-                page,
                 account,
                 modified,
                 expired,
@@ -124,10 +120,16 @@ export default class DidDatabaseService extends BullableService {
             } = ctx.params;
 
             const effectiveLimit = Math.min(responseMaxSize || 64, 1024);
-            const offset = (page - 1) * effectiveLimit;
             const now = new Date().toISOString();
 
-            let query = knex("dids").where({ is_deleted: false });
+            let query = knex("dids").where({ is_deleted: false }).select(
+                "did",
+                "controller",
+                "deposit",
+                "exp",
+                "created",
+                "modified",
+            );
 
             if (account) query = query.andWhere("controller", account);
             if (modified) query = query.andWhere("modified", ">", modified);
@@ -144,20 +146,11 @@ export default class DidDatabaseService extends BullableService {
                     : query.andWhereRaw(`exp + interval '30 days' >= ?`, [now]);
             }
 
-            const totalResult = await query.clone().count("did as count");
-            const total = Number(totalResult[0].count);
-
             const items = await query
                 .orderBy("modified", "asc")
-                .limit(effectiveLimit)
-                .offset(offset);
+                .limit(effectiveLimit);
 
-            return ApiResponder.success(ctx, {
-                total,
-                page,
-                responseMaxSize: effectiveLimit,
-                items
-            }, 200);
+            return ApiResponder.success(ctx, items, 200);
         } catch (err: any) {
             this.logger.error("DB error in getDidList:", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);
