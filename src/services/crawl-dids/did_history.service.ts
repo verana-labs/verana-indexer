@@ -18,6 +18,7 @@ export default class DidHistoryService extends BullableService {
   @Action({ name: "save" })
   async save(ctx: { params: DidHistoryRecord }) {
     const record = ctx.params;
+    delete record?.id
     await DidHistoryRepository.insertHistory(record);
     this.logger.info("DID history saved:", record);
     return record;
@@ -26,7 +27,6 @@ export default class DidHistoryService extends BullableService {
 async getByDid(ctx: Context<{ did: string }>) {
   try {
     const history = await DidHistoryRepository.getByDid(ctx.params.did);
-
     if (!history || history.length === 0) {
       return {
         success: false,
@@ -37,7 +37,6 @@ async getByDid(ctx: Context<{ did: string }>) {
         }
       };
     }
-
     return { success: true, data: history };
   } catch (err) {
     this.logger.error("Error fetching DID history:", err);
