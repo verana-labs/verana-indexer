@@ -56,43 +56,43 @@ services:
       - dev_network
 
   # Node.js app
-  verana-indexer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: verana_indexer
-    env_file: docker.env
-    depends_on:
-      psql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      # Database configuration
-      POSTGRES_HOST: psql
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+  # verana-indexer:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: verana_indexer
+  #   env_file: docker.env
+  #   depends_on:
+  #     psql:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   environment:
+  #     # Database configuration
+  #     POSTGRES_HOST: psql
+  #     POSTGRES_PORT: 5432
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: ${POSTGRES_DB}
 
-      # Redis configuration
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      TRANSPORTER: redis://redis:6379
-      CACHER: redis://redis:6379
+  #     # Redis configuration
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     TRANSPORTER: redis://redis:6379
+  #     CACHER: redis://redis:6379
 
-      # Application configuration
-      NODE_ENV: development
-      NAMESPACE:
-      LOGGER: true
-      LOGLEVEL: info
-      SERVICEDIR: dist/src/services
-      SERVICES: "**/*.service.js"
-      STRATEGY: RoundRobin
-    ports:
-      - "3000:3000"
-    networks:
-      - dev_network
+  #     # Application configuration
+  #     NODE_ENV: development
+  #     NAMESPACE:
+  #     LOGGER: true
+  #     LOGLEVEL: info
+  #     SERVICEDIR: dist/src/services
+  #     SERVICES: "**/*.service.js"
+  #     STRATEGY: RoundRobin
+  #   ports:
+  #     - "3000:3000"
+  #   networks:
+  #     - dev_network
 
 networks:
   dev_network:
