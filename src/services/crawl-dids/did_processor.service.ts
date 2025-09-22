@@ -1,25 +1,19 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
-import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import BullableService from "../../base/bullable.service";
-import { DID_EVENT_TYPES, SERVICE } from "../../common";
+import { DidMessages, SERVICE } from "../../common";
+import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import { addYearsToDate, formatTimestamp } from "../../common/utils/date_utils";
 
 
 
-interface DidAttribute {
-    key: string;
-    value: string;
-}
-
-interface DidEvent {
+interface DidMessageType {
     type: string;
     did?: string;
-    attributes?: DidAttribute[];
     [key: string]: any;
 }
 
-interface ProcessedDidEvent {
+interface DidMessageTypes {
     event_type: string;
     did?: string;
     created?: string;
@@ -36,10 +30,10 @@ interface ProcessedDidEvent {
 }
 
 @Service({
-    name: SERVICE.V1.ProcessDidEventsService.key,
+    name: SERVICE.V1.DidMessageProcessorService.key,
     version: 1,
 })
-export default class ProcessDidEventsService extends BullableService {
+export default class DidMessageProcessorService extends BullableService {
     constructor(broker: ServiceBroker) {
         super(broker);
     }
@@ -60,73 +54,67 @@ export default class ProcessDidEventsService extends BullableService {
 
 
 
-    private async saveHistory(didEvent: ProcessedDidEvent, changes?: any) {
-        const { modified, ...cleanedEvent } = didEvent;
+    private async saveHistory(did: DidMessageTypes, changes?: any) {
+        const { modified, ...cleanedDID } = did;
         await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, {
-            ...cleanedEvent,
+            ...cleanedDID,
             changes: changes ? JSON.stringify(changes) : null,
         });
     }
 
 
-    @Action({ name: "handleDidEvents" })
-    async handleDidEvents(ctx: { params: { listDidTx: DidEvent[] } }) {
-        const { listDidTx } = ctx.params;
+    @Action({ name: "handleDidMessages" })
+    async handleDidMessages(ctx: { params: { messages: DidMessageType[] } }) {
+        const { messages } = ctx.params;
 
-        for (const event of listDidTx) {
-            let processedEvent: ProcessedDidEvent | null = null;
+        for (const message of messages) {
+            let processedDID: DidMessageTypes | null = null;
             const calculateDeposit = await calculateDidDeposit();
             // ---------------- ADD ----------------
-            if (event.type === DID_EVENT_TYPES[0] || event.type === DID_EVENT_TYPES[1]) {
-                processedEvent = {
-                    event_type: event.type,
-                    did: event.did,
-                    controller: event.controller,
-                    height: event.height ?? 0,
-                    years: event.years ? String(event.years) : undefined,
+            if ([DidMessages.AddDid, DidMessages.AddDidLegacy].includes(message.type as DidMessages)) {
+                processedDID = {
+                    event_type: message.type,
+                    did: message.did,
+                    controller: message.controller,
+                    height: message.height ?? 0,
+                    years: message.years ? String(message.years) : undefined,
                     deposit: String(calculateDeposit) ?? "0",
-                    created: formatTimestamp(event?.timestamp),
-                    modified: formatTimestamp(event?.timestamp),
+                    created: formatTimestamp(message?.timestamp),
+                    modified: formatTimestamp(message?.timestamp),
                     exp:
-                        event.timestamp && event.years
-                            ? addYearsToDate(event.timestamp, event.years)
+                        message.timestamp && message.years
+                            ? addYearsToDate(message.timestamp, message.years)
                             : undefined,
                     is_deleted: false,
                     deleted_at: null,
                 };
-
-
-                event.attributes?.forEach((attr: DidAttribute) => {
-                    if (!["timestamp", "height"].includes(attr.key)) {
-                        processedEvent![attr.key] = attr.value;
-                    }
-                });
-
                 await this.broker.call(
                     `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
-                    processedEvent
+                    processedDID
                 );
-                await this.saveHistory(processedEvent, {});
+                await this.saveHistory(processedDID, {});
             }
 
             // ---------------- RENEW ----------------
-            else if (event.type === DID_EVENT_TYPES[2] || event.type === DID_EVENT_TYPES[3] && event.did) {
-                const renewDeposit = await calculateDidDeposit(event?.years) ?? "0";
-                const existingDid: ProcessedDidEvent | null =
+            else if (
+                (message.type === DidMessages.RenewDid || message.type === DidMessages.RenewDidLegacy)
+                && message.did) {
+                const renewDeposit = await calculateDidDeposit(message?.years) ?? "0";
+                const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
-                        { did: event.did }
+                        { did: message.did }
                     );
 
                 if (existingDid) {
-                    const yearsToAdd = parseInt(event.years || "0");
+                    const yearsToAdd = parseInt(message.years || "0");
                     const newDeposit = String(renewDeposit) ?? "0";
 
-                    const updatedDid: ProcessedDidEvent = {
+                    const updatedDid: DidMessageTypes = {
                         ...existingDid,
-                        modified: formatTimestamp(event?.timestamp),
-                        height: event?.height ?? existingDid.height,
-                        event_type: event.type,
+                        modified: formatTimestamp(message?.timestamp),
+                        height: message?.height ?? existingDid.height,
+                        did_type: message.type,
                         exp: addYearsToDate(existingDid.exp, yearsToAdd),
                         deposit: (
                             parseInt(existingDid.deposit || "0") +
@@ -151,18 +139,21 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- TOUCH ----------------
-            else if (event.type === DID_EVENT_TYPES[4] || event.type === DID_EVENT_TYPES[5] && event.did) {
-                const existingDid: ProcessedDidEvent | null =
+            else if (
+                (message.type === DidMessages.TouchDid || message.type === DidMessages.TouchDidLegacy)
+                && message.did
+            ) {
+                const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
-                        { did: event.did }
+                        { did: message.did }
                     );
                 if (existingDid) {
-                    const updatedDid: ProcessedDidEvent = {
+                    const updatedDid: DidMessageTypes = {
                         ...existingDid,
-                        modified: formatTimestamp(event?.timestamp),
-                        height: event?.height ?? existingDid.height,
-                        event_type: event.type,
+                        modified: formatTimestamp(message?.timestamp),
+                        height: message?.height ?? existingDid.height,
+                        did_type: message.type,
                     };
 
                     const changes = this.computeChanges(
@@ -178,44 +169,47 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- REMOVE ----------------
-            else if (event.type === DID_EVENT_TYPES[6] || event.type === DID_EVENT_TYPES[7] && event.did) {
-                const existingDid: ProcessedDidEvent | null =
+            else if (
+                (message.type === DidMessages.RemoveDid || message.type === DidMessages.RemoveDidLegacy)
+                && message.did
+            ) {
+                const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
-                        { did: event.did }
+                        { did: message.did }
                     );
 
                 if (existingDid) {
-                    const deletedEvent: ProcessedDidEvent = {
+                    const deletedDID: DidMessageTypes = {
                         ...existingDid,
-                        event_type: event.type,
-                        deleted_at: formatTimestamp(event?.timestamp),
+                        event_type: message.type,
+                        deleted_at: formatTimestamp(message?.timestamp),
                         is_deleted: true,
-                        height: event.height ?? existingDid.height,
+                        height: message.height ?? existingDid.height,
                     };
 
                     const changes = this.computeChanges(existingDid, {
                         ...existingDid,
                         is_deleted: true,
-                        deleted_at: formatTimestamp(event?.timestamp),
+                        deleted_at: formatTimestamp(message?.timestamp),
                     });
 
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.delete`,
-                        { did: event.did }
+                        { did: message.did }
                     );
 
-                    await this.saveHistory(deletedEvent, changes);
+                    await this.saveHistory(deletedDID, changes);
 
-                    processedEvent = deletedEvent;
+                    processedDID = deletedDID;
                 }
             }
 
 
-            if (processedEvent) {
+            if (processedDID) {
                 this.logger.info(
-                    "Processed DID event",
-                    JSON.stringify(processedEvent, null, 2)
+                    "Processed DID Messages",
+                    JSON.stringify(processedDID, null, 2)
                 );
             }
         }
@@ -223,6 +217,6 @@ export default class ProcessDidEventsService extends BullableService {
 
     public async _start() {
         await super._start();
-        this.logger.info("ProcessDidEventsService started and ready.");
+        this.logger.info("ProcessDidMessageService started and ready.");
     }
 }

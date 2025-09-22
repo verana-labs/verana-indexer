@@ -1,21 +1,24 @@
 # Crawl DID
 
 ```mermaid
-  sequenceDiagram
+ sequenceDiagram
   autonumber
-  participant A as CrawlDidService
+  participant C as CrawlTxService
+  participant D as DidMessageProcessorService
   participant B as DB (Postgres)
-  participant W as WebSocket (Node)
 
-  A->>W: Subscribe to DID contract events
-  activate W
-  W-->>A: Stream events (create/update/renew/remove)
+  C->>C: Fetch block transactions
+  C->>C: Decode transaction messages
+  C->>D: Send DID-related messages
 
-  loop Realtime
-    A->>A: Parse event → DID record
-    A->>B: UPSERT dids (idempotent write)
-    activate B
-    B-->>A: OK
-    deactivate B
+  loop Per Message
+    D->>D: Parse event → Process DID Event
+    D->>B: UPSERT dids (idempotent write)
+    D->>B: Insert DID history (append-only)
+    B-->>D: OK
   end
+
+
 ```
+For details on how DID lifecycle changes are recorded and queried, see the  
+👉 [DID History Service](./did-history.md)

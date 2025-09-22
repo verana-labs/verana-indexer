@@ -1,10 +1,9 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { Context, Errors, ServiceBroker } from "moleculer";
+import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { SERVICE } from "../../common";
 import { DidHistoryRecord, DidHistoryRepository } from "../../models/did_history";
 
-const { MoleculerClientError, MoleculerServerError } = Errors;
 
 @Service({
   name: SERVICE.V1.DidHistoryService.key,
