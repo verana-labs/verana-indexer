@@ -1,8 +1,8 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
-import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import BullableService from "../../base/bullable.service";
-import { DID_EVENT_TYPES, SERVICE } from "../../common";
+import { DidEventTypes, SERVICE } from "../../common";
+import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import { addYearsToDate, formatTimestamp } from "../../common/utils/date_utils";
 
 
@@ -19,7 +19,7 @@ interface DidEvent {
     [key: string]: any;
 }
 
-interface ProcessedDidEvent {
+interface DidMessageTypes {
     event_type: string;
     did?: string;
     created?: string;
@@ -36,10 +36,10 @@ interface ProcessedDidEvent {
 }
 
 @Service({
-    name: SERVICE.V1.ProcessDidEventsService.key,
+    name: SERVICE.V1.DidMessageProcessorService.key,
     version: 1,
 })
-export default class ProcessDidEventsService extends BullableService {
+export default class DidMessageProcessorService extends BullableService {
     constructor(broker: ServiceBroker) {
         super(broker);
     }
@@ -60,7 +60,7 @@ export default class ProcessDidEventsService extends BullableService {
 
 
 
-    private async saveHistory(didEvent: ProcessedDidEvent, changes?: any) {
+    private async saveHistory(didEvent: DidMessageTypes, changes?: any) {
         const { modified, ...cleanedEvent } = didEvent;
         await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, {
             ...cleanedEvent,
@@ -69,15 +69,15 @@ export default class ProcessDidEventsService extends BullableService {
     }
 
 
-    @Action({ name: "handleDidEvents" })
-    async handleDidEvents(ctx: { params: { listDidTx: DidEvent[] } }) {
+    @Action({ name: "handleDidMessages" })
+    async handleDidMessages(ctx: { params: { listDidTx: DidEvent[] } }) {
         const { listDidTx } = ctx.params;
 
         for (const event of listDidTx) {
-            let processedEvent: ProcessedDidEvent | null = null;
+            let processedEvent: DidMessageTypes | null = null;
             const calculateDeposit = await calculateDidDeposit();
             // ---------------- ADD ----------------
-            if (event.type === DID_EVENT_TYPES[0] || event.type === DID_EVENT_TYPES[1]) {
+            if ([DidEventTypes.AddDid, DidEventTypes.AddDidLegacy].includes(event.type as DidEventTypes)) {
                 processedEvent = {
                     event_type: event.type,
                     did: event.did,
@@ -110,9 +110,11 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- RENEW ----------------
-            else if (event.type === DID_EVENT_TYPES[2] || event.type === DID_EVENT_TYPES[3] && event.did) {
+            else if (
+                (event.type === DidEventTypes.RenewDid || event.type === DidEventTypes.RenewDidLegacy)
+                && event.did) {
                 const renewDeposit = await calculateDidDeposit(event?.years) ?? "0";
-                const existingDid: ProcessedDidEvent | null =
+                const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
                         { did: event.did }
@@ -122,7 +124,7 @@ export default class ProcessDidEventsService extends BullableService {
                     const yearsToAdd = parseInt(event.years || "0");
                     const newDeposit = String(renewDeposit) ?? "0";
 
-                    const updatedDid: ProcessedDidEvent = {
+                    const updatedDid: DidMessageTypes = {
                         ...existingDid,
                         modified: formatTimestamp(event?.timestamp),
                         height: event?.height ?? existingDid.height,
@@ -151,14 +153,17 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- TOUCH ----------------
-            else if (event.type === DID_EVENT_TYPES[4] || event.type === DID_EVENT_TYPES[5] && event.did) {
-                const existingDid: ProcessedDidEvent | null =
+            else if (
+                (event.type === DidEventTypes.TouchDid || event.type === DidEventTypes.TouchDidLegacy)
+                && event.did
+            ) {
+                const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
                         { did: event.did }
                     );
                 if (existingDid) {
-                    const updatedDid: ProcessedDidEvent = {
+                    const updatedDid: DidMessageTypes = {
                         ...existingDid,
                         modified: formatTimestamp(event?.timestamp),
                         height: event?.height ?? existingDid.height,
@@ -178,15 +183,18 @@ export default class ProcessDidEventsService extends BullableService {
             }
 
             // ---------------- REMOVE ----------------
-            else if (event.type === DID_EVENT_TYPES[6] || event.type === DID_EVENT_TYPES[7] && event.did) {
-                const existingDid: ProcessedDidEvent | null =
+            else if (
+                (event.type === DidEventTypes.RemoveDid || event.type === DidEventTypes.RemoveDidLegacy)
+                && event.did
+            ) {
+                const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
                         { did: event.did }
                     );
 
                 if (existingDid) {
-                    const deletedEvent: ProcessedDidEvent = {
+                    const deletedEvent: DidMessageTypes = {
                         ...existingDid,
                         event_type: event.type,
                         deleted_at: formatTimestamp(event?.timestamp),
@@ -223,6 +231,6 @@ export default class ProcessDidEventsService extends BullableService {
 
     public async _start() {
         await super._start();
-        this.logger.info("ProcessDidEventsService started and ready.");
+        this.logger.info("ProcessDidMessageService started and ready.");
     }
 }

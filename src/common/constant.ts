@@ -113,22 +113,23 @@ export const BULL_JOB_NAME = {
   JOB_CRAWL_DID: "crawl:did-directory",
   CP_CRAWL_DID: "checkpoint:did-directory",
 };
-export const DID_EVENT_TYPES = [
-  "/verana.dd.v1.MsgAddDID",
-  "/veranablockchain.diddirectory.MsgAddDID",
-  "/verana.dd.v1.MsgRenewDID",
-  "/veranablockchain.diddirectory.MsgRenewDID",
-  "/verana.dd.v1.MsgTouchDID",
-  "/veranablockchain.diddirectory.MsgTouchDID",
-  "/verana.dd.v1.MsgRemoveDID",
-  "/veranablockchain.diddirectory.MsgRemoveDID",
-];
+
+export enum DidEventTypes {
+  AddDid = "/verana.dd.v1.MsgAddDID",
+  AddDidLegacy = "/veranablockchain.diddirectory.MsgAddDID",
+  RenewDid = "/verana.dd.v1.MsgRenewDID",
+  RenewDidLegacy = "/veranablockchain.diddirectory.MsgRenewDID",
+  TouchDid = "/verana.dd.v1.MsgTouchDID",
+  TouchDidLegacy = "/veranablockchain.diddirectory.MsgTouchDID",
+  RemoveDid = "/verana.dd.v1.MsgRemoveDID",
+  RemoveDidLegacy = "/veranablockchain.diddirectory.MsgRemoveDID",
+}
 
 export const SERVICE = {
   V1: {
-    ProcessDidEventsService: {
-      key: "ProcessDidEventsService",
-      path: "v1.ProcessDidEventsService",
+    DidMessageProcessorService: {
+      key: "DidMessageProcessorService",
+      path: "v1.DidMessageProcessorService",
     },
     GenesisParamsService: {
       key: "GenesisParamsService",

@@ -4,8 +4,12 @@ import BullableService from "../../base/bullable.service";
 import { SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import ModuleParams from "../../models/modules_params";
+import ModuleParams from "../../models/modules_params"; 
 
+function isValidDid(did: string): boolean {
+    const didRegex = /^did:[a-z0-9]+:[A-Za-z0-9.\-_%]+$/;
+    return didRegex.test(did);
+}
 
 @Service({
     name: SERVICE.V1.DidDatabaseService.key,
@@ -70,28 +74,36 @@ export default class DidDatabaseService extends BullableService {
         return await knex('dids').where({ did }).first();
     }
 
+
+
     @Action({ rest: "GET get/:did", params: { did: "string" } })
     async getSingleDid(ctx: Context<{ did: string }>) {
         try {
-            const did = await knex("dids").where({ did: ctx.params.did }).select(
-                "did",
-                "controller",
-                "deposit",
-                "exp",
-                "created",
-                "modified",
-            ).first();
-            if (!did) {
+            const { did } = ctx.params;
+
+            if (!isValidDid(did)) {
+                this.logger.warn(`Invalid DID syntax received: ${did}`);
+                return ApiResponder.error(ctx, "Invalid DID syntax", 400);
+            }
+
+            const record = await knex("dids")
+                .where({ did })
+                .select("did", "controller", "deposit", "exp", "created", "modified")
+                .first();
+
+            if (!record) {
                 return ApiResponder.error(ctx, "Not Found", 404);
             }
-            return ApiResponder.success(ctx, did, 200);
+
+            return ApiResponder.success(ctx, record, 200);
         } catch (err: any) {
             this.logger.error("DB error in getSingleDid:", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);
         }
     }
 
-  
+
+
     @Action({
         rest: "GET list",
         params: {

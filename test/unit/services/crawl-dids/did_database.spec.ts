@@ -1,6 +1,6 @@
 // tests/dids.service.spec.ts
 import { ServiceBroker } from "moleculer";
-import DidDatabaseService from "../../../../src/services/crawl-dids/dids.service";
+import DidDatabaseService from "../../../../src/services/crawl-dids/dids_database.service";
 import knex from "../../../../src/common/utils/db_connection";
 import ModuleParams from "../../../../src/models/modules_params";
 import ApiResponder from "../../../../src/common/utils/apiResponse";
