@@ -114,7 +114,7 @@ export const BULL_JOB_NAME = {
   CP_CRAWL_DID: "checkpoint:did-directory",
 };
 
-export enum DidEventTypes {
+export enum DidMessages {
   AddDid = "/verana.dd.v1.MsgAddDID",
   AddDidLegacy = "/veranablockchain.diddirectory.MsgAddDID",
   RenewDid = "/verana.dd.v1.MsgRenewDID",

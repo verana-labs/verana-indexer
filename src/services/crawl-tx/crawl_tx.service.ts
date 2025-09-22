@@ -16,7 +16,7 @@ import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
-  DidEventTypes,
+  DidMessages,
   getHttpBatchClient,
   getLcdClient,
   SERVICE
@@ -450,7 +450,7 @@ export default class CrawlTxService extends BullableService {
 
       this.logger.warn('result insert messages:', resultInsertMsgs);
      const DIDfiltered = resultInsertMsgs
-        .filter((msg: any) => Object.values(DidEventTypes).includes(msg.type))
+        .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
         .map((msg: any) => {
           const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
           return {
@@ -469,7 +469,7 @@ export default class CrawlTxService extends BullableService {
         await this.broker.call(
           `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
           {
-            listDidTx: DIDfiltered,
+            messages: DIDfiltered,
           }
         );
       }
