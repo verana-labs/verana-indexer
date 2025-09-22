@@ -113,6 +113,7 @@ export const BULL_JOB_NAME = {
   JOB_CRAWL_DID: "crawl:did-directory",
   CP_CRAWL_DID: "checkpoint:did-directory",
 };
+
 export enum DidMessages {
   AddDid = "/verana.dd.v1.MsgAddDID",
   AddDidLegacy = "/veranablockchain.diddirectory.MsgAddDID",
@@ -123,14 +124,15 @@ export enum DidMessages {
   RemoveDid = "/verana.dd.v1.MsgRemoveDID",
   RemoveDidLegacy = "/veranablockchain.diddirectory.MsgRemoveDID",
 }
-export const trustRegistryEvents = [
-  "/verana.tr.v1.MsgCreateTrustRegistry",
-  "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
-  "/verana.tr.v1.MsgUpdateTrustRegistry",
-  "/verana.tr.v1.MsgArchiveTrustRegistry",
-  "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
-  "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
-];
+
+export enum TrustRegistryMessageTypes {
+  Create = "/verana.tr.v1.MsgCreateTrustRegistry",
+  CreateLegacy = "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
+  Update = "/verana.tr.v1.MsgUpdateTrustRegistry",
+  Archive = "/verana.tr.v1.MsgArchiveTrustRegistry",
+  AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
+  IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
+}
 
 export const SERVICE = {
   V1: {
@@ -138,9 +140,13 @@ export const SERVICE = {
       key: "DidMessageProcessorService",
       path: "v1.DidMessageProcessorService",
     },
-    ProcessTREventsService: {
-      key: "ProcessTREventsService",
-      path: "v1.ProcessTREventsService",
+    TrustRegistryMessageProcessorService: {
+      key: "TrustRegistryMessageProcessorService",
+      path: "v1.TrustRegistryMessageProcessorService",
+    },
+    TrustRegistryHistoryService: {
+      key: "TrustRegistryHistoryService",
+      path: "v1.TrustRegistryHistoryService",
     },
     TrustRegistryDatabaseService: {
       key: "TrustRegistryDatabaseService",

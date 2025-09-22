@@ -20,7 +20,7 @@ import {
   getHttpBatchClient,
   getLcdClient,
   SERVICE,
-  trustRegistryEvents
+  TrustRegistryMessageTypes
 } from '../../common';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
@@ -445,7 +445,7 @@ export default class CrawlTxService extends BullableService {
         .insert(listMsgModel)
         .transacting(transactionDB);
       this.logger.warn('result insert messages:', resultInsertMsgs);
-     const DIDfiltered = resultInsertMsgs
+      const DIDfiltered = resultInsertMsgs
         .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
         .map((msg: any) => {
           const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
@@ -470,7 +470,7 @@ export default class CrawlTxService extends BullableService {
       }
 
       const trustRegistryList = resultInsertMsgs
-        .filter((msg: any) => trustRegistryEvents.includes(msg.type))
+        .filter((msg: any) => Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes))
         .map((msg: any) => {
           const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
           return {
@@ -484,7 +484,7 @@ export default class CrawlTxService extends BullableService {
 
       if (trustRegistryList?.length) {
         await this.broker.call(
-          `${SERVICE.V1.ProcessTREventsService.path}.handleTREvents`,
+          `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
           { trustRegistryList });
       }
     }
