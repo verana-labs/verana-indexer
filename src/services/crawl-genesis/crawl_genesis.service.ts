@@ -1,31 +1,19 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-await-in-loop */
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
+import { ibc } from '@aura-nw/aurajs';
+import { QueryDenomTraceRequest } from '@aura-nw/aurajs/types/codegen/ibc/applications/transfer/v1/query';
+import { fromBase64, fromUtf8, toHex } from '@cosmjs/encoding';
+import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
 import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
-import { fromBase64, fromUtf8, toHex } from '@cosmjs/encoding';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended';
 import fs from 'fs';
 import _ from 'lodash';
+import { ServiceBroker } from 'moleculer';
 import Chain from 'stream-chain';
 import Pick from 'stream-json/filters/Pick';
 import StreamArr from 'stream-json/streamers/StreamArray';
-import { QueryDenomTraceRequest } from '@aura-nw/aurajs/types/codegen/ibc/applications/transfer/v1/query';
-import { ibc } from '@aura-nw/aurajs';
-import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
-import Utils from '../../common/utils/utils';
-import {
-  Account,
-  BlockCheckpoint,
-  Code,
-  Proposal,
-  SmartContract,
-  Validator,
-  Feegrant,
-  IbcClient,
-  IbcConnection,
-  IbcChannel,
-} from '../../models';
+import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   ABCI_QUERY_PATH,
@@ -37,8 +25,20 @@ import {
   REDIS_KEY,
   SERVICE,
 } from '../../common';
-import config from '../../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
+import Utils from '../../common/utils/utils';
+import {
+  Account,
+  BlockCheckpoint,
+  Code,
+  Feegrant,
+  IbcChannel,
+  IbcClient,
+  IbcConnection,
+  Proposal,
+  SmartContract,
+  Validator,
+} from '../../models';
 import { ALLOWANCE_TYPE, FEEGRANT_STATUS } from '../feegrant/feegrant.service';
 
 @Service({
@@ -88,7 +88,6 @@ export default class CrawlGenesisService extends BullableService {
 
       fs.appendFileSync('genesis.json', JSON.stringify(genesis.result.genesis));
     } catch (error: any) {
-    
       if (JSON.parse(error.message).code !== -32603) {
         this.logger.error(error);
         return;
@@ -902,36 +901,47 @@ export default class CrawlGenesisService extends BullableService {
     });
   }
 
-private async terminateProcess() {
-  const checkpoint = await BlockCheckpoint.query().whereIn('job_name', this.genesisJobs);
-
-  if (
-    checkpoint?.length < this?.genesisJobs?.length ||
-    checkpoint?.find((check) => check?.height !== 1)
-  ) {
-    this.logger.info('Crawl genesis jobs are still processing');
-    return;
-  }
-
-  try { fs.unlinkSync('genesis.json'); } catch {}
-}
-
-
-  public async _start() {
-    this.createJob(
-      BULL_JOB_NAME.CRAWL_GENESIS,
-      BULL_JOB_NAME.CRAWL_GENESIS,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        attempts: config.jobRetryAttempt,
-        backoff: config.jobRetryBackoff,
-      }
+  private async terminateProcess() {
+    const checkpoint = await BlockCheckpoint.query().whereIn(
+      'job_name',
+      this.genesisJobs
     );
+
+    if (
+      checkpoint.length < this.genesisJobs.length ||
+      checkpoint.find((check) => check.height !== 1)
+    ) {
+      this.logger.info('Crawl genesis jobs are still processing');
+      return;
+    }
+    this.logger.info('✅ All genesis jobs finished successfully');
+    // process.exit();
+  }
+  public async _start() {
+    const genesisBlkCheck: BlockCheckpoint | undefined =
+      await BlockCheckpoint.query()
+        .select('*')
+        .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS);
+
+    if (!genesisBlkCheck || genesisBlkCheck.height === 0) {
+      this.logger.info("Scheduling initial Crawl Genesis job...");
+      await this.createJob(
+        BULL_JOB_NAME.CRAWL_GENESIS,
+        BULL_JOB_NAME.CRAWL_GENESIS,
+        {},
+        {
+          removeOnComplete: true,
+          removeOnFail: { count: 3 },
+          attempts: config.jobRetryAttempt,
+          backoff: config.jobRetryBackoff,
+        }
+      );
+      this.handleGenesis({});
+    } else {
+      this.logger.info("Genesis job already processed, skipping scheduling");
+    }
 
     return super._start();
   }
+
 }

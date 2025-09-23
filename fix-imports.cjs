@@ -51,6 +51,9 @@ function needsJsExtension(importPath) {
     return "file";
   }
 
+  if (importPath === "protobufjs/minimal") {
+    return "file";
+  }
   return false;
 }
 
