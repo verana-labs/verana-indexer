@@ -16,6 +16,7 @@ import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
+  CredentialSchemaMessageType,
   DidMessages,
   getHttpBatchClient,
   getLcdClient,
@@ -486,6 +487,22 @@ export default class CrawlTxService extends BullableService {
         await this.broker.call(
           `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
           { trustRegistryList });
+      }
+      const credentialSchemaMessages = resultInsertMsgs
+        .filter((msg: any) => Object.values(CredentialSchemaMessageType).includes(msg.type as CredentialSchemaMessageType))
+        .map((msg: any) => {
+          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+          return {
+            type: msg.type,
+            content: msg.content ?? null,
+            timestamp: parentTx?.timestamp ?? null,
+          };
+        });
+
+      if (credentialSchemaMessages?.length) {
+        await this.broker.call(
+          `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
+          { credentialSchemaMessages });
       }
     }
 

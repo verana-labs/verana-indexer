@@ -90,6 +90,8 @@ A list of services is shown below:
 - [**crawl-genesis**](./docs/services/crawl-genesis/crawl-genesis.md): get state from genesis chunk
 - [**crawl-dids**](./docs/services/crawl-did/crawl-code.md): Crawl and updates DIDs in real time by listening to blockchain events.
 - [**trust-registry**](./docs/services/trust-registry/trust-registry.md): Crawl Trust Registry, governance frameworks, and track version changes.
+- [**Credential Schemas**](./docs/services/credential-schema/credential-schema.md): Crawl all credential schema–related transactions and update their state in the database.
+
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
 ## Database schema

@@ -823,6 +823,367 @@
 			]
 		},
 		{
+			"name": "Credential_Schema",
+			"item": [
+				{
+					"name": "getCredentialSchema",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseURL}}/verana/cs/v1/get/1",
+							"host": [
+								"{{baseURL}}"
+							],
+							"path": [
+								"verana",
+								"cs",
+								"v1",
+								"get",
+								"1"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "getCredentialSchema",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseURL}}/verana/cs/v1/get/1",
+									"host": [
+										"{{baseURL}}"
+									],
+									"path": [
+										"verana",
+										"cs",
+										"v1",
+										"get",
+										"1"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": null,
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "43b79345-c88f-4cd7-8524-a4d17d8dceb9"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Tue, 23 Sep 2025 11:21:29 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "1195"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"id\": 1,\n        \"tr_id\": \"6\",\n        \"json_schema\": {\n            \"$id\": \"/vpr/v1/cs/js/1\",\n            \"type\": \"object\",\n            \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n            \"properties\": {\n                \"credentialSubject\": {\n                    \"type\": \"object\",\n                    \"required\": [\n                        \"id\",\n                        \"name\",\n                        \"logo\",\n                        \"registryId\",\n                        \"registryUrl\",\n                        \"address\",\n                        \"type\",\n                        \"countryCode\"\n                    ],\n                    \"properties\": {\n                        \"id\": {\n                            \"type\": \"string\",\n                            \"format\": \"uri\"\n                        },\n                        \"logo\": {\n                            \"type\": \"string\",\n                            \"contentEncoding\": \"base64\",\n                            \"contentMediaType\": \"image/png\"\n                        },\n                        \"name\": {\n                            \"type\": \"string\",\n                            \"maxLength\": 256,\n                            \"minLength\": 0\n                        },\n                        \"type\": {\n                            \"enum\": [\n                                \"PUBLIC\",\n                                \"PRIVATE\",\n                                \"FOUNDATION\"\n                            ],\n                            \"type\": \"string\"\n                        },\n                        \"address\": {\n                            \"type\": \"string\",\n                            \"maxLength\": 1024,\n                            \"minLength\": 0\n                        },\n                        \"registryId\": {\n                            \"type\": \"string\",\n                            \"maxLength\": 256,\n                            \"minLength\": 0\n                        },\n                        \"countryCode\": {\n                            \"type\": \"string\",\n                            \"maxLength\": 2,\n                            \"minLength\": 2\n                        },\n                        \"registryUrl\": {\n                            \"type\": \"string\",\n                            \"maxLength\": 256,\n                            \"minLength\": 0\n                        }\n                    }\n                }\n            }\n        },\n        \"deposit\": \"10000000\",\n        \"issuer_grantor_validation_validity_period\": 365,\n        \"verifier_grantor_validation_validity_period\": 365,\n        \"issuer_validation_validity_period\": 180,\n        \"verifier_validation_validity_period\": 180,\n        \"holder_validation_validity_period\": 180,\n        \"issuer_perm_management_mode\": 2,\n        \"verifier_perm_management_mode\": 2,\n        \"archived\": null,\n        \"created\": \"2025-07-24T23:35:29.312Z\",\n        \"modified\": \"2025-07-24T23:35:29.312Z\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "getJsonSchema",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseURL}}/verana/cs/v1/js/1",
+							"host": [
+								"{{baseURL}}"
+							],
+							"path": [
+								"verana",
+								"cs",
+								"v1",
+								"js",
+								"1"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "getJsonSchema",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseURL}}/verana/cs/v1/js/1",
+									"host": [
+										"{{baseURL}}"
+									],
+									"path": [
+										"verana",
+										"cs",
+										"v1",
+										"js",
+										"1"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": null,
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "9a368ce6-307f-470a-b9d5-ce31e42f51c9"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Tue, 23 Sep 2025 11:21:35 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "762"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"$id\": \"/vpr/v1/cs/js/1\",\n        \"type\": \"object\",\n        \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n        \"properties\": {\n            \"credentialSubject\": {\n                \"type\": \"object\",\n                \"required\": [\n                    \"id\",\n                    \"name\",\n                    \"logo\",\n                    \"registryId\",\n                    \"registryUrl\",\n                    \"address\",\n                    \"type\",\n                    \"countryCode\"\n                ],\n                \"properties\": {\n                    \"id\": {\n                        \"type\": \"string\",\n                        \"format\": \"uri\"\n                    },\n                    \"logo\": {\n                        \"type\": \"string\",\n                        \"contentEncoding\": \"base64\",\n                        \"contentMediaType\": \"image/png\"\n                    },\n                    \"name\": {\n                        \"type\": \"string\",\n                        \"maxLength\": 256,\n                        \"minLength\": 0\n                    },\n                    \"type\": {\n                        \"enum\": [\n                            \"PUBLIC\",\n                            \"PRIVATE\",\n                            \"FOUNDATION\"\n                        ],\n                        \"type\": \"string\"\n                    },\n                    \"address\": {\n                        \"type\": \"string\",\n                        \"maxLength\": 1024,\n                        \"minLength\": 0\n                    },\n                    \"registryId\": {\n                        \"type\": \"string\",\n                        \"maxLength\": 256,\n                        \"minLength\": 0\n                    },\n                    \"countryCode\": {\n                        \"type\": \"string\",\n                        \"maxLength\": 2,\n                        \"minLength\": 2\n                    },\n                    \"registryUrl\": {\n                        \"type\": \"string\",\n                        \"maxLength\": 256,\n                        \"minLength\": 0\n                    }\n                }\n            }\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "listCredentialSchemas",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseURL}}/verana/cs/v1/list?response_max_size=100&tr_id=5&only_active=false",
+							"host": [
+								"{{baseURL}}"
+							],
+							"path": [
+								"verana",
+								"cs",
+								"v1",
+								"list"
+							],
+							"query": [
+								{
+									"key": "modified_after",
+									"value": "2025-07-24T23:35:29.312Z",
+									"disabled": true
+								},
+								{
+									"key": "response_max_size",
+									"value": "100"
+								},
+								{
+									"key": "verifier_perm_management_mode",
+									"value": "2",
+									"disabled": true
+								},
+								{
+									"key": "issuer_perm_management_mode",
+									"value": "2",
+									"disabled": true
+								},
+								{
+									"key": "tr_id",
+									"value": "5"
+								},
+								{
+									"key": "only_active",
+									"value": "false"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "getHistoryCS",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseURL}}/verana/cs/v1/history/1",
+							"host": [
+								"{{baseURL}}"
+							],
+							"path": [
+								"verana",
+								"cs",
+								"v1",
+								"history",
+								"1"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "getHistoryCS",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseURL}}/verana/cs/v1/history/5",
+									"host": [
+										"{{baseURL}}"
+									],
+									"path": [
+										"verana",
+										"cs",
+										"v1",
+										"history",
+										"5"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": null,
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "3a81c9b1-7469-42ea-8bea-4f1ed4f2bc9e"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Tue, 23 Sep 2025 11:23:33 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "2690"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"id\": 5,\n        \"history\": [\n            {\n                \"id\": 5,\n                \"credential_schema_id\": 5,\n                \"tr_id\": \"5\",\n                \"json_schema\": {\n                    \"$id\": \"/vpr/v1/cs/js/1\",\n                    \"type\": \"object\",\n                    \"$defs\": {},\n                    \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n                    \"required\": [\n                        \"name\"\n                    ],\n                    \"properties\": {\n                        \"name\": {\n                            \"type\": \"string\"\n                        },\n                        \"email\": {\n                            \"type\": \"string\",\n                            \"format\": \"email\"\n                        }\n                    },\n                    \"additionalProperties\": false\n                },\n                \"deposit\": \"10000000\",\n                \"issuer_grantor_validation_validity_period\": 365,\n                \"verifier_grantor_validation_validity_period\": 365,\n                \"issuer_validation_validity_period\": 180,\n                \"verifier_validation_validity_period\": 180,\n                \"holder_validation_validity_period\": 180,\n                \"issuer_perm_management_mode\": 1,\n                \"verifier_perm_management_mode\": 1,\n                \"archived\": null,\n                \"created\": \"2025-07-30T17:33:47.235Z\",\n                \"modified\": \"2025-07-30T17:33:47.235Z\",\n                \"changes\": null,\n                \"action\": \"create\",\n                \"created_at\": \"2025-09-23T11:10:00.237Z\"\n            },\n            {\n                \"id\": 6,\n                \"credential_schema_id\": 5,\n                \"tr_id\": \"5\",\n                \"json_schema\": {\n                    \"$id\": \"/vpr/v1/cs/js/1\",\n                    \"type\": \"object\",\n                    \"$defs\": {},\n                    \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n                    \"required\": [\n                        \"name\"\n                    ],\n                    \"properties\": {\n                        \"name\": {\n                            \"type\": \"string\"\n                        },\n                        \"email\": {\n                            \"type\": \"string\",\n                            \"format\": \"email\"\n                        }\n                    },\n                    \"additionalProperties\": false\n                },\n                \"deposit\": \"10000000\",\n                \"issuer_grantor_validation_validity_period\": 365,\n                \"verifier_grantor_validation_validity_period\": 365,\n                \"issuer_validation_validity_period\": 280,\n                \"verifier_validation_validity_period\": 280,\n                \"holder_validation_validity_period\": 280,\n                \"issuer_perm_management_mode\": 1,\n                \"verifier_perm_management_mode\": 1,\n                \"archived\": null,\n                \"created\": \"2025-07-30T17:33:47.235Z\",\n                \"modified\": \"2025-07-30T17:39:28.219Z\",\n                \"changes\": {\n                    \"modified\": {\n                        \"new\": \"2025-07-30T17:39:28.219Z\",\n                        \"old\": \"2025-07-30T17:33:47.235Z\"\n                    },\n                    \"holder_validation_validity_period\": {\n                        \"new\": 280,\n                        \"old\": 180\n                    },\n                    \"issuer_validation_validity_period\": {\n                        \"new\": 280,\n                        \"old\": 180\n                    },\n                    \"verifier_validation_validity_period\": {\n                        \"new\": 280,\n                        \"old\": 180\n                    }\n                },\n                \"action\": \"update\",\n                \"created_at\": \"2025-09-23T11:10:00.248Z\"\n            },\n            {\n                \"id\": 7,\n                \"credential_schema_id\": 5,\n                \"tr_id\": \"5\",\n                \"json_schema\": {\n                    \"$id\": \"/vpr/v1/cs/js/1\",\n                    \"type\": \"object\",\n                    \"$defs\": {},\n                    \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n                    \"required\": [\n                        \"name\"\n                    ],\n                    \"properties\": {\n                        \"name\": {\n                            \"type\": \"string\"\n                        },\n                        \"email\": {\n                            \"type\": \"string\",\n                            \"format\": \"email\"\n                        }\n                    },\n                    \"additionalProperties\": false\n                },\n                \"deposit\": \"10000000\",\n                \"issuer_grantor_validation_validity_period\": 365,\n                \"verifier_grantor_validation_validity_period\": 365,\n                \"issuer_validation_validity_period\": 280,\n                \"verifier_validation_validity_period\": 280,\n                \"holder_validation_validity_period\": 280,\n                \"issuer_perm_management_mode\": 1,\n                \"verifier_perm_management_mode\": 1,\n                \"archived\": \"2025-07-30T17:40:58.848Z\",\n                \"created\": \"2025-07-30T17:33:47.235Z\",\n                \"modified\": \"2025-07-30T17:40:58.848Z\",\n                \"changes\": {\n                    \"archived\": {\n                        \"new\": \"2025-07-30T17:40:58.848Z\",\n                        \"old\": null\n                    }\n                },\n                \"action\": \"archive\",\n                \"created_at\": \"2025-09-23T11:10:00.260Z\"\n            }\n        ]\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "getParams",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseURL}}/verana/cs/v1/params",
+							"host": [
+								"{{baseURL}}"
+							],
+							"path": [
+								"verana",
+								"cs",
+								"v1",
+								"params"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "getParams",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseURL}}/verana/cs/v1/params",
+									"host": [
+										"{{baseURL}}"
+									],
+									"path": [
+										"verana",
+										"cs",
+										"v1",
+										"params"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "",
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "b4ff710f-f459-4c93-82f2-a1bd782fa692"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Tue, 23 Sep 2025 11:43:07 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "465"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"credential_schema_trust_deposit\": \"10\",\n        \"credential_schema_schema_max_size\": \"8192\",\n        \"credential_schema_holder_validation_validity_period_max_days\": 3650,\n        \"credential_schema_issuer_validation_validity_period_max_days\": 3650,\n        \"credential_schema_verifier_validation_validity_period_max_days\": 3650,\n        \"credential_schema_issuer_grantor_validation_validity_period_max_days\": 3650,\n        \"credential_schema_verifier_grantor_validation_validity_period_max_days\": 3650\n    }\n}"
+						}
+					]
+				}
+			]
+		},
+		{
 			"name": "get result by txs hash",
 			"protocolProfileBehavior": {
 				"disableBodyPruning": true
