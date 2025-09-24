@@ -32,8 +32,7 @@ import { SERVICE } from "../../common";
           "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
           "GET list": `${SERVICE.V1.TrustRegistryDatabaseService.path}.listTrustRegistries`,
           "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
-          "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`
-
+          "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {

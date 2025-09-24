@@ -444,6 +444,8 @@ export default class CrawlTxService extends BullableService {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
+
+
       this.logger.warn('result insert messages:', resultInsertMsgs);
       const DIDfiltered = resultInsertMsgs
         .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
