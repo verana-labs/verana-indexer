@@ -1,6 +1,6 @@
 // tests/trustRegistryDatabaseService.spec.ts
 import { ServiceBroker } from "moleculer";
-import TrustRegistryDatabaseService from "../../../services/crawl_tr/tr_database.service";
+import TrustRegistryDatabaseService from "../../../services/crawl-tr/tr_database.service";
 import { TrustRegistry } from "../../../models/trust_registry";
 import ApiResponder from "../../../common/utils/apiResponse";
 
