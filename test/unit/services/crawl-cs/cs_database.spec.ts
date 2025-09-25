@@ -1,7 +1,7 @@
 import { ServiceBroker } from "moleculer";
-import CredentialSchemaDatabaseService from "../../../../src/services/credentialSchema/credentialSchemaDatabase.service";
-import knex from "../../../../src/common/utils/db_connection";
-import { SERVICE } from "../../../../src/common";
+import CredentialSchemaDatabaseService from "../../../services/crawl-cs/cs_database.service";
+import knex from "../../../common/utils/db_connection";
+import { SERVICE } from "../../../common";
 
 describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   const broker = new ServiceBroker({ logger: false });
@@ -64,25 +64,37 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should archive the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.archive`, {
-      payload: { id: schema.id, archive: true, modified: new Date().toISOString() },
+      payload: {
+        id: schema.id,
+        archive: true,
+        modified: new Date().toISOString(),
+      },
     });
 
     const success = res.data?.success ?? res.success;
     expect(success).toBe(true);
 
-    const dbRow = await knex("credential_schemas").where({ id: schema.id }).first();
+    const dbRow = await knex("credential_schemas")
+      .where({ id: schema.id })
+      .first();
     expect(dbRow.archived).not.toBeNull();
   });
 
   it("should unarchive the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.archive`, {
-      payload: { id: schema.id, archive: false, modified: new Date().toISOString() },
+      payload: {
+        id: schema.id,
+        archive: false,
+        modified: new Date().toISOString(),
+      },
     });
 
     const success = res.data?.success ?? res.success;
     expect(success).toBe(true);
 
-    const dbRow = await knex("credential_schemas").where({ id: schema.id }).first();
+    const dbRow = await knex("credential_schemas")
+      .where({ id: schema.id })
+      .first();
     expect(dbRow.archived).toBeNull();
   });
 
@@ -106,7 +118,9 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   });
 
   it("should fetch JsonSchema of the credential schema", async () => {
-    const res = await broker.call(`${serviceKey}.JsonSchema`, { id: schema.id });
+    const res = await broker.call(`${serviceKey}.JsonSchema`, {
+      id: schema.id,
+    });
     const jsonSchema = res.data || res;
 
     // jsonSchema is an object, so assert keys
@@ -122,12 +136,16 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
       expect(typeof params).toBe("object");
     } catch {
-      console.warn("⚠️ getParams skipped - no credentialschema module params seeded");
+      console.warn(
+        "⚠️ getParams skipped - no credentialschema module params seeded"
+      );
     }
   });
 
   it("should get history records for the schema", async () => {
-    const res = await broker.call(`${serviceKey}.getHistory`, { id: schema.id });
+    const res = await broker.call(`${serviceKey}.getHistory`, {
+      id: schema.id,
+    });
     const history = res.data?.history || res.history;
 
     expect(Array.isArray(history)).toBe(true);
