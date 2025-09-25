@@ -1,7 +1,7 @@
 import { ServiceBroker } from "moleculer";
-import CredentialSchemaDatabaseService from "../../../services/crawl-cs/cs_database.service";
-import knex from "../../../common/utils/db_connection";
-import { SERVICE } from "../../../common";
+import CredentialSchemaDatabaseService from "../../../../src/services/crawl-cs/cs_database.service";
+import knex from "../../../../src/common/utils/db_connection";
+import { SERVICE } from "../../../../src/common";
 describe("CredentialSchemaDatabaseService Tests", () => {
   const broker = new ServiceBroker({ logger: false });
   const serviceKey = SERVICE.V1.CredentialSchemaDatabaseService.path;
