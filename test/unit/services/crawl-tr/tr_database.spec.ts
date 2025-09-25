@@ -1,8 +1,8 @@
 // tests/trustRegistryDatabaseService.spec.ts
 import { ServiceBroker } from "moleculer";
-import TrustRegistryDatabaseService from "../../../services/crawl-tr/tr_database.service";
-import { TrustRegistry } from "../../../models/trust_registry";
-import ApiResponder from "../../../common/utils/apiResponse";
+import TrustRegistryDatabaseService from "../../../../src/services/crawl-tr/tr_database.service";
+import { TrustRegistry } from "../../../../src/models/trust_registry";
+import ApiResponder from "../../../../src/common/utils/apiResponse";
 
 jest.mock("../../../../src/models/trust_registry");
 jest.mock("../../../../src/common/utils/apiResponse");
