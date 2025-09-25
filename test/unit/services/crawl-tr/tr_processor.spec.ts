@@ -1,7 +1,7 @@
 import { ServiceBroker } from "moleculer";
 import { TrustRegistryMessageTypes } from "../../../common";
 import knex from "../../../common/utils/db_connection";
-import TrustRegistryMessageProcessorService from "../../../services/crawl_tr/tr_processor.service";
+import TrustRegistryMessageProcessorService from "../../../services/crawl-tr/tr_processor.service";
 
 describe("TrustRegistryMessageProcessorService Tests", () => {
   const broker = new ServiceBroker({ logger: false });
