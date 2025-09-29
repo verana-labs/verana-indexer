@@ -27,3 +27,6 @@ export * from './ibc_connection';
 export * from './ibc_channel';
 export * from './ibc_message';
 export * from './ibc_ics20';
+export * from "./trust_registry_history";
+export * from "./governance_framework_version_history";
+export * from "./governance_framework_document_history";

@@ -125,11 +125,32 @@ export enum DidMessages {
   RemoveDidLegacy = "/veranablockchain.diddirectory.MsgRemoveDID",
 }
 
+export enum TrustRegistryMessageTypes {
+  Create = "/verana.tr.v1.MsgCreateTrustRegistry",
+  CreateLegacy = "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
+  Update = "/verana.tr.v1.MsgUpdateTrustRegistry",
+  Archive = "/verana.tr.v1.MsgArchiveTrustRegistry",
+  AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
+  IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
+}
+
 export const SERVICE = {
   V1: {
     DidMessageProcessorService: {
       key: "DidMessageProcessorService",
       path: "v1.DidMessageProcessorService",
+    },
+    TrustRegistryMessageProcessorService: {
+      key: "TrustRegistryMessageProcessorService",
+      path: "v1.TrustRegistryMessageProcessorService",
+    },
+    TrustRegistryHistoryService: {
+      key: "TrustRegistryHistoryService",
+      path: "v1.TrustRegistryHistoryService",
+    },
+    TrustRegistryDatabaseService: {
+      key: "TrustRegistryDatabaseService",
+      path: "v1.TrustRegistryDatabaseService",
     },
     GenesisParamsService: {
       key: "GenesisParamsService",

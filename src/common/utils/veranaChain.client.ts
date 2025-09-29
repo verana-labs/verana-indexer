@@ -38,6 +38,10 @@ export const veranaRegistry = [
   ["/verana.td.v1.MsgRepaySlashedTrustDeposit", MsgRepaySlashedTrustDeposit],
   // verana.tr.v1
   ["/verana.tr.v1.MsgCreateTrustRegistry", MsgCreateTrustRegistry],
+  [
+    "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
+    MsgCreateTrustRegistry,
+  ],
   ["/verana.tr.v1.MsgUpdateTrustRegistry", MsgUpdateTrustRegistry],
   ["/verana.tr.v1.MsgArchiveTrustRegistry", MsgArchiveTrustRegistry],
   [
@@ -50,6 +54,10 @@ export const veranaRegistry = [
   ],
   // verana.cs.v1
   ["/verana.cs.v1.MsgCreateCredentialSchema", MsgCreateCredentialSchema],
+  [
+    "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
+    MsgCreateCredentialSchema,
+  ],
   ["/verana.cs.v1.MsgUpdateCredentialSchema", MsgUpdateCredentialSchema],
   ["/verana.cs.v1.MsgArchiveCredentialSchema", MsgArchiveCredentialSchema],
 ];
