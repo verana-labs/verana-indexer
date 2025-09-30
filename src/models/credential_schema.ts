@@ -19,7 +19,7 @@ export default class CredentialSchema extends BaseModel {
   archived!: Date | null;
   created!: Date;
   modified!: Date;
-  isActive!: boolean;
+  is_active!: boolean;
 
   static useTimestamps = false;
 
@@ -52,7 +52,7 @@ export default class CredentialSchema extends BaseModel {
 
         issuer_perm_management_mode: { type: "integer" },
         verifier_perm_management_mode: { type: "integer" },
-        isActive: { type: "boolean" },
+        is_active: { type: "boolean" },
 
         archived: { type: ["string", "null"], format: "date-time" },
         created: { type: "string", format: "date-time" },

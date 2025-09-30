@@ -31,7 +31,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
         properties: { foo: { type: "string" } },
       }),
       deposit: "10000000",
-      isActive: true,
+      is_active: true,
       issuer_grantor_validation_validity_period: 365,
       verifier_grantor_validation_validity_period: 365,
       issuer_validation_validity_period: 180,

@@ -21,4 +21,4 @@
 
 ```
 For details on how DID lifecycle changes are recorded and queried, see the  
-👉 [DID History Service](./did-history.md)
+👉 [DID History Service](./crawl-did-history.md)

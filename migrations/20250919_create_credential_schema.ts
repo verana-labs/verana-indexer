@@ -6,7 +6,7 @@ export async function up(knex: Knex): Promise<void> {
     table.string("tr_id").notNullable();
     table.jsonb("json_schema").notNullable();
     table.string("deposit").notNullable();
-table.boolean("isActive").notNullable().defaultTo(false);
+table.boolean("is_active").notNullable().defaultTo(false);
 
     table.integer("issuer_grantor_validation_validity_period").notNullable();
     table.integer("verifier_grantor_validation_validity_period").notNullable();

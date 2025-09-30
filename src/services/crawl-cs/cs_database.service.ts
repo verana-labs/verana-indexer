@@ -20,7 +20,7 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}) {
     issuer_perm_management_mode: row.issuer_perm_management_mode,
     verifier_perm_management_mode: row.verifier_perm_management_mode,
     archived: row.archived,
-    isActive: row.isActive,
+    is_active: row.is_active,
     created: row.created,
     modified: row.modified,
     changes: null,
@@ -137,7 +137,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       const updates: Record<string, any> = {
         archived: archive ? modified : null,
-        isActive: archive ? true : false, // eslint-disable-line no-unneeded-ternary
+        is_active: archive ? true : false, // eslint-disable-line no-unneeded-ternary
         modified,
       };
 
@@ -149,7 +149,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         mapToHistoryRow(updated, {
           changes: {
             archived: { old: schemaRecord.archived, new: updated.archived },
-            isActive: { old: schemaRecord.isActive, new: updated.isActive },
+            is_active: { old: schemaRecord.is_active, new: updated.is_active },
           },
           action: archive ? "archive" : "unarchive",
           created_at: knex.fn.now(),
@@ -232,9 +232,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       if (onlyActiveBool === true) {
-        query.where("isActive", true);
+        query.where("is_active", true);
       } else if (onlyActiveBool === false) {
-        query.where("isActive", false);
+        query.where("is_active", false);
       }
 
       if (issuerPerm !== undefined) {

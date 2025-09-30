@@ -94,6 +94,6 @@ flowchart TD
 All changes to TR, GFV, and GFD entities are recorded in **history tables** for auditability and traceability.
 You can view the **complete Trust Registry History module** here:
 
-[📖 Trust Registry History Module – Developer Guide](./tr-history.md)
+[📖 Trust Registry History Module – Developer Guide](./crawl-tr-history.md)
 
 This link provides **visual ER diagrams, change tracking flows, and architecture overviews** for historical data.

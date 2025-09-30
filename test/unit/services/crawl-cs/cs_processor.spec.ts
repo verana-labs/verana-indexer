@@ -61,7 +61,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
         },
       }),
       deposit: "10000000",
-      isActive: false,
+      is_active: false,
       issuer_grantor_validation_validity_period: 365,
       verifier_grantor_validation_validity_period: 365,
       issuer_validation_validity_period: 180,
@@ -116,7 +116,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       .first();
     const unarchiveSuccess = dbSchema ?? dbSchema;
 
-    expect(unarchiveSuccess.isActive).toBe(true);
+    expect(unarchiveSuccess.is_active).toBe(true);
   });
   it("should unarchive a credential schema", async () => {
     const unarchiveRes = await broker.call(`${serviceKey}.archive`, {

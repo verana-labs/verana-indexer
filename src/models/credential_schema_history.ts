@@ -20,7 +20,7 @@ export default class CredentialSchemaHistory extends BaseModel {
   deposit!: string;
 
   archived!: Date | null;
-  isActive!: boolean;
+  is_active!: boolean;
   created!: Date;
   modified!: Date;
 
@@ -57,7 +57,7 @@ export default class CredentialSchemaHistory extends BaseModel {
         modified: { type: "string", format: "date-time" },
 
         changes: { type: ["object", "null"] },
-        isActive: { type: "boolean" },
+        is_active: { type: "boolean" },
         action: { type: "string" },
         created_at: { type: "string", format: "date-time" },
       },

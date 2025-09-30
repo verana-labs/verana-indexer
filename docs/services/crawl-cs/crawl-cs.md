@@ -73,7 +73,7 @@ sequenceDiagram
 | `issuer_perm_management_mode`                 | int            | Issuer permission mode             |
 | `verifier_perm_management_mode`               | int            | Verifier permission mode           |
 | `archived`                                    | timestamp/null | Archive flag (null = active)       |
-| `isActive`                                    | boolean        | Schema is active or not            |
+| `is_active`                                    | boolean        | Schema is active or not            |
 | `created`                                     | timestamp      | Created timestamp                  |
 | `modified`                                    | timestamp      | Modified timestamp                 |
 
@@ -90,7 +90,7 @@ Keeps **full history of changes** to schemas.
 | `json_schema`          | jsonb          | JSON schema snapshot                       |
 | `deposit`              | string         | Deposit at time of change                  |
 | `archived`             | timestamp/null | Archived state at time of change           |
-| `isActive`             | boolean        | Active state at time of change             |
+| `is_active`             | boolean        | Active state at time of change             |
 | `action`               | enum           | `create`, `update`, `archive`, `unarchive` |
 | `changes`              | jsonb          | Field-level diffs                          |
 | `created_at`           | timestamp      | When the change was recorded               |

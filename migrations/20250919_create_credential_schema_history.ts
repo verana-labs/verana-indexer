@@ -24,7 +24,7 @@ export async function up(knex: Knex): Promise<void> {
     table.integer("verifier_perm_management_mode").notNullable();
 
     table.timestamp("archived").nullable();
-table.boolean("isActive").notNullable().defaultTo(false);
+table.boolean("is_active").notNullable().defaultTo(false);
     table.timestamp("created").notNullable();
     table.timestamp("modified").notNullable();
 
