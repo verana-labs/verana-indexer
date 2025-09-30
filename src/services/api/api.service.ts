@@ -1,10 +1,28 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { ServiceBroker } from "moleculer";
+import { IncomingMessage, ServerResponse } from "http";
+import { Context, ServiceBroker } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
-import ApiGateway from "moleculer-web";
+import ApiGateway, { Route } from "moleculer-web";
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
+import knex from "../../common/utils/db_connection";
+
+async function attachHeaders(res: ServerResponse) {
+  try {
+    const checkpoint = await knex("block_checkpoint")
+      .where("job_name", "crawl:block").first();
+
+    if (checkpoint) {
+      res.setHeader("X-Index-Ts", checkpoint.updated_at?.toISOString?.() ?? checkpoint.updated_at);
+      res.setHeader("X-Height", checkpoint.height.toString());
+    }
+  } catch (err) {
+    console.log(err)
+  }
+
+  res.setHeader("X-Query-At", new Date().toISOString());
+}
 
 @Service({
   name: "api",
@@ -25,6 +43,16 @@ import { SERVICE } from "../../common";
           json: true,
           urlencoded: { extended: true },
         },
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
+        },
       },
       {
         path: "/verana/cs/v1",
@@ -40,6 +68,16 @@ import { SERVICE } from "../../common";
           json: true,
           urlencoded: { extended: true },
         },
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
+        },
       },
       {
         path: "/verana/tr/v1",
@@ -53,6 +91,16 @@ import { SERVICE } from "../../common";
         bodyParsers: {
           json: true,
           urlencoded: { extended: true },
+        },
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
         },
       },
     ],
