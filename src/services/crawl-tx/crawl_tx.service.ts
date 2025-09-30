@@ -16,6 +16,7 @@ import config from '../../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
+  CredentialSchemaMessageType,
   DidMessages,
   getHttpBatchClient,
   getLcdClient,
@@ -444,10 +445,14 @@ export default class CrawlTxService extends BullableService {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
-
-
       this.logger.warn('result insert messages:', resultInsertMsgs);
-      const DIDfiltered = resultInsertMsgs
+
+      const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return parentTx?.code === 0;
+      });
+      
+      const DIDfiltered = successfulMsgs
         .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
         .map((msg: any) => {
           const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
@@ -465,14 +470,14 @@ export default class CrawlTxService extends BullableService {
       if (DIDfiltered?.length) {
         await this.broker.call(
           `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
-          {
-            messages: DIDfiltered,
-          }
+          { messages: DIDfiltered },
         );
       }
 
-      const trustRegistryList = resultInsertMsgs
-        .filter((msg: any) => Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes))
+      const trustRegistryList = successfulMsgs
+        .filter((msg: any) =>
+          Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes)
+        )
         .map((msg: any) => {
           const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
           return {
@@ -487,10 +492,30 @@ export default class CrawlTxService extends BullableService {
       if (trustRegistryList?.length) {
         await this.broker.call(
           `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
-          { trustRegistryList });
+          { trustRegistryList },
+        );
+      }
+
+      const credentialSchemaMessages = successfulMsgs
+        .filter((msg: any) =>
+          Object.values(CredentialSchemaMessageType).includes(msg.type as CredentialSchemaMessageType)
+        )
+        .map((msg: any) => {
+          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+          return {
+            type: msg.type,
+            content: msg.content ?? null,
+            timestamp: parentTx?.timestamp ?? null,
+          };
+        });
+
+      if (credentialSchemaMessages?.length) {
+        await this.broker.call(
+          `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
+          { credentialSchemaMessages },
+        );
       }
     }
-
   }
 
   private checkMappingEventToLog(tx: any) {
@@ -502,9 +527,9 @@ export default class CrawlTxService extends BullableService {
       log.events.forEach((event: any) => {
         event.attributes?.forEach((attr: any) => {
           if (attr.value === undefined) {
-            flattenLog.push(`${index}-${event.type}-${attr.key}-null`);
+            flattenLog.push(`${index} - ${event.type} - ${attr.key} - null`);
           } else {
-            flattenLog.push(`${index}-${event.type}-${attr.key}-${attr.value}`);
+            flattenLog.push(`${index} - ${event.type} - ${attr.key} - ${attr.value}`);
           }
         });
       });
@@ -520,7 +545,7 @@ export default class CrawlTxService extends BullableService {
             ? this._registry.decodeAttribute(attr.value)
             : null;
           flattenEventEncoded.push(
-            `${event.msg_index}-${event.type}-${key}-${value}`
+            `${event.msg_index} - ${event.type} - ${key} - ${value}`
           );
         }
       });

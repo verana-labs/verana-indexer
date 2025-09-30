@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
-import ApiGateway from "moleculer-web";
 import OpenApiMixin from "moleculer-auto-openapi";
+import ApiGateway from "moleculer-web";
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 
@@ -19,6 +19,21 @@ import { SERVICE } from "../../common";
           "GET list": `${SERVICE.V1.DidDatabaseService.path}.getDidList`,
           "GET history/:did": `${SERVICE.V1.DidHistoryService.path}.getByDid`,
           "GET params": `${SERVICE.V1.DidDatabaseService.path}.getDidParams`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
+        },
+      },
+      {
+        path: "/verana/cs/v1",
+        aliases: {
+          "GET get/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
+          "GET history/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
+          "GET js/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.JsonSchema`,
+          "GET list": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
+          "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {

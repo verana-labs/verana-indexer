@@ -134,6 +134,13 @@ export enum TrustRegistryMessageTypes {
   IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }
 
+export enum CredentialSchemaMessageType {
+  Create = "/verana.cs.v1.MsgCreateCredentialSchema",
+  CreateLegacy = "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
+  Update = "/verana.cs.v1.MsgUpdateCredentialSchema",
+  Archive = "/verana.cs.v1.MsgArchiveCredentialSchema",
+}
+
 export const SERVICE = {
   V1: {
     DidMessageProcessorService: {
@@ -163,6 +170,14 @@ export const SERVICE = {
     DidDatabaseService: {
       key: "DidDatabaseService",
       path: "v1.DidDatabaseService",
+    },
+    CredentialSchemaDatabaseService: {
+      key: "CredentialSchemaDatabaseService",
+      path: "v1.CredentialSchemaDatabaseService",
+    },
+    ProcessCredentialSchemaService: {
+      key: "ProcessCredentialSchemaService",
+      path: "v1.ProcessCredentialSchemaService",
     },
     CrawlAccountService: {
       key: "CrawlAccountService",

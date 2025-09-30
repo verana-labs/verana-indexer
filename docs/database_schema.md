@@ -315,15 +315,88 @@
 | denom       |                                      |
 | processed   | marked this feegrant is done or not  |
 
-### dids
+### `dids`
 
-| Column     | Description                                                                 |
-| ---------- | --------------------------------------------------------------------------- |
-| id         | Table's identity (primary key)                                              |
-| height     | Block height when the DID record was created or last updated                |
-| did        | Decentralized Identifier (DID) string                                       |
-| controller | Controller of the DID                                                       |
-| created    | Creation date/time of the DID record                                        |
-| modified   | Last modification date/time of the DID record                               |
-| exp        | Expiration date/time of the DID                                              |
-| deposit    | Deposit amount associated with the DID                                      |
+| Column       | Description                                                             |
+| ------------ | ----------------------------------------------------------------------- |
+| `id`         | Primary key of the record                                               |
+| `height`     | Block height when the DID record was created or last updated            |
+| `did`        | Decentralized Identifier (DID) string (must be unique)                  |
+| `controller` | Controller of the DID                                                   |
+| `created`    | Creation date/time of the DID record                                    |
+| `modified`   | Last modification date/time of the DID record                           |
+| `exp`        | Expiration date/time of the DID                                         |
+| `deposit`    | Deposit amount associated with the DID                                  |
+| `event_type` | Event type that triggered the DID change (e.g., create, update, revoke) |
+| `years`      | Number of years the DID is valid (if applicable)                        |
+| `is_deleted` | Whether the DID has been marked as deleted                              |
+| `deleted_at` | Date/time when the DID was marked as deleted (if applicable)            |
+
+### `trust_registry`
+
+| Column           | Description                                                                 |
+| ---------------- | --------------------------------------------------------------------------- |
+| `id`             | Primary key of the trust registry record                                    |
+| `did`            | Decentralized Identifier (DID) string associated with the trust registry    |
+| `controller`     | Controller of the trust registry                                            |
+| `created`        | Creation date/time of the trust registry record                             |
+| `modified`       | Last modification date/time of the trust registry record                    |
+| `archived`       | Date/time when the trust registry was archived (nullable, if ever archived) |
+| `deposit`        | Deposit amount associated with the trust registry                           |
+| `aka`            | Alternative name or alias for the trust registry (if provided)              |
+| `language`       | Default language of the trust registry                                      |
+| `active_version` | ID of the currently active governance framework version (if applicable)     |
+
+**Relations**
+
+- One `trust_registry` → Many `governance_framework_version`
+
+### `governance_framework_version`
+
+| Column         | Description                                                            |
+| -------------- | ---------------------------------------------------------------------- |
+| `id`           | Primary key of the governance framework version record                 |
+| `tr_id`        | Foreign key → `trust_registry.id` (links to the parent trust registry) |
+| `created`      | Creation date/time of the governance framework version                 |
+| `active_since` | Date/time when this version became active                              |
+| `version`      | Version number of the governance framework                             |
+
+**Relations**
+
+- One `governance_framework_version` → Many `governance_framework_document`
+- Many `governance_framework_version` → One `trust_registry`
+
+### `governance_framework_document`
+
+| Column       | Description                                                               |
+| ------------ | ------------------------------------------------------------------------- |
+| `id`         | Primary key of the governance framework document                          |
+| `gfv_id`     | Foreign key → `governance_framework_version.id` (links to the version)    |
+| `created`    | Creation date/time of the governance framework document                   |
+| `language`   | Language of the governance framework document                             |
+| `url`        | URL pointing to the governance framework document                         |
+| `digest_sri` | Subresource Integrity (SRI) digest for verifying the document’s integrity |
+
+**Relations**
+
+- Many `governance_framework_document` → One `governance_framework_version`
+
+## `credential_schemas`
+
+| Column                                        | Description                                                            |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| `id`                                          | Primary key of the credential schema record                            |
+| `tr_id`                                       | Foreign key → `trust_registry.id` (links schema to its trust registry) |
+| `json_schema`                                 | JSON schema definition for the credential                              |
+| `issuer_grantor_validation_validity_period`   | Validity period (in blocks/days/units) for issuer-grantor validation   |
+| `verifier_grantor_validation_validity_period` | Validity period for verifier-grantor validation                        |
+| `issuer_validation_validity_period`           | Validity period for issuer validation                                  |
+| `verifier_validation_validity_period`         | Validity period for verifier validation                                |
+| `holder_validation_validity_period`           | Validity period for holder validation                                  |
+| `issuer_perm_management_mode`                 | Permission management mode for issuers                                 |
+| `verifier_perm_management_mode`               | Permission management mode for verifiers                               |
+| `deposit`                                     | Deposit amount associated with the schema                              |
+| `is_active`                                   | Boolean flag indicating if the schema is active                        |
+| `archived`                                    | Date/time when the schema was archived (nullable)                      |
+| `created`                                     | Creation date/time of the schema record                                |
+| `modified`                                    | Last modification date/time of the schema record                       |
