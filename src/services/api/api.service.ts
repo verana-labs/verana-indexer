@@ -11,14 +11,18 @@ import knex from "../../common/utils/db_connection";
 async function attachHeaders(res: ServerResponse) {
   try {
     const checkpoint = await knex("block_checkpoint")
-      .where("job_name", "crawl:block").first();
+      .where("job_name", "crawl:block")
+      .first();
 
     if (checkpoint) {
-      res.setHeader("X-Index-Ts", checkpoint.updated_at?.toISOString?.() ?? checkpoint.updated_at);
+      res.setHeader(
+        "X-Index-Ts",
+        checkpoint.updated_at?.toISOString?.() ?? checkpoint.updated_at
+      );
       res.setHeader("X-Height", checkpoint.height.toString());
     }
   } catch (err) {
-    console.log(err)
+    console.log(err);
   }
 
   res.setHeader("X-Query-At", new Date().toISOString());
@@ -77,6 +81,21 @@ async function attachHeaders(res: ServerResponse) {
         ) {
           await attachHeaders(res);
           return data;
+        },
+      },
+      {
+        path: "/verana/cs/v1",
+        aliases: {
+          "GET get/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
+          "GET history/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
+          "GET js/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.JsonSchema`,
+          "GET list": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
+          "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
         },
       },
       {
