@@ -2,6 +2,19 @@ version: "2.4"
 
 services:
   # PostgreSQL
+  aurad:
+    container_name: aurad_erascope
+    image: auranw/local-aurad:dev_v0.7.0-3
+    ports:
+      - "1317:1317"
+      - "26656:26656"
+      - "26657:26657"
+      - "9090:9090"
+    networks:
+      - dev_network
+    # depends_on:
+    #   - psql
+
   psql:
     build: ./docker/psql/
     container_name: psql_erascope
@@ -36,24 +49,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  # Hasura
-  graphql-engine:
-    image: hasura/graphql-engine:v2.12.1
-    container_name: hasura
-    depends_on:
-      psql:
-        condition: service_healthy
-    ports:
-      - "8888:8080"
-    environment:
-      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@psql:5432/hasura
-      HASURA_GRAPHQL_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@psql:5432/${POSTGRES_DB}
-      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
-      HASURA_GRAPHQL_DEV_MODE: "true"
-      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup, http-log, webhook-log, websocket-log, query-log
-    networks:
-      - dev_network
 
 networks:
   dev_network:

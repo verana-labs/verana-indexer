@@ -43,12 +43,10 @@ subgraph "Verana Indexer"
 
   subgraph "Other Services"
     redis["Redis"]
-    hasura["Hasura"]
   end
 
   api-gateway --> database
-  api-gateway --> hasura
-  hasura --> database
+
 
   Services --> redis
   Services --> database
@@ -113,39 +111,15 @@ cp .env.example .env
 # then open .env and fill in the required values
 ```
 
-### 3) Start infrastructure (PostgreSQL, Redis, Hasura)
+### 3) Start infrastructure (PostgreSQL, Redis)
 
 ```bash
 pnpm run docker
 ```
 
-This will start the PostgreSQL, Redis, and Hasura containers in the background.
+This will start the PostgreSQL, Redis containers in the background.
 
 > **Note:** Make sure the required ports aren’t already in use on your machine.
-
-### Hasura metadata migration
-
-Read [link](https://hasura.io/docs/latest/hasura-cli/install-hasura-cli/) to install Hasura CLI for your operating system. To make update to hasura metadata programmatically, use sample code below:
-
-```
-# init hasura directory
-hasura init hasura
-
-# create file env hasura
-cp .env.hasura.sample hasura/.env
-
-# go to hasura directory
-cd hasura
-
-# export current metadata from hasura
-hasura metadata export
-
-# check current diff between local and hasura server
-hasura metadata diff
-
-# apply current hasura metadata to server
-hasura metadata apply
-```
 
 ## Configuration
 
@@ -159,6 +133,5 @@ Setting up Verana Indexer for a new chain is straight-forward:
 
 - Add the chain to the `network.json` file
 - Configure the crawling jobs and chain information in the `config.json` file
-- Add the chain to the Hasura metadata (see [Hasura](#hasura) section). For more information about Hasura and how to use Hasura CLI, see the [Hasura documentation](https://hasura.io/docs/latest/graphql/core/index.html). You can remove other chains from the metadata if you don't need them.
 - If the chain has custom messages, you may need to add a new message decoder (see [Message Decoders](#message-decoders) section).
 - Start crawling your chain :fireworks:
