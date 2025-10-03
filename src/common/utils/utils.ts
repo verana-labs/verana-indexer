@@ -232,3 +232,15 @@ export default class Utils {
     }
   }
 }
+
+export function mapPermissionType(input: string): string {
+  switch (input) {
+    case "PERMISSION_TYPE_ISSUER": return "ISSUER";
+    case "PERMISSION_TYPE_VERIFIER": return "VERIFIER";
+    case "PERMISSION_TYPE_ECOSYSTEM": return "ECOSYSTEM";
+    case "PERMISSION_TYPE_HOLDER": return "HOLDER";
+    case "PERMISSION_TYPE_ISSUER_GRANTOR": return "ISSUER_GRANTOR";
+    case "PERMISSION_TYPE_VERIFIER_GRANTOR": return "VERIFIER_GRANTOR";
+    default: return "UNSPECIFIED";
+  }
+}

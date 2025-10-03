@@ -1,0 +1,184 @@
+syntax = "proto3";
+package verana.perm.v1;
+
+import "params.proto";
+import "types.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/verana-labs/verana-blockchain/x/permission/types";
+
+// Msg defines the Msg service.
+service Msg {
+
+  // UpdateParams defines a (governance) operation for updating the module
+  // parameters. The authority defaults to the x/gov module account.
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc StartPermissionVP(MsgStartPermissionVP) returns (MsgStartPermissionVPResponse);
+  rpc RenewPermissionVP(MsgRenewPermissionVP) returns (MsgRenewPermissionVPResponse);
+  rpc SetPermissionVPToValidated(MsgSetPermissionVPToValidated) returns (MsgSetPermissionVPToValidatedResponse);
+  rpc RequestPermissionVPTermination(MsgRequestPermissionVPTermination) returns (MsgRequestPermissionVPTerminationResponse);
+  rpc ConfirmPermissionVPTermination(MsgConfirmPermissionVPTermination) returns (MsgConfirmPermissionVPTerminationResponse);
+  rpc CancelPermissionVPLastRequest(MsgCancelPermissionVPLastRequest) returns (MsgCancelPermissionVPLastRequestResponse);
+  rpc CreateRootPermission(MsgCreateRootPermission) returns (MsgCreateRootPermissionResponse);
+  rpc ExtendPermission(MsgExtendPermission) returns (MsgExtendPermissionResponse);
+  rpc RevokePermission(MsgRevokePermission) returns (MsgRevokePermissionResponse);
+  rpc CreateOrUpdatePermissionSession(MsgCreateOrUpdatePermissionSession) returns (MsgCreateOrUpdatePermissionSessionResponse);
+  rpc SlashPermissionTrustDeposit(MsgSlashPermissionTrustDeposit) returns (MsgSlashPermissionTrustDepositResponse);
+  rpc RepayPermissionSlashedTrustDeposit(MsgRepayPermissionSlashedTrustDeposit) returns (MsgRepayPermissionSlashedTrustDepositResponse);
+  rpc CreatePermission(MsgCreatePermission) returns (MsgCreatePermissionResponse);
+}
+
+// MsgUpdateParams is the Msg/UpdateParams request type.
+message MsgUpdateParams {
+  
+
+  // authority is the address that controls the module (defaults to x/gov unless overwritten).
+  string authority = 1;
+
+  // params defines the module parameters to update.
+  //
+  // NOTE: All parameters must be supplied.
+  Params params = 2;
+}
+
+// MsgUpdateParamsResponse defines the response structure for executing a
+// MsgUpdateParams message.
+message MsgUpdateParamsResponse {}
+
+// MsgStartPermissionVP represents a message to start a permission validation process
+message MsgStartPermissionVP {
+  string creator = 1;
+  uint32 type = 2;
+  uint64 validator_perm_id = 3;
+  string country = 4;
+  string did = 5; // optional
+}
+
+// MsgStartPermissionVPResponse defines the Msg/StartPermissionVP response type
+message MsgStartPermissionVPResponse {
+  uint64 permission_id = 1;
+}
+
+// MsgRenewPermissionVP represents a message to renew a permission validation process
+message MsgRenewPermissionVP {
+  
+
+  string creator = 1;
+  uint64 id = 2;  // ID of the permission to renew
+}
+
+// MsgRenewPermissionVPResponse defines the Msg/RenewPermissionVP response type
+message MsgRenewPermissionVPResponse {}
+
+// MsgSetPermissionVPToValidated represents a message to set a permission validation process to validated state
+message MsgSetPermissionVPToValidated {
+  string creator = 1;
+  uint64 id = 2;
+  google.protobuf.Timestamp effective_until = 3;
+  uint64 validation_fees = 4;
+  uint64 issuance_fees = 5;
+  uint64 verification_fees = 6;
+  string country = 7;
+  string vp_summary_digest_sri = 8;
+}
+
+// MsgSetPermissionVPToValidatedResponse defines the Msg/SetPermissionVPToValidated response type
+message MsgSetPermissionVPToValidatedResponse {}
+
+// MsgRequestPermissionVPTermination represents a message to request termination of a permission validation process
+message MsgRequestPermissionVPTermination {
+  string creator = 1;
+  uint64 id = 2;  // id of the validation process
+}
+
+// MsgRequestPermissionVPTerminationResponse defines the Msg/RequestPermissionVPTermination response type
+message MsgRequestPermissionVPTerminationResponse {}
+
+
+message MsgConfirmPermissionVPTermination {
+  string creator = 1;
+  uint64 id = 2;  // Permission ID
+}
+
+message MsgConfirmPermissionVPTerminationResponse {}
+
+message MsgCancelPermissionVPLastRequest {
+  string creator = 1;
+  uint64 id = 2;  // Permission ID
+}
+
+message MsgCancelPermissionVPLastRequestResponse {}
+
+message MsgCreateRootPermission {
+  string creator = 1;
+  uint64 schema_id = 2;
+  string did = 3;
+  string country = 4;
+  google.protobuf.Timestamp effective_from = 5;
+  google.protobuf.Timestamp effective_until = 6;
+  uint64 validation_fees = 7;
+  uint64 issuance_fees = 8;
+  uint64 verification_fees = 9;
+}
+
+message MsgCreateRootPermissionResponse {
+  uint64 id = 1;  // ID of the created permission
+}
+
+message MsgExtendPermission {
+  string creator = 1;
+  uint64 id = 2;  // Permission ID
+  google.protobuf.Timestamp effective_until = 3;
+}
+
+message MsgExtendPermissionResponse {}
+
+message MsgRevokePermission {
+  string creator = 1;
+  uint64 id = 2;  // Permission ID
+}
+
+message MsgRevokePermissionResponse {}
+
+message MsgCreateOrUpdatePermissionSession {
+  string creator = 1;
+  string id = 2; // UUID
+  uint64 issuer_perm_id = 3;
+  uint64 verifier_perm_id = 4;
+  uint64 agent_perm_id = 5;
+  uint64 wallet_agent_perm_id = 6;
+}
+
+message MsgCreateOrUpdatePermissionSessionResponse {
+  string id = 1;
+}
+
+message MsgSlashPermissionTrustDeposit {
+  string creator = 1;
+  uint64 id = 2;
+  uint64 amount = 3;
+}
+
+message MsgSlashPermissionTrustDepositResponse {}
+
+message MsgRepayPermissionSlashedTrustDeposit {
+  string creator = 1;
+  uint64 id = 2;
+}
+
+message MsgRepayPermissionSlashedTrustDepositResponse {}
+
+message MsgCreatePermission {
+  string creator = 1;
+  uint64 schema_id = 2;
+  PermissionType type = 3;
+  string did = 4;
+  string country = 5;
+  google.protobuf.Timestamp effective_from = 6;
+  google.protobuf.Timestamp effective_until = 7;
+  uint64 verification_fees = 8;
+}
+
+message MsgCreatePermissionResponse {
+  uint64 id = 1;
+}
