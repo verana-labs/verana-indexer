@@ -20,6 +20,7 @@ import {
   DidMessages,
   getHttpBatchClient,
   getLcdClient,
+  PermissionMessageTypes,
   SERVICE,
   TrustRegistryMessageTypes
 } from '../../common';
@@ -445,6 +446,7 @@ export default class CrawlTxService extends BullableService {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
+
       this.logger.warn('result insert messages:', resultInsertMsgs);
 
       const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
@@ -513,6 +515,24 @@ export default class CrawlTxService extends BullableService {
         await this.broker.call(
           `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
           { credentialSchemaMessages },
+        );
+      }
+
+      const permissionMessages = successfulMsgs
+        .filter((msg: any) => Object.values(PermissionMessageTypes).includes(msg.type))
+        .map((msg: any) => {
+          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+          return {
+            type: msg.type,
+            content: msg.content ?? null,
+            timestamp: parentTx?.timestamp ?? null,
+          };
+        });
+
+      if (permissionMessages?.length) {
+        await this.broker.call(
+          `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
+          { permissionMessages },
         );
       }
     }

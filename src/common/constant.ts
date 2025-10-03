@@ -141,6 +141,23 @@ export enum CredentialSchemaMessageType {
   Archive = "/verana.cs.v1.MsgArchiveCredentialSchema",
 }
 
+export enum PermissionMessageTypes {
+  UpdateParams = "/verana.perm.v1.MsgUpdateParams",
+  StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
+  RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
+  SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
+  RequestPermissionVPTermination = "/verana.perm.v1.MsgRequestPermissionVPTermination",
+  ConfirmPermissionVPTermination = "/verana.perm.v1.MsgConfirmPermissionVPTermination",
+  CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
+  CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
+  ExtendPermission = "/verana.perm.v1.MsgExtendPermission",
+  RevokePermission = "/verana.perm.v1.MsgRevokePermission",
+  CreateOrUpdatePermissionSession = "/verana.perm.v1.MsgCreateOrUpdatePermissionSession",
+  SlashPermissionTrustDeposit = "/verana.perm.v1.MsgSlashPermissionTrustDeposit",
+  RepayPermissionSlashedTrustDeposit = "/verana.perm.v1.MsgRepayPermissionSlashedTrustDeposit",
+  CreatePermission = "/verana.perm.v1.MsgCreatePermission",
+}
+
 export const SERVICE = {
   V1: {
     DidMessageProcessorService: {
@@ -163,6 +180,10 @@ export const SERVICE = {
       key: "GenesisParamsService",
       path: "v1.GenesisParamsService",
     },
+    PermissionProcessService: {
+      key: "PermissionProcessService",
+      path: "v1.PermissionProcessService",
+    },
     DidHistoryService: {
       key: "DidHistoryService",
       path: "v1.DidHistoryService",
@@ -178,6 +199,10 @@ export const SERVICE = {
     ProcessCredentialSchemaService: {
       key: "ProcessCredentialSchemaService",
       path: "v1.ProcessCredentialSchemaService",
+    },
+    PermProcessorService: {
+      key: "PermProcessorService",
+      path: "v1.PermProcessorService",
     },
     CrawlAccountService: {
       key: "CrawlAccountService",

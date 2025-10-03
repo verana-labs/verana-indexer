@@ -122,6 +122,18 @@ async function attachHeaders(res: ServerResponse) {
           return data;
         },
       },
+      {
+        path: "/verana/perm/v1",
+        aliases: {
+          "GET get/:schema_id/:grantee/:type": `${SERVICE.V1.PermProcessorService.path}.getPermission`,
+          "GET list": `${SERVICE.V1.PermProcessorService.path}.listPermissions`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
+        },
+      },
     ],
     openapi: {
       info: {

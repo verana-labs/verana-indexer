@@ -1,0 +1,10 @@
+syntax = "proto3";
+package verana.perm.v1;
+
+
+option go_package = "github.com/verana-labs/verana-blockchain/x/permission/types";
+
+// Params defines the parameters for the module.
+message Params {
+  uint64 validation_term_requested_timeout_days = 1;
+}
