@@ -1,7 +1,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { SERVICE } from "../../common";
+import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params"; 
@@ -172,7 +172,7 @@ export default class DidDatabaseService extends BullableService {
     @Action({ rest: "GET params" })
     public async getDidParams(ctx: Context) {
         try {
-            const module = await ModuleParams.query().findOne({ module: "diddirectory" });
+            const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.DD });
 
             if (!module || !module.params) {
                 return ApiResponder.error(ctx, "Module parameters not found: diddirectory", 404);

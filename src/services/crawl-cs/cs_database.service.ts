@@ -1,7 +1,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { SERVICE } from "../../common";
+import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
@@ -282,7 +282,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action()
   public async getParams(ctx: Context) {
     try {
-      const module = await ModuleParams.query().findOne({ module: "credentialschema" });
+      const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.CS });
 
       if (!module || !module.params) {
         return ApiResponder.error(ctx, "Module parameters not found: credentialschema", 404);

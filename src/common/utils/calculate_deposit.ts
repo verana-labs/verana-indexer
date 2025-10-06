@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import ModuleParams from "../../models/modules_params";
+import { ModulesParamsNamesTypes } from "../constant";
 
 export async function calculateDidDeposit(years: number = 1): Promise<number> {
   if (years < 1 || years > 31) {
@@ -12,7 +13,7 @@ export async function calculateDidDeposit(years: number = 1): Promise<number> {
 
   try {
     // --- 1. Try fetching from DB ---
-    const didModule = await ModuleParams.query().findOne({ module: "diddirectory" });
+    const didModule = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.DD });
     if (didModule?.params) {
       const parsed = typeof didModule.params === "string" ? JSON.parse(didModule.params) : didModule.params;
       if (parsed?.params?.did_directory_trust_deposit != null) {
@@ -20,7 +21,7 @@ export async function calculateDidDeposit(years: number = 1): Promise<number> {
       }
     }
 
-    const trustModule = await ModuleParams.query().findOne({ module: "trustregistry" });
+    const trustModule = await ModuleParams.query().findOne({ module: "tr" });
     if (trustModule?.params) {
       const parsed = typeof trustModule.params === "string" ? JSON.parse(trustModule.params) : trustModule.params;
       if (parsed?.params?.trust_unit_price != null) {

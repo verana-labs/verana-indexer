@@ -140,6 +140,22 @@ export enum CredentialSchemaMessageType {
   Update = "/verana.cs.v1.MsgUpdateCredentialSchema",
   Archive = "/verana.cs.v1.MsgArchiveCredentialSchema",
 }
+export enum ModulesParamsNamesTypes {
+  AUTH = "auth",
+  BANK = "bank",
+  CS = "cs",
+  DD = "dd",
+  DISTRIBUTION = "distribution",
+  GOV = "gov",
+  MINT = "mint",
+  PERM = "perm",
+  PROTOCOLPOOL = "protocolpool",
+  SLASHING = "slashing",
+  STAKING = "staking",
+  TD = "td",
+  TR = "tr",
+  TRANSFER = "transfer",
+}
 
 export enum PermissionMessageTypes {
   UpdateParams = "/verana.perm.v1.MsgUpdateParams",

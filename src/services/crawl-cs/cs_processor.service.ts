@@ -1,7 +1,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { CredentialSchemaMessageType, SERVICE } from "../../common";
+import { CredentialSchemaMessageType, ModulesParamsNamesTypes, SERVICE } from "../../common";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 
@@ -27,8 +27,8 @@ interface CredentialSchemaMessage {
 
 
 async function calculateDeposit(): Promise<number> {
-  const csParamsRow = await knex("module_params").where({ module: "credentialschema" }).first();
-  const trParamsRow = await knex("module_params").where({ module: "trustregistry" }).first();
+  const csParamsRow = await knex("module_params").where({ module: ModulesParamsNamesTypes?.CS }).first();
+  const trParamsRow = await knex("module_params").where({ module: ModulesParamsNamesTypes?.TR }).first();
 
   if (!csParamsRow || !trParamsRow) {
     return 0;
