@@ -1,4 +1,4 @@
-.import { Model } from 'objection';
+import { Model } from 'objection';
 import BaseModel from './base';
 import type _CredentialSchema from './credential_schema';
 import type _PermissionSession from './permission_session';

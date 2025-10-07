@@ -186,13 +186,26 @@ export default class PermIngestService extends Service {
       modified: msg?.timestamp ? formatTimestamp(msg.timestamp) : null,
       created: msg?.timestamp ? formatTimestamp(msg.timestamp) : null,
     });
-    // process.exit();
   }
   private async handleExtendPermission(msg: MsgExtendPermission) {
     try {
       if (!msg.id || !msg.effective_until) {
         this.logger.warn("Missing mandatory parameter: id or effective_until");
         return { success: false, reason: "Missing mandatory parameter" };
+      }
+
+      const idNum = Number(msg.id);
+      if (!Number.isInteger(idNum) || idNum <= 0) {
+        this.logger.warn(`Invalid id: ${msg.id}. Must be a valid uint64.`);
+        return { success: false, reason: "Invalid permission ID" };
+      }
+
+      const newEffectiveUntil = new Date(msg.effective_until);
+      if (Number.isNaN(newEffectiveUntil.getTime())) {
+        this.logger.warn(
+          `Invalid effective_until timestamp: ${msg.effective_until}`
+        );
+        return { success: false, reason: "Invalid effective_until timestamp" };
       }
 
       const applicantPerm = await knex("permissions")
@@ -203,7 +216,6 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not found" };
       }
 
-      const newEffectiveUntil = new Date(msg.effective_until);
       const currentEffectiveUntil = applicantPerm.effective_until
         ? new Date(applicantPerm.effective_until)
         : null;
@@ -218,18 +230,18 @@ export default class PermIngestService extends Service {
         };
       }
 
-      let validatorPerm = null;
+      const caller = msg.creator;
 
-      if (!applicantPerm.validator_perm_id) {
-        if (
-          applicantPerm.type === "ECOSYSTEM" &&
-          msg.creator !== applicantPerm.grantee
-        ) {
+      if (
+        !applicantPerm.validator_perm_id &&
+        applicantPerm.type === "ECOSYSTEM"
+      ) {
+        if (caller !== applicantPerm.grantee) {
           this.logger.warn("Only grantee can extend ECOSYSTEM permission");
           return { success: false, reason: "Unauthorized caller" };
         }
-      } else {
-        validatorPerm = await knex("permissions")
+      } else if (applicantPerm.validator_perm_id) {
+        const validatorPerm = await knex("permissions")
           .where({ id: applicantPerm.validator_perm_id })
           .first();
 
@@ -240,38 +252,21 @@ export default class PermIngestService extends Service {
           return { success: false, reason: "Validator permission not found" };
         }
 
-        if (applicantPerm.type === "VP_MANAGED") {
-          const vpExp = applicantPerm.vp_exp
-            ? new Date(applicantPerm.vp_exp)
-            : null;
-          if (vpExp && newEffectiveUntil > vpExp) {
-            this.logger.warn(
-              `effective_until ${newEffectiveUntil.toISOString()} exceeds VP expiration ${vpExp.toISOString()}`
-            );
-            return {
-              success: false,
-              reason: "effective_until exceeds VP expiration",
-            };
-          }
-
-          if (msg.creator !== validatorPerm.grantee) {
-            this.logger.warn(
-              "Only validator grantee can extend VP-managed permission"
-            );
-            return { success: false, reason: "Unauthorized caller" };
-          }
-        } else {
-          if (validatorPerm.type !== "ECOSYSTEM") {
-            this.logger.warn(
-              "Validator permission for self-created permission must be ECOSYSTEM"
-            );
-            return { success: false, reason: "Invalid validator permission" };
-          }
-          if (msg.creator !== applicantPerm.grantee) {
-            this.logger.warn("Only grantee can extend self-created permission");
-            return { success: false, reason: "Unauthorized caller" };
-          }
+        if (validatorPerm.type !== "ECOSYSTEM") {
+          this.logger.warn("Validator permission must be of type ECOSYSTEM");
+          return {
+            success: false,
+            reason: "Invalid validator permission type",
+          };
         }
+
+        if (caller !== applicantPerm.grantee) {
+          this.logger.warn("Only grantee can extend self-created permission");
+          return { success: false, reason: "Unauthorized caller" };
+        }
+      } else {
+        this.logger.warn("Invalid permission structure");
+        return { success: false, reason: "Invalid permission structure" };
       }
 
       const now = formatTimestamp(msg.timestamp);
@@ -279,20 +274,21 @@ export default class PermIngestService extends Service {
         await trx("permissions").where({ id: msg.id }).update({
           effective_until: newEffectiveUntil.toISOString(),
           extended: now,
-          extended_by: msg.creator,
           modified: now,
+          extended_by: caller,
         });
       });
 
       this.logger.info(
-        `Permission ${
+        `✅ Permission ${
           msg.id
-        } successfully extended to ${newEffectiveUntil.toISOString()}`
+        } extended until ${newEffectiveUntil.toISOString()} by ${caller}`
       );
+
       return { success: true };
     } catch (err) {
-      this.logger.error("Error in handleExtendPermission:", err);
-      return { success: false, reason: "DB error" };
+      this.logger.error("❌ Error in handleExtendPermission:", err);
+      return { success: false, reason: "Internal server error" };
     }
   }
 
@@ -370,7 +366,6 @@ export default class PermIngestService extends Service {
     } catch (err) {
       this.logger.error("Error in handleRevokePermission:", err);
       return { success: false, reason: "DB error" };
-      // process.exit()
     }
   }
 
@@ -507,102 +502,116 @@ export default class PermIngestService extends Service {
     return vpExp.toISOString();
   }
 
-  private async handleSetPermissionVPToValidated(
-    msg: MsgSetPermissionVPToValidated
-  ) {
-    try {
-      const now = formatTimestamp(msg.timestamp);
+ private async handleSetPermissionVPToValidated(
+  msg: MsgSetPermissionVPToValidated
+) {
+  try {
+    const now = formatTimestamp(msg.timestamp);
 
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-      if (!perm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
-      }
-
-      if (perm.vp_state !== "PENDING") {
-        this.logger.warn(`Permission ${msg.id} is not PENDING`);
-        return { success: false, reason: "Permission not pending" };
-      }
-
-      const isFirstValidation = !perm.effective_from;
-
-      if (msg.country && msg.country.length !== 2) {
-        this.logger.warn(`Invalid country code: ${msg.country}`);
-        return { success: false, reason: "Invalid country code" };
-      }
-
-      if (
-        msg.validation_fees < 0 ||
-        msg.issuance_fees < 0 ||
-        msg.verification_fees < 0
-      ) {
-        this.logger.warn(`Fees must be >= 0`);
-        return { success: false, reason: "Invalid fees" };
-      }
-
-      const vpExp = await this.computeVpExp(perm, knex);
-
-      const effectiveUntil =
-        msg.effective_until ?? perm.effective_until ?? vpExp ?? null;
-
-      if (
-        effectiveUntil &&
-        vpExp &&
-        new Date(effectiveUntil) > new Date(vpExp)
-      ) {
-        this.logger.warn(
-          `effective_until ${effectiveUntil} exceeds vp_exp ${vpExp}`
-        );
-        return { success: false, reason: "effective_until exceeds vp_exp" };
-      }
-
-      const entry: any = {
-        vp_state: "VALIDATED",
-        vp_last_state_change: now,
-        vp_current_fees: "0",
-        vp_current_deposit: "0",
-        vp_summary_digest_sri:
-          msg.vp_summary_digest_sri ?? perm.vp_summary_digest_sri ?? null,
-        vp_exp: vpExp,
-        effective_until: effectiveUntil,
-        modified: now,
-      };
-
-      if (isFirstValidation) {
-        entry.validation_fees = msg.validation_fees ?? "0";
-        entry.issuance_fees = msg.issuance_fees ?? "0";
-        entry.verification_fees = msg.verification_fees ?? "0";
-        entry.country = msg.country ?? null;
-        entry.effective_from = now;
-      } else {
-        const feesChanged =
-          (msg.validation_fees &&
-            msg.validation_fees !== perm.validation_fees) ||
-          (msg.issuance_fees && msg.issuance_fees !== perm.issuance_fees) ||
-          (msg.verification_fees &&
-            msg.verification_fees !== perm.verification_fees);
-
-        const countryChanged = msg.country && msg.country !== perm.country;
-
-        if (feesChanged || countryChanged) {
-          this.logger.warn("Cannot change fees or country during renewal");
-          return {
-            success: false,
-            reason: "Cannot change fees/country on renewal",
-          };
-        }
-      }
-
-      await knex("permissions").where({ id: msg.id }).update(entry);
-
-      this.logger.info(`Permission ${msg.id} successfully validated`);
-      return { success: true };
-    } catch (err) {
-      this.logger.error("Error in handleSetPermissionVPToValidated:", err);
-      // process.exit();
-      return { success: false, reason: "DB error" };
+    const perm = await knex("permissions").where({ id: msg.id }).first();
+    if (!perm) {
+      this.logger.warn(`Permission ${msg.id} not found`);
+      return { success: false, reason: "Permission not found" };
     }
+
+    if (perm.vp_state !== "PENDING") {
+      this.logger.warn(`Permission ${msg.id} is not PENDING`);
+      return { success: false, reason: "Permission not pending" };
+    }
+
+    const isFirstValidation = !perm.effective_from;
+
+    if (msg.country && msg.country.length !== 2) {
+      this.logger.warn(`Invalid country code: ${msg.country}`);
+      return { success: false, reason: "Invalid country code" };
+    }
+
+    if (
+      msg.validation_fees < 0 ||
+      msg.issuance_fees < 0 ||
+      msg.verification_fees < 0
+    ) {
+      this.logger.warn(`Fees must be >= 0`);
+      return { success: false, reason: "Invalid fees" };
+    }
+
+    const vpExp = await this.computeVpExp(perm, knex);
+
+    const effectiveUntil =
+      msg.effective_until ?? perm.effective_until ?? vpExp ?? null;
+
+    if (
+      effectiveUntil &&
+      vpExp &&
+      new Date(effectiveUntil) > new Date(vpExp)
+    ) {
+      this.logger.warn(
+        `effective_until ${effectiveUntil} exceeds vp_exp ${vpExp}`
+      );
+      return { success: false, reason: "effective_until exceeds vp_exp" };
+    }
+
+    const vpValidatorDeposit = isFirstValidation 
+      ? perm.vp_current_deposit 
+      : perm.vp_validator_deposit;
+
+    const entry: any = {
+      vp_state: "VALIDATED",
+      vp_last_state_change: now,
+      vp_current_fees: "0",
+      vp_current_deposit: "0",
+      vp_validator_deposit: vpValidatorDeposit, 
+      vp_summary_digest_sri:
+        msg.vp_summary_digest_sri ?? perm.vp_summary_digest_sri ?? null,
+      vp_exp: vpExp,
+      effective_until: effectiveUntil,
+      modified: now,
+    };
+
+    if (isFirstValidation) {
+      entry.validation_fees = msg.validation_fees ?? "0";
+      entry.issuance_fees = msg.issuance_fees ?? "0";
+      entry.verification_fees = msg.verification_fees ?? "0";
+      entry.country = msg.country ?? null;
+      entry.effective_from = now;
+      
+
+      this.logger.info(
+        `Setting initial vp_validator_deposit: ${vpValidatorDeposit} for permission ${msg.id}`
+      );
+    } else {
+      const feesChanged =
+        (msg.validation_fees &&
+          msg.validation_fees !== perm.validation_fees) ||
+        (msg.issuance_fees && msg.issuance_fees !== perm.issuance_fees) ||
+        (msg.verification_fees &&
+          msg.verification_fees !== perm.verification_fees);
+
+      const countryChanged = msg.country && msg.country !== perm.country;
+
+      if (feesChanged || countryChanged) {
+        this.logger.warn("Cannot change fees or country during renewal");
+        return {
+          success: false,
+          reason: "Cannot change fees/country on renewal",
+        };
+      }
+      
+      
+      this.logger.info(
+        `Preserving existing vp_validator_deposit: ${vpValidatorDeposit} for permission ${msg.id} renewal`
+      );
+    }
+
+    await knex("permissions").where({ id: msg.id }).update(entry);
+
+    this.logger.info(`Permission ${msg.id} successfully validated`);
+    return { success: true };
+  } catch (err) {
+    this.logger.error("Error in handleSetPermissionVPToValidated:", err);
+    return { success: false, reason: "DB error" };
   }
+}
 
   private async handleRenewPermissionVP(msg: MsgRenewPermissionVP) {
     try {
@@ -683,162 +692,270 @@ export default class PermIngestService extends Service {
     }
   }
 
-  private async handleCancelPermissionVPLastRequest(
-    msg: MsgCancelPermissionVPLastRequest
-  ) {
-    try {
-      const now = formatTimestamp(msg.timestamp);
+ private async handleCancelPermissionVPLastRequest(
+  msg: MsgCancelPermissionVPLastRequest
+) {
+  try {
+    const now = formatTimestamp(msg.timestamp);
 
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-      if (!perm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
+    const perm = await knex("permissions").where({ id: msg.id }).first();
+    if (!perm) {
+      this.logger.warn(`Permission ${msg.id} not found`);
+      return { success: false, reason: "Permission not found" };
+    }
+
+    if (perm.vp_state !== "PENDING") {
+      this.logger.warn(`Permission ${msg.id} is not PENDING`);
+      return { success: false, reason: "Permission not pending" };
+    }
+
+    if (msg.creator && perm.grantee && msg.creator !== perm.grantee) {
+      this.logger.warn(`Creator ${msg.creator} is not permission grantee`);
+      return { success: false, reason: "Creator is not grantee" };
+    }
+
+    const newVpState = perm.vp_exp ? "VALIDATED" : "TERMINATED";
+    
+    const vpValidatorDeposit = newVpState === "TERMINATED" ? "0" : perm.vp_validator_deposit;
+
+    await knex("permissions").where({ id: msg.id }).update({
+      vp_state: newVpState,
+      vp_last_state_change: now,
+      vp_current_fees: "0",
+      vp_current_deposit: "0",
+      vp_validator_deposit: vpValidatorDeposit, 
+      modified: now,
+    });
+
+    this.logger.info(
+      `Permission ${msg.id} validation cancelled. New state: ${newVpState}`
+    );
+
+    return { success: true };
+  } catch (err) {
+    this.logger.error("Error in handleCancelPermissionVPLastRequest:", err);
+    return { success: false, reason: "DB error" };
+  }
+}
+
+ private async handleSlashPermissionTrustDeposit(msg: MsgSlashPermissionTrustDeposit) {
+  try {
+    if (!msg.id || msg.amount == null) {
+      this.logger.warn("Missing mandatory parameter: id or amount");
+      return { success: false, reason: "Missing mandatory parameter" };
+    }
+
+    const idNum = Number(msg.id);
+    if (!Number.isInteger(idNum) || idNum <= 0) {
+      this.logger.warn(`Invalid id: ${msg.id}. Must be uint64`);
+      return { success: false, reason: "Invalid permission ID" };
+    }
+
+    const amountNum = Number(msg.amount);
+    if (Number.isNaN(amountNum) || amountNum <= 0) {
+      this.logger.warn(`Invalid amount: ${msg.amount}`);
+      return { success: false, reason: "Invalid amount" };
+    }
+
+    const perm = await knex("permissions").where({ id: msg.id }).first();
+    if (!perm) {
+      this.logger.warn(`Permission ${msg.id} not found`);
+      return { success: false, reason: "Permission not found" };
+    }
+
+    const deposit = Number(perm.deposit || 0);
+    if (amountNum > deposit) {
+      this.logger.warn(`Slash amount ${amountNum} exceeds deposit ${deposit}`);
+      return { success: false, reason: "Amount exceeds deposit" };
+    }
+
+    let isAuthorized = false;
+    const caller = msg.creator;
+
+    let validatorPerm = perm;
+    while (validatorPerm && validatorPerm.validator_perm_id) {
+      validatorPerm = await knex("permissions")
+        .where({ id: validatorPerm.validator_perm_id })
+        .first();
+      if (validatorPerm && validatorPerm.grantee === caller) {
+        isAuthorized = true;
+        break;
       }
+    }
 
-      if (perm.vp_state !== "PENDING") {
-        this.logger.warn(`Permission ${msg.id} is not PENDING`);
-        return { success: false, reason: "Permission not pending" };
+    if (!isAuthorized && perm.schema_id) {
+      const schema = await knex("credential_schemas")
+        .where({ id: perm.schema_id })
+        .first();
+      if (schema && schema.tr_id) {
+        const tr = await knex("trust_registry")
+          .where({ id: schema.tr_id })
+          .first();
+        if (tr && tr.controller === caller) {
+          isAuthorized = true;
+        }
       }
+    }
 
-      if (msg.creator && perm.grantee && msg.creator !== perm.grantee) {
-        this.logger.warn(`Creator ${msg.creator} is not permission grantee`);
-        return { success: false, reason: "Creator is not grantee" };
-      }
-      const newVpState = perm.vp_exp ? "VALIDATED" : "TERMINATED";
-      const refundFees = Number(perm.vp_current_fees) > 0;
-      const refundDeposit = Number(perm.vp_current_deposit) > 0;
+    if (!isAuthorized) {
+      this.logger.warn("Unauthorized caller for slash operation");
+      return { success: false, reason: "Unauthorized caller" };
+    }
 
-      if (refundFees) {
-        this.logger.info(
-          `Refunding ${perm.vp_current_fees} from escrow to ${perm.grantee}`
-        );
-      }
+    const now = formatTimestamp(msg.timestamp);
+    const prevSlashed = Number(perm.slashed_deposit || 0);
 
-      if (refundDeposit) {
-        this.logger.info(
-          `Reducing trust deposit by ${perm.vp_current_deposit} for ${perm.grantee}`
-        );
-      }
-
-      await knex("permissions").where({ id: msg.id }).update({
-        vp_state: newVpState,
-        vp_last_state_change: now,
-        vp_current_fees: "0",
-        vp_current_deposit: "0",
+    await knex.transaction(async (trx) => {
+      await trx("permissions").where({ id: msg.id }).update({
+        slashed: now,
+        slashed_by: caller,
+        slashed_deposit: String(prevSlashed + amountNum),
         modified: now,
       });
+    });
 
-      this.logger.info(
-        `Permission ${msg.id} validation cancelled. New state: ${newVpState}`
+    this.logger.info(
+      `✅ Permission ${msg.id} slashed by ${caller} amount ${amountNum}`
+    );
+
+    return { success: true };
+  } catch (err) {
+    this.logger.error("❌ Error in handleSlashPermissionTrustDeposit:", err);
+      return { success: false, reason: "Internal server error" };
+  }
+}
+
+
+ private async handleRepayPermissionSlashedTrustDeposit(
+  msg: MsgRepayPermissionSlashedTrustDeposit
+) {
+  try {
+    if (!msg.id) {
+      this.logger.warn("Missing mandatory parameter: id");
+      return { success: false, reason: "Missing mandatory parameter" };
+    }
+
+    const idNum = Number(msg.id);
+    if (!Number.isInteger(idNum) || idNum <= 0) {
+      this.logger.warn(`Invalid id: ${msg.id}. Must be a valid uint64.`);
+      return { success: false, reason: "Invalid permission ID" };
+    }
+
+    const perm = await knex("permissions").where({ id: msg.id }).first();
+    if (!perm) {
+      this.logger.warn(`Permission ${msg.id} not found`);
+      return { success: false, reason: "Permission not found" };
+    }
+
+    const slashedDeposit = Number(perm.slashed_deposit || 0);
+    if (slashedDeposit <= 0) {
+      this.logger.warn(
+        `Permission ${msg.id} has no slashed deposit to repay`
       );
-
-      return { success: true };
-    } catch (err) {
-      this.logger.error("Error in handleCancelPermissionVPLastRequest:", err);
-      return { success: false, reason: "DB error" };
-      // process.exit();
+      return { success: false, reason: "No slashed deposit to repay" };
     }
-  }
 
-  private async handleSlashPermissionTrustDeposit(
-    msg: MsgSlashPermissionTrustDeposit
-  ) {
-    try {
-      const now = formatTimestamp(msg.timestamp);
-      const perm = await knex("permissions").where({ id: msg.id }).first();
+    const now = formatTimestamp(msg.timestamp);
 
-      if (!perm) {
-        this.logger.warn(
-          `Permission ${msg.id} not found, skipping slash update`
-        );
-        return { success: false, reason: "Permission not found" };
-      }
-
-      const prev = perm.slashed_deposit ? Number(perm.slashed_deposit) : 0;
-
-      await knex("permissions")
-        .where({ id: msg.id })
-        .update({
-          slashed: now,
-          slashed_by: msg.creator,
-          slashed_deposit: String(prev + (msg.amount || 0)),
-          modified: now,
-        });
-
-      return { success: true };
-    } catch (err) {
-      this.logger.error("Error in handleSlashPermissionTrustDeposit:", err);
-      return { success: false, reason: "DB error" };
-    }
-  }
-
-  private async handleRepayPermissionSlashedTrustDeposit(
-    msg: MsgRepayPermissionSlashedTrustDeposit
-  ) {
-    try {
-      const now = formatTimestamp(msg.timestamp);
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-
-      if (!perm) {
-        this.logger.warn(`Permission ${msg.id} not found, skipping repay`);
-        return { success: false, reason: "Permission not found" };
-      }
-
-      await knex("permissions").where({ id: msg.id }).update({
+    await knex.transaction(async (trx) => {
+      await trx("permissions").where({ id: msg.id }).update({
         repaid: now,
         repaid_by: msg.creator,
+        repaid_deposit: slashedDeposit,
         modified: now,
       });
+    });
 
-      return { success: true };
-    } catch (err) {
-      this.logger.error(
-        "Error in handleRepayPermissionSlashedTrustDeposit:",
-        err
-      );
-      return { success: false, reason: "DB error" };
-    }
+    this.logger.info(
+      `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${msg.creator}`
+    );
+
+    return { success: true };
+  } catch (err) {
+    this.logger.error(
+      "❌ Error in handleRepayPermissionSlashedTrustDeposit:",
+      err
+    );
+    return { success: false, reason: "DB error" };
   }
+}
 
-  // ---------- PERMISSION SESSION ----------
 
-  private async handleCreateOrUpdatePermissionSession(
-    msg: MsgCreateOrUpdatePermissionSession
-  ) {
-    try {
-      const now = formatTimestamp(msg.timestamp);
-      const exists = await knex("permission_sessions")
-        .where({ id: msg.id })
-        .first();
 
-      const authzEntry = {
-        issuer_perm_id: msg.issuer_perm_id || null,
-        verifier_perm_id: msg.validator_perm_id || null,
-      } as any;
+private async handleCreateOrUpdatePermissionSession(
+  msg: MsgCreateOrUpdatePermissionSession
+) {
+  const trx = await knex.transaction();
+  try {
+    const now = formatTimestamp(msg.timestamp);
 
-      if (!exists) {
-        await knex("permission_sessions").insert({
-          id: msg.id,
-          controller: msg.creator,
-          agent_perm_id: msg.agent_perm_id,
-          wallet_agent_perm_id: msg.wallet_agent_perm_id,
-          authz: JSON.stringify([authzEntry]),
-          created: now,
-          modified: now,
-        });
-      } else {
-        await knex("permission_sessions")
-          .where({ id: msg.id })
-          .update({
-            authz: JSON.stringify([...(exists.authz as any[]), authzEntry]),
-            modified: now,
-          });
+    if (!msg.id || !msg.agent_perm_id || !msg.wallet_agent_perm_id) {
+      throw new Error("Missing mandatory parameters");
+    }
+    if (!msg.issuer_perm_id && !msg.verifier_perm_id) {
+      throw new Error("At least one of issuer_perm_id or verifier_perm_id must be provided");
+    }
+
+    const [agentPerm, walletAgentPerm, issuerPerm, verifierPerm] = await Promise.all([
+      knex("permissions").where({ id: msg.agent_perm_id }).first(),
+      knex("permissions").where({ id: msg.wallet_agent_perm_id }).first(),
+      msg.issuer_perm_id ? knex("permissions").where({ id: msg.issuer_perm_id }).first() : null,
+      msg.verifier_perm_id ? knex("permissions").where({ id: msg.verifier_perm_id }).first() : null,
+    ]);
+
+    if (!agentPerm || !walletAgentPerm) {
+      throw new Error("Agent or Wallet Agent permission not found");
+    }
+
+    if (msg.issuer_perm_id && issuerPerm?.type !== "ISSUER") {
+      throw new Error("Invalid issuer permission type");
+    }
+    if (msg.verifier_perm_id && verifierPerm?.type !== "VERIFIER") {
+      throw new Error("Invalid verifier permission type");
+    }
+
+    const existing = await trx("permission_sessions").where({ id: msg.id }).first();
+    const authzEntry = {
+      issuer_perm_id: msg.issuer_perm_id || null,
+      verifier_perm_id: msg.verifier_perm_id || null,
+      wallet_agent_perm_id: msg.wallet_agent_perm_id,
+    };
+
+    if (!existing) {
+      await trx("permission_sessions").insert({
+        id: msg.id,
+        controller: msg.creator,
+        agent_perm_id: msg.agent_perm_id,
+        wallet_agent_perm_id: msg.wallet_agent_perm_id,
+        authz: JSON.stringify([authzEntry]),
+        created: now,
+        modified: now,
+      });
+    } else {
+      let existingAuthz: any[] = [];
+      try {
+        existingAuthz = JSON.parse(existing.authz || "[]");
+      } catch {
+        existingAuthz = [];
       }
 
-      return { success: true };
-    } catch (err) {
-      this.logger.error("Error in handleCreateOrUpdatePermissionSession:", err);
-      return { success: false, reason: "DB error" };
+      existingAuthz.push(authzEntry);
+
+      await trx("permission_sessions")
+        .where({ id: msg.id })
+        .update({
+          authz: JSON.stringify(existingAuthz),
+          modified: now,
+        });
     }
+
+    await trx.commit();
+    return { success: true };
+  } catch (err) {
+    await trx.rollback();
+    this.logger.error("Error in handleCreateOrUpdatePermissionSession:", err);
+    return { success: false, reason: err || "DB error" };
   }
+}
+
 }

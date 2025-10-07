@@ -95,18 +95,6 @@ export default class PermProcessorService extends BullableService {
             { data: payload }
           );
           break;
-        case PermissionMessageTypes.RequestPermissionVPTermination:
-          await this.broker.call(
-            "permIngest.handleMsgRequestPermissionVPTermination",
-            { data: payload }
-          );
-          break;
-        case PermissionMessageTypes.ConfirmPermissionVPTermination:
-          await this.broker.call(
-            "permIngest.handleMsgConfirmPermissionVPTermination",
-            { data: payload }
-          );
-          break;
         default:
           break;
       }

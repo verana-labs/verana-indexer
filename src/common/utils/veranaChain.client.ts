@@ -32,12 +32,9 @@ export const veranaRegistry = [
     ["/verana.cs.v1.MsgUpdateCredentialSchema", MsgUpdateCredentialSchema],
     ["/verana.cs.v1.MsgArchiveCredentialSchema", MsgArchiveCredentialSchema],
     // verana.perm.v1
-    ["/verana.perm.v1.MsgUpdateParams", MsgUpdateParamsPerm],
     ["/verana.perm.v1.MsgStartPermissionVP", MsgStartPermissionVP],
     ["/verana.perm.v1.MsgRenewPermissionVP", MsgRenewPermissionVP],
     ["/verana.perm.v1.MsgSetPermissionVPToValidated", MsgSetPermissionVPToValidated],
-    ["/verana.perm.v1.MsgRequestPermissionVPTermination", MsgRequestPermissionVPTermination],
-    ["/verana.perm.v1.MsgConfirmPermissionVPTermination", MsgConfirmPermissionVPTermination],
     ["/verana.perm.v1.MsgCancelPermissionVPLastRequest", MsgCancelPermissionVPLastRequest],
     ["/verana.perm.v1.MsgCreateRootPermission", MsgCreateRootPermission],
     ["/verana.perm.v1.MsgExtendPermission", MsgExtendPermission],

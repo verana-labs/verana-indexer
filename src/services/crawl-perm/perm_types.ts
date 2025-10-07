@@ -100,6 +100,7 @@ export interface MsgCreateOrUpdatePermissionSession {
   id: string;
   issuer_perm_id: number;
   validator_perm_id: number;
+  verifier_perm_id: number;
   agent_perm_id: number;
   wallet_agent_perm_id: number;
 }

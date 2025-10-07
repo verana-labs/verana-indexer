@@ -125,8 +125,8 @@ async function attachHeaders(res: ServerResponse) {
       {
         path: "/verana/perm/v1",
         aliases: {
-          "GET get/:schema_id/:grantee/:type": `${SERVICE.V1.PermProcessorService.path}.getPermission`,
-          "GET list": `${SERVICE.V1.PermProcessorService.path}.listPermissions`,
+          "GET get/:schema_id/:grantee/:type": `${SERVICE.V1.PermAPIService.path}.getPermission`,
+          "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {

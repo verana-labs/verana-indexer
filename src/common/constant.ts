@@ -158,20 +158,17 @@ export enum ModulesParamsNamesTypes {
 }
 
 export enum PermissionMessageTypes {
-  UpdateParams = "/verana.perm.v1.MsgUpdateParams",
+  CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
+  CreatePermission = "/verana.perm.v1.MsgCreatePermission",
   StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
   RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
-  SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
-  RequestPermissionVPTermination = "/verana.perm.v1.MsgRequestPermissionVPTermination",
-  ConfirmPermissionVPTermination = "/verana.perm.v1.MsgConfirmPermissionVPTermination",
-  CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
-  CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
-  ExtendPermission = "/verana.perm.v1.MsgExtendPermission",
   RevokePermission = "/verana.perm.v1.MsgRevokePermission",
+  ExtendPermission = "/verana.perm.v1.MsgExtendPermission",
+  SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
   CreateOrUpdatePermissionSession = "/verana.perm.v1.MsgCreateOrUpdatePermissionSession",
   SlashPermissionTrustDeposit = "/verana.perm.v1.MsgSlashPermissionTrustDeposit",
   RepayPermissionSlashedTrustDeposit = "/verana.perm.v1.MsgRepayPermissionSlashedTrustDeposit",
-  CreatePermission = "/verana.perm.v1.MsgCreatePermission",
+  CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
 }
 
 export const SERVICE = {
@@ -199,6 +196,10 @@ export const SERVICE = {
     PermissionProcessService: {
       key: "PermissionProcessService",
       path: "v1.PermissionProcessService",
+    },
+    PermAPIService: {
+      key: "PermAPIService",
+      path: "v1.PermAPIService",
     },
     DidHistoryService: {
       key: "DidHistoryService",
