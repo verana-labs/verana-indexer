@@ -123,16 +123,6 @@ async function attachHeaders(res: ServerResponse) {
         },
       },
     ],
-    openapi: {
-      info: {
-        title: "Verana DID API",
-        version: "1.0.0",
-        description: "Auto-generated OpenAPI docs for Verana DID APIs",
-      },
-      servers: [
-        { url: "http://localhost:3000/verana/dd/v1", description: "Local Dev" },
-      ],
-    },
   },
 })
 export default class ApiService extends BaseService {
