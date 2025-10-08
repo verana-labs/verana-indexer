@@ -26,7 +26,6 @@ export default class PermProcessorService extends BullableService {
     }>
   ) {
     const { permissionMessages } = ctx.params;
-    console.log(permissionMessages, "customLogs");
     for (const msg of permissionMessages) {
       const payload = {
         ...msg.content,

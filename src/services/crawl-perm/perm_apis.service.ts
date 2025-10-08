@@ -1,4 +1,7 @@
-import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
+import {
+  Action,
+  Service,
+} from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { SERVICE } from "../../common";
@@ -40,14 +43,12 @@ export default class PermAPIService extends BullableService {
   async listPermissions(ctx: Context<any>) {
     try {
       const p = ctx.params;
+      const now = new Date().toISOString();
+      const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
 
-      // Convert string booleans to actual booleans
       const onlyValid = p.only_valid === "true" || p.only_valid === true;
       const onlySlashed = p.only_slashed === "true" || p.only_slashed === true;
       const onlyRepaid = p.only_repaid === "true" || p.only_repaid === true;
-
-      const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
-      const now = new Date().toISOString();
 
       const query = knex("permissions").select("*");
 
@@ -58,30 +59,42 @@ export default class PermAPIService extends BullableService {
       if (p.type) query.where("type", p.type);
       if (p.country) query.where("country", p.country);
       if (p.vp_state) query.where("vp_state", p.vp_state);
+
       if (p.modified_after) {
         const ts = new Date(p.modified_after);
-        if (!Number.isNaN(ts.getTime())) query.where("modified", ">", ts.toISOString());
+        if (!Number.isNaN(ts.getTime()))
+          query.where("modified", ">", ts.toISOString());
       }
       if (p.when) {
         const whenTs = new Date(p.when);
-        if (!Number.isNaN(whenTs.getTime())) query.where("modified", "<=", whenTs.toISOString());
+        if (!Number.isNaN(whenTs.getTime()))
+          query.where("modified", "<=", whenTs.toISOString());
       }
 
-      // Boolean filters with logic
       if (onlyValid) {
         query.where((qb) => {
           qb.whereNull("revoked")
             .andWhere((q) => q.whereNull("slashed").orWhereNotNull("repaid"))
-            .andWhere((q) => q.whereNull("effective_until").orWhere("effective_until", ">", now))
-            .andWhere((q) => q.whereNull("effective_from").orWhere("effective_from", "<=", now));
+            .andWhere((q) =>
+              q
+                .whereNull("effective_until")
+                .orWhere("effective_until", ">", now)
+            )
+            .andWhere((q) =>
+              q.whereNull("effective_from").orWhere("effective_from", "<=", now)
+            );
         });
       }
 
-      if (onlySlashed) query.whereNotNull("slashed");
-      if (onlySlashed === false) query.whereNull("slashed");
+      if (p.only_slashed !== undefined) {
+        if (onlySlashed) query.whereNotNull("slashed");
+        else query.whereNull("slashed");
+      }
 
-      if (onlyRepaid) query.whereNotNull("repaid");
-      if (onlyRepaid === false) query.whereNull("repaid");
+      if (p.only_repaid !== undefined) {
+        if (onlyRepaid) query.whereNotNull("repaid");
+        else query.whereNull("repaid");
+      }
 
       const results = await query.orderBy("modified", "asc").limit(limit);
       return ApiResponder.success(ctx, results, 200);
@@ -91,16 +104,13 @@ export default class PermAPIService extends BullableService {
     }
   }
 
-  /**
-   * Get Permission by ID [MOD-PERM-QRY-2]
-   */
   @Action({
     rest: "GET get/:id",
     params: {
-      id: { type: "string", pattern: /^[0-9]+$/ }, // uint64 check
+      id: { type: "string", pattern: /^[0-9]+$/ },
     },
   })
-  async getPermissionById(ctx: Context<{ id: string }>) {
+  async getPermission(ctx: Context<{ id: string }>) {
     try {
       const id = ctx.params.id;
       const permission = await knex("permissions").where("id", id).first();
@@ -109,8 +119,121 @@ export default class PermAPIService extends BullableService {
       }
       return ApiResponder.success(ctx, permission, 200);
     } catch (err: any) {
-      this.logger.error("Error in getPermissionById:", err);
+      this.logger.error("Error in getPermission:", err);
       return ApiResponder.error(ctx, "Failed to get permission", 500);
+    }
+  }
+
+  @Action({
+    rest: "GET beneficiaries",
+    params: {
+      issuer_perm_id: { type: "number", integer: true, optional: true },
+      verifier_perm_id: { type: "number", integer: true, optional: true },
+    },
+  })
+  async findBeneficiaries(
+    ctx: Context<{ issuer_perm_id?: number; verifier_perm_id?: number }>
+  ) {
+    const { issuer_perm_id: issuerPermId, verifier_perm_id: verifierPermId } =
+      ctx.params;
+
+    if (!issuerPermId && !verifierPermId) {
+      return ApiResponder.error(
+        ctx,
+        "issuer_perm_id or verifier_perm_id must be set",
+        400
+      );
+    }
+
+    const foundPermSet = new Set<any>();
+
+    const loadPerm = async (permId: number) => {
+      const perm = await knex("permissions").where("id", permId).first();
+      if (!perm) throw new Error(`Permission ${permId} not found`);
+      return perm;
+    };
+
+    const addAncestors = async (perm: any) => {
+      let currentPerm = perm;
+      while (currentPerm.validator_perm_id) {
+        const parent = await loadPerm(currentPerm.validator_perm_id);
+        if (!parent.revoked && !parent.slashed) {
+          foundPermSet.add(parent);
+        }
+        currentPerm = parent;
+      }
+    };
+
+    try {
+      if (issuerPermId) {
+        const issuerPerm = await loadPerm(issuerPermId);
+        if (!verifierPermId) {
+          await addAncestors(issuerPerm);
+        }
+      }
+
+      if (verifierPermId) {
+        const verifierPerm = await loadPerm(verifierPermId);
+        if (issuerPermId) {
+          const issuerPerm = await loadPerm(issuerPermId);
+          foundPermSet.add(issuerPerm);
+        }
+        await addAncestors(verifierPerm);
+      }
+
+      return ApiResponder.success(ctx, Array.from(foundPermSet), 200);
+    } catch (err: any) {
+      this.logger.error("Error in findBeneficiaries:", err);
+      return ApiResponder.error(ctx, "Failed to find beneficiaries", 500);
+    }
+  }
+
+  @Action({
+    rest: "GET permission-session/:id",
+    params: {
+      id: { type: "string", pattern: /^[0-9a-fA-F-]+$/ },
+    },
+  })
+  async getPermissionSession(ctx: Context<{ id: string }>) {
+    try {
+      const { id } = ctx.params;
+      const session = await knex("permission_sessions").where("id", id).first();
+      if (!session)
+        return ApiResponder.error(ctx, "PermissionSession not found", 404);
+      return ApiResponder.success(ctx, session, 200);
+    } catch (err: any) {
+      this.logger.error("Error in getPermissionSession:", err);
+      return ApiResponder.error(ctx, "Failed to get PermissionSession", 500);
+    }
+  }
+
+  @Action({
+    rest: "GET permission-sessions",
+    params: {
+      modified_after: { type: "string", optional: true },
+      response_max_size: { type: "number", optional: true, default: 64 },
+    },
+  })
+  async listPermissionSessions(ctx: Context<any>) {
+    try {
+      const {
+        modified_after: modifiedAfter,
+        response_max_size: responseMaxSize,
+      } = ctx.params;
+      const limit = Math.min(Math.max(responseMaxSize || 64, 1), 1024);
+
+      const query = knex("permission_sessions").select("*");
+      if (modifiedAfter) {
+        const ts = new Date(modifiedAfter);
+        if (!Number.isNaN(ts.getTime()))
+          query.where("modified", ">", ts.toISOString());
+      }
+
+      const results = await query.orderBy("modified", "asc").limit(limit);
+      return ApiResponder.success(ctx, results, 200);
+    } catch (err: any) {
+      this.logger.error("Error in listPermissionSessions:", err);
+      return ApiResponder.error(ctx, "Failed to list PermissionSessions", 500);
     }
   }
 }

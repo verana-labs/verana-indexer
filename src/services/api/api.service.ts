@@ -84,21 +84,6 @@ async function attachHeaders(res: ServerResponse) {
         },
       },
       {
-        path: "/verana/cs/v1",
-        aliases: {
-          "GET get/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
-          "GET history/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
-          "GET js/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.JsonSchema`,
-          "GET list": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
-          "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-      },
-      {
         path: "/verana/tr/v1",
         aliases: {
           "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
@@ -125,8 +110,11 @@ async function attachHeaders(res: ServerResponse) {
       {
         path: "/verana/perm/v1",
         aliases: {
-          "GET get/:schema_id/:grantee/:type": `${SERVICE.V1.PermAPIService.path}.getPermission`,
+          "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
           "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
+          "GET beneficiaries": `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
+          "GET permission-session/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSession`,
+          "GET permission-sessions": `${SERVICE.V1.PermAPIService.path}.listPermissionSessions`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {

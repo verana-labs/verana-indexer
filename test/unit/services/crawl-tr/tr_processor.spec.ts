@@ -1,5 +1,8 @@
 import { ServiceBroker } from "moleculer";
-import { TrustRegistryMessageTypes } from "../../../../src/common";
+import {
+  ModulesParamsNamesTypes,
+  TrustRegistryMessageTypes,
+} from "../../../../src/common";
 import knex from "../../../../src/common/utils/db_connection";
 import TrustRegistryMessageProcessorService from "../../../../src/services/crawl-tr/tr_processor.service";
 
@@ -35,7 +38,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       .catch(() => {});
 
     await knex("module_params").insert({
-      module: "trustregistry",
+      module: ModulesParamsNamesTypes.TR,
       params: JSON.stringify({
         params: {
           trust_registry_trust_deposit: 1000,
@@ -51,7 +54,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const dummyTR = [
       {
-        type: TrustRegistryMessageTypes.Create, // CREATE
+        type: TrustRegistryMessageTypes.Create,
         content: {
           did: "did:example:insert",
           creator: "creator_test",
@@ -126,7 +129,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const UpdateResponse = [
       {
-        type: TrustRegistryMessageTypes.Update, // UPDATE
+        type: TrustRegistryMessageTypes.Update,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_update",
@@ -185,7 +188,6 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       })
       .returning("id");
 
-    // Archive
     const archiveTrustRegistry = [
       {
         type: TrustRegistryMessageTypes.Archive,
@@ -219,7 +221,6 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(archiveChanges.archived).toHaveProperty("new");
     expect(archiveChanges.archived).toHaveProperty("old");
 
-    // Unarchive
     const unarchiveTrustRegistry = [
       {
         type: TrustRegistryMessageTypes.Archive,
