@@ -1,7 +1,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { SERVICE, TrustRegistryMessageTypes } from "../../common";
+import { ModulesParamsNamesTypes, SERVICE, TrustRegistryMessageTypes } from "../../common";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 
@@ -188,7 +188,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     private async processCreateTR(message: any) {
         const trx = await knex.transaction();
         try {
-            const params = await trx("module_params").where({ module: "trustregistry" }).first();
+            const params = await trx("module_params").where({ module: ModulesParamsNamesTypes?.TR }).first();
             if (!params) {
                 await trx.rollback();
                 return;
@@ -249,7 +249,8 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
             await trx.commit();
         } catch (err) {
             await trx.rollback();
-            this.logger.error("❌ Failed to process CreateTrustRegistry", err);
+            process.exit()
+            // this.logger.error("❌ Failed to process CreateTrustRegistry", err);
         }
     }
 

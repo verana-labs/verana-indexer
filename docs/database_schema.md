@@ -400,3 +400,54 @@
 | `archived`                                    | Date/time when the schema was archived (nullable)                      |
 | `created`                                     | Creation date/time of the schema record                                |
 | `modified`                                    | Last modification date/time of the schema record                       |
+
+### `permissions`
+
+| Column                  | Description                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `id`                    | Primary key of the permission record                                                         |
+| `schema_id`             | Reference to `credential_schemas.id`                                                         |
+| `type`                  | Permission type (ECOSYSTEM / ISSUER_GRANTOR / VERIFIER_GRANTOR / ISSUER / VERIFIER / HOLDER) |
+| `did`                   | Optional DID associated with this permission                                                 |
+| `grantee`               | Account address granted this permission                                                      |
+| `created`               | Permission creation timestamp                                                                |
+| `created_by`            | Who created this permission                                                                  |
+| `extended`              | Optional field for extended permission                                                       |
+| `extended_by`           | Who extended this permission                                                                 |
+| `slashed`               | Timestamp when slashed (optional)                                                            |
+| `slashed_by`            | Who slashed the permission (optional)                                                        |
+| `repaid`                | Timestamp when repaid (optional)                                                             |
+| `repaid_by`             | Who repaid the permission (optional)                                                         |
+| `effective_from`        | Effective start date of permission (optional)                                                |
+| `effective_until`       | Effective end date of permission (optional)                                                  |
+| `revoked`               | Timestamp when revoked (optional)                                                            |
+| `revoked_by`            | Who revoked the permission (optional)                                                        |
+| `country`               | ISO 3166-1 alpha-2 country code                                                              |
+| `validator_perm_id`     | Reference to another permission which acts as validator (optional)                           |
+| `vp_state`              | Validation state (VALIDATION_STATE_UNSPECIFIED / PENDING / VALIDATED / TERMINATED)           |
+| `vp_exp`                | Validation expiration timestamp (optional)                                                   |
+| `vp_last_state_change`  | Last validation state change timestamp (optional)                                            |
+| `vp_validator_deposit`  | Validator deposit amount                                                                     |
+| `vp_current_fees`       | Current fees for validation                                                                  |
+| `vp_current_deposit`    | Current deposit for validation                                                               |
+| `vp_summary_digest_sri` | Optional SRI digest summary                                                                  |
+| `vp_term_requested`     | Optional term requested                                                                      |
+| `validation_fees`       | Validation fees amount                                                                       |
+| `issuance_fees`         | Issuance fees amount                                                                         |
+| `verification_fees`     | Verification fees amount                                                                     |
+| `deposit`               | Deposit associated with the permission                                                       |
+| `slashed_deposit`       | Amount slashed                                                                               |
+| `repaid_deposit`        | Amount repaid                                                                                |
+| `modified`              | Last modified timestamp                                                                      |
+
+### `permission_sessions`
+
+| Column                 | Description                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `id`                   | Primary key of the permission session                                                               |
+| `controller`           | Controller account address                                                                          |
+| `agent_perm_id`        | Reference to agent permission ID                                                                    |
+| `wallet_agent_perm_id` | Reference to wallet agent permission ID                                                             |
+| `authz`                | JSON array of Authz entries containing `issuer_perm_id`, `verifier_perm_id`, `wallet_agent_perm_id` |
+| `created`              | Creation timestamp                                                                                  |
+| `modified`             | Last modified timestamp                                                                             |

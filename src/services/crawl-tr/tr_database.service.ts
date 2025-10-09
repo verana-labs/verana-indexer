@@ -3,7 +3,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
-import { SERVICE } from "../../common";
+import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import ModuleParams from "../../models/modules_params";
 import { TrustRegistry } from "../../models/trust_registry";
@@ -134,7 +134,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
     @Action()
     public async getParams(ctx: Context) {
         try {
-            const module = await ModuleParams.query().findOne({ module: "trustregistry" });
+            const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.TR });
 
             if (!module || !module.params) {
                 return ApiResponder.error(ctx, "Module parameters not found: trustregistry", 404);

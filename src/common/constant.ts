@@ -140,6 +140,36 @@ export enum CredentialSchemaMessageType {
   Update = "/verana.cs.v1.MsgUpdateCredentialSchema",
   Archive = "/verana.cs.v1.MsgArchiveCredentialSchema",
 }
+export enum ModulesParamsNamesTypes {
+  AUTH = "auth",
+  BANK = "bank",
+  CS = "cs",
+  DD = "dd",
+  DISTRIBUTION = "distribution",
+  GOV = "gov",
+  MINT = "mint",
+  PERM = "perm",
+  PROTOCOLPOOL = "protocolpool",
+  SLASHING = "slashing",
+  STAKING = "staking",
+  TD = "td",
+  TR = "tr",
+  TRANSFER = "transfer",
+}
+
+export enum PermissionMessageTypes {
+  CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
+  CreatePermission = "/verana.perm.v1.MsgCreatePermission",
+  StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
+  RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
+  RevokePermission = "/verana.perm.v1.MsgRevokePermission",
+  ExtendPermission = "/verana.perm.v1.MsgExtendPermission",
+  SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
+  CreateOrUpdatePermissionSession = "/verana.perm.v1.MsgCreateOrUpdatePermissionSession",
+  SlashPermissionTrustDeposit = "/verana.perm.v1.MsgSlashPermissionTrustDeposit",
+  RepayPermissionSlashedTrustDeposit = "/verana.perm.v1.MsgRepayPermissionSlashedTrustDeposit",
+  CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
+}
 
 export const SERVICE = {
   V1: {
@@ -163,6 +193,14 @@ export const SERVICE = {
       key: "GenesisParamsService",
       path: "v1.GenesisParamsService",
     },
+    PermissionProcessService: {
+      key: "PermissionProcessService",
+      path: "v1.PermissionProcessService",
+    },
+    PermAPIService: {
+      key: "PermAPIService",
+      path: "v1.PermAPIService",
+    },
     DidHistoryService: {
       key: "DidHistoryService",
       path: "v1.DidHistoryService",
@@ -178,6 +216,10 @@ export const SERVICE = {
     ProcessCredentialSchemaService: {
       key: "ProcessCredentialSchemaService",
       path: "v1.ProcessCredentialSchemaService",
+    },
+    PermProcessorService: {
+      key: "PermProcessorService",
+      path: "v1.PermProcessorService",
     },
     CrawlAccountService: {
       key: "CrawlAccountService",

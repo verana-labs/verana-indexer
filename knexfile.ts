@@ -3,6 +3,8 @@ import network from './network.json' with { type: 'json' };
 import configJson from './config.json' with { type: 'json' };
 import { Config } from './src/common';
 
+const DEFAULT_POOL_MAX = 10;
+const DEFAULT_STATEMENT_TIMEOUT = 20000; 
 
 const config: { [key: string]: Knex.Config } = {
   development: {
@@ -17,11 +19,13 @@ const config: { [key: string]: Knex.Config } = {
       user: Config.POSTGRES_USER,
       password: Config.POSTGRES_PASSWORD,
       port: Config.POSTGRES_PORT,
-      statement_timeout: Config.POSTGRES_STATEMENT_TIMEOUT,
+      statement_timeout: parseInt(Config.POSTGRES_STATEMENT_TIMEOUT ?? DEFAULT_STATEMENT_TIMEOUT.toString(), 10),
     },
     pool: {
-      min: 1,
-      max: parseInt(Config.POSTGRES_POOL_MAX ?? '5', 10),
+      min: 2,
+      max: parseInt(Config.POSTGRES_POOL_MAX ?? DEFAULT_POOL_MAX.toString(), 10),
+      acquireTimeoutMillis: 60000, 
+      idleTimeoutMillis: 10000,    
     },
   },
   test: {
@@ -35,7 +39,13 @@ const config: { [key: string]: Knex.Config } = {
       user: Config.POSTGRES_USER,
       password: Config.POSTGRES_PASSWORD,
       port: Config.POSTGRES_PORT,
-      statement_timeout: Config.POSTGRES_STATEMENT_TIMEOUT,
+      statement_timeout: parseInt(Config.POSTGRES_STATEMENT_TIMEOUT ?? DEFAULT_STATEMENT_TIMEOUT.toString(), 10),
+    },
+    pool: {
+      min: 1,
+      max: 5,
+      acquireTimeoutMillis: 30000,
+      idleTimeoutMillis: 5000,
     },
   },
   production: {
@@ -50,11 +60,13 @@ const config: { [key: string]: Knex.Config } = {
       user: Config.POSTGRES_USER,
       password: Config.POSTGRES_PASSWORD,
       port: Config.POSTGRES_PORT,
-      statement_timeout: Config.POSTGRES_STATEMENT_TIMEOUT,
+      statement_timeout: parseInt(Config.POSTGRES_STATEMENT_TIMEOUT ?? DEFAULT_STATEMENT_TIMEOUT.toString(), 10),
     },
     pool: {
-      min: 1,
-      max: parseInt(Config.POSTGRES_POOL_MAX ?? '5', 10),
+      min: 2,
+      max: parseInt(Config.POSTGRES_POOL_MAX ?? DEFAULT_POOL_MAX.toString(), 10),
+      acquireTimeoutMillis: 60000,
+      idleTimeoutMillis: 10000,
     },
   },
 };

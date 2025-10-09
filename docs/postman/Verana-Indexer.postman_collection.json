@@ -988,7 +988,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{baseURL}}/verana/cs/v1/list?response_max_size=100&tr_id=5&only_active=false",
+							"raw": "{{baseURL}}/verana/cs/v1/list?response_max_size=100&tr_id=6&only_active=false",
 							"host": [
 								"{{baseURL}}"
 							],
@@ -1020,7 +1020,7 @@
 								},
 								{
 									"key": "tr_id",
-									"value": "5"
+									"value": "6"
 								},
 								{
 									"key": "only_active",
@@ -1149,7 +1149,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": "",
+							"_postman_previewlanguage": null,
 							"header": [
 								{
 									"key": "X-Request-ID",
@@ -1178,6 +1178,574 @@
 							],
 							"cookie": [],
 							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"credential_schema_trust_deposit\": \"10\",\n        \"credential_schema_schema_max_size\": \"8192\",\n        \"credential_schema_holder_validation_validity_period_max_days\": 3650,\n        \"credential_schema_issuer_validation_validity_period_max_days\": 3650,\n        \"credential_schema_verifier_validation_validity_period_max_days\": 3650,\n        \"credential_schema_issuer_grantor_validation_validity_period_max_days\": 3650,\n        \"credential_schema_verifier_grantor_validation_validity_period_max_days\": 3650\n    }\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Perm",
+			"item": [
+				{
+					"name": "listPermissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3001/verana/perm/v1/list?only_repaid=false",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3001",
+							"path": [
+								"verana",
+								"perm",
+								"v1",
+								"list"
+							],
+							"query": [
+								{
+									"key": "grantee",
+									"value": "verana1abc",
+									"disabled": true
+								},
+								{
+									"key": "did",
+									"value": "did:verana:xyz",
+									"disabled": true
+								},
+								{
+									"key": "perm_id",
+									"value": "11",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "ISSUER",
+									"disabled": true
+								},
+								{
+									"key": "only_valid",
+									"value": "true",
+									"disabled": true
+								},
+								{
+									"key": "only_slashed",
+									"value": "false",
+									"disabled": true
+								},
+								{
+									"key": "modified_after",
+									"value": "2025-10-03T11:59:38.834Z",
+									"disabled": true
+								},
+								{
+									"key": "country",
+									"value": "US",
+									"disabled": true
+								},
+								{
+									"key": "vp_state",
+									"value": "PENDING",
+									"disabled": true
+								},
+								{
+									"key": "response_max_size",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "when",
+									"value": "2025-10-03T11:59:38.834Z",
+									"disabled": true
+								},
+								{
+									"key": "schema_id",
+									"value": "3",
+									"disabled": true
+								},
+								{
+									"key": "only_repaid",
+									"value": "false"
+								}
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "listPermissions",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3001/verana/perm/v1/list?only_valid=false",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3001",
+									"path": [
+										"verana",
+										"perm",
+										"v1",
+										"list"
+									],
+									"query": [
+										{
+											"key": "grantee",
+											"value": "verana1abc",
+											"disabled": true
+										},
+										{
+											"key": "did",
+											"value": "did:verana:xyz",
+											"disabled": true
+										},
+										{
+											"key": "perm_id",
+											"value": "11",
+											"disabled": true
+										},
+										{
+											"key": "type",
+											"value": "ISSUER",
+											"disabled": true
+										},
+										{
+											"key": "only_valid",
+											"value": "false"
+										},
+										{
+											"key": "only_slashed",
+											"value": "true",
+											"disabled": true
+										},
+										{
+											"key": "modified_after",
+											"value": "2025-10-03T11:59:38.834Z",
+											"disabled": true
+										},
+										{
+											"key": "country",
+											"value": "US",
+											"disabled": true
+										},
+										{
+											"key": "vp_state",
+											"value": "PENDING",
+											"disabled": true
+										},
+										{
+											"key": "response_max_size",
+											"value": "1",
+											"disabled": true
+										},
+										{
+											"key": "when",
+											"value": "2025-10-03T11:59:38.834Z",
+											"disabled": true
+										},
+										{
+											"key": "schema_id",
+											"value": "3",
+											"disabled": true
+										},
+										{
+											"key": "only_repaid",
+											"value": "true",
+											"disabled": true
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": null,
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "e53d1d15-2507-4956-ab04-a8758b281b65"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Wed, 08 Oct 2025 05:50:00 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "14612"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": [\n        {\n            \"id\": \"1\",\n            \"schema_id\": \"2\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:example:186af95a000ef890a583f47a0274a800\",\n            \"grantee\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n            \"created_by\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n            \"created\": \"2025-10-03T11:59:38.834Z\",\n            \"modified\": \"2025-10-03T11:59:38.834Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-10-03T11:59:49.805Z\",\n            \"effective_until\": \"2026-09-28T11:59:49.805Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"5\",\n            \"issuance_fees\": \"5\",\n            \"verification_fees\": \"5\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"2\",\n            \"schema_id\": \"2\",\n            \"type\": \"VERIFIER\",\n            \"did\": null,\n            \"grantee\": \"verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0\",\n            \"created_by\": \"verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0\",\n            \"created\": \"2025-10-03T12:30:43.431Z\",\n            \"modified\": \"2025-10-03T12:30:43.431Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"GB\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"1000000\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"1\",\n            \"vp_state\": \"PENDING\",\n            \"vp_last_state_change\": \"2025-10-03T12:30:43.431Z\",\n            \"vp_current_fees\": \"5000000\",\n            \"vp_current_deposit\": \"1000000\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"3\",\n            \"schema_id\": \"3\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:16:04.076Z\",\n            \"modified\": \"2025-10-06T07:16:04.076Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"4\",\n            \"schema_id\": \"3\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:23:10.194Z\",\n            \"modified\": \"2025-10-06T07:28:41.096Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": \"2025-10-06T07:28:41.096Z\",\n            \"revoked_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"5\",\n            \"schema_id\": \"3\",\n            \"type\": \"VERIFIER\",\n            \"did\": \"did:test:1.0\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:40:48.141Z\",\n            \"modified\": \"2025-10-06T07:40:48.141Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-11-27T00:00:00.000Z\",\n            \"effective_until\": \"2026-11-01T00:00:00.000Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"US\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"3\",\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"6\",\n            \"schema_id\": \"4\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:43:28.546Z\",\n            \"modified\": \"2025-10-06T07:43:28.546Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"7\",\n            \"schema_id\": \"5\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:46:08.960Z\",\n            \"modified\": \"2025-10-06T07:46:08.960Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"8\",\n            \"schema_id\": \"3\",\n            \"type\": \"ISSUER\",\n            \"did\": \"did:test:1.0\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:51:14.788Z\",\n            \"modified\": \"2025-10-06T07:51:14.788Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-11-27T00:00:00.000Z\",\n            \"effective_until\": \"2026-11-01T00:00:00.000Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"US\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"3\",\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"9\",\n            \"schema_id\": \"3\",\n            \"type\": \"VERIFIER\",\n            \"did\": \"did:test:1.0\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T07:51:54.893Z\",\n            \"modified\": \"2025-10-06T07:51:54.893Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-11-27T00:00:00.000Z\",\n            \"effective_until\": \"2026-11-01T00:00:00.000Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"US\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"3\",\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"10\",\n            \"schema_id\": \"6\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T08:22:14.786Z\",\n            \"modified\": \"2025-10-06T08:22:14.786Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"11\",\n            \"schema_id\": \"7\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T08:24:30.174Z\",\n            \"modified\": \"2025-10-06T08:24:30.174Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"12\",\n            \"schema_id\": \"7\",\n            \"type\": \"ISSUER\",\n            \"did\": \"did:test:1.0\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T08:24:35.186Z\",\n            \"modified\": \"2025-10-06T08:24:35.186Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-11-27T00:00:00.000Z\",\n            \"effective_until\": \"2026-11-01T00:00:00.000Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"US\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"11\",\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"13\",\n            \"schema_id\": \"7\",\n            \"type\": \"VERIFIER\",\n            \"did\": null,\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T08:31:01.255Z\",\n            \"modified\": \"2025-10-06T08:32:11.444Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-10-06T08:32:11.444Z\",\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"20000000\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"11\",\n            \"vp_state\": \"VALIDATED\",\n            \"vp_last_state_change\": \"2025-10-06T08:32:11.444Z\",\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"20000000\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"15\",\n            \"schema_id\": \"7\",\n            \"type\": \"VERIFIER\",\n            \"did\": null,\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T11:23:25.752Z\",\n            \"modified\": \"2025-10-06T11:24:00.843Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"GB\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"0\",\n            \"deposit\": \"20000000\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"11\",\n            \"vp_state\": \"TERMINATED\",\n            \"vp_last_state_change\": \"2025-10-06T11:24:00.843Z\",\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"14\",\n            \"schema_id\": \"7\",\n            \"type\": \"VERIFIER\",\n            \"did\": null,\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-06T08:44:15.318Z\",\n            \"modified\": \"2025-10-07T08:20:15.568Z\",\n            \"extended\": \"2025-10-07T07:22:55.496Z\",\n            \"extended_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"slashed\": \"2025-10-07T07:40:08.282Z\",\n            \"slashed_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"repaid\": \"2025-10-07T08:20:15.568Z\",\n            \"repaid_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"effective_from\": \"2025-10-06T08:44:40.399Z\",\n            \"effective_until\": \"2027-12-31T23:59:59.000Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"US\",\n            \"validation_fees\": \"10\",\n            \"issuance_fees\": \"50\",\n            \"verification_fees\": \"20\",\n            \"deposit\": \"40000000\",\n            \"slashed_deposit\": \"1000000\",\n            \"repaid_deposit\": \"1000000\",\n            \"validator_perm_id\": \"11\",\n            \"vp_state\": \"PENDING\",\n            \"vp_last_state_change\": \"2025-10-07T07:06:02.622Z\",\n            \"vp_current_fees\": \"100000000\",\n            \"vp_current_deposit\": \"20000000\",\n            \"vp_summary_digest_sri\": \"sha384-BASE64PLACEHOLDER\",\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"20000000\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"16\",\n            \"schema_id\": \"3\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:123:123\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-07T09:14:34.855Z\",\n            \"modified\": \"2025-10-07T09:14:34.855Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": null,\n            \"effective_until\": null,\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"100\",\n            \"issuance_fees\": \"100\",\n            \"verification_fees\": \"100\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"17\",\n            \"schema_id\": \"3\",\n            \"type\": \"ISSUER\",\n            \"did\": \"did:verana:verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"grantee\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created_by\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"created\": \"2025-10-07T09:50:35.851Z\",\n            \"modified\": \"2025-10-07T09:50:35.851Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-10-07T09:55:36.000Z\",\n            \"effective_until\": \"2025-12-31T00:00:00.000Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": \"US\",\n            \"validation_fees\": \"0\",\n            \"issuance_fees\": \"0\",\n            \"verification_fees\": \"100000\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": \"3\",\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        }\n    ]\n}"
+						}
+					]
+				},
+				{
+					"name": "getPermission",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3001/verana/perm/v1/get/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3001",
+							"path": [
+								"verana",
+								"perm",
+								"v1",
+								"get",
+								"1"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "getPermission",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3001/verana/perm/v1/get/1",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3001",
+									"path": [
+										"verana",
+										"perm",
+										"v1",
+										"get",
+										"1"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "",
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "175e8496-0ade-4748-9b7f-1d1324781d49"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Wed, 08 Oct 2025 06:32:46 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "910"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"id\": \"1\",\n        \"schema_id\": \"2\",\n        \"type\": \"ECOSYSTEM\",\n        \"did\": \"did:example:186af95a000ef890a583f47a0274a800\",\n        \"grantee\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n        \"created_by\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n        \"created\": \"2025-10-03T11:59:38.834Z\",\n        \"modified\": \"2025-10-03T11:59:38.834Z\",\n        \"extended\": null,\n        \"extended_by\": null,\n        \"slashed\": null,\n        \"slashed_by\": null,\n        \"repaid\": null,\n        \"repaid_by\": null,\n        \"effective_from\": \"2025-10-03T11:59:49.805Z\",\n        \"effective_until\": \"2026-09-28T11:59:49.805Z\",\n        \"revoked\": null,\n        \"revoked_by\": null,\n        \"country\": null,\n        \"validation_fees\": \"5\",\n        \"issuance_fees\": \"5\",\n        \"verification_fees\": \"5\",\n        \"deposit\": \"0\",\n        \"slashed_deposit\": \"0\",\n        \"repaid_deposit\": \"0\",\n        \"validator_perm_id\": null,\n        \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n        \"vp_last_state_change\": null,\n        \"vp_current_fees\": \"0\",\n        \"vp_current_deposit\": \"0\",\n        \"vp_summary_digest_sri\": null,\n        \"vp_exp\": null,\n        \"vp_validator_deposit\": \"0\",\n        \"vp_term_requested\": null\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "getPermissionSession",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3001/verana/perm/v1/permission-session/123e4567-e89b-12d3-a456-426614174000",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3001",
+							"path": [
+								"verana",
+								"perm",
+								"v1",
+								"permission-session",
+								"123e4567-e89b-12d3-a456-426614174000"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "getPermissionSession",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3001/verana/perm/v1/permission-session/123e4567-e89b-12d3-a456-426614174000",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3001",
+									"path": [
+										"verana",
+										"perm",
+										"v1",
+										"permission-session",
+										"123e4567-e89b-12d3-a456-426614174000"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "",
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "dee96508-d00c-4e15-8169-f2fc0c934d6f"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Wed, 08 Oct 2025 06:33:30 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "332"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": {\n        \"id\": \"123e4567-e89b-12d3-a456-426614174000\",\n        \"controller\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n        \"agent_perm_id\": \"17\",\n        \"wallet_agent_perm_id\": \"17\",\n        \"authz\": [\n            {\n                \"issuer_perm_id\": 17,\n                \"verifier_perm_id\": 13,\n                \"wallet_agent_perm_id\": 17\n            }\n        ],\n        \"created\": \"2025-10-07T09:58:02.067Z\",\n        \"modified\": \"2025-10-07T12:41:51.234Z\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "listPermissionSessions",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3001/verana/perm/v1/permission-sessions?modified_after=2025-10-01T00:00:00Z&response_max_size=50",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3001",
+							"path": [
+								"verana",
+								"perm",
+								"v1",
+								"permission-sessions"
+							],
+							"query": [
+								{
+									"key": "modified_after",
+									"value": "2025-10-01T00:00:00Z"
+								},
+								{
+									"key": "response_max_size",
+									"value": "50"
+								}
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "listPermissionSessions",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3001/verana/perm/v1/permission-sessions?modified_after=2025-10-01T00:00:00Z&response_max_size=50",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3001",
+									"path": [
+										"verana",
+										"perm",
+										"v1",
+										"permission-sessions"
+									],
+									"query": [
+										{
+											"key": "modified_after",
+											"value": "2025-10-01T00:00:00Z"
+										},
+										{
+											"key": "response_max_size",
+											"value": "50"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "",
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "d4852ef8-7617-4539-acaf-c01738c6d832"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Wed, 08 Oct 2025 06:35:05 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "645"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": [\n        {\n            \"id\": \"123e4567-e89b-12d3-a456-426614174000\",\n            \"controller\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"agent_perm_id\": \"17\",\n            \"wallet_agent_perm_id\": \"17\",\n            \"authz\": [\n                {\n                    \"issuer_perm_id\": 17,\n                    \"verifier_perm_id\": 13,\n                    \"wallet_agent_perm_id\": 17\n                }\n            ],\n            \"created\": \"2025-10-07T09:58:02.067Z\",\n            \"modified\": \"2025-10-07T12:41:51.234Z\"\n        },\n        {\n            \"id\": \"123e4567-e89b-12d3-a456-426614174001\",\n            \"controller\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n            \"agent_perm_id\": \"17\",\n            \"wallet_agent_perm_id\": \"17\",\n            \"authz\": [\n                {\n                    \"issuer_perm_id\": 17,\n                    \"verifier_perm_id\": 13,\n                    \"wallet_agent_perm_id\": 17\n                }\n            ],\n            \"created\": \"2025-10-07T12:43:01.456Z\",\n            \"modified\": \"2025-10-07T12:43:01.456Z\"\n        }\n    ]\n}"
+						}
+					]
+				},
+				{
+					"name": "findBeneficiaries",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/verana/perm/v1/beneficiaries?issuer_perm_id=1&verifier_perm_id=2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"verana",
+								"perm",
+								"v1",
+								"beneficiaries"
+							],
+							"query": [
+								{
+									"key": "issuer_perm_id",
+									"value": "1"
+								},
+								{
+									"key": "verifier_perm_id",
+									"value": "2"
+								}
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "findBeneficiaries",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3001/verana/perm/v1/beneficiaries?issuer_perm_id=1&verifier_perm_id=2",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3001",
+									"path": [
+										"verana",
+										"perm",
+										"v1",
+										"beneficiaries"
+									],
+									"query": [
+										{
+											"key": "issuer_perm_id",
+											"value": "1"
+										},
+										{
+											"key": "verifier_perm_id",
+											"value": "2"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "",
+							"header": [
+								{
+									"key": "X-Request-ID",
+									"value": "5956cc58-ba4e-44f4-940e-52c6d60335d9"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Date",
+									"value": "Wed, 08 Oct 2025 06:34:31 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								},
+								{
+									"key": "Content-Length",
+									"value": "1801"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"status\": 200,\n    \"data\": [\n        {\n            \"id\": \"1\",\n            \"schema_id\": \"2\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:example:186af95a000ef890a583f47a0274a800\",\n            \"grantee\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n            \"created_by\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n            \"created\": \"2025-10-03T11:59:38.834Z\",\n            \"modified\": \"2025-10-03T11:59:38.834Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-10-03T11:59:49.805Z\",\n            \"effective_until\": \"2026-09-28T11:59:49.805Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"5\",\n            \"issuance_fees\": \"5\",\n            \"verification_fees\": \"5\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        },\n        {\n            \"id\": \"1\",\n            \"schema_id\": \"2\",\n            \"type\": \"ECOSYSTEM\",\n            \"did\": \"did:example:186af95a000ef890a583f47a0274a800\",\n            \"grantee\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n            \"created_by\": \"verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf\",\n            \"created\": \"2025-10-03T11:59:38.834Z\",\n            \"modified\": \"2025-10-03T11:59:38.834Z\",\n            \"extended\": null,\n            \"extended_by\": null,\n            \"slashed\": null,\n            \"slashed_by\": null,\n            \"repaid\": null,\n            \"repaid_by\": null,\n            \"effective_from\": \"2025-10-03T11:59:49.805Z\",\n            \"effective_until\": \"2026-09-28T11:59:49.805Z\",\n            \"revoked\": null,\n            \"revoked_by\": null,\n            \"country\": null,\n            \"validation_fees\": \"5\",\n            \"issuance_fees\": \"5\",\n            \"verification_fees\": \"5\",\n            \"deposit\": \"0\",\n            \"slashed_deposit\": \"0\",\n            \"repaid_deposit\": \"0\",\n            \"validator_perm_id\": null,\n            \"vp_state\": \"VALIDATION_STATE_UNSPECIFIED\",\n            \"vp_last_state_change\": null,\n            \"vp_current_fees\": \"0\",\n            \"vp_current_deposit\": \"0\",\n            \"vp_summary_digest_sri\": null,\n            \"vp_exp\": null,\n            \"vp_validator_deposit\": \"0\",\n            \"vp_term_requested\": null\n        }\n    ]\n}"
 						}
 					]
 				}
@@ -1257,6 +1825,211 @@
 							"key": "order_by",
 							"value": "asc",
 							"disabled": true
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "get result by txs hash",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "query",
+									"value": "tx.hash='Ci12ZXJhbmExZXZ2cnp4dzl5ZzVzdGFxZHZ1bWQ2ZnVweTNqaGF4ZmZsbGE3c3QQEBoLZGlkOjEyMzoxMjMiImh0dHBzOi8vYXBwLnRlc3RuZXQudmVyYW5hLm5ldHdvcms='",
+									"type": "text"
+								},
+								{
+									"key": "prove",
+									"value": "true",
+									"type": "text"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"type": "text"
+								},
+								{
+									"key": "per_page",
+									"value": "30",
+									"type": "text"
+								},
+								{
+									"key": "order_by",
+									"value": "asc",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "https://rpc.testnet.verana.network/tx_search?query=\"tx.hash='C63327C01C9E2C81507C84C92474A29D458B9361B8B0F50AE83E1790F147EB78'\"",
+							"protocol": "https",
+							"host": [
+								"rpc",
+								"testnet",
+								"verana",
+								"network"
+							],
+							"path": [
+								"tx_search"
+							],
+							"query": [
+								{
+									"key": "prove",
+									"value": "true",
+									"disabled": true
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "per_page",
+									"value": "30",
+									"disabled": true
+								},
+								{
+									"key": "order_by",
+									"value": "asc",
+									"disabled": true
+								},
+								{
+									"key": "query",
+									"value": "\"tx.hash='C63327C01C9E2C81507C84C92474A29D458B9361B8B0F50AE83E1790F147EB78'\""
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "Date",
+							"value": "Fri, 12 Sep 2025 12:37:14 GMT"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						},
+						{
+							"key": "Transfer-Encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Vary",
+							"value": "Origin"
+						},
+						{
+							"key": "X-Server-Time",
+							"value": "1757680634"
+						},
+						{
+							"key": "Strict-Transport-Security",
+							"value": "max-age=31536000; includeSubDomains"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": -1,\n    \"result\": {\n        \"txs\": [\n            {\n                \"hash\": \"C63327C01C9E2C81507C84C92474A29D458B9361B8B0F50AE83E1790F147EB78\",\n                \"height\": \"2005165\",\n                \"index\": 0,\n                \"tx_result\": {\n                    \"code\": 0,\n                    \"data\": \"Ei4KLC92ZXJhbmEudHIudjEuTXNnQ3JlYXRlVHJ1c3RSZWdpc3RyeVJlc3BvbnNl\",\n                    \"log\": \"\",\n                    \"info\": \"\",\n                    \"gas_wanted\": \"180736\",\n                    \"gas_used\": \"106296\",\n                    \"events\": [\n                        {\n                            \"type\": \"coin_spent\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"spender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"amount\",\n                                    \"value\": \"542208uvna\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"coin_received\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"receiver\",\n                                    \"value\": \"verana17xpfvakm2amg962yls6f84z3kell8c5lq3tsnf\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"amount\",\n                                    \"value\": \"542208uvna\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"transfer\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"recipient\",\n                                    \"value\": \"verana17xpfvakm2amg962yls6f84z3kell8c5lq3tsnf\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"sender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"amount\",\n                                    \"value\": \"542208uvna\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"message\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"sender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"tx\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"fee\",\n                                    \"value\": \"542208uvna\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"fee_payer\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"tx\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"acc_seq\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st/157\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"tx\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"signature\",\n                                    \"value\": \"yKPDJBPv253+Yqq5t8lgpNPQYxQab45wsfAPW/4Q2dIMzQeMI/CzC5KejRyMzxMGqv00x6BUQz/BGrsMVynT6Q==\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"message\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"action\",\n                                    \"value\": \"/verana.tr.v1.MsgCreateTrustRegistry\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"sender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"module\",\n                                    \"value\": \"tr\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"coin_spent\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"spender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"amount\",\n                                    \"value\": \"10000000uvna\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"coin_received\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"receiver\",\n                                    \"value\": \"verana1xr7fuv6kcgfzw9mct8lj3v2y2fkehjhesgfj9w\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"amount\",\n                                    \"value\": \"10000000uvna\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"transfer\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"recipient\",\n                                    \"value\": \"verana1xr7fuv6kcgfzw9mct8lj3v2y2fkehjhesgfj9w\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"sender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"amount\",\n                                    \"value\": \"10000000uvna\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"message\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"sender\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"create_trust_registry\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"trust_registry_id\",\n                                    \"value\": \"22\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"did\",\n                                    \"value\": \"did:test:123\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"controller\",\n                                    \"value\": \"verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"aka\",\n                                    \"value\": \"https://app.testnet.verana.network/tr/add\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"language\",\n                                    \"value\": \"en\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"deposit\",\n                                    \"value\": \"10000000\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"timestamp\",\n                                    \"value\": \"2025-09-11 11:31:10.453865379 +0000 UTC\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"create_governance_framework_version\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"gf_version_id\",\n                                    \"value\": \"32\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"trust_registry_id\",\n                                    \"value\": \"22\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"version\",\n                                    \"value\": \"1\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        },\n                        {\n                            \"type\": \"create_governance_framework_document\",\n                            \"attributes\": [\n                                {\n                                    \"key\": \"gf_document_id\",\n                                    \"value\": \"32\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"gf_version_id\",\n                                    \"value\": \"32\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"doc_url\",\n                                    \"value\": \"https://app.testnet.verana.network/tr/add\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"digest_sri\",\n                                    \"value\": \"sha384-lHo/+64lob5TuqttqpYrji61QJkLh14bTLnDF0t0znv0x58GEj288kR9NmWbojhO\",\n                                    \"index\": true\n                                },\n                                {\n                                    \"key\": \"msg_index\",\n                                    \"value\": \"0\",\n                                    \"index\": true\n                                }\n                            ]\n                        }\n                    ],\n                    \"codespace\": \"\"\n                },\n                \"tx\": \"CqQCCokCCiQvdmVyYW5hLnRyLnYxLk1zZ0NyZWF0ZVRydXN0UmVnaXN0cnkS4AEKLXZlcmFuYTFldnZyenh3OXlnNXN0YXFkdnVtZDZmdXB5M2poYXhmZmxsYTdzdBIMZGlkOnRlc3Q6MTIzGilodHRwczovL2FwcC50ZXN0bmV0LnZlcmFuYS5uZXR3b3JrL3RyL2FkZCICZW4qKWh0dHBzOi8vYXBwLnRlc3RuZXQudmVyYW5hLm5ldHdvcmsvdHIvYWRkMkdzaGEzODQtbEhvLys2NGxvYjVUdXF0dHFwWXJqaTYxUUprTGgxNGJUTG5ERjB0MHpudjB4NThHRWoyODhrUjlObVdib2poTxIWTXNnQ3JlYXRlVHJ1c3RSZWdpc3RyeRJpClEKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiEDQMrUvCS7wLnKOoJ1WFNBpzAgShcP+mUqYvfU/YHdLaQSBAoCCH8YnQESFAoOCgR1dm5hEgY1NDIyMDgQgIQLGkDIo8MkE+/bnf5iqrm3yWCk09BjFBpvjnCx8A9b/hDZ0gzNB4wj8LMLkp6NHIzPEwaq/TTHoFRDP8EauwxXKdPp\"\n            }\n        ],\n        \"total_count\": \"1\"\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "Get Account Reputation",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "query",
+							"value": "tx.hash='Ci12ZXJhbmExZXZ2cnp4dzl5ZzVzdGFxZHZ1bWQ2ZnVweTNqaGF4ZmZsbGE3c3QQEBoLZGlkOjEyMzoxMjMiImh0dHBzOi8vYXBwLnRlc3RuZXQudmVyYW5hLm5ldHdvcms='",
+							"type": "text"
+						},
+						{
+							"key": "prove",
+							"value": "true",
+							"type": "text"
+						},
+						{
+							"key": "page",
+							"value": "1",
+							"type": "text"
+						},
+						{
+							"key": "per_page",
+							"value": "30",
+							"type": "text"
+						},
+						{
+							"key": "order_by",
+							"value": "asc",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:3001/verana/mixed/v1/account-reputation?account=verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st&tr_id=1&schema_id=1&include_slash_details=true",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3001",
+					"path": [
+						"verana",
+						"mixed",
+						"v1",
+						"account-reputation"
+					],
+					"query": [
+						{
+							"key": "prove",
+							"value": "true",
+							"disabled": true
+						},
+						{
+							"key": "page",
+							"value": "1",
+							"disabled": true
+						},
+						{
+							"key": "per_page",
+							"value": "30",
+							"disabled": true
+						},
+						{
+							"key": "order_by",
+							"value": "asc",
+							"disabled": true
+						},
+						{
+							"key": "account",
+							"value": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+						},
+						{
+							"key": "tr_id",
+							"value": "1"
+						},
+						{
+							"key": "schema_id",
+							"value": "1"
+						},
+						{
+							"key": "include_slash_details",
+							"value": "true"
 						}
 					]
 				}
