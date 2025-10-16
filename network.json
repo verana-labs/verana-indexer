@@ -7,7 +7,7 @@
     "LCD": [
       "https://api.testnet.verana.network"
     ],
-    "databaseName": "horoscope_dev_auratestnet1",
+    "databaseName": "verana_testnet1",
     "redisDBNumber": 20,
     "moleculerNamespace": "verana-testnet",
     "EVMJSONRPC": [
