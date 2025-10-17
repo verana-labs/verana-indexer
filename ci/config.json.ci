@@ -1,11 +1,10 @@
 {
-  "chainId": "vna-testnet-1",
-  "chainName": "aura",
-  "networkPrefixAddress": "aura",
+  "chainName": "verana",
+  "networkPrefixAddress": "verana",
   "consensusPrefixAddress": "valcons",
   "validatorPrefixAddress": "valoper",
   "evmOnly": false,
-  "networkDenom": "utaura",
+  "networkDenom": "uvna",
   "jobRetryAttempt": 5,
   "jobRetryBackoff": 1000,
   "crawlValidator": {

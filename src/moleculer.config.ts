@@ -1,13 +1,12 @@
-import { BrokerOptions, Errors, MetricRegistry } from 'moleculer';
+import { BrokerOptions, Errors, MetricRegistry } from "moleculer";
 // import 'reflect-metadata';
-import { inspect } from 'util';
+import { inspect } from "util";
 // import pick from 'lodash/pick';
 // import HotReloadMiddleware from './middlewares/HotReloadCHokidar';
-import InterNamespaceMiddleware from './middlewares/internamespace';
-import { Config } from './common';
+import { Network } from "../network";
+import { Config } from "./common";
+import InterNamespaceMiddleware from "./middlewares/internamespace";
 import MoleculerRetryableError = Errors.MoleculerRetryableError;
-import networks from '../network.json' with { type: 'json' };
-
 // TODO: Set default value for common config (TRACING_TYPE ...)
 
 /**
@@ -50,14 +49,14 @@ const brokerConfig: BrokerOptions = {
   // Enable/disable logging or use custom logger. More info: https://moleculer.services/docs/0.14/logging.html
   // Available logger types: "Console", "File", "Pino", "Winston", "Bunyan", "debug", "Log4js", "Datadog"
   logger: {
-    type: Config.LOGGERTYPE || 'Console',
+    type: Config.LOGGERTYPE || "Console",
     options: {
       // Using colors on the output
       colors: Config.LOGGERCOLORS || true,
       // Print module names with different colors (like docker-compose for containers)
       moduleColors: Config.LOGGERMODULECOLORS || false,
       // Line formatter. It can be "json", "short", "simple", "full", a `Function` or a template string like "{timestamp} {level} {nodeID}/{mod}: {msg}"
-      formatter: Config.LOGGERFORMATTER || 'full',
+      formatter: Config.LOGGERFORMATTER || "full",
       // Custom object printer. If not defined, it uses the `util.inspect` method.
       objectPrinter: (o: never) =>
         inspect(o, { depth: 4, colors: true, breakLength: 100 }),
@@ -130,7 +129,7 @@ const brokerConfig: BrokerOptions = {
   registry: {
     // Define balancing strategy. More info: https://moleculer.services/docs/0.14/balancing.html
     // Available values: "RoundRobin", "Random", "CpuUsage", "Latency", "Shard"
-    strategy: Config.STRATEGY || 'RoundRobin',
+    strategy: Config.STRATEGY || "RoundRobin",
     // Enable local action call preferring. Always call the local action instance if available.
     preferLocal: Config.PREFERLOCAL || true,
   },
@@ -165,7 +164,7 @@ const brokerConfig: BrokerOptions = {
   // Enable action & event parameter validation. More info: https://moleculer.services/docs/0.14/validating.html
   // validator: Config.VALIDATOR_ENABLED || true,
   validator: {
-    type: 'Fastest',
+    type: "Fastest",
     options: {
       defaults: {
         number: {
@@ -220,7 +219,7 @@ const brokerConfig: BrokerOptions = {
         // HTTP port
         port: Config.METRICS_PORT || 3030,
         // HTTP URL path
-        path: Config.METRICS_PATH || '/metrics',
+        path: Config.METRICS_PATH || "/metrics",
         // Default labels which are appended to all metrics labels
         defaultLabels: (registry: MetricRegistry) => ({
           namespace: registry.broker.namespace,
@@ -254,11 +253,7 @@ const brokerConfig: BrokerOptions = {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     // Config.ADD_INTER_NAMESPACE_MIDDLEWARE
-    true
-      ? InterNamespaceMiddleware(
-        networks.map((network) => network.moleculerNamespace)
-      )
-      : null,
+    true ? InterNamespaceMiddleware([Network?.moleculerNamespace]) : null,
   ],
   // Register custom REPL commands.
   // replCommands: undefined,

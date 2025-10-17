@@ -1,9 +1,8 @@
-import { IProviderJSClientFactory } from '../types/interfaces';
-import network from '../../../network.json' with { type: 'json' };
-import config from '../../../config.json' with { type: 'json' };
-import { chainIdConfigOnServer } from '../constant';
+import { Network } from "../../../network";
+import { chainIdConfigOnServer } from "../constant";
+import { IProviderJSClientFactory } from "../types/interfaces";
 
-export default class AuraJsClient {
+export default class VeranaJsClient {
   public lcdClient: IProviderJSClientFactory = {
     provider: null,
     cosmwasm: null,
@@ -19,7 +18,7 @@ export default class AuraJsClient {
   };
 }
 
-const client = new AuraJsClient();
+const client = new VeranaJsClient();
 
 export async function getProviderFactory(): Promise<{
   providerClient: any;
@@ -34,11 +33,11 @@ export async function getProviderFactory(): Promise<{
   let cosmwasm;
   let provider;
 
-  switch (config.chainId) {
+  switch (Network.chainId) {
     case chainIdConfigOnServer.Atlantic2:
     case chainIdConfigOnServer.Pacific1:
       ({ ibc, cosmos, cosmwasm, seiprotocol } = await import(
-        '@horoscope/sei-js-proto'
+        "@horoscope/sei-js-proto"
       ));
       provider = seiprotocol;
       break;
@@ -47,7 +46,7 @@ export async function getProviderFactory(): Promise<{
     case chainIdConfigOnServer.AuraTestnetEVM:
     case chainIdConfigOnServer.Xstaxy1:
     default:
-      ({ ibc, cosmos, cosmwasm, aura } = await import('@aura-nw/aurajs'));
+      ({ ibc, cosmos, cosmwasm, aura } = await import("@aura-nw/aurajs"));
       provider = aura;
       break;
   }
@@ -60,9 +59,7 @@ export async function getProviderFactory(): Promise<{
 }
 
 export async function getLcdClient() {
-  const lcd =
-    network.find((net: any) => net.chainId === config.chainId)?.LCD[0] || '';
-
+  const lcd = Network?.LCD || "";
   if (!client.lcdClient.provider) {
     const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
       await getProviderFactory();
@@ -84,8 +81,7 @@ export async function getLcdClient() {
 }
 
 export async function getRpcClient() {
-  const rpc =
-    network.find((net: any) => net.chainId === config.chainId)?.RPC[0] || '';
+  const rpc = Network.RPC || "";
 
   if (!client.rpcClient.provider) {
     const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
