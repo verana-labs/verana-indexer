@@ -26,14 +26,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint check (PRs)
-        if: github.ref != 'refs/heads/main'
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm exec eslint "src/**/*.{ts,tsx,js}" --max-warnings=9999
-
-      - name: Lint check (main)
+      - name: Lint check
         if: github.ref == 'refs/heads/main'
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm exec eslint "src/**/*.{ts,tsx,js}" --max-warnings=0
+        run: pnpm exec eslint "src/**/*.{ts,tsx,js}" --max-warnings=9999

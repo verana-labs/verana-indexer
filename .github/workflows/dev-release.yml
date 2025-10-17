@@ -88,7 +88,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:dev
-            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}-dev
-            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}-dev
-            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_MAJOR }}.${{ steps.semantic.outputs.RELEASE_MINOR }}.${{ steps.semantic.outputs.RELEASE_PATCH }}
-            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.RELEASE_VERSION }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}.${{ steps.semantic.outputs.release-patch }}
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-version }}-dev
