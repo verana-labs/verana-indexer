@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - '**'
+      - "**"
 
 jobs:
   test:
@@ -47,7 +47,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          run_install: false 
+          run_install: false
 
       - name: Cache pnpm store
         uses: actions/cache@v3
@@ -66,8 +66,8 @@ jobs:
       - name: Setup config.json
         run: cp ci/config.json.ci config.json
 
-      - name: Setup network.json
-        run: cp ci/network.json.ci network.json
+      - name: Setup network.ts
+        run: cp ci/network.ts.ci network.ts
 
       - name: Setup code-type.json
         run: cp ci/code-type.json.ci code-type.json

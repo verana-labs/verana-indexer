@@ -1,0 +1,14 @@
+import * as dotenv from "dotenv";
+
+dotenv.config();
+
+export const Network = {
+  chainId: process.env.CHAIN_ID || "ChainId",
+  RPC: process.env.RPC_ENDPOINT,
+  LCD: process.env.LCD_ENDPOINT,
+  databaseName: process.env.POSTGRES_DB || "postgre",
+  redisDBNumber: Number(process.env.REDIS_DB_NUMBER) || 20,
+  moleculerNamespace: process.env.MOLECULER_NAMESPACE || "Indexer",
+  EVMJSONRPC: [process.env.EVM_JSON_RPC],
+  EVMchainId: Number(process.env.EVM_CHAIN_ID) || "ChainId",
+};

@@ -125,14 +125,12 @@ This will start the PostgreSQL, Redis containers in the background.
 ## Configuration
 
 [Config Moleculer](.env.example), refer [docs](https://moleculer.services/docs/0.14/configuration.html) to get detail configurations.
-[Config network](network.json) to config networks with LCD, RPC, database.
 [Config chain](config.json) to setup crawling jobs and the crawling chain information.
 
 ## Adding a new chain
 
 Setting up Verana Indexer for a new chain is straight-forward:
 
-- Add the chain to the `network.json` file
 - Configure the crawling jobs and chain information in the `config.json` file
 - If the chain has custom messages, you may need to add a new message decoder (see [Message Decoders](#message-decoders) section).
 - Start crawling your chain :fireworks:

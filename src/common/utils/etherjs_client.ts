@@ -1,17 +1,15 @@
 import { PublicClient, createPublicClient, http } from 'viem';
 import config from '../../../config.json' with { type: 'json' };
 import '../../../fetch-polyfill.js';
-import networks from '../../../network.json' with { type: 'json' };
+import { Network } from '../../../network';
 
 let viemClient!: PublicClient;
 
 export function getViemClient(): PublicClient {
   if (!viemClient) {
-    const selectedChain = networks.find(
-      (network) => network.chainId === config.chainId
-    );
-    if (!selectedChain?.EVMJSONRPC) {
-      throw new Error(`EVMJSONRPC not found with chainId: ${config.chainId}`);
+    const EVMJSONRPC=Network?.EVMJSONRPC
+    if (!EVMJSONRPC) {
+      throw new Error(`EVMJSONRPC not found.`);
     }
     viemClient = createPublicClient({
       batch: {
@@ -20,7 +18,7 @@ export function getViemClient(): PublicClient {
           wait: config.viemConfig.multicall.waitMilisecond,
         },
       },
-      transport: http(selectedChain.EVMJSONRPC[0], {
+      transport: http((EVMJSONRPC as any), {
         batch: {
           batchSize: config.viemConfig.transport.batchSize,
           wait: config.viemConfig.transport.waitMilisecond,
