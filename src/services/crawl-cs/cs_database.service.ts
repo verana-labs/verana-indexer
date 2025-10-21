@@ -166,7 +166,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action({
     name: "get",
     params: {
-      id: { type: "number", integer: true, positive: true }, 
+      id: { type: "number", integer: true, positive: true },
     },
   })
   async get(ctx: Context<{ id: number }>) {
@@ -177,8 +177,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (!schemaRecord) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
-
-      return ApiResponder.success(ctx, schemaRecord, 200);
+      if (schemaRecord?.json_schema && typeof schemaRecord.json_schema !== "string") {
+        schemaRecord.json_schema = JSON.stringify(schemaRecord.json_schema);
+      }
+      delete schemaRecord?.is_active
+      return ApiResponder.success(ctx, { schema: schemaRecord }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema get:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -195,8 +198,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         optional: true,
         default: false,
       },
-      issuer_perm_management_mode: { type: "number", optional: true },
-      verifier_perm_management_mode: { type: "number", optional: true },
+      issuer_perm_management_mode: { type: "string", optional: true },
+      verifier_perm_management_mode: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
     },
   })
@@ -214,7 +217,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
 
       const query = knex("credential_schemas");
-
       if (trId) query.where("tr_id", trId);
 
       if (modifiedAfter) {
@@ -244,9 +246,17 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (verifierPerm !== undefined) {
         query.where("verifier_perm_management_mode", verifierPerm);
       }
-
       const items = await query.orderBy("modified", "asc").limit(limit);
-      return ApiResponder.success(ctx, items, 200);
+
+      const cleanItems = items?.map(({ is_active, ...rest }) => ({
+        ...rest,
+        json_schema:
+          rest.json_schema && typeof rest.json_schema !== "string"
+            ? JSON.stringify(rest.json_schema)
+            : rest.json_schema,
+      }));
+
+      return ApiResponder.success(ctx, { schemas: cleanItems }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema list:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -272,7 +282,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
 
-      return ApiResponder.success(ctx, schemaRecord.json_schema, 200);
+      return ApiResponder.success(ctx, { schema: JSON.stringify(schemaRecord.json_schema) }, 200);
     } catch (err: any) {
       this.logger.error("Error in renderJsonSchema:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -293,7 +303,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           ? JSON.parse(module.params)
           : module.params;
 
-      return ApiResponder.success(ctx, parsedParams.params || {}, 200);
+      return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
     } catch (err: any) {
       this.logger.error("Error fetching credentialschema params", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -303,7 +313,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action({
     name: "getHistory",
     params: {
-      id: { type: "number", integer: true, positive: true }, 
+      id: { type: "number", integer: true, positive: true },
     },
   })
   async getHistory(ctx: Context<{ id: number }>) {
@@ -319,10 +329,19 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .where({ credential_schema_id: id })
         .orderBy("created_at", "asc");
 
-      return ApiResponder.success(ctx, { id, history: historyRecords }, 200);
+      const cleanHistory = historyRecords.map(record => ({
+        ...record,
+        json_schema:
+          record.json_schema && typeof record.json_schema !== "string"
+            ? JSON.stringify(record.json_schema)
+            : record.json_schema,
+      }));
+
+      return ApiResponder.success(ctx, { id, history: cleanHistory }, 200);
     } catch (err: any) {
       this.logger.error("Error fetching CredentialSchema history:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
+
 }

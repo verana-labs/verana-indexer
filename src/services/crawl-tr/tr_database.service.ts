@@ -54,10 +54,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         v.documents?.filter((d) => d.language === preferred_language) ?? [];
                 }
             }
-
             delete plain.governanceFrameworkVersions;
-
-            return ApiResponder.success(ctx, { ...plain, versions }, 200);
+            delete (plain as any).height;
+            return ApiResponder.success(ctx, { trust_registry: { ...plain, versions } }, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
@@ -121,11 +120,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
 
                 delete plain.governanceFrameworkVersions;
+                delete (plain as any).height;
 
                 return { ...plain, versions };
             });
 
-            return ApiResponder.success(ctx, result, 200);
+            return ApiResponder.success(ctx, { trust_registries: result }, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
@@ -145,7 +145,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     ? JSON.parse(module.params)
                     : module.params;
 
-            return ApiResponder.success(ctx, parsedParams.params || {}, 200);
+            return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
         } catch (err: any) {
             this.logger.error("Error fetching trustregistry params", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);

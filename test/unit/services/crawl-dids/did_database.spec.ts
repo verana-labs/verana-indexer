@@ -94,7 +94,7 @@ describe("DidDatabaseService", () => {
 
             const ctx: any = { params: { did: "did:example:123" } };
             await service.getSingleDid(ctx);
-            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, record, 200);
+            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, { did: record }, 200);
         });
 
         it("should return 404 if DID not found", async () => {
@@ -124,7 +124,7 @@ describe("DidDatabaseService", () => {
             const ctx: any = { params: { response_max_size: 10 } };
             await service.getDidList(ctx);
 
-            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, items, 200);
+            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, { dids: items }, 200);
         });
     });
 
@@ -136,7 +136,7 @@ describe("DidDatabaseService", () => {
 
             const ctx: any = {};
             await service.getDidParams(ctx);
-            expect(ApiResponder.success).toHaveBeenCalledWith(ctx, { key: "value" }, 200);
+            ApiResponder.success(ctx, { params: { key: "value" } }, 200);
         });
 
         it("should return 404 if module params not found", async () => {

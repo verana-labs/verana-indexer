@@ -97,7 +97,7 @@ export default class PermAPIService extends BullableService {
       }
 
       const results = await query.orderBy("modified", "asc").limit(limit);
-      return ApiResponder.success(ctx, results, 200);
+      return ApiResponder.success(ctx, { permissions: results }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissions:", err);
       return ApiResponder.error(ctx, "Failed to list permissions", 500);
@@ -117,7 +117,7 @@ export default class PermAPIService extends BullableService {
       if (!permission) {
         return ApiResponder.error(ctx, "Permission not found", 404);
       }
-      return ApiResponder.success(ctx, permission, 200);
+      return ApiResponder.success(ctx, { permission: permission }, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermission:", err);
       return ApiResponder.error(ctx, "Failed to get permission", 500);
@@ -181,7 +181,7 @@ export default class PermAPIService extends BullableService {
         await addAncestors(verifierPerm);
       }
 
-      return ApiResponder.success(ctx, Array.from(foundPermSet), 200);
+      return ApiResponder.success(ctx, { permissions: Array.from(foundPermSet) }, 200);
     } catch (err: any) {
       this.logger.error("Error in findBeneficiaries:", err);
       return ApiResponder.error(ctx, "Failed to find beneficiaries", 500);
@@ -200,7 +200,7 @@ export default class PermAPIService extends BullableService {
       const session = await knex("permission_sessions").where("id", id).first();
       if (!session)
         return ApiResponder.error(ctx, "PermissionSession not found", 404);
-      return ApiResponder.success(ctx, session, 200);
+      return ApiResponder.success(ctx, { session: session }, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermissionSession:", err);
       return ApiResponder.error(ctx, "Failed to get PermissionSession", 500);
@@ -230,7 +230,7 @@ export default class PermAPIService extends BullableService {
       }
 
       const results = await query.orderBy("modified", "asc").limit(limit);
-      return ApiResponder.success(ctx, results, 200);
+      return ApiResponder.success(ctx, { sessions: results }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissionSessions:", err);
       return ApiResponder.error(ctx, "Failed to list PermissionSessions", 500);

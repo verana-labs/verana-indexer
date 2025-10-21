@@ -122,6 +122,16 @@ async function attachHeaders(res: ServerResponse) {
           json: true,
           urlencoded: { extended: true },
         },
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
+        },
       },
       {
         path: "/",

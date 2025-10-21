@@ -45,7 +45,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     };
 
     const res = await broker.call(`${serviceKey}.upsert`, { payload });
-    schema = res.data?.result || res.result || res;
+    schema = res?.result || res;
 
     expect(res).toBeDefined();
     expect(schema.tr_id).toBe("T123");
@@ -57,8 +57,8 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       payload: { id: schema.id, deposit: "20000000" },
     });
 
-    const updated = res.data?.updated || res.updated;
-    expect(res.data?.success ?? res.success).toBe(true);
+    const updated = res?.updated || res.updated;
+    expect(res?.success ?? res.success).toBe(true);
     expect(updated.deposit).toBe("20000000");
   });
 
@@ -71,7 +71,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       },
     });
 
-    const success = res.data?.success ?? res.success;
+    const success = res?.success ?? res.success;
     expect(success).toBe(true);
 
     const dbRow = await knex("credential_schemas")
@@ -89,7 +89,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       },
     });
 
-    const success = res.data?.success ?? res.success;
+    const success = res.success ?? res.success;
     expect(success).toBe(true);
 
     const dbRow = await knex("credential_schemas")
@@ -100,7 +100,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should get the credential schema by id", async () => {
     const res = await broker.call(`${serviceKey}.get`, { id: schema.id });
-    const item = res.data || res;
+    const item = res?.schema || res;
 
     expect(item.id).toBe(schema.id);
     expect(item.tr_id).toBe("T123");
@@ -108,31 +108,30 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should list credential schemas", async () => {
     const res = await broker.call(`${serviceKey}.list`, { only_active: false });
-    const items = res.data || res;
+    const items = res?.schemas || res;
 
     expect(Array.isArray(items)).toBe(true);
-    // check that our schema is inside the list
     const found = items.find((i: any) => i.id === schema.id);
     expect(found).toBeDefined();
     expect(found.tr_id).toBe("T123");
   });
 
   it("should fetch JsonSchema of the credential schema", async () => {
-    const res = await broker.call(`${serviceKey}.JsonSchema`, {
-      id: schema.id,
-    });
-    const jsonSchema = res.data || res;
+    const res = await broker.call(`${serviceKey}.JsonSchema`, { id: schema.id });
+    const jsonSchemaStr = res?.schema || res;
 
-    // jsonSchema is an object, so assert keys
-    expect(typeof jsonSchema).toBe("object");
+    expect(typeof jsonSchemaStr).toBe("string");
+
+    const jsonSchema = JSON.parse(jsonSchemaStr);
     expect(jsonSchema.type).toBe("object");
     expect(jsonSchema.properties).toHaveProperty("foo");
+
   });
 
   it("should fetch module params for credentialschema", async () => {
     try {
       const res = await broker.call(`${serviceKey}.getParams`);
-      const params = res.data || res;
+      const params = res;
 
       expect(typeof params).toBe("object");
     } catch {
@@ -143,10 +142,8 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   });
 
   it("should get history records for the schema", async () => {
-    const res = await broker.call(`${serviceKey}.getHistory`, {
-      id: schema.id,
-    });
-    const history = res.data?.history || res.history;
+    const res = await broker.call(`${serviceKey}.getHistory`, { id: schema.id });
+    const history = res?.history;
 
     expect(Array.isArray(history)).toBe(true);
     expect(history.length).toBeGreaterThan(0);

@@ -12,9 +12,9 @@ export default class CredentialSchema extends BaseModel {
   verifier_validation_validity_period!: number;
   holder_validation_validity_period!: number;
 
-  issuer_perm_management_mode!: number;
+  issuer_perm_management_mode!: string;
   deposit!: string;
-  verifier_perm_management_mode!: number;
+  verifier_perm_management_mode!: string;
 
   archived!: Date | null;
   created!: Date;
@@ -50,8 +50,8 @@ export default class CredentialSchema extends BaseModel {
         verifier_validation_validity_period: { type: "integer" },
         holder_validation_validity_period: { type: "integer" },
 
-        issuer_perm_management_mode: { type: "integer" },
-        verifier_perm_management_mode: { type: "integer" },
+        issuer_perm_management_mode: { type: "string" },
+        verifier_perm_management_mode: { type: "string" },
         is_active: { type: "boolean" },
 
         archived: { type: ["string", "null"], format: "date-time" },
