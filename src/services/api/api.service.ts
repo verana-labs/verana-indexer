@@ -4,9 +4,11 @@ import { IncomingMessage, ServerResponse } from "http";
 import { Context, ServiceBroker } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
 import ApiGateway, { Route } from "moleculer-web";
+// Serve Swagger UI static files
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
+import { swaggerUiComponent } from "./swagger_ui";
 
 async function attachHeaders(res: ServerResponse) {
   try {
@@ -135,48 +137,7 @@ async function attachHeaders(res: ServerResponse) {
       },
       {
         path: "/",
-        aliases: {
-          "GET /": (req: IncomingMessage, res: ServerResponse) => {
-            res.setHeader("Content-Type", "text/html");
-            res.end(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>Verana Indexer</title>
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                background: #f4f6f8;
-                color: #333;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                margin: 0;
-              }
-              h1 {
-                color: #24162F;
-                margin-bottom: 10px;
-              }          
-              footer {
-                position: absolute;
-                bottom: 20px;
-                font-size: 0.9rem;
-                color: #777;
-              }
-            </style>
-          </head>
-          <body>
-            <h1>Verana Indexer</h1>
-            <footer>© ${new Date().getFullYear()} Verana Labs</footer>
-          </body>
-        </html>
-      `);
-          },
-        },
+        ...swaggerUiComponent(),
       },
     ],
   },
