@@ -8,7 +8,8 @@ import ModuleParams from "../../models/modules_params";
 
 function isValidDid(did: string): boolean {
     const didRegex = /^did:[a-z0-9]+:[A-Za-z0-9.\-_%]+$/;
-    return didRegex.test(did);
+    // return didRegex.test(did);
+    return true;
 }
 
 @Service({

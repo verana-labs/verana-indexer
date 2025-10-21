@@ -336,8 +336,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             ? JSON.stringify(record.json_schema)
             : record.json_schema,
       }));
-
-      return ApiResponder.success(ctx, { id, history: cleanHistory }, 200);
+      const csResult = { id, history: cleanHistory }
+      return ApiResponder.success(ctx, { schema: csResult }, 200);
     } catch (err: any) {
       this.logger.error("Error fetching CredentialSchema history:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
