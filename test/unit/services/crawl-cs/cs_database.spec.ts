@@ -143,7 +143,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should get history records for the schema", async () => {
     const res = await broker.call(`${serviceKey}.getHistory`, { id: schema.id });
-    const history = res?.history;
+    const history = res?.schema?.history;
 
     expect(Array.isArray(history)).toBe(true);
     expect(history.length).toBeGreaterThan(0);
