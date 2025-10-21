@@ -1,45 +1,54 @@
-import { Knex } from 'knex';
-import network from './network.json' with { type: 'json' };
-import configJson from './config.json' with { type: 'json' };
-import { Config } from './src/common';
+import { Knex } from "knex";
+import { Network } from "./network";
+import { Config } from "./src/common";
 
 const DEFAULT_POOL_MAX = 10;
-const DEFAULT_STATEMENT_TIMEOUT = 20000; 
-
+const DEFAULT_STATEMENT_TIMEOUT = 20000;
+const databaseName = Network.databaseName;
 const config: { [key: string]: Knex.Config } = {
   development: {
-    client: 'pg',
+    client: "pg",
     migrations: {
-      directory: ['./migrations'],
+      directory: ["./migrations"],
     },
     connection: {
-      database: network.find((item) => item.chainId === configJson.chainId)
-        ?.databaseName,
+      database: databaseName,
       host: Config.POSTGRES_HOST,
       user: Config.POSTGRES_USER,
       password: Config.POSTGRES_PASSWORD,
       port: Config.POSTGRES_PORT,
-      statement_timeout: parseInt(Config.POSTGRES_STATEMENT_TIMEOUT ?? DEFAULT_STATEMENT_TIMEOUT.toString(), 10),
+      statement_timeout: parseInt(
+        Config.POSTGRES_STATEMENT_TIMEOUT ??
+          DEFAULT_STATEMENT_TIMEOUT.toString(),
+        10
+      ),
     },
     pool: {
       min: 2,
-      max: parseInt(Config.POSTGRES_POOL_MAX ?? DEFAULT_POOL_MAX.toString(), 10),
-      acquireTimeoutMillis: 60000, 
-      idleTimeoutMillis: 10000,    
+      max: parseInt(
+        Config.POSTGRES_POOL_MAX ?? DEFAULT_POOL_MAX.toString(),
+        10
+      ),
+      acquireTimeoutMillis: 60000,
+      idleTimeoutMillis: 10000,
     },
   },
   test: {
-    client: 'pg',
+    client: "pg",
     migrations: {
-      directory: ['./migrations'],
+      directory: ["./migrations"],
     },
     connection: {
       database: Config.POSTGRES_DB_TEST,
-      host: 'localhost',
+      host: "localhost",
       user: Config.POSTGRES_USER,
       password: Config.POSTGRES_PASSWORD,
       port: Config.POSTGRES_PORT,
-      statement_timeout: parseInt(Config.POSTGRES_STATEMENT_TIMEOUT ?? DEFAULT_STATEMENT_TIMEOUT.toString(), 10),
+      statement_timeout: parseInt(
+        Config.POSTGRES_STATEMENT_TIMEOUT ??
+          DEFAULT_STATEMENT_TIMEOUT.toString(),
+        10
+      ),
     },
     pool: {
       min: 1,
@@ -49,22 +58,28 @@ const config: { [key: string]: Knex.Config } = {
     },
   },
   production: {
-    client: 'pg',
+    client: "pg",
     migrations: {
-      directory: ['./migrations'],
+      directory: ["./migrations"],
     },
     connection: {
-      database: network.find((item) => item.chainId === configJson.chainId)
-        ?.databaseName,
+      database: databaseName,
       host: Config.POSTGRES_HOST,
       user: Config.POSTGRES_USER,
       password: Config.POSTGRES_PASSWORD,
       port: Config.POSTGRES_PORT,
-      statement_timeout: parseInt(Config.POSTGRES_STATEMENT_TIMEOUT ?? DEFAULT_STATEMENT_TIMEOUT.toString(), 10),
+      statement_timeout: parseInt(
+        Config.POSTGRES_STATEMENT_TIMEOUT ??
+          DEFAULT_STATEMENT_TIMEOUT.toString(),
+        10
+      ),
     },
     pool: {
       min: 2,
-      max: parseInt(Config.POSTGRES_POOL_MAX ?? DEFAULT_POOL_MAX.toString(), 10),
+      max: parseInt(
+        Config.POSTGRES_POOL_MAX ?? DEFAULT_POOL_MAX.toString(),
+        10
+      ),
       acquireTimeoutMillis: 60000,
       idleTimeoutMillis: 10000,
     },

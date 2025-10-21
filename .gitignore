@@ -104,9 +104,6 @@ Thumbs.db
 # Docker
 .dockerignore
 
-# CI/CD
-ci/
-
 # Test coverage
 coverage/
 *.lcov

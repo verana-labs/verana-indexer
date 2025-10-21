@@ -33,6 +33,7 @@ async function attachHeaders(res: ServerResponse) {
   mixins: [ApiGateway, OpenApiMixin],
   settings: {
     port: process.env.PORT || 3001,
+
     routes: [
       {
         path: "/verana/dd/v1",
@@ -120,6 +121,51 @@ async function attachHeaders(res: ServerResponse) {
         bodyParsers: {
           json: true,
           urlencoded: { extended: true },
+        },
+      },
+      {
+        path: "/",
+        aliases: {
+          "GET /": (req: IncomingMessage, res: ServerResponse) => {
+            res.setHeader("Content-Type", "text/html");
+            res.end(`
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Verana Indexer</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                background: #f4f6f8;
+                color: #333;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                margin: 0;
+              }
+              h1 {
+                color: #24162F;
+                margin-bottom: 10px;
+              }          
+              footer {
+                position: absolute;
+                bottom: 20px;
+                font-size: 0.9rem;
+                color: #777;
+              }
+            </style>
+          </head>
+          <body>
+            <h1>Verana Indexer</h1>
+            <footer>© ${new Date().getFullYear()} Verana Labs</footer>
+          </body>
+        </html>
+      `);
+          },
         },
       },
     ],
