@@ -11,6 +11,7 @@ import {
 } from "../../common";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
+import { getModeString } from "./cs_types";
 
 interface CredentialSchemaMessage {
   tr_id: number;
@@ -24,8 +25,8 @@ interface CredentialSchemaMessage {
   issuer_validation_validity_period: number;
   verifier_validation_validity_period: number;
   holder_validation_validity_period: number;
-  issuer_perm_management_mode: number;
-  verifier_perm_management_mode: number;
+  issuer_perm_management_mode: string;
+  verifier_perm_management_mode: string;
   timestamp?: string;
   creator?: string;
   archive?: string;
@@ -100,7 +101,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
     return { success: true };
   }
-
   private async createSchema(
     ctx: Context,
     schemaMessage: CredentialSchemaMessage,
@@ -108,19 +108,23 @@ export default class ProcessCredentialSchemaService extends BullableService {
   ) {
     try {
       const timestamp = formatTimestamp(schemaMessage.timestamp);
-
       const content = schemaMessage?.content ?? {};
+      const trId = content.tr_id ?? "";
+      const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
+
+      const baseSchema =
+        typeof content.json_schema === "string"
+          ? JSON.parse(content.json_schema)
+          : content.json_schema ?? {};
 
       const payload: Record<string, any> = {
-        tr_id: content.tr_id ?? "",
-        json_schema: content.json_schema ?? {},
-
+        tr_id: trId,
+        json_schema: JSON.stringify(baseSchema),
         deposit: deposit?.toString() ?? "0",
         created: timestamp ?? null,
         modified: timestamp ?? null,
         archived: null,
         is_active: content.is_active ?? false,
-
         issuer_grantor_validation_validity_period:
           content.issuer_grantor_validation_validity_period ?? 0,
         verifier_grantor_validation_validity_period:
@@ -131,26 +135,55 @@ export default class ProcessCredentialSchemaService extends BullableService {
           content.verifier_validation_validity_period ?? 0,
         holder_validation_validity_period:
           content.holder_validation_validity_period ?? 0,
-
-        issuer_perm_management_mode: content.issuer_perm_management_mode ?? 0,
-        verifier_perm_management_mode:
-          content.verifier_perm_management_mode ?? 0,
+        issuer_perm_management_mode: getModeString(
+          content.issuer_perm_management_mode ?? 0
+        ),
+        verifier_perm_management_mode: getModeString(
+          content.verifier_perm_management_mode ?? 0
+        ),
       };
 
-      const result = await ctx.call(
+      const insertResult = await ctx.call(
         `${SERVICE.V1.CredentialSchemaDatabaseService.path}.upsert`,
         { payload }
       );
 
+      const generatedId =
+        (insertResult as any)?.data?.result?.id ??
+        (insertResult as any)?.result?.id ??
+        (insertResult as any)?.id;
+
+      if (!generatedId) {
+        throw new Error("❌ Failed to get generated ID from DB");
+      }
+
+      const updatedSchema = {
+        ...baseSchema,
+        $id: `vpr:verana:${chainId}/cs/v1/js/${generatedId}`,
+      };
+
+      const updatePayload: Record<string, any> = {
+        id: generatedId,
+        json_schema: JSON.stringify(updatedSchema),
+      };
+
+      await ctx.call(
+        `${SERVICE.V1.CredentialSchemaDatabaseService.path}.update`,
+        { payload: updatePayload }
+      );
+
       this.logger.info(
-        `✅ Stored credential schema tr_id=${payload.tr_id} with deposit=${payload.deposit}`,
-        result
+        `✅ Stored credential schema tr_id=${trId} with final ID=${generatedId}`,
+        updatePayload
       );
     } catch (err) {
       this.logger.error("❌ Error storing credential schema:", err);
       process.exit();
     }
   }
+
+
+
 
   private async updateSchema(
     ctx: Context,

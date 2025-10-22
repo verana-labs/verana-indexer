@@ -12,10 +12,10 @@ Credential schemas define the **structure and validation rules** for credentials
 
 ## 🎯 Purpose
 
-- **Index & Store** credential schema transactions from the blockchain.
-- **Track lifecycle** (create, update, archive/unarchive) of credential schemas.
-- **Maintain history** for auditability.
-- **Expose APIs** for querying schemas.
+* **Index & Store** credential schema transactions from the blockchain.
+* **Track lifecycle** (create, update, archive/unarchive) of credential schemas.
+* **Maintain history** for auditability.
+* **Expose APIs** for querying schemas.
 
 ---
 
@@ -29,7 +29,7 @@ sequenceDiagram
     participant ProcessSvc as ProcessCredentialSchemaService
     participant DB as CredentialSchemaDatabaseService
     participant History as credential_schema_history
-    participant API as API Gateway
+    participant API as API Gateway 
     participant User as Client / dApp
 
     Blockchain ->> ProcessSvc: CredentialSchema Msg (create/update/archive)
@@ -43,15 +43,15 @@ sequenceDiagram
 
 1. **ProcessCredentialSchemaService**
 
-   - Handles raw messages from the blockchain.
-   - Calculates deposits (based on `module_params`).
-   - Calls the database service with normalized payloads.
+   * Handles raw messages from the blockchain.
+   * Calculates deposits (based on `module_params`).
+   * Calls the database service with normalized payloads.
 
 2. **CredentialSchemaDatabaseService**
 
-   - Stores credential schemas in `credential_schemas`.
-   - Tracks lifecycle events in `credential_schema_history`.
-   - Provides query APIs (`get`, `list`, `JsonSchema`, `getHistory`, `getParams`).
+   * Stores credential schemas in `credential_schemas`.
+   * Tracks lifecycle events in `credential_schema_history`.
+   * Provides query APIs (`get`, `list`, `JsonSchema`, `getHistory`, `getParams`).
 
 ---
 
@@ -70,10 +70,10 @@ sequenceDiagram
 | `issuer_validation_validity_period`           | int            | Issuer validity period             |
 | `verifier_validation_validity_period`         | int            | Verifier validity period           |
 | `holder_validation_validity_period`           | int            | Holder validity period             |
-| `issuer_perm_management_mode`                 | int            | Issuer permission mode             |
-| `verifier_perm_management_mode`               | int            | Verifier permission mode           |
+| `issuer_perm_management_mode`                 | string            | Issuer permission mode             |
+| `verifier_perm_management_mode`               | string            | Verifier permission mode           |
 | `archived`                                    | timestamp/null | Archive flag (null = active)       |
-| `is_active`                                   | boolean        | Schema is active or not            |
+| `is_active`                                    | boolean        | Schema is active or not            |
 | `created`                                     | timestamp      | Created timestamp                  |
 | `modified`                                    | timestamp      | Modified timestamp                 |
 
@@ -85,12 +85,12 @@ Keeps **full history of changes** to schemas.
 
 | Column                 | Type           | Description                                |
 | ---------------------- | -------------- | ------------------------------------------ |
-| `credential_schema_id` | int            | FK → credential_schemas.id                 |
+| `credential_schema_id` | int            | FK → credential\_schemas.id                |
 | `tr_id`                | string         | Trust registry ID                          |
 | `json_schema`          | jsonb          | JSON schema snapshot                       |
 | `deposit`              | string         | Deposit at time of change                  |
 | `archived`             | timestamp/null | Archived state at time of change           |
-| `is_active`            | boolean        | Active state at time of change             |
+| `is_active`             | boolean        | Active state at time of change             |
 | `action`               | enum           | `create`, `update`, `archive`, `unarchive` |
 | `changes`              | jsonb          | Field-level diffs                          |
 | `created_at`           | timestamp      | When the change was recorded               |
@@ -101,43 +101,42 @@ Keeps **full history of changes** to schemas.
 
 ### 1. `upsert`
 
-- Create a new credential schema.
-- Records initial history entry.
+* Create a new credential schema.
+* Records initial history entry.
 
 ### 2. `update`
 
-- Update existing schema fields.
-- Diffs changes and records them in history.
+* Update existing schema fields.
+* Diffs changes and records them in history.
 
 ### 3. `archive` / `unarchive`
 
-- Toggle schema archive state.
-- Records action + diffs in history.
+* Toggle schema archive state.
+* Records action + diffs in history.
 
 ### 4. `get`
 
-- Retrieve a single credential schema by `id`.
+* Retrieve a single credential schema by `id`.
 
 ### 5. `list`
 
-- List schemas with filters:
+* List schemas with filters:
 
-  - `tr_id`, `modified_after`, `only_active`, `issuer_perm_management_mode`, `verifier_perm_management_mode`.
-
-- Supports pagination via `response_max_size`.
+  * `tr_id`, `modified_after`, `only_active`, `issuer_perm_management_mode`, `verifier_perm_management_mode`.
+* Supports pagination via `response_max_size`.
 
 ### 6. `JsonSchema`
 
-- Retrieve only the **JSON schema definition** by `id`.
+* Retrieve only the **JSON schema definition** by `id`.
 
 ### 7. `getHistory`
 
-- Retrieve full **lifecycle history** of a schema.
+* Retrieve full **lifecycle history** of a schema.
 
 ### 8. `getParams`
 
-- Retrieve **module parameters** (from `module_params` table).
-- Used for deposit calculation, trust unit pricing, etc.
+* Retrieve **module parameters** (from `module_params` table).
+* Used for deposit calculation, trust unit pricing, etc.
 
 ---
 
@@ -145,9 +144,9 @@ Keeps **full history of changes** to schemas.
 
 Defined in `module_params`:
 
-- `credential_schema_trust_deposit`: Base deposit required for schema creation.
-- `trust_unit_price`: Unit price multiplier from trust registry.
-- **Effective deposit** = `credential_schema_trust_deposit × trust_unit_price`.
+* `credential_schema_trust_deposit`: Base deposit required for schema creation.
+* `trust_unit_price`: Unit price multiplier from trust registry.
+* **Effective deposit** = `credential_schema_trust_deposit × trust_unit_price`.
 
 ---
 
@@ -168,8 +167,8 @@ Defined in `module_params`:
   "issuer_validation_validity_period": 3600,
   "verifier_validation_validity_period": 3600,
   "holder_validation_validity_period": 3600,
-  "issuer_perm_management_mode": 1,
-  "verifier_perm_management_mode": 1
+  "issuer_perm_management_mode": "OPEN",
+  "verifier_perm_management_mode":"OPEN"
 }
 ```
 
@@ -180,6 +179,6 @@ Defined in `module_params`:
 
 ## 🔍 References
 
-- [Verana VPR Spec – Credential Schema](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-cs-msg-1-create-new-credential-schema)
-- `CredentialSchemaDatabaseService.ts`
-- `ProcessCredentialSchemaService.ts`
+* [Verana VPR Spec – Credential Schema](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-cs-msg-1-create-new-credential-schema)
+* `CredentialSchemaDatabaseService.ts`
+* `ProcessCredentialSchemaService.ts`
