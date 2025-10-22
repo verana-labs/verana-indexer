@@ -1,0 +1,1852 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Verana Indexer API",
+    "description": "Comprehensive API for managing decentralized identifiers, trust registries, credential schemas, and permissions in the Verana ecosystem",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://idx.testnet.verana.network",
+      "description": "Testnet API server"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/verana/dd/v1/get/{did}": {
+      "get": {
+        "tags": [
+          "DID"
+        ],
+        "summary": "Get DID document",
+        "description": "Retrieve a specific Decentralized Identifier document by its DID",
+        "operationId": "getDID",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "did:Test:123"
+            },
+            "description": "The Decentralized Identifier to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with DID document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DIDResponse"
+                },
+                "example": {
+                  "did": {
+                    "did": "did:Test:123",
+                    "controller": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+                    "deposit": "5000000",
+                    "exp": "2026-10-06T08:46:20.686Z",
+                    "created": "2025-10-06T08:46:20.686Z",
+                    "modified": "2025-10-06T08:46:20.686Z"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DID not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "DID not found: did:Test:123",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/dd/v1/list": {
+      "get": {
+        "tags": [
+          "DID"
+        ],
+        "summary": "List DID documents",
+        "description": "Retrieve a paginated list of Decentralized Identifier documents with optional filtering",
+        "operationId": "listDID",
+        "parameters": [
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Maximum number of records to return"
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "verana1k6exwj6644xy028vxtzxs2fhf9nt8hymeuqkz7"
+            },
+            "description": "Filter by controller account"
+          },
+          {
+            "name": "modified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter by modification date"
+          },
+          {
+            "name": "over_grace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter by grace period status"
+          },
+          {
+            "name": "expired",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter by expiration status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with list of DIDs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DIDListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/dd/v1/history/{did}": {
+      "get": {
+        "tags": [
+          "DID"
+        ],
+        "summary": "Get DID history",
+        "description": "Retrieve the complete history and changes for a specific DID",
+        "operationId": "getDIDHistory",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "did:Test:123"
+            },
+            "description": "The Decentralized Identifier to retrieve history for"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with DID history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DIDHistoryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DID history not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "DID history not found: did:Test:123",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/dd/v1/params": {
+      "get": {
+        "tags": [
+          "DID"
+        ],
+        "summary": "Get DID parameters",
+        "description": "Retrieve current system parameters for DID directory",
+        "operationId": "getDIDParams",
+        "responses": {
+          "200": {
+            "description": "Successful response with DID parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DIDParamsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/tr/v1/params": {
+      "get": {
+        "tags": [
+          "Trust Registry"
+        ],
+        "summary": "Get Trust Registry parameters",
+        "description": "Retrieve current system parameters for Trust Registry",
+        "operationId": "getTrustRegistryParams",
+        "responses": {
+          "200": {
+            "description": "Successful response with Trust Registry parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustRegistryParamsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/tr/v1/list": {
+      "get": {
+        "tags": [
+          "Trust Registry"
+        ],
+        "summary": "List Trust Registries",
+        "description": "Retrieve a paginated list of Trust Registries with optional filtering",
+        "operationId": "listTrustRegistry",
+        "parameters": [
+          {
+            "name": "active_gf_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Filter only active governance frameworks"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "en"
+            },
+            "description": "Preferred language for document content"
+          },
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Maximum number of records to return"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter by modification date"
+          },
+          {
+            "name": "controller",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "verana1evfvnwxjngkq2nz7nra5puj45s5dzrf378crlj"
+            },
+            "description": "Filter by controller account"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with list of Trust Registries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustRegistryListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/tr/v1/get/{id}": {
+      "get": {
+        "tags": [
+          "Trust Registry"
+        ],
+        "summary": "Get Trust Registry",
+        "description": "Retrieve a specific Trust Registry by its ID",
+        "operationId": "getTrustRegistry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            },
+            "description": "The Trust Registry ID to retrieve"
+          },
+          {
+            "name": "active_gf_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Filter only active governance frameworks"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "en"
+            },
+            "description": "Preferred language for document content"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Trust Registry details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustRegistryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trust Registry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Trust Registry not found: 1",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/tr/v1/history/{id}": {
+      "get": {
+        "tags": [
+          "Trust Registry"
+        ],
+        "summary": "Get Trust Registry history",
+        "description": "Retrieve the complete history and changes for a specific Trust Registry",
+        "operationId": "getTrustRegistryHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "5"
+            },
+            "description": "The Trust Registry ID to retrieve history for"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Trust Registry history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustRegistryHistoryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trust Registry history not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Trust Registry history not found: 5",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/cs/v1/get/{id}": {
+      "get": {
+        "tags": [
+          "Credential Schema"
+        ],
+        "summary": "Get Credential Schema",
+        "description": "Retrieve a specific Credential Schema by its ID",
+        "operationId": "getCredentialSchema",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "3"
+            },
+            "description": "The Credential Schema ID to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Credential Schema details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential Schema not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Credential Schema not found: 3",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/cs/v1/js/{id}": {
+      "get": {
+        "tags": [
+          "Credential Schema"
+        ],
+        "summary": "Get JSON Schema",
+        "description": "Retrieve the JSON Schema definition for a specific Credential Schema",
+        "operationId": "getJsonSchema",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "3"
+            },
+            "description": "The Credential Schema ID to retrieve JSON Schema for"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with JSON Schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "JSON Schema not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "JSON Schema not found for Credential Schema: 3",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/cs/v1/list": {
+      "get": {
+        "tags": [
+          "Credential Schema"
+        ],
+        "summary": "List Credential Schemas",
+        "description": "Retrieve a paginated list of Credential Schemas with optional filtering",
+        "operationId": "listCredentialSchemas",
+        "parameters": [
+          {
+            "name": "tr_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by Trust Registry ID"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter by modification date"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Filter only active"
+          },
+          {
+            "name": "issuer_perm_management_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "ECOSYSTEM",
+                "GRANTOR_VALIDATION"
+              ]
+            },
+            "description": "Filter by issuer permission management mode"
+          },
+          {
+            "name": "verifier_perm_management_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "ECOSYSTEM",
+                "GRANTOR_VALIDATION"
+              ]
+            },
+            "description": "Filter by verifier permission management mode"
+          },
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Maximum number of records to return in the response"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with list of Credential Schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialSchemaListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/cs/v1/history/{id}": {
+      "get": {
+        "tags": [
+          "Credential Schema"
+        ],
+        "summary": "Get Credential Schema history",
+        "description": "Retrieve the complete history and changes for a specific Credential Schema",
+        "operationId": "getCredentialSchemaHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "3"
+            },
+            "description": "The Credential Schema ID to retrieve history for"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Credential Schema history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialSchemaHistoryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Credential Schema history not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Credential Schema history not found: 3",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/cs/v1/params": {
+      "get": {
+        "tags": [
+          "Credential Schema"
+        ],
+        "summary": "Get Credential Schema parameters",
+        "description": "Retrieve current system parameters for Credential Schemas",
+        "operationId": "getCredentialSchemaParams",
+        "responses": {
+          "200": {
+            "description": "Successful response with Credential Schema parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialSchemaParamsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/perm/v1/list": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "List Permissions",
+        "description": "Retrieve a paginated list of Permissions with extensive filtering options",
+        "operationId": "listPermissions",
+        "parameters": [
+          {
+            "name": "grantee",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "verana1abc"
+            },
+            "description": "Filter by grantee account"
+          },
+          {
+            "name": "did",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "did:verana:xyz"
+            },
+            "description": "Filter by DID"
+          },
+          {
+            "name": "perm_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "11"
+            },
+            "description": "Filter by permission ID"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ISSUER",
+                "VERIFIER",
+                "ECOSYSTEM"
+              ]
+            },
+            "description": "Filter by permission type"
+          },
+          {
+            "name": "only_valid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter only valid permissions"
+          },
+          {
+            "name": "only_slashed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter only slashed permissions"
+          },
+          {
+            "name": "only_repaid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Filter only repaid permissions"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter by modification date"
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "US"
+            },
+            "description": "Filter by country code"
+          },
+          {
+            "name": "vp_state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "VALIDATED",
+                "TERMINATED",
+                "VALIDATION_STATE_UNSPECIFIED"
+              ]
+            },
+            "description": "Filter by validation process state"
+          },
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Maximum number of records to return"
+          },
+          {
+            "name": "when",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter by effective date"
+          },
+          {
+            "name": "schema_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "3"
+            },
+            "description": "Filter by schema ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with list of Permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/perm/v1/get/{id}": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Get Permission",
+        "description": "Retrieve a specific Permission by its ID",
+        "operationId": "getPermission",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            },
+            "description": "The Permission ID to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Permission details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Permission not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Permission not found: 1",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/perm/v1/permission-session/{id}": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Get Permission Session",
+        "description": "Retrieve a specific Permission Session by its ID",
+        "operationId": "getPermissionSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "123e4567-e89b-12d3-a456-426614174000"
+            },
+            "description": "The Permission Session ID to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Permission Session details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionSessionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Permission Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Permission Session not found: 123e4567-e89b-12d3-a456-426614174000",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/perm/v1/permission-sessions": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "List Permission Sessions",
+        "description": "Retrieve a paginated list of Permission Sessions",
+        "operationId": "listPermissionSessions",
+        "parameters": [
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2025-10-01T00:00:00Z"
+            },
+            "description": "Filter by modification date"
+          },
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Maximum number of records to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with list of Permission Sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionSessionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/perm/v1/beneficiaries": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Find Beneficiaries",
+        "description": "Find permission beneficiaries based on issuer and verifier permissions",
+        "operationId": "findBeneficiaries",
+        "parameters": [
+          {
+            "name": "issuer_perm_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            },
+            "description": "Issuer Permission ID"
+          },
+          {
+            "name": "verifier_perm_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "2"
+            },
+            "description": "Verifier Permission ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with beneficiary permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeneficiaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "Beneficiaries not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "No beneficiaries found for issuer_perm_id: 1 and verifier_perm_id: 2",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "code": {
+            "type": "integer",
+            "description": "HTTP status code"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details",
+            "nullable": true
+          }
+        }
+      },
+      "DID": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "string",
+            "description": "Decentralized Identifier"
+          },
+          "controller": {
+            "type": "string",
+            "description": "Controller account address"
+          },
+          "deposit": {
+            "type": "string",
+            "description": "Deposit amount"
+          },
+          "exp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiration date"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation date"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last modification date"
+          }
+        }
+      },
+      "DIDResponse": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "$ref": "#/components/schemas/DID"
+          }
+        }
+      },
+      "DIDListResponse": {
+        "type": "object",
+        "properties": {
+          "dids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DID"
+            }
+          }
+        }
+      },
+      "DIDHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "did": {
+                  "type": "string"
+                },
+                "years": {
+                  "type": "string"
+                },
+                "controller": {
+                  "type": "string"
+                },
+                "deposit": {
+                  "type": "string"
+                },
+                "exp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "changes": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "DIDParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "did_directory_grace_period": {
+                "type": "string",
+                "example": "30"
+              },
+              "did_directory_trust_deposit": {
+                "type": "string",
+                "example": "5"
+              }
+            }
+          }
+        }
+      },
+      "TrustRegistryParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "trust_unit_price": {
+                "type": "string",
+                "example": "1000000"
+              },
+              "trust_registry_trust_deposit": {
+                "type": "string",
+                "example": "10"
+              }
+            }
+          }
+        }
+      },
+      "TrustRegistry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "did": {
+            "type": "string"
+          },
+          "controller": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "archived": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deposit": {
+            "type": "string"
+          },
+          "aka": {
+            "type": "string",
+            "nullable": true
+          },
+          "language": {
+            "type": "string"
+          },
+          "active_version": {
+            "type": "integer"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustRegistryVersion"
+            }
+          }
+        }
+      },
+      "TrustRegistryVersion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tr_id": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "active_since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustRegistryDocument"
+            }
+          }
+        }
+      },
+      "TrustRegistryDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "gfv_id": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "language": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "digest_sri": {
+            "type": "string"
+          }
+        }
+      },
+      "TrustRegistryListResponse": {
+        "type": "object",
+        "properties": {
+          "trust_registries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustRegistry"
+            }
+          }
+        }
+      },
+      "TrustRegistryResponse": {
+        "type": "object",
+        "properties": {
+          "trust_registry": {
+            "$ref": "#/components/schemas/TrustRegistry"
+          }
+        }
+      },
+      "TrustRegistryHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "trust_registry": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "did": {
+                "type": "string"
+              },
+              "controller": {
+                "type": "string"
+              },
+              "created": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "modified": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "archived": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "deposit": {
+                "type": "string"
+              },
+              "aka": {
+                "type": "string",
+                "nullable": true
+              },
+              "language": {
+                "type": "string"
+              },
+              "active_version": {
+                "type": "integer"
+              },
+              "versions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TrustRegistryVersion"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CredentialSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tr_id": {
+            "type": "string"
+          },
+          "json_schema": {
+            "type": "string"
+          },
+          "deposit": {
+            "type": "string"
+          },
+          "issuer_grantor_validation_validity_period": {
+            "type": "integer"
+          },
+          "verifier_grantor_validation_validity_period": {
+            "type": "integer"
+          },
+          "issuer_validation_validity_period": {
+            "type": "integer"
+          },
+          "verifier_validation_validity_period": {
+            "type": "integer"
+          },
+          "holder_validation_validity_period": {
+            "type": "integer"
+          },
+          "issuer_perm_management_mode": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ECOSYSTEM",
+              "GRANTOR_VALIDATION"
+            ]
+          },
+          "verifier_perm_management_mode": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ECOSYSTEM",
+              "GRANTOR_VALIDATION"
+            ]
+          },
+          "archived": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CredentialSchemaResponse": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "$ref": "#/components/schemas/CredentialSchema"
+          }
+        }
+      },
+      "JsonSchemaResponse": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "CredentialSchemaListResponse": {
+        "type": "object",
+        "properties": {
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialSchema"
+            }
+          }
+        }
+      },
+      "CredentialSchemaHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "history": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CredentialSchemaParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "credential_schema_trust_deposit": {
+                "type": "string",
+                "example": "5"
+              }
+            }
+          }
+        }
+      },
+      "Permission": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "schema_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ISSUER",
+              "VERIFIER",
+              "ECOSYSTEM"
+            ]
+          },
+          "did": {
+            "type": "string",
+            "nullable": true
+          },
+          "grantee": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "extended": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "extended_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "slashed": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "slashed_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "repaid": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "repaid_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "effective_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "validation_fees": {
+            "type": "string"
+          },
+          "issuance_fees": {
+            "type": "string"
+          },
+          "verification_fees": {
+            "type": "string"
+          },
+          "deposit": {
+            "type": "string"
+          },
+          "slashed_deposit": {
+            "type": "string"
+          },
+          "repaid_deposit": {
+            "type": "string"
+          },
+          "validator_perm_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "vp_state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "VALIDATED",
+              "TERMINATED",
+              "VALIDATION_STATE_UNSPECIFIED"
+            ]
+          },
+          "vp_last_state_change": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vp_current_fees": {
+            "type": "string"
+          },
+          "vp_current_deposit": {
+            "type": "string"
+          },
+          "vp_summary_digest_sri": {
+            "type": "string",
+            "nullable": true
+          },
+          "vp_exp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vp_validator_deposit": {
+            "type": "string"
+          },
+          "vp_term_requested": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "PermissionResponse": {
+        "type": "object",
+        "properties": {
+          "permission": {
+            "$ref": "#/components/schemas/Permission"
+          }
+        }
+      },
+      "PermissionListResponse": {
+        "type": "object",
+        "properties": {
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            }
+          }
+        }
+      },
+      "PermissionSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "controller": {
+            "type": "string"
+          },
+          "agent_perm_id": {
+            "type": "string"
+          },
+          "wallet_agent_perm_id": {
+            "type": "string"
+          },
+          "authz": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "issuer_perm_id": {
+                  "type": "integer"
+                },
+                "verifier_perm_id": {
+                  "type": "integer"
+                },
+                "wallet_agent_perm_id": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PermissionSessionResponse": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/PermissionSession"
+          }
+        }
+      },
+      "PermissionSessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionSession"
+            }
+          }
+        }
+      },
+      "BeneficiaryResponse": {
+        "type": "object",
+        "properties": {
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad Request - Invalid parameters provided",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Invalid parameter: response_max_size must be between 1 and 100",
+              "code": 400
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Internal Server Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Internal server error occurred",
+              "code": 500
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "DID",
+      "description": "Decentralized Identifier operations"
+    },
+    {
+      "name": "Trust Registry",
+      "description": "Trust Registry management operations"
+    },
+    {
+      "name": "Credential Schema",
+      "description": "Credential Schema management operations"
+    },
+    {
+      "name": "Permissions",
+      "description": "Permission management operations"
+    }
+  ]
+}
