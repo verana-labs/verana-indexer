@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://idx.testnet.verana.network/",
+      "url": "https://idx.testnet.verana.network",
       "description": "Testnet API server"
     },
     {
@@ -58,7 +58,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "DID not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "DID not found: did:Test:123",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -82,8 +93,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100,
-              "default": 10
+              "maximum": 1024,
+              "default": 64
             },
             "description": "Maximum number of records to return"
           },
@@ -164,61 +175,6 @@
               "example": "did:Test:123"
             },
             "description": "The Decentralized Identifier to retrieve history for"
-          },
-          {
-            "name": "query",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Advanced query filter"
-          },
-          {
-            "name": "prove",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            },
-            "description": "Include proof data"
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            },
-            "description": "Page number for pagination"
-          },
-          {
-            "name": "per_page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 30
-            },
-            "description": "Number of records per page"
-          },
-          {
-            "name": "order_by",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "asc",
-                "desc"
-              ],
-              "default": "asc"
-            },
-            "description": "Sort order"
           }
         ],
         "responses": {
@@ -233,7 +189,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "DID history not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "DID history not found: did:Test:123",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -327,8 +294,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100,
-              "default": 10
+              "maximum": 1024,
+              "default": 64
             },
             "description": "Maximum number of records to return"
           },
@@ -425,7 +392,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Trust Registry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Trust Registry not found: 1",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -465,7 +443,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Trust Registry history not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Trust Registry history not found: 5",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -505,7 +494,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Credential Schema not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Credential Schema not found: 3",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -545,7 +545,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "JSON Schema not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "JSON Schema not found for Credential Schema: 3",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -562,6 +573,35 @@
         "description": "Retrieve a paginated list of Credential Schemas with optional filtering",
         "operationId": "listCredentialSchemas",
         "parameters": [
+          {
+            "name": "tr_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by Trust Registry ID"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter by modification date"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Filter only active"
+          },
           {
             "name": "issuer_perm_management_mode",
             "in": "query",
@@ -591,14 +631,16 @@
             "description": "Filter by verifier permission management mode"
           },
           {
-            "name": "modified_after",
+            "name": "response_max_size",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "date-time"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
             },
-            "description": "Filter by modification date"
+            "description": "Maximum number of records to return in the response"
           }
         ],
         "responses": {
@@ -653,7 +695,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Credential Schema history not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Credential Schema history not found: 3",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -809,7 +862,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100
+              "maximum": 1024,
+              "default": 64
             },
             "description": "Maximum number of records to return"
           },
@@ -886,7 +940,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Permission not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Permission not found: 1",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -927,7 +992,18 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Permission Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Permission Session not found: 123e4567-e89b-12d3-a456-426614174000",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -962,8 +1038,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100,
-              "default": 50
+              "maximum": 1024,
+              "default": 64
             },
             "description": "Maximum number of records to return"
           }
@@ -1032,6 +1108,20 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "404": {
+            "description": "Beneficiaries not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "No beneficiaries found for issuer_perm_id: 1 and verifier_perm_id: 2",
+                  "code": 404
+                }
+              }
+            }
+          },
           "500": {
             "$ref": "#/components/responses/ServerError"
           }
@@ -1041,6 +1131,24 @@
   },
   "components": {
     "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "code": {
+            "type": "integer",
+            "description": "HTTP status code"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details",
+            "nullable": true
+          }
+        }
+      },
       "DID": {
         "type": "object",
         "properties": {
@@ -1336,13 +1444,52 @@
         "type": "object",
         "properties": {
           "id": {
+            "type": "integer"
+          },
+          "tr_id": {
             "type": "string"
           },
-          "did": {
+          "json_schema": {
             "type": "string"
           },
-          "controller": {
+          "deposit": {
             "type": "string"
+          },
+          "issuer_grantor_validation_validity_period": {
+            "type": "integer"
+          },
+          "verifier_grantor_validation_validity_period": {
+            "type": "integer"
+          },
+          "issuer_validation_validity_period": {
+            "type": "integer"
+          },
+          "verifier_validation_validity_period": {
+            "type": "integer"
+          },
+          "holder_validation_validity_period": {
+            "type": "integer"
+          },
+          "issuer_perm_management_mode": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ECOSYSTEM",
+              "GRANTOR_VALIDATION"
+            ]
+          },
+          "verifier_perm_management_mode": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ECOSYSTEM",
+              "GRANTOR_VALIDATION"
+            ]
+          },
+          "archived": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "created": {
             "type": "string",
@@ -1351,43 +1498,13 @@
           "modified": {
             "type": "string",
             "format": "date-time"
-          },
-          "deposit": {
-            "type": "string"
-          },
-          "schema": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "issuer_permission_management_mode": {
-                "type": "string",
-                "enum": [
-                  "OPEN",
-                  "ECOSYSTEM",
-                  "GRANTOR_VALIDATION"
-                ]
-              },
-              "verifier_permission_management_mode": {
-                "type": "string",
-                "enum": [
-                  "OPEN",
-                  "ECOSYSTEM",
-                  "GRANTOR_VALIDATION"
-                ]
-              }
-            }
           }
         }
       },
       "CredentialSchemaResponse": {
         "type": "object",
         "properties": {
-          "credential_schema": {
+          "schema": {
             "$ref": "#/components/schemas/CredentialSchema"
           }
         }
@@ -1395,16 +1512,15 @@
       "JsonSchemaResponse": {
         "type": "object",
         "properties": {
-          "json_schema": {
-            "type": "object",
-            "additionalProperties": true
+          "schema": {
+            "type": "string"
           }
         }
       },
       "CredentialSchemaListResponse": {
         "type": "object",
         "properties": {
-          "credential_schemas": {
+          "schemas": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CredentialSchema"
@@ -1415,54 +1531,16 @@
       "CredentialSchemaHistoryResponse": {
         "type": "object",
         "properties": {
-          "credential_schema": {
+          "schema": {
             "type": "object",
             "properties": {
               "id": {
-                "type": "string"
+                "type": "integer"
               },
-              "did": {
-                "type": "string"
-              },
-              "controller": {
-                "type": "string"
-              },
-              "created": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "modified": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "deposit": {
-                "type": "string"
-              },
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "issuer_permission_management_mode": {
-                    "type": "string",
-                    "enum": [
-                      "OPEN",
-                      "ECOSYSTEM",
-                      "GRANTOR_VALIDATION"
-                    ]
-                  },
-                  "verifier_permission_management_mode": {
-                    "type": "string",
-                    "enum": [
-                      "OPEN",
-                      "ECOSYSTEM",
-                      "GRANTOR_VALIDATION"
-                    ]
-                  }
+              "history": {
+                "type": "array",
+                "items": {
+                  "type": "object"
                 }
               }
             }
@@ -1489,15 +1567,6 @@
           "id": {
             "type": "string"
           },
-          "grantee": {
-            "type": "string"
-          },
-          "grantor": {
-            "type": "string"
-          },
-          "did": {
-            "type": "string"
-          },
           "schema_id": {
             "type": "string"
           },
@@ -1509,7 +1578,14 @@
               "ECOSYSTEM"
             ]
           },
-          "country": {
+          "did": {
+            "type": "string",
+            "nullable": true
+          },
+          "grantee": {
+            "type": "string"
+          },
+          "created_by": {
             "type": "string"
           },
           "created": {
@@ -1520,18 +1596,77 @@
             "type": "string",
             "format": "date-time"
           },
-          "exp": {
+          "extended": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
+          },
+          "extended_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "slashed": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "slashed_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "repaid": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "repaid_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "effective_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revoked_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "validation_fees": {
+            "type": "string"
+          },
+          "issuance_fees": {
+            "type": "string"
+          },
+          "verification_fees": {
+            "type": "string"
           },
           "deposit": {
             "type": "string"
           },
-          "slashed": {
+          "slashed_deposit": {
             "type": "string"
           },
-          "repaid": {
+          "repaid_deposit": {
             "type": "string"
+          },
+          "validator_perm_id": {
+            "type": "string",
+            "nullable": true
           },
           "vp_state": {
             "type": "string",
@@ -1541,6 +1676,34 @@
               "TERMINATED",
               "VALIDATION_STATE_UNSPECIFIED"
             ]
+          },
+          "vp_last_state_change": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vp_current_fees": {
+            "type": "string"
+          },
+          "vp_current_deposit": {
+            "type": "string"
+          },
+          "vp_summary_digest_sri": {
+            "type": "string",
+            "nullable": true
+          },
+          "vp_exp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vp_validator_deposit": {
+            "type": "string"
+          },
+          "vp_term_requested": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -1570,11 +1733,31 @@
             "type": "string",
             "format": "uuid"
           },
-          "grantee": {
+          "controller": {
             "type": "string"
           },
-          "grantor": {
+          "agent_perm_id": {
             "type": "string"
+          },
+          "wallet_agent_perm_id": {
+            "type": "string"
+          },
+          "authz": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "issuer_perm_id": {
+                  "type": "integer"
+                },
+                "verifier_perm_id": {
+                  "type": "integer"
+                },
+                "wallet_agent_perm_id": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "created": {
             "type": "string",
@@ -1583,23 +1766,13 @@
           "modified": {
             "type": "string",
             "format": "date-time"
-          },
-          "exp": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "permission_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
       "PermissionSessionResponse": {
         "type": "object",
         "properties": {
-          "permission_session": {
+          "session": {
             "$ref": "#/components/schemas/PermissionSession"
           }
         }
@@ -1607,7 +1780,7 @@
       "PermissionSessionListResponse": {
         "type": "object",
         "properties": {
-          "permission_sessions": {
+          "sessions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PermissionSession"
@@ -1633,37 +1806,11 @@
         "content": {
           "application/json": {
             "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "type": "string",
-                  "example": "Invalid parameter: response_max_size must be between 1 and 100"
-                },
-                "code": {
-                  "type": "integer",
-                  "example": 400
-                }
-              }
-            }
-          }
-        }
-      },
-      "NotFound": {
-        "description": "Resource Not Found",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "type": "string",
-                  "example": "DID not found: did:Test:123"
-                },
-                "code": {
-                  "type": "integer",
-                  "example": 404
-                }
-              }
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Invalid parameter: response_max_size must be between 1 and 100",
+              "code": 400
             }
           }
         }
@@ -1673,17 +1820,11 @@
         "content": {
           "application/json": {
             "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "type": "string",
-                  "example": "Internal server error occurred"
-                },
-                "code": {
-                  "type": "integer",
-                  "example": 500
-                }
-              }
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Internal server error occurred",
+              "code": 500
             }
           }
         }
