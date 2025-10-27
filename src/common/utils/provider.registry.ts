@@ -1,8 +1,8 @@
-import seiTxRegistryType from '../../services/crawl-tx/registry-type/sei-network.json' with { type: 'json' };
+import { Network } from '../../../network';
 import auraTxRegistryType from '../../services/crawl-tx/registry-type/aura-network.json' with { type: 'json' };
 import evmosTxRegistryType from '../../services/crawl-tx/registry-type/evmos-network.json' with { type: 'json' };
+import seiTxRegistryType from '../../services/crawl-tx/registry-type/sei-network.json' with { type: 'json' };
 import { chainIdConfigOnServer } from '../index';
-import config from '../../../config.json' with { type: 'json' };
 
 export interface IProviderRegistry {
   cosmos: any;
@@ -22,7 +22,7 @@ export async function getProviderRegistry(): Promise<IProviderRegistry> {
   let aura;
   let evmos;
   let txRegistryType;
-  switch (config.chainId) {
+  switch (Network?.chainId) {
     case chainIdConfigOnServer.Atlantic2:
     case chainIdConfigOnServer.Pacific1:
       ({ ibc, cosmos, seiprotocol } = await import('@horoscope/sei-js-proto'));

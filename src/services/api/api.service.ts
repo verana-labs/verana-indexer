@@ -4,9 +4,11 @@ import { IncomingMessage, ServerResponse } from "http";
 import { Context, ServiceBroker } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
 import ApiGateway, { Route } from "moleculer-web";
+// Serve Swagger UI static files
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
+import { swaggerUiComponent } from "./swagger_ui";
 
 async function attachHeaders(res: ServerResponse) {
   try {
@@ -33,6 +35,7 @@ async function attachHeaders(res: ServerResponse) {
   mixins: [ApiGateway, OpenApiMixin],
   settings: {
     port: process.env.PORT || 3001,
+
     routes: [
       {
         path: "/verana/dd/v1",
@@ -121,6 +124,20 @@ async function attachHeaders(res: ServerResponse) {
           json: true,
           urlencoded: { extended: true },
         },
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
+        },
+      },
+      {
+        path: "/",
+        ...swaggerUiComponent(),
       },
     ],
   },

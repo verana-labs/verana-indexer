@@ -1,5 +1,4 @@
 {
-  "chainId": "vna-testnet-1",
   "chainName": "verana",
   "networkPrefixAddress": "verana",
   "consensusPrefixAddress": "valcons",

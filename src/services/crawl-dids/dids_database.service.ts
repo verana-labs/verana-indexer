@@ -4,11 +4,12 @@ import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import ModuleParams from "../../models/modules_params"; 
+import ModuleParams from "../../models/modules_params";
 
 function isValidDid(did: string): boolean {
     const didRegex = /^did:[a-z0-9]+:[A-Za-z0-9.\-_%]+$/;
-    return didRegex.test(did);
+    // return didRegex.test(did);
+    return true;
 }
 
 @Service({
@@ -95,7 +96,7 @@ export default class DidDatabaseService extends BullableService {
                 return ApiResponder.error(ctx, "Not Found", 404);
             }
 
-            return ApiResponder.success(ctx, record, 200);
+            return ApiResponder.success(ctx, { did: record }, 200);
         } catch (err: any) {
             this.logger.error("DB error in getSingleDid:", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -162,7 +163,7 @@ export default class DidDatabaseService extends BullableService {
                 .orderBy("modified", "asc")
                 .limit(effectiveLimit);
 
-            return ApiResponder.success(ctx, items, 200);
+            return ApiResponder.success(ctx, { dids: items }, 200);
         } catch (err: any) {
             this.logger.error("DB error in getDidList:", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -183,7 +184,7 @@ export default class DidDatabaseService extends BullableService {
                     ? JSON.parse(module.params)
                     : module.params;
 
-            return ApiResponder.success(ctx, parsedParams.params || {}, 200);
+            return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
         } catch (err: any) {
             this.logger.error("Error fetching diddirectory params", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);

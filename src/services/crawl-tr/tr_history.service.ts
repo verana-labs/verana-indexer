@@ -107,7 +107,7 @@ export default class TrustRegistryHistoryService extends BaseService {
         versions: resultVersions,
       };
 
-      return ApiResponder.success(ctx, response);
+      return ApiResponder.success(ctx, { trust_registry: response });
     } catch (err: any) {
       this.logger.error("Error fetching TR history", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
