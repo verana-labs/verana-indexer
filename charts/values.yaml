@@ -1,0 +1,65 @@
+# Global configuration for the application
+global: 
+  domain: testnet.verana.network # Domain for the application
+
+# General configuration
+name: idx
+replicas: 1 # Number of replicas for the Indexer service
+
+# Ports
+apiPort: 3001
+
+#FIXME: Limit resources as soon as we can calculate requirements (especially for db migration at startup)
+#resources:
+#  requests:
+#    cpu: 250m
+#    memory: 512Mi
+#  limits:
+#    cpu: 500m
+#    memory: 1Gi
+
+# DB and Redis configuration
+database:
+  enabled: true
+  host: localhost
+  user: verana_testnet1
+  pwd: pass
+  db: verana_testnet1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis: 
+  enabled: true
+  host: localhost
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Enable cors for the Indexer
+ingress:
+  host: "{{ .Values.name }}.{{ .Values.global.domain }}"
+  tlsSecret: public.{{ .Values.name }}.{{ .Values.global.domain }}-cert
+  public:
+    enableCors: true
+  private:
+    enableCors: true
+    whitelistSourceRange: "" # e.g. "xxx.xx.xxx.xxx/32"
+    tlsSecret: "private.{{ .Values.name }}.{{ .Values.global.domain }}-cert"
+    host: ""
+
+# Extra environment variables (extensible)
+extraEnv: []
+
+# Persistent volume configuration for app
+storage:
+  size: 1Gi
+  storageClassName: csi-cinder-high-speed
