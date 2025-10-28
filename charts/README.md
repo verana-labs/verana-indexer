@@ -4,20 +4,20 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 
 ## Features
 
-* Deploys VS-Agent with configurable replicas
+* Deploys Verana Indexer with configurable replicas
 * Supports private and public ingress with TLS certificates via cert-manager
 * Persistent storage using PersistentVolumeClaim with customizable storage class and size
-* Configurable environment variables for agent ports, endpoints, and external services
+* Configurable environment variables for indexer ports, endpoints, and external services
 * Optional PostgreSQL and Redis support
 * Customizable deployment color label for easy versioning or environment differentiation
 
 ## Kubernetes Resources
 
-* **Service:** Exposes two TCP ports, one for the agent (`didcomm`) and one for admin access.
+* **Service:** Exposes a public API TCP port as well as the ones for redis and db (if enabled)
 * **Ingress:**
   * Public ingress for external access with TLS
-* **PersistentVolumeClaim:** Provides persistent storage for agent data.
-* **StatefulSet:** Runs the VS-Agent container(s) with configurable replicas.
+* **PersistentVolumeClaim:** Provides persistent storage for indexer data (Note: not currently used).
+* **StatefulSet:** Runs Verana Indexer container(s) with configurable replicas.
 
 ## Configuration
 
@@ -25,9 +25,9 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 
 | Parameter                      | Description                                 | Default       |
 | ------------------------------ | ------------------------------------------- | ------------- |
-| `name`                         | Application name                            | `vs-agent`    |
+| `name`                         | Application name                            | `idx`    |
 | `namespace`                    | Kubernetes namespace                        | `default`     |
-| `replicas`                     | Number of agent pods                        | `1`           |
+| `replicas`                     | Number of indexer pods                      | `1`           |
 | `domain`                       | Domain for ingress hosts                    | `example.com` |
 
 ### Ports
@@ -36,23 +36,20 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 | ------------- | ---------------------------------------- | ------- |
 | `apiPort`   | Port for public API | `3001`  |
 
-### Agent Configuration
+### Indexer Configuration
 
 | Parameter                  | Description                                      | Default                          |
 | -------------------------- | ------------------------------------------------ | -------------------------------- |
-| `didcommLabel`                | Label for the agent                              | `VS Agent`                      |
-| `eventsBaseUrl`            | Base URL for events                              | `https://events.example.com`    |
-| `didcommInvitationImageUrl`  | URL for the agent invitation image               | `https://example.com/invitation.png` |
-| `publicDidMethod`          | DID method to use for public DID: 'web' or 'webvh' | `webvh` |
-| `extraEnv`                 | Additional environment variables for the agent   | `[]`                            |
+| `extraEnv`                 | Additional environment variables for indexer     | `[]`                            |
 
 ### Database Configuration (Optional)
 
 | Parameter                  | Description                                      | Default                          |
 | -------------------------- | ------------------------------------------------ | -------------------------------- |
 | `database.enabled`         | Enable PostgreSQL database                       | `false`                         |
-| `database.user`            | PostgreSQL username                              | `unicid`                        |
-| `database.pwd`             | PostgreSQL password                              | `mypassword123`                 |
+| `database.user`            | PostgreSQL username                              | `verana_testnet1`               |
+| `database.pwd`             | PostgreSQL password                              | `pass`                          |
+| `database.db`             | PostgreSQL database name                          | `verana_testnet1`               |
 
 ### Redis Configuration (Optional)
 
@@ -66,7 +63,7 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 
 | Parameter                  | Description                                      | Default                          |
 | -------------------------- | ------------------------------------------------ | -------------------------------- |
-| `storage.size`             | Size of the persistent volume for the agent      | `1Gi`                           |
+| `storage.size`             | Size of the persistent volume for Indexer      | `1Gi`                           |
 | `storage.storageClassName` | Storage class for the persistent volume          | `csi-cinder-high-speed`         |
 
 ### Ingress
@@ -77,7 +74,7 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 
 ### Extra Environment Variables
 
-Add additional environment variables to the agent container with `extraEnv`:
+Add additional environment variables to Verana Indexer container with `extraEnv`:
 
 ```yaml
 extraEnv:
@@ -87,11 +84,11 @@ extraEnv:
 
 ---
 
-### Resources (New)
+### Resources
 
-Configurable CPU/Memory requests and limits for the VS-Agent container and, if enabled, for PostgreSQL and Redis. Defaults are conservative and can be adjusted after observing real usage.
+Configurable CPU/Memory requests and limits for Verana Indexer container and, if enabled, for PostgreSQL and Redis. Defaults are conservative and can be adjusted after observing real usage.
 
-#### VS-Agent container
+#### Indexer container
 
 | Parameter                   | Description                    | Default |
 | --------------------------- | ------------------------------ | ------- |
@@ -125,7 +122,7 @@ Configurable CPU/Memory requests and limits for the VS-Agent container and, if e
 #### Quick Helm overrides
 
 ```bash
-helm upgrade --install vs-agent ./vs-agent-chart \
+helm upgrade --install idx ./verana-indexer-chart \
   -n your-namespace \
   --set resources.requests.cpu=100m \
   --set resources.requests.memory=256Mi \
@@ -139,7 +136,7 @@ helm upgrade --install vs-agent ./vs-agent-chart \
 2. Install or upgrade the chart using Helm:
 
 ```bash
-helm upgrade --install vs-agent ./vs-agent-chart -n your-namespace -f values.yaml
+helm upgrade --install idx ./verana-indexer-chart -n your-namespace -f values.yaml
 ```
 
 3. Monitor pods and ingress resources to ensure deployment success.
@@ -147,7 +144,7 @@ helm upgrade --install vs-agent ./vs-agent-chart -n your-namespace -f values.yam
 4. To uninstall and remove the deployment:
 
 ```bash
-helm uninstall vs-agent -n your-namespace
+helm uninstall idx -n your-namespace
 ```
 
 This will delete all resources created by the chart in the specified namespace.
