@@ -111,7 +111,6 @@ ci
 *.yaml
 
 # Documentation
-docs
 README.md
 LICENSE
 

@@ -90,5 +90,5 @@ jobs:
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:dev
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}-dev
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}-dev
-            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}.${{ steps.semantic.outputs.release-patch }}-dev
+            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}.${{ steps.semantic.outputs.release-patch }}
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-version }}
