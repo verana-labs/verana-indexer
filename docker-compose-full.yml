@@ -5,10 +5,12 @@ services:
     image: verana-indexer:dev
     container_name: indexer_erascope
     environment:
+      SERVICEDIR: dist/src/services
+      SERVICES: '**/*.service.js'
       TRANSPORTER: redis://redis:6379
       CACHER: redis://redis:6379
       QUEUE_JOB_REDIS: redis://redis:6379
-      NODE_ENV: development
+      NODE_ENV: production
       NAMESPACE: verana
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
