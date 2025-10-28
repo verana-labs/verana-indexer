@@ -128,8 +128,12 @@ spec:
                 value: redis://{{ .Values.redis.host }}:6379
               - name: QUEUE_JOB_REDIS
                 value: redis://{{ .Values.redis.host }}:6379
+              - name: SERVICEDIR
+                value: dist/src/services
+              - name: SERVICES
+                value: "**/*.service.js"
               - name: NODE_ENV
-                value: development
+                value: production
               - name: NAMESPACE
                 value: verana
               - name: POSTGRES_USER
