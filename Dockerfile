@@ -24,6 +24,15 @@ RUN cp docker.env .env
 # Build the application
 RUN pnpm run build
 
+# Remove TypeScript source code
+RUN rm -rf ./src
+
+RUN rm *.ts
+
+RUN rm -rf ./migrations
+
+RUN rm ./dist/migrations/*.ts
+
 # Change ownership of the app directory
 RUN chown -R nodejs:nodejs /app
 
