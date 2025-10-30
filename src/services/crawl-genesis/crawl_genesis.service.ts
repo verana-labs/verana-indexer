@@ -80,64 +80,94 @@ export default class CrawlGenesisService extends BullableService {
       return;
     }
 
-    if (!fs.existsSync('genesis.json')) fs.appendFileSync('genesis.json', '');
+    const genesisPath = 'genesis.json';
+    if (fs.existsSync(genesisPath)) fs.unlinkSync(genesisPath);
+
     try {
-      const genesis = await this._httpBatchClient.execute(
+      const genesisResponse = await this._httpBatchClient.execute(
         createJsonRpcRequest('genesis')
       );
 
-      fs.appendFileSync('genesis.json', JSON.stringify(genesis.result.genesis));
+      fs.writeFileSync(
+        genesisPath,
+        JSON.stringify(genesisResponse.result.genesis, null, 2),
+        'utf-8'
+      );
+      this.logger.info('✅ Full genesis fetched successfully (no chunks).');
     } catch (error: any) {
-      if (JSON.parse(error.message).code !== -32603) {
-        this.logger.error(error);
+      let errCode = 0;
+      try {
+        errCode = JSON.parse(error.message).code;
+      } catch {
+        errCode = 0;
+      }
+
+      if (errCode !== -32603) {
+        this.logger.error('❌ Unexpected error while fetching genesis:', error);
         return;
       }
 
+      this.logger.warn('⚙️ Falling back to chunked genesis fetch...');
       let index = 0;
       let done = false;
+      const chunks: string[] = [];
+
       while (!done) {
         try {
-          this.logger.info(`Query genesis_chunked at page ${index}`);
+          this.logger.info(`📦 Fetching genesis_chunked: chunk ${index}`);
           const resultChunk = await this._httpBatchClient.execute(
-            createJsonRpcRequest('genesis_chunked', {
-              chunk: index.toString(),
-            })
+            createJsonRpcRequest('genesis_chunked', { chunk: index.toString() })
           );
 
-          fs.appendFileSync(
-            'genesis.json',
-            fromUtf8(fromBase64(resultChunk.result.data))
-          );
+          const decoded = fromUtf8(fromBase64(resultChunk.result.data));
+          chunks.push(decoded);
           index += 1;
-        } catch (err) {
-          if (JSON.parse(error.message).code !== -32603) {
-            this.logger.error(error);
-            return;
+        } catch (chunkError: any) {
+          try {
+            const parsed = JSON.parse(chunkError.message || '{}');
+            if (parsed.code !== -32603) {
+              this.logger.error('❌ Chunk fetch failed:', chunkError);
+              return;
+            }
+          } catch {
+            this.logger.error('❌ Unknown error while parsing chunk error:', chunkError);
           }
-
           done = true;
         }
       }
+
+      this.logger.info(`✅ Retrieved ${chunks.length} genesis chunks. Combining...`);
+      const combinedData = chunks.join('');
+
+      try {
+        const parsedGenesis = JSON.parse(combinedData);
+        fs.writeFileSync(
+          genesisPath,
+          JSON.stringify(parsedGenesis, null, 2),
+          'utf-8'
+        );
+        this.logger.info('✅ Chunked genesis combined & saved successfully.');
+      } catch (parseErr) {
+        this.logger.error('❌ Failed to parse combined genesis data. Possibly corrupted chunks.', parseErr);
+        return;
+      }
     }
 
-    // fs.renameSync('genesis.txt', 'genesis.json');
-
-    let updateBlkCheck: BlockCheckpoint;
-    if (genesisBlkCheck) {
-      updateBlkCheck = genesisBlkCheck;
-      updateBlkCheck.height = 1;
-    } else
-      updateBlkCheck = BlockCheckpoint.fromJson({
+    const updateBlkCheck =
+      genesisBlkCheck ?? BlockCheckpoint.fromJson({
         job_name: BULL_JOB_NAME.CRAWL_GENESIS,
         height: 1,
       });
+
+    updateBlkCheck.height = 1;
+
     await BlockCheckpoint.query()
       .insert(updateBlkCheck)
       .onConflict('job_name')
       .merge()
       .returning('id');
 
-    this.genesisJobs.forEach(async (job) => {
+    for (const job of this.genesisJobs) {
       if (job !== BULL_JOB_NAME.CRAWL_GENESIS_CONTRACT) {
         await this.createJob(
           job,
@@ -153,7 +183,7 @@ export default class CrawlGenesisService extends BullableService {
           }
         );
       }
-    });
+    }
   }
 
   @QueueHandler({
