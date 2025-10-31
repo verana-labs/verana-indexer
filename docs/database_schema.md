@@ -451,3 +451,19 @@
 | `authz`                | JSON array of Authz entries containing `issuer_perm_id`, `verifier_perm_id`, `wallet_agent_perm_id` |
 | `created`              | Creation timestamp                                                                                  |
 | `modified`             | Last modified timestamp                                                                             |
+
+### `trust_deposits`
+
+| Column            | Description                                               |
+| ----------------- | --------------------------------------------------------- |
+| `id`              | Table's identity (primary key)                            |
+| `account`         | Account address associated with this trust deposit        |
+| `share`           | Total share amount currently held by this account         |
+| `amount`          | Total trust deposit amount                                |
+| `claimable`       | Amount that can currently be claimed by the account       |
+| `slashed_deposit` | Total amount slashed from this trust deposit              |
+| `repaid_deposit`  | Total amount repaid to this trust deposit after slash     |
+| `last_slashed`    | Timestamp of the last slashing event (nullable)           |
+| `last_repaid`     | Timestamp of the last repayment event (nullable)          |
+| `slash_count`     | Total number of times this trust deposit has been slashed |
+| `last_repaid_by`  | Address of the account who executed the last repayment    |

@@ -1106,6 +1106,104 @@
             }
           }
         }
+      },
+      "/verana/td/v1/get/{account}": {
+        "get": {
+          "tags": [
+            "TrustDeposit"
+          ],
+          "summary": "Get Trust Deposit by Account",
+          "description": "Retrieve trust deposit information for a specific account",
+          "operationId": "getTrustDepositByAccount",
+          "parameters": [
+            {
+              "name": "account",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              },
+              "description": "The account address to retrieve trust deposit for"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with trust deposit details",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/TrustDepositResponse"
+                  },
+                  "example": {
+                    "trust_deposit": {
+                      "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                      "share": "20000000",
+                      "amount": "20000000",
+                      "claimable": "0",
+                      "slashed_deposit": "0",
+                      "repaid_deposit": "0",
+                      "last_slashed": null,
+                      "last_repaid": null,
+                      "slash_count": 0,
+                      "last_repaid_by": ""
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Trust Deposit not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  },
+                  "example": {
+                    "error": "Trust Deposit not found for account: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                    "code": 404
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
+      },
+      "/verana/td/v1/params": {
+        "get": {
+          "tags": [
+            "TrustDeposit"
+          ],
+          "summary": "Get Trust Deposit Parameters",
+          "description": "Retrieve current system parameters for Trust Deposit module",
+          "operationId": "getTrustDepositParams",
+          "responses": {
+            "200": {
+              "description": "Successful response with Trust Deposit parameters",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/TrustDepositParamsResponse"
+                  },
+                  "example": {
+                    "params": {
+                      "trust_deposit_rate": "0.200000000000000000",
+                      "user_agent_reward_rate": "0.200000000000000000",
+                      "trust_deposit_share_value": "1.000000000000000000",
+                      "wallet_user_agent_reward_rate": "0.200000000000000000",
+                      "trust_deposit_reclaim_burn_rate": "0.600000000000000000"
+                    }
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
       }
     },
     "components": {
@@ -1803,6 +1901,98 @@
             }
           }
         }
+      },
+      "TrustDeposit": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string",
+            "description": "Account address"
+          },
+          "share": {
+            "type": "string",
+            "description": "Current share amount"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Total deposit amount"
+          },
+          "claimable": {
+            "type": "string",
+            "description": "Claimable rewards amount"
+          },
+          "slashed_deposit": {
+            "type": "string",
+            "description": "Total slashed deposit amount"
+          },
+          "repaid_deposit": {
+            "type": "string",
+            "description": "Total repaid deposit amount"
+          },
+          "last_slashed": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Last slash event timestamp"
+          },
+          "last_repaid": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Last repay event timestamp"
+          },
+          "slash_count": {
+            "type": "integer",
+            "description": "Number of slash events"
+          },
+          "last_repaid_by": {
+            "type": "string",
+            "description": "Account that last performed repayment"
+          }
+        }
+      },
+      "TrustDepositResponse": {
+        "type": "object",
+        "properties": {
+          "trust_deposit": {
+            "$ref": "#/components/schemas/TrustDeposit"
+          }
+        }
+      },
+      "TrustDepositParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "trust_deposit_rate": {
+                "type": "string",
+                "description": "Trust deposit interest rate",
+                "example": "0.200000000000000000"
+              },
+              "user_agent_reward_rate": {
+                "type": "string",
+                "description": "User agent reward rate",
+                "example": "0.200000000000000000"
+              },
+              "trust_deposit_share_value": {
+                "type": "string",
+                "description": "Value of each trust deposit share",
+                "example": "1.000000000000000000"
+              },
+              "wallet_user_agent_reward_rate": {
+                "type": "string",
+                "description": "Wallet user agent reward rate",
+                "example": "0.200000000000000000"
+              },
+              "trust_deposit_reclaim_burn_rate": {
+                "type": "string",
+                "description": "Burn rate for reclaimed trust deposits",
+                "example": "0.600000000000000000"
+              }
+            }
+          }
+        }
       }
     },
     "tags": [
@@ -1821,6 +2011,10 @@
       {
         "name": "Permissions",
         "description": "Permission management operations"
+      },
+      {
+        "name": "TrustDeposit",
+        "description": "Trust Deposit management and operations"
       }
     ]
   }

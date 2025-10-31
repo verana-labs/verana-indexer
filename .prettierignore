@@ -30,6 +30,7 @@ coverage/
 
 # nyc test coverage
 .nyc_output
+*.json
 
 # Dependency directories
 jspm_packages/
