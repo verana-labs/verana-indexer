@@ -38,6 +38,7 @@ export const MODULE_PARAM = {
 
 export const BULL_JOB_NAME = {
   CRAWL_VALIDATOR: "crawl:validator",
+  HANDLE_TRUST_DEPOSIT: "handle:trust-deposit",
   CRAWL_GENESIS_VALIDATOR: "crawl:genesis-validator",
   CRAWL_SIGNING_INFO: "crawl:signing-info",
   HANDLE_ADDRESS: "handle:address",
@@ -170,12 +171,37 @@ export enum PermissionMessageTypes {
   RepayPermissionSlashedTrustDeposit = "/verana.perm.v1.MsgRepayPermissionSlashedTrustDeposit",
   CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
 }
+export enum TrustDepositMessageTypes {
+  RECLAIM_YIELD = "/verana.td.v1.MsgReclaimTrustDepositYield",
+  RECLAIM_DEPOSIT = "/verana.td.v1.MsgReclaimTrustDeposit",
+  REPAY_SLASHED = "/verana.td.v1.MsgRepaySlashedTrustDeposit",
+}
+export enum TrustDepositEventType {
+  ADJUST = "adjust_trust_deposit",
+  SLASH = "slash_trust_deposit",
+}
 
 export const SERVICE = {
   V1: {
     DidMessageProcessorService: {
       key: "DidMessageProcessorService",
       path: "v1.DidMessageProcessorService",
+    },
+    TrustDepositMessageProcessorService: {
+      key: "TrustDepositMessageProcessorService",
+      path: "v1.TrustDepositMessageProcessorService",
+    },
+    TrustDepositDatabaseService: {
+      key: "TrustDepositDatabaseService",
+      path: "v1.TrustDepositDatabaseService",
+    },
+    TrustDepositApiService: {
+      key: "TrustDepositApiService",
+      path: "v1.TrustDepositApiService",
+    },
+    CrawlTrustDepositService: {
+      key: "CrawlTrustDepositService",
+      path: "v1.CrawlTrustDepositService",
     },
     TrustRegistryMessageProcessorService: {
       key: "TrustRegistryMessageProcessorService",

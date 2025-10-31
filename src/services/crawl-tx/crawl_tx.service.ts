@@ -22,6 +22,7 @@ import {
   getLcdClient,
   PermissionMessageTypes,
   SERVICE,
+  TrustDepositMessageTypes,
   TrustRegistryMessageTypes
 } from '../../common';
 import ChainRegistry from '../../common/utils/chain.registry';
@@ -535,6 +536,29 @@ export default class CrawlTxService extends BullableService {
           { permissionMessages },
         );
       }
+
+
+      const trustDepositList = resultInsertMsgs
+        .filter((msg: any) =>
+          Object.values(TrustDepositMessageTypes).includes(msg.type as TrustDepositMessageTypes),
+        )
+        .map((msg: any) => {
+          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+          return {
+            type: msg.type,
+            content: msg.content ?? null,
+            timestamp: parentTx?.timestamp ?? null,
+            height: parentTx?.height ?? null,
+          };
+        });
+
+      if (trustDepositList?.length) {
+        await this.broker.call(
+          `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
+          { trustDepositList },
+        );
+      }
+
     }
   }
 
