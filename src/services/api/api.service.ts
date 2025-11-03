@@ -4,7 +4,6 @@ import { IncomingMessage, ServerResponse } from "http";
 import { Context, ServiceBroker } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
 import ApiGateway, { Route } from "moleculer-web";
-// Serve Swagger UI static files
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
@@ -125,6 +124,27 @@ async function attachHeaders(res: ServerResponse) {
           urlencoded: { extended: true },
         },
         onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
+        },
+      },
+      {
+        path: "/verana/td/v1",
+        aliases: {
+          "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
+          "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
+        }, onAfterCall: async function (
           _ctx: Context<any, any>,
           _route: Route,
           _req: IncomingMessage,

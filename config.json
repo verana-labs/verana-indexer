@@ -4,7 +4,7 @@
   "consensusPrefixAddress": "valcons",
   "validatorPrefixAddress": "valoper",
   "evmOnly": false,
-  "networkDenom": "utaura",
+  "networkDenom": "uvna",
   "jobRetryAttempt": 5,
   "jobRetryBackoff": 1000,
   "crawlValidator": {
@@ -33,6 +33,12 @@
   },
   "crawlTransaction": {
     "key": "crawlTransaction",
+    "millisecondCrawl": 1000,
+    "blocksPerCall": 100,
+    "chunkSize": 1000
+  },
+  "crawlTrustDeposit": {
+    "key": "crawlTrustDeposit",
     "millisecondCrawl": 1000,
     "blocksPerCall": 100,
     "chunkSize": 1000

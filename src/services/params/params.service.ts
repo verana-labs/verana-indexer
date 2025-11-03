@@ -1,11 +1,13 @@
-import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
+import {
+  Action,
+  Service,
+} from "@ourparentcenter/moleculer-decorators-extended";
 import fs from "fs";
 import { Context, ServiceBroker } from "moleculer";
 import path from "path";
 import BullableService from "../../base/bullable.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
-
 
 @Service({
   name: SERVICE.V1.GenesisParamsService.key,
