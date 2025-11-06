@@ -21,7 +21,7 @@
           "tags": [
             "DID"
           ],
-          "summary": "Get DID document",
+          "summary": "Get a DID",
           "description": "Retrieve a specific Decentralized Identifier document by its DID",
           "operationId": "getDID",
           "parameters": [
@@ -81,7 +81,7 @@
           "tags": [
             "DID"
           ],
-          "summary": "List DID documents",
+          "summary": "List DIDs",
           "description": "Retrieve a paginated list of Decentralized Identifier documents with optional filtering",
           "operationId": "listDID",
           "parameters": [
@@ -773,7 +773,10 @@
                 "enum": [
                   "ISSUER",
                   "VERIFIER",
-                  "ECOSYSTEM"
+                  "ISSUER_GRANTOR",
+                  "VERIFIER_GRANTOR",
+                  "ECOSYSTEM",
+                  "HOLDER"
                 ]
               },
               "description": "Filter by permission type"
