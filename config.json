@@ -43,6 +43,15 @@
     "blocksPerCall": 100,
     "chunkSize": 1000
   },
+  "crawlAccounts": {
+    "millisecondCrawl": 10000,
+    "chunkSize": 100,
+    "blocksPerCall": 100,
+    "key": "crawlAccounts",
+    "reconcile": {
+      "enabled": true
+    }
+  },
   "handleCoinTransfer": {
     "key": "handleCoinTransfer",
     "blocksPerCall": 100,

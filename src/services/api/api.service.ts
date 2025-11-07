@@ -156,6 +156,27 @@ async function attachHeaders(res: ServerResponse) {
         },
       },
       {
+        path: "/verana/v1",
+        aliases: {
+          "GET account-reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
+        },
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(res);
+          return data;
+        },
+      },
+      {
         path: "/",
         ...swaggerUiComponent(),
       },

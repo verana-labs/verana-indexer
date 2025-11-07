@@ -49,6 +49,7 @@ export const BULL_JOB_NAME = {
   HANDLE_VESTING_ACCOUNT: "handle:vesting-account",
   HANDLE_STAKE_EVENT: "handle:stake-event",
   CRAWL_BLOCK: "crawl:block",
+  JOB_HANDLE_ACCOUNTS: "crawl:new-accounts",
   HANDLE_TRANSACTION: "handle:transaction",
   CRAWL_TRANSACTION: "crawl:transaction",
   HANDLE_COIN_TRANSFER: "handle:coin_transfer",
@@ -187,6 +188,10 @@ export const SERVICE = {
       key: "DidMessageProcessorService",
       path: "v1.DidMessageProcessorService",
     },
+    HANDLE_ACCOUNTS: {
+      key: "HANDLE_ACCOUNTS",
+      path: "v1.HANDLE_ACCOUNTS",
+    },
     TrustDepositMessageProcessorService: {
       key: "TrustDepositMessageProcessorService",
       path: "v1.TrustDepositMessageProcessorService",
@@ -206,6 +211,10 @@ export const SERVICE = {
     TrustRegistryMessageProcessorService: {
       key: "TrustRegistryMessageProcessorService",
       path: "v1.TrustRegistryMessageProcessorService",
+    },
+    AccountReputationService: {
+      key: 'AccountReputationService',
+      path: 'v1.AccountReputationService',
     },
     TrustRegistryHistoryService: {
       key: "TrustRegistryHistoryService",

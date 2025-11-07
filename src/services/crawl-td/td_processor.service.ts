@@ -121,8 +121,9 @@ export default class CrawlTrustDepositService extends BullableService {
     if (!blockResult) return;
 
     const finalizeBlockEvents = blockResult?.finalize_block_events || [];
+    const endBlockEvents = blockResult?.end_block_events || [];
     const txEvents = blockResult?.txs_results?.flatMap((tx: any) => tx?.events || []) || [];
-    const events = [...finalizeBlockEvents, ...txEvents];
+    const events = [...finalizeBlockEvents, ...txEvents, ...endBlockEvents];
     if (!events.length) return;
 
     const eventTypes = [TrustDepositEventType.ADJUST, TrustDepositEventType.SLASH];
