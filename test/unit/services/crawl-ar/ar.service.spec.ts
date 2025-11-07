@@ -41,7 +41,7 @@ describe("AccountReputationService", () => {
                 where: jest.fn(() => ({
                     first: jest.fn().mockResolvedValue({
                         address: "verana1emptydataxx",
-                        balances: [{ denom: "uvna", amount: "999" }],
+                        spendable_balances: [{ denom: "uvna", amount: "999" }],
                         first_interaction_ts: null,
                     })
                 })),
