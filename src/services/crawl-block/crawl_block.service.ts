@@ -130,13 +130,8 @@ export default class CrawlBlockService extends BullableService {
       const mergeBlockResponses: any[] = [];
 
       for (let i = 0; i < blockResponses?.length; i += 2) {
-        const blockHeight = startBlock + i / 2;
-
         const blockData = blockResponses[i]?.result;
         const blockResultData = blockResponses[i + 1]?.result;
-
-        this.logger.info(`📦 Block [${blockHeight}] fetched`);
-
         mergeBlockResponses.push({
           ...blockData,
           block_result: blockResultData,
@@ -264,7 +259,7 @@ export default class CrawlBlockService extends BullableService {
 
       if (listBlockModel.length) {
         await knex.transaction(async (trx) => {
-           await Block.query()
+          await Block.query()
             .insertGraph(listBlockModel)
             .transacting(trx);
           // trigger crawl transaction job

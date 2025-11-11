@@ -1207,6 +1207,170 @@
             }
           }
         }
+      },
+      "/verana/v1/account-reputation": {
+        "get": {
+          "tags": [
+            "Account"
+          ],
+          "summary": "Get Account Reputation",
+          "description": "Retrieve comprehensive reputation information for a specific account including trust deposits, slashing history, and activity metrics across trust registries and credential schemas",
+          "operationId": "getAccountReputation",
+          "parameters": [
+            {
+              "name": "account",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "string"
+              },
+              "description": "The account address to retrieve reputation for"
+            },
+            {
+              "name": "tr_id",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "type": "string"
+              },
+              "description": "Filter by specific Trust Registry ID"
+            },
+            {
+              "name": "schema_id",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "type": "string"
+              },
+              "description": "Filter by specific Credential Schema ID"
+            },
+            {
+              "name": "include_slash_details",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "type": "boolean",
+                "default": false
+              },
+              "description": "Include detailed slashing and repayment information"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with account reputation details",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AccountReputationResponse"
+                  },
+                  "example": {
+                    "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+                    "balance": "7000000000",
+                    "deposit": 65001050,
+                    "slashed": 1050,
+                    "repaid": 1001050,
+                    "slash_count": 6,
+                    "first_interaction_ts": null,
+                    "trust_registry_count": 1,
+                    "credential_schema_count": 1,
+                    "slashs": [
+                      {
+                        "slashed_amount": "1050",
+                        "slashed_ts": "2025-10-16T12:45:29.745Z",
+                        "slashed_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                      }
+                    ],
+                    "repayments": [
+                      {
+                        "repaid_amount": "1001050",
+                        "repaid_ts": "2025-10-16T13:47:44.071Z",
+                        "repaid_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                      }
+                    ],
+                    "trust_registries": [
+                      {
+                        "tr_id": "2",
+                        "tr_did": "did:test:1",
+                        "credential_schemas": [
+                          {
+                            "schema_id": 4,
+                            "deposit": 20000000,
+                            "slashed": 1050,
+                            "repaid": 1050,
+                            "slash_count": 1,
+                            "issued": 0,
+                            "verified": 0,
+                            "run_as_validator_vps": 0,
+                            "run_as_applicant_vps": 0,
+                            "issuer_perm_count": 1,
+                            "verifier_perm_count": 0,
+                            "issuer_grantor_perm_count": 0,
+                            "verifier_grantor_perm_count": 0,
+                            "ecosystem_perm_count": 1,
+                            "active_issuer_perm_count": 1,
+                            "active_verifier_perm_count": 0,
+                            "active_issuer_grantor_perm_count": 0,
+                            "active_verifier_grantor_perm_count": 0,
+                            "active_ecosystem_perm_count": 1,
+                            "slashs": [
+                              {
+                                "perm_id": "2",
+                                "schema_id": 4,
+                                "tr_id": "2",
+                                "slashed_ts": "2025-10-16T12:45:29.745Z",
+                                "slashed_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                              }
+                            ],
+                            "repayments": [
+                              {
+                                "perm_id": "2",
+                                "schema_id": 4,
+                                "tr_id": "2",
+                                "repaid_ts": "2025-10-16T12:46:01.406Z",
+                                "repaid_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Bad Request - Invalid parameters provided",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  },
+                  "example": {
+                    "error": "Missing required parameter: account",
+                    "code": 400
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Account not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  },
+                  "example": {
+                    "error": "Account not found: verana1nonexistentaddress",
+                    "code": 404
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
       }
     },
     "components": {
@@ -1873,6 +2037,365 @@
               }
             }
           }
+        },
+        "TrustDeposit": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "type": "string",
+              "description": "Account address"
+            },
+            "share": {
+              "type": "string",
+              "description": "Current share amount"
+            },
+            "amount": {
+              "type": "string",
+              "description": "Total deposit amount"
+            },
+            "claimable": {
+              "type": "string",
+              "description": "Claimable rewards amount"
+            },
+            "slashed_deposit": {
+              "type": "string",
+              "description": "Total slashed deposit amount"
+            },
+            "repaid_deposit": {
+              "type": "string",
+              "description": "Total repaid deposit amount"
+            },
+            "last_slashed": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last slash event timestamp"
+            },
+            "last_repaid": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last repay event timestamp"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Number of slash events"
+            },
+            "last_repaid_by": {
+              "type": "string",
+              "description": "Account that last performed repayment"
+            }
+          }
+        },
+        "TrustDepositResponse": {
+          "type": "object",
+          "properties": {
+            "trust_deposit": {
+              "$ref": "#/components/schemas/TrustDeposit"
+            }
+          }
+        },
+        "TrustDepositParamsResponse": {
+          "type": "object",
+          "properties": {
+            "params": {
+              "type": "object",
+              "properties": {
+                "trust_deposit_rate": {
+                  "type": "string",
+                  "description": "Trust deposit interest rate",
+                  "example": "0.200000000000000000"
+                },
+                "user_agent_reward_rate": {
+                  "type": "string",
+                  "description": "User agent reward rate",
+                  "example": "0.200000000000000000"
+                },
+                "trust_deposit_share_value": {
+                  "type": "string",
+                  "description": "Value of each trust deposit share",
+                  "example": "1.000000000000000000"
+                },
+                "wallet_user_agent_reward_rate": {
+                  "type": "string",
+                  "description": "Wallet user agent reward rate",
+                  "example": "0.200000000000000000"
+                },
+                "trust_deposit_reclaim_burn_rate": {
+                  "type": "string",
+                  "description": "Burn rate for reclaimed trust deposits",
+                  "example": "0.600000000000000000"
+                }
+              }
+            }
+          }
+        },
+        "AccountReputationResponse": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "type": "string",
+              "description": "Account address"
+            },
+            "balance": {
+              "type": "string",
+              "description": "Current account balance"
+            },
+            "deposit": {
+              "type": "integer",
+              "description": "Total deposited amount across all trust registries and schemas"
+            },
+            "slashed": {
+              "type": "integer",
+              "description": "Total slashed amount"
+            },
+            "repaid": {
+              "type": "integer",
+              "description": "Total repaid amount"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Total number of slash events"
+            },
+            "first_interaction_ts": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "First interaction timestamp"
+            },
+            "trust_registry_count": {
+              "type": "integer",
+              "description": "Number of trust registries owned"
+            },
+            "credential_schema_count": {
+              "type": "integer",
+              "description": "Number of credential schemas owned"
+            },
+            "slashs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SlashEvent"
+              },
+              "description": "Detailed slash events"
+            },
+            "repayments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RepaymentEvent"
+              },
+              "description": "Detailed repayment events"
+            },
+            "trust_registries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TrustRegistryReputation"
+              },
+              "description": "Reputation details per trust registry"
+            }
+          }
+        },
+        "SlashEvent": {
+          "type": "object",
+          "properties": {
+            "slashed_amount": {
+              "type": "string",
+              "description": "Amount slashed"
+            },
+            "slashed_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Slash timestamp"
+            },
+            "slashed_by": {
+              "type": "string",
+              "description": "Account that performed the slash"
+            }
+          }
+        },
+        "RepaymentEvent": {
+          "type": "object",
+          "properties": {
+            "repaid_amount": {
+              "type": "string",
+              "description": "Amount repaid"
+            },
+            "repaid_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Repayment timestamp"
+            },
+            "repaid_by": {
+              "type": "string",
+              "description": "Account that performed the repayment"
+            }
+          }
+        },
+        "TrustRegistryReputation": {
+          "type": "object",
+          "properties": {
+            "tr_id": {
+              "type": "string",
+              "description": "Trust Registry ID"
+            },
+            "tr_did": {
+              "type": "string",
+              "description": "Trust Registry DID"
+            },
+            "credential_schemas": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CredentialSchemaReputation"
+              },
+              "description": "Reputation details per credential schema"
+            }
+          }
+        },
+        "CredentialSchemaReputation": {
+          "type": "object",
+          "properties": {
+            "schema_id": {
+              "type": "integer",
+              "description": "Credential Schema ID"
+            },
+            "deposit": {
+              "type": "integer",
+              "description": "Deposit amount for this schema"
+            },
+            "slashed": {
+              "type": "integer",
+              "description": "Slashed amount for this schema"
+            },
+            "repaid": {
+              "type": "integer",
+              "description": "Repaid amount for this schema"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Number of slash events for this schema"
+            },
+            "issued": {
+              "type": "integer",
+              "description": "Number of credentials issued"
+            },
+            "verified": {
+              "type": "integer",
+              "description": "Number of credentials verified"
+            },
+            "run_as_validator_vps": {
+              "type": "integer",
+              "description": "Number of validation processes run as validator"
+            },
+            "run_as_applicant_vps": {
+              "type": "integer",
+              "description": "Number of validation processes run as applicant"
+            },
+            "issuer_perm_count": {
+              "type": "integer",
+              "description": "Total issuer permissions"
+            },
+            "verifier_perm_count": {
+              "type": "integer",
+              "description": "Total verifier permissions"
+            },
+            "issuer_grantor_perm_count": {
+              "type": "integer",
+              "description": "Total issuer grantor permissions"
+            },
+            "verifier_grantor_perm_count": {
+              "type": "integer",
+              "description": "Total verifier grantor permissions"
+            },
+            "ecosystem_perm_count": {
+              "type": "integer",
+              "description": "Total ecosystem permissions"
+            },
+            "active_issuer_perm_count": {
+              "type": "integer",
+              "description": "Active issuer permissions"
+            },
+            "active_verifier_perm_count": {
+              "type": "integer",
+              "description": "Active verifier permissions"
+            },
+            "active_issuer_grantor_perm_count": {
+              "type": "integer",
+              "description": "Active issuer grantor permissions"
+            },
+            "active_verifier_grantor_perm_count": {
+              "type": "integer",
+              "description": "Active verifier grantor permissions"
+            },
+            "active_ecosystem_perm_count": {
+              "type": "integer",
+              "description": "Active ecosystem permissions"
+            },
+            "slashs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SchemaSlashEvent"
+              },
+              "description": "Schema-specific slash events"
+            },
+            "repayments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SchemaRepaymentEvent"
+              },
+              "description": "Schema-specific repayment events"
+            }
+          }
+        },
+        "SchemaSlashEvent": {
+          "type": "object",
+          "properties": {
+            "perm_id": {
+              "type": "string",
+              "description": "Permission ID that was slashed"
+            },
+            "schema_id": {
+              "type": "integer",
+              "description": "Schema ID"
+            },
+            "tr_id": {
+              "type": "string",
+              "description": "Trust Registry ID"
+            },
+            "slashed_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Slash timestamp"
+            },
+            "slashed_by": {
+              "type": "string",
+              "description": "Account that performed the slash"
+            }
+          }
+        },
+        "SchemaRepaymentEvent": {
+          "type": "object",
+          "properties": {
+            "perm_id": {
+              "type": "string",
+              "description": "Permission ID that was repaid"
+            },
+            "schema_id": {
+              "type": "integer",
+              "description": "Schema ID"
+            },
+            "tr_id": {
+              "type": "string",
+              "description": "Trust Registry ID"
+            },
+            "repaid_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Repayment timestamp"
+            },
+            "repaid_by": {
+              "type": "string",
+              "description": "Account that performed the repayment"
+            }
+          }
         }
       },
       "responses": {
@@ -1904,98 +2427,6 @@
             }
           }
         }
-      },
-      "TrustDeposit": {
-        "type": "object",
-        "properties": {
-          "account": {
-            "type": "string",
-            "description": "Account address"
-          },
-          "share": {
-            "type": "string",
-            "description": "Current share amount"
-          },
-          "amount": {
-            "type": "string",
-            "description": "Total deposit amount"
-          },
-          "claimable": {
-            "type": "string",
-            "description": "Claimable rewards amount"
-          },
-          "slashed_deposit": {
-            "type": "string",
-            "description": "Total slashed deposit amount"
-          },
-          "repaid_deposit": {
-            "type": "string",
-            "description": "Total repaid deposit amount"
-          },
-          "last_slashed": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "Last slash event timestamp"
-          },
-          "last_repaid": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "Last repay event timestamp"
-          },
-          "slash_count": {
-            "type": "integer",
-            "description": "Number of slash events"
-          },
-          "last_repaid_by": {
-            "type": "string",
-            "description": "Account that last performed repayment"
-          }
-        }
-      },
-      "TrustDepositResponse": {
-        "type": "object",
-        "properties": {
-          "trust_deposit": {
-            "$ref": "#/components/schemas/TrustDeposit"
-          }
-        }
-      },
-      "TrustDepositParamsResponse": {
-        "type": "object",
-        "properties": {
-          "params": {
-            "type": "object",
-            "properties": {
-              "trust_deposit_rate": {
-                "type": "string",
-                "description": "Trust deposit interest rate",
-                "example": "0.200000000000000000"
-              },
-              "user_agent_reward_rate": {
-                "type": "string",
-                "description": "User agent reward rate",
-                "example": "0.200000000000000000"
-              },
-              "trust_deposit_share_value": {
-                "type": "string",
-                "description": "Value of each trust deposit share",
-                "example": "1.000000000000000000"
-              },
-              "wallet_user_agent_reward_rate": {
-                "type": "string",
-                "description": "Wallet user agent reward rate",
-                "example": "0.200000000000000000"
-              },
-              "trust_deposit_reclaim_burn_rate": {
-                "type": "string",
-                "description": "Burn rate for reclaimed trust deposits",
-                "example": "0.600000000000000000"
-              }
-            }
-          }
-        }
       }
     },
     "tags": [
@@ -2018,6 +2449,10 @@
       {
         "name": "TrustDeposit",
         "description": "Trust Deposit management and operations"
+      },
+      {
+        "name": "Account",
+        "description": "Account reputation and statistics operations"
       }
     ]
   }

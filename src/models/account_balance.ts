@@ -36,6 +36,7 @@ export class AccountBalance extends BaseModel {
         denom: { type: 'string' },
         amount: { type: 'string' },
         base_denom: { type: 'string' },
+        account_id: { type: 'number' },
       },
     };
   }
