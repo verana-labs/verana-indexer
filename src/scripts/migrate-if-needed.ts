@@ -1,6 +1,6 @@
+import * as dotenv from "dotenv";
 import knex, { Knex } from "knex";
 import { loadEnvFiles } from "../common/utils/loadEnv";
-import * as dotenv from "dotenv";
 import { getConfigForEnv } from "../knexfile";
 
 loadEnvFiles();
@@ -49,10 +49,12 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
       }
 
       const errorMsg = error?.message || String(error);
-      const shortMsg = errorMsg.length > 100 ? errorMsg.substring(0, 100) + '...' : errorMsg;
+      const shortMsg = errorMsg.length > 100 ? `${errorMsg.substring(0, 100)}...` : errorMsg;
       console.log(`Waiting for database... (attempt ${i + 1}/${maxRetries}) - ${shortMsg}`);
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delayMs);
+      });
 
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 }
