@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import { IbcIcs20, IbcMessage } from '../src/models';
+import { IbcIcs20, IbcMessage } from '../models';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.alterTable('ibc_ics20', (table) => {
@@ -25,19 +25,19 @@ export async function up(knex: Knex): Promise<void> {
         ibcIcs20.start_time =
           ibcIcs20.type === IbcMessage.EVENT_TYPE.SEND_PACKET
             ? ibcMsgs.find(
-                (e) =>
-                  e.sequence_key === ibcIcs20.sequence_key &&
-                  e.type === IbcMessage.EVENT_TYPE.SEND_PACKET
-              )?.timestamp
+              (e) =>
+                e.sequence_key === ibcIcs20.sequence_key &&
+                e.type === IbcMessage.EVENT_TYPE.SEND_PACKET
+            )?.timestamp
             : null;
         ibcIcs20.finish_time = ibcMsgs.find(
           (e) =>
             e.sequence_key === ibcIcs20.sequence_key &&
             (ibcIcs20.type === IbcMessage.EVENT_TYPE.SEND_PACKET
               ? [
-                  IbcMessage.EVENT_TYPE.TIMEOUT_PACKET,
-                  IbcMessage.EVENT_TYPE.ACKNOWLEDGE_PACKET,
-                ].includes(e.type)
+                IbcMessage.EVENT_TYPE.TIMEOUT_PACKET,
+                IbcMessage.EVENT_TYPE.ACKNOWLEDGE_PACKET,
+              ].includes(e.type)
               : [IbcMessage.EVENT_TYPE.RECV_PACKET].includes(e.type))
         )?.timestamp;
       });

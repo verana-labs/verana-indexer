@@ -4,7 +4,7 @@ import { ServiceBroker } from 'moleculer';
 import { Transaction, BlockCheckpoint } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 
 @Service({

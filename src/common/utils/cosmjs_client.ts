@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import config from '../../../config.json' with { type: 'json' };
-import { Network } from '../../../network';
+import config from '../../config.json' with { type: 'json' };
+import { Network } from '../../network';
 
 export default class CosmjsClient {
   public httpBatchClient: HttpBatchClient;

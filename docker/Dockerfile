@@ -19,7 +19,7 @@ RUN pnpm install
 # Copy source code
 COPY . .
 
-RUN cp docker.env .env
+RUN cp ./docker.env ../.env
 
 # Build the application
 RUN pnpm run build
@@ -45,5 +45,4 @@ USER nodejs
 # Expose port
 EXPOSE 3001
 
-# Run migrations, then start the app
-CMD ["sh", "-c", "pnpm run db:migrate:latest && pnpm start"]
+CMD ["sh", "-c", "pnpm run migrate && pnpm start"]

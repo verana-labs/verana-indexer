@@ -18,7 +18,7 @@ import {
 } from '../../common';
 import { Block, BlockCheckpoint, Event, EventAttribute } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';

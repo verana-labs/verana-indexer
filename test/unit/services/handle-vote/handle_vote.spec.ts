@@ -53,7 +53,7 @@ export default class HandleTxVoteServiceTest {
     ]);
   }
 
-  @Test.todo('Handle voting simple tx')
+  @Test('Handle voting simple tx')
   async handleVoteTx() {
     await BlockCheckpoint.query().insert([
       BlockCheckpoint.fromJson({
@@ -102,7 +102,7 @@ export default class HandleTxVoteServiceTest {
     expect(vote.length).toEqual(1);
   }
 
-  @Test.todo('Handle voting in authz tx')
+  @Test('Handle voting in authz tx')
   async handleVoteAuthzTx() {
     await BlockCheckpoint.query().insert([
       BlockCheckpoint.fromJson({
@@ -156,7 +156,7 @@ export default class HandleTxVoteServiceTest {
     expect(vote.length).toEqual(1);
   }
 
-  @Test.todo('Handle change voting option')
+  @Test('Handle change voting option')
   async changeVoteTx() {
     await BlockCheckpoint.query().insert([
       BlockCheckpoint.fromJson({
@@ -216,7 +216,7 @@ export default class HandleTxVoteServiceTest {
     expect(vote.length).toEqual(1);
   }
 
-  @Test.todo('Handle multivote to one proposal')
+  @Test('Handle multivote to one proposal')
   async handleMultiVote() {
     await BlockCheckpoint.query().insert([
       BlockCheckpoint.fromJson({

@@ -13,7 +13,7 @@ import { ServiceBroker } from 'moleculer';
 import Chain from 'stream-chain';
 import Pick from 'stream-json/filters/Pick';
 import StreamArr from 'stream-json/streamers/StreamArray';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   ABCI_QUERY_PATH,

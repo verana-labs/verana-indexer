@@ -7,7 +7,7 @@ import Queue from "bull";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import * as redisuri from "redisuri";
-import { Network } from "../../../network";
+import { Network } from "../../network";
 import { DEFAULT_PREFIX } from "../../base/bullable.service";
 import { BULL_JOB_NAME, Config } from "../../common";
 

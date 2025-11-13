@@ -3,7 +3,7 @@ import { Model } from 'objection';
 import BaseModel from './base';
 import { IbcChannel } from './ibc_channel';
 import { TransactionMessage } from './transaction_message';
-import config from '../../config.json' with { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 
 export class IbcMessage extends BaseModel {
   [relation: string]: any;

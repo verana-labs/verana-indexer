@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
 import config from '../config.json' with { type: 'json' };
-import { BULL_JOB_NAME } from '../src/common';
+import { BULL_JOB_NAME } from '../common';
 export async function up(knex: Knex): Promise<void> {
   console.log('Migrating event_attribute to use partition');
   await knex.transaction(async (trx) => {

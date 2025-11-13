@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import { IbcMessage } from '../src/models';
+import { IbcMessage } from '../models';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.alterTable('ibc_message', (table) => {

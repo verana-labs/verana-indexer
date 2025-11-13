@@ -44,7 +44,7 @@
     "chunkSize": 1000
   },
   "crawlAccounts": {
-    "millisecondCrawl": 10000,
+    "millisecondCrawl": 1000,
     "chunkSize": 100,
     "blocksPerCall": 100,
     "key": "crawlAccounts",

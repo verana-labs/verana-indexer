@@ -23,58 +23,62 @@ The crawler servires utilize [Bull](https://github.com/OptimalBits/bull) for eff
 An overview of the architecture is shown below:
 
 ```mermaid
-graph LR
+flowchart LR
+    subgraph EXT["External"]
+        CLIENTS["REST Clients"]
+        BLOCKCHAIN["Verana Blockchain"]
+    end
 
-subgraph "Verana Indexer"
-  subgraph "Services"
-    api-gateway["API Gateway"]
-    crawl-account["crawl-account"]
-    crawl-block["crawl-block"]
-    crawl-transaction["crawl-transaction"]
-    crawl-proposal["crawl-proposal"]
-    crawl-validator["crawl-validator"]
-    crawl-cosmwasm["crawl-cosmwasm"]
-    cw721["cw721"]
-  end
+    subgraph INDEXER["Verana Indexer"]
+        API["API Gateway"]
+        CRAWLERS["Crawler Services<br/>(block, tx, account, etc.)"]
+        PROCESSORS["Verana Processors<br/>(DID, TR, CS, Perm, TD, AR)"]
+        DB_SERVICES["Database Services<br/>(Query APIs)"]
+    end
 
-  subgraph "Database"
-    database["Postgres"]
-  end
+    subgraph INFRA["Infrastructure"]
+        REDIS["Redis<br/>Transporter | Cache | Queues"]
+        POSTGRES["PostgreSQL"]
+    end
 
-  subgraph "Other Services"
-    redis["Redis"]
-  end
+    CLIENTS -->|HTTP| API
+    BLOCKCHAIN -->|RPC/LCD| CRAWLERS
+    BLOCKCHAIN -->|RPC/LCD| PROCESSORS
+    
+    API -.->|Moleculer Broker| DB_SERVICES
+    DB_SERVICES -->|Query| POSTGRES
+    
+    CRAWLERS -->|Create Jobs| REDIS
+    PROCESSORS -->|Create Jobs| REDIS
+    REDIS -->|Process Jobs| CRAWLERS
+    REDIS -->|Process Jobs| PROCESSORS
+    
+    CRAWLERS -->|Write| POSTGRES
+    PROCESSORS -->|Write| POSTGRES
 
-  api-gateway --> database
-
-
-  Services --> redis
-  Services --> database
-end
-
-subgraph "User"
-  user["GraphQL client"]
-end
-
-subgraph "Blockchain RPC"
-  blockchain["Blockchain RPC"]
-end
-
-subgraph "External Services"
-  ipfs["IPFS"]
-end
-
-blockchain --> crawl-block
-blockchain --> cw721
-blockchain --> crawl-transaction
-blockchain --> crawl-account
-blockchain --> crawl-proposal
-blockchain --> crawl-validator
-
+    style API fill:#2196F3,stroke:#1976D2,stroke-width:3px,color:#fff
+    style POSTGRES fill:#4CAF50,stroke:#388E3C,stroke-width:3px,color:#fff
+    style REDIS fill:#F44336,stroke:#D32F2F,stroke-width:3px,color:#fff
+    style BLOCKCHAIN fill:#FF9800,stroke:#F57C00,stroke-width:3px,color:#fff
+    style CRAWLERS fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff
+    style PROCESSORS fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
+    style DB_SERVICES fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
 ```
 
-All services are stateless and can be scaled horizontally. Crawling jobs are queued in Redis and processed by the crawler services.
-The current state of crawling jobs is stored in the database and can be queried via the GraphQL API.
+**Architecture Overview:**
+
+All services are **Moleculer microservices** that communicate via the **Moleculer broker** (using Redis as transporter). The system operates in two main flows:
+
+1. **Crawling Flow**: Crawler services fetch data from the blockchain, create jobs in Redis queues, and workers process these jobs to write indexed data to PostgreSQL.
+
+2. **API Flow**: REST clients call the API Gateway, which routes requests to database services via the Moleculer broker. Database services query PostgreSQL and return results.
+
+**Redis serves three purposes:**
+- **Transporter**: Enables Moleculer service-to-service communication
+- **Cache**: Provides caching layer for frequently accessed data
+- **Job Queues**: Stores and manages crawling jobs using Bull/BullMQ
+
+All services are stateless and can be scaled horizontally.
 
 ## Services
 
@@ -100,6 +104,8 @@ You can view detail database schema [here](./docs/database_schema.md)
 
 ## Setup
 
+This setup guide is for **local development** and connecting to the **Verana testnet**. For production deployments or other networks, adjust the configuration accordingly.
+
 ### 1) Install dependencies
 
 ```bash
@@ -116,22 +122,92 @@ cp .env.example .env
 ### 3) Start infrastructure (PostgreSQL, Redis)
 
 ```bash
-pnpm run docker
+pnpm run docker:dev
 ```
 
-This will start the PostgreSQL, Redis containers in the background.
+This will start the PostgreSQL and Redis containers in the background.
 
-> **Note:** Make sure the required ports aren’t already in use on your machine.
+> **Note:** Make sure the required ports aren't already in use on your machine.
 
 ## Configuration
 
-[Config Moleculer](.env.example), refer [docs](https://moleculer.services/docs/0.14/configuration.html) to get detail configurations.
-[Config chain](config.json) to setup crawling jobs and the crawling chain information.
+### Environment Variables
 
-## Adding a new chain
+The application is configured through environment variables. See `.env.example` for a complete list.
 
-Setting up Verana Indexer for a new chain is straight-forward:
+#### Mandatory Environment Variables
 
-- Configure the crawling jobs and chain information in the `config.json` file
-- If the chain has custom messages, you may need to add a new message decoder (see [Message Decoders](#message-decoders) section).
-- Start crawling your chain :fireworks:
+These must be configured for the indexer to function:
+
+**Network Configuration:**
+- `CHAIN_ID` - The Verana chain ID (e.g., `vna-testnet-1`)
+- `RPC_ENDPOINT` - Blockchain RPC endpoint URL (e.g., `https://rpc.testnet.verana.network/`)
+- `LCD_ENDPOINT` - Blockchain LCD/REST API endpoint URL (e.g., `https://api.testnet.verana.network`)
+
+**Database Configuration:**
+- `POSTGRES_HOST` - PostgreSQL host address
+- `POSTGRES_PORT` - PostgreSQL port (default: `5432`)
+- `POSTGRES_USER` - PostgreSQL username
+- `POSTGRES_PASSWORD` - PostgreSQL password
+- `POSTGRES_DB` - PostgreSQL database name
+
+**Redis Configuration:**
+- `TRANSPORTER` - Redis connection string for Moleculer transporter (e.g., `redis://127.0.0.1:6379`)
+- `CACHER` - Redis connection string for caching (e.g., `redis://127.0.0.1:6379`)
+- `QUEUE_JOB_REDIS` - Redis connection string for job queues (e.g., `redis://127.0.0.1:6379`)
+
+#### Important Optional Variables
+
+These have sensible defaults but may need adjustment for specific deployments:
+
+- `MOLECULER_NAMESPACE` - Namespace for service isolation (default: `verana-indexer`)
+- `REDIS_DB_NUMBER` - Redis database number (default: `20`)
+- `PORT` - API Gateway port (default: `3001`)
+- `LOGLEVEL` - Logging level (default: `info`)
+- `NODE_ENV` - Environment mode: `development` or `production`
+
+#### Advanced Configuration
+
+For advanced usage, you can configure:
+- Moleculer framework settings (transporter, cacher, serializer, etc.)
+- Metrics and tracing settings
+- Circuit breaker and bulkhead settings
+- Request timeout and retry policies
+
+Refer to the [Moleculer documentation](https://moleculer.services/docs/0.14/configuration.html) for detailed configuration options.
+
+### Chain Configuration (`config.json`)
+
+The `src/config.json` file contains chain-specific and job-specific configuration:
+
+**Chain Information:**
+- `chainName` - Chain identifier
+- `networkPrefixAddress`, `consensusPrefixAddress`, `validatorPrefixAddress` - Address prefixes
+- `networkDenom` - Native denomination (e.g., `uvna`)
+
+**Crawling Job Configuration:**
+Each service has its own configuration section (e.g., `crawlBlock`, `crawlTransaction`, `crawlDids`, etc.) that controls:
+- Crawling intervals and timing
+- Batch sizes and chunk sizes
+- Retry policies
+- Start blocks for initial sync
+
+**What to modify for different deployments:**
+- Chain-specific settings (prefixes, denomination) if deploying to a different Verana network variant
+- Crawling job intervals and batch sizes based on network performance and requirements
+- Start blocks if you need to reindex from a specific block height
+
+For most Verana deployments, the default configuration should work without modification.
+
+## Deployment Configuration
+
+The Verana Indexer is designed specifically for the Verana blockchain. For different Verana network deployments (e.g., testnet vs mainnet), you typically only need to adjust:
+
+1. **Environment Variables** - Update network endpoints (`RPC_ENDPOINT`, `LCD_ENDPOINT`, `CHAIN_ID`) and database credentials
+2. **Chain Settings in `config.json`** - If the network uses different address prefixes or denomination, update:
+   - `networkPrefixAddress`
+   - `consensusPrefixAddress`
+   - `validatorPrefixAddress`
+   - `networkDenom`
+
+The crawling job configurations in `config.json` (intervals, batch sizes, etc.) are usually fine with defaults, but can be tuned based on network performance requirements.

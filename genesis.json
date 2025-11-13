@@ -1,0 +1,499 @@
+{
+  "genesis_time": "2025-10-02T16:12:53.00146354Z",
+  "chain_id": "vna-testnet-1",
+  "initial_height": "1",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "22020096",
+      "max_gas": "-1"
+    },
+    "evidence": {
+      "max_age_num_blocks": "100000",
+      "max_age_duration": "172800000000000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": [
+        "ed25519"
+      ]
+    },
+    "version": {
+      "app": "0"
+    },
+    "abci": {
+      "vote_extensions_enable_height": "0"
+    }
+  },
+  "app_hash": "",
+  "app_state": {
+    "06-solomachine": null,
+    "07-tendermint": null,
+    "auth": {
+      "params": {
+        "max_memo_characters": "256",
+        "tx_sig_limit": "7",
+        "tx_size_cost_per_byte": "10",
+        "sig_verify_cost_ed25519": "590",
+        "sig_verify_cost_secp256k1": "1000"
+      },
+      "accounts": [
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "verana1z2epxhjn6qrg0uca6j0rq7llupe3n0nl0gjt7d",
+          "pub_key": null,
+          "account_number": "0",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "verana19ywhwwycdunw9yluwsefxe2ehs2d6nnun2y903",
+          "pub_key": null,
+          "account_number": "1",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "verana16j9qracmadh977cp0zq2mam48zuyk7qlt5nwz8",
+          "pub_key": null,
+          "account_number": "2",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "verana1wg99msmt03zpwee3n85urv8yzha79tfrw2ujw8",
+          "pub_key": null,
+          "account_number": "3",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "verana1hjkqsxq20n3av9ss3g9zj0yt4g5atsj0nh9udn",
+          "pub_key": null,
+          "account_number": "4",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "verana167vrykn5vhp8v9rng69xf0jzvqa3v79etmr0t2",
+          "pub_key": null,
+          "account_number": "5",
+          "sequence": "0"
+        }
+      ]
+    },
+    "authz": {
+      "authorization": []
+    },
+    "bank": {
+      "params": {
+        "send_enabled": [],
+        "default_send_enabled": true
+      },
+      "balances": [
+        {
+          "address": "verana1z2epxhjn6qrg0uca6j0rq7llupe3n0nl0gjt7d",
+          "coins": [
+            {
+              "denom": "uvna",
+              "amount": "1000000000"
+            }
+          ]
+        },
+        {
+          "address": "verana19ywhwwycdunw9yluwsefxe2ehs2d6nnun2y903",
+          "coins": [
+            {
+              "denom": "uvna",
+              "amount": "1000000000"
+            }
+          ]
+        },
+        {
+          "address": "verana1wg99msmt03zpwee3n85urv8yzha79tfrw2ujw8",
+          "coins": [
+            {
+              "denom": "uvna",
+              "amount": "1000000000"
+            }
+          ]
+        },
+        {
+          "address": "verana1hjkqsxq20n3av9ss3g9zj0yt4g5atsj0nh9udn",
+          "coins": [
+            {
+              "denom": "uvna",
+              "amount": "1000000000"
+            }
+          ]
+        },
+        {
+          "address": "verana16j9qracmadh977cp0zq2mam48zuyk7qlt5nwz8",
+          "coins": [
+            {
+              "denom": "uvna",
+              "amount": "1000000000"
+            }
+          ]
+        },
+        {
+          "address": "verana167vrykn5vhp8v9rng69xf0jzvqa3v79etmr0t2",
+          "coins": [
+            {
+              "denom": "uvna",
+              "amount": "1000000000000"
+            }
+          ]
+        }
+      ],
+      "supply": [
+        {
+          "denom": "uvna",
+          "amount": "1005000000000"
+        }
+      ],
+      "denom_metadata": [],
+      "send_enabled": []
+    },
+    "capability": {
+      "index": "1",
+      "owners": []
+    },
+    "circuit": {
+      "account_permissions": [],
+      "disabled_type_urls": []
+    },
+    "consensus": null,
+    "crisis": {
+      "constant_fee": {
+        "denom": "uvna",
+        "amount": "1000"
+      }
+    },
+    "cs": {
+      "params": {
+        "credential_schema_trust_deposit": "10",
+        "credential_schema_schema_max_size": "8192",
+        "credential_schema_issuer_grantor_validation_validity_period_max_days": 3650,
+        "credential_schema_verifier_grantor_validation_validity_period_max_days": 3650,
+        "credential_schema_issuer_validation_validity_period_max_days": 3650,
+        "credential_schema_verifier_validation_validity_period_max_days": 3650,
+        "credential_schema_holder_validation_validity_period_max_days": 3650
+      },
+      "credential_schemas": [],
+      "schema_counter": "0"
+    },
+    "dd": {
+      "params": {
+        "did_directory_trust_deposit": "5",
+        "did_directory_grace_period": "30"
+      },
+      "did_directories": []
+    },
+    "distribution": {
+      "params": {
+        "community_tax": "0.020000000000000000",
+        "base_proposer_reward": "0.000000000000000000",
+        "bonus_proposer_reward": "0.000000000000000000",
+        "withdraw_addr_enabled": true
+      },
+      "fee_pool": {
+        "community_pool": []
+      },
+      "delegator_withdraw_infos": [],
+      "previous_proposer": "",
+      "outstanding_rewards": [],
+      "validator_accumulated_commissions": [],
+      "validator_historical_rewards": [],
+      "validator_current_rewards": [],
+      "delegator_starting_infos": [],
+      "validator_slash_events": []
+    },
+    "evidence": {
+      "evidence": []
+    },
+    "feegrant": {
+      "allowances": []
+    },
+    "feeibc": {
+      "identified_fees": [],
+      "fee_enabled_channels": [],
+      "registered_payees": [],
+      "registered_counterparty_payees": [],
+      "forward_relayers": []
+    },
+    "genutil": {
+      "gen_txs": [
+        {
+          "body": {
+            "messages": [
+              {
+                "@type": "/cosmos.staking.v1beta1.MsgCreateValidator",
+                "description": {
+                  "moniker": "prime-node",
+                  "identity": "",
+                  "website": "",
+                  "security_contact": "",
+                  "details": ""
+                },
+                "commission": {
+                  "rate": "0.100000000000000000",
+                  "max_rate": "0.200000000000000000",
+                  "max_change_rate": "0.010000000000000000"
+                },
+                "min_self_delegation": "1",
+                "delegator_address": "",
+                "validator_address": "veranavaloper1z2epxhjn6qrg0uca6j0rq7llupe3n0nlw8e6zd",
+                "pubkey": {
+                  "@type": "/cosmos.crypto.ed25519.PubKey",
+                  "key": "mUNO2bzyVU1hezYD7io7KoOayyakW4lt3RXF4S45U8c="
+                },
+                "value": {
+                  "denom": "uvna",
+                  "amount": "1000000000"
+                }
+              }
+            ],
+            "memo": "4c242a009ec35e5785632f6615469779a8179644@172.17.0.3:26656",
+            "timeout_height": "0",
+            "unordered": false,
+            "timeout_timestamp": null,
+            "extension_options": [],
+            "non_critical_extension_options": []
+          },
+          "auth_info": {
+            "signer_infos": [
+              {
+                "public_key": {
+                  "@type": "/cosmos.crypto.secp256k1.PubKey",
+                  "key": "A4oAcBWS+TnIG7wO18P9CYQZvN/wa1EaVle6o4aGQ1iw"
+                },
+                "mode_info": {
+                  "single": {
+                    "mode": "SIGN_MODE_DIRECT"
+                  }
+                },
+                "sequence": "0"
+              }
+            ],
+            "fee": {
+              "amount": [],
+              "gas_limit": "200000",
+              "payer": "",
+              "granter": ""
+            },
+            "tip": null
+          },
+          "signatures": [
+            "ooxm4OhSU8Xp8Ole3SDP7zqf58HtkFb1z/yI3SvxavQBVN14oYEijHh2s02OTlOu8IjNc79bLDs9T0LDdsZxKw=="
+          ]
+        }
+      ]
+    },
+    "gov": {
+      "starting_proposal_id": "1",
+      "deposits": [],
+      "votes": [],
+      "proposals": [],
+      "deposit_params": null,
+      "voting_params": null,
+      "tally_params": null,
+      "params": {
+        "min_deposit": [
+          {
+            "denom": "uvna",
+            "amount": "10000000"
+          }
+        ],
+        "max_deposit_period": "172800s",
+        "voting_period": "600s",
+        "quorum": "0.334000000000000000",
+        "threshold": "0.500000000000000000",
+        "veto_threshold": "0.334000000000000000",
+        "min_initial_deposit_ratio": "0.000000000000000000",
+        "proposal_cancel_ratio": "0.500000000000000000",
+        "proposal_cancel_dest": "",
+        "expedited_voting_period": "86400s",
+        "expedited_threshold": "0.667000000000000000",
+        "expedited_min_deposit": [
+          {
+            "denom": "uvna",
+            "amount": "50000000"
+          }
+        ],
+        "burn_vote_quorum": false,
+        "burn_proposal_deposit_prevote": false,
+        "burn_vote_veto": true,
+        "min_deposit_ratio": "0.010000000000000000"
+      },
+      "constitution": ""
+    },
+    "group": {
+      "group_seq": "0",
+      "groups": [],
+      "group_members": [],
+      "group_policy_seq": "0",
+      "group_policies": [],
+      "proposal_seq": "0",
+      "proposals": [],
+      "votes": []
+    },
+    "ibc": {
+      "client_genesis": {
+        "clients": [],
+        "clients_consensus": [],
+        "clients_metadata": [],
+        "params": {
+          "allowed_clients": [
+            "*"
+          ]
+        },
+        "create_localhost": false,
+        "next_client_sequence": "0"
+      },
+      "connection_genesis": {
+        "connections": [],
+        "client_connection_paths": [],
+        "next_connection_sequence": "0",
+        "params": {
+          "max_expected_time_per_block": "30000000000"
+        }
+      },
+      "channel_genesis": {
+        "channels": [],
+        "acknowledgements": [],
+        "commitments": [],
+        "receipts": [],
+        "send_sequences": [],
+        "recv_sequences": [],
+        "ack_sequences": [],
+        "next_channel_sequence": "0",
+        "params": {
+          "upgrade_timeout": {
+            "height": {
+              "revision_number": "0",
+              "revision_height": "0"
+            },
+            "timestamp": "600000000000"
+          }
+        }
+      }
+    },
+    "interchainaccounts": {
+      "controller_genesis_state": {
+        "active_channels": [],
+        "interchain_accounts": [],
+        "ports": [],
+        "params": {
+          "controller_enabled": true
+        }
+      },
+      "host_genesis_state": {
+        "active_channels": [],
+        "interchain_accounts": [],
+        "port": "icahost",
+        "params": {
+          "host_enabled": true,
+          "allow_messages": [
+            "*"
+          ]
+        }
+      }
+    },
+    "mint": {
+      "minter": {
+        "inflation": "0.130000000000000000",
+        "annual_provisions": "0.000000000000000000"
+      },
+      "params": {
+        "mint_denom": "uvna",
+        "inflation_rate_change": "0.130000000000000000",
+        "inflation_max": "0.200000000000000000",
+        "inflation_min": "0.070000000000000000",
+        "goal_bonded": "0.670000000000000000",
+        "blocks_per_year": "6311520"
+      }
+    },
+    "nft": {
+      "classes": [],
+      "entries": []
+    },
+    "params": null,
+    "perm": {
+      "params": {
+        "validation_term_requested_timeout_days": "7"
+      },
+      "permissions": [],
+      "permission_sessions": [],
+      "next_permission_id": "0"
+    },
+    "protocolpool": {
+      "continuous_funds": [],
+      "params": {
+        "enabled_distribution_denoms": [
+          "uvna"
+        ],
+        "distribution_frequency": "1"
+      }
+    },
+    "runtime": null,
+    "slashing": {
+      "params": {
+        "signed_blocks_window": "100",
+        "min_signed_per_window": "0.500000000000000000",
+        "downtime_jail_duration": "600s",
+        "slash_fraction_double_sign": "0.050000000000000000",
+        "slash_fraction_downtime": "0.010000000000000000"
+      },
+      "signing_infos": [],
+      "missed_blocks": []
+    },
+    "staking": {
+      "params": {
+        "unbonding_time": "1814400s",
+        "max_validators": 100,
+        "max_entries": 7,
+        "historical_entries": 10000,
+        "bond_denom": "uvna",
+        "min_commission_rate": "0.000000000000000000"
+      },
+      "last_total_power": "0",
+      "last_validator_powers": [],
+      "validators": [],
+      "delegations": [],
+      "unbonding_delegations": [],
+      "redelegations": [],
+      "exported": false
+    },
+    "td": {
+      "params": {
+        "trust_deposit_reclaim_burn_rate": "0.600000000000000000",
+        "trust_deposit_share_value": "1.000000000000000000",
+        "trust_deposit_rate": "0.200000000000000000",
+        "wallet_user_agent_reward_rate": "0.200000000000000000",
+        "user_agent_reward_rate": "0.200000000000000000"
+      },
+      "trust_deposits": []
+    },
+    "tr": {
+      "params": {
+        "trust_registry_trust_deposit": "10",
+        "trust_unit_price": "1000000"
+      },
+      "trust_registries": [],
+      "governance_framework_versions": [],
+      "governance_framework_documents": [],
+      "counters": []
+    },
+    "transfer": {
+      "port_id": "transfer",
+      "denom_traces": [],
+      "params": {
+        "send_enabled": true,
+        "receive_enabled": true
+      },
+      "total_escrowed": []
+    },
+    "upgrade": {},
+    "vesting": {}
+  }
+}

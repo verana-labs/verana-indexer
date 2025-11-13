@@ -3,7 +3,7 @@ import { Model } from 'objection';
 import BaseModel from './base';
 import { SmartContract } from './smart_contract';
 import { CodeIdVerification } from './code_id_verification';
-import codeType from '../../code-type.json' with { type: 'json' };
+import codeType from '../code-type.json' with { type: 'json' };
 
 export interface IInstantiatePermission {
   permission: string;

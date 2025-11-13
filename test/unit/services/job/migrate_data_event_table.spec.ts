@@ -6,7 +6,7 @@ import CreateConstraintInEventPartitionJob from '../../../../src/services/job/cr
 import { insertFakeBlockWithHeight } from '../../mock-data/block.mock';
 import { insertFakeEventWithInputId, getAllEvent } from '../../mock-data/event.mock';
 import { insertFakeTxWithInputId } from '../../mock-data/transaction.mock';
-import config from '../../../../config.json' with { type: 'json' };
+import config from '../../../../src/config.json' with { type: 'json' };
 
 async function tableExists(name: string): Promise<boolean> {
   const res = await knex.raw(

@@ -5,7 +5,9 @@ import { LogLevels } from 'moleculer';
 // import _ from 'lodash';
 import * as dotenv from 'dotenv'; // see https://github.com/motdotla/dotenv#how-do-i-use-dotenv-with-import
 // import { DBDialog, DBInfo } from '../types';
+import { loadEnvFiles } from './utils/loadEnv';
 
+loadEnvFiles();
 dotenv.config();
 
 const processEnv = process.env;
@@ -112,17 +114,19 @@ export default class ConfigClass {
 
   public constructor() {
     Object.keys(configObj).forEach((key: string) => {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      this[key] = getValue(configObj[key]);
+      const value = getValue(configObj[key]);
+      if (key === 'REQUEST_TIMEOUT' && typeof value === 'string') {
+        this[key] = +value || 60000;
+      } else {
+        this[key] = value;
+      }
     });
     this.NODE_ENV = process.env.NODE_ENV;
-    this.NODEID = `${
-      process.env.NODEID ? `${process.env.NODEID}-` : ''
-    }${HOST_NAME}-${
+    this.NODEID = `${process.env.NODEID ? `${process.env.NODEID}-` : ''
+      }${HOST_NAME}-${
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       this.NODE_ENV
-    }`;
+      }`;
   }
 }

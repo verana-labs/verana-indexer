@@ -146,16 +146,12 @@ export default class HandleStakeEventTest {
   @BeforeAll()
   async initSuite() {
     jest.setTimeout(60_000);
-
-    // Keep schema current
-    await knex.migrate.latest();
-
     await this.broker.start();
     this.handleStakeEventService = this.broker.createService(HandleStakeEventService) as HandleStakeEventService;
 
     try {
       this.handleStakeEventService.getQueueManager().stopAll();
-    } catch {}
+    } catch { }
 
     // Make service registry (even though we won't use parsing path)
     const providerRegistry = await getProviderRegistry();

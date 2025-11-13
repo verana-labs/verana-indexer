@@ -1,5 +1,7 @@
 import * as dotenv from "dotenv";
+import { loadEnvFiles } from "./common/utils/loadEnv";
 
+loadEnvFiles();
 dotenv.config();
 
 export const Network = {

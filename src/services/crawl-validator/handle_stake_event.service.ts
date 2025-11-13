@@ -14,7 +14,7 @@ import {
   BlockCheckpoint,
 } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 
 @Service({
   name: SERVICE.V1.HandleStakeEventService.key,

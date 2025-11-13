@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import { SmartContract } from '../src/models';
+import { SmartContract } from '../models';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.alterTable('smart_contract', (table) => {

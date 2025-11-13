@@ -4,7 +4,7 @@ import { ServiceBroker } from 'moleculer';
 import { Knex } from 'knex';
 import { Feegrant, FeegrantHistory } from '../../models';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, Config, SERVICE } from '../../common';
 import { FEEGRANT_ACTION } from './feegrant.service';

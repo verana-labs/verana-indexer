@@ -3,7 +3,7 @@ import {
   Service,
 } from '@ourparentcenter/moleculer-decorators-extended';
 import { Context, ServiceBroker } from 'moleculer';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import { BlockCheckpoint } from '../../models';

@@ -44,19 +44,23 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const { payload } = ctx.params;
 
-      const [inserted] = await knex("credential_schemas")
-        .insert(payload)
-        .returning("*");
+      const result = await knex.transaction(async (trx) => {
+        const [inserted] = await trx("credential_schemas")
+          .insert(payload)
+          .returning("*");
 
-      await knex("credential_schema_history").insert(
-        mapToHistoryRow(inserted, {
-          changes: null,
-          action: "create",
-          created_at: knex.fn.now(),
-        })
-      );
+        await trx("credential_schema_history").insert(
+          mapToHistoryRow(inserted, {
+            changes: null,
+            action: "create",
+            created_at: knex.fn.now(),
+          })
+        );
 
-      return ApiResponder.success(ctx, { success: true, result: inserted }, 200);
+        return inserted;
+      });
+
+      return ApiResponder.success(ctx, { success: true, result }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema upsert:", err);
       return ApiResponder.error(ctx, `Failed to upsert credential schema   ${err} `, 500);

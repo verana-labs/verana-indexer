@@ -1,5 +1,5 @@
 import { Knex } from 'knex';
-import { PowerEvent } from '../src/models';
+import { PowerEvent } from '../models';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('power_event', (table: any) => {

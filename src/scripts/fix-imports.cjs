@@ -113,10 +113,11 @@ function fixImportsInFile(filePath) {
 console.log(
   "🔧 Fixing missing .js or /index.js extensions in compiled files..."
 );
-const distDir = path.join(__dirname, "dist");
+const distDir = path.resolve(__dirname, "..", "..", "dist");
 
 if (!fs.existsSync(distDir)) {
   console.error("❌ dist directory not found! Please run your build first.");
+  process.exit(1);
 }
 
 const jsFiles = findJsFiles(distDir);
