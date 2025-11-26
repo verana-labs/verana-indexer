@@ -3,7 +3,7 @@ import { BrokerOptions, Errors, MetricRegistry } from "moleculer";
 import { inspect } from "util";
 // import pick from 'lodash/pick';
 // import HotReloadMiddleware from './middlewares/HotReloadCHokidar';
-import { Network } from "../network";
+import { Network } from "./network";
 import { Config } from "./common";
 import InterNamespaceMiddleware from "./middlewares/internamespace";
 import MoleculerRetryableError = Errors.MoleculerRetryableError;
@@ -83,8 +83,7 @@ const brokerConfig: BrokerOptions = {
   // More info: https://moleculer.services/docs/0.14/networking.html#Serialization
   serializer: Config.SERIALIZER,
 
-  // Number of milliseconds to wait before reject a request with a RequestTimeout error. Disabled: 0
-  requestTimeout: Config.REQUEST_TIMEOUT, // Config.REQUEST_TIMEOUT
+  requestTimeout: +(Config.REQUEST_TIMEOUT || process.env.REQUEST_TIMEOUT || 60000),
 
   // Retry policy settings. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Retry
   retryPolicy: {

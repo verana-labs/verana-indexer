@@ -1,4 +1,4 @@
-import { Network } from '../../../network';
+import { Network } from '../../network';
 import auraTxRegistryType from '../../services/crawl-tx/registry-type/aura-network.json' with { type: 'json' };
 import evmosTxRegistryType from '../../services/crawl-tx/registry-type/evmos-network.json' with { type: 'json' };
 import seiTxRegistryType from '../../services/crawl-tx/registry-type/sei-network.json' with { type: 'json' };

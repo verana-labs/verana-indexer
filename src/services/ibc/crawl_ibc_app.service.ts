@@ -3,7 +3,7 @@ import { Service } from '@ourparentcenter/moleculer-decorators-extended';
 import { Knex } from 'knex';
 import { ServiceBroker } from 'moleculer';
 import knex from '../../common/utils/db_connection';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import { getAttributeFrom } from '../../common/utils/smart_contract';

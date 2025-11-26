@@ -281,8 +281,7 @@ export default class PermIngestService extends Service {
       });
 
       this.logger.info(
-        `✅ Permission ${
-          msg.id
+        `✅ Permission ${msg.id
         } extended until ${newEffectiveUntil.toISOString()} by ${caller}`
       );
 
@@ -825,7 +824,7 @@ export default class PermIngestService extends Service {
         const account = schema?.grantee;
         if (account) {
           await (this as any).broker.call(
-            `${SERVICE.V1.TrustDepositDatabaseService.path}.slashPermTrustDeposit`,
+            `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_perm_trust_deposit`,
             {
               account,
               amount: String(amountNum),

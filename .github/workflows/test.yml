@@ -29,14 +29,7 @@ jobs:
         image: redis:6-alpine
         ports:
           - 6379:6379
-
-      aurad:
-        image: auranw/local-aurad:dev_v0.7.0-3
-        ports:
-          - 1317:1317
-          - 26657:26657
-          - 9090:9090
-
+          
     steps:
       - uses: actions/checkout@v3
 
@@ -63,18 +56,6 @@ jobs:
       - name: Setup env
         run: cp ci/.env.ci .env
 
-      - name: Setup config.json
-        run: cp ci/config.json.ci config.json
-
-      - name: Setup network.ts
-        run: cp ci/network.ts.ci network.ts
-
-      - name: Setup code-type.json
-        run: cp ci/code-type.json.ci code-type.json
-
-      - name: Setup graphql-query-whitelist.json
-        run: cp ci/graphql-query-whitelist.json.ci graphql-query-whitelist.json
-
       - name: Test
         env:
           NODE_ENV: test
@@ -82,5 +63,5 @@ jobs:
           POSTGRES_USER: phamphong
           POSTGRES_DB_TEST: test
         run: |
-          pnpm run db:migrate:test:latest
+          pnpm run migrate:dev
           pnpm run test-ci

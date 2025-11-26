@@ -47,9 +47,6 @@ export default class CrawlSigningInfoTest {
 
   @BeforeAll()
   async initSuite() {
-    // Ensure test schema is up-to-date
-    await knex.migrate.latest();
-
     await this.broker.start();
     this.crawlSigningInfoService = this.broker.createService(CrawlSigningInfoService) as CrawlSigningInfoService;
 

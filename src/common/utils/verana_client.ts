@@ -1,4 +1,4 @@
-import { Network } from "../../../network";
+import { Network } from "../../network";
 import { chainIdConfigOnServer } from "../constant";
 import { IProviderJSClientFactory } from "../types/interfaces";
 

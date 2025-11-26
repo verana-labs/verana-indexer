@@ -1,5 +1,4 @@
 import { Knex } from 'knex';
-import { PowerEvent } from '../src/models';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.alterTable('power_event', (table) => {

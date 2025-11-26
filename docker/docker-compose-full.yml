@@ -1,33 +1,38 @@
 version: "2.4"
-
 services:
-  # PostgreSQL
-  aurad:
-    container_name: aurad_erascope
-    image: auranw/local-aurad:dev_v0.7.0-3
+  indexer:
+    image: verana-indexer:dev
+    container_name: indexer_erascope
+    environment:
+      SERVICEDIR: dist/src/services
+      SERVICES: '**/*.service.js'
+      TRANSPORTER: redis://redis:6379
+      CACHER: redis://redis:6379
+      QUEUE_JOB_REDIS: redis://redis:6379
+      NODE_ENV: production
+      NAMESPACE: verana
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: psql
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "1317:1317"
-      - "26656:26656"
-      - "26657:26657"
-      - "9090:9090"
+      - "3001:3001"
     networks:
       - dev_network
-    # depends_on:
-    #   - psql
 
   psql:
-    build: ./docker/psql/
+    # PostgreSQL
+    image: postgres:14-alpine
+    #build: ./docker/psql/
     container_name: psql_erascope
-    env_file: docker.env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_DB_TEST: ${POSTGRES_DB_TEST}
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata2:/var/lib/postgresql/data
     networks:
       - dev_network
     healthcheck:
@@ -54,4 +59,4 @@ networks:
   dev_network:
 
 volumes:
-  pgdata:
+  pgdata2:

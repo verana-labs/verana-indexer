@@ -1,6 +1,6 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended';
 import { ServiceBroker } from 'moleculer';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE, TrustDepositEventType } from '../../common';
 import knex from '../../common/utils/db_connection';

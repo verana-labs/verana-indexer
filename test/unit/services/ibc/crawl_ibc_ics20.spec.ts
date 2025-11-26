@@ -10,7 +10,7 @@ import {
   Transaction,
 } from '../../../../src/models';
 import CrawlIbcIcs20 from '../../../../src/services/ibc/crawl_ibc_ics20.service';
-import config from '../../../../config.json' with { type: 'json' };
+import config from '../../../../src/config.json' with { type: 'json' };
 import { getAttributeFrom } from '../../../../src/common/utils/smart_contract';
 
 const PORT = config.crawlIbcIcs20.port;

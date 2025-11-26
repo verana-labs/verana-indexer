@@ -10,7 +10,7 @@ import { cosmos } from '@aura-nw/aurajs';
 import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import { Proposal } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {

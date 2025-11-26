@@ -8,10 +8,19 @@ import {
   Event,
   EventAttribute,
 } from "../../../../src/models";
-import { BULL_JOB_NAME } from "../../../../src/common";
+import { BULL_JOB_NAME, getLcdClient } from "../../../../src/common";
 import CrawlProposalService from "../../../../src/services/crawl-proposal/crawl_proposal.service";
 import CrawlTallyProposalService from "../../../../src/services/crawl-proposal/crawl_tally_proposal.service";
 import knex from "../../../../src/common/utils/db_connection";
+
+// Mock the common module functions
+jest.mock("../../../../src/common", () => {
+  const actual = jest.requireActual("../../../../src/common");
+  return {
+    ...actual,
+    getLcdClient: jest.fn(),
+  };
+});
 
 @Describe("Test crawl_proposal service")
 export default class CrawlProposalTest {
@@ -89,6 +98,71 @@ export default class CrawlProposalTest {
   @BeforeAll()
   async initSuite() {
     jest.setTimeout(60_000);
+
+    // Set up mocks BEFORE creating services
+    const mockLcdClient = {
+      provider: {
+        cosmos: {
+          base: {
+            tendermint: {
+              v1beta1: {
+                getNodeInfo: jest.fn().mockResolvedValue({
+                  application_version: {
+                    cosmos_sdk_version: "v0.47.0"
+                  }
+                })
+              }
+            }
+          },
+          gov: {
+            v1: {
+              proposal: jest.fn().mockResolvedValue({
+                proposal: {
+                  id: 1,
+                  proposal_id: 1,
+                  proposer: "verana1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk",
+                  status: "PROPOSAL_STATUS_VOTING_PERIOD",
+                  voting_start_time: "2023-04-10T07:28:12.328245471Z",
+                  voting_end_time: new Date(Date.now() + 86400000).toISOString(),
+                  submit_time: "2023-04-10T07:28:12.328245471Z",
+                  deposit_end_time: "2023-04-10T07:38:12.328245471Z",
+                  total_deposit: [{ denom: "utaura", amount: "10000000" }],
+                  messages: [{
+                    "@type": "/cosmos.gov.v1beta1.TextProposal",
+                    title: "Community Pool Spend test 1",
+                    description: "Test 1",
+                  }],
+                  summary: "Test 1",
+                  title: "Community Pool Spend test 1",
+                  description: "Test 1",
+                  content: {
+                    "@type": "/cosmos.gov.v1beta1.TextProposal",
+                    title: "Community Pool Spend test 1",
+                    description: "Test 1",
+                  },
+                  final_tally_result: {
+                    yes_count: "0",
+                    no_count: "0",
+                    abstain_count: "0",
+                    no_with_veto_count: "0",
+                  },
+                }
+              })
+            }
+          }
+        }
+      }
+    };
+
+    // Mock LCD client to return dummy proposal data
+    (getLcdClient as jest.Mock).mockResolvedValue(mockLcdClient);
+
+    // Mock Proposal.getProposerBySearchTx to return dummy data
+    jest.spyOn(Proposal, "getProposerBySearchTx").mockResolvedValue([
+      "verana1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk",
+      [{ denom: "utaura", amount: "100000" }]
+    ]);
+
     await this.broker.start();
 
     this.crawlProposalService = this.broker.createService(
@@ -101,10 +175,10 @@ export default class CrawlProposalTest {
 
     try {
       await this.crawlProposalService.getQueueManager().stopAll();
-    } catch {}
+    } catch { }
     try {
       await this.crawlTallyProposalService.getQueueManager().stopAll();
-    } catch {}
+    } catch { }
 
     await knex.raw(
       "TRUNCATE TABLE block, block_signature, transaction, event, event_attribute, proposal, block_checkpoint RESTART IDENTITY CASCADE"
@@ -172,16 +246,16 @@ export default class CrawlProposalTest {
 
     try {
       await this.crawlProposalService?.getQueueManager().stopAll();
-    } catch {}
+    } catch { }
     try {
       await this.crawlTallyProposalService?.getQueueManager().stopAll();
-    } catch {}
+    } catch { }
 
     await this.broker.stop();
     await knex.destroy();
   }
 
-  @Test.todo("Crawl new proposal success")
+  @Test("Crawl new proposal success")
   public async testCrawlNewProposal() {
     await this.crawlProposalService?.handleCrawlProposals({});
     const p = await Proposal.query().where("proposal_id", 1).first();

@@ -2,7 +2,7 @@
 import { fromBase64, fromBech32, toBech32, toHex } from '@cosmjs/encoding';
 import { pubkeyToRawAddress } from '@cosmjs/tendermint-rpc';
 import { Model } from 'objection';
-import config from '../../config.json' with { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 import BaseModel from './base';
 import { PowerEvent } from './power_event';
 import { Delegator } from './delegator';

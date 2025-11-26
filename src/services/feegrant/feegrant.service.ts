@@ -9,7 +9,7 @@ import {
   Feegrant,
   FeegrantHistory,
 } from '../../models';
-import config from '../../../config.json' with { type: 'json' };
+import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, Config, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';

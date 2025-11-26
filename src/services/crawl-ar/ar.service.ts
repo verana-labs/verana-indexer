@@ -1,7 +1,7 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended';
 import { ServiceBroker } from 'moleculer';
-import config from '../../../config.json' with { type: 'json' };
-import { Network } from '../../../network';
+import config from '../../config.json' with { type: 'json' };
+import { Network } from '../../network';
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import knex from '../../common/utils/db_connection';
@@ -356,7 +356,6 @@ export default class CrawlNewAccountsService extends BullableService {
             const onChainBalances: Balance[] = Array.isArray(data?.balances)
                 ? data.balances.map((b: any) => ({ denom: b.denom, amount: b.amount || '0' }))
                 : [];
-            console.log(onChainBalances, "RECONCILE")
             await Account.query(knex)
                 .patch({
                     spendable_balances: onChainBalances as any,
