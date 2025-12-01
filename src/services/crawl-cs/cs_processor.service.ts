@@ -31,6 +31,7 @@ interface CredentialSchemaMessage {
   creator?: string;
   archive?: string;
   "@type"?: string;
+  height?: number;
 }
 
 async function calculateDeposit(): Promise<number> {
@@ -75,9 +76,9 @@ export default class ProcessCredentialSchemaService extends BullableService {
   async handleCredentialSchemas(
     ctx: Context<{ credentialSchemaMessages: CredentialSchemaMessage[] }>
   ) {
-    this.logger.info("📥 Processing credential schemas:", ctx.params);
-
     const { credentialSchemaMessages } = ctx.params;
+    this.logger.info(`🔄 Processing ${credentialSchemaMessages?.length || 0} CredentialSchema messages`);
+
     if (!credentialSchemaMessages?.length) {
       return { success: false, message: "No credential schemas" };
     }
@@ -85,17 +86,25 @@ export default class ProcessCredentialSchemaService extends BullableService {
     const deposit = await calculateDeposit();
 
     for (const schemaMessage of credentialSchemaMessages) {
-      if (
-        schemaMessage.type === CredentialSchemaMessageType.Create ||
-        schemaMessage.type === CredentialSchemaMessageType.CreateLegacy
-      ) {
-        await this.createSchema(ctx, schemaMessage, deposit);
-      }
-      if (schemaMessage.type === CredentialSchemaMessageType.Update) {
-        await this.updateSchema(ctx, schemaMessage, deposit);
-      }
-      if (schemaMessage.type === CredentialSchemaMessageType.Archive) {
-        await this.archiveSchema(ctx, schemaMessage);
+      try {
+        this.logger.info(`📝 Processing CS message: type=${schemaMessage.type}, height=${schemaMessage.height}`);
+        if (
+          schemaMessage.type === CredentialSchemaMessageType.Create ||
+          schemaMessage.type === CredentialSchemaMessageType.CreateLegacy
+        ) {
+          this.logger.info(`🆕 Creating new CredentialSchema at height ${schemaMessage.height}`);
+          await this.createSchema(ctx, schemaMessage, deposit);
+        }
+        if (schemaMessage.type === CredentialSchemaMessageType.Update) {
+          await this.updateSchema(ctx, schemaMessage, deposit);
+        }
+        if (schemaMessage.type === CredentialSchemaMessageType.Archive) {
+          await this.archiveSchema(ctx, schemaMessage);
+        }
+      } catch (err) {
+        this.logger.error(`❌ Error processing CS message:`, err);
+        console.error("FATAL CS ERROR:", err);
+        
       }
     }
 
@@ -141,6 +150,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
         verifier_perm_management_mode: getModeString(
           content.verifier_perm_management_mode ?? 0
         ),
+        height: schemaMessage.height ?? 0,
       };
 
       const insertResult = await ctx.call(
@@ -165,6 +175,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const updatePayload: Record<string, any> = {
         id: generatedId,
         json_schema: JSON.stringify(updatedSchema),
+        height: schemaMessage.height ?? 0,
       };
 
       await ctx.call(
@@ -178,7 +189,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
       );
     } catch (err) {
       this.logger.error("❌ Error storing credential schema:", err);
-      process.exit();
     }
   }
 
@@ -196,6 +206,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
         ...schemaMessage.content,
         deposit: deposit.toString(),
         modified: formatTimestamp(schemaMessage.timestamp),
+        height: schemaMessage.height ?? 0,
       };
 
       delete payload.content;
@@ -226,6 +237,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
         ...schemaMessage,
         ...schemaMessage.content,
         modified: formatTimestamp(schemaMessage.timestamp),
+        height: schemaMessage.height ?? 0,
       };
 
       delete payload.content;

@@ -6,6 +6,7 @@ import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
+import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
 import TrustDeposit from "../../models/trust_deposit";
 
@@ -100,6 +101,61 @@ export default class TrustDepositApiService extends BullableService {
       );
     } catch (err: any) {
       this.logger.error("Error fetching module params:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
+    }
+  }
+
+  @Action({
+    name: "getTrustDepositHistory",
+    params: {
+      account: { type: "string", min: 5 },
+    },
+  })
+  public async getTrustDepositHistory(ctx: Context<{ account: string }>) {
+    try {
+      const { account } = ctx.params;
+
+      if (!this.isValidAccount(account)) {
+        return ApiResponder.error(ctx, "Invalid account format", 400);
+      }
+
+      // First check if the trust deposit exists
+      const trustDeposit = await TrustDeposit.query().findOne({ account });
+      if (!trustDeposit) {
+        return ApiResponder.error(
+          ctx,
+          `No trust deposit found for account: ${account}`,
+          404
+        );
+      }
+
+      const history = await knex("trust_deposit_history")
+        .where("account", account)
+        .orderBy("height", "asc")
+        .orderBy("created_at", "asc");
+
+      // If no history but trust deposit exists, return empty array (history tracking started after creation)
+      const cleanHistory = history.map((record: any) => ({
+        id: record.id,
+        account: record.account,
+        share: record.share?.toString(),
+        amount: record.amount?.toString(),
+        claimable: record.claimable?.toString(),
+        slashed_deposit: record.slashed_deposit?.toString(),
+        repaid_deposit: record.repaid_deposit?.toString(),
+        last_slashed: record.last_slashed,
+        last_repaid: record.last_repaid,
+        slash_count: record.slash_count,
+        last_repaid_by: record.last_repaid_by,
+        event_type: record.event_type,
+        height: record.height,
+        changes: record.changes,
+        created_at: record.created_at,
+      }));
+
+      return ApiResponder.success(ctx, { history: cleanHistory }, 200);
+    } catch (err: any) {
+      this.logger.error("Error in getTrustDepositHistory:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }

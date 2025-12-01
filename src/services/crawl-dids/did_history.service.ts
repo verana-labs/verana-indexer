@@ -17,11 +17,25 @@ export default class DidHistoryService extends BullableService {
 
   @Action({ name: "save" })
   async save(ctx: { params: DidHistoryRecord }) {
-    const record = ctx.params;
-    delete record?.id
-    await DidHistoryRepository.insertHistory(record);
-    this.logger.info("DID history saved:", record);
-    return record;
+    try {
+      const record = ctx.params;
+      delete record?.id
+      this.logger.info("Attempting to save DID history:", record);
+      await DidHistoryRepository.insertHistory(record);
+      this.logger.info("✅ DID history saved successfully:", record);
+      return record;
+    } catch (err) {
+      this.logger.error("❌ Error saving DID history:", err);
+      console.error("FATAL DID HISTORY SAVE ERROR:", err);
+      return {
+        success: false,
+        error: {
+          code: 500,
+          name: "DidHistorySaveError",
+          message: "Failed to save DID history",
+        },
+      };
+    }
   }
   @Action({ name: "getByDid", params: { did: "string" } })
   async getByDid(ctx: Context<{ did: string }>) {

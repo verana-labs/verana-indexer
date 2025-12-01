@@ -945,7 +945,6 @@ export default class CrawlGenesisService extends BullableService {
       return;
     }
     this.logger.info('✅ All genesis jobs finished successfully');
-    // process.exit();
   }
   public async _start() {
     const genesisBlkCheck: BlockCheckpoint | undefined =

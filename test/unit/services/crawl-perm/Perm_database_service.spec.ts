@@ -13,6 +13,7 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
   mockQuery.transaction = jest.fn((fn) => fn(mockQuery));
   mockQuery.commit = jest.fn();
   mockQuery.rollback = jest.fn();
+  mockQuery.returning = jest.fn().mockResolvedValue([{}]);
   return mockQuery;
 });
 

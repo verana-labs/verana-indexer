@@ -125,6 +125,28 @@ export default class PermAPIService extends BullableService {
   }
 
   @Action({
+    rest: "GET history/:id",
+    params: {
+      id: { type: "string", pattern: /^[0-9]+$/ },
+    },
+  })
+  async getPermissionHistory(ctx: Context<{ id: string }>) {
+    try {
+      const history = await knex("permission_history")
+        .where("permission_id", ctx.params.id)
+        .orderBy("height", "asc")
+        .orderBy("created_at", "asc");
+      if (!history.length) {
+        return ApiResponder.error(ctx, "Permission history not found", 404);
+      }
+      return ApiResponder.success(ctx, { history }, 200);
+    } catch (err: any) {
+      this.logger.error("Error in getPermissionHistory:", err);
+      return ApiResponder.error(ctx, "Failed to get permission history", 500);
+    }
+  }
+
+  @Action({
     rest: "GET beneficiaries",
     params: {
       issuer_perm_id: { type: "number", integer: true, optional: true },
@@ -204,6 +226,36 @@ export default class PermAPIService extends BullableService {
     } catch (err: any) {
       this.logger.error("Error in getPermissionSession:", err);
       return ApiResponder.error(ctx, "Failed to get PermissionSession", 500);
+    }
+  }
+
+  @Action({
+    rest: "GET permission-session-history/:id",
+    params: {
+      id: { type: "string", pattern: /^[0-9a-fA-F-]+$/ },
+    },
+  })
+  async getPermissionSessionHistory(ctx: Context<{ id: string }>) {
+    try {
+      const history = await knex("permission_session_history")
+        .where("session_id", ctx.params.id)
+        .orderBy("height", "asc")
+        .orderBy("created_at", "asc");
+      if (!history.length) {
+        return ApiResponder.error(
+          ctx,
+          "PermissionSession history not found",
+          404
+        );
+      }
+      return ApiResponder.success(ctx, { history }, 200);
+    } catch (err: any) {
+      this.logger.error("Error in getPermissionSessionHistory:", err);
+      return ApiResponder.error(
+        ctx,
+        "Failed to get PermissionSession history",
+        500
+      );
     }
   }
 

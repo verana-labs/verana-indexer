@@ -9,6 +9,88 @@ import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import TrustDeposit from "../../models/trust_deposit";
 
+const TRUST_DEPOSIT_HISTORY_FIELDS = [
+  "share",
+  "amount",
+  "claimable",
+  "slashed_deposit",
+  "repaid_deposit",
+  "last_slashed",
+  "last_repaid",
+  "slash_count",
+  "last_repaid_by",
+];
+
+function computeTdChanges(
+  oldRecord: any,
+  newRecord: any
+): Record<string, { old: any; new: any }> | null {
+  if (!oldRecord) return null;
+  const changes: Record<string, { old: any; new: any }> = {};
+  for (const field of TRUST_DEPOSIT_HISTORY_FIELDS) {
+    const oldValue = oldRecord?.[field] ?? null;
+    const newValue = newRecord?.[field] ?? null;
+    if (String(oldValue) !== String(newValue)) {
+      changes[field] = { old: oldValue, new: newValue };
+    }
+  }
+  return Object.keys(changes).length ? changes : null;
+}
+
+async function recordTrustDepositHistory(
+  trxOrKnex: any,
+  td: any,
+  eventType: string,
+  height: number,
+  previousRecord?: any
+) {
+  if (!td) return;
+  const changes = computeTdChanges(previousRecord, td);
+  
+  if (previousRecord && !changes) {
+    return; 
+  }
+  
+  const existingHistory = await trxOrKnex("trust_deposit_history")
+    .where({ account: td.account, height })
+    .first();
+  
+  if (existingHistory) {
+    await trxOrKnex("trust_deposit_history")
+      .where({ id: existingHistory.id })
+      .update({
+        share: td.share?.toString() ?? "0",
+        amount: td.amount?.toString() ?? "0",
+        claimable: td.claimable?.toString() ?? "0",
+        slashed_deposit: td.slashed_deposit?.toString() ?? "0",
+        repaid_deposit: td.repaid_deposit?.toString() ?? "0",
+        last_slashed: td.last_slashed ?? null,
+        last_repaid: td.last_repaid ?? null,
+        slash_count: td.slash_count ?? 0,
+        last_repaid_by: td.last_repaid_by ?? "",
+        event_type: eventType,
+        changes: changes ? JSON.stringify(changes) : null,
+      });
+    return;
+  }
+  
+  await trxOrKnex("trust_deposit_history").insert({
+    account: td.account,
+    share: td.share?.toString() ?? "0",
+    amount: td.amount?.toString() ?? "0",
+    claimable: td.claimable?.toString() ?? "0",
+    slashed_deposit: td.slashed_deposit?.toString() ?? "0",
+    repaid_deposit: td.repaid_deposit?.toString() ?? "0",
+    last_slashed: td.last_slashed ?? null,
+    last_repaid: td.last_repaid ?? null,
+    slash_count: td.slash_count ?? 0,
+    last_repaid_by: td.last_repaid_by ?? "",
+    event_type: eventType,
+    height,
+    changes: changes ? JSON.stringify(changes) : null,
+  });
+}
+
 function toBigIntSafe(value: any): bigint {
   if (value === null || value === undefined) return BigInt(0);
   const str = String(value).trim();
@@ -41,33 +123,56 @@ export default class TrustDepositDatabaseService extends BullableService {
     name: "adjustTrustDeposit",
     params: {
       account: { type: "string", min: 5 },
+      height: { type: "number", optional: true },
     },
   })
   public async adjustTrustDeposit(ctx: any) {
-    const { account, newAmount, newShare, newClaimable } = ctx.params;
+    const { account, newAmount, newShare, newClaimable, height } = ctx.params;
+    const blockHeight = Number(height) || 0;
     try {
       const result = await knex.transaction(async (trx) => {
         const existing = await TrustDeposit.query(trx).findOne({ account });
         if (!existing) {
-          await TrustDeposit.query(trx).insert({
-            account,
-            amount: (newAmount ?? newAmount ?? BigInt(0)).toString(),
-            share: (newShare ?? newShare).toString(),
-            claimable: (newClaimable ?? newClaimable ?? BigInt(0)).toString(),
-          });
+          const [inserted] = await trx("trust_deposits")
+            .insert({
+              account,
+              amount: (newAmount ?? BigInt(0)).toString(),
+              share: (newShare ?? BigInt(0)).toString(),
+              claimable: (newClaimable ?? BigInt(0)).toString(),
+            })
+            .returning("*");
+
+          // Record history for creation
+          await recordTrustDepositHistory(
+            trx,
+            inserted,
+            "CREATE_TRUST_DEPOSIT",
+            blockHeight
+          );
+
           return {
             success: true,
             message: "Inserted new trust deposit record",
           };
         }
 
-        await TrustDeposit.query(trx).patchAndFetchById(existing.id, {
+        const previousRecord = { ...existing };
+        const updated = await TrustDeposit.query(trx).patchAndFetchById(existing.id, {
           amount: (newAmount ?? BigInt(existing.amount)).toString(),
           share: (newShare ?? BigInt(existing.share)).toString(),
           claimable: (
             newClaimable ?? BigInt(existing.claimable || "0")
           ).toString(),
         });
+
+        // Record history for update
+        await recordTrustDepositHistory(
+          trx,
+          updated,
+          "ADJUST_TRUST_DEPOSIT",
+          blockHeight,
+          previousRecord
+        );
 
         return {
           success: true,
@@ -87,11 +192,13 @@ export default class TrustDepositDatabaseService extends BullableService {
       slashed: { type: "string" },
       lastSlashed: { type: "string", optional: true },
       slashCount: { type: "number", optional: true },
+      height: { type: "number", optional: true },
     },
   })
   public async slashTrustDeposit(ctx: any) {
-    const { account, slashed: amount, lastSlashed, slashCount } = ctx.params;
+    const { account, slashed: amount, lastSlashed, slashCount, height } = ctx.params;
     const amountBig = toBigIntSafe(amount);
+    const blockHeight = Number(height) || 0;
 
     if (!account) {
       this.logger.warn("[SlashTD] ❌ Missing account parameter");
@@ -116,6 +223,7 @@ export default class TrustDepositDatabaseService extends BullableService {
           };
         }
 
+        const previousRecord = { ...td };
         const currentAmount = toBigIntSafe(td.amount);
         if (amountBig > currentAmount) {
           this.logger.warn(
@@ -136,7 +244,7 @@ export default class TrustDepositDatabaseService extends BullableService {
         const newSlashed = toBigIntSafe(td.slashed_deposit) + amountBig;
         const newSlashCount = BigInt(td.slash_count || "0") + BigInt(1);
 
-        await TrustDeposit.query(trx).patchAndFetchById(td.id, {
+        const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
           amount: newAmount.toString(),
           share: newShare.toString(),
           slashed_deposit: newSlashed.toString(),
@@ -145,6 +253,14 @@ export default class TrustDepositDatabaseService extends BullableService {
             ? BigInt(slashCount).toString()
             : newSlashCount.toString(),
         });
+
+        await recordTrustDepositHistory(
+          trx,
+          updated,
+          "SLASH_TRUST_DEPOSIT",
+          blockHeight,
+          previousRecord
+        );
 
         this.logger.info(
           `[SlashTD] ⚔️ Global slash: ${account} slashed ${amountBig.toString()} at ${now}`
@@ -166,11 +282,13 @@ export default class TrustDepositDatabaseService extends BullableService {
       account: { type: "string", min: 5 },
       amount: { type: "string" },
       ts: { type: "string", optional: true },
+      height: { type: "number", optional: true },
     },
   })
   public async slashPermTrustDeposit(ctx: any) {
-    const { account, amount, ts } = ctx.params;
+    const { account, amount, ts, height } = ctx.params;
     const amountBig = toBigIntSafe(amount);
+    const blockHeight = Number(height) || 0;
 
     if (!account) {
       this.logger.warn("[SlashPermTD] ❌ Missing account parameter");
@@ -195,6 +313,7 @@ export default class TrustDepositDatabaseService extends BullableService {
           };
         }
 
+        const previousRecord = { ...td };
         const currentAmount = toBigIntSafe(td.amount);
         if (amountBig > currentAmount) {
           this.logger.warn(
@@ -214,13 +333,21 @@ export default class TrustDepositDatabaseService extends BullableService {
         const newSlashed = toBigIntSafe(td.slashed_deposit) + amountBig;
         const newSlashCount = BigInt(td.slash_count || "0") + BigInt(1);
 
-        await TrustDeposit.query(trx).patchAndFetchById(td.id, {
+        const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
           amount: newAmount.toString(),
           share: newShare.toString(),
           slashed_deposit: newSlashed.toString(),
           last_slashed: ts ? formatTimestamp(ts) : formatTimestamp(Date.now()),
           slash_count: newSlashCount.toString(),
         });
+
+        await recordTrustDepositHistory(
+          trx,
+          updated,
+          "SLASH_PERM_TRUST_DEPOSIT",
+          blockHeight,
+          previousRecord
+        );
 
         this.logger.info(
           `[SlashPermTD] ⚔️ Permission slash: ${account} slashed ${amountBig.toString()}`

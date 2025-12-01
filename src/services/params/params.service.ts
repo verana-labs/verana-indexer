@@ -95,6 +95,44 @@ export default class GenesisParamsService extends BullableService {
     }
   }
 
+  private computeParamsChanges(
+    oldParams: any,
+    newParams: any
+  ): Record<string, { old: any; new: any }> | null {
+    if (!oldParams) return null;
+    const changes: Record<string, { old: any; new: any }> = {};
+    const allKeys = new Set([
+      ...Object.keys(oldParams || {}),
+      ...Object.keys(newParams || {}),
+    ]);
+    for (const key of allKeys) {
+      const oldValue = oldParams?.[key];
+      const newValue = newParams?.[key];
+      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+        changes[key] = { old: oldValue ?? null, new: newValue ?? null };
+      }
+    }
+    return Object.keys(changes).length ? changes : null;
+  }
+
+  private async recordModuleParamsHistory(
+    trx: any,
+    module: string,
+    params: any,
+    eventType: string,
+    height: number,
+    previousParams?: any
+  ) {
+    const changes = this.computeParamsChanges(previousParams, params);
+    await trx("module_params_history").insert({
+      module,
+      params: JSON.stringify(params),
+      event_type: eventType,
+      height,
+      changes: changes ? JSON.stringify(changes) : null,
+    });
+  }
+
   private async sync() {
     if (!fs.existsSync(this.genesisPath)) {
       this.logger.warn("⚠️ genesis.json not found. Skipping params sync.");
@@ -134,17 +172,46 @@ export default class GenesisParamsService extends BullableService {
       try {
         for (const genesis of genesisList) {
           const appState = genesis.app_state || {};
+          const genesisHeight = genesis.initial_height ? Number(genesis.initial_height) : 0;
+
           for (const [module, data] of Object.entries(appState)) {
             if (data && typeof data === "object" && "params" in data) {
-              await trx("module_params")
-                .insert({
+              // Get existing params for comparison
+              const existing = await trx("module_params")
+                .where({ module })
+                .first();
+              const previousParams = existing?.params
+                ? typeof existing.params === "string"
+                  ? JSON.parse(existing.params)
+                  : existing.params
+                : null;
+
+              const newParamsData = data as any;
+              const isNewOrChanged =
+                !existing ||
+                JSON.stringify(previousParams) !== JSON.stringify(newParamsData);
+
+              if (isNewOrChanged) {
+                await trx("module_params")
+                  .insert({
+                    module,
+                    params: JSON.stringify(data),
+                    updated_at: trx.fn.now(),
+                  })
+                  .onConflict("module")
+                  .merge();
+
+                await this.recordModuleParamsHistory(
+                  trx,
                   module,
-                  params: JSON.stringify(data),
-                  updated_at: trx.fn.now(),
-                })
-                .onConflict("module")
-                .merge();
-              updatedModules++;
+                  newParamsData,
+                  existing ? "UPDATE_PARAMS" : "CREATE_PARAMS",
+                  genesisHeight,
+                  previousParams
+                );
+
+                updatedModules++;
+              }
             }
           }
         }

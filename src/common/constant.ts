@@ -224,6 +224,10 @@ export const SERVICE = {
       key: "TrustRegistryDatabaseService",
       path: "v1.TrustRegistryDatabaseService",
     },
+    IndexerMetaService: {
+      key: "IndexerMetaService",
+      path: "v1.IndexerMetaService",
+    },
     GenesisParamsService: {
       key: "GenesisParamsService",
       path: "v1.GenesisParamsService",
