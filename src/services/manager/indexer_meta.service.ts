@@ -169,7 +169,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of didHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -187,7 +186,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of trHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -205,7 +203,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of gfvHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -223,7 +220,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of gfdHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -241,7 +237,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of csHistory) {
       const {
         action: actionType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -260,7 +255,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of permHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -279,7 +273,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of permSessionHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -299,7 +292,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of tdHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;
@@ -323,7 +315,6 @@ export default class IndexerMetaService extends BaseService {
     for (const record of moduleParamsHistory) {
       const {
         event_type: eventType,
-        height: _height,
         changes: recordChanges,
         ...snapshot
       } = record;

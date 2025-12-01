@@ -23,7 +23,7 @@ async function ensureAtBlockHeight(
 ) {
   ctx.meta = ctx.meta || {};
   const headerValue =
-    (req.headers["atblockheight"] ??
+    (req.headers.atblockheight ??
       req.headers["at-blockheight"] ??
       req.headers["at-block-height"]) ??
     null;
