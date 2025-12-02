@@ -84,7 +84,7 @@ jobs:
         if: steps.semantic.outputs.new-release-published == 'true'        
         with:
           context: .
-          file: ./Dockerfile
+          file: ./docker/Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:dev
