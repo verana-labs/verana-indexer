@@ -18,6 +18,7 @@ export default class CredentialSchemaHistory extends BaseModel {
   issuer_perm_management_mode!: string;
   verifier_perm_management_mode!: string;
   deposit!: string;
+  height!: number;
 
   archived!: Date | null;
   is_active!: boolean;
@@ -52,6 +53,7 @@ export default class CredentialSchemaHistory extends BaseModel {
         issuer_perm_management_mode: { type: "string" },
         verifier_perm_management_mode: { type: "string" },
 
+        height: { type: "integer" },
         archived: { type: ["string", "null"], format: "date-time" },
         created: { type: "string", format: "date-time" },
         modified: { type: "string", format: "date-time" },

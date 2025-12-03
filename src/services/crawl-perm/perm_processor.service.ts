@@ -22,23 +22,29 @@ export default class PermProcessorService extends BullableService {
         type: string;
         content: any;
         timestamp?: string;
+        height?: number;
       }>;
     }>
   ) {
     const { permissionMessages } = ctx.params;
+    this.logger.info(`🔄 Processing ${permissionMessages?.length || 0} Permission messages`);
+    
     for (const msg of permissionMessages) {
-      const payload = {
-        ...msg.content,
-        timestamp: msg.timestamp,
-      };
-      delete payload["@type"];
+      try {
+        this.logger.info(`📝 Processing Permission message: type=${msg.type}, height=${msg.height}`);
+        const payload = {
+          ...msg.content,
+          timestamp: msg.timestamp,
+          height: msg.height,
+        };
+        delete payload["@type"];
 
-      switch (msg.type) {
-        case PermissionMessageTypes.CreateRootPermission:
-          await this.broker.call("permIngest.handleMsgCreateRootPermission", {
-            data: payload,
-          });
-          break;
+        switch (msg.type) {
+          case PermissionMessageTypes.CreateRootPermission:
+            await this.broker.call("permIngest.handleMsgCreateRootPermission", {
+              data: payload,
+            });
+            break;
         case PermissionMessageTypes.CreatePermission:
           await this.broker.call("permIngest.handleMsgCreatePermission", {
             data: payload,
@@ -96,6 +102,11 @@ export default class PermProcessorService extends BullableService {
           break;
         default:
           break;
+        }
+      } catch (err) {
+        this.logger.error(`❌ Error processing Permission message:`, err);
+        console.error("FATAL PERMISSION ERROR:", err);
+        
       }
     }
 

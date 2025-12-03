@@ -32,7 +32,8 @@ export default class DidDatabaseService extends BullableService {
             return ApiResponder.success(ctx, { success: true, result }, 200);
         } catch (err: any) {
             this.logger.error("Error in upsertProcessedDid:", err);
-            return ApiResponder.error(ctx, "Failed to upsert DID", 500);
+            console.error("FATAL DID UPSERT ERROR:", err);
+            return ApiResponder.error(ctx, "Internal Server Error", 500);
         }
     }
 
@@ -65,6 +66,7 @@ export default class DidDatabaseService extends BullableService {
             return ApiResponder.success(ctx, { success: true }, 200);
         } catch (err: any) {
             this.logger.error("Error in deleteDid:", err);
+            console.error("FATAL DID DELETE ERROR:", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);
         }
     }
@@ -81,12 +83,39 @@ export default class DidDatabaseService extends BullableService {
     async getSingleDid(ctx: Context<{ did: string }>) {
         try {
             const { did } = ctx.params;
+            const blockHeight = (ctx.meta as any)?.blockHeight;
 
             if (!isValidDid(did)) {
                 this.logger.warn(`Invalid DID syntax received: ${did}`);
                 return ApiResponder.error(ctx, "Invalid DID syntax", 400);
             }
 
+            // If AtBlockHeight is provided, query historical state
+            if (typeof blockHeight === "number") {
+                const historyRecord = await knex("did_history")
+                    .where({ did })
+                    .where("height", "<=", blockHeight)
+                    .orderBy("height", "desc")
+                    .orderBy("created_at", "desc")
+                    .first();
+
+                if (!historyRecord || historyRecord.is_deleted) {
+                    return ApiResponder.error(ctx, "Not Found", 404);
+                }
+
+                const historicalDid = {
+                    did: historyRecord.did,
+                    controller: historyRecord.controller,
+                    deposit: historyRecord.deposit,
+                    exp: historyRecord.exp,
+                    created: historyRecord.created,
+                    modified: historyRecord.created, // Use created as modified for historical
+                };
+
+                return ApiResponder.success(ctx, { did: historicalDid }, 200);
+            }
+
+            // Otherwise, return latest state
             const record = await knex("dids")
                 .where({ did })
                 .select("did", "controller", "deposit", "exp", "created", "modified")

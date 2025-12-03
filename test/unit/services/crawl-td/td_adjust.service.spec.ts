@@ -39,12 +39,43 @@ jest.mock("../../../../src/models/block_checkpoint", () => {
     },
   };
 });
-jest.mock("../../../../src/common/utils/db_connection", () => ({
-  transaction: jest.fn(async (fn) => {
-    const result = await fn({});
-    return result;
-  }),
-}));
+
+jest.mock("../../../../src/common/utils/db_connection", () => {
+  const mockKnex: any = jest.fn((table?: string) => {
+    if (table === "trust_deposit_history") {
+      const historyChain: any = {
+        where: jest.fn(() => historyChain),
+        first: jest.fn().mockResolvedValue(null),
+        insert: jest.fn().mockResolvedValue(1),
+        update: jest.fn().mockResolvedValue(1),
+      };
+      return historyChain;
+    }
+    return mockKnex;
+  });
+
+  mockKnex.transaction = jest.fn(async (fn: any) => {
+    return fn(mockKnex);
+  });
+
+  mockKnex.raw = jest.fn();
+  mockKnex.where = jest.fn(() => mockKnex);
+  mockKnex.first = jest.fn(() => mockKnex);
+  mockKnex.insert = jest.fn(() => ({
+    returning: jest.fn().mockResolvedValue([
+      {
+        account: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+        amount: "100",
+        share: "10",
+        claimable: "0",
+      },
+    ]),
+  }));
+
+  mockKnex.update = jest.fn(() => mockKnex);
+
+  return mockKnex;
+});
 
 describe("🧪 TrustDepositDatabaseService", () => {
   const broker = new ServiceBroker({ logger: false });

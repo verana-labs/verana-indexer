@@ -98,11 +98,14 @@ export interface MsgCreateOrUpdatePermissionSession {
   timestamp?: Date | undefined;
   creator: string;
   id: string;
-  issuer_perm_id: number;
-  validator_perm_id: number;
-  verifier_perm_id: number;
-  agent_perm_id: number;
-  wallet_agent_perm_id: number;
+  issuerPermId?: number;
+  issuer_perm_id?: number;
+  verifierPermId?: number;
+  verifier_perm_id?: number;
+  agentPermId?: number;
+  agent_perm_id?: number;
+  walletAgentPermId?: number;
+  wallet_agent_perm_id?: number;
 }
 export interface MsgCancelPermissionVPLastRequest {
   timestamp?: Date | undefined;

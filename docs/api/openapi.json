@@ -2,7 +2,7 @@
     "openapi": "3.0.0",
     "info": {
       "title": "Verana Indexer API",
-      "description": "Comprehensive API for managing decentralized identifiers, trust registries, credential schemas, and permissions in the Verana ecosystem",
+      "description": "Comprehensive API for managing decentralized identifiers, trust registries, credential schemas, and permissions in the Verana ecosystem.\n\nIndexer endpoints (under /verana/indexer/v1) require the AtBlockHeight header so responses reflect a specific processed block height. All other endpoints return the latest indexed state unless noted otherwise.",
       "version": "1.0.0"
     },
     "servers": [
@@ -16,6 +16,132 @@
       }
     ],
     "paths": {
+      "/verana/indexer/v1/block-height": {
+        "get": {
+          "tags": [
+            "Indexer"
+          ],
+          "summary": "Get indexed block height",
+          "description": "Return the latest block height that has been fully processed by the indexer.",
+          "operationId": "getBlockHeight",
+          "responses": {
+            "200": {
+              "description": "Current indexed block height",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "job_name": {
+                        "type": "string"
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  },
+                  "example": {
+                    "job_name": "crawl:block",
+                    "height": 123456,
+                    "updated_at": "2025-11-24T08:15:00.000Z"
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
+      },
+      "/verana/indexer/v1/changes": {
+        "get": {
+          "tags": [
+            "Indexer"
+          ],
+          "summary": "List entity changes at a block height",
+          "description": "Return all indexed entity changes for the requested block height.",
+          "operationId": "listChanges",
+          "parameters": [
+            {
+              "$ref": "#/components/parameters/AtBlockHeight"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Entity changes recorded at the requested block height",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "block_height": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "changes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "entity_type": {
+                              "type": "string"
+                            },
+                            "entity_id": {
+                              "type": "string"
+                            },
+                            "operation": {
+                              "type": "string",
+                              "enum": [
+                                "create",
+                                "update",
+                                "delete"
+                              ]
+                            },
+                            "payload": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "block_height": 123450,
+                    "changes": [
+                      {
+                        "entity_type": "DidDirectory",
+                        "entity_id": "did:verana:abc123",
+                        "operation": "create",
+                        "payload": {
+                          "controller": "verana1abcd...",
+                          "changes": {
+                            "created": {
+                              "old": null,
+                              "new": "2025-11-24T07:00:00.000Z"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "428": {
+              "$ref": "#/components/responses/BadRequest"
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
+      },
       "/verana/dd/v1/get/{did}": {
         "get": {
           "tags": [
@@ -945,6 +1071,52 @@
           }
         }
       },
+      "/verana/perm/v1/history/{id}": {
+        "get": {
+          "tags": [
+            "Permissions"
+          ],
+          "summary": "Get Permission History",
+          "description": "Retrieve the recorded history for a specific Permission ID.",
+          "operationId": "getPermissionHistory",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              },
+              "description": "Permission ID whose history will be returned"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "History entries for the given Permission",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PermissionHistoryResponse"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "No history entries found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
+      },
       "/verana/perm/v1/permission-session/{id}": {
         "get": {
           "tags": [
@@ -986,6 +1158,53 @@
                   "example": {
                     "error": "Permission Session not found: 123e4567-e89b-12d3-a456-426614174000",
                     "code": 404
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
+      },
+      "/verana/perm/v1/permission-session-history/{id}": {
+        "get": {
+          "tags": [
+            "Permissions"
+          ],
+          "summary": "Get Permission Session History",
+          "description": "Retrieve the recorded history for a specific Permission Session ID.",
+          "operationId": "getPermissionSessionHistory",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "description": "Permission Session ID to fetch history for"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "History entries for the given Permission Session",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PermissionSessionHistoryResponse"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "No history entries found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
                   }
                 }
               }
@@ -1208,6 +1427,77 @@
           }
         }
       },
+      "/verana/td/v1/history/{account}": {
+        "get": {
+          "tags": [
+            "TrustDeposit"
+          ],
+          "summary": "Get Trust Deposit History",
+          "description": "Retrieve the complete history of changes for a specific account's trust deposit",
+          "operationId": "getTrustDepositHistory",
+          "parameters": [
+            {
+              "name": "account",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              },
+              "description": "The account address to retrieve trust deposit history for"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with trust deposit history",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/TrustDepositHistoryResponse"
+                  },
+                  "example": {
+                    "history": [
+                      {
+                        "id": 1,
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                        "share": "20000000",
+                        "amount": "20000000",
+                        "claimable": "0",
+                        "slashed_deposit": "0",
+                        "repaid_deposit": "0",
+                        "last_slashed": null,
+                        "last_repaid": null,
+                        "slash_count": 0,
+                        "last_repaid_by": "",
+                        "event_type": "CREATE_TRUST_DEPOSIT",
+                        "height": 12345,
+                        "changes": null,
+                        "created_at": "2025-11-26T08:35:35.199Z"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Trust Deposit history not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  },
+                  "example": {
+                    "error": "No trust deposit history found for account: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                    "code": 404
+                  }
+                }
+              }
+            },
+            "500": {
+              "$ref": "#/components/responses/ServerError"
+            }
+          }
+        }
+      },
       "/verana/v1/account-reputation": {
         "get": {
           "tags": [
@@ -1374,6 +1664,18 @@
       }
     },
     "components": {
+      "parameters": {
+        "AtBlockHeight": {
+          "name": "AtBlockHeight",
+          "in": "header",
+          "required": true,
+          "description": "Return the state of the indexer as it was when block <blockHeight> finished processing.",
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "schemas": {
         "Error": {
           "type": "object",
@@ -1965,6 +2267,49 @@
             }
           }
         },
+        "PermissionHistoryItem": {
+          "type": "object",
+          "properties": {
+            "permission_id": {
+              "type": "string"
+            },
+            "schema_id": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            },
+            "grantee": {
+              "type": "string"
+            },
+            "event_type": {
+              "type": "string"
+            },
+            "height": {
+              "type": "integer"
+            },
+            "changes": {
+              "type": "object",
+              "nullable": true,
+              "description": "Field-level diffs for the event"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "PermissionHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PermissionHistoryItem"
+              }
+            }
+          }
+        },
         "PermissionSession": {
           "type": "object",
           "properties": {
@@ -2023,6 +2368,55 @@
               "type": "array",
               "items": {
                 "$ref": "#/components/schemas/PermissionSession"
+              }
+            }
+          }
+        },
+        "PermissionSessionHistoryItem": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "event_type": {
+              "type": "string"
+            },
+            "height": {
+              "type": "integer"
+            },
+            "controller": {
+              "type": "string"
+            },
+            "agent_perm_id": {
+              "type": "string"
+            },
+            "wallet_agent_perm_id": {
+              "type": "string"
+            },
+            "authz": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "changes": {
+              "type": "object",
+              "nullable": true
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "PermissionSessionHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PermissionSessionHistoryItem"
               }
             }
           }
@@ -2126,6 +2520,97 @@
                   "description": "Burn rate for reclaimed trust deposits",
                   "example": "0.600000000000000000"
                 }
+              }
+            }
+          }
+        },
+        "TrustDepositHistoryItem": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "description": "History record ID"
+            },
+            "account": {
+              "type": "string",
+              "description": "Account address"
+            },
+            "share": {
+              "type": "string",
+              "description": "Share amount at this point"
+            },
+            "amount": {
+              "type": "string",
+              "description": "Deposit amount at this point"
+            },
+            "claimable": {
+              "type": "string",
+              "description": "Claimable amount at this point"
+            },
+            "slashed_deposit": {
+              "type": "string",
+              "description": "Slashed deposit at this point"
+            },
+            "repaid_deposit": {
+              "type": "string",
+              "description": "Repaid deposit at this point"
+            },
+            "last_slashed": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last slashed timestamp"
+            },
+            "last_repaid": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last repaid timestamp"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Slash count at this point"
+            },
+            "last_repaid_by": {
+              "type": "string",
+              "description": "Account that last repaid"
+            },
+            "event_type": {
+              "type": "string",
+              "enum": [
+                "CREATE_TRUST_DEPOSIT",
+                "ADJUST_TRUST_DEPOSIT",
+                "SLASH_TRUST_DEPOSIT",
+                "SLASH_PERM_TRUST_DEPOSIT",
+                "RECLAIM_YIELD",
+                "RECLAIM_DEPOSIT",
+                "REPAY_SLASHED"
+              ],
+              "description": "Type of event that caused this history record"
+            },
+            "height": {
+              "type": "integer",
+              "description": "Block height when this change occurred"
+            },
+            "changes": {
+              "type": "object",
+              "nullable": true,
+              "description": "Field-level diffs showing what changed"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When this history record was created"
+            }
+          }
+        },
+        "TrustDepositHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TrustDepositHistoryItem"
               }
             }
           }
@@ -2453,6 +2938,10 @@
       {
         "name": "Account",
         "description": "Account reputation and statistics operations"
+      },
+      {
+        "name": "Indexer",
+        "description": "Indexer state and changes tracking operations"
       }
     ]
   }

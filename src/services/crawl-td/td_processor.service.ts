@@ -158,11 +158,12 @@ export default class CrawlTrustDepositService extends BullableService {
         return;
       }
 
-      const payload: TrustDepositAdjustPayload = {
+      const payload: TrustDepositAdjustPayload & { height: number } = {
         account,
         newAmount: attrs.new_amount ? BigInt(attrs.new_amount) : null,
         newShare: attrs.new_share ? BigInt(attrs.new_share) : null,
         newClaimable: attrs.new_claimable ? BigInt(attrs.new_claimable) : null,
+        height,
       };
 
       const result = await this.broker.call(
@@ -194,7 +195,7 @@ export default class CrawlTrustDepositService extends BullableService {
 
       const result = await this.broker.call(
         `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_trust_deposit`,
-        { account, slashed, lastSlashed, slashCount }
+        { account, slashed, lastSlashed, slashCount, height }
       );
 
       if (result) {

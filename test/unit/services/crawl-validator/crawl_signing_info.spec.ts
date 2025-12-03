@@ -4,6 +4,41 @@ import { Validator } from '../../../../src/models';
 import CrawlSigningInfoService from '../../../../src/services/crawl-validator/crawl_signing_info.service';
 import knex from '../../../../src/common/utils/db_connection';
 
+jest.setTimeout(30000);
+
+jest.mock('../../../../src/common', () => {
+  const actual = jest.requireActual('../../../../src/common');
+  return {
+    ...actual,
+    getLcdClient: jest.fn().mockResolvedValue({
+      provider: {
+        cosmos: {
+          base: {
+            tendermint: {
+              v1beta1: {
+                getNodeInfo: async () => ({
+                  application_version: { cosmos_sdk_version: 'v0.45.7' },
+                }),
+              },
+            },
+          },
+          slashing: {
+            v1beta1: {
+              params: async () => ({
+                params: { signed_blocks_window: '100' },
+              }),
+              signingInfos: async () => ({
+                info: [],
+                pagination: { next_key: null },
+              }),
+            },
+          },
+        },
+      },
+    }),
+  };
+});
+
 @Describe('Test crawl_signing_info service')
 export default class CrawlSigningInfoTest {
   validator: Validator = Validator.fromJson({

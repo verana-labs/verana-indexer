@@ -54,31 +54,52 @@ export default class DidMessageProcessorService extends BullableService {
 
 
 
-    private async saveHistory(did: DidMessageTypes, changes?: any) {
-        const { modified, ...cleanedDID } = did;
-        await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, {
+    private async saveHistory(did: DidMessageTypes, height: number, changes?: any, isUpdate: boolean = false) {
+        if (isUpdate && (!changes || Object.keys(changes).length === 0)) {
+            this.logger.info(`Skipping DID history - no actual changes for update at height: ${height}`);
+            return;
+        }
+        
+        const { modified, id, ...cleanedDID } = did;
+        const historyRecord = {
             ...cleanedDID,
+            height: height, 
             changes: changes ? JSON.stringify(changes) : null,
-        });
+        };
+        this.logger.info(`Saving DID history with height: ${height}`, historyRecord);
+        await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, historyRecord);
     }
 
 
     @Action({ name: "handleDidMessages" })
     async handleDidMessages(ctx: { params: { messages: DidMessageType[] } }) {
         const { messages } = ctx.params;
+        this.logger.info(`🔄 Processing ${messages.length} DID messages`);
 
         for (const message of messages) {
-            let processedDID: DidMessageTypes | null = null;
-            const calculateDeposit = await calculateDidDeposit();
-            // ---------------- ADD ----------------
-            if ([DidMessages.AddDid, DidMessages.AddDidLegacy].includes(message.type as DidMessages)) {
-                processedDID = {
+            try {
+                this.logger.info(`📝 Processing DID message: type=${message.type}, did=${message.did}, height=${message.height}`);
+                let processedDID: DidMessageTypes | null = null;
+                
+                let depositAmount = 0;
+                try {
+                    depositAmount = await calculateDidDeposit();
+                } catch (depositErr) {
+                    this.logger.error(`❌ Failed to calculate DID deposit:`, depositErr);
+                    console.error("FATAL DID DEPOSIT ERROR:", depositErr);
+                    
+                }
+                
+                // ---------------- ADD ----------------
+                if ([DidMessages.AddDid, DidMessages.AddDidLegacy].includes(message.type as DidMessages)) {
+                    this.logger.info(`🆕 Creating new DID: ${message.did} at height ${message.height}`);
+                    processedDID = {
                     event_type: message.type,
                     did: message.did,
                     controller: message.controller,
                     height: message.height ?? 0,
                     years: message.years ? String(message.years) : undefined,
-                    deposit: String(calculateDeposit) ?? "0",
+                    deposit: String(depositAmount) ?? "0",
                     created: formatTimestamp(message?.timestamp),
                     modified: formatTimestamp(message?.timestamp),
                     exp:
@@ -92,14 +113,22 @@ export default class DidMessageProcessorService extends BullableService {
                     `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
                     processedDID
                 );
-                await this.saveHistory(processedDID, {});
+                const blockHeight = message.height ?? 0;
+                await this.saveHistory(processedDID, blockHeight, {});
             }
 
             // ---------------- RENEW ----------------
             else if (
                 (message.type === DidMessages.RenewDid || message.type === DidMessages.RenewDidLegacy)
                 && message.did) {
-                const renewDeposit = await calculateDidDeposit(message?.years) ?? "0";
+                let renewDeposit = 0;
+                try {
+                    renewDeposit = await calculateDidDeposit(message?.years) ?? 0;
+                } catch (depositErr) {
+                    this.logger.error(`❌ Failed to calculate renew deposit:`, depositErr);
+                    console.error("FATAL DID RENEW DEPOSIT ERROR:", depositErr);
+                    
+                }
                 const existingDid: DidMessageTypes | null =
                     await this.broker.call(
                         `${SERVICE.V1.DidDatabaseService.path}.get`,
@@ -108,7 +137,7 @@ export default class DidMessageProcessorService extends BullableService {
 
                 if (existingDid) {
                     const yearsToAdd = parseInt(message.years || "0");
-                    const newDeposit = String(renewDeposit) ?? "0";
+                    const newDeposit = String(renewDeposit);
 
                     const updatedDid: DidMessageTypes = {
                         ...existingDid,
@@ -134,7 +163,8 @@ export default class DidMessageProcessorService extends BullableService {
                         `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
                         updatedDid
                     );
-                    await this.saveHistory(updatedDid, changes);
+                    const blockHeight = message.height ?? 0;
+                    await this.saveHistory(updatedDid, blockHeight, changes, true); // isUpdate = true
                 }
             }
 
@@ -164,7 +194,8 @@ export default class DidMessageProcessorService extends BullableService {
                         `${SERVICE.V1.DidDatabaseService.path}.upsertProcessedDid`,
                         updatedDid
                     );
-                    await this.saveHistory(updatedDid, changes);
+                    const blockHeight = message.height ?? 0;
+                    await this.saveHistory(updatedDid, blockHeight, changes, true); // isUpdate = true
                 }
             }
 
@@ -199,7 +230,8 @@ export default class DidMessageProcessorService extends BullableService {
                         { did: message.did }
                     );
 
-                    await this.saveHistory(deletedDID, changes);
+                    const blockHeight = message.height ?? 0;
+                    await this.saveHistory(deletedDID, blockHeight, changes);
 
                     processedDID = deletedDID;
                 }
@@ -208,9 +240,14 @@ export default class DidMessageProcessorService extends BullableService {
 
             if (processedDID) {
                 this.logger.info(
-                    "Processed DID Messages",
+                    "✅ Processed DID Messages",
                     JSON.stringify(processedDID, null, 2)
                 );
+            }
+            } catch (msgErr) {
+                this.logger.error(`❌ Error processing DID message for ${message.did}:`, msgErr);
+                console.error("FATAL DID ERROR:", msgErr);
+                
             }
         }
     }

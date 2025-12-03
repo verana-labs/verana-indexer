@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { IncomingMessage, ServerResponse } from "http";
-import { Context, ServiceBroker } from "moleculer";
+import { Context, ServiceBroker, Errors } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
 import ApiGateway, { Route } from "moleculer-web";
 import BaseService from "../../base/base.service";
@@ -9,11 +9,72 @@ import { SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 
-async function attachHeaders(res: ServerResponse) {
+const BLOCK_CHECKPOINT_JOB = "crawl:block";
+
+async function fetchBlockCheckpoint() {
+  return knex("block_checkpoint")
+    .where("job_name", BLOCK_CHECKPOINT_JOB)
+    .first();
+}
+
+async function ensureAtBlockHeight(
+  ctx: Context<any, any>,
+  req: IncomingMessage
+) {
+  ctx.meta = ctx.meta || {};
+  const headerValue =
+    (req.headers.atblockheight ??
+      req.headers["at-blockheight"] ??
+      req.headers["at-block-height"]) ??
+    null;
+
+  if (headerValue === null) {
+    throw new Errors.MoleculerError(
+      "Missing AtBlockHeight header",
+      428,
+      "AT_BLOCK_HEIGHT_REQUIRED"
+    );
+  }
+
+  const parsedHeight = Number(headerValue);
+  if (!Number.isInteger(parsedHeight) || parsedHeight < 0) {
+    throw new Errors.MoleculerError(
+      "AtBlockHeight must be a positive integer",
+      400,
+      "AT_BLOCK_HEIGHT_INVALID"
+    );
+  }
+
+  let checkpoint = ctx.meta.latestCheckpoint;
+  if (!checkpoint) {
+    checkpoint = await fetchBlockCheckpoint();
+    if (!checkpoint) {
+      throw new Errors.MoleculerError(
+        "Indexer checkpoint unavailable",
+        503,
+        "AT_BLOCK_HEIGHT_UNAVAILABLE"
+      );
+    }
+    ctx.meta.latestCheckpoint = checkpoint;
+  }
+
+  if (parsedHeight > checkpoint.height) {
+    throw new Errors.MoleculerError(
+      `Requested height ${parsedHeight} exceeds indexed height ${checkpoint.height}`,
+      409,
+      "AT_BLOCK_HEIGHT_AHEAD"
+    );
+  }
+
+  ctx.meta.blockHeight = parsedHeight;
+}
+
+async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   try {
-    const checkpoint = await knex("block_checkpoint")
-      .where("job_name", "crawl:block")
-      .first();
+    let checkpoint = ctx?.meta?.latestCheckpoint;
+    if (!checkpoint) {
+      checkpoint = await fetchBlockCheckpoint();
+    }
 
     if (checkpoint) {
       res.setHeader(
@@ -28,6 +89,17 @@ async function attachHeaders(res: ServerResponse) {
 
   res.setHeader("X-Query-At", new Date().toISOString());
 }
+
+
+const ensureBlockHeightForIndexer = async function (
+  ctx: Context<any, any>,
+  _route: Route,
+  req: IncomingMessage
+) {
+  if (req.url?.includes("changes")) {
+    await ensureAtBlockHeight(ctx, req);
+  }
+};
 
 @Service({
   name: "api",
@@ -56,7 +128,7 @@ async function attachHeaders(res: ServerResponse) {
           res: ServerResponse,
           data: any
         ) {
-          await attachHeaders(res);
+          await attachHeaders(_ctx, res);
           return data;
         },
       },
@@ -74,6 +146,7 @@ async function attachHeaders(res: ServerResponse) {
           json: true,
           urlencoded: { extended: true },
         },
+
         onAfterCall: async function (
           _ctx: Context<any, any>,
           _route: Route,
@@ -81,7 +154,7 @@ async function attachHeaders(res: ServerResponse) {
           res: ServerResponse,
           data: any
         ) {
-          await attachHeaders(res);
+          await attachHeaders(_ctx, res);
           return data;
         },
       },
@@ -105,7 +178,7 @@ async function attachHeaders(res: ServerResponse) {
           res: ServerResponse,
           data: any
         ) {
-          await attachHeaders(res);
+          await attachHeaders(_ctx, res);
           return data;
         },
       },
@@ -115,8 +188,10 @@ async function attachHeaders(res: ServerResponse) {
           "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
           "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
           "GET beneficiaries": `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
+          "GET history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionHistory`,
           "GET permission-session/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSession`,
           "GET permission-sessions": `${SERVICE.V1.PermAPIService.path}.listPermissionSessions`,
+          "GET permission-session-history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSessionHistory`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {
@@ -130,7 +205,7 @@ async function attachHeaders(res: ServerResponse) {
           res: ServerResponse,
           data: any
         ) {
-          await attachHeaders(res);
+          await attachHeaders(_ctx, res);
           return data;
         },
       },
@@ -139,19 +214,21 @@ async function attachHeaders(res: ServerResponse) {
         aliases: {
           "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
           "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
+          "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {
           json: true,
           urlencoded: { extended: true },
-        }, onAfterCall: async function (
+        },
+        onAfterCall: async function (
           _ctx: Context<any, any>,
           _route: Route,
           _req: IncomingMessage,
           res: ServerResponse,
           data: any
         ) {
-          await attachHeaders(res);
+          await attachHeaders(_ctx, res);
           return data;
         },
       },
@@ -172,7 +249,30 @@ async function attachHeaders(res: ServerResponse) {
           res: ServerResponse,
           data: any
         ) {
-          await attachHeaders(res);
+          await attachHeaders(_ctx, res);
+          return data;
+        },
+      },
+      {
+        path: "/verana/indexer/v1",
+        aliases: {
+          "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
+          "GET changes": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
+        },
+        mappingPolicy: "restrict",
+        bodyParsers: {
+          json: true,
+          urlencoded: { extended: true },
+        },
+        onBeforeCall: ensureBlockHeightForIndexer,
+        onAfterCall: async function (
+          _ctx: Context<any, any>,
+          _route: Route,
+          _req: IncomingMessage,
+          res: ServerResponse,
+          data: any
+        ) {
+          await attachHeaders(_ctx, res);
           return data;
         },
       },
@@ -188,3 +288,4 @@ export default class ApiService extends BaseService {
     super(broker);
   }
 }
+

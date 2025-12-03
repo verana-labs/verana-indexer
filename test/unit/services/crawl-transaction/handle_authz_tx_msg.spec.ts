@@ -12,6 +12,30 @@ import tx_fixture_authz from './tx_authz.fixture.json' with { type: 'json' };
 import HandleAuthzTxService from '../../../../src/services/crawl-tx/handle_authz_tx.service';
 import CrawlTxService from '../../../../src/services/crawl-tx/crawl_tx.service';
 
+jest.setTimeout(30000);
+
+jest.mock('../../../../src/common', () => {
+  const actual = jest.requireActual('../../../../src/common');
+  return {
+    ...actual,
+    getLcdClient: jest.fn().mockResolvedValue({
+      provider: {
+        cosmos: {
+          base: {
+            tendermint: {
+              v1beta1: {
+                getNodeInfo: async () => ({
+                  application_version: { cosmos_sdk_version: 'v0.45.7' },
+                }),
+              },
+            },
+          },
+        },
+      },
+    }),
+  };
+});
+
 @Describe('Test handle authz tx msg service')
 export default class HandleAuthzTxMsgTest {
   broker = new ServiceBroker({ logger: false });

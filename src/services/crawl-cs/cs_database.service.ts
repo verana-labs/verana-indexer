@@ -7,6 +7,7 @@ import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}) {
+  const height = Number(overrides.height) || 0;
   return {
     credential_schema_id: row.id,
     tr_id: row.tr_id,
@@ -23,10 +24,10 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}) {
     is_active: row.is_active,
     created: row.created,
     modified: row.modified,
-    changes: null,
-    action: "unknown",
+    changes: overrides.changes ?? null,
+    action: overrides.action ?? "unknown",
     created_at: knex.fn.now(),
-    ...overrides,
+    height: height, // Explicitly set as number
   };
 }
 
@@ -45,17 +46,19 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { payload } = ctx.params;
 
       const result = await knex.transaction(async (trx) => {
+        const { height, ...schemaPayload } = payload;
+        const blockHeight = Number(height) || 0;
         const [inserted] = await trx("credential_schemas")
-          .insert(payload)
+          .insert(schemaPayload)
           .returning("*");
 
-        await trx("credential_schema_history").insert(
-          mapToHistoryRow(inserted, {
-            changes: null,
-            action: "create",
-            created_at: knex.fn.now(),
-          })
-        );
+        const historyRow = mapToHistoryRow(inserted, {
+          changes: null,
+          action: "create",
+          height: blockHeight,
+        });
+        this.logger.info(`[CS] Saving create history with height: ${blockHeight}`, historyRow);
+        await trx("credential_schema_history").insert(historyRow);
 
         return inserted;
       });
@@ -63,7 +66,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, { success: true, result }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema upsert:", err);
-      return ApiResponder.error(ctx, `Failed to upsert credential schema   ${err} `, 500);
+      console.error("FATAL CS UPSERT ERROR:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
 
@@ -92,30 +96,37 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, "No valid fields to update", 400);
       }
 
+      const { height, ...updatesWithoutHeight } = updates;
+      const blockHeight = Number(height) || 0;
+
       const [updated] = await knex("credential_schemas")
         .where({ id: payload.id })
-        .update(updates)
+        .update(updatesWithoutHeight)
         .returning("*");
 
       const changes: Record<string, { old: any; new: any }> = {};
-      for (const key of Object.keys(updates)) {
+      for (const key of Object.keys(updatesWithoutHeight)) {
         if (existing[key] !== updated[key]) {
           changes[key] = { old: existing[key], new: updated[key] };
         }
       }
 
-      await knex("credential_schema_history").insert(
-        mapToHistoryRow(updated, {
-          changes: Object.keys(changes).length ? changes : null,
+      // Only record history if there are actual changes
+      if (Object.keys(changes).length > 0) {
+        const historyRow = mapToHistoryRow(updated, {
+          changes: changes,
           action: "update",
-          created_at: knex.fn.now(),
-        })
-      );
+          height: blockHeight,
+        });
+        this.logger.info(`[CS] Saving update history with height: ${blockHeight}`, historyRow);
+        await knex("credential_schema_history").insert(historyRow);
+      }
 
       return ApiResponder.success(ctx, { success: true, updated }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema update:", err);
-      return ApiResponder.error(ctx, "Failed to update credential schema", 500);
+      console.error("FATAL CS UPDATE ERROR:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
 
@@ -145,25 +156,30 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         modified,
       };
 
+      const { height } = ctx.params.payload;
+      const blockHeight = Number(height) || 0;
+
       const [updated] = await knex("credential_schemas")
         .where({ id })
         .update(updates)
         .returning("*");
-      await knex("credential_schema_history").insert(
-        mapToHistoryRow(updated, {
-          changes: {
-            archived: { old: schemaRecord.archived, new: updated.archived },
-            is_active: { old: schemaRecord.is_active, new: updated.is_active },
-          },
-          action: archive ? "archive" : "unarchive",
-          created_at: knex.fn.now(),
-        })
-      );
+      
+      const historyRow = mapToHistoryRow(updated, {
+        changes: {
+          archived: { old: schemaRecord.archived, new: updated.archived },
+          is_active: { old: schemaRecord.is_active, new: updated.is_active },
+        },
+        action: archive ? "archive" : "unarchive",
+        height: blockHeight,
+      });
+      this.logger.info(`[CS] Saving ${archive ? "archive" : "unarchive"} history with height: ${blockHeight}`, historyRow);
+      await knex("credential_schema_history").insert(historyRow);
 
       return ApiResponder.success(ctx, { success: true, updated }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema archive:", err);
-      return ApiResponder.error(ctx, "Failed to archive/unarchive credential schema", 500);
+      console.error("FATAL CS ARCHIVE ERROR:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
 

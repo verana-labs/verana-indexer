@@ -6,9 +6,24 @@ import { SERVICE } from "../../../../src/common";
 
 jest.mock("../../../../src/models/trust_deposit");
 jest.mock("../../../../src/models/modules_params");
-jest.mock("../../../../src/common/utils/db_connection", () => ({
-  transaction: jest.fn((fn) => fn({})),
-}));
+
+jest.mock("../../../../src/common/utils/db_connection", () => {
+  const mockKnex: any = jest.fn(() => mockKnex);
+
+  mockKnex.transaction = jest.fn(async (fn: any) => {
+    return fn(mockKnex);
+  });
+
+  mockKnex.raw = jest.fn();
+
+  mockKnex.where = jest.fn(() => mockKnex);
+  mockKnex.first = jest.fn(() => mockKnex);
+  mockKnex.insert = jest.fn(() => mockKnex);
+  mockKnex.update = jest.fn(() => mockKnex);
+  mockKnex.returning = jest.fn(() => mockKnex);
+
+  return mockKnex;
+});
 
 describe("🧪 TrustDepositMessageProcessorService", () => {
   const broker = new ServiceBroker({ logger: false });

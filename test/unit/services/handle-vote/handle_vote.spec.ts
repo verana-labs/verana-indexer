@@ -17,6 +17,30 @@ import tx_fixture_vote_option_yes from './tx_vote_change_option_yes.fixture.json
 import tx_fixture_vote_option_no from './tx_vote_change_option_no.fixture.json' with { type: 'json' };
 import HandleAuthzTxService from '../../../../src/services/crawl-tx/handle_authz_tx.service';
 
+jest.setTimeout(30000);
+
+jest.mock('../../../../src/common', () => {
+  const actual = jest.requireActual('../../../../src/common');
+  return {
+    ...actual,
+    getLcdClient: jest.fn().mockResolvedValue({
+      provider: {
+        cosmos: {
+          base: {
+            tendermint: {
+              v1beta1: {
+                getNodeInfo: async () => ({
+                  application_version: { cosmos_sdk_version: 'v0.45.7' },
+                }),
+              },
+            },
+          },
+        },
+      },
+    }),
+  };
+});
+
 @Describe('Test handle voting tx service')
 export default class HandleTxVoteServiceTest {
   broker = new ServiceBroker({ logger: false });
