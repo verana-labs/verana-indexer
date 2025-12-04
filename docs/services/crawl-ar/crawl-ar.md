@@ -15,7 +15,7 @@ Any account can run this query.
 ### 📥 **Endpoint**
 
 ```
-GET /verana/v1/account-reputation
+GET /mx/v1/reputation
 ```
 
 ### 🧭 **Method**
@@ -166,7 +166,7 @@ GET /verana/v1/account-reputation
 #### ✅ 1. Get full account reputation
 
 ```bash
-curl -G "http://localhost:3001/verana/v1/account-reputation" \
+curl -G "http://localhost:3001/mx/v1/reputation" \
   --data-urlencode "account=verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st" \
   --data-urlencode "include_slash_details=true"
 ```
@@ -174,7 +174,7 @@ curl -G "http://localhost:3001/verana/v1/account-reputation" \
 #### ✅ 2. Filter by Trust Registry ID
 
 ```bash
-curl -G "http://localhost:3001/verana/v1/account-reputation" \
+curl -G "http://localhost:3001/mx/v1/reputation" \
   --data-urlencode "account=verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st" \
   --data-urlencode "tr_id=1"
 ```
@@ -182,7 +182,7 @@ curl -G "http://localhost:3001/verana/v1/account-reputation" \
 #### ✅ 3. Filter by Schema ID only
 
 ```bash
-curl -G "http://localhost:3001/verana/v1/account-reputation" \
+curl -G "http://localhost:3001/mx/v1/reputation" \
   --data-urlencode "account=verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st" \
   --data-urlencode "schema_id=11"
 ```
@@ -190,7 +190,7 @@ curl -G "http://localhost:3001/verana/v1/account-reputation" \
 #### ✅ 4. Filter by Trust Registry ID + Schema ID with details
 
 ```bash
-curl -G "http://localhost:3001/verana/v1/account-reputation" \
+curl -G "http://localhost:3001/mx/v1/reputation" \
   --data-urlencode "account=verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st" \
   --data-urlencode "tr_id=1" \
   --data-urlencode "schema_id=11" \

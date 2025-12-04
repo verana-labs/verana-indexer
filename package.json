@@ -12,8 +12,8 @@
     "clean": "rimraf ./dist/",
     "docker:dev": "pnpm run up && pnpm run migrate:dev && pnpm run dev",
     "docker": "pnpm run up && pnpm run build && pnpm run migrate && pnpm run start",
-    "start": "node ./node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./dist/src/moleculer.config.js ./dist/src/services/**/*.service.js",
-    "dev": "cross-env NODE_OPTIONS=--loader=ts-node/esm node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts",
+    "start": "node --max-old-space-size=8192 ./node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./dist/src/moleculer.config.js ./dist/src/services/**/*.service.js",
+    "dev": "cross-env NODE_OPTIONS=\"--loader=ts-node/esm --max-old-space-size=8192\" node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts",
     "watch": "nodemon",
     "migrate": "node dist/src/scripts/migrate-if-needed.js",
     "migrate:dev": "cross-env  NODE_OPTIONS=\"--loader ts-node/esm\" node ./src/scripts/migrate-if-needed.ts",
@@ -38,7 +38,7 @@
     "watch": [
       "src"
     ],
-    "exec": "node --loader ts-node/esm --experimental-specifier-resolution=node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
+    "exec": "node --loader ts-node/esm --experimental-specifier-resolution=node --max-old-space-size=8192 ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
     "ext": "ts, js"
   },
   "dependencies": {
