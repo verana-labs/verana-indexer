@@ -1498,7 +1498,7 @@
           }
         }
       },
-      "/verana/v1/account-reputation": {
+      "/mx/v1/reputation": {
         "get": {
           "tags": [
             "Account"

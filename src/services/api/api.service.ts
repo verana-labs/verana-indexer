@@ -233,9 +233,9 @@ const ensureBlockHeightForIndexer = async function (
         },
       },
       {
-        path: "/verana/v1",
+        path: "/mx/v1",
         aliases: {
-          "GET account-reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
+          "GET reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
         },
         mappingPolicy: "restrict",
         bodyParsers: {
