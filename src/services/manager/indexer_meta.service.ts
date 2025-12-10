@@ -71,36 +71,6 @@ function safeJsonParse(value: any) {
   }
 }
 
-const HEADER_KEYS = ["atblockheight", "at-blockheight", "at-block-height"];
-
-function ensureBlockHeight(ctx: Context): number | undefined {
-  const meta: any = ctx.meta ?? {};
-
-  if (typeof meta.blockHeight === "number") {
-    return meta.blockHeight;
-  }
-
-  const headers =
-    meta?.headers ??
-    meta?.req?.headers ??
-    meta?.$req?.headers ??
-    meta?.requestHeaders ??
-    {};
-
-  for (const headerKey of HEADER_KEYS) {
-    if (headers[headerKey] !== undefined) {
-      const parsed = Number(headers[headerKey]);
-      if (Number.isInteger(parsed) && parsed >= 0) {
-        meta.blockHeight = parsed;
-        return parsed;
-      }
-      break;
-    }
-  }
-
-  return undefined;
-}
-
 @Service({
   name: SERVICE.V1.IndexerMetaService.key,
   version: 1,
@@ -131,14 +101,19 @@ export default class IndexerMetaService extends BaseService {
     );
   }
 
-  @Action()
-  public async listChanges(ctx: Context) {
-    const blockHeight = ensureBlockHeight(ctx);
-    if (typeof blockHeight !== "number") {
+  @Action({
+    params: {
+      block_height: { type: "number", integer: true, positive: true, convert: true },
+    },
+  })
+  public async listChanges(ctx: Context<{ block_height: number }>) {
+    const blockHeight = ctx.params.block_height;
+
+    if (!Number.isInteger(blockHeight) || blockHeight < 0) {
       return ApiResponder.error(
         ctx,
-        "AtBlockHeight header is required for ListChanges",
-        428
+        "block_height parameter is required and must be a positive integer",
+        400
       );
     }
 

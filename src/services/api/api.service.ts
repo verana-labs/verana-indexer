@@ -11,35 +11,61 @@ import { swaggerUiComponent } from "./swagger_ui";
 
 const BLOCK_CHECKPOINT_JOB = "crawl:block";
 
+const HEADER_VARIANTS = [
+  "at-block-height",
+  "At-Block-Height",
+  "at-blockheight",
+  "AtBlockHeight",
+  "atblockheight",
+] as const;
+
+const DEFAULT_ROUTE_CONFIG = {
+  mappingPolicy: "restrict" as const,
+  bodyParsers: {
+    json: true,
+    urlencoded: { extended: true },
+  },
+};
+
 async function fetchBlockCheckpoint() {
   return knex("block_checkpoint")
     .where("job_name", BLOCK_CHECKPOINT_JOB)
     .first();
 }
 
-async function ensureAtBlockHeight(
+function getHeaderValue(req: IncomingMessage): string | null {
+  for (const variant of HEADER_VARIANTS) {
+    const value = req.headers[variant];
+    if (value !== undefined && value !== null) {
+      return String(value).trim() || null;
+    }
+  }
+  return null;
+}
+
+async function parseAtBlockHeight(
   ctx: Context<any, any>,
-  req: IncomingMessage
+  req: IncomingMessage,
+  required: boolean = false
 ) {
   ctx.meta = ctx.meta || {};
-  const headerValue =
-    (req.headers.atblockheight ??
-      req.headers["at-blockheight"] ??
-      req.headers["at-block-height"]) ??
-    null;
+  const headerValue = getHeaderValue(req);
 
-  if (headerValue === null) {
-    throw new Errors.MoleculerError(
-      "Missing AtBlockHeight header",
-      428,
-      "AT_BLOCK_HEIGHT_REQUIRED"
-    );
+  if (!headerValue) {
+    if (required) {
+      throw new Errors.MoleculerError(
+        "Missing At-Block-Height header",
+        428,
+        "AT_BLOCK_HEIGHT_REQUIRED"
+      );
+    }
+    return;
   }
 
   const parsedHeight = Number(headerValue);
   if (!Number.isInteger(parsedHeight) || parsedHeight < 0) {
     throw new Errors.MoleculerError(
-      "AtBlockHeight must be a positive integer",
+      "At-Block-Height must be a positive integer",
       400,
       "AT_BLOCK_HEIGHT_INVALID"
     );
@@ -90,16 +116,56 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   res.setHeader("X-Query-At", new Date().toISOString());
 }
 
+function createOnBeforeCall(required: boolean = true) {
+  return async function (
+    ctx: Context<any, any>,
+    _route: Route,
+    req: IncomingMessage
+  ) {
+    await parseAtBlockHeight(ctx, req, required);
+  };
+}
 
-const ensureBlockHeightForIndexer = async function (
-  ctx: Context<any, any>,
-  _route: Route,
-  req: IncomingMessage
+function createOnError() {
+  return function (
+    req: IncomingMessage,
+    res: ServerResponse,
+    err: any
+  ) {
+    const status = err.code || 428;
+    const errorMessage = err.message || "Missing At-Block-Height header";
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status, error: errorMessage }));
+  };
+}
+
+function createOnAfterCall() {
+  return async function (
+    _ctx: Context<any, any>,
+    _route: Route,
+    _req: IncomingMessage,
+    res: ServerResponse,
+    data: any
+  ) {
+    await attachHeaders(_ctx, res);
+    return data;
+  };
+}
+
+function createRoute(
+  path: string,
+  aliases: Record<string, string>,
+  requireBlockHeight: boolean = true
 ) {
-  if (req.url?.includes("changes")) {
-    await ensureAtBlockHeight(ctx, req);
-  }
-};
+  return {
+    path,
+    aliases,
+    ...DEFAULT_ROUTE_CONFIG,
+    onBeforeCall: createOnBeforeCall(requireBlockHeight),
+    onError: createOnError(),
+    onAfterCall: createOnAfterCall(),
+  };
+}
 
 @Service({
   name: "api",
@@ -108,174 +174,46 @@ const ensureBlockHeightForIndexer = async function (
     port: process.env.PORT || 3001,
 
     routes: [
-      {
-        path: "/verana/dd/v1",
-        aliases: {
-          "GET get/:did": `${SERVICE.V1.DidDatabaseService.path}.getSingleDid`,
-          "GET list": `${SERVICE.V1.DidDatabaseService.path}.getDidList`,
-          "GET history/:did": `${SERVICE.V1.DidHistoryService.path}.getByDid`,
-          "GET params": `${SERVICE.V1.DidDatabaseService.path}.getDidParams`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
-      {
-        path: "/verana/cs/v1",
-        aliases: {
-          "GET get/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
-          "GET history/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
-          "GET js/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.JsonSchema`,
-          "GET list": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
-          "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
-      {
-        path: "/verana/tr/v1",
-        aliases: {
-          "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
-          "GET list": `${SERVICE.V1.TrustRegistryDatabaseService.path}.listTrustRegistries`,
-          "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
-          "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
-      {
-        path: "/verana/perm/v1",
-        aliases: {
-          "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
-          "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
-          "GET beneficiaries": `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
-          "GET history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionHistory`,
-          "GET permission-session/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSession`,
-          "GET permission-sessions": `${SERVICE.V1.PermAPIService.path}.listPermissionSessions`,
-          "GET permission-session-history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSessionHistory`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
-      {
-        path: "/verana/td/v1",
-        aliases: {
-          "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
-          "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
-          "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
-      {
-        path: "/mx/v1",
-        aliases: {
-          "GET reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
-      {
-        path: "/verana/indexer/v1",
-        aliases: {
-          "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
-          "GET changes": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
-        },
-        mappingPolicy: "restrict",
-        bodyParsers: {
-          json: true,
-          urlencoded: { extended: true },
-        },
-        onBeforeCall: ensureBlockHeightForIndexer,
-        onAfterCall: async function (
-          _ctx: Context<any, any>,
-          _route: Route,
-          _req: IncomingMessage,
-          res: ServerResponse,
-          data: any
-        ) {
-          await attachHeaders(_ctx, res);
-          return data;
-        },
-      },
+      createRoute("/verana/dd/v1", {
+        "GET get/:did": `${SERVICE.V1.DidDatabaseService.path}.getSingleDid`,
+        "GET list": `${SERVICE.V1.DidDatabaseService.path}.getDidList`,
+        "GET history/:did": `${SERVICE.V1.DidHistoryService.path}.getByDid`,
+        "GET params": `${SERVICE.V1.DidDatabaseService.path}.getDidParams`,
+      }),
+      createRoute("/verana/cs/v1", {
+        "GET get/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
+        "GET history/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
+        "GET js/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.JsonSchema`,
+        "GET list": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
+        "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
+      }),
+      createRoute("/verana/tr/v1", {
+        "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
+        "GET list": `${SERVICE.V1.TrustRegistryDatabaseService.path}.listTrustRegistries`,
+        "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
+        "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`,
+      }),
+      createRoute("/verana/perm/v1", {
+        "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
+        "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
+        "GET beneficiaries": `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
+        "GET history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionHistory`,
+        "GET permission-session/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSession`,
+        "GET permission-sessions": `${SERVICE.V1.PermAPIService.path}.listPermissionSessions`,
+        "GET permission-session-history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSessionHistory`,
+      }),
+      createRoute("/verana/td/v1", {
+        "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
+        "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
+        "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
+      }),
+      createRoute("/mx/v1", {
+        "GET reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
+      }),
+      createRoute("/verana/indexer/v1", {
+        "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
+        "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
+      }),
       {
         path: "/",
         ...swaggerUiComponent(),
@@ -288,4 +226,3 @@ export default class ApiService extends BaseService {
     super(broker);
   }
 }
-
