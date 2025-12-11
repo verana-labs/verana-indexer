@@ -12,11 +12,7 @@ import { swaggerUiComponent } from "./swagger_ui";
 const BLOCK_CHECKPOINT_JOB = "crawl:block";
 
 const HEADER_VARIANTS = [
-  "at-block-height",
   "At-Block-Height",
-  "at-blockheight",
-  "AtBlockHeight",
-  "atblockheight",
 ] as const;
 
 const DEFAULT_ROUTE_CONFIG = {
@@ -55,7 +51,7 @@ async function parseAtBlockHeight(
     if (required) {
       throw new Errors.MoleculerError(
         "Missing At-Block-Height header",
-        428,
+        400,
         "AT_BLOCK_HEIGHT_REQUIRED"
       );
     }
@@ -132,7 +128,7 @@ function createOnError() {
     res: ServerResponse,
     err: any
   ) {
-    const status = err.code || 428;
+    const status = err.code || 400;
     const errorMessage = err.message || "Missing At-Block-Height header";
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status, error: errorMessage }));
@@ -155,7 +151,7 @@ function createOnAfterCall() {
 function createRoute(
   path: string,
   aliases: Record<string, string>,
-  requireBlockHeight: boolean = true
+  requireBlockHeight: boolean = false
 ) {
   return {
     path,

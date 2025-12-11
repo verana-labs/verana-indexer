@@ -51,7 +51,9 @@ export default class PermAPIService extends BullableService {
       const onlySlashed = p.only_slashed === "true" || p.only_slashed === true;
       const onlyRepaid = p.only_repaid === "true" || p.only_repaid === true;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
+        // Get all unique permission IDs that existed at or before the block height
         const latestHistorySubquery = knex("permission_history")
           .select("permission_id")
           .select(
@@ -72,6 +74,7 @@ export default class PermAPIService extends BullableService {
           return ApiResponder.success(ctx, { permissions: [] }, 200);
         }
 
+        // For each permission, get the latest history record at or before block height
         const permissions = await Promise.all(
           permIdsAtHeight.map(async (permId: string) => {
             const historyRecord = await knex("permission_history")
@@ -122,6 +125,7 @@ export default class PermAPIService extends BullableService {
           })
         );
 
+        // Filter out nulls and apply filters
         let filteredPermissions = permissions.filter((perm): perm is NonNullable<typeof permissions[0]> => perm !== null);
 
         if (p.schema_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.schema_id === p.schema_id);
@@ -171,12 +175,14 @@ export default class PermAPIService extends BullableService {
           }
         }
 
+        // Sort and limit
         filteredPermissions.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
         filteredPermissions = filteredPermissions.slice(0, limit);
 
         return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
       }
 
+      // Otherwise, return latest state
       const query = knex("permissions").select("*");
 
       if (p.schema_id !== undefined) query.where("schema_id", p.schema_id);
@@ -242,6 +248,7 @@ export default class PermAPIService extends BullableService {
       const id = ctx.params.id;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("permission_history")
           .where({ permission_id: id })
@@ -254,6 +261,7 @@ export default class PermAPIService extends BullableService {
           return ApiResponder.error(ctx, "Permission not found", 404);
         }
 
+        // Map history record to permission format
         const historicalPermission = {
           id: historyRecord.permission_id,
           schema_id: historyRecord.schema_id,
@@ -294,6 +302,7 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.success(ctx, { permission: historicalPermission }, 200);
       }
 
+      // Otherwise, return latest state
       const permission = await knex("permissions").where("id", id).first();
       if (!permission) {
         return ApiResponder.error(ctx, "Permission not found", 404);
@@ -448,6 +457,7 @@ export default class PermAPIService extends BullableService {
       const { id } = ctx.params;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("permission_session_history")
           .where({ session_id: id })
@@ -460,6 +470,7 @@ export default class PermAPIService extends BullableService {
           return ApiResponder.error(ctx, "PermissionSession not found", 404);
         }
 
+        // Map history record to session format
         const historicalSession = {
           id: historyRecord.session_id,
           controller: historyRecord.controller,
@@ -473,6 +484,7 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.success(ctx, { session: historicalSession }, 200);
       }
 
+      // Otherwise, return latest state
       const session = await knex("permission_sessions").where("id", id).first();
       if (!session)
         return ApiResponder.error(ctx, "PermissionSession not found", 404);
@@ -529,7 +541,9 @@ export default class PermAPIService extends BullableService {
       const blockHeight = (ctx.meta as any)?.blockHeight;
       const limit = Math.min(Math.max(responseMaxSize || 64, 1), 1024);
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
+        // Get all unique session IDs that existed at or before the block height
         const latestHistorySubquery = knex("permission_session_history")
           .select("session_id")
           .select(
@@ -550,6 +564,7 @@ export default class PermAPIService extends BullableService {
           return ApiResponder.success(ctx, { sessions: [] }, 200);
         }
 
+        // For each session, get the latest history record at or before block height
         const sessions = await Promise.all(
           sessionIdsAtHeight.map(async (sessionId: string) => {
             const historyRecord = await knex("permission_session_history")
@@ -573,6 +588,7 @@ export default class PermAPIService extends BullableService {
           })
         );
 
+        // Filter out nulls and apply filters
         let filteredSessions = sessions.filter((sess): sess is NonNullable<typeof sessions[0]> => sess !== null);
 
         if (modifiedAfter) {
@@ -582,12 +598,14 @@ export default class PermAPIService extends BullableService {
           }
         }
 
+        // Sort and limit
         filteredSessions.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
         filteredSessions = filteredSessions.slice(0, limit);
 
         return ApiResponder.success(ctx, { sessions: filteredSessions }, 200);
       }
 
+      // Otherwise, return latest state
       const query = knex("permission_sessions").select("*");
       if (modifiedAfter) {
         const ts = new Date(modifiedAfter);

@@ -165,13 +165,16 @@ export default class DidDatabaseService extends BullableService {
             const effectiveLimit = Math.min(responseMaxSize || 64, 1024);
             const now = new Date().toISOString();
 
+            // If AtBlockHeight is provided, query historical state
             if (typeof blockHeight === "number") {
+                // Get all unique DIDs that existed at or before the block height
                 const historyQuery = knex("did_history")
                     .select("did")
                     .where("height", "<=", blockHeight)
                     .where("is_deleted", false)
                     .groupBy("did");
 
+                // Get the latest state for each DID at the given block height
                 const subquery = knex("did_history")
                     .select("did")
                     .select(
@@ -194,6 +197,7 @@ export default class DidDatabaseService extends BullableService {
                     return ApiResponder.success(ctx, { dids: [] }, 200);
                 }
 
+                // For each DID, get the latest history record at or before block height
                 const items = await Promise.all(
                     didsAtHeight.map(async (did: string) => {
                         const historyRecord = await knex("did_history")
@@ -217,6 +221,7 @@ export default class DidDatabaseService extends BullableService {
                     })
                 );
 
+                // Filter out nulls and apply filters
                 let filteredItems = items.filter((item): item is NonNullable<typeof items[0]> => item !== null);
 
                 if (account) filteredItems = filteredItems.filter(item => item.controller === account);
@@ -243,12 +248,14 @@ export default class DidDatabaseService extends BullableService {
                         });
                 }
 
+                // Sort and limit
                 filteredItems.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
                 filteredItems = filteredItems.slice(0, effectiveLimit);
 
                 return ApiResponder.success(ctx, { dids: filteredItems }, 200);
             }
 
+            // Otherwise, return latest state
             let query = knex("dids").where({ is_deleted: false }).select(
                 "did",
                 "controller",
@@ -289,6 +296,7 @@ export default class DidDatabaseService extends BullableService {
         try {
             const blockHeight = (ctx.meta as any)?.blockHeight;
 
+            // If AtBlockHeight is provided, query historical state
             if (typeof blockHeight === "number") {
                 const historyRecord = await knex("module_params_history")
                     .where({ module: ModulesParamsNamesTypes?.DD })
@@ -309,6 +317,7 @@ export default class DidDatabaseService extends BullableService {
                 return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
             }
 
+            // Otherwise, return latest state
             const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.DD });
 
             if (!module || !module.params) {

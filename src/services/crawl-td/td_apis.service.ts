@@ -35,6 +35,7 @@ export default class TrustDepositApiService extends BullableService {
         return ApiResponder.error(ctx, "Invalid account format", 400);
       }
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("trust_deposit_history")
           .where({ account })
@@ -70,6 +71,7 @@ export default class TrustDepositApiService extends BullableService {
         return ApiResponder.success(ctx, result, 200);
       }
 
+      // Otherwise, return latest state
       const trustDeposit = await TrustDeposit.query().findOne({ account });
 
       if (!trustDeposit) {
@@ -112,6 +114,7 @@ export default class TrustDepositApiService extends BullableService {
     try {
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("module_params_history")
           .where({ module: ModulesParamsNamesTypes.TD })
@@ -139,6 +142,7 @@ export default class TrustDepositApiService extends BullableService {
         return ApiResponder.success(ctx, { params }, 200);
       }
 
+      // Otherwise, return latest state
       const module = await ModuleParams.query().findOne({
         module: ModulesParamsNamesTypes.TD,
       });
