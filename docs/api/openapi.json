@@ -400,8 +400,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true
+              "type": "boolean"
             },
             "description": "Filter only active governance frameworks"
           },
@@ -463,8 +462,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true
+              "type": "boolean"
             },
             "description": "Filter only active governance frameworks"
           },
@@ -754,8 +752,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Filter only active"
           },
@@ -1089,8 +1086,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Filter only repaid permissions"
           },
@@ -1623,8 +1619,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Include detailed slashing and repayment information"
           },
@@ -2194,6 +2189,39 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "perm_state": {
+            "type": "string",
+            "enum": ["REPAID", "SLASHED", "REVOKED", "EXPIRED", "ACTIVE", "FUTURE", "INACTIVE"],
+            "description": "The current state of the permission, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
+          },
+          "grantee_available_actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["VP_RENEW", "VP_CANCEL", "PERM_REVOKE", "PERM_EXTEND", "PERM_REPAY"]
+            },
+            "description": "List of actions available to the grantee for this permission, calculated based on permission type, schema modes, permission state, and validation process state"
+          },
+          "validator_available_actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["VP_SET_VALIDATED", "PERM_REVOKE", "PERM_EXTEND", "PERM_SLASH"]
+            },
+            "description": "List of actions available to the validator for this permission, calculated based on permission type, schema modes, permission state, and validation process state"
+          },
+          "weight": {
+            "type": "string",
+            "description": "The node weight of the permission, calculated as the sum of all trust deposits of this permission and all permissions in its subtree. Includes all permissions regardless of state (expired, slashed, active, etc.). Supports AtBlockHeight directive."
+          },
+          "issued": {
+            "type": "string",
+            "description": "Number of credentials issued using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
+          },
+          "verified": {
+            "type": "string",
+            "description": "Number of credentials verified using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
           },
           "schema_id": {
             "type": "string"

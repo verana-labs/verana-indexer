@@ -7,7 +7,9 @@ import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import ModuleParams from "../../models/modules_params";
+import { getModuleParams } from "../../common/utils/moduleParams";
+import { isValidAccount } from "../../common/utils/accountValidation";
+import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 import TrustDeposit from "../../models/trust_deposit";
 
 @Service({
@@ -28,15 +30,14 @@ export default class TrustDepositApiService extends BullableService {
   public async getTrustDeposit(ctx: Context<{ account: string }>) {
     try {
       const { account } = ctx.params;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
 
-      if (!this.isValidAccount(account)) {
+      if (!isValidAccount(account)) {
         this.logger.warn(`Invalid account format: ${account}`);
         return ApiResponder.error(ctx, "Invalid account format", 400);
       }
 
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const historyRecord = await knex("trust_deposit_history")
           .where({ account })
           .where("height", "<=", blockHeight)
@@ -95,7 +96,7 @@ export default class TrustDepositApiService extends BullableService {
           slash_count: trustDeposit.slash_count,
           last_repaid_by: trustDeposit.last_repaid_by,
         },
-      }
+      };
       return ApiResponder.success(
         ctx,
         result,
@@ -111,67 +112,7 @@ export default class TrustDepositApiService extends BullableService {
     name: "getModuleParams",
   })
   public async getModuleParams(ctx: Context) {
-    try {
-      const blockHeight = (ctx.meta as any)?.blockHeight;
-
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
-        const historyRecord = await knex("module_params_history")
-          .where({ module: ModulesParamsNamesTypes.TD })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-
-        if (!historyRecord || !historyRecord.params) {
-          this.logger.warn("Module parameters not found for Trust Deposit");
-          return ApiResponder.error(ctx, "Module parameters not found", 404);
-        }
-
-        let parsedParams: Record<string, any>;
-        try {
-          parsedParams =
-            typeof historyRecord.params === "string"
-              ? JSON.parse(historyRecord.params)
-              : historyRecord.params;
-        } catch (parseErr) {
-          this.logger.error("Failed to parse module.params JSON:", parseErr);
-          return ApiResponder.error(ctx, "Invalid module parameters format", 500);
-        }
-        const params = parsedParams.params || parsedParams || {};
-        return ApiResponder.success(ctx, { params }, 200);
-      }
-
-      // Otherwise, return latest state
-      const module = await ModuleParams.query().findOne({
-        module: ModulesParamsNamesTypes.TD,
-      });
-
-      if (!module || !module.params) {
-        this.logger.warn("Module parameters not found for Trust Deposit");
-        return ApiResponder.error(ctx, "Module parameters not found", 404);
-      }
-
-      let parsedParams: Record<string, any>;
-      try {
-        parsedParams =
-          typeof module.params === "string"
-            ? JSON.parse(module.params)
-            : module.params;
-      } catch (parseErr) {
-        this.logger.error("Failed to parse module.params JSON:", parseErr);
-        return ApiResponder.error(ctx, "Invalid module parameters format", 500);
-      }
-      const params = parsedParams.params || parsedParams || {}
-      return ApiResponder.success(
-        ctx,
-        { params },
-        200
-      );
-    } catch (err: any) {
-      this.logger.error("Error fetching module params:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
-    }
+    return getModuleParams(ctx, ModulesParamsNamesTypes.TD, "trustdeposit", this.logger);
   }
 
   @Action({
@@ -184,7 +125,7 @@ export default class TrustDepositApiService extends BullableService {
     try {
       const { account } = ctx.params;
 
-      if (!this.isValidAccount(account)) {
+      if (!isValidAccount(account)) {
         return ApiResponder.error(ctx, "Invalid account format", 400);
       }
 
@@ -229,8 +170,4 @@ export default class TrustDepositApiService extends BullableService {
     }
   }
 
-  private isValidAccount(account: string): boolean {
-    const accountRegex = /^verana1[0-9a-z]{10,}$/;
-    return accountRegex.test(account);
-  }
 }

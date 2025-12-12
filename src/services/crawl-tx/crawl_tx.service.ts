@@ -8,7 +8,7 @@ import {
   Action,
   Service,
 } from '@ourparentcenter/moleculer-decorators-extended';
-import { Queue } from 'bullmq';
+import { Job, Queue } from 'bullmq';
 import { Knex } from 'knex';
 import _ from 'lodash';
 import { ServiceBroker } from 'moleculer';
@@ -114,13 +114,13 @@ export default class CrawlTxService extends BullableService {
       .andWhere('height', '<=', endBlock)
       .orderBy('height', 'asc')
       .orderBy('index', 'asc');
-    
+
     this.logger.info(`📝 [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
-    
+
     if (listTxRaw.length === 0) {
       this.logger.warn('⚠️ [HANDLE_TRANSACTION] No transactions found in Transaction table!');
     }
-    
+
     await knex.transaction(async (trx) => {
       await this.insertRelatedTx(listTxRaw, trx);
       if (blockCheckpoint) {
@@ -464,7 +464,7 @@ export default class CrawlTxService extends BullableService {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return parentTx?.code === 0;
       });
-      
+
       this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
       const DIDfiltered = successfulMsgs
@@ -494,7 +494,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process DID messages:`, err);
           console.error("FATAL CRAWL_TX DID ERROR:", err);
-          
+
         }
       }
 
@@ -525,7 +525,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process TR messages:`, err);
           console.error("FATAL CRAWL_TX TR ERROR:", err);
-          
+
         }
       }
 
@@ -542,7 +542,7 @@ export default class CrawlTxService extends BullableService {
             height: parentTx?.height ?? null,
           };
         });
-      
+
       this.logger.info(`📋 [insertRelatedTx] CredentialSchema messages: ${credentialSchemaMessages.length}`);
 
       if (credentialSchemaMessages?.length) {
@@ -556,7 +556,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process CS messages:`, err);
           console.error("FATAL CRAWL_TX CS ERROR:", err);
-          
+
         }
       }
 
@@ -584,7 +584,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process Permission messages:`, err);
           console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
-          
+
         }
       }
 
@@ -610,7 +610,7 @@ export default class CrawlTxService extends BullableService {
           { trustDepositList },
         );
       }
-      
+
       this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
     }
   }
@@ -744,9 +744,22 @@ export default class CrawlTxService extends BullableService {
       );
       const jobInDelayed = await queue.getDelayed();
       if (jobInDelayed?.length > 0) {
-        await jobInDelayed[0].promote();
+        const job: Job = jobInDelayed[0];
+        const jobState = await job.getState();
+        if (jobState === 'delayed') {
+          await job.promote();
+        } else {
+          this.logger.debug(
+            `Job ${job.id} is not in delayed state (current state: ${jobState}), skipping promotion`
+          );
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.includes('not in the delayed state') ||
+        error?.message?.includes('is not in the delayed state')) {
+        this.logger.debug('Job state changed before promotion, this is safe to ignore for repeatable jobs');
+        return;
+      }
       this.logger.error('No job can be promoted');
       this.logger.error(error);
     }

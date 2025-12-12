@@ -4,6 +4,8 @@ import BullableService from "../../base/bullable.service";
 import { SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import ApiResponder from "../../common/utils/apiResponse";
+import { isValidAccount } from "../../common/utils/accountValidation";
+import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 
 @Service({
   name: SERVICE.V1.AccountReputationService.key,
@@ -35,9 +37,9 @@ export default class AccountReputationService extends BullableService {
     include_slash_details?: boolean | string;
   }>) {
     const { account, tr_id: trId, schema_id: schemaId, include_slash_details: includeSlashDetails } = ctx.params;
-    const blockHeight = (ctx.meta as any)?.blockHeight;
+    const blockHeight = getBlockHeight(ctx);
 
-    if (!this.isValidAccount(account)) {
+    if (!isValidAccount(account)) {
       return ApiResponder.error(ctx, "Invalid account format", 400);
     }
 
@@ -55,7 +57,7 @@ export default class AccountReputationService extends BullableService {
     })();
 
     let td: any;
-    if (typeof blockHeight === "number") {
+    if (hasBlockHeight(ctx) && blockHeight !== undefined) {
       const tdHistory = await knex("trust_deposit_history")
         .where({ account })
         .where("height", "<=", blockHeight)
@@ -81,7 +83,7 @@ export default class AccountReputationService extends BullableService {
     const slashCount = td?.slash_count || 0;
 
     const slashDetails = includeSlashDetails
-      ? (typeof blockHeight === "number"
+      ? (hasBlockHeight(ctx) && blockHeight !== undefined
           ? await knex("trust_deposit_history")
               .where({ account })
               .where("height", "<=", blockHeight)
@@ -109,7 +111,7 @@ export default class AccountReputationService extends BullableService {
       : [];
 
     const repayDetails = includeSlashDetails
-      ? (typeof blockHeight === "number"
+      ? (hasBlockHeight(ctx) && blockHeight !== undefined
           ? await knex("trust_deposit_history")
               .where({ account })
               .where("height", "<=", blockHeight)
@@ -131,7 +133,7 @@ export default class AccountReputationService extends BullableService {
       : [];
 
     let permissionRows: any[];
-    if (typeof blockHeight === "number") {
+    if (hasBlockHeight(ctx) && blockHeight !== undefined) {
       const permHistory = await knex("permission_history")
         .where("grantee", account)
         .where("height", "<=", blockHeight)
@@ -164,7 +166,7 @@ export default class AccountReputationService extends BullableService {
             .first();
 
           if (trId && String(schemaHistory.tr_id) !== String(trId)) return null;
-          if (schemaId && schemaHistory.credential_schema_id !== schemaId) return null;
+          if (schemaId && Number(schemaHistory.credential_schema_id) !== Number(schemaId)) return null;
 
           return {
             tr_id: schemaHistory.tr_id,
@@ -415,7 +417,4 @@ export default class AccountReputationService extends BullableService {
     return ApiResponder.success(ctx, responseData);
   }
 
-  private isValidAccount(account: string): boolean {
-    return /^verana1[0-9a-z]{10,}$/.test(account);
-  }
 }

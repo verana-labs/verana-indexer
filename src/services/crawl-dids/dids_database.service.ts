@@ -4,7 +4,8 @@ import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import ModuleParams from "../../models/modules_params";
+import { getModuleParams } from "../../common/utils/moduleParams";
+import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 
 function isValidDid(did: string): boolean {
     const didRegex = /^did:[a-z0-9]+:[A-Za-z0-9.\-_%]+$/;
@@ -83,15 +84,14 @@ export default class DidDatabaseService extends BullableService {
     async getSingleDid(ctx: Context<{ did: string }>) {
         try {
             const { did } = ctx.params;
-            const blockHeight = (ctx.meta as any)?.blockHeight;
+            const blockHeight = getBlockHeight(ctx);
 
             if (!isValidDid(did)) {
                 this.logger.warn(`Invalid DID syntax received: ${did}`);
                 return ApiResponder.error(ctx, "Invalid DID syntax", 400);
             }
 
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
+            if (hasBlockHeight(ctx) && blockHeight !== undefined) {
                 const historyRecord = await knex("did_history")
                     .where({ did })
                     .where("height", "<=", blockHeight)
@@ -161,12 +161,11 @@ export default class DidDatabaseService extends BullableService {
                 response_max_size: responseMaxSize
             } = ctx.params;
 
-            const blockHeight = (ctx.meta as any)?.blockHeight;
+            const blockHeight = getBlockHeight(ctx);
             const effectiveLimit = Math.min(responseMaxSize || 64, 1024);
             const now = new Date().toISOString();
 
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
+            if (hasBlockHeight(ctx) && blockHeight !== undefined) {
                 // Get all unique DIDs that existed at or before the block height
                 const historyQuery = knex("did_history")
                     .select("did")
@@ -293,46 +292,6 @@ export default class DidDatabaseService extends BullableService {
 
     @Action({ rest: "GET params" })
     public async getDidParams(ctx: Context) {
-        try {
-            const blockHeight = (ctx.meta as any)?.blockHeight;
-
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
-                const historyRecord = await knex("module_params_history")
-                    .where({ module: ModulesParamsNamesTypes?.DD })
-                    .where("height", "<=", blockHeight)
-                    .orderBy("height", "desc")
-                    .orderBy("created_at", "desc")
-                    .first();
-
-                if (!historyRecord || !historyRecord.params) {
-                    return ApiResponder.error(ctx, "Module parameters not found: diddirectory", 404);
-                }
-
-                const parsedParams =
-                    typeof historyRecord.params === "string"
-                        ? JSON.parse(historyRecord.params)
-                        : historyRecord.params;
-
-                return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
-            }
-
-            // Otherwise, return latest state
-            const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.DD });
-
-            if (!module || !module.params) {
-                return ApiResponder.error(ctx, "Module parameters not found: diddirectory", 404);
-            }
-
-            const parsedParams =
-                typeof module.params === "string"
-                    ? JSON.parse(module.params)
-                    : module.params;
-
-            return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
-        } catch (err: any) {
-            this.logger.error("Error fetching diddirectory params", err);
-            return ApiResponder.error(ctx, "Internal Server Error", 500);
-        }
+        return getModuleParams(ctx, ModulesParamsNamesTypes.DD, "diddirectory", this.logger);
     }
 }

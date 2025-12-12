@@ -7,6 +7,14 @@ import BullableService from "../../base/bullable.service";
 import { SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
+import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
+import {
+  calculatePermState,
+  calculateGranteeAvailableActions,
+  calculateValidatorAvailableActions,
+  type SchemaData,
+  type PermState,
+} from "./perm_state_utils";
 
 @Service({
   name: SERVICE.V1.PermAPIService.key,
@@ -15,6 +23,414 @@ import knex from "../../common/utils/db_connection";
 export default class PermAPIService extends BullableService {
   constructor(broker: ServiceBroker) {
     super(broker);
+  }
+
+  private async batchEnrichPermissions(
+    permissions: any[],
+    blockHeight: number | undefined,
+    now: Date,
+    batchSize: number = 10
+  ): Promise<any[]> {
+    const results: any[] = [];
+    for (let i = 0; i < permissions.length; i += batchSize) {
+      const batch = permissions.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(perm => this.enrichPermissionWithStateAndActions(perm, blockHeight, now))
+      );
+      results.push(...batchResults);
+    }
+    return results;
+  }
+
+  private async calculatePermissionWeight(
+    permId: string,
+    schemaId: string,
+    blockHeight?: number,
+    visited: Set<string> = new Set()
+  ): Promise<string> {
+    if (visited.has(permId)) {
+      return "0";
+    }
+    visited.add(permId);
+
+    const ownDeposit = permId ? await this.getPermissionDeposit(permId, schemaId, blockHeight) : "0";
+    let ownDepositValue = BigInt(ownDeposit || "0");
+
+    if (typeof blockHeight === "number") {
+      const latestHistorySubquery = knex("permission_history")
+        .select("permission_id")
+        .select(
+          knex.raw(
+            `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC) as rn`
+          )
+        )
+        .where("schema_id", String(schemaId))
+        .where("height", "<=", blockHeight)
+        .as("ranked");
+
+      const children = await knex
+        .from(latestHistorySubquery)
+        .join("permission_history as ph", function () {
+          this.on("ranked.permission_id", "=", "ph.permission_id")
+            .andOn("ranked.rn", "=", knex.raw("1"));
+        })
+        .where("ph.validator_perm_id", permId)
+        .select("ph.permission_id", "ph.deposit");
+
+      const childWeights = await Promise.all(
+        children.map(child =>
+          this.calculatePermissionWeight(
+            child.permission_id,
+            schemaId,
+            blockHeight,
+            visited
+          )
+        )
+      );
+
+      for (const childWeight of childWeights) {
+        ownDepositValue += BigInt(childWeight || "0");
+      }
+    } else {
+      const children = await knex("permissions")
+        .where("schema_id", String(schemaId))
+        .where("validator_perm_id", permId)
+        .select("id", "deposit");
+
+      const childWeights = await Promise.all(
+        children.map(child =>
+          this.calculatePermissionWeight(
+            String(child.id),
+            schemaId,
+            blockHeight,
+            visited
+          )
+        )
+      );
+
+      for (const childWeight of childWeights) {
+        ownDepositValue += BigInt(childWeight || "0");
+      }
+    }
+
+    return ownDepositValue.toString();
+  }
+
+  private async getPermissionDeposit(
+    permId: string,
+    schemaId: string,
+    blockHeight?: number
+  ): Promise<string> {
+    if (typeof blockHeight === "number") {
+      const historyRecord = await knex("permission_history")
+        .where("permission_id", permId)
+        .where("schema_id", String(schemaId))
+        .where("height", "<=", blockHeight)
+        .orderBy("height", "desc")
+        .orderBy("created_at", "desc")
+        .first()
+        .select("deposit");
+
+      return historyRecord?.deposit || "0";
+    }
+    const permission = await knex("permissions")
+      .where("id", permId)
+      .where("schema_id", String(schemaId))
+      .first()
+      .select("deposit");
+
+    return permission?.deposit || "0";
+  }
+
+  private async enrichPermissionWithStateAndActions(
+    perm: any,
+    blockHeight?: number,
+    now: Date = new Date()
+  ): Promise<any> {
+    let schema: SchemaData;
+    const schemaId = Number(perm.schema_id);
+
+    if (typeof blockHeight === "number") {
+      const schemaHistory = await knex("credential_schema_history")
+        .where({ credential_schema_id: schemaId })
+        .where("height", "<=", blockHeight)
+        .orderBy("height", "desc")
+        .orderBy("created_at", "desc")
+        .first();
+
+      if (schemaHistory) {
+        schema = {
+          issuer_perm_management_mode: schemaHistory.issuer_perm_management_mode || null,
+          verifier_perm_management_mode: schemaHistory.verifier_perm_management_mode || null,
+        };
+      } else {
+        const schemaMain = await knex("credential_schemas")
+          .where({ id: schemaId })
+          .first();
+        schema = {
+          issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
+          verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
+        };
+      }
+    } else {
+      const schemaMain = await knex("credential_schemas")
+        .where({ id: schemaId })
+        .first();
+      schema = {
+        issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
+        verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
+      };
+    }
+
+    let validatorPermState: PermState | null = null;
+    if (perm.validator_perm_id) {
+      if (blockHeight !== undefined) {
+        const validatorPermHistory = await knex("permission_history")
+          .where({ permission_id: String(perm.validator_perm_id) })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (validatorPermHistory) {
+          validatorPermState = calculatePermState(
+            {
+              repaid: validatorPermHistory.repaid,
+              slashed: validatorPermHistory.slashed,
+              revoked: validatorPermHistory.revoked,
+              effective_from: validatorPermHistory.effective_from,
+              effective_until: validatorPermHistory.effective_until,
+              type: validatorPermHistory.type,
+              vp_state: validatorPermHistory.vp_state,
+              vp_exp: validatorPermHistory.vp_exp,
+              validator_perm_id: validatorPermHistory.validator_perm_id,
+            },
+            now
+          );
+        }
+      } else {
+        const validatorPerm = await knex("permissions")
+          .where({ id: String(perm.validator_perm_id) })
+          .first();
+
+        if (validatorPerm) {
+          validatorPermState = calculatePermState(
+            {
+              repaid: validatorPerm.repaid,
+              slashed: validatorPerm.slashed,
+              revoked: validatorPerm.revoked,
+              effective_from: validatorPerm.effective_from,
+              effective_until: validatorPerm.effective_until,
+              type: validatorPerm.type,
+              vp_state: validatorPerm.vp_state,
+              vp_exp: validatorPerm.vp_exp,
+              validator_perm_id: validatorPerm.validator_perm_id,
+            },
+            now
+          );
+        }
+      }
+    }
+
+    const permState = calculatePermState(
+      {
+        repaid: perm.repaid,
+        slashed: perm.slashed,
+        revoked: perm.revoked,
+        effective_from: perm.effective_from,
+        effective_until: perm.effective_until,
+        type: perm.type,
+        vp_state: perm.vp_state,
+        vp_exp: perm.vp_exp,
+        validator_perm_id: perm.validator_perm_id,
+      },
+      now
+    );
+
+    const granteeActions = calculateGranteeAvailableActions(
+      {
+        repaid: perm.repaid,
+        slashed: perm.slashed,
+        revoked: perm.revoked,
+        effective_from: perm.effective_from,
+        effective_until: perm.effective_until,
+        type: perm.type,
+        vp_state: perm.vp_state,
+        vp_exp: perm.vp_exp,
+        validator_perm_id: perm.validator_perm_id,
+      },
+      schema,
+      validatorPermState || undefined,
+      now
+    );
+
+    const validatorActions = calculateValidatorAvailableActions(
+      {
+        repaid: perm.repaid,
+        slashed: perm.slashed,
+        revoked: perm.revoked,
+        effective_from: perm.effective_from,
+        effective_until: perm.effective_until,
+        type: perm.type,
+        vp_state: perm.vp_state,
+        vp_exp: perm.vp_exp,
+        validator_perm_id: perm.validator_perm_id,
+      },
+      schema,
+      now
+    );
+
+    let weight = "0";
+    try {
+      weight = await this.calculatePermissionWeight(
+        String(perm.id),
+        String(perm.schema_id),
+        blockHeight
+      );
+    } catch (err: any) {
+      this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
+    }
+
+    let statistics = { issued: "0", verified: "0" };
+    try {
+      statistics = await this.calculatePermissionStatistics(
+        String(perm.id),
+        String(perm.schema_id),
+        blockHeight
+      );
+    } catch (err: any) {
+      this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
+    }
+
+    return {
+      ...perm,
+      perm_state: permState,
+      grantee_available_actions: granteeActions,
+      validator_available_actions: validatorActions,
+      weight: weight,
+      issued: statistics.issued,
+      verified: statistics.verified,
+    };
+  }
+
+  private async calculatePermissionStatistics(
+    permId: string,
+    schemaId: string,
+    blockHeight?: number
+  ): Promise<{ issued: string; verified: string }> {
+    try {
+      const permissionIds = new Set<string>();
+      let currentPermId: string | null = permId;
+
+      if (blockHeight !== undefined) {
+        while (currentPermId) {
+          permissionIds.add(currentPermId);
+          const permHistory: { validator_perm_id: string | null } | undefined = await knex("permission_history")
+            .where("permission_id", currentPermId)
+            .where("schema_id", String(schemaId))
+            .where("height", "<=", blockHeight)
+            .orderBy("height", "desc")
+            .orderBy("created_at", "desc")
+            .first()
+            .select("validator_perm_id");
+
+          currentPermId = permHistory?.validator_perm_id || null;
+        }
+      } else {
+        while (currentPermId) {
+          permissionIds.add(currentPermId);
+          const perm: { validator_perm_id: string | null } | undefined = await knex("permissions")
+            .where("id", currentPermId)
+            .where("schema_id", String(schemaId))
+            .first()
+            .select("validator_perm_id");
+
+          currentPermId = perm?.validator_perm_id || null;
+        }
+      }
+
+      if (blockHeight !== undefined) {
+        const latestHistorySubquery = knex("permission_session_history")
+          .select("session_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY height DESC, created_at DESC) as rn`
+            )
+          )
+          .where("height", "<=", blockHeight)
+          .as("ranked");
+
+        const sessions = await knex
+          .from(latestHistorySubquery)
+          .join("permission_session_history as psh", function () {
+            this.on("ranked.session_id", "=", "psh.session_id")
+              .andOn("ranked.rn", "=", knex.raw("1"));
+          })
+          .select("psh.authz");
+
+        let issuedCount = BigInt(0);
+        let verifiedCount = BigInt(0);
+
+        for (const session of sessions) {
+          const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
+          if (Array.isArray(authz)) {
+            for (const entry of authz) {
+              if (entry.issuer_perm_id && permissionIds.has(String(entry.issuer_perm_id))) {
+                issuedCount += BigInt(1);
+              }
+              if (entry.verifier_perm_id && permissionIds.has(String(entry.verifier_perm_id))) {
+                verifiedCount += BigInt(1);
+              }
+            }
+          }
+        }
+
+        return {
+          issued: issuedCount.toString(),
+          verified: verifiedCount.toString(),
+        };
+      }
+      
+      let issuedCount = BigInt(0);
+      let verifiedCount = BigInt(0);
+
+      if (permissionIds.size === 0) {
+        return { issued: "0", verified: "0" };
+      }
+
+      try {
+        const perms = await knex("permissions")
+          .whereIn("id", Array.from(permissionIds))
+          .where("schema_id", String(schemaId))
+          .select("issued", "verified");
+
+        for (const perm of perms) {
+          const issued = perm.issued !== null && perm.issued !== undefined ? Number(perm.issued) : 0;
+          const verified = perm.verified !== null && perm.verified !== undefined ? Number(perm.verified) : 0;
+          issuedCount += BigInt(issued);
+          verifiedCount += BigInt(verified);
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message || String(err);
+        if (errorMsg.includes("column") && (errorMsg.includes("does not exist") || errorMsg.includes("doesn't exist"))) {
+          this.logger.warn(`Columns 'issued' or 'verified' do not exist yet. Migration may not have been run. Returning 0 for statistics.`);
+          return { issued: "0", verified: "0" };
+        }
+        throw err;
+      }
+
+      return {
+        issued: issuedCount.toString(),
+        verified: verifiedCount.toString(),
+      };
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      if (errorMsg.includes("column") && (errorMsg.includes("does not exist") || errorMsg.includes("doesn't exist"))) {
+        this.logger.warn(`Columns 'issued' or 'verified' do not exist yet. Migration may not have been run. Returning 0 for statistics.`);
+        return { issued: "0", verified: "0" };
+      }
+      throw err;
+    }
   }
 
   /**
@@ -43,7 +459,7 @@ export default class PermAPIService extends BullableService {
   async listPermissions(ctx: Context<any>) {
     try {
       const p = ctx.params;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
       const now = new Date().toISOString();
       const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
 
@@ -51,44 +467,63 @@ export default class PermAPIService extends BullableService {
       const onlySlashed = p.only_slashed === "true" || p.only_slashed === true;
       const onlyRepaid = p.only_repaid === "true" || p.only_repaid === true;
 
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
-        // Get all unique permission IDs that existed at or before the block height
-        const latestHistorySubquery = knex("permission_history")
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
+      const latestHistorySubquery = knex("permission_history")
           .select("permission_id")
           .select(
             knex.raw(
-              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC) as rn`
+              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
             )
           )
-          .where("height", "<=", blockHeight)
-          .as("ranked");
+          .where("height", "<=", blockHeight);
 
-        const permIdsAtHeight = await knex
+        if (p.schema_id !== undefined) {
+          latestHistorySubquery.where("schema_id", String(p.schema_id));
+        }
+
+        latestHistorySubquery.as("ranked");
+
+     const permIdsAtHeight = await knex
           .from(latestHistorySubquery)
           .select("permission_id")
           .where("rn", 1)
+          .distinct()
           .then((rows: any[]) => rows.map((r: any) => r.permission_id));
 
+        const totalPermsInTable = await knex("permissions").count("* as count").first();
+        const totalHistoryEntries = await knex("permission_history")
+          .where("height", "<=", blockHeight)
+          .countDistinct("permission_id as count")
+          .first();
+
+        this.logger.info(`[listPermissions] Debug at height ${blockHeight}: Total permissions in table: ${totalPermsInTable?.count}, Unique permissions in history: ${totalHistoryEntries?.count}, Found permission IDs: ${permIdsAtHeight.length}`);
+
         if (permIdsAtHeight.length === 0) {
+          this.logger.warn(`[listPermissions] No permission IDs found at height ${blockHeight}`);
           return ApiResponder.success(ctx, { permissions: [] }, 200);
         }
 
-        // For each permission, get the latest history record at or before block height
+        this.logger.info(`[listPermissions] Found ${permIdsAtHeight.length} permission IDs at height ${blockHeight}: ${permIdsAtHeight.join(', ')}`);
         const permissions = await Promise.all(
           permIdsAtHeight.map(async (permId: string) => {
             const historyRecord = await knex("permission_history")
-              .where({ permission_id: permId })
+              .where({ permission_id: String(permId) })
               .where("height", "<=", blockHeight)
               .orderBy("height", "desc")
               .orderBy("created_at", "desc")
+              .orderBy("id", "desc")
               .first();
 
-            if (!historyRecord) return null;
+            if (!historyRecord) {
+              this.logger.warn(`[listPermissions] No history record found for permission ${permId} at height ${blockHeight}`);
+              return null;
+            }
+
+            this.logger.debug(`[listPermissions] Permission ${permId} at height ${blockHeight}: repaid=${historyRecord.repaid}, slashed=${historyRecord.slashed}, height=${historyRecord.height}`);
 
             return {
-              id: historyRecord.permission_id,
-              schema_id: historyRecord.schema_id,
+              id: String(historyRecord.permission_id),
+              schema_id: String(historyRecord.schema_id),
               grantee: historyRecord.grantee,
               did: historyRecord.did,
               created_by: historyRecord.created_by,
@@ -125,13 +560,22 @@ export default class PermAPIService extends BullableService {
           })
         );
 
-        // Filter out nulls and apply filters
-        let filteredPermissions = permissions.filter((perm): perm is NonNullable<typeof permissions[0]> => perm !== null);
+        const validPermissions = permissions.filter((perm): perm is NonNullable<typeof permissions[0]> => perm !== null);
+        this.logger.info(`[listPermissions] After filtering nulls: ${validPermissions.length} permissions`);
 
-        if (p.schema_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.schema_id === p.schema_id);
+        let filteredPermissions = await this.batchEnrichPermissions(
+          validPermissions,
+          blockHeight,
+          new Date(now),
+          10
+        );
+
+        this.logger.info(`[listPermissions] After enrichment: ${filteredPermissions.length} permissions`);
+
+        if (p.schema_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => String(perm.schema_id) === String(p.schema_id));
         if (p.grantee) filteredPermissions = filteredPermissions.filter(perm => perm.grantee === p.grantee);
         if (p.did) filteredPermissions = filteredPermissions.filter(perm => perm.did === p.did);
-        if (p.perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id === p.perm_id);
+        if (p.perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => String(perm.validator_perm_id) === String(p.perm_id));
         if (p.type) filteredPermissions = filteredPermissions.filter(perm => perm.type === p.type);
         if (p.country) filteredPermissions = filteredPermissions.filter(perm => perm.country === p.country);
         if (p.vp_state) filteredPermissions = filteredPermissions.filter(perm => perm.vp_state === p.vp_state);
@@ -149,6 +593,7 @@ export default class PermAPIService extends BullableService {
           }
         }
 
+        // Only apply filters when explicitly set to true
         if (onlyValid) {
           filteredPermissions = filteredPermissions.filter(perm => {
             const isNotRevoked = !perm.revoked;
@@ -160,16 +605,16 @@ export default class PermAPIService extends BullableService {
         }
 
         if (p.only_slashed !== undefined) {
-          if (onlySlashed) {
-            filteredPermissions = filteredPermissions.filter(perm => perm.slashed !== null);
+        if (onlySlashed) {
+          filteredPermissions = filteredPermissions.filter(perm => perm.slashed !== null);
           } else {
             filteredPermissions = filteredPermissions.filter(perm => perm.slashed === null);
           }
         }
 
         if (p.only_repaid !== undefined) {
-          if (onlyRepaid) {
-            filteredPermissions = filteredPermissions.filter(perm => perm.repaid !== null);
+        if (onlyRepaid) {
+          filteredPermissions = filteredPermissions.filter(perm => perm.repaid !== null);
           } else {
             filteredPermissions = filteredPermissions.filter(perm => perm.repaid === null);
           }
@@ -183,12 +628,49 @@ export default class PermAPIService extends BullableService {
       }
 
       // Otherwise, return latest state
-      const query = knex("permissions").select("*");
+      // Note: We don't select "issued" and "verified" here as they may not exist if migration hasn't run
+      // They will be added by enrichPermissionWithStateAndActions
+      const query = knex("permissions").select([
+        "id",
+        "schema_id",
+        "type",
+        "did",
+        "grantee",
+        "created_by",
+        "created",
+        "modified",
+        "extended",
+        "extended_by",
+        "slashed",
+        "slashed_by",
+        "repaid",
+        "repaid_by",
+        "effective_from",
+        "effective_until",
+        "revoked",
+        "revoked_by",
+        "country",
+        "validation_fees",
+        "issuance_fees",
+        "verification_fees",
+        "deposit",
+        "slashed_deposit",
+        "repaid_deposit",
+        "validator_perm_id",
+        "vp_state",
+        "vp_last_state_change",
+        "vp_current_fees",
+        "vp_current_deposit",
+        "vp_summary_digest_sri",
+        "vp_exp",
+        "vp_validator_deposit",
+        "vp_term_requested",
+      ]);
 
-      if (p.schema_id !== undefined) query.where("schema_id", p.schema_id);
+      if (p.schema_id !== undefined) query.where("schema_id", String(p.schema_id));
       if (p.grantee) query.where("grantee", p.grantee);
       if (p.did) query.where("did", p.did);
-      if (p.perm_id !== undefined) query.where("validator_perm_id", p.perm_id);
+      if (p.perm_id !== undefined) query.where("validator_perm_id", String(p.perm_id));
       if (p.type) query.where("type", p.type);
       if (p.country) query.where("country", p.country);
       if (p.vp_state) query.where("vp_state", p.vp_state);
@@ -230,10 +712,30 @@ export default class PermAPIService extends BullableService {
       }
 
       const results = await query.orderBy("modified", "asc").limit(limit);
-      return ApiResponder.success(ctx, { permissions: results }, 200);
+      // Normalize IDs to strings and enrich with state and actions
+      const normalizedResults = results.map(perm => ({
+        ...perm,
+        id: String(perm.id),
+        schema_id: String(perm.schema_id),
+        validator_perm_id: perm.validator_perm_id ? String(perm.validator_perm_id) : null,
+      }));
+
+      const enrichedResults = await this.batchEnrichPermissions(
+        normalizedResults,
+        blockHeight,
+        new Date(now),
+        10
+      );
+
+      return ApiResponder.success(ctx, { permissions: enrichedResults }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissions:", err);
-      return ApiResponder.error(ctx, "Failed to list permissions", 500);
+      this.logger.error("Error details:", {
+        message: err?.message,
+        stack: err?.stack,
+        code: err?.code,
+      });
+      return ApiResponder.error(ctx, `Failed to list permissions: ${err?.message || String(err)}`, 500);
     }
   }
 
@@ -246,12 +748,12 @@ export default class PermAPIService extends BullableService {
   async getPermission(ctx: Context<{ id: string }>) {
     try {
       const id = ctx.params.id;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
 
       // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const historyRecord = await knex("permission_history")
-          .where({ permission_id: id })
+          .where({ permission_id: String(id) })
           .where("height", "<=", blockHeight)
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
@@ -263,12 +765,12 @@ export default class PermAPIService extends BullableService {
 
         // Map history record to permission format
         const historicalPermission = {
-          id: historyRecord.permission_id,
-          schema_id: historyRecord.schema_id,
+          id: String(historyRecord.permission_id),
+          schema_id: String(historyRecord.schema_id),
           grantee: historyRecord.grantee,
           did: historyRecord.did,
           created_by: historyRecord.created_by,
-          validator_perm_id: historyRecord.validator_perm_id,
+          validator_perm_id: historyRecord.validator_perm_id ? String(historyRecord.validator_perm_id) : null,
           type: historyRecord.type,
           country: historyRecord.country,
           vp_state: historyRecord.vp_state,
@@ -299,15 +801,35 @@ export default class PermAPIService extends BullableService {
           modified: historyRecord.modified,
         };
 
-        return ApiResponder.success(ctx, { permission: historicalPermission }, 200);
+        const enrichedPermission = await this.enrichPermissionWithStateAndActions(
+          historicalPermission,
+          blockHeight,
+          new Date()
+        );
+
+        return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
       }
 
       // Otherwise, return latest state
-      const permission = await knex("permissions").where("id", id).first();
+      const permission = await knex("permissions").where("id", String(id)).first();
       if (!permission) {
         return ApiResponder.error(ctx, "Permission not found", 404);
       }
-      return ApiResponder.success(ctx, { permission: permission }, 200);
+      // Normalize IDs to strings for consistency
+      const normalizedPermission = {
+        ...permission,
+        id: String(permission.id),
+        schema_id: String(permission.schema_id),
+        validator_perm_id: permission.validator_perm_id ? String(permission.validator_perm_id) : null,
+      };
+
+      const enrichedPermission = await this.enrichPermissionWithStateAndActions(
+        normalizedPermission,
+        blockHeight,
+        new Date()
+      );
+
+      return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermission:", err);
       return ApiResponder.error(ctx, "Failed to get permission", 500);
@@ -348,7 +870,7 @@ export default class PermAPIService extends BullableService {
   ) {
     const { issuer_perm_id: issuerPermId, verifier_perm_id: verifierPermId } =
       ctx.params;
-    const blockHeight = (ctx.meta as any)?.blockHeight;
+    const blockHeight = getBlockHeight(ctx);
 
     if (!issuerPermId && !verifierPermId) {
       return ApiResponder.error(
@@ -360,22 +882,23 @@ export default class PermAPIService extends BullableService {
 
     const foundPermSet = new Set<any>();
 
-    const loadPerm = async (permId: number) => {
-      if (typeof blockHeight === "number") {
+    const loadPerm = async (permId: number | string) => {
+      const permIdStr = String(permId);
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const historyRecord = await knex("permission_history")
-          .where({ permission_id: String(permId) })
+          .where({ permission_id: permIdStr })
           .where("height", "<=", blockHeight)
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
           .first();
-        if (!historyRecord) throw new Error(`Permission ${permId} not found`);
+        if (!historyRecord) throw new Error(`Permission ${permIdStr} not found`);
         return {
-          id: historyRecord.permission_id,
-          schema_id: historyRecord.schema_id,
+          id: String(historyRecord.permission_id),
+          schema_id: String(historyRecord.schema_id),
           grantee: historyRecord.grantee,
           did: historyRecord.did,
           created_by: historyRecord.created_by,
-          validator_perm_id: historyRecord.validator_perm_id,
+          validator_perm_id: historyRecord.validator_perm_id ? String(historyRecord.validator_perm_id) : null,
           type: historyRecord.type,
           country: historyRecord.country,
           vp_state: historyRecord.vp_state,
@@ -406,15 +929,20 @@ export default class PermAPIService extends BullableService {
           modified: historyRecord.modified,
         };
       }
-      const perm = await knex("permissions").where("id", permId).first();
-      if (!perm) throw new Error(`Permission ${permId} not found`);
-      return perm;
+      const perm = await knex("permissions").where("id", permIdStr).first();
+      if (!perm) throw new Error(`Permission ${permIdStr} not found`);
+      return {
+        ...perm,
+        id: String(perm.id),
+        schema_id: String(perm.schema_id),
+        validator_perm_id: perm.validator_perm_id ? String(perm.validator_perm_id) : null,
+      };
     };
 
     const addAncestors = async (perm: any) => {
       let currentPerm = perm;
       while (currentPerm.validator_perm_id) {
-        const parent = await loadPerm(currentPerm.validator_perm_id);
+        const parent = await loadPerm(String(currentPerm.validator_perm_id));
         if (!parent.revoked && !parent.slashed) {
           foundPermSet.add(parent);
         }
@@ -439,7 +967,14 @@ export default class PermAPIService extends BullableService {
         await addAncestors(verifierPerm);
       }
 
-      return ApiResponder.success(ctx, { permissions: Array.from(foundPermSet) }, 200);
+      // Enrich all permissions with state and actions
+      const enrichedPermissions = await Promise.all(
+        Array.from(foundPermSet).map(perm =>
+          this.enrichPermissionWithStateAndActions(perm, blockHeight, new Date())
+        )
+      );
+
+      return ApiResponder.success(ctx, { permissions: enrichedPermissions }, 200);
     } catch (err: any) {
       this.logger.error("Error in findBeneficiaries:", err);
       return ApiResponder.error(ctx, "Failed to find beneficiaries", 500);
@@ -455,10 +990,10 @@ export default class PermAPIService extends BullableService {
   async getPermissionSession(ctx: Context<{ id: string }>) {
     try {
       const { id } = ctx.params;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
 
       // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const historyRecord = await knex("permission_session_history")
           .where({ session_id: id })
           .where("height", "<=", blockHeight)
@@ -538,11 +1073,11 @@ export default class PermAPIService extends BullableService {
         modified_after: modifiedAfter,
         response_max_size: responseMaxSize,
       } = ctx.params;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
       const limit = Math.min(Math.max(responseMaxSize || 64, 1), 1024);
 
       // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         // Get all unique session IDs that existed at or before the block height
         const latestHistorySubquery = knex("permission_session_history")
           .select("session_id")

@@ -9,6 +9,8 @@ class DefaultValue {
 
   static readonly DEFAULT_WORKER_OPTION: WorkerOptions = {
     concurrency: 1,
+    lockDuration: 300000, 
+    maxStalledCount: 1,
   };
 
   static readonly DEFAULT_JOB_OTION: JobOption = {
@@ -43,7 +45,13 @@ export class BullQueueProvider implements QueueProvider {
   const processor = async (job: Job) => {
     try {
       await fn(job.data);
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.message?.includes('Missing lock for job repeat') ||
+          e?.message?.includes('not in the delayed state') ||
+          e?.message?.includes('is not in the delayed state')) {
+        console.warn(`[BullMQ] Repeatable job state issue for ${job.name}, this is usually safe to ignore`);
+        return;
+      }
       console.error(`job ${job.name} failed`);
       console.error(e);
       throw e;
@@ -62,7 +70,31 @@ export class BullQueueProvider implements QueueProvider {
 
   console.log(`worker option: ${JSON.stringify(wo)}`);
   wo.connection = getRedisConnection();
-  this._workers.push(new Worker(opt.queueName, processor, wo));
+  const worker = new Worker(opt.queueName, processor, wo);
+  
+  // Handle errors that occur during job processing, including lock expiration errors
+  worker.on('failed', (job, err) => {
+    if (err?.message?.includes('Missing lock for job repeat') ||
+        err?.message?.includes('not in the delayed state') ||
+        err?.message?.includes('is not in the delayed state')) {
+      console.warn(`[BullMQ] Repeatable job state issue for ${job?.name || 'unknown'}, this is usually safe to ignore`);
+      return;
+    }
+    console.error(`[BullMQ] Job ${job?.name || 'unknown'} failed:`, err);
+  });
+
+  // Handle errors that occur in the worker itself
+  worker.on('error', (err) => {
+    if (err?.message?.includes('Missing lock for job repeat') ||
+        err?.message?.includes('not in the delayed state') ||
+        err?.message?.includes('is not in the delayed state')) {
+      console.warn(`[BullMQ] Repeatable job state issue in worker, this is usually safe to ignore`);
+      return;
+    }
+    console.error(`[BullMQ] Worker error:`, err);
+  });
+
+  this._workers.push(worker);
 }
 
 

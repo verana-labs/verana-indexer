@@ -9,6 +9,15 @@ jest.mock("../../../../src/models/trust_deposit");
 jest.mock("../../../../src/models/modules_params");
 jest.mock("../../../../src/common/utils/db_connection", () => ({
   transaction: jest.fn((fn) => fn({})),
+  default: jest.fn((table: string) => ({
+    where: jest.fn(() => ({
+      orderBy: jest.fn(() => ({
+        orderBy: jest.fn(() => ({
+          first: jest.fn().mockResolvedValue(null),
+        })),
+      })),
+    })),
+  })),
 }));
 
 describe("🧪 TrustDepositDatabaseService", () => {
@@ -110,15 +119,11 @@ describe("🧪 TrustDepositDatabaseService", () => {
         findOne: jest.fn().mockResolvedValue(null),
       });
 
-      try {
-        const res: any = await broker.call(
-          SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
-        );
-        expect(res.status).toBe(404);
-        expect(res.error).toBe("Module parameters not found");
-      } catch (err: any) {
-        expect(err?.data?.action).toBe("v1.TrustDepositApiService.getModuleParams");
-      }
+      const res: any = await broker.call(
+        SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
+      );
+      expect(res.status).toBe(404);
+      expect(res.error).toBe("Module parameters not found: trustdeposit");
     });
   });
 });

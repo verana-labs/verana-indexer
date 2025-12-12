@@ -53,6 +53,8 @@ const PERMISSION_HISTORY_FIELDS = [
   "vp_exp",
   "vp_validator_deposit",
   "vp_term_requested",
+  "issued",
+  "verified",
 ];
 
 const PERMISSION_SESSION_HISTORY_FIELDS = [
@@ -1352,6 +1354,36 @@ export default class PermIngestService extends Service {
     }
   }
 
+  private async incrementPermissionStatistics(
+    trx: any,
+    permId: string,
+    incrementIssued: boolean,
+    incrementVerified: boolean
+  ): Promise<void> {
+    let currentPermId: string | null = permId;
+    
+    while (currentPermId) {
+      const perm: { validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: currentPermId }).first();
+      if (!perm) break;
+
+      const updates: any = {};
+      if (incrementIssued) {
+        updates.issued = knex.raw("COALESCE(issued, 0) + 1");
+      }
+      if (incrementVerified) {
+        updates.verified = knex.raw("COALESCE(verified, 0) + 1");
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await trx("permissions")
+          .where({ id: currentPermId })
+          .update(updates);
+      }
+
+      currentPermId = perm.validator_perm_id;
+    }
+  }
+
   private async handleCreateOrUpdatePermissionSession(
     msg: MsgCreateOrUpdatePermissionSession & { height?: number }
   ) {
@@ -1440,6 +1472,13 @@ export default class PermIngestService extends Service {
           "CREATE_PERMISSION_SESSION",
           height
         );
+
+        if (issuerPermId) {
+          await this.incrementPermissionStatistics(trx, String(issuerPermId), true, false);
+        }
+        if (verifierPermId) {
+          await this.incrementPermissionStatistics(trx, String(verifierPermId), false, true);
+        }
       } else {
         let existingAuthz: any[] = [];
         try {
@@ -1470,6 +1509,32 @@ export default class PermIngestService extends Service {
           height,
           previousSession
         );
+
+        const previousAuthz = previousSession?.authz || [];
+        const previousIssuerPermIds = new Set(
+          previousAuthz.map((entry: any) => entry.issuer_perm_id).filter(Boolean)
+        );
+        const previousVerifierPermIds = new Set(
+          previousAuthz.map((entry: any) => entry.verifier_perm_id).filter(Boolean)
+        );
+
+        const newIssuerPermIds = new Set(
+          existingAuthz.map((entry: any) => entry.issuer_perm_id).filter(Boolean)
+        );
+        const newVerifierPermIds = new Set(
+          existingAuthz.map((entry: any) => entry.verifier_perm_id).filter(Boolean)
+        );
+
+        for (const issuerId of newIssuerPermIds) {
+          if (!previousIssuerPermIds.has(issuerId)) {
+            await this.incrementPermissionStatistics(trx, String(issuerId), true, false);
+          }
+        }
+        for (const verifierId of newVerifierPermIds) {
+          if (!previousVerifierPermIds.has(verifierId)) {
+            await this.incrementPermissionStatistics(trx, String(verifierId), false, true);
+          }
+        }
       }
 
       await trx.commit();

@@ -5,9 +5,10 @@ import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
 import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
-import ModuleParams from "../../models/modules_params";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
+import { getModuleParams } from "../../common/utils/moduleParams";
+import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
@@ -28,10 +29,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
             const { tr_id, preferred_language } = ctx.params;
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
-            const blockHeight = (ctx.meta as any)?.blockHeight;
+            const blockHeight = getBlockHeight(ctx);
 
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
+            if (hasBlockHeight(ctx) && blockHeight !== undefined) {
                 const trHistory = await knex("trust_registry_history")
                     .where({ tr_id })
                     .where("height", "<=", blockHeight)
@@ -182,7 +182,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
-            const blockHeight = (ctx.meta as any)?.blockHeight;
+            const blockHeight = getBlockHeight(ctx);
 
             const responseMaxSize =
                 !responseMaxSizeRaw ? 64 : Math.min(Math.max(responseMaxSizeRaw, 1), 1024);
@@ -191,9 +191,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 return ApiResponder.error(ctx, "response_max_size must be between 1 and 1024", 400);
             }
 
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
-                // Get all unique TR IDs that existed at or before the block height
+            if (hasBlockHeight(ctx) && blockHeight !== undefined) {
                 const latestHistorySubquery = knex("trust_registry_history")
                     .select("tr_id")
                     .select(
@@ -372,46 +370,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
     @Action()
     public async getParams(ctx: Context) {
-        try {
-            const blockHeight = (ctx.meta as any)?.blockHeight;
-
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
-                const historyRecord = await knex("module_params_history")
-                    .where({ module: ModulesParamsNamesTypes?.TR })
-                    .where("height", "<=", blockHeight)
-                    .orderBy("height", "desc")
-                    .orderBy("created_at", "desc")
-                    .first();
-
-                if (!historyRecord || !historyRecord.params) {
-                    return ApiResponder.error(ctx, "Module parameters not found: trustregistry", 404);
-                }
-
-                const parsedParams =
-                    typeof historyRecord.params === "string"
-                        ? JSON.parse(historyRecord.params)
-                        : historyRecord.params;
-
-                return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
-            }
-
-            // Otherwise, return latest state
-            const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.TR });
-
-            if (!module || !module.params) {
-                return ApiResponder.error(ctx, "Module parameters not found: trustregistry", 404);
-            }
-
-            const parsedParams =
-                typeof module.params === "string"
-                    ? JSON.parse(module.params)
-                    : module.params;
-
-            return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
-        } catch (err: any) {
-            this.logger.error("Error fetching trustregistry params", err);
-            return ApiResponder.error(ctx, "Internal Server Error", 500);
-        }
+        return getModuleParams(ctx, ModulesParamsNamesTypes.TR, "trustregistry", this.logger);
     }
 }

@@ -4,7 +4,8 @@ import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import ModuleParams from "../../models/modules_params";
+import { getModuleParams } from "../../common/utils/moduleParams";
+import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}) {
   const height = Number(overrides.height) || 0;
@@ -192,10 +193,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async get(ctx: Context<{ id: number }>) {
     try {
       const { id } = ctx.params;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
 
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const historyRecord = await knex("credential_schema_history")
           .where({ credential_schema_id: id })
           .where("height", "<=", blockHeight)
@@ -236,7 +236,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (schemaRecord?.json_schema && typeof schemaRecord.json_schema !== "string") {
         schemaRecord.json_schema = JSON.stringify(schemaRecord.json_schema);
       }
-      delete schemaRecord?.is_active
+      delete schemaRecord?.is_active;
       return ApiResponder.success(ctx, { schema: schemaRecord }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema get:", err);
@@ -270,10 +270,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         response_max_size: maxSize,
       } = ctx.params;
 
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
 
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const subquery = knex("credential_schema_history")
           .select("credential_schema_id")
           .select(
@@ -428,10 +428,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async JsonSchema(ctx: Context<{ id: number }>) {
     try {
       const { id } = ctx.params;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const blockHeight = getBlockHeight(ctx);
 
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
+      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
         const historyRecord = await knex("credential_schema_history")
           .select("json_schema")
           .where({ credential_schema_id: id })
@@ -466,47 +465,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
   @Action()
   public async getParams(ctx: Context) {
-    try {
-      const blockHeight = (ctx.meta as any)?.blockHeight;
-
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
-        const historyRecord = await knex("module_params_history")
-          .where({ module: ModulesParamsNamesTypes?.CS })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-
-        if (!historyRecord || !historyRecord.params) {
-          return ApiResponder.error(ctx, "Module parameters not found: credentialschema", 404);
-        }
-
-        const parsedParams =
-          typeof historyRecord.params === "string"
-            ? JSON.parse(historyRecord.params)
-            : historyRecord.params;
-
-        return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
-      }
-
-      // Otherwise, return latest state
-      const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.CS });
-
-      if (!module || !module.params) {
-        return ApiResponder.error(ctx, "Module parameters not found: credentialschema", 404);
-      }
-
-      const parsedParams =
-        typeof module.params === "string"
-          ? JSON.parse(module.params)
-          : module.params;
-
-      return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
-    } catch (err: any) {
-      this.logger.error("Error fetching credentialschema params", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
-    }
+    return getModuleParams(ctx, ModulesParamsNamesTypes.CS, "credentialschema", this.logger);
   }
 
   @Action({
