@@ -194,6 +194,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { id } = ctx.params;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("credential_schema_history")
           .where({ credential_schema_id: id })
@@ -429,6 +430,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { id } = ctx.params;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("credential_schema_history")
           .select("json_schema")
@@ -445,6 +447,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.success(ctx, { schema: JSON.stringify(historyRecord.json_schema) }, 200);
       }
 
+      // Otherwise, return latest state
       const schemaRecord = await knex("credential_schemas")
         .select("json_schema")
         .where({ id })
@@ -466,6 +469,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
         const historyRecord = await knex("module_params_history")
           .where({ module: ModulesParamsNamesTypes?.CS })
@@ -486,6 +490,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
       }
 
+      // Otherwise, return latest state
       const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.CS });
 
       if (!module || !module.params) {

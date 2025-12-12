@@ -11,9 +11,6 @@ import { swaggerUiComponent } from "./swagger_ui";
 
 const BLOCK_CHECKPOINT_JOB = "crawl:block";
 
-const HEADER_VARIANTS = [
-  "At-Block-Height",
-] as const;
 
 const DEFAULT_ROUTE_CONFIG = {
   mappingPolicy: "restrict" as const,
@@ -30,12 +27,29 @@ async function fetchBlockCheckpoint() {
 }
 
 function getHeaderValue(req: IncomingMessage): string | null {
-  for (const variant of HEADER_VARIANTS) {
-    const value = req.headers[variant];
+  const normalizedHeader = "at-block-height";
+    let value = req.headers[normalizedHeader];
+    if (Array.isArray(value)) {
+    value = value[0];
+  }
     if (value !== undefined && value !== null) {
-      return String(value).trim() || null;
+    const strValue = String(value).trim();
+    return strValue || null;
+  }
+    const headerKey = Object.keys(req.headers).find(
+    key => key.toLowerCase() === normalizedHeader
+  );
+    if (headerKey) {
+    let fallbackValue = req.headers[headerKey];
+    if (Array.isArray(fallbackValue)) {
+      fallbackValue = fallbackValue[0];
+    }
+    if (fallbackValue !== undefined && fallbackValue !== null) {
+      const strValue = String(fallbackValue).trim();
+      return strValue || null;
     }
   }
+  
   return null;
 }
 
@@ -46,6 +60,11 @@ async function parseAtBlockHeight(
 ) {
   ctx.meta = ctx.meta || {};
   const headerValue = getHeaderValue(req);
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[DEBUG] Available headers:", Object.keys(req.headers));
+    console.log("[DEBUG] Header value for 'at-block-height':", headerValue);
+  }
 
   if (!headerValue) {
     if (required) {
