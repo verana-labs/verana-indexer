@@ -1,7 +1,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
-import { SERVICE } from "../../common";
+import { BULL_JOB_NAME, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 
@@ -113,19 +113,26 @@ export default class IndexerMetaService extends BaseService {
   @Action()
   public async getBlockHeight(ctx: Context) {
     const checkpoint = await knex("block_checkpoint")
-      .where("job_name", "crawl:block")
+      .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
       .first();
 
     if (!checkpoint) {
       return ApiResponder.error(ctx, "Block checkpoint not found", 404);
     }
 
+    const updatedAt =
+      checkpoint.updated_at instanceof Date
+        ? checkpoint.updated_at
+        : new Date(checkpoint.updated_at);
+    const iso = updatedAt.toISOString();
+    const timestamp = iso.replace(/\.\d{3}Z$/, "Z");
+
     return ApiResponder.success(
       ctx,
       {
-        job_name: checkpoint.job_name,
+        type: "block-processed",
         height: checkpoint.height,
-        updated_at: checkpoint.updated_at,
+        timestamp,
       },
       200
     );

@@ -5,12 +5,12 @@ import { Context, ServiceBroker, Errors } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
 import ApiGateway, { Route } from "moleculer-web";
 import BaseService from "../../base/base.service";
-import { SERVICE } from "../../common";
+import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 import { eventsBroadcaster } from "./events_broadcaster";
 
-const BLOCK_CHECKPOINT_JOB = "crawl:block";
+const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 
 async function fetchBlockCheckpoint() {
   return knex("block_checkpoint")

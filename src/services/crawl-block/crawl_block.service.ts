@@ -141,7 +141,10 @@ export default class CrawlBlockService extends BullableService {
       // insert data to DB
       await this.handleListBlock(mergeBlockResponses);
 
-      // update crawled block to db
+      // update crawled block checkpoint in DB.
+      // Note: the "block-processed" WebSocket event is now emitted
+      // ONLY after all related transactions have been fully processed
+      // and saved (see CrawlTxService.jobHandlerCrawlTx).
       if (this._currentBlock < endBlock) {
         await BlockCheckpoint.query()
           .update(
@@ -154,13 +157,6 @@ export default class CrawlBlockService extends BullableService {
             job_name: BULL_JOB_NAME.CRAWL_BLOCK,
           });
         this._currentBlock = endBlock;
-
-        this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`, {
-          height: endBlock,
-          timestamp: new Date().toISOString(),
-        }).catch((error) => {
-          this.logger.warn(`[CrawlBlock] Failed to broadcast block-processed event:`, error);
-        });
       }
     } catch (error) {
       this.logger.error(error);
