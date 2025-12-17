@@ -103,11 +103,6 @@ jobs:
         if: steps.semantic.outputs.new-release-published == 'true'
         uses: azure/setup-helm@v3
 
-      - name: Ensure namespace exists
-        if: steps.semantic.outputs.new-release-published == 'true'
-        run: |
-          kubectl get ns vna-testnet-1 || kubectl create ns vna-testnet-1
-
       - name: Uninstall previous release
         if: steps.semantic.outputs.new-release-published == 'true'
         run: |
