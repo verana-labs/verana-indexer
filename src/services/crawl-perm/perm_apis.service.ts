@@ -43,6 +43,7 @@ export default class PermAPIService extends BullableService {
   async listPermissions(ctx: Context<any>) {
     try {
       const p = ctx.params;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
       const now = new Date().toISOString();
       const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
 
@@ -50,6 +51,138 @@ export default class PermAPIService extends BullableService {
       const onlySlashed = p.only_slashed === "true" || p.only_slashed === true;
       const onlyRepaid = p.only_repaid === "true" || p.only_repaid === true;
 
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        // Get all unique permission IDs that existed at or before the block height
+        const latestHistorySubquery = knex("permission_history")
+          .select("permission_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC) as rn`
+            )
+          )
+          .where("height", "<=", blockHeight)
+          .as("ranked");
+
+        const permIdsAtHeight = await knex
+          .from(latestHistorySubquery)
+          .select("permission_id")
+          .where("rn", 1)
+          .then((rows: any[]) => rows.map((r: any) => r.permission_id));
+
+        if (permIdsAtHeight.length === 0) {
+          return ApiResponder.success(ctx, { permissions: [] }, 200);
+        }
+
+        // For each permission, get the latest history record at or before block height
+        const permissions = await Promise.all(
+          permIdsAtHeight.map(async (permId: string) => {
+            const historyRecord = await knex("permission_history")
+              .where({ permission_id: permId })
+              .where("height", "<=", blockHeight)
+              .orderBy("height", "desc")
+              .orderBy("created_at", "desc")
+              .first();
+
+            if (!historyRecord) return null;
+
+            return {
+              id: historyRecord.permission_id,
+              schema_id: historyRecord.schema_id,
+              grantee: historyRecord.grantee,
+              did: historyRecord.did,
+              created_by: historyRecord.created_by,
+              validator_perm_id: historyRecord.validator_perm_id,
+              type: historyRecord.type,
+              country: historyRecord.country,
+              vp_state: historyRecord.vp_state,
+              revoked: historyRecord.revoked,
+              revoked_by: historyRecord.revoked_by,
+              slashed: historyRecord.slashed,
+              slashed_by: historyRecord.slashed_by,
+              repaid: historyRecord.repaid,
+              repaid_by: historyRecord.repaid_by,
+              extended: historyRecord.extended,
+              extended_by: historyRecord.extended_by,
+              effective_from: historyRecord.effective_from,
+              effective_until: historyRecord.effective_until,
+              validation_fees: historyRecord.validation_fees,
+              issuance_fees: historyRecord.issuance_fees,
+              verification_fees: historyRecord.verification_fees,
+              deposit: historyRecord.deposit,
+              slashed_deposit: historyRecord.slashed_deposit,
+              repaid_deposit: historyRecord.repaid_deposit,
+              vp_last_state_change: historyRecord.vp_last_state_change,
+              vp_current_fees: historyRecord.vp_current_fees,
+              vp_current_deposit: historyRecord.vp_current_deposit,
+              vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
+              vp_exp: historyRecord.vp_exp,
+              vp_validator_deposit: historyRecord.vp_validator_deposit,
+              vp_term_requested: historyRecord.vp_term_requested,
+              created: historyRecord.created,
+              modified: historyRecord.modified,
+            };
+          })
+        );
+
+        // Filter out nulls and apply filters
+        let filteredPermissions = permissions.filter((perm): perm is NonNullable<typeof permissions[0]> => perm !== null);
+
+        if (p.schema_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.schema_id === p.schema_id);
+        if (p.grantee) filteredPermissions = filteredPermissions.filter(perm => perm.grantee === p.grantee);
+        if (p.did) filteredPermissions = filteredPermissions.filter(perm => perm.did === p.did);
+        if (p.perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id === p.perm_id);
+        if (p.type) filteredPermissions = filteredPermissions.filter(perm => perm.type === p.type);
+        if (p.country) filteredPermissions = filteredPermissions.filter(perm => perm.country === p.country);
+        if (p.vp_state) filteredPermissions = filteredPermissions.filter(perm => perm.vp_state === p.vp_state);
+
+        if (p.modified_after) {
+          const ts = new Date(p.modified_after);
+          if (!Number.isNaN(ts.getTime())) {
+            filteredPermissions = filteredPermissions.filter(perm => new Date(perm.modified) > ts);
+          }
+        }
+        if (p.when) {
+          const whenTs = new Date(p.when);
+          if (!Number.isNaN(whenTs.getTime())) {
+            filteredPermissions = filteredPermissions.filter(perm => new Date(perm.modified) <= whenTs);
+          }
+        }
+
+        if (onlyValid) {
+          filteredPermissions = filteredPermissions.filter(perm => {
+            const isNotRevoked = !perm.revoked;
+            const isNotSlashedOrRepaid = !perm.slashed || perm.repaid;
+            const isEffective = (!perm.effective_until || new Date(perm.effective_until) > new Date(now)) &&
+              (!perm.effective_from || new Date(perm.effective_from) <= new Date(now));
+            return isNotRevoked && isNotSlashedOrRepaid && isEffective;
+          });
+        }
+
+        if (p.only_slashed !== undefined) {
+          if (onlySlashed) {
+            filteredPermissions = filteredPermissions.filter(perm => perm.slashed !== null);
+          } else {
+            filteredPermissions = filteredPermissions.filter(perm => perm.slashed === null);
+          }
+        }
+
+        if (p.only_repaid !== undefined) {
+          if (onlyRepaid) {
+            filteredPermissions = filteredPermissions.filter(perm => perm.repaid !== null);
+          } else {
+            filteredPermissions = filteredPermissions.filter(perm => perm.repaid === null);
+          }
+        }
+
+        // Sort and limit
+        filteredPermissions.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
+        filteredPermissions = filteredPermissions.slice(0, limit);
+
+        return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
+      }
+
+      // Otherwise, return latest state
       const query = knex("permissions").select("*");
 
       if (p.schema_id !== undefined) query.where("schema_id", p.schema_id);
@@ -113,6 +246,63 @@ export default class PermAPIService extends BullableService {
   async getPermission(ctx: Context<{ id: string }>) {
     try {
       const id = ctx.params.id;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
+
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("permission_history")
+          .where({ permission_id: id })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord) {
+          return ApiResponder.error(ctx, "Permission not found", 404);
+        }
+
+        // Map history record to permission format
+        const historicalPermission = {
+          id: historyRecord.permission_id,
+          schema_id: historyRecord.schema_id,
+          grantee: historyRecord.grantee,
+          did: historyRecord.did,
+          created_by: historyRecord.created_by,
+          validator_perm_id: historyRecord.validator_perm_id,
+          type: historyRecord.type,
+          country: historyRecord.country,
+          vp_state: historyRecord.vp_state,
+          revoked: historyRecord.revoked,
+          revoked_by: historyRecord.revoked_by,
+          slashed: historyRecord.slashed,
+          slashed_by: historyRecord.slashed_by,
+          repaid: historyRecord.repaid,
+          repaid_by: historyRecord.repaid_by,
+          extended: historyRecord.extended,
+          extended_by: historyRecord.extended_by,
+          effective_from: historyRecord.effective_from,
+          effective_until: historyRecord.effective_until,
+          validation_fees: historyRecord.validation_fees,
+          issuance_fees: historyRecord.issuance_fees,
+          verification_fees: historyRecord.verification_fees,
+          deposit: historyRecord.deposit,
+          slashed_deposit: historyRecord.slashed_deposit,
+          repaid_deposit: historyRecord.repaid_deposit,
+          vp_last_state_change: historyRecord.vp_last_state_change,
+          vp_current_fees: historyRecord.vp_current_fees,
+          vp_current_deposit: historyRecord.vp_current_deposit,
+          vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
+          vp_exp: historyRecord.vp_exp,
+          vp_validator_deposit: historyRecord.vp_validator_deposit,
+          vp_term_requested: historyRecord.vp_term_requested,
+          created: historyRecord.created,
+          modified: historyRecord.modified,
+        };
+
+        return ApiResponder.success(ctx, { permission: historicalPermission }, 200);
+      }
+
+      // Otherwise, return latest state
       const permission = await knex("permissions").where("id", id).first();
       if (!permission) {
         return ApiResponder.error(ctx, "Permission not found", 404);
@@ -158,6 +348,7 @@ export default class PermAPIService extends BullableService {
   ) {
     const { issuer_perm_id: issuerPermId, verifier_perm_id: verifierPermId } =
       ctx.params;
+    const blockHeight = (ctx.meta as any)?.blockHeight;
 
     if (!issuerPermId && !verifierPermId) {
       return ApiResponder.error(
@@ -170,6 +361,51 @@ export default class PermAPIService extends BullableService {
     const foundPermSet = new Set<any>();
 
     const loadPerm = async (permId: number) => {
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("permission_history")
+          .where({ permission_id: String(permId) })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+        if (!historyRecord) throw new Error(`Permission ${permId} not found`);
+        return {
+          id: historyRecord.permission_id,
+          schema_id: historyRecord.schema_id,
+          grantee: historyRecord.grantee,
+          did: historyRecord.did,
+          created_by: historyRecord.created_by,
+          validator_perm_id: historyRecord.validator_perm_id,
+          type: historyRecord.type,
+          country: historyRecord.country,
+          vp_state: historyRecord.vp_state,
+          revoked: historyRecord.revoked,
+          revoked_by: historyRecord.revoked_by,
+          slashed: historyRecord.slashed,
+          slashed_by: historyRecord.slashed_by,
+          repaid: historyRecord.repaid,
+          repaid_by: historyRecord.repaid_by,
+          extended: historyRecord.extended,
+          extended_by: historyRecord.extended_by,
+          effective_from: historyRecord.effective_from,
+          effective_until: historyRecord.effective_until,
+          validation_fees: historyRecord.validation_fees,
+          issuance_fees: historyRecord.issuance_fees,
+          verification_fees: historyRecord.verification_fees,
+          deposit: historyRecord.deposit,
+          slashed_deposit: historyRecord.slashed_deposit,
+          repaid_deposit: historyRecord.repaid_deposit,
+          vp_last_state_change: historyRecord.vp_last_state_change,
+          vp_current_fees: historyRecord.vp_current_fees,
+          vp_current_deposit: historyRecord.vp_current_deposit,
+          vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
+          vp_exp: historyRecord.vp_exp,
+          vp_validator_deposit: historyRecord.vp_validator_deposit,
+          vp_term_requested: historyRecord.vp_term_requested,
+          created: historyRecord.created,
+          modified: historyRecord.modified,
+        };
+      }
       const perm = await knex("permissions").where("id", permId).first();
       if (!perm) throw new Error(`Permission ${permId} not found`);
       return perm;
@@ -219,6 +455,36 @@ export default class PermAPIService extends BullableService {
   async getPermissionSession(ctx: Context<{ id: string }>) {
     try {
       const { id } = ctx.params;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
+
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("permission_session_history")
+          .where({ session_id: id })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord) {
+          return ApiResponder.error(ctx, "PermissionSession not found", 404);
+        }
+
+        // Map history record to session format
+        const historicalSession = {
+          id: historyRecord.session_id,
+          controller: historyRecord.controller,
+          agent_perm_id: historyRecord.agent_perm_id,
+          wallet_agent_perm_id: historyRecord.wallet_agent_perm_id,
+          authz: historyRecord.authz,
+          created: historyRecord.created,
+          modified: historyRecord.modified,
+        };
+
+        return ApiResponder.success(ctx, { session: historicalSession }, 200);
+      }
+
+      // Otherwise, return latest state
       const session = await knex("permission_sessions").where("id", id).first();
       if (!session)
         return ApiResponder.error(ctx, "PermissionSession not found", 404);
@@ -272,8 +538,74 @@ export default class PermAPIService extends BullableService {
         modified_after: modifiedAfter,
         response_max_size: responseMaxSize,
       } = ctx.params;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
       const limit = Math.min(Math.max(responseMaxSize || 64, 1), 1024);
 
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        // Get all unique session IDs that existed at or before the block height
+        const latestHistorySubquery = knex("permission_session_history")
+          .select("session_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY height DESC, created_at DESC) as rn`
+            )
+          )
+          .where("height", "<=", blockHeight)
+          .as("ranked");
+
+        const sessionIdsAtHeight = await knex
+          .from(latestHistorySubquery)
+          .select("session_id")
+          .where("rn", 1)
+          .then((rows: any[]) => rows.map((r: any) => r.session_id));
+
+        if (sessionIdsAtHeight.length === 0) {
+          return ApiResponder.success(ctx, { sessions: [] }, 200);
+        }
+
+        // For each session, get the latest history record at or before block height
+        const sessions = await Promise.all(
+          sessionIdsAtHeight.map(async (sessionId: string) => {
+            const historyRecord = await knex("permission_session_history")
+              .where({ session_id: sessionId })
+              .where("height", "<=", blockHeight)
+              .orderBy("height", "desc")
+              .orderBy("created_at", "desc")
+              .first();
+
+            if (!historyRecord) return null;
+
+            return {
+              id: historyRecord.session_id,
+              controller: historyRecord.controller,
+              agent_perm_id: historyRecord.agent_perm_id,
+              wallet_agent_perm_id: historyRecord.wallet_agent_perm_id,
+              authz: historyRecord.authz,
+              created: historyRecord.created,
+              modified: historyRecord.modified,
+            };
+          })
+        );
+
+        // Filter out nulls and apply filters
+        let filteredSessions = sessions.filter((sess): sess is NonNullable<typeof sessions[0]> => sess !== null);
+
+        if (modifiedAfter) {
+          const ts = new Date(modifiedAfter);
+          if (!Number.isNaN(ts.getTime())) {
+            filteredSessions = filteredSessions.filter(sess => new Date(sess.modified) > ts);
+          }
+        }
+
+        // Sort and limit
+        filteredSessions.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
+        filteredSessions = filteredSessions.slice(0, limit);
+
+        return ApiResponder.success(ctx, { sessions: filteredSessions }, 200);
+      }
+
+      // Otherwise, return latest state
       const query = knex("permission_sessions").select("*");
       if (modifiedAfter) {
         const ts = new Date(modifiedAfter);

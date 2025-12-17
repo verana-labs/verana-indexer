@@ -35,6 +35,7 @@ export default class AccountReputationService extends BullableService {
     include_slash_details?: boolean | string;
   }>) {
     const { account, tr_id: trId, schema_id: schemaId, include_slash_details: includeSlashDetails } = ctx.params;
+    const blockHeight = (ctx.meta as any)?.blockHeight;
 
     if (!this.isValidAccount(account)) {
       return ApiResponder.error(ctx, "Invalid account format", 400);
@@ -53,60 +54,162 @@ export default class AccountReputationService extends BullableService {
       }
     })();
 
-    const td = await knex("trust_deposits").where({ account }).first();
+    let td: any;
+    if (typeof blockHeight === "number") {
+      const tdHistory = await knex("trust_deposit_history")
+        .where({ account })
+        .where("height", "<=", blockHeight)
+        .orderBy("height", "desc")
+        .orderBy("created_at", "desc")
+        .first();
+      td = tdHistory ? {
+        amount: tdHistory.amount?.toString() || "0",
+        slashed_deposit: tdHistory.slashed_deposit?.toString() || "0",
+        repaid_deposit: tdHistory.repaid_deposit?.toString() || "0",
+        slash_count: tdHistory.slash_count || 0,
+        last_slashed: tdHistory.last_slashed,
+        last_repaid: tdHistory.last_repaid,
+        last_repaid_by: tdHistory.last_repaid_by,
+      } : null;
+    } else {
+      td = await knex("trust_deposits").where({ account }).first();
+    }
+
     const deposit = td?.amount || "0";
     const slashed = td?.slashed_deposit || "0";
     const repaid = td?.repaid_deposit || "0";
     const slashCount = td?.slash_count || 0;
 
     const slashDetails = includeSlashDetails
-      ? await knex("trust_deposits")
-        .where({ account })
-        .select(
-          "slashed_deposit as slashed_amount",
-          "last_slashed as slashed_ts"
-        )
-        .whereNotNull("last_slashed")
-        .then(rows => rows.map(row => ({
-          ...row,
-          slashed_by: account
-        })))
+      ? (typeof blockHeight === "number"
+          ? await knex("trust_deposit_history")
+              .where({ account })
+              .where("height", "<=", blockHeight)
+              .whereNotNull("last_slashed")
+              .select(
+                "slashed_deposit as slashed_amount",
+                "last_slashed as slashed_ts"
+              )
+              .orderBy("height", "desc")
+              .then(rows => rows.map(row => ({
+                ...row,
+                slashed_by: account
+              })))
+          : await knex("trust_deposits")
+              .where({ account })
+              .select(
+                "slashed_deposit as slashed_amount",
+                "last_slashed as slashed_ts"
+              )
+              .whereNotNull("last_slashed")
+              .then(rows => rows.map(row => ({
+                ...row,
+                slashed_by: account
+              }))))
       : [];
 
     const repayDetails = includeSlashDetails
-      ? await knex("trust_deposits")
-        .where({ account })
-        .select(
-          "repaid_deposit as repaid_amount",
-          "last_repaid as repaid_ts",
-          "last_repaid_by as repaid_by"
-        )
-        .whereNotNull("last_repaid")
+      ? (typeof blockHeight === "number"
+          ? await knex("trust_deposit_history")
+              .where({ account })
+              .where("height", "<=", blockHeight)
+              .whereNotNull("last_repaid")
+              .select(
+                "repaid_deposit as repaid_amount",
+                "last_repaid as repaid_ts",
+                "last_repaid_by as repaid_by"
+              )
+              .orderBy("height", "desc")
+          : await knex("trust_deposits")
+              .where({ account })
+              .select(
+                "repaid_deposit as repaid_amount",
+                "last_repaid as repaid_ts",
+                "last_repaid_by as repaid_by"
+              )
+              .whereNotNull("last_repaid"))
       : [];
-    let permissionsQuery = knex("permissions as p")
-      .joinRaw("LEFT JOIN credential_schemas cs on p.schema_id::text = cs.id::text")
-      .joinRaw("LEFT JOIN trust_registry tr on tr.id::text = cs.tr_id::text")
-      .joinRaw("LEFT JOIN permission_sessions ps on p.id::text = ps.agent_perm_id::text")
-      .where("p.grantee", account);
 
-    if (trId) permissionsQuery = permissionsQuery.andWhere("cs.tr_id", String(trId));
-    if (schemaId) permissionsQuery = permissionsQuery.andWhere("cs.id", schemaId);
+    let permissionRows: any[];
+    if (typeof blockHeight === "number") {
+      const permHistory = await knex("permission_history")
+        .where("grantee", account)
+        .where("height", "<=", blockHeight)
+        .orderBy("height", "desc")
+        .orderBy("created_at", "desc");
 
-    const permissionRows = await permissionsQuery.select(
-      "tr.id as tr_id",
-      "tr.did as tr_did",
-      "cs.id as schema_id",
-      "cs.deposit as schema_deposit",
-      "p.type",
-      "p.revoked",
-      "p.effective_until",
-      "p.slashed",
-      "p.repaid",
-      "p.deposit",
-      "p.slashed_deposit",
-      "p.repaid_deposit",
-      "p.id as perm_id"
-    );
+      const permMap = new Map<string, any>();
+      for (const perm of permHistory) {
+        if (!permMap.has(String(perm.permission_id))) {
+          permMap.set(String(perm.permission_id), perm);
+        }
+      }
+
+      permissionRows = await Promise.all(
+        Array.from(permMap.values()).map(async (perm: any) => {
+          const schemaHistory = await knex("credential_schema_history")
+            .where({ credential_schema_id: perm.schema_id })
+            .where("height", "<=", blockHeight)
+            .orderBy("height", "desc")
+            .orderBy("created_at", "desc")
+            .first();
+          
+          if (!schemaHistory) return null;
+
+          const trHistory = await knex("trust_registry_history")
+            .where({ tr_id: schemaHistory.tr_id })
+            .where("height", "<=", blockHeight)
+            .orderBy("height", "desc")
+            .orderBy("created_at", "desc")
+            .first();
+
+          if (trId && String(schemaHistory.tr_id) !== String(trId)) return null;
+          if (schemaId && schemaHistory.credential_schema_id !== schemaId) return null;
+
+          return {
+            tr_id: schemaHistory.tr_id,
+            tr_did: trHistory?.did || null,
+            schema_id: schemaHistory.credential_schema_id,
+            schema_deposit: schemaHistory.deposit,
+            type: perm.type,
+            revoked: perm.revoked,
+            effective_until: perm.effective_until,
+            slashed: perm.slashed,
+            repaid: perm.repaid,
+            deposit: perm.deposit,
+            slashed_deposit: perm.slashed_deposit,
+            repaid_deposit: perm.repaid_deposit,
+            perm_id: perm.permission_id,
+          };
+        })
+      );
+      permissionRows = permissionRows.filter((r): r is NonNullable<typeof permissionRows[0]> => r !== null);
+    } else {
+      let permissionsQuery = knex("permissions as p")
+        .joinRaw("LEFT JOIN credential_schemas cs on p.schema_id::text = cs.id::text")
+        .joinRaw("LEFT JOIN trust_registry tr on tr.id::text = cs.tr_id::text")
+        .joinRaw("LEFT JOIN permission_sessions ps on p.id::text = ps.agent_perm_id::text")
+        .where("p.grantee", account);
+
+      if (trId) permissionsQuery = permissionsQuery.andWhere("cs.tr_id", String(trId));
+      if (schemaId) permissionsQuery = permissionsQuery.andWhere("cs.id", schemaId);
+
+      permissionRows = await permissionsQuery.select(
+        "tr.id as tr_id",
+        "tr.did as tr_did",
+        "cs.id as schema_id",
+        "cs.deposit as schema_deposit",
+        "p.type",
+        "p.revoked",
+        "p.effective_until",
+        "p.slashed",
+        "p.repaid",
+        "p.deposit",
+        "p.slashed_deposit",
+        "p.repaid_deposit",
+        "p.id as perm_id"
+      );
+    }
 
 
     type SchemaStats = {
