@@ -28,12 +28,50 @@ export default class TrustDepositApiService extends BullableService {
   public async getTrustDeposit(ctx: Context<{ account: string }>) {
     try {
       const { account } = ctx.params;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
 
       if (!this.isValidAccount(account)) {
         this.logger.warn(`Invalid account format: ${account}`);
         return ApiResponder.error(ctx, "Invalid account format", 400);
       }
 
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("trust_deposit_history")
+          .where({ account })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord) {
+          this.logger.info(`No trust deposit found for account: ${account}`);
+          return ApiResponder.error(
+            ctx,
+            `No trust deposit found for account: ${account}`,
+            404
+          );
+        }
+
+        const result = {
+          trust_deposit: {
+            account: historyRecord.account,
+            share: historyRecord.share?.toString() || "0",
+            amount: historyRecord.amount?.toString() || "0",
+            claimable: historyRecord.claimable?.toString() || "0",
+            slashed_deposit: historyRecord.slashed_deposit?.toString() || "0",
+            repaid_deposit: historyRecord.repaid_deposit?.toString() || "0",
+            last_slashed: historyRecord.last_slashed,
+            last_repaid: historyRecord.last_repaid,
+            slash_count: historyRecord.slash_count || 0,
+            last_repaid_by: historyRecord.last_repaid_by || "",
+          },
+        };
+
+        return ApiResponder.success(ctx, result, 200);
+      }
+
+      // Otherwise, return latest state
       const trustDeposit = await TrustDeposit.query().findOne({ account });
 
       if (!trustDeposit) {
@@ -74,6 +112,37 @@ export default class TrustDepositApiService extends BullableService {
   })
   public async getModuleParams(ctx: Context) {
     try {
+      const blockHeight = (ctx.meta as any)?.blockHeight;
+
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("module_params_history")
+          .where({ module: ModulesParamsNamesTypes.TD })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord || !historyRecord.params) {
+          this.logger.warn("Module parameters not found for Trust Deposit");
+          return ApiResponder.error(ctx, "Module parameters not found", 404);
+        }
+
+        let parsedParams: Record<string, any>;
+        try {
+          parsedParams =
+            typeof historyRecord.params === "string"
+              ? JSON.parse(historyRecord.params)
+              : historyRecord.params;
+        } catch (parseErr) {
+          this.logger.error("Failed to parse module.params JSON:", parseErr);
+          return ApiResponder.error(ctx, "Invalid module parameters format", 500);
+        }
+        const params = parsedParams.params || parsedParams || {};
+        return ApiResponder.success(ctx, { params }, 200);
+      }
+
+      // Otherwise, return latest state
       const module = await ModuleParams.query().findOne({
         module: ModulesParamsNamesTypes.TD,
       });
