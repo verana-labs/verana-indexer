@@ -400,8 +400,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true
+              "type": "boolean"
             },
             "description": "Filter only active governance frameworks"
           },
@@ -463,8 +462,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true
+              "type": "boolean"
             },
             "description": "Filter only active governance frameworks"
           },
@@ -754,8 +752,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Filter only active"
           },
@@ -1089,8 +1086,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Filter only repaid permissions"
           },
@@ -1623,8 +1619,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Include detailed slashing and repayment information"
           },
