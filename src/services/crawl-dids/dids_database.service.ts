@@ -109,7 +109,7 @@ export default class DidDatabaseService extends BullableService {
                     deposit: historyRecord.deposit,
                     exp: historyRecord.exp,
                     created: historyRecord.created,
-                    modified: historyRecord.created, // Use created as modified for historical
+                    modified: historyRecord.modified,
                 };
 
                 return ApiResponder.success(ctx, { did: historicalDid }, 200);
@@ -161,9 +161,101 @@ export default class DidDatabaseService extends BullableService {
                 response_max_size: responseMaxSize
             } = ctx.params;
 
+            const blockHeight = (ctx.meta as any)?.blockHeight;
             const effectiveLimit = Math.min(responseMaxSize || 64, 1024);
             const now = new Date().toISOString();
 
+            // If AtBlockHeight is provided, query historical state
+            if (typeof blockHeight === "number") {
+                // Get all unique DIDs that existed at or before the block height
+                const historyQuery = knex("did_history")
+                    .select("did")
+                    .where("height", "<=", blockHeight)
+                    .where("is_deleted", false)
+                    .groupBy("did");
+
+                // Get the latest state for each DID at the given block height
+                const subquery = knex("did_history")
+                    .select("did")
+                    .select(
+                        knex.raw(
+                            `ROW_NUMBER() OVER (PARTITION BY did ORDER BY height DESC, created_at DESC) as rn`
+                        )
+                    )
+                    .where("height", "<=", blockHeight)
+                    .where("is_deleted", false)
+                    .as("ranked");
+
+                const latestHistory = await knex
+                    .from(subquery)
+                    .select("did")
+                    .where("rn", 1);
+
+                const didsAtHeight = latestHistory.map((r: any) => r.did);
+
+                if (didsAtHeight.length === 0) {
+                    return ApiResponder.success(ctx, { dids: [] }, 200);
+                }
+
+                // For each DID, get the latest history record at or before block height
+                const items = await Promise.all(
+                    didsAtHeight.map(async (did: string) => {
+                        const historyRecord = await knex("did_history")
+                            .where({ did })
+                            .where("height", "<=", blockHeight)
+                            .where("is_deleted", false)
+                            .orderBy("height", "desc")
+                            .orderBy("created_at", "desc")
+                            .first();
+
+                        if (!historyRecord) return null;
+
+                        return {
+                            did: historyRecord.did,
+                            controller: historyRecord.controller,
+                            deposit: historyRecord.deposit,
+                            exp: historyRecord.exp,
+                            created: historyRecord.created,
+                            modified: historyRecord.modified,
+                        };
+                    })
+                );
+
+                // Filter out nulls and apply filters
+                let filteredItems = items.filter((item): item is NonNullable<typeof items[0]> => item !== null);
+
+                if (account) filteredItems = filteredItems.filter(item => item.controller === account);
+                if (modified) {
+                    const modifiedDate = new Date(modified);
+                    filteredItems = filteredItems.filter(item => new Date(item.modified) > modifiedDate);
+                }
+                if (expired !== undefined) {
+                    filteredItems = expired
+                        ? filteredItems.filter(item => new Date(item.exp) < new Date(now))
+                        : filteredItems.filter(item => new Date(item.exp) > new Date(now));
+                }
+                if (overGrace !== undefined) {
+                    filteredItems = overGrace
+                        ? filteredItems.filter(item => {
+                            const graceDate = new Date(item.exp);
+                            graceDate.setDate(graceDate.getDate() + 30);
+                            return graceDate < new Date(now);
+                        })
+                        : filteredItems.filter(item => {
+                            const graceDate = new Date(item.exp);
+                            graceDate.setDate(graceDate.getDate() + 30);
+                            return graceDate >= new Date(now);
+                        });
+                }
+
+                // Sort and limit
+                filteredItems.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
+                filteredItems = filteredItems.slice(0, effectiveLimit);
+
+                return ApiResponder.success(ctx, { dids: filteredItems }, 200);
+            }
+
+            // Otherwise, return latest state
             let query = knex("dids").where({ is_deleted: false }).select(
                 "did",
                 "controller",
@@ -202,6 +294,30 @@ export default class DidDatabaseService extends BullableService {
     @Action({ rest: "GET params" })
     public async getDidParams(ctx: Context) {
         try {
+            const blockHeight = (ctx.meta as any)?.blockHeight;
+
+            // If AtBlockHeight is provided, query historical state
+            if (typeof blockHeight === "number") {
+                const historyRecord = await knex("module_params_history")
+                    .where({ module: ModulesParamsNamesTypes?.DD })
+                    .where("height", "<=", blockHeight)
+                    .orderBy("height", "desc")
+                    .orderBy("created_at", "desc")
+                    .first();
+
+                if (!historyRecord || !historyRecord.params) {
+                    return ApiResponder.error(ctx, "Module parameters not found: diddirectory", 404);
+                }
+
+                const parsedParams =
+                    typeof historyRecord.params === "string"
+                        ? JSON.parse(historyRecord.params)
+                        : historyRecord.params;
+
+                return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
+            }
+
+            // Otherwise, return latest state
             const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.DD });
 
             if (!module || !module.params) {

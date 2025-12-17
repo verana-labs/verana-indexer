@@ -192,6 +192,42 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async get(ctx: Context<{ id: number }>) {
     try {
       const { id } = ctx.params;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
+
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("credential_schema_history")
+          .where({ credential_schema_id: id })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord) {
+          return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
+        }
+
+        const historicalSchema = {
+          id: historyRecord.credential_schema_id,
+          tr_id: historyRecord.tr_id,
+          json_schema: historyRecord.json_schema && typeof historyRecord.json_schema !== "string"
+            ? JSON.stringify(historyRecord.json_schema)
+            : historyRecord.json_schema,
+          deposit: historyRecord.deposit,
+          issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
+          verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
+          issuer_validation_validity_period: historyRecord.issuer_validation_validity_period,
+          verifier_validation_validity_period: historyRecord.verifier_validation_validity_period,
+          holder_validation_validity_period: historyRecord.holder_validation_validity_period,
+          issuer_perm_management_mode: historyRecord.issuer_perm_management_mode,
+          verifier_perm_management_mode: historyRecord.verifier_perm_management_mode,
+          archived: historyRecord.archived,
+          created: historyRecord.created,
+          modified: historyRecord.modified,
+        };
+
+        return ApiResponder.success(ctx, { schema: historicalSchema }, 200);
+      }
 
       const schemaRecord = await knex("credential_schemas").where({ id }).first();
       if (!schemaRecord) {
@@ -234,7 +270,107 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         response_max_size: maxSize,
       } = ctx.params;
 
+      const blockHeight = (ctx.meta as any)?.blockHeight;
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
+
+      if (typeof blockHeight === "number") {
+        const subquery = knex("credential_schema_history")
+          .select("credential_schema_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn`
+            )
+          )
+          .where("height", "<=", blockHeight)
+          .as("ranked");
+
+        const latestHistory = await knex
+          .from(subquery)
+          .select("credential_schema_id")
+          .where("rn", 1);
+
+        const schemaIdsAtHeight = latestHistory.map((r: any) => r.credential_schema_id);
+
+        if (schemaIdsAtHeight.length === 0) {
+          return ApiResponder.success(ctx, { schemas: [] }, 200);
+        }
+
+        const items = await Promise.all(
+          schemaIdsAtHeight.map(async (schemaId: number) => {
+            const historyRecord = await knex("credential_schema_history")
+              .where({ credential_schema_id: schemaId })
+              .where("height", "<=", blockHeight)
+              .orderBy("height", "desc")
+              .orderBy("created_at", "desc")
+              .first();
+
+            if (!historyRecord) return null;
+
+            return historyRecord;
+          })
+        );
+
+        let filteredItems = items
+          .filter((item): item is NonNullable<typeof items[0]> => item !== null)
+          .map((historyRecord) => ({
+            id: historyRecord.credential_schema_id,
+            tr_id: historyRecord.tr_id,
+            json_schema:
+              historyRecord.json_schema && typeof historyRecord.json_schema !== "string"
+                ? JSON.stringify(historyRecord.json_schema)
+                : historyRecord.json_schema,
+            deposit: historyRecord.deposit,
+            issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
+            verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
+            issuer_validation_validity_period: historyRecord.issuer_validation_validity_period,
+            verifier_validation_validity_period: historyRecord.verifier_validation_validity_period,
+            holder_validation_validity_period: historyRecord.holder_validation_validity_period,
+            issuer_perm_management_mode: historyRecord.issuer_perm_management_mode,
+            verifier_perm_management_mode: historyRecord.verifier_perm_management_mode,
+            archived: historyRecord.archived,
+            created: historyRecord.created,
+            modified: historyRecord.modified,
+            is_active: historyRecord.is_active,
+          }));
+
+        if (trId) filteredItems = filteredItems.filter(item => String(item.tr_id) === String(trId));
+        if (modifiedAfter) {
+          const ts = new Date(modifiedAfter);
+          if (Number.isNaN(ts.getTime())) {
+            return ApiResponder.error(ctx, "Invalid modified_after timestamp", 400);
+          }
+          filteredItems = filteredItems.filter(item => new Date(item.modified) > ts);
+        }
+
+        let onlyActiveBool: boolean | undefined;
+        if (typeof onlyActive === "string") {
+          onlyActiveBool = onlyActive.toLowerCase() === "true";
+        } else if (typeof onlyActive === "boolean") {
+          onlyActiveBool = onlyActive;
+        }
+
+        if (onlyActiveBool === true) {
+          filteredItems = filteredItems.filter(item => item.is_active === true);
+        } else if (onlyActiveBool === false) {
+          filteredItems = filteredItems.filter(item => item.is_active === false);
+        }
+
+        const finalItems = filteredItems.map(({ is_active, ...rest }) => rest);
+        filteredItems = finalItems as typeof filteredItems;
+
+        if (issuerPerm !== undefined) {
+          filteredItems = filteredItems.filter(item => item.issuer_perm_management_mode === issuerPerm);
+        }
+
+        if (verifierPerm !== undefined) {
+          filteredItems = filteredItems.filter(item => item.verifier_perm_management_mode === verifierPerm);
+        }
+
+        filteredItems.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
+        filteredItems = filteredItems.slice(0, limit);
+
+        return ApiResponder.success(ctx, { schemas: filteredItems }, 200);
+      }
 
       const query = knex("credential_schemas");
       if (trId) query.where("tr_id", trId);
@@ -292,7 +428,26 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async JsonSchema(ctx: Context<{ id: number }>) {
     try {
       const { id } = ctx.params;
+      const blockHeight = (ctx.meta as any)?.blockHeight;
 
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("credential_schema_history")
+          .select("json_schema")
+          .where({ credential_schema_id: id })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord) {
+          return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
+        }
+
+        return ApiResponder.success(ctx, { schema: JSON.stringify(historyRecord.json_schema) }, 200);
+      }
+
+      // Otherwise, return latest state
       const schemaRecord = await knex("credential_schemas")
         .select("json_schema")
         .where({ id })
@@ -312,6 +467,30 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action()
   public async getParams(ctx: Context) {
     try {
+      const blockHeight = (ctx.meta as any)?.blockHeight;
+
+      // If AtBlockHeight is provided, query historical state
+      if (typeof blockHeight === "number") {
+        const historyRecord = await knex("module_params_history")
+          .where({ module: ModulesParamsNamesTypes?.CS })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (!historyRecord || !historyRecord.params) {
+          return ApiResponder.error(ctx, "Module parameters not found: credentialschema", 404);
+        }
+
+        const parsedParams =
+          typeof historyRecord.params === "string"
+            ? JSON.parse(historyRecord.params)
+            : historyRecord.params;
+
+        return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
+      }
+
+      // Otherwise, return latest state
       const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.CS });
 
       if (!module || !module.params) {

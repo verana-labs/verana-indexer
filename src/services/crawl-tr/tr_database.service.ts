@@ -7,6 +7,7 @@ import { ModulesParamsNamesTypes, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import ModuleParams from "../../models/modules_params";
 import { TrustRegistry } from "../../models/trust_registry";
+import knex from "../../common/utils/db_connection";
 
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
@@ -27,7 +28,108 @@ export default class TrustRegistryDatabaseService extends BaseService {
             const { tr_id, preferred_language } = ctx.params;
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
+            const blockHeight = (ctx.meta as any)?.blockHeight;
 
+            // If AtBlockHeight is provided, query historical state
+            if (typeof blockHeight === "number") {
+                const trHistory = await knex("trust_registry_history")
+                    .where({ tr_id })
+                    .where("height", "<=", blockHeight)
+                    .orderBy("height", "desc")
+                    .orderBy("created_at", "desc")
+                    .first();
+
+                if (!trHistory) {
+                    return ApiResponder.error(ctx, `TrustRegistry with id ${tr_id} not found`, 404);
+                }
+
+                // Get governance framework versions at this block height
+                const gfvHistory = await knex("governance_framework_version_history")
+                    .where({ tr_id })
+                    .where("height", "<=", blockHeight)
+                    .orderBy("height", "desc")
+                    .orderBy("created_at", "desc");
+
+                // Get unique versions (latest state for each version at block height)
+                const versionMap = new Map<number, any>();
+                for (const gfv of gfvHistory) {
+                    if (!versionMap.has(gfv.version)) {
+                        versionMap.set(gfv.version, gfv);
+                    }
+                }
+
+                const versions = Array.from(versionMap.values()).map(async (gfv: any) => {
+                    // Get documents for this version at block height
+                    const gfdHistory = await knex("governance_framework_document_history")
+                        .where({ gfv_id: gfv.id, tr_id })
+                        .where("height", "<=", blockHeight)
+                        .orderBy("height", "desc")
+                        .orderBy("created_at", "desc");
+
+                    // Get unique documents (latest state for each document at block height)
+                    const docMap = new Map<string, any>();
+                    for (const gfd of gfdHistory) {
+                        const key = `${gfd.url}-${gfd.language}`;
+                        if (!docMap.has(key)) {
+                            docMap.set(key, gfd);
+                        }
+                    }
+
+                    const documents = Array.from(docMap.values()).map((gfd: any) => ({
+                        id: gfd.id,
+                        created: gfd.created,
+                        language: gfd.language,
+                        url: gfd.url,
+                        digest_sri: gfd.digest_sri,
+                    }));
+
+                    return {
+                        id: gfv.id,
+                        tr_id: gfv.tr_id,
+                        created: gfv.created,
+                        version: gfv.version,
+                        active_since: gfv.active_since,
+                        documents,
+                    };
+                });
+
+                const resolvedVersions = await Promise.all(versions);
+
+                let filteredVersions = resolvedVersions;
+                if (activeGfOnly) {
+                    filteredVersions = resolvedVersions
+                        .sort(
+                            (a, b) =>
+                                new Date(b.active_since).getTime() - new Date(a.active_since).getTime()
+                        )
+                        .slice(0, 1);
+                }
+
+                if (preferred_language) {
+                    for (const v of filteredVersions) {
+                        v.documents =
+                            v.documents?.filter((d) => d.language === preferred_language) ?? [];
+                    }
+                }
+
+                const trustRegistry = {
+                    id: trHistory.tr_id,
+                    did: trHistory.did,
+                    controller: trHistory.controller,
+                    created: trHistory.created,
+                    modified: trHistory.modified,
+                    archived: trHistory.archived,
+                    deposit: trHistory.deposit,
+                    aka: trHistory.aka,
+                    language: trHistory.language,
+                    active_version: trHistory.active_version,
+                    versions: filteredVersions,
+                };
+
+                return ApiResponder.success(ctx, { trust_registry: trustRegistry }, 200);
+            }
+
+            // Otherwise, return latest state
             const registry = await TrustRegistry.query()
                 .findById(tr_id)
                 .withGraphFetched("governanceFrameworkVersions.documents");
@@ -80,6 +182,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
+            const blockHeight = (ctx.meta as any)?.blockHeight;
 
             const responseMaxSize =
                 !responseMaxSizeRaw ? 64 : Math.min(Math.max(responseMaxSizeRaw, 1), 1024);
@@ -88,6 +191,142 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 return ApiResponder.error(ctx, "response_max_size must be between 1 and 1024", 400);
             }
 
+            // If AtBlockHeight is provided, query historical state
+            if (typeof blockHeight === "number") {
+                // Get all unique TR IDs that existed at or before the block height
+                const latestHistorySubquery = knex("trust_registry_history")
+                    .select("tr_id")
+                    .select(
+                        knex.raw(
+                            `ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn`
+                        )
+                    )
+                    .where("height", "<=", blockHeight)
+                    .as("ranked");
+
+                const trIdsAtHeight = await knex
+                    .from(latestHistorySubquery)
+                    .select("tr_id")
+                    .where("rn", 1)
+                    .then((rows: any[]) => rows.map((r: any) => r.tr_id));
+
+                if (trIdsAtHeight.length === 0) {
+                    return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                }
+
+                // For each TR, get the latest history record and reconstruct
+                const registries = await Promise.all(
+                    trIdsAtHeight.map(async (trId: number) => {
+                        const trHistory = await knex("trust_registry_history")
+                            .where({ tr_id: trId })
+                            .where("height", "<=", blockHeight)
+                            .orderBy("height", "desc")
+                            .orderBy("created_at", "desc")
+                            .first();
+
+                        if (!trHistory) return null;
+
+                        // Get versions (simplified - just get latest state for each version)
+                        const gfvHistory = await knex("governance_framework_version_history")
+                            .where({ tr_id: trId })
+                            .where("height", "<=", blockHeight)
+                            .orderBy("height", "desc")
+                            .orderBy("created_at", "desc");
+
+                        const versionMap = new Map<number, any>();
+                        for (const gfv of gfvHistory) {
+                            if (!versionMap.has(gfv.version)) {
+                                versionMap.set(gfv.version, gfv);
+                            }
+                        }
+
+                        const versions = await Promise.all(
+                            Array.from(versionMap.values()).map(async (gfv: any) => {
+                                const gfdHistory = await knex("governance_framework_document_history")
+                                    .where({ gfv_id: gfv.id, tr_id: trId })
+                                    .where("height", "<=", blockHeight)
+                                    .orderBy("height", "desc")
+                                    .orderBy("created_at", "desc");
+
+                                const docMap = new Map<string, any>();
+                                for (const gfd of gfdHistory) {
+                                    const key = `${gfd.url}-${gfd.language}`;
+                                    if (!docMap.has(key)) {
+                                        docMap.set(key, gfd);
+                                    }
+                                }
+
+                                const documents = Array.from(docMap.values()).map((gfd: any) => ({
+                                    id: gfd.id,
+                                    created: gfd.created,
+                                    language: gfd.language,
+                                    url: gfd.url,
+                                    digest_sri: gfd.digest_sri,
+                                }));
+
+                                return {
+                                    id: gfv.id,
+                                    tr_id: gfv.tr_id,
+                                    created: gfv.created,
+                                    version: gfv.version,
+                                    active_since: gfv.active_since,
+                                    documents,
+                                };
+                            })
+                        );
+
+                        let filteredVersions = versions;
+                        if (activeGfOnly) {
+                            filteredVersions = versions
+                                .sort((a, b) => new Date(b.active_since).getTime() - new Date(a.active_since).getTime())
+                                .slice(0, 1);
+                        }
+
+                        if (preferredLanguage) {
+                            for (const v of filteredVersions) {
+                                v.documents = v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
+                            }
+                        }
+
+                        return {
+                            id: trHistory.tr_id,
+                            did: trHistory.did,
+                            controller: trHistory.controller,
+                            created: trHistory.created,
+                            modified: trHistory.modified,
+                            archived: trHistory.archived,
+                            deposit: trHistory.deposit,
+                            aka: trHistory.aka,
+                            language: trHistory.language,
+                            active_version: trHistory.active_version,
+                            versions: filteredVersions,
+                        };
+                    })
+                );
+
+                // Filter out nulls and apply filters
+                let filteredRegistries = registries.filter((r): r is NonNullable<typeof registries[0]> => r !== null);
+
+                if (controller) {
+                    filteredRegistries = filteredRegistries.filter(r => r.controller === controller);
+                }
+                if (modifiedAfter) {
+                    const ts = new Date(modifiedAfter);
+                    filteredRegistries = filteredRegistries.filter(r => new Date(r.modified) > ts);
+                }
+
+                // Sort and limit
+                if (modifiedAfter) {
+                    filteredRegistries.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+                } else {
+                    filteredRegistries.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
+                }
+                filteredRegistries = filteredRegistries.slice(0, responseMaxSize);
+
+                return ApiResponder.success(ctx, { trust_registries: filteredRegistries }, 200);
+            }
+
+            // Otherwise, return latest state
             let query = TrustRegistry.query().withGraphFetched("governanceFrameworkVersions.documents");
 
             if (controller) {
@@ -134,6 +373,30 @@ export default class TrustRegistryDatabaseService extends BaseService {
     @Action()
     public async getParams(ctx: Context) {
         try {
+            const blockHeight = (ctx.meta as any)?.blockHeight;
+
+            // If AtBlockHeight is provided, query historical state
+            if (typeof blockHeight === "number") {
+                const historyRecord = await knex("module_params_history")
+                    .where({ module: ModulesParamsNamesTypes?.TR })
+                    .where("height", "<=", blockHeight)
+                    .orderBy("height", "desc")
+                    .orderBy("created_at", "desc")
+                    .first();
+
+                if (!historyRecord || !historyRecord.params) {
+                    return ApiResponder.error(ctx, "Module parameters not found: trustregistry", 404);
+                }
+
+                const parsedParams =
+                    typeof historyRecord.params === "string"
+                        ? JSON.parse(historyRecord.params)
+                        : historyRecord.params;
+
+                return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
+            }
+
+            // Otherwise, return latest state
             const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.TR });
 
             if (!module || !module.params) {
