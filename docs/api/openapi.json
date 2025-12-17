@@ -400,8 +400,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true
+              "type": "boolean"
             },
             "description": "Filter only active governance frameworks"
           },
@@ -463,8 +462,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true
+              "type": "boolean"
             },
             "description": "Filter only active governance frameworks"
           },
@@ -754,8 +752,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Filter only active"
           },
@@ -1089,8 +1086,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Filter only repaid permissions"
           },
@@ -1623,8 +1619,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "description": "Include detailed slashing and repayment information"
           },
@@ -1865,6 +1860,958 @@
                   "type": "object"
                 }
               }
+            }
+          }
+        },
+        "CredentialSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "tr_id": {
+              "type": "string"
+            },
+            "json_schema": {
+              "type": "string"
+            },
+            "deposit": {
+              "type": "string"
+            },
+            "issuer_grantor_validation_validity_period": {
+              "type": "integer"
+            },
+            "verifier_grantor_validation_validity_period": {
+              "type": "integer"
+            },
+            "issuer_validation_validity_period": {
+              "type": "integer"
+            },
+            "verifier_validation_validity_period": {
+              "type": "integer"
+            },
+            "holder_validation_validity_period": {
+              "type": "integer"
+            },
+            "issuer_perm_management_mode": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "ECOSYSTEM",
+                "GRANTOR_VALIDATION"
+              ]
+            },
+            "verifier_perm_management_mode": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "ECOSYSTEM",
+                "GRANTOR_VALIDATION"
+              ]
+            },
+            "archived": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "modified": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "CredentialSchemaResponse": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "$ref": "#/components/schemas/CredentialSchema"
+            }
+          }
+        },
+        "JsonSchemaResponse": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "CredentialSchemaListResponse": {
+          "type": "object",
+          "properties": {
+            "schemas": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CredentialSchema"
+              }
+            }
+          }
+        },
+        "CredentialSchemaHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "history": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "CredentialSchemaParamsResponse": {
+          "type": "object",
+          "properties": {
+            "params": {
+              "type": "object",
+              "properties": {
+                "credential_schema_trust_deposit": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "Permission": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "perm_state": {
+              "type": "string",
+              "enum": [
+                "REPAID",
+                "SLASHED",
+                "REVOKED",
+                "EXPIRED",
+                "ACTIVE",
+                "FUTURE",
+                "INACTIVE"
+              ],
+              "description": "The current state of the permission, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
+            },
+            "grantee_available_actions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "VP_RENEW",
+                  "VP_CANCEL",
+                  "PERM_REVOKE",
+                  "PERM_EXTEND",
+                  "PERM_REPAY"
+                ]
+              },
+              "description": "List of actions available to the grantee for this permission, calculated based on permission type, schema modes, permission state, and validation process state"
+            },
+            "validator_available_actions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "VP_SET_VALIDATED",
+                  "PERM_REVOKE",
+                  "PERM_EXTEND",
+                  "PERM_SLASH"
+                ]
+              },
+              "description": "List of actions available to the validator for this permission, calculated based on permission type, schema modes, permission state, and validation process state"
+            },
+            "weight": {
+              "type": "string",
+              "description": "The node weight of the permission, calculated as the sum of all trust deposits of this permission and all permissions in its subtree. Includes all permissions regardless of state (expired, slashed, active, etc.). Supports AtBlockHeight directive."
+            },
+            "issued": {
+              "type": "string",
+              "description": "Number of credentials issued using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
+            },
+            "verified": {
+              "type": "string",
+              "description": "Number of credentials verified using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
+            },
+            "schema_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ISSUER",
+                "VERIFIER",
+                "ECOSYSTEM"
+              ]
+            },
+            "did": {
+              "type": "string",
+              "nullable": true
+            },
+            "grantee": {
+              "type": "string"
+            },
+            "created_by": {
+              "type": "string"
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "modified": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "extended": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "extended_by": {
+              "type": "string",
+              "nullable": true
+            },
+            "slashed": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "slashed_by": {
+              "type": "string",
+              "nullable": true
+            },
+            "repaid": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "repaid_by": {
+              "type": "string",
+              "nullable": true
+            },
+            "effective_from": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "effective_until": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "revoked": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "revoked_by": {
+              "type": "string",
+              "nullable": true
+            },
+            "country": {
+              "type": "string",
+              "nullable": true
+            },
+            "validation_fees": {
+              "type": "string"
+            },
+            "issuance_fees": {
+              "type": "string"
+            },
+            "verification_fees": {
+              "type": "string"
+            },
+            "deposit": {
+              "type": "string"
+            },
+            "slashed_deposit": {
+              "type": "string"
+            },
+            "repaid_deposit": {
+              "type": "string"
+            },
+            "validator_perm_id": {
+              "type": "string",
+              "nullable": true
+            },
+            "vp_state": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "VALIDATED",
+                "TERMINATED",
+                "VALIDATION_STATE_UNSPECIFIED"
+              ]
+            },
+            "vp_last_state_change": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "vp_current_fees": {
+              "type": "string"
+            },
+            "vp_current_deposit": {
+              "type": "string"
+            },
+            "vp_summary_digest_sri": {
+              "type": "string",
+              "nullable": true
+            },
+            "vp_exp": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "vp_validator_deposit": {
+              "type": "string"
+            },
+            "vp_term_requested": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        },
+        "PermissionResponse": {
+          "type": "object",
+          "properties": {
+            "permission": {
+              "$ref": "#/components/schemas/Permission"
+            }
+          }
+        },
+        "PermissionListResponse": {
+          "type": "object",
+          "properties": {
+            "permissions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Permission"
+              }
+            }
+          }
+        },
+        "PermissionHistoryItem": {
+          "type": "object",
+          "properties": {
+            "permission_id": {
+              "type": "string"
+            },
+            "schema_id": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            },
+            "grantee": {
+              "type": "string"
+            },
+            "event_type": {
+              "type": "string"
+            },
+            "height": {
+              "type": "integer"
+            },
+            "changes": {
+              "type": "object",
+              "nullable": true,
+              "description": "Field-level diffs for the event"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "PermissionHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PermissionHistoryItem"
+              }
+            }
+          }
+        },
+        "PermissionSession": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "controller": {
+              "type": "string"
+            },
+            "agent_perm_id": {
+              "type": "string"
+            },
+            "wallet_agent_perm_id": {
+              "type": "string"
+            },
+            "authz": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "issuer_perm_id": {
+                    "type": "integer"
+                  },
+                  "verifier_perm_id": {
+                    "type": "integer"
+                  },
+                  "wallet_agent_perm_id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "modified": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "PermissionSessionResponse": {
+          "type": "object",
+          "properties": {
+            "session": {
+              "$ref": "#/components/schemas/PermissionSession"
+            }
+          }
+        },
+        "PermissionSessionListResponse": {
+          "type": "object",
+          "properties": {
+            "sessions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PermissionSession"
+              }
+            }
+          }
+        },
+        "PermissionSessionHistoryItem": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "event_type": {
+              "type": "string"
+            },
+            "height": {
+              "type": "integer"
+            },
+            "controller": {
+              "type": "string"
+            },
+            "agent_perm_id": {
+              "type": "string"
+            },
+            "wallet_agent_perm_id": {
+              "type": "string"
+            },
+            "authz": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "changes": {
+              "type": "object",
+              "nullable": true
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "PermissionSessionHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PermissionSessionHistoryItem"
+              }
+            }
+          }
+        },
+        "BeneficiaryResponse": {
+          "type": "object",
+          "properties": {
+            "permissions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Permission"
+              }
+            }
+          }
+        },
+        "TrustDeposit": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "type": "string",
+              "description": "Account address"
+            },
+            "share": {
+              "type": "string",
+              "description": "Current share amount"
+            },
+            "amount": {
+              "type": "string",
+              "description": "Total deposit amount"
+            },
+            "claimable": {
+              "type": "string",
+              "description": "Claimable rewards amount"
+            },
+            "slashed_deposit": {
+              "type": "string",
+              "description": "Total slashed deposit amount"
+            },
+            "repaid_deposit": {
+              "type": "string",
+              "description": "Total repaid deposit amount"
+            },
+            "last_slashed": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last slash event timestamp"
+            },
+            "last_repaid": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last repay event timestamp"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Number of slash events"
+            },
+            "last_repaid_by": {
+              "type": "string",
+              "description": "Account that last performed repayment"
+            }
+          }
+        },
+        "TrustDepositResponse": {
+          "type": "object",
+          "properties": {
+            "trust_deposit": {
+              "$ref": "#/components/schemas/TrustDeposit"
+            }
+          }
+        },
+        "TrustDepositParamsResponse": {
+          "type": "object",
+          "properties": {
+            "params": {
+              "type": "object",
+              "properties": {
+                "trust_deposit_rate": {
+                  "type": "string",
+                  "description": "Trust deposit interest rate",
+                  "example": "0.200000000000000000"
+                },
+                "user_agent_reward_rate": {
+                  "type": "string",
+                  "description": "User agent reward rate",
+                  "example": "0.200000000000000000"
+                },
+                "trust_deposit_share_value": {
+                  "type": "string",
+                  "description": "Value of each trust deposit share",
+                  "example": "1.000000000000000000"
+                },
+                "wallet_user_agent_reward_rate": {
+                  "type": "string",
+                  "description": "Wallet user agent reward rate",
+                  "example": "0.200000000000000000"
+                },
+                "trust_deposit_reclaim_burn_rate": {
+                  "type": "string",
+                  "description": "Burn rate for reclaimed trust deposits",
+                  "example": "0.600000000000000000"
+                }
+              }
+            }
+          }
+        },
+        "TrustDepositHistoryItem": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "description": "History record ID"
+            },
+            "account": {
+              "type": "string",
+              "description": "Account address"
+            },
+            "share": {
+              "type": "string",
+              "description": "Share amount at this point"
+            },
+            "amount": {
+              "type": "string",
+              "description": "Deposit amount at this point"
+            },
+            "claimable": {
+              "type": "string",
+              "description": "Claimable amount at this point"
+            },
+            "slashed_deposit": {
+              "type": "string",
+              "description": "Slashed deposit at this point"
+            },
+            "repaid_deposit": {
+              "type": "string",
+              "description": "Repaid deposit at this point"
+            },
+            "last_slashed": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last slashed timestamp"
+            },
+            "last_repaid": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "Last repaid timestamp"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Slash count at this point"
+            },
+            "last_repaid_by": {
+              "type": "string",
+              "description": "Account that last repaid"
+            },
+            "event_type": {
+              "type": "string",
+              "enum": [
+                "CREATE_TRUST_DEPOSIT",
+                "ADJUST_TRUST_DEPOSIT",
+                "SLASH_TRUST_DEPOSIT",
+                "SLASH_PERM_TRUST_DEPOSIT",
+                "RECLAIM_YIELD",
+                "RECLAIM_DEPOSIT",
+                "REPAY_SLASHED"
+              ],
+              "description": "Type of event that caused this history record"
+            },
+            "height": {
+              "type": "integer",
+              "description": "Block height when this change occurred"
+            },
+            "changes": {
+              "type": "object",
+              "nullable": true,
+              "description": "Field-level diffs showing what changed"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When this history record was created"
+            }
+          }
+        },
+        "TrustDepositHistoryResponse": {
+          "type": "object",
+          "properties": {
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TrustDepositHistoryItem"
+              }
+            }
+          }
+        },
+        "AccountReputationResponse": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "type": "string",
+              "description": "Account address"
+            },
+            "balance": {
+              "type": "string",
+              "description": "Current account balance"
+            },
+            "deposit": {
+              "type": "integer",
+              "description": "Total deposited amount across all trust registries and schemas"
+            },
+            "slashed": {
+              "type": "integer",
+              "description": "Total slashed amount"
+            },
+            "repaid": {
+              "type": "integer",
+              "description": "Total repaid amount"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Total number of slash events"
+            },
+            "first_interaction_ts": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "description": "First interaction timestamp"
+            },
+            "trust_registry_count": {
+              "type": "integer",
+              "description": "Number of trust registries owned"
+            },
+            "credential_schema_count": {
+              "type": "integer",
+              "description": "Number of credential schemas owned"
+            },
+            "slashs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SlashEvent"
+              },
+              "description": "Detailed slash events"
+            },
+            "repayments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RepaymentEvent"
+              },
+              "description": "Detailed repayment events"
+            },
+            "trust_registries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TrustRegistryReputation"
+              },
+              "description": "Reputation details per trust registry"
+            }
+          }
+        },
+        "SlashEvent": {
+          "type": "object",
+          "properties": {
+            "slashed_amount": {
+              "type": "string",
+              "description": "Amount slashed"
+            },
+            "slashed_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Slash timestamp"
+            },
+            "slashed_by": {
+              "type": "string",
+              "description": "Account that performed the slash"
+            }
+          }
+        },
+        "RepaymentEvent": {
+          "type": "object",
+          "properties": {
+            "repaid_amount": {
+              "type": "string",
+              "description": "Amount repaid"
+            },
+            "repaid_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Repayment timestamp"
+            },
+            "repaid_by": {
+              "type": "string",
+              "description": "Account that performed the repayment"
+            }
+          }
+        },
+        "TrustRegistryReputation": {
+          "type": "object",
+          "properties": {
+            "tr_id": {
+              "type": "string",
+              "description": "Trust Registry ID"
+            },
+            "tr_did": {
+              "type": "string",
+              "description": "Trust Registry DID"
+            },
+            "credential_schemas": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CredentialSchemaReputation"
+              },
+              "description": "Reputation details per credential schema"
+            }
+          }
+        },
+        "CredentialSchemaReputation": {
+          "type": "object",
+          "properties": {
+            "schema_id": {
+              "type": "integer",
+              "description": "Credential Schema ID"
+            },
+            "deposit": {
+              "type": "integer",
+              "description": "Deposit amount for this schema"
+            },
+            "slashed": {
+              "type": "integer",
+              "description": "Slashed amount for this schema"
+            },
+            "repaid": {
+              "type": "integer",
+              "description": "Repaid amount for this schema"
+            },
+            "slash_count": {
+              "type": "integer",
+              "description": "Number of slash events for this schema"
+            },
+            "issued": {
+              "type": "integer",
+              "description": "Number of credentials issued"
+            },
+            "verified": {
+              "type": "integer",
+              "description": "Number of credentials verified"
+            },
+            "run_as_validator_vps": {
+              "type": "integer",
+              "description": "Number of validation processes run as validator"
+            },
+            "run_as_applicant_vps": {
+              "type": "integer",
+              "description": "Number of validation processes run as applicant"
+            },
+            "issuer_perm_count": {
+              "type": "integer",
+              "description": "Total issuer permissions"
+            },
+            "verifier_perm_count": {
+              "type": "integer",
+              "description": "Total verifier permissions"
+            },
+            "issuer_grantor_perm_count": {
+              "type": "integer",
+              "description": "Total issuer grantor permissions"
+            },
+            "verifier_grantor_perm_count": {
+              "type": "integer",
+              "description": "Total verifier grantor permissions"
+            },
+            "ecosystem_perm_count": {
+              "type": "integer",
+              "description": "Total ecosystem permissions"
+            },
+            "active_issuer_perm_count": {
+              "type": "integer",
+              "description": "Active issuer permissions"
+            },
+            "active_verifier_perm_count": {
+              "type": "integer",
+              "description": "Active verifier permissions"
+            },
+            "active_issuer_grantor_perm_count": {
+              "type": "integer",
+              "description": "Active issuer grantor permissions"
+            },
+            "active_verifier_grantor_perm_count": {
+              "type": "integer",
+              "description": "Active verifier grantor permissions"
+            },
+            "active_ecosystem_perm_count": {
+              "type": "integer",
+              "description": "Active ecosystem permissions"
+            },
+            "slashs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SchemaSlashEvent"
+              },
+              "description": "Schema-specific slash events"
+            },
+            "repayments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SchemaRepaymentEvent"
+              },
+              "description": "Schema-specific repayment events"
+            }
+          }
+        },
+        "SchemaSlashEvent": {
+          "type": "object",
+          "properties": {
+            "perm_id": {
+              "type": "string",
+              "description": "Permission ID that was slashed"
+            },
+            "schema_id": {
+              "type": "integer",
+              "description": "Schema ID"
+            },
+            "tr_id": {
+              "type": "string",
+              "description": "Trust Registry ID"
+            },
+            "slashed_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Slash timestamp"
+            },
+            "slashed_by": {
+              "type": "string",
+              "description": "Account that performed the slash"
+            }
+          }
+        },
+        "SchemaRepaymentEvent": {
+          "type": "object",
+          "properties": {
+            "perm_id": {
+              "type": "string",
+              "description": "Permission ID that was repaid"
+            },
+            "schema_id": {
+              "type": "integer",
+              "description": "Schema ID"
+            },
+            "tr_id": {
+              "type": "string",
+              "description": "Trust Registry ID"
+            },
+            "repaid_ts": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Repayment timestamp"
+            },
+            "repaid_by": {
+              "type": "string",
+              "description": "Account that performed the repayment"
             }
           }
         }
