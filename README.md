@@ -287,7 +287,7 @@ All messages are JSON strings with the following structure:
 
 ```bash
 # Run the test script (make sure indexer is running first)
-node --loader ts-node/esm src/test-websocket.ts
+node --loader ts-node/esm test/manual/test-websocket.ts
 ```
 
 You should see:
