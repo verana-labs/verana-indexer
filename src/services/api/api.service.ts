@@ -1,15 +1,16 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { IncomingMessage, ServerResponse } from "http";
+import { IncomingMessage, Server, ServerResponse } from "http";
 import { Context, ServiceBroker, Errors } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
 import ApiGateway, { Route } from "moleculer-web";
 import BaseService from "../../base/base.service";
-import { SERVICE } from "../../common";
+import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
+import { eventsBroadcaster } from "./events_broadcaster";
 
-const BLOCK_CHECKPOINT_JOB = "crawl:block";
+const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 
 
 const DEFAULT_ROUTE_CONFIG = {
@@ -239,5 +240,27 @@ function createRoute(
 export default class ApiService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  async started() {
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        resolve();
+      }, 1000);
+    });
+    
+    const server = (this as unknown as { server?: Server }).server;
+    if (server) {
+      eventsBroadcaster.setLogger(this.logger);
+      eventsBroadcaster.initialize(server);
+      this.logger.info("✅ WebSocket events broadcaster initialized on /verana/indexer/v1/events");
+    } else {
+      this.logger.warn("⚠️ HTTP server not found, WebSocket events broadcaster not initialized");
+    }
+  }
+
+  async stopped() {
+    eventsBroadcaster.close();
+    this.logger.info("🔌 WebSocket events broadcaster closed");
   }
 }

@@ -244,3 +244,96 @@ The Verana Indexer is designed specifically for the Verana blockchain. For diffe
    - `networkDenom`
 
 The crawling job configurations in `config.json` (intervals, batch sizes, etc.) are usually fine with defaults, but can be tuned based on network performance requirements.
+
+## Real-Time Event API (WebSocket)
+
+The Verana Indexer provides a **WebSocket** endpoint that broadcasts real-time notifications when blocks are processed. This eliminates the need for polling and enables frontend applications to react immediately when new data becomes available.
+
+### Endpoint
+
+**WebSocket:** `ws://localhost:3001/verana/indexer/v1/events`
+
+> **Note:** This is a WebSocket endpoint, not an HTTP endpoint. Connect using a WebSocket client, not a regular HTTP GET request.
+
+### Use Case
+
+When a frontend application submits a transaction to the blockchain (e.g., creating a DID), it needs to know when the indexer has processed that transaction's block so it can refresh its data. Instead of polling the indexer every few seconds, the application can subscribe to the events endpoint and receive immediate notifications.
+
+**Example Flow:**
+1. Frontend submits transaction to blockchain (e.g., `MsgAddDID`)
+2. Frontend receives transaction hash and block height from blockchain
+3. Frontend subscribes to indexer events endpoint
+4. When indexer processes the block, frontend receives notification
+5. Frontend queries indexer API to get updated data (e.g., `/verana/dd/v1/list`)
+
+### Message Format
+
+All messages are JSON strings with the following structure:
+
+```json
+{
+  "type": "block-processed",
+  "height": 123456,
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+**Event Type:**
+- `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height.
+
+### Quick Test
+
+**Test the WebSocket connection:**
+
+```bash
+# Run the test script (make sure indexer is running first)
+node --loader ts-node/esm test/manual/test-websocket.ts
+```
+
+You should see:
+```
+✅ Connected to Verana Indexer Events WebSocket
+Waiting for block-processed events...
+```
+
+When a block is processed, you'll see:
+```
+📦 Received event: {
+  "type": "block-processed",
+  "height": 123456,
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+
+🎉 New block processed! Height: 123456, Time: 2025-01-15T10:30:00Z
+```
+
+### Usage
+
+
+```javascript
+const ws = new WebSocket('wss://idx.testnet.verana.network/verana/indexer/v1/events');
+
+ws.onopen = () => {
+  console.log('Connected to Verana Indexer Events');
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  if (data.type === 'block-processed') {
+    console.log(`Block ${data.height} processed at ${data.timestamp}`);
+    
+    if (data.height >= expectedBlockHeight) {
+      fetchUpdatedData();
+    }
+  }
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+ws.onclose = () => {
+  console.log('WebSocket connection closed');
+};
+```

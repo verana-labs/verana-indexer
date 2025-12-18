@@ -114,13 +114,13 @@ export default class CrawlTxService extends BullableService {
       .andWhere('height', '<=', endBlock)
       .orderBy('height', 'asc')
       .orderBy('index', 'asc');
-    
+
     this.logger.info(`📝 [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
-    
+
     if (listTxRaw.length === 0) {
       this.logger.warn('⚠️ [HANDLE_TRANSACTION] No transactions found in Transaction table!');
     }
-    
+
     await knex.transaction(async (trx) => {
       await this.insertRelatedTx(listTxRaw, trx);
       if (blockCheckpoint) {
@@ -133,7 +133,25 @@ export default class CrawlTxService extends BullableService {
           .transacting(trx);
       }
     });
+
     this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${endBlock}`);
+    try {
+      await this.broker.call(
+        `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
+        {
+          height: endBlock,
+          timestamp: new Date().toISOString(),
+        }
+      );
+      this.logger.info(
+        `📡 [HANDLE_TRANSACTION] Emitted block-processed event for height ${endBlock}`
+      );
+    } catch (error) {
+      this.logger.warn(
+        `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed event for height ${endBlock}:`,
+        error
+      );
+    }
   }
 
   // get list raw tx from block to block
@@ -464,7 +482,7 @@ export default class CrawlTxService extends BullableService {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return parentTx?.code === 0;
       });
-      
+
       this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
       const DIDfiltered = successfulMsgs
@@ -494,7 +512,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process DID messages:`, err);
           console.error("FATAL CRAWL_TX DID ERROR:", err);
-          
+
         }
       }
 
@@ -525,7 +543,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process TR messages:`, err);
           console.error("FATAL CRAWL_TX TR ERROR:", err);
-          
+
         }
       }
 
@@ -542,7 +560,7 @@ export default class CrawlTxService extends BullableService {
             height: parentTx?.height ?? null,
           };
         });
-      
+
       this.logger.info(`📋 [insertRelatedTx] CredentialSchema messages: ${credentialSchemaMessages.length}`);
 
       if (credentialSchemaMessages?.length) {
@@ -556,7 +574,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process CS messages:`, err);
           console.error("FATAL CRAWL_TX CS ERROR:", err);
-          
+
         }
       }
 
@@ -584,7 +602,7 @@ export default class CrawlTxService extends BullableService {
         } catch (err) {
           this.logger.error(`❌ [insertRelatedTx] Failed to process Permission messages:`, err);
           console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
-          
+
         }
       }
 
@@ -610,7 +628,7 @@ export default class CrawlTxService extends BullableService {
           { trustDepositList },
         );
       }
-      
+
       this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
     }
   }

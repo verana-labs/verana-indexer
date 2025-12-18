@@ -141,7 +141,10 @@ export default class CrawlBlockService extends BullableService {
       // insert data to DB
       await this.handleListBlock(mergeBlockResponses);
 
-      // update crawled block to db
+      // update crawled block checkpoint in DB.
+      // Note: the "block-processed" WebSocket event is now emitted
+      // ONLY after all related transactions have been fully processed
+      // and saved (see CrawlTxService.jobHandlerCrawlTx).
       if (this._currentBlock < endBlock) {
         await BlockCheckpoint.query()
           .update(

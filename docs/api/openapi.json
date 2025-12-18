@@ -3976,6 +3976,9 @@
     {
       "name": "Indexer",
       "description": "Indexer state and changes tracking operations"
+    },
+    {
+      "description": "## Real-Time Event (WebSocket)\n\n**Endpoint URLs:**\n- Local: `ws://localhost:3001/verana/indexer/v1/events`\n- Testnet: `wss://idx.testnet.verana.network/verana/indexer/v1/events`\n\n**Message Format:**\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**Event Type:** `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height (ISO 8601 format with 'Z' designator).\n\n**Example:**\n```javascript\nconst ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  if (data.type === 'block-processed') {\n    console.log(`Block ${data.height} processed`);\n    // Now safe to query indexer API for updated data\n  }\n};\n```"
     }
   ]
 }
