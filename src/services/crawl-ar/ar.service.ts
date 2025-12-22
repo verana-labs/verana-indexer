@@ -14,6 +14,17 @@ interface Balance {
     amount: string;
 }
 
+interface AccountInsertData {
+    address: string;
+    type: string;
+    balances: unknown[];
+    spendable_balances: unknown[];
+    account_number: number;
+    sequence: number;
+    created_at: string;
+    [key: string]: unknown;
+}
+
 @Service({
     name: SERVICE.V1.HANDLE_ACCOUNTS.key,
     version: 1,
@@ -223,7 +234,7 @@ export default class CrawlNewAccountsService extends BullableService {
     }
 
     private pendingAccountCreates = new Set<string>();
-    private accountCreateBatch: Array<{ address: string; accountData: any }> = [];
+    private accountCreateBatch: Array<{ address: string; accountData: AccountInsertData }> = [];
     private accountCreateTimeout: NodeJS.Timeout | null = null;
     private readonly ACCOUNT_BATCH_SIZE = 50;
     private readonly ACCOUNT_BATCH_DELAY = 100; // ms
@@ -237,7 +248,7 @@ export default class CrawlNewAccountsService extends BullableService {
         if (this.pendingAccountCreates.has(address)) return;
         this.pendingAccountCreates.add(address);
 
-        const accountData: any = {
+        const accountData: AccountInsertData = {
             address,
             type: 'user-accounts',
             balances: [],
@@ -286,10 +297,12 @@ export default class CrawlNewAccountsService extends BullableService {
                 const accountDataList = toCreate.map(b => b.accountData);
                 try {
                     await Account.query(knex).insert(accountDataList);
-                } catch (err: any) {
-                    if (err?.nativeError?.code === '42703' && err?.nativeError?.column === 'pub_key') {
-                        const retryData = accountDataList.map((data: any) => {
-                            const { pub_key, ...rest } = data;
+                } catch (err: unknown) {
+                    const e = err as { nativeError?: { code?: string; column?: string } };
+                    if (e?.nativeError?.code === '42703' && e?.nativeError?.column === 'pub_key') {
+                        const retryData = accountDataList.map((data) => {
+                            const rest = { ...data };
+                            delete rest.pub_key;
                             return rest;
                         });
                         await Account.query(knex).insert(retryData);
@@ -298,8 +311,9 @@ export default class CrawlNewAccountsService extends BullableService {
                     }
                 }
             }
-        } catch (err: any) {
-            if (err?.code === '23505' || err?.nativeError?.code === '23505') {
+        } catch (err: unknown) {
+            const e = err as { code?: string; nativeError?: { code?: string } };
+            if (e?.code === '23505' || e?.nativeError?.code === '23505') {
             } else {
                 this.logger.error(`[ENSURE_ACCOUNT] Batch insert error:`, err);
             }
