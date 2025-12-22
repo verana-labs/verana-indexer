@@ -1311,7 +1311,7 @@ export default class PermIngestService extends Service {
           .update({
             repaid: now,
             repaid_by: msg.creator,
-            repaid_deposit: slashedDeposit,
+            repaid_deposit: String(slashedDeposit),
             modified: now,
           })
           .returning("*");
