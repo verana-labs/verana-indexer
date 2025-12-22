@@ -65,18 +65,26 @@ export default class HandleTxVoteService extends BullableService {
     });
 
     await knex.transaction(async (trx) => {
-      votesInsert.forEach(async (vote) => {
-        const resultInsert = await Vote.query(trx)
-          .insert(vote)
-          .onConflict(['proposal_id', 'voter'])
-          .merge(['vote_option', 'height', 'tx_id', 'txhash'])
-          .where('vote.height', '<=', vote.height)
-          .transacting(trx);
-        this.logger.debug('result insert vote: ', resultInsert);
-      });
+      if (votesInsert.length > 0) {
+        const CHUNK_SIZE = 100;
+        for (let i = 0; i < votesInsert.length; i += CHUNK_SIZE) {
+          const chunk = votesInsert.slice(i, i + CHUNK_SIZE);
+          await Vote.query(trx)
+            .insert(chunk)
+            .onConflict(['proposal_id', 'voter'])
+            .merge({
+              vote_option: knex.raw('EXCLUDED.vote_option'),
+              height: knex.raw('EXCLUDED.height'),
+              tx_id: knex.raw('EXCLUDED.tx_id'),
+              txhash: knex.raw('EXCLUDED.txhash')
+            })
+            .whereRaw('vote.height <= EXCLUDED.height')
+            .transacting(trx);
+        }
+      }
+      
       if (blockCheckpoint) {
         blockCheckpoint.height = endBlock;
-
         await BlockCheckpoint.query()
           .insert(blockCheckpoint)
           .onConflict('job_name')

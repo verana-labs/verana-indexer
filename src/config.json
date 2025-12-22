@@ -27,9 +27,16 @@
   },
   "crawlBlock": {
     "millisecondCrawl": 5000,
+    "millisecondCrawlCaughtUp": 200,
     "blocksPerCall": 100,
     "startBlock": 0,
-    "saveRawLog": true
+    "saveRawLog": true,
+    "caughtUpThreshold": 3,
+    "enableOptimizedPolling": true,
+    "heightCheckOptimization": true,
+    "rpcRetryAttempts": 3,
+    "rpcRetryDelay": 1000,
+    "rpcTimeout": 30000
   },
   "crawlTransaction": {
     "key": "crawlTransaction",
@@ -67,7 +74,10 @@
     "lastEventsTypeTx": [
       "tx",
       "ethereum_tx"
-    ]
+    ],
+    "rpcRetryAttempts": 3,
+    "rpcRetryDelay": 1000,
+    "rpcTimeout": 30000
   },
   "crawlSigningInfo": {
     "millisecondCrawl": null,

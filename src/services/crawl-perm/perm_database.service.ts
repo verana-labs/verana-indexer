@@ -1363,7 +1363,7 @@ export default class PermIngestService extends Service {
     let currentPermId: string | null = permId;
     
     while (currentPermId) {
-      const perm: { validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: currentPermId }).first();
+      const perm: { validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: currentPermId }).select('validator_perm_id').first();
       if (!perm) break;
 
       const updates: any = {};
