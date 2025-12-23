@@ -115,7 +115,7 @@ export default class CrawlTxService extends BullableService {
       );
 
       if (startBlock >= endBlock) {
-        this.logger.info('⏳ [HANDLE_TRANSACTION] No new blocks to process (startBlock >= endBlock)');
+        this.logger.debug(`⏳ [HANDLE_TRANSACTION] No new blocks to process (${startBlock} >= ${endBlock})`);
         return;
       }
 
@@ -128,7 +128,7 @@ export default class CrawlTxService extends BullableService {
       this.logger.info(`📝 [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
 
       if (listTxRaw.length === 0) {
-        this.logger.warn('⚠️ [HANDLE_TRANSACTION] No transactions found in Transaction table!');
+        this.logger.info(`ℹ️ [HANDLE_TRANSACTION] No transactions found for blocks ${startBlock + 1}-${endBlock}`);
         if (blockCheckpoint) {
           await knex.transaction(async (trx) => {
             blockCheckpoint.height = endBlock;

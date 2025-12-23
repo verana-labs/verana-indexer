@@ -11,6 +11,7 @@ import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import { JsonRpcRequest, JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
+import WebSocket from 'ws';
 import {
   BULL_JOB_NAME,
   getHttpBatchClient,
@@ -25,6 +26,7 @@ import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
+import { Network } from '../../network';
 
 @Service({
   name: SERVICE.V1.CrawlBlock.key,
@@ -49,6 +51,24 @@ export default class CrawlBlockService extends BullableService {
 
   private _lastCheckedHeight: number = 0;
 
+  private _websocket: WebSocket | null = null;
+
+  private _websocketConnected: boolean = false;
+
+  private _websocketReconnectTimer: NodeJS.Timeout | null = null;
+
+  private _initialSyncComplete: boolean = false;
+
+  private _lastLatestBlockHeight: number = 0;
+
+  private _blocksProcessedThisCycle: number = 0;
+
+  private _lastWebSocketBlockHeight: number = 0;
+
+  private _websocketFailureCount: number = 0;
+
+  private _lastRpcBackupCheck: number = 0;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
     this._httpBatchClient = getHttpBatchClient();
@@ -69,7 +89,7 @@ export default class CrawlBlockService extends BullableService {
         return;
       }
       this.logger.error(`❌ Unexpected error in job handler: ${error}`);
-      throw error;
+      this.logger.error('💀 Fatal error, exiting process...');
     }
   }
 
@@ -114,13 +134,52 @@ export default class CrawlBlockService extends BullableService {
     }
 
     this._currentBlock = blockHeightCrawled ? blockHeightCrawled.height : 0;
-    this.logger.info(`_currentBlock: ${this._currentBlock}`);
+    
+    try {
+      const latestBlockResponse: GetLatestBlockResponseSDKType = await this.retryRpcCall(
+        () => this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getLatestBlock(),
+        'getLatestBlock'
+      );
+      const latestBlockNetwork = latestBlockResponse?.block?.header?.height
+        ? parseInt(latestBlockResponse.block.header.height.toString(), 10)
+        : 0;
+      
+      const blocksBehind = latestBlockNetwork - this._currentBlock;
+      
+      if (blocksBehind > 0) {
+        this._initialSyncComplete = false;
+        this.logger.info(
+          `📊 Initial Sync Status: NOT COMPLETE | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Blocks Behind: ${blocksBehind} | Status: Catching up with existing blocks...`
+        );
+      } else {
+        this._initialSyncComplete = true;
+        this.logger.info(
+          `✅ Initial Sync Status: COMPLETE | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Blocks Behind: ${blocksBehind} | Status: Ready for new blocks`
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`⚠️ Could not check initial sync status: ${error}. Will check on first crawl cycle.`);
+      this._initialSyncComplete = false;
+    }
   }
 
   async handleJobCrawlBlock() {
     if (this._processingLock) {
-      this.logger.debug('⏸️ Block crawling already in progress, skipping...');
       return;
+    }
+
+    const isCaughtUp = this._isCaughtUp && this._initialSyncComplete;
+    const isWebSocketActive = config.crawlBlock.enableWebSocketSubscription &&
+      this._websocketConnected &&
+      isCaughtUp;
+    
+    if (isWebSocketActive) {
+      const now = Date.now();
+      const backupInterval = 10000;
+      if (this._lastRpcBackupCheck > 0 && (now - this._lastRpcBackupCheck) < backupInterval) {
+        return;
+      }
+      this._lastRpcBackupCheck = now;
     }
 
     this._processingLock = true;
@@ -159,6 +218,21 @@ export default class CrawlBlockService extends BullableService {
         10
       );
 
+      if (latestBlockNetwork <= 0) {
+        this.logger.error(`❌ Invalid latest block height: ${latestBlockNetwork}`);
+      }
+
+      if (this._lastLatestBlockHeight > 0 && latestBlockNetwork < this._lastLatestBlockHeight - 1000) {
+        this.logger.error(`❌ Block height decreased: ${this._lastLatestBlockHeight} -> ${latestBlockNetwork}`);
+      }
+
+      this._lastLatestBlockHeight = latestBlockNetwork;
+      const blocksBehind = latestBlockNetwork - this._currentBlock;
+      
+      if (isCaughtUp && blocksBehind > 1) {
+        this.logger.warn(`⚠️ Block gap detected: ${blocksBehind} blocks behind`);
+      }
+
       const startBlock = this._currentBlock + 1;
 
       let endBlock = startBlock + config.crawlBlock.blocksPerCall - 1;
@@ -167,10 +241,14 @@ export default class CrawlBlockService extends BullableService {
       }
 
       if (startBlock > latestBlockNetwork) {
+        this.logger.info(
+          `✅ Already at latest block | Current: ${this._currentBlock} | Latest: ${latestBlockNetwork} | Status: Waiting for new blocks`
+        );
         await this.adjustPollingInterval(latestBlockNetwork);
         return;
       }
 
+      this._blocksProcessedThisCycle = endBlock - startBlock + 1;
       const blockQueries = [];
       for (let i = startBlock; i <= endBlock; i += 1) {
         try {
@@ -249,16 +327,12 @@ export default class CrawlBlockService extends BullableService {
       }
 
       if (mergeBlockResponses.length === 0) {
-        this.logger.warn('⚠️ No valid blocks to process after filtering. Skipping this cycle.');
+        this.logger.warn('⚠️ No valid blocks to process. Skipping this cycle.');
         return;
       }
 
       await this.handleListBlock(mergeBlockResponses);
 
-      // update crawled block checkpoint in DB.
-      // Note: the "block-processed" WebSocket event is now emitted
-      // ONLY after all related transactions have been fully processed
-      // and saved (see CrawlTxService.jobHandlerCrawlTx).
       if (this._currentBlock < endBlock) {
         await BlockCheckpoint.query()
           .update(
@@ -271,16 +345,23 @@ export default class CrawlBlockService extends BullableService {
             job_name: BULL_JOB_NAME.CRAWL_BLOCK,
           });
         this._currentBlock = endBlock;
+        
+        const remainingBlocks = latestBlockNetwork - this._currentBlock;
+        if (!this._initialSyncComplete && remainingBlocks <= 0) {
+          this._initialSyncComplete = true;
+          this.logger.info(`✅ Initial sync complete. Current: ${this._currentBlock}, Latest: ${latestBlockNetwork}`);
+        }
       }
 
       await this.adjustPollingInterval(latestBlockNetwork);
     } catch (error: any) {
       if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
         this.logger.error(`❌ Network connection error in block crawling (${error.code}): ${error.message}`);
+        this.logger.info('⏭️ Skipping this cycle, will retry on next polling interval');
       } else {
-        this.logger.error(`❌ Error in block crawling (non-fatal): ${error}`);
+        this.logger.error(`❌ Critical error in block crawling: ${error}`);
+        this.logger.error('💀 Fatal error, exiting process...');
       }
-      this.logger.info('⏭️ Skipping this cycle, will retry on next polling interval');
     } finally {
       this._processingLock = false;
     }
@@ -422,6 +503,29 @@ export default class CrawlBlockService extends BullableService {
 
     this._isCaughtUp = isCaughtUp;
 
+    if (config.crawlBlock.enableWebSocketSubscription) {
+      if (isCaughtUp && !wasCaughtUp && this._initialSyncComplete) {
+        this.logger.info(
+          `🔄 Sync Status: CAUGHT UP | Blocks Behind: ${blocksBehind} (threshold: ${threshold}) | Initial Sync: COMPLETE | Action: Starting WebSocket subscription for instant block notifications`
+        );
+        await this.startWebSocketSubscription();
+      } else if (isCaughtUp && !wasCaughtUp && !this._initialSyncComplete) {
+        this.logger.info(
+          `⏳ Sync Status: Within threshold but initial sync NOT COMPLETE | Blocks Behind: ${blocksBehind} | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Action: Continuing to crawl existing blocks before starting WebSocket`
+        );
+      } else if (!isCaughtUp && wasCaughtUp) {
+        this.logger.info(
+          `🔄 Sync Status: FELL BEHIND | Blocks Behind: ${blocksBehind} (threshold: ${threshold}) | Action: Stopping WebSocket subscription, using polling instead`
+        );
+        await this.stopWebSocketSubscription();
+      } else if (isCaughtUp && this._initialSyncComplete && !this._websocketConnected) {
+        this.logger.info(
+          `🔄 Sync Status: CAUGHT UP | Initial Sync: COMPLETE | WebSocket: NOT CONNECTED | Action: Attempting to start WebSocket subscription`
+        );
+        await this.startWebSocketSubscription();
+      }
+    }
+
     const targetInterval = isCaughtUp
       ? (config.crawlBlock.millisecondCrawlCaughtUp || 500)
       : config.crawlBlock.millisecondCrawl;
@@ -438,7 +542,8 @@ export default class CrawlBlockService extends BullableService {
         await this.updateJobInterval(targetInterval);
         this._currentInterval = targetInterval;
       } catch (error) {
-        this.logger.error(`Failed to update job interval: ${error}`);
+        this.logger.error(`❌ Critical error updating job interval: ${error}`);
+        this.logger.error('💀 Fatal error, exiting process...');
       } finally {
         this._updatingInterval = false;
       }
@@ -482,8 +587,9 @@ export default class CrawlBlockService extends BullableService {
 
       this.logger.info(`✅ Successfully updated job interval to ${newInterval}ms`);
     } catch (error) {
-      this.logger.error(`❌ Error updating job interval: ${error}`);
-      throw error;
+      this.logger.error(`❌ Critical error updating job interval: ${error}`);
+      this.logger.error('💀 Fatal error, exiting process...');
+      
     } finally {
       await redisClient.quit();
     }
@@ -594,8 +700,9 @@ export default class CrawlBlockService extends BullableService {
         });
       }
     } catch (error) {
-      this.logger.error(error);
-      throw error;
+      this.logger.error(`❌ Critical error in handleListBlock: ${error}`);
+      this.logger.error('💀 Fatal error, exiting process...');
+      
     }
   }
 
@@ -604,6 +711,13 @@ export default class CrawlBlockService extends BullableService {
     this._registry = new ChainRegistry(this.logger, providerRegistry);
 
     await this.waitForServices(SERVICE.V1.CrawlTransaction.name);
+    
+    this.logger.info(
+      `🚀 CrawlBlock Service Starting | Initial Polling Interval: ${config.crawlBlock.millisecondCrawl}ms | ` +
+      `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
+      `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
+    );
+    
     this.createJob(
       `${BULL_JOB_NAME.CRAWL_BLOCK}`,
       `${BULL_JOB_NAME.CRAWL_BLOCK}`,
@@ -623,5 +737,158 @@ export default class CrawlBlockService extends BullableService {
 
   public setRegistry(registry: ChainRegistry) {
     this._registry = registry;
+  }
+
+  private getWebSocketUrl(): string {
+    const rpcUrl = Network?.RPC || '';
+    if (!rpcUrl) {
+      this.logger.error('❌ RPC_ENDPOINT is not configured');
+      this.logger.error('💀 Fatal error, exiting process...');
+      
+    }
+
+    let wsUrl = rpcUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+    
+    wsUrl = wsUrl.replace(/\/$/, '');
+    
+    if (!wsUrl.endsWith('/websocket')) {
+      wsUrl += '/websocket';
+    }
+
+    return wsUrl;
+  }
+
+  private async startWebSocketSubscription(): Promise<void> {
+    if (this._websocket && this._websocketConnected) {
+      this.logger.debug('WebSocket already connected, skipping subscription');
+      return;
+    }
+
+    if (this._websocketReconnectTimer) {
+      clearTimeout(this._websocketReconnectTimer);
+      this._websocketReconnectTimer = null;
+    }
+
+    try {
+      const wsUrl = this.getWebSocketUrl();
+      this.logger.info(`🔌 Connecting to Verana RPC WebSocket: ${wsUrl}`);
+
+      this._websocket = new WebSocket(wsUrl);
+
+      this._websocket.on('open', () => {
+        this.logger.info(
+          `✅ WebSocket Status: CONNECTED | URL: ${wsUrl} | Initial Sync: ${this._initialSyncComplete ? 'COMPLETE' : 'IN PROGRESS'} | Ready to receive new block events`
+        );
+        this._websocketConnected = true;
+
+        if (this._websocket && this._websocket.readyState === WebSocket.OPEN) {
+          this._websocket.send(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'subscribe',
+              id: 'new-block-sub',
+              params: {
+                query: "tm.event = 'NewBlock'"
+              }
+            })
+          );
+          this.logger.info('📡 WebSocket Subscription: Subscribed to NewBlock events | Status: ACTIVE');
+        }
+      });
+
+      this._websocket.on('message', async (data: WebSocket.Data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (!msg.result?.data?.value?.block) {
+            return;
+          }
+
+          if (!this._isCaughtUp || !this._initialSyncComplete) {
+            return;
+          }
+
+          const blockHeight = Number(msg.result.data.value.block.header.height);
+          if (blockHeight <= this._currentBlock) {
+            return;
+          }
+
+          this.logger.info(`🔔 WebSocket: New block ${blockHeight} detected, fetching immediately`);
+          this._lastWebSocketBlockHeight = blockHeight;
+
+          setImmediate(async () => {
+            try {
+              await this.handleJobCrawlBlock();
+            } catch (error: any) {
+              if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
+                this.logger.warn(`⚠️ WebSocket fetch failed for block ${blockHeight}: ${error.message}`);
+              } else {
+                this.logger.error(`❌ WebSocket fetch failed for block ${blockHeight}: ${error}`);
+              }
+            }
+          });
+        } catch (err) {
+          this.logger.error(`❌ WebSocket message error: ${err}`);
+        }
+      });
+
+      this._websocket.on('error', (err: Error) => {
+        this._websocketFailureCount++;
+        this.logger.error(`❌ WebSocket error: ${err.message} (failures: ${this._websocketFailureCount})`);
+        this._websocketConnected = false;
+        this._lastRpcBackupCheck = 0;
+      });
+
+      this._websocket.on('close', () => {
+        this.logger.warn(`⚠️ WebSocket closed. RPC polling will continue as backup`);
+        this._websocketConnected = false;
+        this._websocket = null;
+        this._lastRpcBackupCheck = 0;
+
+        if (this._isCaughtUp && this._initialSyncComplete && config.crawlBlock.enableWebSocketSubscription) {
+          const reconnectDelay = config.crawlBlock.websocketReconnectDelay || 2000;
+          this._websocketReconnectTimer = setTimeout(() => {
+            this.startWebSocketSubscription().catch((err) => {
+              this.logger.error(`❌ WebSocket reconnection failed: ${err}`);
+            });
+          }, reconnectDelay);
+        }
+      });
+    } catch (error) {
+      this.logger.error(`❌ Critical error starting WebSocket subscription: ${error}`);
+      this._websocketConnected = false;
+      this.logger.error('💀 Fatal error, exiting process...');
+      
+    }
+  }
+
+
+  private async stopWebSocketSubscription(): Promise<void> {
+    if (this._websocketReconnectTimer) {
+      clearTimeout(this._websocketReconnectTimer);
+      this._websocketReconnectTimer = null;
+      this.logger.debug('🔄 WebSocket: Cancelled pending reconnection timer');
+    }
+
+    if (this._websocket) {
+      try {
+        this._websocket.close();
+        this.logger.info(
+          `🔌 WebSocket Status: STOPPED | Reason: Fell behind or service stopping | Initial Sync: ${this._initialSyncComplete ? 'COMPLETE' : 'IN PROGRESS'}`
+        );
+      } catch (error) {
+        this.logger.error(`❌ WebSocket Stop Error: ${error}`);
+      } finally {
+        this._websocket = null;
+        this._websocketConnected = false;
+      }
+    } else {
+      this.logger.debug('ℹ️ WebSocket: Already stopped, no action needed');
+    }
+  }
+
+ 
+  public async stopped() {
+    await this.stopWebSocketSubscription();
+    return super.stopped();
   }
 }
