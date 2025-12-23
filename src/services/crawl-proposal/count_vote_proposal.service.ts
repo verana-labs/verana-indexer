@@ -43,63 +43,70 @@ export default class CountVoteProposalService extends BullableService {
       )
       .select('*');
 
-    votingProposals.forEach(async (proposal: Proposal) => {
-      const proposalId = proposal.proposal_id;
-      this.logger.info('Count vote for proposal id ', proposalId);
+    const BATCH_SIZE = 5; 
+    for (let i = 0; i < votingProposals.length; i += BATCH_SIZE) {
+      const batch = votingProposals.slice(i, i + BATCH_SIZE);
+      
+      await Promise.all(
+        batch.map(async (proposal: Proposal) => {
+          const proposalId = proposal.proposal_id;
+          this.logger.info('Count vote for proposal id ', proposalId);
 
-      const voteCounted =
-        new Date(proposal.voting_end_time) <= latestCheckpointTime;
+          const voteCounted =
+            new Date(proposal.voting_end_time) <= latestCheckpointTime;
 
-      await knex.transaction(async (trx) => {
-        const [
-          countVoteYes,
-          countVoteNo,
-          countVoteNoWithVeto,
-          countVoteAbstain,
-          countVoteUnspecified,
-        ] = await Promise.all([
-          Vote.query()
-            .where('proposal_id', proposalId)
-            .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_YES)
-            .count()
-            .transacting(trx),
-          Vote.query()
-            .where('proposal_id', proposalId)
-            .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO)
-            .count()
-            .transacting(trx),
-          Vote.query()
-            .where('proposal_id', proposalId)
-            .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO_WITH_VETO)
-            .count()
-            .transacting(trx),
-          Vote.query()
-            .where('proposal_id', proposalId)
-            .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_ABSTAIN)
-            .count()
-            .transacting(trx),
-          Vote.query()
-            .where('proposal_id', proposalId)
-            .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_UNSPECIFIED)
-            .count()
-            .transacting(trx),
-        ]);
+          await knex.transaction(async (trx) => {
+            const [
+              countVoteYes,
+              countVoteNo,
+              countVoteNoWithVeto,
+              countVoteAbstain,
+              countVoteUnspecified,
+            ] = await Promise.all([
+              Vote.query()
+                .where('proposal_id', proposalId)
+                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_YES)
+                .count()
+                .transacting(trx),
+              Vote.query()
+                .where('proposal_id', proposalId)
+                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO)
+                .count()
+                .transacting(trx),
+              Vote.query()
+                .where('proposal_id', proposalId)
+                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO_WITH_VETO)
+                .count()
+                .transacting(trx),
+              Vote.query()
+                .where('proposal_id', proposalId)
+                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_ABSTAIN)
+                .count()
+                .transacting(trx),
+              Vote.query()
+                .where('proposal_id', proposalId)
+                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_UNSPECIFIED)
+                .count()
+                .transacting(trx),
+            ]);
 
-        await Proposal.query()
-          .where('proposal_id', proposalId)
-          .patch({
-            count_vote: {
-              yes: countVoteYes[0].count,
-              no: countVoteNo[0].count,
-              abstain: countVoteAbstain[0].count,
-              no_with_veto: countVoteNoWithVeto[0].count,
-              unspecified: countVoteUnspecified[0].count,
-            },
-            vote_counted: voteCounted,
-          })
-          .transacting(trx);
-      });
-    });
+            await Proposal.query()
+              .where('proposal_id', proposalId)
+              .patch({
+                count_vote: {
+                  yes: countVoteYes[0].count,
+                  no: countVoteNo[0].count,
+                  abstain: countVoteAbstain[0].count,
+                  no_with_veto: countVoteNoWithVeto[0].count,
+                  unspecified: countVoteUnspecified[0].count,
+                },
+                vote_counted: voteCounted,
+              })
+              .transacting(trx);
+          });
+        })
+      );
+    }
   }
 
   public async _start() {

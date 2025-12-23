@@ -195,7 +195,7 @@ export default class CrawlTrustDepositService extends BullableService {
 
       const result = await this.broker.call(
         `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_trust_deposit`,
-        { account, slashed, lastSlashed, slashCount, height }
+        { account, slashed: slashed.toString(), lastSlashed, slashCount, height }
       );
 
       if (result) {

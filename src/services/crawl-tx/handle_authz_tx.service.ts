@@ -39,9 +39,9 @@ export default class HandleAuthzTxService extends BullableService {
       .andWhere('parent_id', null);
     const listSubTxAuthz: TransactionMessage[] = [];
 
-    listTxMsgs.forEach(async (txMsg) => {
+    listTxMsgs.forEach((txMsg) => {
       this.logger.debug('Handling tx msg id: ', txMsg.id);
-      txMsg?.content?.msgs.forEach(async (msg: any, index: number) => {
+      txMsg?.content?.msgs.forEach((msg: any, index: number) => {
         listSubTxAuthz.push(
           TransactionMessage.fromJson({
             tx_id: txMsg.tx_id,
