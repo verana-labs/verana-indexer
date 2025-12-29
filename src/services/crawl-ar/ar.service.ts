@@ -14,6 +14,17 @@ interface Balance {
     amount: string;
 }
 
+interface AccountInsertData {
+    address: string;
+    type: string;
+    balances: unknown[];
+    spendable_balances: unknown[];
+    account_number: number;
+    sequence: number;
+    created_at: string;
+    [key: string]: unknown;
+}
+
 @Service({
     name: SERVICE.V1.HANDLE_ACCOUNTS.key,
     version: 1,
@@ -51,6 +62,11 @@ export default class CrawlNewAccountsService extends BullableService {
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
+        }
+        await this.flushAccountBatch();
+        if (this.accountCreateTimeout) {
+            clearTimeout(this.accountCreateTimeout);
+            this.accountCreateTimeout = null;
         }
         this.accountCache.clear();
     }
@@ -114,6 +130,8 @@ export default class CrawlNewAccountsService extends BullableService {
                 if (this.ENABLE_RECONCILE && Network?.LCD) {
                     await this.reconcileChangedAddresses(Array.from(changedAddresses), nextBlocks[nextBlocks.length - 1].height);
                 }
+
+                await this.flushAccountBatch();
 
                 totalBlocksProcessed += nextBlocks.length;
                 const newHeight = nextBlocks[nextBlocks.length - 1].height;
@@ -215,13 +233,22 @@ export default class CrawlNewAccountsService extends BullableService {
         }
     }
 
+    private pendingAccountCreates = new Set<string>();
+    private accountCreateBatch: Array<{ address: string; accountData: AccountInsertData }> = [];
+    private accountCreateTimeout: NodeJS.Timeout | null = null;
+    private readonly ACCOUNT_BATCH_SIZE = 50;
+    private readonly ACCOUNT_BATCH_DELAY = 100; // ms
+
     private async ensureAccountExists(address: string): Promise<void> {
         if (!address) return;
 
         const existing = await this.getAccountFromCacheOrDB(address);
         if (existing) return;
 
-        const accountData: any = {
+        if (this.pendingAccountCreates.has(address)) return;
+        this.pendingAccountCreates.add(address);
+
+        const accountData: AccountInsertData = {
             address,
             type: 'user-accounts',
             balances: [],
@@ -231,18 +258,70 @@ export default class CrawlNewAccountsService extends BullableService {
             created_at: new Date().toISOString(),
         };
 
-        try {
-            await Account.query(knex).insert(accountData);
-            this.accountCache.delete(address);
-        } catch (err: any) {
-            if (err?.nativeError?.code === '42703' && err?.nativeError?.column === 'pub_key') {
-                delete accountData.pub_key;
-                await Account.query(knex).insert(accountData);
-                this.accountCache.delete(address);
-            } else if (err?.code === '23505' || err?.nativeError?.code === '23505') {
-            } else {
-                this.logger.error(`[ENSURE_ACCOUNT] Error creating account ${address}:`, err);
+        this.accountCreateBatch.push({ address, accountData });
+
+        if (this.accountCreateBatch.length >= this.ACCOUNT_BATCH_SIZE) {
+            await this.flushAccountBatch();
+        } else {
+            if (this.accountCreateTimeout) {
+                clearTimeout(this.accountCreateTimeout);
             }
+            this.accountCreateTimeout = setTimeout(() => {
+                this.flushAccountBatch().catch(err => {
+                    this.logger.error('[ENSURE_ACCOUNT] Batch flush error:', err);
+                });
+            }, this.ACCOUNT_BATCH_DELAY);
+        }
+    }
+
+    private async flushAccountBatch(): Promise<void> {
+        if (this.accountCreateBatch.length === 0) return;
+
+        const batch = this.accountCreateBatch.splice(0, this.ACCOUNT_BATCH_SIZE);
+        const addresses = batch.map(b => b.address);
+        
+        if (this.accountCreateTimeout) {
+            clearTimeout(this.accountCreateTimeout);
+            this.accountCreateTimeout = null;
+        }
+
+        try {
+            const existing = await Account.query(knex)
+                .whereIn('address', addresses)
+                .select('address');
+            const existingSet = new Set(existing.map(a => a.address));
+            
+            const toCreate = batch.filter(b => !existingSet.has(b.address));
+            
+            if (toCreate.length > 0) {
+                const accountDataList = toCreate.map(b => b.accountData);
+                try {
+                    await Account.query(knex).insert(accountDataList);
+                } catch (err: unknown) {
+                    const e = err as { nativeError?: { code?: string; column?: string } };
+                    if (e?.nativeError?.code === '42703' && e?.nativeError?.column === 'pub_key') {
+                        const retryData = accountDataList.map((data) => {
+                            const rest = { ...data };
+                            delete rest.pub_key;
+                            return rest;
+                        });
+                        await Account.query(knex).insert(retryData);
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+        } catch (err: unknown) {
+            const e = err as { code?: string; nativeError?: { code?: string } };
+            if (e?.code === '23505' || e?.nativeError?.code === '23505') {
+            } else {
+                this.logger.error(`[ENSURE_ACCOUNT] Batch insert error:`, err);
+            }
+        } finally {
+            addresses.forEach(addr => {
+                this.pendingAccountCreates.delete(addr);
+                this.accountCache.delete(addr);
+            });
         }
     }
 

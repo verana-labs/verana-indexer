@@ -8,7 +8,6 @@ import {
   Action,
   Service,
 } from '@ourparentcenter/moleculer-decorators-extended';
-import { Queue } from 'bullmq';
 import { Knex } from 'knex';
 import _ from 'lodash';
 import { ServiceBroker } from 'moleculer';
@@ -46,6 +45,8 @@ export default class CrawlTxService extends BullableService {
   private _httpBatchClient: HttpBatchClient;
 
   private _registry!: ChainRegistry;
+
+  private _processingLock: boolean = false;
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
@@ -93,64 +94,92 @@ export default class CrawlTxService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_TRANSACTION,
   })
   public async jobHandlerCrawlTx(): Promise<void> {
-    this.logger.info('🔄 [HANDLE_TRANSACTION] Job started');
-    const [startBlock, endBlock, blockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.HANDLE_TRANSACTION,
-        [BULL_JOB_NAME.CRAWL_TRANSACTION],
-        config.handleTransaction.key
-      );
-
-    this.logger.info(
-      `📊 [HANDLE_TRANSACTION] Handle transaction from block ${startBlock} to ${endBlock}`
-    );
-
-    if (startBlock >= endBlock) {
-      this.logger.info('⏳ [HANDLE_TRANSACTION] No new blocks to process (startBlock >= endBlock)');
+    if (this._processingLock) {
+      this.logger.debug('⏸️ [HANDLE_TRANSACTION] Already in progress, skipping...');
       return;
     }
-    const listTxRaw = await Transaction.query()
-      .where('height', '>', startBlock)
-      .andWhere('height', '<=', endBlock)
-      .orderBy('height', 'asc')
-      .orderBy('index', 'asc');
 
-    this.logger.info(`📝 [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
+    this._processingLock = true;
 
-    if (listTxRaw.length === 0) {
-      this.logger.warn('⚠️ [HANDLE_TRANSACTION] No transactions found in Transaction table!');
-    }
-
-    await knex.transaction(async (trx) => {
-      await this.insertRelatedTx(listTxRaw, trx);
-      if (blockCheckpoint) {
-        blockCheckpoint.height = endBlock;
-        await BlockCheckpoint.query()
-          .insert(blockCheckpoint)
-          .onConflict('job_name')
-          .merge()
-          .returning('id')
-          .transacting(trx);
-      }
-    });
-
-    this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${endBlock}`);
     try {
-      await this.broker.call(
-        `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
-        {
-          height: endBlock,
-          timestamp: new Date().toISOString(),
-        }
-      );
+      this.logger.info('🔄 [HANDLE_TRANSACTION] Job started');
+      const [startBlock, endBlock, blockCheckpoint] =
+        await BlockCheckpoint.getCheckpoint(
+          BULL_JOB_NAME.HANDLE_TRANSACTION,
+          [BULL_JOB_NAME.CRAWL_TRANSACTION],
+          config.handleTransaction.key
+        );
+
       this.logger.info(
-        `📡 [HANDLE_TRANSACTION] Emitted block-processed event for height ${endBlock}`
+        `📊 [HANDLE_TRANSACTION] Handle transaction from block ${startBlock} to ${endBlock}`
       );
+
+      if (startBlock >= endBlock) {
+        this.logger.debug(`⏳ [HANDLE_TRANSACTION] No new blocks to process (${startBlock} >= ${endBlock})`);
+        return;
+      }
+
+      const listTxRaw = await Transaction.query()
+        .where('height', '>', startBlock)
+        .andWhere('height', '<=', endBlock)
+        .orderBy('height', 'asc')
+        .orderBy('index', 'asc');
+
+      this.logger.info(`📝 [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
+
+      if (listTxRaw.length === 0) {
+        this.logger.info(`ℹ️ [HANDLE_TRANSACTION] No transactions found for blocks ${startBlock + 1}-${endBlock}`);
+        if (blockCheckpoint) {
+          await knex.transaction(async (trx) => {
+            blockCheckpoint.height = endBlock;
+            await BlockCheckpoint.query()
+              .insert(blockCheckpoint)
+              .onConflict('job_name')
+              .merge()
+              .returning('id')
+              .transacting(trx);
+          });
+        }
+        return;
+      }
+
+      await knex.transaction(async (trx) => {
+        await this.insertRelatedTx(listTxRaw, trx);
+        if (blockCheckpoint) {
+          blockCheckpoint.height = endBlock;
+          await BlockCheckpoint.query()
+            .insert(blockCheckpoint)
+            .onConflict('job_name')
+            .merge()
+            .returning('id')
+            .transacting(trx);
+        }
+      });
+
+      this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${endBlock}`);
+
+      try {
+        await this.broker.call(
+          `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
+          {
+            height: endBlock,
+            timestamp: new Date().toISOString(),
+          }
+        );
+        this.logger.info(
+          `📡 [HANDLE_TRANSACTION] Emitted block-processed event for height ${endBlock}`
+        );
+      } catch (error) {
+        this.logger.warn(
+          `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed event for height ${endBlock}:`,
+          error
+        );
+      }
     } catch (error) {
-      this.logger.warn(
-        `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed event for height ${endBlock}:`,
-        error
-      );
+      this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing transactions:`, error);
+      throw error;
+    } finally {
+      this._processingLock = false;
     }
   }
 
@@ -173,20 +202,32 @@ export default class CrawlTxService extends BullableService {
       page: string,
       perPage: string
     ) => {
-      const blockInfo = await this._httpBatchClient.execute(
-        createJsonRpcRequest('tx_search', {
-          query: `tx.height=${height}`,
-          page,
-          per_page: perPage,
-        })
-      );
-      // this.logger.warn(`getBlockInfo: ${JSON.stringify(blockInfo)}`);
-      return {
-        txs: blockInfo.result.txs,
-        tx_count: Number(blockInfo.result.total_count),
-        height,
-        timestamp,
-      };
+      try {
+        const blockInfo = await this.retryRpcCall(
+          () => this._httpBatchClient.execute(
+            createJsonRpcRequest('tx_search', {
+              query: `tx.height=${height}`,
+              page,
+              per_page: perPage,
+            })
+          ),
+          `tx_search-height-${height}-page-${page}`
+        );
+        return {
+          txs: blockInfo.result?.txs || [],
+          tx_count: Number(blockInfo.result?.total_count || 0),
+          height,
+          timestamp,
+        };
+      } catch (error) {
+        this.logger.error(`❌ Failed to fetch tx_search for height ${height}, page ${page}: ${error}`);
+        return {
+          txs: [],
+          tx_count: 0,
+          height,
+          timestamp,
+        };
+      }
     };
 
     blocks.forEach((block) => {
@@ -209,7 +250,15 @@ export default class CrawlTxService extends BullableService {
         });
       }
     });
-    const resultPromises: any[] = await Promise.all(promises);
+    const resultPromisesResults = await Promise.allSettled(promises);
+    const resultPromises: any[] = resultPromisesResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => (result as PromiseFulfilledResult<any>).value);
+    
+    const failures = resultPromisesResults.filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      this.logger.warn(`⚠️ ${failures.length} tx_search RPC call(s) failed, but processing ${resultPromises.length} successful results`);
+    }
 
     const listRawTxs: any[] = [];
     blocks.forEach((block) => {
@@ -397,6 +446,8 @@ export default class CrawlTxService extends BullableService {
     }
   }
 
+
+
   // insert related table (event, event_attribute, message)
   async insertRelatedTx(
     listDecodedTx: Transaction[],
@@ -466,171 +517,170 @@ export default class CrawlTxService extends BullableService {
     });
 
     if (listEventModel.length) {
-      const resultInsertEvents = await Event.query()
+      await Event.query()
         .insertGraph(listEventModel, { allowRefs: true })
         .transacting(transactionDB);
-      this.logger.warn('result insert events:', resultInsertEvents);
     }
+    
     if (listMsgModel?.length) {
       const resultInsertMsgs = await TransactionMessage.query()
         .insert(listMsgModel)
         .transacting(transactionDB);
+      
+      const messagesArray = (Array.isArray(resultInsertMsgs) ? resultInsertMsgs : [resultInsertMsgs]) as any[];
+      await this.processMessageTypes(messagesArray, listDecodedTx);
+    }
+  }
 
-      this.logger.warn('result insert messages:', resultInsertMsgs);
+  private async processMessageTypes(resultInsertMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
+    const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
+      const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+      return parentTx?.code === 0;
+    });
 
-      const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
+    this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
+
+    const DIDfiltered = successfulMsgs
+      .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
+      .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-        return parentTx?.code === 0;
+        return {
+          type: msg.type,
+          did: msg.content?.did ?? null,
+          controller: msg.content?.controller ?? null,
+          years: msg.content?.years ?? null,
+          timestamp: parentTx?.timestamp ?? null,
+          height: parentTx?.height ?? null,
+          id: msg?.tx_id ?? null,
+        };
       });
 
-      this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
-
-      const DIDfiltered = successfulMsgs
-        .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
-        .map((msg: any) => {
-          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-          return {
-            type: msg.type,
-            did: msg.content?.did ?? null,
-            controller: msg.content?.controller ?? null,
-            years: msg.content?.years ?? null,
-            timestamp: parentTx?.timestamp ?? null,
-            height: parentTx?.height ?? null,
-            id: msg?.tx_id ?? null,
-          };
-        });
-
-      this.logger.info(`📋 [insertRelatedTx] DID messages: ${DIDfiltered.length}`);
-      if (DIDfiltered?.length) {
-        this.logger.info(`🚀 [insertRelatedTx] Sending ${DIDfiltered.length} DID messages to processor`);
-        try {
-          await this.broker.call(
-            `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
-            { messages: DIDfiltered },
-          );
-          this.logger.info(`✅ [insertRelatedTx] DID messages processed successfully`);
-        } catch (err) {
-          this.logger.error(`❌ [insertRelatedTx] Failed to process DID messages:`, err);
-          console.error("FATAL CRAWL_TX DID ERROR:", err);
-
-        }
-      }
-
-      const trustRegistryList = successfulMsgs
-        .filter((msg: any) =>
-          Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes)
-        )
-        .map((msg: any) => {
-          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-          return {
-            type: msg.type,
-            content: msg.content ?? null,
-            timestamp: parentTx?.timestamp ?? null,
-            height: parentTx?.height ?? null,
-            id: msg?.tx_id ?? null,
-          };
-        });
-
-      this.logger.info(`📋 [insertRelatedTx] TrustRegistry messages: ${trustRegistryList.length}`);
-      if (trustRegistryList?.length) {
-        this.logger.info(`🚀 [insertRelatedTx] Sending ${trustRegistryList.length} TR messages to processor`);
-        try {
-          await this.broker.call(
-            `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
-            { trustRegistryList },
-          );
-          this.logger.info(`✅ [insertRelatedTx] TR messages processed successfully`);
-        } catch (err) {
-          this.logger.error(`❌ [insertRelatedTx] Failed to process TR messages:`, err);
-          console.error("FATAL CRAWL_TX TR ERROR:", err);
-
-        }
-      }
-
-      const credentialSchemaMessages = successfulMsgs
-        .filter((msg: any) =>
-          Object.values(CredentialSchemaMessageType).includes(msg.type as CredentialSchemaMessageType)
-        )
-        .map((msg: any) => {
-          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-          return {
-            type: msg.type,
-            content: msg.content ?? null,
-            timestamp: parentTx?.timestamp ?? null,
-            height: parentTx?.height ?? null,
-          };
-        });
-
-      this.logger.info(`📋 [insertRelatedTx] CredentialSchema messages: ${credentialSchemaMessages.length}`);
-
-      if (credentialSchemaMessages?.length) {
-        this.logger.info(`🚀 [insertRelatedTx] Sending ${credentialSchemaMessages.length} CS messages to processor`);
-        try {
-          await this.broker.call(
-            `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
-            { credentialSchemaMessages },
-          );
-          this.logger.info(`✅ [insertRelatedTx] CS messages processed successfully`);
-        } catch (err) {
-          this.logger.error(`❌ [insertRelatedTx] Failed to process CS messages:`, err);
-          console.error("FATAL CRAWL_TX CS ERROR:", err);
-
-        }
-      }
-
-      const permissionMessages = successfulMsgs
-        .filter((msg: any) => Object.values(PermissionMessageTypes).includes(msg.type))
-        .map((msg: any) => {
-          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-          return {
-            type: msg.type,
-            content: msg.content ?? null,
-            timestamp: parentTx?.timestamp ?? null,
-            height: parentTx?.height ?? null,
-          };
-        });
-
-      this.logger.info(`📋 [insertRelatedTx] Permission messages: ${permissionMessages.length}`);
-      if (permissionMessages?.length) {
-        this.logger.info(`🚀 [insertRelatedTx] Sending ${permissionMessages.length} Permission messages to processor`);
-        try {
-          await this.broker.call(
-            `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
-            { permissionMessages },
-          );
-          this.logger.info(`✅ [insertRelatedTx] Permission messages processed successfully`);
-        } catch (err) {
-          this.logger.error(`❌ [insertRelatedTx] Failed to process Permission messages:`, err);
-          console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
-
-        }
-      }
-
-      const trustDepositList = resultInsertMsgs
-        .filter((msg: any) =>
-          Object.values(TrustDepositMessageTypes).includes(msg.type as TrustDepositMessageTypes),
-        )
-        .map((msg: any) => {
-          const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-          return {
-            type: msg.type,
-            content: msg.content ?? null,
-            timestamp: parentTx?.timestamp ?? null,
-            height: parentTx?.height ?? null,
-          };
-        });
-
-      this.logger.info(`📋 [insertRelatedTx] TrustDeposit messages: ${trustDepositList.length}`);
-      if (trustDepositList?.length) {
-        this.logger.info(`🚀 [insertRelatedTx] Sending ${trustDepositList.length} TD messages to processor`);
+    this.logger.info(`📋 [insertRelatedTx] DID messages: ${DIDfiltered.length}`);
+    if (DIDfiltered?.length) {
+      this.logger.info(`🚀 [insertRelatedTx] Sending ${DIDfiltered.length} DID messages to processor`);
+      try {
         await this.broker.call(
-          `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
-          { trustDepositList },
+          `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
+          { messages: DIDfiltered },
         );
+        this.logger.info(`✅ [insertRelatedTx] DID messages processed successfully`);
+      } catch (err) {
+        this.logger.error(`❌ [insertRelatedTx] Failed to process DID messages:`, err);
+        console.error("FATAL CRAWL_TX DID ERROR:", err);
       }
-
-      this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
     }
+
+    const trustRegistryList = successfulMsgs
+      .filter((msg: any) =>
+        Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes)
+      )
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          type: msg.type,
+          content: msg.content ?? null,
+          timestamp: parentTx?.timestamp ?? null,
+          height: parentTx?.height ?? null,
+          id: msg?.tx_id ?? null,
+        };
+      });
+
+    this.logger.info(`📋 [insertRelatedTx] TrustRegistry messages: ${trustRegistryList.length}`);
+    if (trustRegistryList?.length) {
+      this.logger.info(`🚀 [insertRelatedTx] Sending ${trustRegistryList.length} TR messages to processor`);
+      try {
+        await this.broker.call(
+          `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
+          { trustRegistryList },
+        );
+        this.logger.info(`✅ [insertRelatedTx] TR messages processed successfully`);
+      } catch (err) {
+        this.logger.error(`❌ [insertRelatedTx] Failed to process TR messages:`, err);
+        console.error("FATAL CRAWL_TX TR ERROR:", err);
+      }
+    }
+
+    const credentialSchemaMessages = successfulMsgs
+      .filter((msg: any) =>
+        Object.values(CredentialSchemaMessageType).includes(msg.type as CredentialSchemaMessageType)
+      )
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          type: msg.type,
+          content: msg.content ?? null,
+          timestamp: parentTx?.timestamp ?? null,
+          height: parentTx?.height ?? null,
+        };
+      });
+
+    this.logger.info(`📋 [insertRelatedTx] CredentialSchema messages: ${credentialSchemaMessages.length}`);
+
+    if (credentialSchemaMessages?.length) {
+      this.logger.info(`🚀 [insertRelatedTx] Sending ${credentialSchemaMessages.length} CS messages to processor`);
+      try {
+        await this.broker.call(
+          `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
+          { credentialSchemaMessages },
+        );
+        this.logger.info(`✅ [insertRelatedTx] CS messages processed successfully`);
+      } catch (err) {
+        this.logger.error(`❌ [insertRelatedTx] Failed to process CS messages:`, err);
+        console.error("FATAL CRAWL_TX CS ERROR:", err);
+      }
+    }
+
+    const permissionMessages = successfulMsgs
+      .filter((msg: any) => Object.values(PermissionMessageTypes).includes(msg.type))
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          type: msg.type,
+          content: msg.content ?? null,
+          timestamp: parentTx?.timestamp ?? null,
+          height: parentTx?.height ?? null,
+        };
+      });
+
+    this.logger.info(`📋 [insertRelatedTx] Permission messages: ${permissionMessages.length}`);
+    if (permissionMessages?.length) {
+      this.logger.info(`🚀 [insertRelatedTx] Sending ${permissionMessages.length} Permission messages to processor`);
+      try {
+        await this.broker.call(
+          `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
+          { permissionMessages },
+        );
+        this.logger.info(`✅ [insertRelatedTx] Permission messages processed successfully`);
+      } catch (err) {
+        this.logger.error(`❌ [insertRelatedTx] Failed to process Permission messages:`, err);
+        console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
+      }
+    }
+
+    const trustDepositList = resultInsertMsgs
+      .filter((msg: any) =>
+        Object.values(TrustDepositMessageTypes).includes(msg.type as TrustDepositMessageTypes),
+      )
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          type: msg.type,
+          content: msg.content ?? null,
+          timestamp: parentTx?.timestamp ?? null,
+          height: parentTx?.height ?? null,
+        };
+      });
+
+    this.logger.info(`📋 [insertRelatedTx] TrustDeposit messages: ${trustDepositList.length}`);
+    if (trustDepositList?.length) {
+      this.logger.info(`🚀 [insertRelatedTx] Sending ${trustDepositList.length} TD messages to processor`);
+      await this.broker.call(
+        `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
+        { trustDepositList },
+      );
+    }
+
+    this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
   }
 
   private checkMappingEventToLog(tx: any) {
@@ -757,7 +807,7 @@ export default class CrawlTxService extends BullableService {
   })
   async triggerHandleTxJob() {
     try {
-      const queue: Queue = this.getQueueManager().getQueue(
+      const queue = this.getQueueManager().getQueue(
         BULL_JOB_NAME.CRAWL_TRANSACTION
       );
       const jobInDelayed = await queue.getDelayed();
@@ -773,12 +823,19 @@ export default class CrawlTxService extends BullableService {
   public async _start() {
     const providerRegistry = await getProviderRegistry();
     this._registry = new ChainRegistry(this.logger, providerRegistry);
-    const lcdClient = await getLcdClient();
-    const nodeInfo: GetNodeInfoResponseSDKType =
-      await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
-    const cosmosSdkVersion = nodeInfo.application_version?.cosmos_sdk_version;
-    if (cosmosSdkVersion) {
-      this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+    
+    try {
+      const lcdClient = await getLcdClient();
+      const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
+        () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+        'getNodeInfo'
+      );
+      const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
+      if (cosmosSdkVersion) {
+        this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+      }
+    } catch (error) {
+      this.logger.warn(`⚠️ Failed to get node info (non-critical): ${error}. Continuing without SDK version update.`);
     }
 
     this.createJob(
@@ -810,6 +867,51 @@ export default class CrawlTxService extends BullableService {
       }
     );
     return super._start();
+  }
+
+
+  private async retryRpcCall<T>(
+    rpcCall: () => Promise<T>,
+    operationName: string,
+    maxAttempts?: number
+  ): Promise<T> {
+    const attempts = maxAttempts || config.handleTransaction.rpcRetryAttempts || 3;
+    const delay = config.handleTransaction.rpcRetryDelay || 1000;
+    const timeout = config.handleTransaction.rpcTimeout || 30000;
+    let lastError: Error | unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await Promise.race([
+          rpcCall(),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('RPC call timeout')), timeout);
+          }),
+        ]);
+      } catch (error) {
+        lastError = error;
+        const isLastAttempt = attempt === attempts;
+        
+        if (isLastAttempt) {
+          this.logger.error(
+            `❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${error}`
+          );
+          throw error;
+        }
+
+        const backoffDelay = delay * (2 ** (attempt - 1));
+        this.logger.warn(
+          `⚠️ RPC call failed (attempt ${attempt}/${attempts}): ${operationName}. Retrying in ${backoffDelay}ms...`
+        );
+        await new Promise((resolve) => {
+          setTimeout(resolve, backoffDelay);
+        });
+      }
+    }
+
+    throw lastError instanceof Error 
+      ? lastError 
+      : new Error(`Failed to execute ${operationName} after ${attempts} attempts`);
   }
 
   public setRegistry(registry: ChainRegistry) {

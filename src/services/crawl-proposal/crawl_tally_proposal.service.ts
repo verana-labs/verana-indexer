@@ -22,6 +22,7 @@ import {
   SERVICE,
 } from '../../common';
 import Utils from '../../common/utils/utils';
+import knex from '../../common/utils/db_connection';
 
 @Service({
   name: SERVICE.V1.CrawlTallyProposalService.key,
@@ -129,13 +130,18 @@ export default class CrawlTallyProposalService extends BullableService {
       }
     });
 
-    if (patchQueries.length > 0)
-      await Promise.all(patchQueries).catch((error) => {
+    if (patchQueries.length > 0) {
+      await knex.transaction(async (trx) => {
+        await Promise.all(
+          patchQueries.map(query => query.transacting(trx))
+        );
+      }).catch((error) => {
         this.logger.error(
           `Error update proposals tally: ${JSON.stringify(votingProposals)}`
         );
         this.logger.error(error);
       });
+    }
   }
 
   public async _start() {
