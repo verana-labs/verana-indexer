@@ -96,6 +96,10 @@ function fixImportsInFile(filePath) {
           }
         }
 
+        if (importPath.startsWith("@verana-labs/verana-types/")) {
+          return match;
+        }
+
         return match; // leave other imports untouched
       }
     );

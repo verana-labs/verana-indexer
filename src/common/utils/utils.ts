@@ -233,14 +233,52 @@ export default class Utils {
   }
 }
 
-export function mapPermissionType(input: string): string {
-  switch (input) {
-    case "PERMISSION_TYPE_ISSUER": return "ISSUER";
-    case "PERMISSION_TYPE_VERIFIER": return "VERIFIER";
-    case "PERMISSION_TYPE_ECOSYSTEM": return "ECOSYSTEM";
-    case "PERMISSION_TYPE_HOLDER": return "HOLDER";
-    case "PERMISSION_TYPE_ISSUER_GRANTOR": return "ISSUER_GRANTOR";
-    case "PERMISSION_TYPE_VERIFIER_GRANTOR": return "VERIFIER_GRANTOR";
-    default: return "UNSPECIFIED";
+export function mapPermissionType(input: string | number): string {
+  if (typeof input === 'number') {
+    const typeMap: Record<number, string> = {
+      0: "UNSPECIFIED",
+      1: "ISSUER",
+      2: "VERIFIER",
+      3: "ISSUER_GRANTOR",
+      4: "VERIFIER_GRANTOR",
+      5: "ECOSYSTEM",
+      6: "HOLDER",
+    };
+    return typeMap[input] || "UNSPECIFIED";
+  }
+
+  const upperInput = String(input).toUpperCase();
+  
+  switch (upperInput) {
+    case "PERMISSION_TYPE_ISSUER":
+    case "1":
+    case "ISSUER":
+      return "ISSUER";
+    case "PERMISSION_TYPE_VERIFIER":
+    case "2":
+    case "VERIFIER":
+      return "VERIFIER";
+    case "PERMISSION_TYPE_ECOSYSTEM":
+    case "5":
+    case "ECOSYSTEM":
+      return "ECOSYSTEM";
+    case "PERMISSION_TYPE_HOLDER":
+    case "6":
+    case "HOLDER":
+      return "HOLDER";
+    case "PERMISSION_TYPE_ISSUER_GRANTOR":
+    case "3":
+    case "ISSUER_GRANTOR":
+      return "ISSUER_GRANTOR";
+    case "PERMISSION_TYPE_VERIFIER_GRANTOR":
+    case "4":
+    case "VERIFIER_GRANTOR":
+      return "VERIFIER_GRANTOR";
+    case "PERMISSION_TYPE_UNSPECIFIED":
+    case "0":
+    case "UNSPECIFIED":
+      return "UNSPECIFIED";
+    default:
+      return "UNSPECIFIED";
   }
 }

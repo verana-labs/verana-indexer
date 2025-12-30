@@ -4,6 +4,7 @@ import BullableService from "../../base/bullable.service";
 import { DidMessages, SERVICE } from "../../common";
 import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import { addYearsToDate, formatTimestamp } from "../../common/utils/date_utils";
+import { extractController, requireController } from "../../common/utils/extract_controller";
 
 
 
@@ -55,19 +56,24 @@ export default class DidMessageProcessorService extends BullableService {
 
 
     private async saveHistory(did: DidMessageTypes, height: number, changes?: any, isUpdate: boolean = false) {
-        if (isUpdate && (!changes || Object.keys(changes).length === 0)) {
-            this.logger.info(`Skipping DID history - no actual changes for update at height: ${height}`);
-            return;
+        try {
+            if (isUpdate && (!changes || Object.keys(changes).length === 0)) {
+                this.logger.info(`Skipping DID history - no actual changes for update at height: ${height}`);
+                return;
+            }
+            
+            const { modified, id, ...cleanedDID } = did;
+            const historyRecord = {
+                ...cleanedDID,
+                height: height, 
+                changes: changes ? JSON.stringify(changes) : null,
+            };
+            this.logger.info(`Saving DID history with height: ${height}`, historyRecord);
+            await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, historyRecord);
+        } catch (historyErr) {
+            this.logger.error(`❌ Failed to save DID history for ${did.did} at height ${height}:`, historyErr);
+            console.error("FATAL DID HISTORY SAVE ERROR:", historyErr);
         }
-        
-        const { modified, id, ...cleanedDID } = did;
-        const historyRecord = {
-            ...cleanedDID,
-            height: height, 
-            changes: changes ? JSON.stringify(changes) : null,
-        };
-        this.logger.info(`Saving DID history with height: ${height}`, historyRecord);
-        await this.broker.call(`${SERVICE.V1.DidHistoryService.path}.save`, historyRecord);
     }
 
 
@@ -93,10 +99,14 @@ export default class DidMessageProcessorService extends BullableService {
                 // ---------------- ADD ----------------
                 if ([DidMessages.AddDid, DidMessages.AddDidLegacy].includes(message.type as DidMessages)) {
                     this.logger.info(`🆕 Creating new DID: ${message.did} at height ${message.height}`);
+                    const controller = extractController(message);
+                    if (!controller) {
+                        this.logger.warn(`⚠️ Missing controller/creator for DID ${message.did}, message keys: ${Object.keys(message).join(', ')}`);
+                    }
                     processedDID = {
                     event_type: message.type,
                     did: message.did,
-                    controller: message.controller,
+                    controller: controller || null,
                     height: message.height ?? 0,
                     years: message.years ? String(message.years) : undefined,
                     deposit: String(depositAmount) ?? "0",

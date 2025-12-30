@@ -4,6 +4,7 @@ import knex from "../../common/utils/db_connection";
 import { SERVICE } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
 import { mapPermissionType } from "../../common/utils/utils";
+import { extractController, requireController } from "../../common/utils/extract_controller";
 import {
   getPermissionTypeString,
   MsgCancelPermissionVPLastRequest,
@@ -279,14 +280,15 @@ export default class PermIngestService extends Service {
         
       }
 
+      const creator = requireController(msg, `PERM CREATE_ROOT ${schemaId}`);
       const [insertedPermission] = await knex("permissions")
         .insert({
         schema_id: schemaId,
         type: "ECOSYSTEM",
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
-        grantee: msg.creator,
-        created_by: msg.creator,
+        grantee: creator,
+        created_by: creator,
         effective_from: msg.effective_from
           ? formatTimestamp(msg.effective_from)
           : null,
@@ -366,14 +368,15 @@ export default class PermIngestService extends Service {
         );
       }
 
+      const creator = requireController(msg, `PERM CREATE ${schemaId}`);
       const [permission] = await knex("permissions")
         .insert({
         schema_id: schemaId,
         type,
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
-        grantee: msg.creator,
-        created_by: msg.creator,
+        grantee: creator,
+        created_by: creator,
         effective_from: msg.effective_from
           ? formatTimestamp(msg.effective_from)
           : null,
@@ -705,12 +708,13 @@ export default class PermIngestService extends Service {
             : 0;
       }
 
+      const creator = requireController(msg, `PERM START_VP ${msg.validator_perm_id}`);
       const Entry = {
         schema_id: perm?.schema_id,
         type: typeStr,
         did: msg.did,
-        grantee: msg.creator,
-        created_by: msg.creator,
+        grantee: creator,
+        created_by: creator,
         effective_from: msg.effective_from
           ? formatTimestamp(msg.effective_from)
           : null,
@@ -1306,11 +1310,12 @@ export default class PermIngestService extends Service {
       const height = Number((msg as any)?.height) || 0;
 
       await knex.transaction(async (trx) => {
+        const creator = requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
         const [updated] = await trx("permissions")
           .where({ id: msg.id })
           .update({
             repaid: now,
-            repaid_by: msg.creator,
+            repaid_by: creator,
             repaid_deposit: String(slashedDeposit),
             modified: now,
           })
@@ -1449,10 +1454,11 @@ export default class PermIngestService extends Service {
       };
 
       if (!existing) {
+        const creator = requireController(msg, `PERM SESSION ${msg.id}`);
         const [session] = await trx("permission_sessions")
           .insert({
             id: msg.id,
-            controller: msg.creator,
+            controller: creator,
             agent_perm_id: agentPermId,
             wallet_agent_perm_id: walletAgentPermId,
             authz: JSON.stringify([authzEntry]),

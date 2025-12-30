@@ -10,6 +10,7 @@
   },
   "scripts": {
     "clean": "rimraf ./dist/",
+    "postinstall": "node ./scripts/patch-verana-exports.cjs",
     "docker:dev": "pnpm run up && pnpm run migrate:dev && pnpm run dev",
     "docker": "pnpm run up && pnpm run build && pnpm run migrate && pnpm run start",
     "start": "node --max-old-space-size=8192 ./node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./dist/src/moleculer.config.js ./dist/src/services/**/*.service.js",
@@ -63,6 +64,7 @@
     "@tendermint/amino-js": "^0.6.2",
     "@types/parse-uri": "^1.0.2",
     "@types/swagger-ui-dist": "3.30.6",
+    "@verana-labs/verana-types": "0.9.1",
     "ajv-formats": "^2.1.1",
     "axios": "^1.12.2",
     "bignumber.js": "^9.3.1",

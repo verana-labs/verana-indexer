@@ -21,6 +21,9 @@
       ],
       "test/*": [
         "./test/*"
+      ],
+      "@verana-labs/verana-types/codec/*": [
+        "./node_modules/@verana-labs/verana-types/dist/codec/*"
       ]
     }
   },
