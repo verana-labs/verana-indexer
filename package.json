@@ -17,7 +17,7 @@
     "watch": "nodemon",
     "migrate": "node dist/src/scripts/migrate-if-needed.js",
     "migrate:dev": "cross-env  NODE_OPTIONS=\"--loader ts-node/esm\" node ./src/scripts/migrate-if-needed.ts",
-    "build": "pnpm run clean && tsc --project tsconfig.build.json && node ./src/scripts/fix-imports.cjs && node ./scripts/patch-verana-exports.cjs",
+    "build": "pnpm run clean && tsc --project tsconfig.build.json && node ./src/scripts/fix-imports.cjs",
     "up": "docker-compose -f ./docker/docker-compose.yml up -d",
     "stop": "docker-compose -f ./docker/docker-compose.yml stop",
     "down": "docker-compose -f ./docker/docker-compose.yml down",
