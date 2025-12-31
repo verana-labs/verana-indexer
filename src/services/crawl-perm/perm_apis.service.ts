@@ -151,19 +151,30 @@ export default class PermAPIService extends BullableService {
     const schemaId = Number(perm.schema_id);
 
     if (typeof blockHeight === "number") {
-      const schemaHistory = await knex("credential_schema_history")
-        .where({ credential_schema_id: schemaId })
-        .where("height", "<=", blockHeight)
-        .orderBy("height", "desc")
-        .orderBy("created_at", "desc")
-        .first();
+      try {
+        const schemaHistory = await knex("credential_schema_history")
+          .where({ credential_schema_id: schemaId })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
 
-      if (schemaHistory) {
-        schema = {
-          issuer_perm_management_mode: schemaHistory.issuer_perm_management_mode || null,
-          verifier_perm_management_mode: schemaHistory.verifier_perm_management_mode || null,
-        };
-      } else {
+        if (schemaHistory) {
+          schema = {
+            issuer_perm_management_mode: schemaHistory.issuer_perm_management_mode || null,
+            verifier_perm_management_mode: schemaHistory.verifier_perm_management_mode || null,
+          };
+        } else {
+          const schemaMain = await knex("credential_schemas")
+            .where({ id: schemaId })
+            .first();
+          schema = {
+            issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
+            verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
+          };
+        }
+      } catch (error: any) {
+        this.logger.warn(`credential_schema_history table doesn't have height column, using main table. Error: ${error?.message || error}`);
         const schemaMain = await knex("credential_schemas")
           .where({ id: schemaId })
           .first();
@@ -443,6 +454,8 @@ export default class PermAPIService extends BullableService {
       grantee: { type: "string", optional: true },
       did: { type: "string", optional: true },
       perm_id: { type: "number", integer: true, optional: true },
+      validator_perm_id: { type: "number", integer: true, optional: true },
+      perm_state: { type: "string", optional: true },
       type: { type: "string", optional: true },
 
       only_valid: { type: "any", optional: true },
@@ -576,9 +589,14 @@ export default class PermAPIService extends BullableService {
         if (p.grantee) filteredPermissions = filteredPermissions.filter(perm => perm.grantee === p.grantee);
         if (p.did) filteredPermissions = filteredPermissions.filter(perm => perm.did === p.did);
         if (p.perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => String(perm.validator_perm_id) === String(p.perm_id));
+        if (p.validator_perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id ? String(perm.validator_perm_id) === String(p.validator_perm_id) : false);
         if (p.type) filteredPermissions = filteredPermissions.filter(perm => perm.type === p.type);
         if (p.country) filteredPermissions = filteredPermissions.filter(perm => perm.country === p.country);
         if (p.vp_state) filteredPermissions = filteredPermissions.filter(perm => perm.vp_state === p.vp_state);
+        if (p.perm_state) {
+          const requestedState = String(p.perm_state).toUpperCase();
+          filteredPermissions = filteredPermissions.filter(perm => perm.perm_state === requestedState);
+        }
 
         if (p.modified_after) {
           const ts = new Date(p.modified_after);
@@ -618,6 +636,11 @@ export default class PermAPIService extends BullableService {
           } else {
             filteredPermissions = filteredPermissions.filter(perm => perm.repaid === null);
           }
+        }
+
+        if (p.perm_state) {
+          const requestedState = String(p.perm_state).toUpperCase();
+          filteredPermissions = filteredPermissions.filter(perm => perm.perm_state === requestedState);
         }
 
         // Sort and limit
@@ -671,6 +694,13 @@ export default class PermAPIService extends BullableService {
       if (p.grantee) query.where("grantee", p.grantee);
       if (p.did) query.where("did", p.did);
       if (p.perm_id !== undefined) query.where("validator_perm_id", String(p.perm_id));
+      if (p.validator_perm_id !== undefined) {
+        if (p.validator_perm_id === null || p.validator_perm_id === "null") {
+          query.whereNull("validator_perm_id");
+        } else {
+          query.where("validator_perm_id", String(p.validator_perm_id));
+        }
+      }
       if (p.type) query.where("type", p.type);
       if (p.country) query.where("country", p.country);
       if (p.vp_state) query.where("vp_state", p.vp_state);
@@ -727,7 +757,13 @@ export default class PermAPIService extends BullableService {
         10
       );
 
-      return ApiResponder.success(ctx, { permissions: enrichedResults }, 200);
+      let finalResults = enrichedResults;
+      if (p.perm_state) {
+        const requestedState = String(p.perm_state).toUpperCase();
+        finalResults = enrichedResults.filter(perm => perm.perm_state === requestedState);
+      }
+
+      return ApiResponder.success(ctx, { permissions: finalResults }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissions:", err);
       this.logger.error("Error details:", {

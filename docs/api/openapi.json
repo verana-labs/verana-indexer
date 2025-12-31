@@ -1156,6 +1156,33 @@
             "description": "Filter by schema ID"
           },
           {
+            "name": "validator_perm_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by validator permission ID"
+          },
+          {
+            "name": "perm_state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "REPAID",
+                "SLASHED",
+                "REVOKED",
+                "EXPIRED",
+                "ACTIVE",
+                "FUTURE",
+                "INACTIVE"
+              ]
+            },
+            "description": "Filter by permission state (calculated based on repaid, slashed, revoked, and effective dates)"
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
