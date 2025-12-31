@@ -333,18 +333,33 @@ export default class CrawlBlockService extends BullableService {
 
       await this.handleListBlock(mergeBlockResponses);
 
-      if (this._currentBlock < endBlock) {
+      let highestSavedBlock = this._currentBlock;
+      mergeBlockResponses.forEach((block) => {
+        const height = parseInt(block?.block?.header?.height ?? '0', 10);
+        if (height > highestSavedBlock) {
+          highestSavedBlock = height;
+        }
+      });
+
+      if (highestSavedBlock > this._currentBlock) {
         await BlockCheckpoint.query()
           .update(
             BlockCheckpoint.fromJson({
               job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-              height: endBlock,
+              height: highestSavedBlock,
             })
           )
           .where({
             job_name: BULL_JOB_NAME.CRAWL_BLOCK,
           });
-        this._currentBlock = endBlock;
+        this._currentBlock = highestSavedBlock;
+        
+        if (highestSavedBlock < endBlock) {
+          this.logger.warn(
+            `⚠️ Some blocks failed to save. Checkpoint updated to ${highestSavedBlock} instead of ${endBlock}. ` +
+            `Failed blocks: ${endBlock - highestSavedBlock} (will retry on next cycle)`
+          );
+        }
         
         const remainingBlocks = latestBlockNetwork - this._currentBlock;
         if (!this._initialSyncComplete && remainingBlocks <= 0) {

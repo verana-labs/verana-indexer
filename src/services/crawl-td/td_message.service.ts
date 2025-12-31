@@ -13,6 +13,7 @@ import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
 import TrustDeposit from "../../models/trust_deposit";
+import { extractController, requireController } from "../../common/utils/extract_controller";
 
 function toBigIntSafe(value: any): bigint {
   if (value === null || value === undefined) return BigInt(0);
@@ -196,7 +197,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
     const { type, content, timestamp, height } = msg;
     const ts = formatTimestamp(timestamp);
     const blockHeight = Number(height) || 0;
-    const account = content.creator || content.account;
+    const account = extractController(content);
 
     this.logger.info(`[TrustDeposit] Processing ${type} for ${account}`);
 
@@ -218,8 +219,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
   private async reclaimYield(content: any, params: any, trx: any, height: number) {
     try {
-      const account = content.creator;
-      if (!account) this.logger.warn("Account required");
+      const account = requireController(content, "TrustDeposit RECLAIM_YIELD");
 
       const td = await TrustDeposit.query(trx).findOne({ account });
       if (!td) {
@@ -263,10 +263,8 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
   private async reclaimDeposit(content: any, params: any, trx: any, height: number) {
     try {
-      const account = content.creator;
+      const account = requireController(content, "TrustDeposit RECLAIM_DEPOSIT");
       const claimed = toBigIntSafe(content.claimed);
-
-      if (!account) this.logger.warn("❌ Account required");
       if (claimed <= BigInt(0)) this.logger.warn("❌ Claimed must be > 0");
 
       const td: any = await TrustDeposit.query(trx).findOne({ account });
@@ -334,9 +332,8 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
   private async repaySlashed(content: any, ts: string, params: any, trx: any, height: number) {
     try {
-      const account = content.account;
+      const account = requireController(content, "TrustDeposit REPAY_SLASHED");
       const amount = toBigIntSafe(content.amount);
-      if (!account) this.logger.warn("Account required");
       if (amount <= BigInt(0)) this.logger.warn("Amount must be > 0");
 
       const td = await TrustDeposit.query(trx).findOne({ account });
@@ -362,7 +359,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
         share: newShare.toString(),
         repaid_deposit: newRepaid.toString(),
         last_repaid: ts,
-        last_repaid_by: content.creator || "unknown",
+        last_repaid_by: extractController(content, "unknown"),
       });
 
       await recordTrustDepositHistory(
