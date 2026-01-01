@@ -19,7 +19,13 @@ export enum PermissionTypeNames {
   HOLDER = 6,
 }
 export function getPermissionTypeString(msg: MsgStartPermissionVP): string {
-  return PermissionTypeNames[msg.type] ?? "UNKNOWN";
+  if (typeof msg.type === 'string') {
+    return msg.type;
+  }
+  if (typeof msg.type === 'number') {
+    return PermissionTypeNames[msg.type] ?? "UNKNOWN";
+  }
+  return "UNKNOWN";
 }
 export interface MsgCreateRootPermission {
   creator: string;

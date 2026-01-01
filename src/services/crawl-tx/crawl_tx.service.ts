@@ -28,6 +28,7 @@ import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import Utils from '../../common/utils/utils';
+import { extractController } from '../../common/utils/extract_controller';
 import {
   Block,
   BlockCheckpoint,
@@ -544,10 +545,11 @@ export default class CrawlTxService extends BullableService {
       .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const controller = extractController(msg.content || {});
         return {
           type: msg.type,
           did: msg.content?.did ?? null,
-          controller: msg.content?.controller ?? null,
+          controller: controller ?? null,
           years: msg.content?.years ?? null,
           timestamp: parentTx?.timestamp ?? null,
           height: parentTx?.height ?? null,

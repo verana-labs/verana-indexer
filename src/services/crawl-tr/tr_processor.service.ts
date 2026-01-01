@@ -11,6 +11,7 @@ import {
 } from "../../common";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
+import { requireController } from "../../common/utils/extract_controller";
 
 type ChangeRecord = Record<string, { old: any; new: any }>;
 
@@ -297,12 +298,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       const existingTR = await trx("trust_registry").where({ did: message.did }).first();
       
       let tr;
+      const controller = requireController(message, `TR ${message.did}`);
       if (existingTR) {
         this.logger.info(`📋 TR with did ${message.did} already exists, updating...`);
         [tr] = await trx("trust_registry")
           .where({ id: existingTR.id })
           .update({
-            controller: message.creator,
+            controller: controller,
             modified: timestamp,
             aka: message.aka,
             language: message.language,
@@ -315,7 +317,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         [tr] = await trx("trust_registry")
           .insert({
             did: message.did,
-            controller: message.creator,
+            controller: controller,
             created: timestamp,
             modified: timestamp,
             aka: message.aka,

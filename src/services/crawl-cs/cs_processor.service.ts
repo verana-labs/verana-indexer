@@ -13,11 +13,39 @@ import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import { getModeString } from "./cs_types";
 
+function extractOptionalUInt32(value: unknown): number {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'object' && value !== null) {
+    if ('value' in value && typeof value.value === 'number') {
+      return value.value;
+    }
+    if (Object.keys(value).length === 0) {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+function getValidityPeriod(fieldName: string, content: Record<string, unknown> | undefined, schemaMessage: CredentialSchemaMessage | Record<string, unknown> | undefined): number {
+  const snakeCase = fieldName;
+  const camelCase = fieldName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  
+  const value = content?.[snakeCase] ?? content?.[camelCase] ?? 
+              schemaMessage?.[snakeCase] ?? schemaMessage?.[camelCase];
+  
+  return extractOptionalUInt32(value);
+}
+
 interface CredentialSchemaMessage {
   tr_id: number;
   id: number;
   type: string;
-  content?: any;
+  content?: Record<string, unknown>;
   json_schema: string;
   deposit?: string;
   issuer_grantor_validation_validity_period: number;
@@ -32,6 +60,7 @@ interface CredentialSchemaMessage {
   archive?: string;
   "@type"?: string;
   height?: number;
+  [key: string]: unknown;
 }
 
 async function calculateDeposit(): Promise<number> {
@@ -118,13 +147,14 @@ export default class ProcessCredentialSchemaService extends BullableService {
     try {
       const timestamp = formatTimestamp(schemaMessage.timestamp);
       const content = schemaMessage?.content ?? {};
-      const trId = content.tr_id ?? "";
+      const trId = content.tr_id ?? content.trId ?? "";
       const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
 
+      const jsonSchema = content.json_schema ?? content.jsonSchema ?? "";
       const baseSchema =
-        typeof content.json_schema === "string"
-          ? JSON.parse(content.json_schema)
-          : content.json_schema ?? {};
+        typeof jsonSchema === "string"
+          ? JSON.parse(jsonSchema)
+          : jsonSchema ?? {};
 
       const payload: Record<string, any> = {
         tr_id: trId,
@@ -133,22 +163,22 @@ export default class ProcessCredentialSchemaService extends BullableService {
         created: timestamp ?? null,
         modified: timestamp ?? null,
         archived: null,
-        is_active: content.is_active ?? false,
+        is_active: content.is_active ?? content.isActive ?? false,
         issuer_grantor_validation_validity_period:
-          content.issuer_grantor_validation_validity_period ?? 0,
+          getValidityPeriod('issuer_grantor_validation_validity_period', content, schemaMessage),
         verifier_grantor_validation_validity_period:
-          content.verifier_grantor_validation_validity_period ?? 0,
+          getValidityPeriod('verifier_grantor_validation_validity_period', content, schemaMessage),
         issuer_validation_validity_period:
-          content.issuer_validation_validity_period ?? 0,
+          getValidityPeriod('issuer_validation_validity_period', content, schemaMessage),
         verifier_validation_validity_period:
-          content.verifier_validation_validity_period ?? 0,
+          getValidityPeriod('verifier_validation_validity_period', content, schemaMessage),
         holder_validation_validity_period:
-          content.holder_validation_validity_period ?? 0,
+          getValidityPeriod('holder_validation_validity_period', content, schemaMessage),
         issuer_perm_management_mode: getModeString(
-          content.issuer_perm_management_mode ?? 0
+          Number(content.issuer_perm_management_mode ?? content.issuerPermManagementMode ?? 0)
         ),
         verifier_perm_management_mode: getModeString(
-          content.verifier_perm_management_mode ?? 0
+          Number(content.verifier_perm_management_mode ?? content.verifierPermManagementMode ?? 0)
         ),
         height: schemaMessage.height ?? 0,
       };
@@ -201,19 +231,28 @@ export default class ProcessCredentialSchemaService extends BullableService {
     deposit: number
   ) {
     try {
+      const content = schemaMessage.content ?? {};
       const payload: Record<string, any> = {
-        ...schemaMessage,
-        ...schemaMessage.content,
+        id: schemaMessage.id ?? content.id,
         deposit: deposit.toString(),
         modified: formatTimestamp(schemaMessage.timestamp),
         height: schemaMessage.height ?? 0,
+        issuer_grantor_validation_validity_period:
+          getValidityPeriod('issuer_grantor_validation_validity_period', content, schemaMessage),
+        verifier_grantor_validation_validity_period:
+          getValidityPeriod('verifier_grantor_validation_validity_period', content, schemaMessage),
+        issuer_validation_validity_period:
+          getValidityPeriod('issuer_validation_validity_period', content, schemaMessage),
+        verifier_validation_validity_period:
+          getValidityPeriod('verifier_validation_validity_period', content, schemaMessage),
+        holder_validation_validity_period:
+          getValidityPeriod('holder_validation_validity_period', content, schemaMessage),
       };
 
-      delete payload.content;
-      delete payload.timestamp;
-      delete payload.type;
-      delete payload.creator;
-      delete payload["@type"];
+      if (content.json_schema || content.jsonSchema) {
+        const jsonSchema = content.json_schema ?? content.jsonSchema;
+        payload.json_schema = typeof jsonSchema === "string" ? jsonSchema : JSON.stringify(jsonSchema);
+      }
 
       const result = await ctx.call(
         `${SERVICE.V1.CredentialSchemaDatabaseService.path}.update`,

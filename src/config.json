@@ -37,8 +37,8 @@
     "enableWebSocketSubscription": true,
     "websocketReconnectDelay": 2000,
     "rpcRetryAttempts": 3,
-    "rpcRetryDelay": 1000,
-    "rpcTimeout": 30000
+    "rpcRetryDelay": 100000,
+    "rpcTimeout": 500000
   },
   "crawlTransaction": {
     "key": "crawlTransaction",
