@@ -1,6 +1,7 @@
-import { BrokerOptions, Errors, MetricRegistry } from "moleculer";
+import { BrokerOptions, Errors, MetricRegistry, ServiceBroker } from "moleculer";
 // import 'reflect-metadata';
 import { inspect } from "util";
+import * as os from "os";
 // import pick from 'lodash/pick';
 // import HotReloadMiddleware from './middlewares/HotReloadCHokidar';
 import { Network } from "./network";
@@ -83,7 +84,7 @@ const brokerConfig: BrokerOptions = {
   // More info: https://moleculer.services/docs/0.14/networking.html#Serialization
   serializer: Config.SERIALIZER,
 
-  requestTimeout: +(Config.REQUEST_TIMEOUT || process.env.REQUEST_TIMEOUT || 60000),
+  requestTimeout: +(Config.REQUEST_TIMEOUT || process.env.REQUEST_TIMEOUT || 300000), // 5 minutes default
 
   // Retry policy settings. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Retry
   retryPolicy: {
@@ -256,13 +257,39 @@ const brokerConfig: BrokerOptions = {
   ],
   // Register custom REPL commands.
   // replCommands: undefined,
-  /*
-          // Called after broker created.
-          created : (broker: ServiceBroker): void => {},
-          // Called after broker started.
-          started: async (broker: ServiceBroker): Promise<void> => {},
-          stopped: async (broker: ServiceBroker): Promise<void> => {},
-           */
+  
+  created: (broker: ServiceBroker): void => {
+    if (process.platform === 'win32') {
+      const originalNetworkInterfaces = os.networkInterfaces;
+      try {
+        Object.defineProperty(os, 'networkInterfaces', {
+          value: function() {
+            try {
+              return originalNetworkInterfaces.call(os);
+            } catch (err: any) {
+              if (err.code === 'ERR_SYSTEM_ERROR' || err.syscall === 'uv_interface_addresses') {
+                broker.logger?.warn('Failed to get network interfaces (Windows/Node.js v22 issue), continuing without OS metrics');
+                return {};
+              }
+              throw err;
+            }
+          },
+          writable: true,
+          configurable: true,
+          enumerable: true
+        });
+      } catch (patchError: any) {
+        broker.logger?.warn('Could not patch os.networkInterfaces, metrics may fail on Windows');
+      }
+    }
+  },
+  
+  started: async (broker: ServiceBroker): Promise<void> => {
+    broker.logger?.info(' Broker started successfully. Services will retry LCD connections if needed.');
+  },
+  
+  stopped: async (broker: ServiceBroker): Promise<void> => {
+  },
 };
 
 export default brokerConfig;

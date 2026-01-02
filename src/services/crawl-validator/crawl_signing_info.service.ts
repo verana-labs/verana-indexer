@@ -34,7 +34,12 @@ export default class CrawlSigningInfoService extends BullableService {
   })
   public async handleJob(_payload: object): Promise<void> {
     this.logger.info('Update validator signing info');
-    this._lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient();
+    if (!lcdClient?.provider) {
+      this.logger.warn('LCD client not available, skipping signing info update. Will retry on next job execution.');
+      return;
+    }
+    this._lcdClient = lcdClient;
 
     const updateValidators: Validator[] = [];
     const signingInfos: any[] = [];

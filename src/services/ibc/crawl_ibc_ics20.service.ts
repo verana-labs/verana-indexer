@@ -90,7 +90,11 @@ export default class CrawlIBCIcs20Service extends BullableService {
           start_time: msg.timestamp,
         })
       );
-      await IbcIcs20.query().insert(ibcIcs20s).transacting(trx);
+      const chunkSize = config.crawlIbcIcs20.chunkSize || 5000;
+      for (let i = 0; i < ibcIcs20s.length; i += chunkSize) {
+        const chunk = ibcIcs20s.slice(i, i + chunkSize);
+        await IbcIcs20.query().insert(chunk).transacting(trx);
+      }
     }
   }
 
@@ -170,7 +174,11 @@ export default class CrawlIBCIcs20Service extends BullableService {
           finish_time: msg.timestamp,
         });
       });
-      await IbcIcs20.query().insert(ibcIcs20s).transacting(trx);
+      const chunkSize = config.crawlIbcIcs20.chunkSize || 5000;
+      for (let i = 0; i < ibcIcs20s.length; i += chunkSize) {
+        const chunk = ibcIcs20s.slice(i, i + chunkSize);
+        await IbcIcs20.query().insert(chunk).transacting(trx);
+      }
     }
   }
 

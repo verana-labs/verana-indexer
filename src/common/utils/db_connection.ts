@@ -29,7 +29,7 @@ if (knex.client && (knex.client as any).pool) {
     const freeCount = pool.free?.length || 0;
     const now = Date.now();
 
-    if ((usedCount >= warningThreshold || pendingCount > 10) && 
+    if ((usedCount >= warningThreshold || pendingCount > 10) &&
         (now - lastWarningTime > WARNING_INTERVAL)) {
       console.warn(
         `⚠️ [DB Pool] High usage - Used: ${usedCount}/${poolMax}, ` +
@@ -39,8 +39,43 @@ if (knex.client && (knex.client as any).pool) {
       lastWarningTime = now;
     }
 
+    if (pendingCount > 100) {
+      console.error(
+        `🚨 [DB Pool] CRITICAL: ${pendingCount} pending connections! ` +
+        `Used: ${usedCount}/${poolMax}. Immediate action required.`
+      );
+    }
+
     return originalAcquire(...args);
   };
 }
+
+setInterval(() => {
+  if (knex.client && (knex.client as any).pool) {
+    const pool = (knex.client as any).pool;
+    const usedCount = pool.used?.length || 0;
+    const freeCount = pool.free?.length || 0;
+    const pendingCount = pool.pendingAcquires?.length || 0;
+
+    console.log(` [DB Pool Status] Used: ${usedCount}, Free: ${freeCount}, Pending: ${pendingCount}, Total: ${usedCount + freeCount}`);
+
+    if (pendingCount > 200) {
+      console.warn('🔧 [DB Pool] Forcing pool cleanup due to excessive pending connections');
+      if (pool.destroyAllNow) {
+        pool.destroyAllNow();
+      }
+    }
+  }
+}, 30000); 
+
+process.on('SIGTERM', async () => {
+  console.log('🛑 [DB] Shutting down gracefully...');
+  await knex.destroy();
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 [DB] Shutting down gracefully...');
+  await knex.destroy();
+});
 
 export default knex;

@@ -6,7 +6,6 @@ import { getConfigForEnv } from "../knexfile";
 loadEnvFiles();
 dotenv.config();
 
-
 async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Promise<void> {
   for (let i = 0; i < maxRetries; i++) {
     let testDb: Knex | undefined;
@@ -54,7 +53,6 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
       await new Promise<void>((resolve) => {
         setTimeout(resolve, delayMs);
       });
-
     }
   }
 }
@@ -70,7 +68,6 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
     console.log(`Connecting to database (env: ${environment})...`);
     const config = getConfigForEnv();
 
-    // Log connection details (without password)
     const connInfo = config.connection as any;
     console.log(`Host: ${connInfo.host}, Port: ${connInfo.port}, User: ${connInfo.user}, Database: ${connInfo.database}`);
 
@@ -79,14 +76,47 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
 
     db = knex(config);
 
-    const [completed, pending] = await db.migrate.list();
-
-    if (!pending.length) {
-      console.log(`Database is up to date (env: ${environment}). No migrations required.`);
-    } else {
-      console.log(`Applying ${pending.length} pending migration(s) (env: ${environment})...`);
-      await db.migrate.latest();
-      console.log("Migrations finished successfully.");
+    const blockExists = await db.schema.hasTable("block");
+    
+    try {
+      const [completed, pending] = await db.migrate.list();
+      
+      if (!pending || pending.length === 0) {
+        console.log(`Database is up to date (env: ${environment}). No migrations required.`);
+      } else {
+        console.log(`Found ${pending.length} pending migration(s) (env: ${environment})...`);
+        
+        if (blockExists) {
+          const initMigration = pending.find((m: any) => m && m.name && m.name.includes("init_horoscope_layer_1_model"));
+          if (initMigration) {
+            console.log(`    Init migration detected but block table exists, will skip it`);
+            console.log(`  Using Knex migrate.latest() - it will handle skipping init migration automatically`);
+          }
+        }
+        
+        console.log(`  Running migrations using Knex migrate.latest()...`);
+        await db.migrate.latest();
+        console.log("Migrations finished successfully.");
+      }
+    } catch (migrateError: any) {
+      if (migrateError.message.includes("corrupt") || migrateError.message.includes("missing")) {
+        console.log("  Migration validation error detected, handling gracefully...");
+        console.log("  This usually happens after reindexing. Migrations will be handled by reindex script.");
+        console.log("  If you see this on a fresh database, there may be an issue with migration files.");
+      } else if (migrateError.message.includes("already exists") && migrateError.message.includes("block")) {
+        console.log("  Init migration tried to create block table (skipping)");
+        console.log("  Continuing with remaining migrations...");
+        try {
+          await db.migrate.latest();
+          console.log("Migrations finished successfully.");
+        } catch (retryError: any) {
+          console.error("Migration retry failed:", retryError.message);
+          throw retryError;
+        }
+      } else {
+        console.error("Migration run failed:", migrateError);
+        throw migrateError;
+      }
     }
   } catch (error) {
     console.error("Migration run failed:", error);

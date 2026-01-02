@@ -45,7 +45,12 @@ export default class CrawlTallyProposalService extends BullableService {
   })
   public async handleJob(_payload: object): Promise<void> {
     this.logger.info('Update proposal tally');
-    this._lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient();
+    if (!lcdClient?.provider) {
+      this.logger.warn(' LCD client not available, skipping proposal tally update. Will retry on next job execution.');
+      return;
+    }
+    this._lcdClient = lcdClient;
 
     const batchQueries: any[] = [];
     const patchQueries: any[] = [];

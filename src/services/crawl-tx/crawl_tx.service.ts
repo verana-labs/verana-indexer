@@ -49,6 +49,8 @@ export default class CrawlTxService extends BullableService {
 
   private _processingLock: boolean = false;
 
+  private _isFreshStart: boolean = false;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
     this._httpBatchClient = getHttpBatchClient();
@@ -72,14 +74,19 @@ export default class CrawlTxService extends BullableService {
     if (startBlock >= endBlock) {
       return;
     }
-    const listTxRaw = await this.getListRawTx(startBlock, endBlock);
+
+    let actualEndBlock = endBlock;
+    if (this._isFreshStart && config.crawlTransaction.freshStart) {
+      const maxBlocks = config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall;
+      actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+    }
+
+    const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock);
     const listdecodedTx = await this.decodeListRawTx(listTxRaw);
-    this.logger.warn(`listdecodedTx: ${JSON.stringify(listdecodedTx)}`);
-    this.logger.warn(`listTxRaw: ${JSON.stringify(listTxRaw)}`);
     await knex.transaction(async (trx) => {
       await this.insertTxDecoded(listdecodedTx, trx);
       if (blockCheckpoint) {
-        blockCheckpoint.height = endBlock;
+        blockCheckpoint.height = actualEndBlock;
         await BlockCheckpoint.query()
           .insert(blockCheckpoint)
           .onConflict('job_name')
@@ -96,14 +103,13 @@ export default class CrawlTxService extends BullableService {
   })
   public async jobHandlerCrawlTx(): Promise<void> {
     if (this._processingLock) {
-      this.logger.debug('⏸️ [HANDLE_TRANSACTION] Already in progress, skipping...');
+      this.logger.debug(' [HANDLE_TRANSACTION] Already in progress, skipping...');
       return;
     }
 
     this._processingLock = true;
 
     try {
-      this.logger.info('🔄 [HANDLE_TRANSACTION] Job started');
       const [startBlock, endBlock, blockCheckpoint] =
         await BlockCheckpoint.getCheckpoint(
           BULL_JOB_NAME.HANDLE_TRANSACTION,
@@ -112,63 +118,79 @@ export default class CrawlTxService extends BullableService {
         );
 
       this.logger.info(
-        `📊 [HANDLE_TRANSACTION] Handle transaction from block ${startBlock} to ${endBlock}`
+        ` [HANDLE_TRANSACTION] Handle transaction from block ${startBlock} to ${endBlock}`
       );
 
       if (startBlock >= endBlock) {
-        this.logger.debug(`⏳ [HANDLE_TRANSACTION] No new blocks to process (${startBlock} >= ${endBlock})`);
+        this.logger.debug(` [HANDLE_TRANSACTION] No new blocks to process (${startBlock} >= ${endBlock})`);
         return;
+      }
+
+      let actualEndBlock = endBlock;
+      if (this._isFreshStart && config.handleTransaction.freshStart) {
+        const maxBlocks = config.handleTransaction.freshStart.blocksPerCall || config.handleTransaction.blocksPerCall;
+        actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
       }
 
       const listTxRaw = await Transaction.query()
         .where('height', '>', startBlock)
-        .andWhere('height', '<=', endBlock)
+        .andWhere('height', '<=', actualEndBlock)
         .orderBy('height', 'asc')
         .orderBy('index', 'asc');
 
-      this.logger.info(`📝 [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
+      this.logger.info(` [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
 
       if (listTxRaw.length === 0) {
-        this.logger.info(`ℹ️ [HANDLE_TRANSACTION] No transactions found for blocks ${startBlock + 1}-${endBlock}`);
+
         if (blockCheckpoint) {
           await knex.transaction(async (trx) => {
-            blockCheckpoint.height = endBlock;
-            await BlockCheckpoint.query()
-              .insert(blockCheckpoint)
-              .onConflict('job_name')
-              .merge()
-              .returning('id')
-              .transacting(trx);
+            try {
+              blockCheckpoint.height = actualEndBlock;
+              await BlockCheckpoint.query()
+                .insert(blockCheckpoint)
+                .onConflict('job_name')
+                .merge()
+                .returning('id')
+                .transacting(trx);
+            } catch (error) {
+              this.logger.error(`❌ [HANDLE_TRANSACTION] Error updating checkpoint:`, error);
+              throw error;
+            }
           });
         }
         return;
       }
 
-      await knex.transaction(async (trx) => {
-        await this.insertRelatedTx(listTxRaw, trx);
-        if (blockCheckpoint) {
-          blockCheckpoint.height = endBlock;
-          await BlockCheckpoint.query()
-            .insert(blockCheckpoint)
-            .onConflict('job_name')
-            .merge()
-            .returning('id')
-            .transacting(trx);
-        }
-      });
+        await knex.transaction(async (trx) => {
+          try {
+            await this.insertRelatedTx(listTxRaw, trx);
+            if (blockCheckpoint) {
+              blockCheckpoint.height = actualEndBlock;
+              await BlockCheckpoint.query()
+                .insert(blockCheckpoint)
+                .onConflict('job_name')
+                .merge()
+                .returning('id')
+                .transacting(trx);
+            }
+          } catch (error) {
+            this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
+            throw error;
+          }
+        });
 
-      this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${endBlock}`);
+      this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${actualEndBlock}`);
 
       try {
         await this.broker.call(
           `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
           {
-            height: endBlock,
+            height: actualEndBlock,
             timestamp: new Date().toISOString(),
           }
         );
         this.logger.info(
-          `📡 [HANDLE_TRANSACTION] Emitted block-processed event for height ${endBlock}`
+          ` [HANDLE_TRANSACTION] Emitted block-processed event for height ${actualEndBlock}`
         );
       } catch (error) {
         this.logger.warn(
@@ -234,8 +256,12 @@ export default class CrawlTxService extends BullableService {
     blocks.forEach((block) => {
       if (block.tx_count > 0) {
         this.logger.info('crawl tx by height: ', block.height);
+        const txsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
+          ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
+          : config.handleTransaction.txsPerCall;
+
         const totalPages = Math.ceil(
-          block.tx_count / config.handleTransaction.txsPerCall
+          block.tx_count / txsPerCall
         );
 
         [...Array(totalPages)].forEach((e, i) => {
@@ -245,7 +271,7 @@ export default class CrawlTxService extends BullableService {
               block.height,
               block.timestamp,
               pageIndex,
-              config.handleTransaction.txsPerCall.toString()
+              txsPerCall.toString()
             )
           );
         });
@@ -255,7 +281,7 @@ export default class CrawlTxService extends BullableService {
     const resultPromises: any[] = resultPromisesResults
       .filter((result) => result.status === 'fulfilled')
       .map((result) => (result as PromiseFulfilledResult<any>).value);
-    
+
     const failures = resultPromisesResults.filter((result) => result.status === 'rejected');
     if (failures.length > 0) {
       this.logger.warn(`⚠️ ${failures.length} tx_search RPC call(s) failed, but processing ${resultPromises.length} successful results`);
@@ -438,10 +464,14 @@ export default class CrawlTxService extends BullableService {
     });
 
     if (listTxModel.length) {
+      const effectiveConfig = this._isFreshStart && config.crawlTransaction.freshStart
+        ? config.crawlTransaction.freshStart
+        : config.crawlTransaction;
+      const chunkSize = effectiveConfig.chunkSize || config.crawlTransaction.chunkSize;
       const resultInsert = await transactionDB.batchInsert(
         Transaction.tableName,
         listTxModel,
-        config.crawlTransaction.chunkSize
+        chunkSize
       );
       this.logger.warn('result insert tx', resultInsert);
     }
@@ -462,19 +492,20 @@ export default class CrawlTxService extends BullableService {
 
       let sender = '';
       try {
-        sender = this._registry.decodeAttribute(
-          this._findAttribute(
-            rawLogTx.tx_response.events,
-            'message',
-            this._registry.encodeAttribute('sender')
-          )
-        );
+        if (this._registry.decodeAttribute && this._registry.encodeAttribute) {
+          sender = this._registry.decodeAttribute(
+            this._findAttribute(
+              rawLogTx.tx_response.events,
+              'message',
+              this._registry.encodeAttribute('sender')
+            )
+          );
+        }
       } catch (error) {
         this.logger.warn(
           'txhash not has sender event: ',
           rawLogTx.tx_response.txhash
         );
-        // this.logger.warn(error);
       }
 
       const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx);
@@ -489,15 +520,15 @@ export default class CrawlTxService extends BullableService {
               tx_id: tx.id,
               block_height: tx.height,
               index,
-              composite_key: attribute?.key
+              composite_key: attribute?.key && this._registry.decodeAttribute
                 ? `${event.type}.${this._registry.decodeAttribute(
                   attribute?.key
                 )}`
                 : null,
-              key: attribute?.key
+              key: attribute?.key && this._registry.decodeAttribute
                 ? this._registry.decodeAttribute(attribute?.key)
                 : null,
-              value: attribute?.value
+              value: attribute?.value && this._registry.decodeAttribute
                 ? this._registry.decodeAttribute(attribute?.value)
                 : null,
             })
@@ -518,18 +549,37 @@ export default class CrawlTxService extends BullableService {
     });
 
     if (listEventModel.length) {
-      await Event.query()
-        .insertGraph(listEventModel, { allowRefs: true })
-        .transacting(transactionDB);
+      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
+        ? config.handleTransaction.freshStart
+        : config.handleTransaction;
+      const chunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      this.logger.info(`📝 [insertRelatedTx] Inserting ${listEventModel.length} events in chunks of ${chunkSize}`);
+      for (let i = 0; i < listEventModel.length; i += chunkSize) {
+        const chunk = listEventModel.slice(i, i + chunkSize);
+        await Event.query()
+          .insertGraph(chunk, { allowRefs: true })
+          .transacting(transactionDB);
+      }
+      this.logger.info(`✅ [insertRelatedTx] Inserted ${listEventModel.length} events`);
     }
-    
+
     if (listMsgModel?.length) {
-      const resultInsertMsgs = await TransactionMessage.query()
-        .insert(listMsgModel)
-        .transacting(transactionDB);
-      
-      const messagesArray = (Array.isArray(resultInsertMsgs) ? resultInsertMsgs : [resultInsertMsgs]) as any[];
-      await this.processMessageTypes(messagesArray, listDecodedTx);
+      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
+        ? config.handleTransaction.freshStart
+        : config.handleTransaction;
+      const chunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      this.logger.info(`📝 [insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSize}`);
+      const allInsertedMsgs: any[] = [];
+      for (let i = 0; i < listMsgModel.length; i += chunkSize) {
+        const chunk = listMsgModel.slice(i, i + chunkSize);
+        const resultInsertMsgs = await TransactionMessage.query()
+          .insert(chunk)
+          .transacting(transactionDB);
+        const messagesArray = (Array.isArray(resultInsertMsgs) ? resultInsertMsgs : [resultInsertMsgs]) as any[];
+        allInsertedMsgs.push(...messagesArray);
+      }
+      this.logger.info(`✅ [insertRelatedTx] Inserted ${listMsgModel.length} messages`);
+      await this.processMessageTypes(allInsertedMsgs, listDecodedTx);
     }
   }
 
@@ -646,17 +696,30 @@ export default class CrawlTxService extends BullableService {
 
     this.logger.info(`📋 [insertRelatedTx] Permission messages: ${permissionMessages.length}`);
     if (permissionMessages?.length) {
-      this.logger.info(`🚀 [insertRelatedTx] Sending ${permissionMessages.length} Permission messages to processor`);
-      try {
-        await this.broker.call(
-          `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
-          { permissionMessages },
-        );
-        this.logger.info(`✅ [insertRelatedTx] Permission messages processed successfully`);
-      } catch (err) {
-        this.logger.error(`❌ [insertRelatedTx] Failed to process Permission messages:`, err);
-        console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
+      this.logger.info(` [insertRelatedTx] Waiting 1s for schema transactions to commit before processing permissions`);
+      await new Promise<void>(resolve => { setTimeout(resolve, 1000); });
+      const permissionBatchSize = 50;
+      for (let i = 0; i < permissionMessages.length; i += permissionBatchSize) {
+        const batch = permissionMessages.slice(i, i + permissionBatchSize);
+        this.logger.info(`🚀 [insertRelatedTx] Processing permission batch ${Math.floor(i / permissionBatchSize) + 1}/${Math.ceil(permissionMessages.length / permissionBatchSize)} (${batch.length} messages)`);
+
+        try {
+          await this.broker.call(
+            `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
+            { permissionMessages: batch },
+          );
+          this.logger.info(`✅ [insertRelatedTx] Permission batch processed successfully`);
+        } catch (err) {
+          this.logger.error(`❌ [insertRelatedTx] Failed to process permission batch:`, err);
+          console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
+        }
+
+        if (i + permissionBatchSize < permissionMessages.length) {
+          await new Promise<void>(resolve => { setTimeout(resolve, 200); });
+        }
       }
+
+      this.logger.info(`✅ [insertRelatedTx] All permission batches processed`);
     }
 
     const trustDepositList = resultInsertMsgs
@@ -673,16 +736,12 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    this.logger.info(`📋 [insertRelatedTx] TrustDeposit messages: ${trustDepositList.length}`);
     if (trustDepositList?.length) {
-      this.logger.info(`🚀 [insertRelatedTx] Sending ${trustDepositList.length} TD messages to processor`);
       await this.broker.call(
         `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
         { trustDepositList },
       );
     }
-
-    this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
   }
 
   private checkMappingEventToLog(tx: any) {
@@ -705,10 +764,10 @@ export default class CrawlTxService extends BullableService {
     tx?.tx_response?.events?.forEach((event: any) => {
       event.attributes?.forEach((attr: any) => {
         if (event.msg_index !== undefined) {
-          const key = attr.key
+          const key = attr.key && this._registry.decodeAttribute
             ? this._registry.decodeAttribute(attr.key)
             : null;
-          const value = attr.value
+          const value = attr.value && this._registry.decodeAttribute
             ? this._registry.decodeAttribute(attr.value)
             : null;
           flattenEventEncoded.push(
@@ -823,22 +882,68 @@ export default class CrawlTxService extends BullableService {
   }
 
   public async _start() {
+    await this.waitForServices(SERVICE.V1.CrawlBlock.name);
     const providerRegistry = await getProviderRegistry();
     this._registry = new ChainRegistry(this.logger, providerRegistry);
-    
+
+    try {
+      const blockCountResult = await knex('block').count('* as count').first();
+      const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+      const checkpoint = await BlockCheckpoint.query().findOne({
+        job_name: BULL_JOB_NAME.CRAWL_TRANSACTION,
+      });
+      const currentBlock = checkpoint ? checkpoint.height : 0;
+      this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+      this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
+    } catch (error) {
+      this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+      this._isFreshStart = false;
+    }
+
     try {
       const lcdClient = await getLcdClient();
-      const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
-        () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
-        'getNodeInfo'
-      );
-      const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
-      if (cosmosSdkVersion) {
-        this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+      if (!lcdClient?.provider) {
+        this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
+      } else {
+        try {
+          const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
+            () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+            'getNodeInfo'
+          );
+          const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
+          if (cosmosSdkVersion) {
+            this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+          }
+        } catch (error: any) {
+          const errorMessage = error?.message || String(error);
+          if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
+            this.logger.warn(`⚠️ Failed to get node info due to timeout (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+          } else {
+            this.logger.warn(`⚠️ Failed to get node info (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+          }
+        }
       }
-    } catch (error) {
-      this.logger.warn(`⚠️ Failed to get node info (non-critical): ${error}. Continuing without SDK version update.`);
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
+        this.logger.warn(`⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`);
+      } else {
+        this.logger.warn(`⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`);
+      }
     }
+
+    const crawlTxInterval = (this._isFreshStart && config.crawlTransaction.freshStart)
+      ? (config.crawlTransaction.freshStart.millisecondCrawl || config.crawlTransaction.millisecondCrawl)
+      : config.crawlTransaction.millisecondCrawl;
+
+    const handleTxInterval = (this._isFreshStart && config.handleTransaction.freshStart)
+      ? (config.handleTransaction.freshStart.millisecondCrawl || config.handleTransaction.millisecondCrawl)
+      : config.handleTransaction.millisecondCrawl;
+
+    this.logger.info(
+      `🚀 CrawlTx Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
+      `CrawlTx Interval: ${crawlTxInterval}ms | HandleTx Interval: ${handleTxInterval}ms`
+    );
 
     this.createJob(
       BULL_JOB_NAME.CRAWL_TRANSACTION,
@@ -850,7 +955,7 @@ export default class CrawlTxService extends BullableService {
           count: 3,
         },
         repeat: {
-          every: config.crawlTransaction.millisecondCrawl,
+          every: crawlTxInterval,
         },
       }
     );
@@ -864,7 +969,7 @@ export default class CrawlTxService extends BullableService {
           count: 3,
         },
         repeat: {
-          every: config.handleTransaction.millisecondCrawl,
+          every: handleTxInterval,
         },
       }
     );
@@ -893,7 +998,7 @@ export default class CrawlTxService extends BullableService {
       } catch (error) {
         lastError = error;
         const isLastAttempt = attempt === attempts;
-        
+
         if (isLastAttempt) {
           this.logger.error(
             `❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${error}`
@@ -911,8 +1016,8 @@ export default class CrawlTxService extends BullableService {
       }
     }
 
-    throw lastError instanceof Error 
-      ? lastError 
+    throw lastError instanceof Error
+      ? lastError
       : new Error(`Failed to execute ${operationName} after ${attempts} attempts`);
   }
 

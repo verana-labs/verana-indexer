@@ -31,26 +31,60 @@ interface AccountInsertData {
 })
 export default class CrawlNewAccountsService extends BullableService {
     private timer: NodeJS.Timeout | null = null;
-    private readonly JOB_NAME = (BULL_JOB_NAME as any).JOB_HANDLE_ACCOUNTS || 'crawl:new-accounts';
-    private readonly BATCH_SIZE = config?.crawlAccounts?.chunkSize || 100;
-    private readonly CRAWL_INTERVAL = config?.crawlAccounts?.millisecondCrawl || 10000;
-    private readonly ENABLE_RECONCILE = (config as any)?.crawlAccounts?.reconcile?.enabled || false;
+    private readonly JOB_NAME = BULL_JOB_NAME.JOB_HANDLE_ACCOUNTS;
+    private BATCH_SIZE = config?.crawlAccounts?.freshStart?.chunkSize || 100;
+    private CRAWL_INTERVAL = config?.crawlAccounts?.freshStart?.millisecondCrawl || 10000;
+    private ENABLE_RECONCILE = (config as any)?.crawlAccounts?.reconcile?.enabled || false;
     private accountCache = new Map<string, Account>();
     private cacheSize = 1000;
+    private _isFreshStart: boolean = false;
 
     constructor(public broker: ServiceBroker) {
         super(broker);
     }
 
     async started() {
-        this.logger.info(`[CrawlNewAccountsService] Starting with batch ${this.BATCH_SIZE}`);
-
         try {
+
+            const genesisCheckpoint = await BlockCheckpoint.query().findOne({
+                job_name: BULL_JOB_NAME.CRAWL_GENESIS,
+            });
+            
+            if (!genesisCheckpoint || genesisCheckpoint.height !== 1) {
+                this.logger.warn(`[CrawlNewAccountsService]  Waiting for genesis crawl to complete. Current genesis height: ${genesisCheckpoint?.height || 0}. Will retry in 10 seconds...`);
+
+                setTimeout(() => this.started(), 10000);
+                return;
+            }
+
+            this.logger.info(`[CrawlNewAccountsService] Genesis crawl completed. Starting account service...`);
+
+            const blockCountResult = await knex('block').count('* as count').first();
+            const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+            
+
             const checkpoint = await this.ensureCheckpoint();
-            await this.processBlocks(checkpoint);
+            const currentBlock = checkpoint ? checkpoint.height : 0;
+            this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+
+            this.logger.info(`[CrawlNewAccountsService] Starting - Block count: ${totalBlocks}, Current checkpoint: ${currentBlock}, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+
+            if (this._isFreshStart && config.crawlAccounts.freshStart) {
+                this.BATCH_SIZE = config.crawlAccounts.freshStart.chunkSize || 100;
+                this.CRAWL_INTERVAL = config.crawlAccounts.freshStart.millisecondCrawl || 1000;
+            } else if (!this._isFreshStart && config.crawlAccounts.reindexing) {
+                this.BATCH_SIZE = config.crawlAccounts.reindexing.chunkSize || 1000;
+                this.CRAWL_INTERVAL = config.crawlAccounts.reindexing.millisecondCrawl || 1000;
+            }
+
+            this.logger.info(`[CrawlNewAccountsService] Config - Batch: ${this.BATCH_SIZE}, Interval: ${this.CRAWL_INTERVAL}ms, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+
+
+            await this.processBlocks();
+
 
             this.timer = setInterval(
-                () => this.processBlocks(checkpoint),
+                () => this.processBlocks(),
                 this.CRAWL_INTERVAL
             );
         } catch (err) {
@@ -85,64 +119,100 @@ export default class CrawlNewAccountsService extends BullableService {
 
     private async updateCheckpoint(newHeight: number) {
         try {
-            await BlockCheckpoint.query(knex)
+            const updated = await BlockCheckpoint.query(knex)
                 .patch({
                     height: newHeight,
                 })
                 .where({ job_name: this.JOB_NAME });
+            
+            if (updated === 0) {
+
+                await BlockCheckpoint.query(knex).insert({
+                    job_name: this.JOB_NAME,
+                    height: newHeight,
+                });
+                this.logger.info(`[CrawlNewAccountsService] Created new checkpoint at height: ${newHeight}`);
+            }
         } catch (err) {
-            this.logger.error(`[Checkpoint] Error:`, err);
+            this.logger.error(`[CrawlNewAccountsService] Error updating checkpoint to height ${newHeight}:`, err);
+            throw err;
         }
     }
 
     @Action({ name: 'processBlocks' })
-    async processBlocks(blockCheckpointRow?: any) {
-        const [startBlock] = await BlockCheckpoint.getCheckpoint(this.JOB_NAME, []);
-        let lastHeight = startBlock || 0;
-        let totalBlocksProcessed = 0;
+    async processBlocks() {
+        try {
 
-        while (true) {
-            const nextBlocks = await Block.query()
-                .where('height', '>', lastHeight)
-                .orderBy('height', 'asc')
-                .limit(this.BATCH_SIZE);
+            const checkpoint = await BlockCheckpoint.query(knex).findOne({ job_name: this.JOB_NAME });
+            let lastHeight = checkpoint ? checkpoint.height : 0;
+            let totalBlocksProcessed = 0;
 
-            if (!nextBlocks.length) {
-                break;
-            }
+            this.logger.info(`[CrawlNewAccountsService] Processing blocks starting from height: ${lastHeight}`);
 
-            try {
-                const changedAddresses = new Set<string>();
-                let batchTransfers = 0;
-                let batchSuccess = true;
+            while (true) {
+                const nextBlocks = await Block.query()
+                    .where('height', '>', lastHeight)
+                    .orderBy('height', 'asc')
+                    .limit(this.BATCH_SIZE);
 
-                for (const block of nextBlocks) {
-                    const result = await this.processBlockTransactions(block, changedAddresses);
-                    batchSuccess = batchSuccess && result.success;
-                    batchTransfers += result.transfersProcessed;
-                    if (!result.success) break;
-                }
-
-                if (!batchSuccess) {
+                if (!nextBlocks.length) {
+                    if (totalBlocksProcessed > 0) {
+                        this.logger.info(`[CrawlNewAccountsService] Processed ${totalBlocksProcessed} blocks, reached height: ${lastHeight}`);
+                    }
                     break;
                 }
 
-                if (this.ENABLE_RECONCILE && Network?.LCD) {
-                    await this.reconcileChangedAddresses(Array.from(changedAddresses), nextBlocks[nextBlocks.length - 1].height);
+                try {
+                    const changedAddresses = new Set<string>();
+                    let batchTransfers = 0;
+                    let batchSuccess = true;
+
+                    const batchStartHeight = nextBlocks[0].height;
+                    const batchEndHeight = nextBlocks[nextBlocks.length - 1].height;
+
+                    for (const block of nextBlocks) {
+                        const result = await this.processBlockTransactions(block, changedAddresses);
+                        batchSuccess = batchSuccess && result.success;
+                        batchTransfers += result.transfersProcessed;
+                        if (!result.success) {
+                            this.logger.error(`[CrawlNewAccountsService] Failed processing block ${block.height}`);
+                            break;
+                        }
+                    }
+
+                    if (!batchSuccess) {
+                        this.logger.error(`[CrawlNewAccountsService] Batch processing failed at height ${batchEndHeight}`);
+                        break;
+                    }
+
+                    if (this.ENABLE_RECONCILE && Network?.LCD) {
+                        await this.reconcileChangedAddresses(Array.from(changedAddresses), batchEndHeight);
+                    }
+
+                    await this.flushAccountBatch();
+
+                    totalBlocksProcessed += nextBlocks.length;
+                    const newHeight = batchEndHeight;
+                    await this.updateCheckpoint(newHeight);
+                    lastHeight = newHeight;
+
+                    this.logger.info(`[CrawlNewAccountsService] ✅ Processed batch: heights ${batchStartHeight}-${batchEndHeight} (${nextBlocks.length} blocks, ${batchTransfers} transfers), checkpoint updated to ${newHeight}`);
+
+                    if (nextBlocks.length < this.BATCH_SIZE) {
+                        this.logger.info(`[CrawlNewAccountsService] Reached end of available blocks at height: ${newHeight}`);
+                        break;
+                    }
+                } catch (err) {
+                    this.logger.error(`[CrawlNewAccountsService] Error processing batch starting at height ${lastHeight + 1}:`, err);
+                    break;
                 }
-
-                await this.flushAccountBatch();
-
-                totalBlocksProcessed += nextBlocks.length;
-                const newHeight = nextBlocks[nextBlocks.length - 1].height;
-                await this.updateCheckpoint(newHeight);
-                lastHeight = newHeight;
-
-                if (nextBlocks.length < this.BATCH_SIZE) break;
-            } catch (err) {
-                this.logger.error(`[PROCESS] Error:`, err);
-                break;
             }
+
+            if (totalBlocksProcessed === 0) {
+                this.logger.debug(`[CrawlNewAccountsService] No new blocks to process (current checkpoint: ${lastHeight})`);
+            }
+        } catch (err) {
+            this.logger.error(`[CrawlNewAccountsService] Error in processBlocks:`, err);
         }
     }
 
@@ -417,18 +487,35 @@ export default class CrawlNewAccountsService extends BullableService {
         const lcd: string | undefined = Network?.LCD;
         if (!lcd || !addresses.length) return;
 
-        const batchSize = 10;
-        for (let i = 0; i < addresses.length; i += batchSize) {
-            const batch = addresses.slice(i, i + batchSize);
+
+        const batchSize = 20; // Increased from 10 for faster processing
+        const uniqueAddresses = Array.from(new Set(addresses)); // Remove duplicates
+        
+        for (let i = 0; i < uniqueAddresses.length; i += batchSize) {
+            const batch = uniqueAddresses.slice(i, i + batchSize);
             const promises = batch.map(address => this.reconcileSingleAddress(address, height, lcd));
             await Promise.allSettled(promises);
+            
+
+            if (i + batchSize < uniqueAddresses.length) {
+                await new Promise<void>(resolve => { setTimeout(resolve, 50); });
+            }
+        }
+        
+        if (uniqueAddresses.length > 0) {
+            this.logger.debug(`[CrawlNewAccountsService] Reconciled ${uniqueAddresses.length} addresses at height ${height}`);
         }
     }
 
     private async reconcileSingleAddress(address: string, height: number, lcd: string) {
         try {
             const url = `${lcd.replace(/\/$/, '')}/cosmos/bank/v1beta1/balances/${address}`;
-            const res = await fetch(url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+            
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
             if (!res.ok) return;
 
             const data: any = await res.json();
@@ -443,8 +530,11 @@ export default class CrawlNewAccountsService extends BullableService {
                 .where({ address });
 
             this.accountCache.delete(address);
-        } catch (err) {
-            this.logger.error(`[RECONCILE] Error ${address}:`, err);
+        } catch (err: any) {
+
+            if (err.name !== 'AbortError') {
+                this.logger.error(`[RECONCILE] Error ${address}:`, err);
+            }
         }
     }
 }

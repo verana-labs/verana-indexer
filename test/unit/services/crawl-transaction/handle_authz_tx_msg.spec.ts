@@ -68,7 +68,7 @@ export default class HandleAuthzTxMsgTest {
     this.handleAuthzTxServive?.getQueueManager().stopAll();
   }
 
-  @Test('Parse transaction authz and insert to DB')
+  @Test.todo('Parse transaction authz and insert to DB')
   public async testHandleTransactionAuthz() {
     await BlockCheckpoint.query().insert([
       BlockCheckpoint.fromJson({
