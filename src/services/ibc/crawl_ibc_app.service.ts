@@ -32,7 +32,7 @@ export default class CrawlIbcAppService extends BullableService {
       await BlockCheckpoint.getCheckpoint(
         BULL_JOB_NAME.CRAWL_IBC_APP,
         [BULL_JOB_NAME.CRAWL_IBC_TAO],
-        config.crawlIbcTao.key
+        config.crawlIbcApp.key
       );
     this.logger.info(
       `Handle IBC/APP, startHeight: ${startHeight}, endHeight: ${endHeight}`
@@ -107,7 +107,11 @@ export default class CrawlIbcAppService extends BullableService {
       });
     });
     if (ibcMessages.length > 0) {
-      await IbcMessage.query().insert(ibcMessages).transacting(trx);
+      const chunkSize = config.crawlIbcApp.chunkSize || 5000;
+      for (let i = 0; i < ibcMessages.length; i += chunkSize) {
+        const chunk = ibcMessages.slice(i, i + chunkSize);
+        await IbcMessage.query().insert(chunk).transacting(trx);
+      }
     }
   }
 

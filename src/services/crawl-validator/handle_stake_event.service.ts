@@ -172,18 +172,23 @@ export default class HandleStakeEventService extends BullableService {
     });
 
     await knex.transaction(async (trx) => {
-      if (powerEvents.length > 0)
-        await PowerEvent.query()
-          .insert(powerEvents)
-          .transacting(trx)
-          .catch((error) => {
-            this.logger.error(
-              `Error insert validator's power events: ${JSON.stringify(
-                powerEvents
-              )}`
-            );
-            this.logger.error(error);
-          });
+      if (powerEvents.length > 0) {
+        const chunkSize = config.handleStakeEvent.chunkSize || 5000;
+        for (let i = 0; i < powerEvents.length; i += chunkSize) {
+          const chunk = powerEvents.slice(i, i + chunkSize);
+          await PowerEvent.query()
+            .insert(chunk)
+            .transacting(trx)
+            .catch((error) => {
+              this.logger.error(
+                `Error insert validator's power events: ${JSON.stringify(
+                  chunk
+                )}`
+              );
+              this.logger.error(error);
+            });
+        }
+      }
 
       updateBlockCheckpoint.height = endHeight;
       await BlockCheckpoint.query()
@@ -216,16 +221,34 @@ export default class HandleStakeEventService extends BullableService {
   }
 
   public async _start() {
-    const lcdClient = await getLcdClient();
-    // set version cosmos sdk to registry
-    const nodeInfo: GetNodeInfoResponseSDKType =
-      await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
-    if (nodeInfo.application_version?.cosmos_sdk_version) {
-      this.cosmosSdkVersion = new SemVer(
-        nodeInfo.application_version?.cosmos_sdk_version
-      );
-    } else {
-      throw Error('Cannot found cosmos sdk version');
+    try {
+      const lcdClient = await getLcdClient();
+      if (!lcdClient?.provider) {
+        this.logger.warn('LCD client not available during startup, skipping SDK version detection. Will retry later.');
+      } else {
+        // set version cosmos sdk to registry
+        try {
+          const nodeInfo: GetNodeInfoResponseSDKType =
+            await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
+          if (nodeInfo.application_version?.cosmos_sdk_version) {
+            this.cosmosSdkVersion = new SemVer(
+              nodeInfo.application_version.cosmos_sdk_version
+            );
+          } else {
+            this.logger.warn('Cannot find cosmos sdk version, using default');
+          }
+        } catch (error: any) {
+          const errorMessage = error?.message || String(error);
+          if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
+            this.logger.warn(`LCD client timeout during startup (non-critical): ${errorMessage}. Service will continue.`);
+          } else {
+            this.logger.warn(`Failed to get node info during startup (non-critical): ${errorMessage}. Service will continue.`);
+          }
+        }
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      this.logger.warn(`LCD client initialization failed during startup (non-critical): ${errorMessage}. Service will continue.`);
     }
 
     this.createJob(

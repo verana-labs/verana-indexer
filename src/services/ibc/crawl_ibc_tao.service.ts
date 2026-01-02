@@ -115,7 +115,11 @@ export default class CrawlIbcTaoService extends BullableService {
       );
       this.logger.info('New IBC Clients:');
       this.logger.info(newClients);
-      await IbcClient.query().insert(newClients).transacting(trx);
+      const chunkSize = config.crawlIbcTao.chunkSize || 5000;
+      for (let i = 0; i < newClients.length; i += chunkSize) {
+        const chunk = newClients.slice(i, i + chunkSize);
+        await IbcClient.query().insert(chunk).transacting(trx);
+      }
     }
   }
 
@@ -160,7 +164,11 @@ export default class CrawlIbcTaoService extends BullableService {
       );
       this.logger.info('New IBC Connections:');
       this.logger.info(newConnections);
-      await IbcConnection.query().insert(newConnections).transacting(trx);
+      const chunkSize = config.crawlIbcTao.chunkSize || 5000;
+      for (let i = 0; i < newConnections.length; i += chunkSize) {
+        const chunk = newConnections.slice(i, i + chunkSize);
+        await IbcConnection.query().insert(chunk).transacting(trx);
+      }
     }
   }
 
@@ -210,7 +218,11 @@ export default class CrawlIbcTaoService extends BullableService {
       );
       this.logger.info('New IBC Channels:');
       this.logger.info(newChannels);
-      await IbcChannel.query().insert(newChannels).transacting(trx);
+      const chunkSize = config.crawlIbcTao.chunkSize || 5000;
+      for (let i = 0; i < newChannels.length; i += chunkSize) {
+        const chunk = newChannels.slice(i, i + chunkSize);
+        await IbcChannel.query().insert(chunk).transacting(trx);
+      }
     }
   }
 

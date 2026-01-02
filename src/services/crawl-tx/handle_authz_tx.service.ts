@@ -55,21 +55,32 @@ export default class HandleAuthzTxService extends BullableService {
       });
     });
     await knex.transaction(async (trx) => {
-      if (listSubTxAuthz.length > 0) {
-        await TransactionMessage.query()
-          .insert(listSubTxAuthz)
-          .transacting(trx);
-      }
+      try {
+        if (listSubTxAuthz.length > 0) {
+          const chunkSize = config.handleAuthzTx.chunkSize || 5000;
+          this.logger.info(`📝 [AUTHZ_TX] Inserting ${listSubTxAuthz.length} authz messages in chunks of ${chunkSize}`);
+          for (let i = 0; i < listSubTxAuthz.length; i += chunkSize) {
+            const chunk = listSubTxAuthz.slice(i, i + chunkSize);
+            await TransactionMessage.query()
+              .insert(chunk)
+              .transacting(trx);
+          }
+          this.logger.info(`✅ [AUTHZ_TX] Inserted ${listSubTxAuthz.length} authz messages`);
+        }
 
-      if (blockCheckpoint) {
-        blockCheckpoint.height = endBlock;
+        if (blockCheckpoint) {
+          blockCheckpoint.height = endBlock;
 
-        await BlockCheckpoint.query()
-          .insert(blockCheckpoint)
-          .onConflict('job_name')
-          .merge()
-          .returning('id')
-          .transacting(trx);
+          await BlockCheckpoint.query()
+            .insert(blockCheckpoint)
+            .onConflict('job_name')
+            .merge()
+            .returning('id')
+            .transacting(trx);
+        }
+      } catch (error) {
+        this.logger.error(`❌ [AUTHZ_TX] Transaction failed, rolling back:`, error);
+        throw error;
       }
     });
   }

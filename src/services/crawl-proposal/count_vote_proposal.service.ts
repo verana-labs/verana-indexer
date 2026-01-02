@@ -43,9 +43,9 @@ export default class CountVoteProposalService extends BullableService {
       )
       .select('*');
 
-    const BATCH_SIZE = 5; 
-    for (let i = 0; i < votingProposals.length; i += BATCH_SIZE) {
-      const batch = votingProposals.slice(i, i + BATCH_SIZE);
+    const chunkSize = config.countVoteProposal.chunkSize || 5000; 
+    for (let i = 0; i < votingProposals.length; i += chunkSize) {
+      const batch = votingProposals.slice(i, i + chunkSize);
       
       await Promise.all(
         batch.map(async (proposal: Proposal) => {
