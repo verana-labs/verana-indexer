@@ -1,9 +1,9 @@
 import { TsProtoGeneratedType } from '@cosmjs/proto-signing';
-import { MsgArchiveCredentialSchema, MsgCreateCredentialSchema, MsgUpdateCredentialSchema } from "@verana-labs/verana-types/codec/verana/cs/v1/tx";
-import { MsgAddDID, MsgRemoveDID, MsgRenewDID, MsgTouchDID } from '@verana-labs/verana-types/codec/verana/dd/v1/tx';
-import { MsgCancelPermissionVPLastRequest, MsgCreateOrUpdatePermissionSession, MsgCreatePermission, MsgCreateRootPermission, MsgExtendPermission, MsgRenewPermissionVP, MsgRepayPermissionSlashedTrustDeposit as MsgRepayPermissionSlashedTrustDepositPerm, MsgRevokePermission, MsgSetPermissionVPToValidated, MsgSlashPermissionTrustDeposit, MsgStartPermissionVP } from '@verana-labs/verana-types/codec/verana/perm/v1/tx';
-import { MsgReclaimTrustDeposit, MsgReclaimTrustDepositYield, MsgRepaySlashedTrustDeposit } from '@verana-labs/verana-types/codec/verana/td/v1/tx';
-import { MsgAddGovernanceFrameworkDocument, MsgArchiveTrustRegistry, MsgCreateTrustRegistry, MsgIncreaseActiveGovernanceFrameworkVersion, MsgUpdateTrustRegistry } from '@verana-labs/verana-types/codec/verana/tr/v1/tx';
+import { MsgArchiveCredentialSchema, MsgCreateCredentialSchema, MsgUpdateCredentialSchema } from "@verana-labs/verana-types/codec/verana/cs/v1/tx.js";
+import { MsgAddDID, MsgRemoveDID, MsgRenewDID, MsgTouchDID } from '@verana-labs/verana-types/codec/verana/dd/v1/tx.js';
+import { MsgCancelPermissionVPLastRequest, MsgCreateOrUpdatePermissionSession, MsgCreatePermission, MsgCreateRootPermission, MsgExtendPermission, MsgRenewPermissionVP, MsgRepayPermissionSlashedTrustDeposit as MsgRepayPermissionSlashedTrustDepositPerm, MsgRevokePermission, MsgSetPermissionVPToValidated, MsgSlashPermissionTrustDeposit, MsgStartPermissionVP } from '@verana-labs/verana-types/codec/verana/perm/v1/tx.js';
+import { MsgReclaimTrustDeposit, MsgReclaimTrustDepositYield, MsgRepaySlashedTrustDeposit } from '@verana-labs/verana-types/codec/verana/td/v1/tx.js';
+import { MsgAddGovernanceFrameworkDocument, MsgArchiveTrustRegistry, MsgCreateTrustRegistry, MsgIncreaseActiveGovernanceFrameworkVersion, MsgUpdateTrustRegistry } from '@verana-labs/verana-types/codec/verana/tr/v1/tx.js';
 
 
 export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
