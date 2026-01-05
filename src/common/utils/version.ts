@@ -1,9 +1,19 @@
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { execSync } from 'child_process';
 
 let cachedVersion: string | null = null;
+
+function getPackageJsonPath(): string {
+  try {
+    if (typeof __dirname !== 'undefined') {
+      return join(__dirname, '../../../package.json');
+    }
+    return resolve(process.cwd(), 'package.json');
+  } catch {
+    return resolve(process.cwd(), 'package.json');
+  }
+}
 
 export function getIndexerVersion(): string {
   if (cachedVersion) {
@@ -26,9 +36,7 @@ export function getIndexerVersion(): string {
       console.log('[Version] Git tag not available, falling back to package.json');
     }
 
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const packageJsonPath = join(__dirname, '../../../package.json');
+    const packageJsonPath = getPackageJsonPath();
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     
     let version = packageJson.version;
