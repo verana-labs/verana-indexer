@@ -1,9 +1,13 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
+import { GetNodeInfoResponseSDKType } from "@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query";
 import BaseService from "../../base/base.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
+import { getIndexerVersion } from "../../common/utils/version";
+import { getLcdClient } from "../../common/utils/verana_client";
+import { Network } from "../../network";
 
 type ChangeOperation = "create" | "update" | "delete";
 
@@ -11,7 +15,7 @@ interface IndexerChange {
   entity_type: string;
   entity_id: string;
   operation: ChangeOperation;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
 }
 
 function toOperation(eventType?: string, isDelete?: boolean): ChangeOperation {
@@ -61,9 +65,10 @@ function toOperation(eventType?: string, isDelete?: boolean): ChangeOperation {
   return "update";
 }
 
-function safeJsonParse(value: any) {
+function safeJsonParse(value: unknown) {
   if (!value) return null;
   if (typeof value === "object") return value;
+  if (typeof value !== "string") return value;
   try {
     return JSON.parse(value);
   } catch {
@@ -78,6 +83,52 @@ function safeJsonParse(value: any) {
 export default class IndexerMetaService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  @Action()
+  public async getVersion(ctx: Context) {
+    try {
+      const lcdClient = await getLcdClient();
+      const nodeInfo: GetNodeInfoResponseSDKType = await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
+
+      const networkInfo = {
+        chainId: nodeInfo?.default_node_info?.network || Network.chainId || "unknown",
+        rpcEndpoint: Network.RPC || "unknown",
+        lcdEndpoint: Network.LCD || "unknown",
+        cosmosSdkVersion: nodeInfo?.application_version?.cosmos_sdk_version || "unknown",
+        nodeVersion: nodeInfo?.application_version?.version || "unknown",
+        appName: "verana-indexer",
+      };
+
+      return ApiResponder.success(
+        ctx,
+        {
+          appVersion: getIndexerVersion(),
+          environment: {
+            network: networkInfo,
+          },
+        },
+        200
+      );
+    } catch (error) {
+      return ApiResponder.success(
+        ctx,
+        {
+          appVersion: getIndexerVersion(),
+          environment: {
+            network: {
+              chainId: Network.chainId || "unknown",
+              rpcEndpoint: Network.RPC || "unknown",
+              lcdEndpoint: Network.LCD || "unknown",
+              cosmosSdkVersion: "unknown",
+              nodeVersion: "unknown",
+              appName: "verana-indexer",
+            },
+          },
+        },
+        200
+      );
+    }
   }
 
   @Action()
