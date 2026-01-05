@@ -274,7 +274,8 @@ All messages are JSON strings with the following structure:
 {
   "type": "block-processed",
   "height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
+  "timestamp": "2025-01-15T10:30:00Z",
+  "version": "v1.0.1"
 }
 ```
 

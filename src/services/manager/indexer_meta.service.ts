@@ -4,6 +4,7 @@ import BaseService from "../../base/base.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
+import { getIndexerVersion } from "../../common/utils/version";
 
 type ChangeOperation = "create" | "update" | "delete";
 
@@ -103,6 +104,7 @@ export default class IndexerMetaService extends BaseService {
         type: "block-processed",
         height: checkpoint.height,
         timestamp,
+        version: getIndexerVersion(),
       },
       200
     );

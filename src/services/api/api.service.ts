@@ -7,6 +7,7 @@ import ApiGateway, { Route } from "moleculer-web";
 import BaseService from "../../base/base.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
+import { getIndexerVersion } from "../../common/utils/version";
 import { swaggerUiComponent } from "./swagger_ui";
 import { eventsBroadcaster } from "./events_broadcaster";
 
@@ -130,6 +131,7 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   }
 
   res.setHeader("X-Query-At", new Date().toISOString());
+  res.setHeader("X-Indexer-Version", getIndexerVersion());
 }
 
 function createOnBeforeCall(required: boolean = true) {
