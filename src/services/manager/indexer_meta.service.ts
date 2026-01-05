@@ -68,6 +68,7 @@ function toOperation(eventType?: string, isDelete?: boolean): ChangeOperation {
 function safeJsonParse(value: unknown) {
   if (!value) return null;
   if (typeof value === "object") return value;
+  if (typeof value !== "string") return value;
   try {
     return JSON.parse(value);
   } catch {
