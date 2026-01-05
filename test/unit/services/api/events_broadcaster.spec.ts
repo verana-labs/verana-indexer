@@ -140,8 +140,6 @@ describe("EventsBroadcaster", () => {
             expect(msg.type).toBe("block-processed");
             expect(msg.height).toBe(123456);
             expect(msg.timestamp).toBeDefined();
-            expect(msg.version).toBeDefined();
-            expect(msg.version).toMatch(/^v\d+\.\d+\.\d+/);
           });
           ws1.close();
           ws2.close();
@@ -191,8 +189,6 @@ describe("EventsBroadcaster", () => {
         if (message.type === "block-processed") {
           expect(message.timestamp).toBe(expectedFormat);
           expect(new Date(message.timestamp).getTime()).toBe(testTimestamp.getTime());
-          expect(message.version).toBeDefined();
-          expect(message.version).toMatch(/^v\d+\.\d+\.\d+/);
           blockProcessedReceived = true;
           ws.close();
         }

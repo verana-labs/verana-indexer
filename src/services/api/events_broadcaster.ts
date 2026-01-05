@@ -1,6 +1,5 @@
 import { WebSocket, WebSocketServer } from "ws";
 import { Server } from "http";
-import { getIndexerVersion } from "../../common/utils/version";
 
 export class EventsBroadcaster {
   private wss: WebSocketServer | null = null;
@@ -53,8 +52,7 @@ export class EventsBroadcaster {
       try {
         ws.send(JSON.stringify({
           type: "connected",
-          message: "Connected to Verana Indexer Events",
-          version: getIndexerVersion()
+          message: "Connected to Verana Indexer Events"
         }), { compress: false });
       } catch (error) {
         this.logger.error("[EventsBroadcaster] Error sending welcome message:", error);
@@ -136,8 +134,7 @@ export class EventsBroadcaster {
     const eventData = {
       type: "block-processed",
       height,
-      timestamp: timestampFormatted,
-      version: getIndexerVersion()
+      timestamp: timestampFormatted
     };
     const message = JSON.stringify(eventData);
 
