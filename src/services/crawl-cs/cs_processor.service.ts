@@ -106,7 +106,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
     ctx: Context<{ credentialSchemaMessages: CredentialSchemaMessage[] }>
   ) {
     const { credentialSchemaMessages } = ctx.params;
-    this.logger.info(`🔄 Processing ${credentialSchemaMessages?.length || 0} CredentialSchema messages`);
 
     if (!credentialSchemaMessages?.length) {
       return { success: false, message: "No credential schemas" };
@@ -116,12 +115,10 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
     for (const schemaMessage of credentialSchemaMessages) {
       try {
-        this.logger.info(`📝 Processing CS message: type=${schemaMessage.type}, height=${schemaMessage.height}`);
         if (
           schemaMessage.type === CredentialSchemaMessageType.Create ||
           schemaMessage.type === CredentialSchemaMessageType.CreateLegacy
         ) {
-          this.logger.info(`🆕 Creating new CredentialSchema at height ${schemaMessage.height}`);
           await this.createSchema(ctx, schemaMessage, deposit);
         }
         if (schemaMessage.type === CredentialSchemaMessageType.Update) {

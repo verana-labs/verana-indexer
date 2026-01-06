@@ -201,10 +201,30 @@ export default class CrawlGenesisService extends BullableService {
       BULL_JOB_NAME.CRAWL_GENESIS_ACCOUNT
     );
     if (genesisProcess !== 0) return;
-    const accountsInDb = await Account.query().findOne({});
-    if (accountsInDb) {
-      this.logger.error('DB already contains some accounts');
-      done = true;
+    
+    try {
+      const accountTableExists = await knex.schema.hasTable('account');
+      if (!accountTableExists) {
+        this.logger.warn('Account table does not exist yet, waiting for migrations...');
+        return;
+      }
+    } catch (error: any) {
+      this.logger.warn('Error checking account table existence, waiting for migrations...');
+      return;
+    }
+    
+    try {
+      const accountsInDb = await Account.query().findOne({});
+      if (accountsInDb) {
+        this.logger.error('DB already contains some accounts');
+        done = true;
+      }
+    } catch (error: any) {
+      if (error?.nativeError?.code === '42P01') {
+        this.logger.warn('Account table does not exist yet, waiting for migrations...');
+        return;
+      }
+      throw error;
     }
 
     if (!done) {
@@ -251,6 +271,12 @@ export default class CrawlGenesisService extends BullableService {
       accounts = await this.handleIbcDenom(accounts);
     }
 
+    const accountTableExists = await knex.schema.hasTable('account');
+    if (!accountTableExists) {
+      this.logger.warn('Account table does not exist yet, cannot insert genesis accounts');
+      return;
+    }
+
     await knex
       .transaction(async (trx) => {
         if (accounts.length > 0)
@@ -260,9 +286,17 @@ export default class CrawlGenesisService extends BullableService {
                 this.logger.info(
                   `Insert batch of ${config.crawlGenesis.accountsPerBatch} genesis accounts number ${index}`
                 );
-                await Account.query()
-                  .insertGraph(chunkAccounts)
-                  .transacting(trx);
+                try {
+                  await Account.query()
+                    .insertGraph(chunkAccounts)
+                    .transacting(trx);
+                } catch (error: any) {
+                  if (error?.nativeError?.code === '42P01') {
+                    this.logger.warn('Account table does not exist yet, skipping insert');
+                    throw new Error('Account table does not exist');
+                  }
+                  throw error;
+                }
               }
             )
           );
@@ -677,10 +711,11 @@ export default class CrawlGenesisService extends BullableService {
     await knex
       .transaction(async (trx) => {
         this.logger.info('Insert genesis feegrants');
+        const chunkSize = config.crawlGenesis.chunkSize || config.crawlGenesis.feeGrantsPerBatch || 5000;
         await trx.batchInsert(
           'feegrant',
           feeGrants,
-          config.crawlGenesis.feeGrantsPerBatch
+          chunkSize
         );
 
         await BlockCheckpoint.query()

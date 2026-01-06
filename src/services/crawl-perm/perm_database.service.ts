@@ -4,7 +4,7 @@ import knex from "../../common/utils/db_connection";
 import { SERVICE } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
 import { mapPermissionType } from "../../common/utils/utils";
-import { extractController, requireController } from "../../common/utils/extract_controller";
+import { requireController } from "../../common/utils/extract_controller";
 import {
   getPermissionTypeString,
   MsgCancelPermissionVPLastRequest,
@@ -98,11 +98,53 @@ function parseJson<T = any>(value: any): T | any {
   }
 }
 
-function pickPermissionSnapshot(record: any) {
+let permissionHistoryIssuedColumnExistsCache: boolean | null = null;
+let permissionHistoryVerifiedColumnExistsCache: boolean | null = null;
+
+async function checkPermissionHistoryColumnExists(columnName: string): Promise<boolean> {
+  if (columnName === "issued") {
+    if (permissionHistoryIssuedColumnExistsCache !== null) {
+      return permissionHistoryIssuedColumnExistsCache;
+    }
+  } else if (columnName === "verified") {
+    if (permissionHistoryVerifiedColumnExistsCache !== null) {
+      return permissionHistoryVerifiedColumnExistsCache;
+    }
+  }
+  
+  try {
+    const result = await knex.schema.hasColumn('permission_history', columnName);
+    if (columnName === "issued") {
+      permissionHistoryIssuedColumnExistsCache = result;
+    } else if (columnName === "verified") {
+      permissionHistoryVerifiedColumnExistsCache = result;
+    }
+    return result;
+  } catch (error) {
+    if (columnName === "issued") {
+      permissionHistoryIssuedColumnExistsCache = false;
+    } else if (columnName === "verified") {
+      permissionHistoryVerifiedColumnExistsCache = false;
+    }
+    return false;
+  }
+}
+
+async function pickPermissionSnapshot(record: any) {
   const snapshot: Record<string, any> = {
     permission_id: String(record.permission_id ?? record.id ?? ""),
   };
+  
+  const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
+  const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
+  
   for (const field of PERMISSION_HISTORY_FIELDS) {
+    if (field === "issued" && !hasIssuedColumn) {
+      continue;
+    }
+    if (field === "verified" && !hasVerifiedColumn) {
+      continue;
+    }
     snapshot[field] = normalizeValue(record[field]);
   }
   return snapshot;
@@ -116,10 +158,18 @@ async function recordPermissionHistory(
   previousRecord?: any
 ) {
   if (!permissionRecord) return;
-  const snapshot = pickPermissionSnapshot(permissionRecord);
-  const changes = computeChanges(previousRecord, permissionRecord, [
-    ...PERMISSION_HISTORY_FIELDS,
-  ]);
+  
+  const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
+  const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
+  
+  const fieldsToUse = PERMISSION_HISTORY_FIELDS.filter(field => {
+    if (field === "issued" && !hasIssuedColumn) return false;
+    if (field === "verified" && !hasVerifiedColumn) return false;
+    return true;
+  });
+  
+  const snapshot = await pickPermissionSnapshot(permissionRecord);
+  const changes = computeChanges(previousRecord, permissionRecord, fieldsToUse);
   
   if (previousRecord && !changes) {
     return; 
@@ -181,7 +231,21 @@ async function recordPermissionSessionHistory(
   });
 }
 
+interface QueuedPermission {
+  message: any;
+  reason: string;
+  retryCount: number;
+  queuedAt: Date;
+  nextRetryAt: Date;
+}
+
 export default class PermIngestService extends Service {
+  private retryQueue: Map<string, QueuedPermission> = new Map();
+  private retryInterval: NodeJS.Timeout | null = null;
+  private readonly MAX_RETRY_ATTEMPTS = 10;
+  private readonly RETRY_INTERVAL_MS = 30000; // 30 seconds
+  private readonly RETRY_BACKOFF_MULTIPLIER = 2;
+
   public constructor(broker: ServiceBroker) {
     super(broker);
     this.parseServiceSchema({
@@ -778,7 +842,16 @@ export default class PermIngestService extends Service {
       .first();
 
     if (!cs) {
-      throw new Error(`CredentialSchema ${perm.schema_id} not found`);
+      const schemaExists = await knex("credential_schemas")
+        .where({ id: perm.schema_id })
+        .first();
+
+      if (!schemaExists) {
+        this.logger.warn(`CredentialSchema ${perm.schema_id} not found for permission ${perm.id} - schema may not exist yet, queuing for retry`);
+      } else {
+        this.logger.warn(`CredentialSchema ${perm.schema_id} exists but not visible in current transaction for permission ${perm.id} - queuing for retry`);
+      }
+      return null;
     }
 
     let validityPeriodField = null;
@@ -857,6 +930,12 @@ export default class PermIngestService extends Service {
       }
 
       const vpExp = await this.computeVpExp(perm, knex);
+
+      if (vpExp === null) {
+        await this.queuePermissionForRetry(msg, "SCHEMA_NOT_FOUND");
+        this.logger.info(`Permission ${msg.id} queued for retry - waiting for CredentialSchema ${perm.schema_id}`);
+        return { success: true, message: "Permission queued for retry - schema not ready" };
+      }
 
       const effectiveUntil =
         msg.effective_until ?? perm.effective_until ?? vpExp ?? null;
@@ -1359,12 +1438,35 @@ export default class PermIngestService extends Service {
     }
   }
 
+  private permissionsColumnExistsCache: { issued?: boolean; verified?: boolean } | null = null;
+
+  private async checkPermissionsColumnExists(columnName: string): Promise<boolean> {
+    if (this.permissionsColumnExistsCache === null) {
+      this.permissionsColumnExistsCache = {};
+    }
+    
+    if (this.permissionsColumnExistsCache[columnName as keyof typeof this.permissionsColumnExistsCache] !== undefined) {
+      return this.permissionsColumnExistsCache[columnName as keyof typeof this.permissionsColumnExistsCache] as boolean;
+    }
+    
+    const exists = await knex.schema.hasColumn("permissions", columnName);
+    this.permissionsColumnExistsCache[columnName as keyof typeof this.permissionsColumnExistsCache] = exists;
+    return exists;
+  }
+
   private async incrementPermissionStatistics(
     trx: any,
     permId: string,
     incrementIssued: boolean,
     incrementVerified: boolean
   ): Promise<void> {
+    const hasIssuedColumn = await this.checkPermissionsColumnExists("issued");
+    const hasVerifiedColumn = await this.checkPermissionsColumnExists("verified");
+    
+    if (!hasIssuedColumn && !hasVerifiedColumn) {
+      return;
+    }
+    
     let currentPermId: string | null = permId;
     
     while (currentPermId) {
@@ -1372,17 +1474,25 @@ export default class PermIngestService extends Service {
       if (!perm) break;
 
       const updates: any = {};
-      if (incrementIssued) {
+      if (incrementIssued && hasIssuedColumn) {
         updates.issued = knex.raw("COALESCE(issued, 0) + 1");
       }
-      if (incrementVerified) {
+      if (incrementVerified && hasVerifiedColumn) {
         updates.verified = knex.raw("COALESCE(verified, 0) + 1");
       }
 
       if (Object.keys(updates).length > 0) {
-        await trx("permissions")
-          .where({ id: currentPermId })
-          .update(updates);
+        try {
+          await trx("permissions")
+            .where({ id: currentPermId })
+            .update(updates);
+        } catch (error: any) {
+          if (error?.nativeError?.code === '42703') {
+            this.permissionsColumnExistsCache = null;
+            return;
+          }
+          throw error;
+        }
       }
 
       currentPermId = perm.validator_perm_id;
@@ -1518,17 +1628,17 @@ export default class PermIngestService extends Service {
 
         const previousAuthz = previousSession?.authz || [];
         const previousIssuerPermIds = new Set(
-          previousAuthz.map((entry: any) => entry.issuer_perm_id).filter(Boolean)
+          previousAuthz.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
         );
         const previousVerifierPermIds = new Set(
-          previousAuthz.map((entry: any) => entry.verifier_perm_id).filter(Boolean)
+          previousAuthz.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
         );
 
         const newIssuerPermIds = new Set(
-          existingAuthz.map((entry: any) => entry.issuer_perm_id).filter(Boolean)
+          existingAuthz.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
         );
         const newVerifierPermIds = new Set(
-          existingAuthz.map((entry: any) => entry.verifier_perm_id).filter(Boolean)
+          existingAuthz.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
         );
 
         for (const issuerId of newIssuerPermIds) {
@@ -1551,5 +1661,86 @@ export default class PermIngestService extends Service {
       return { success: false, reason: String(err) };
         
     }
+  }
+
+  private async queuePermissionForRetry(message: unknown, reason: string): Promise<void> {
+    const msg = message as { id: string | number; type?: string };
+    const key = `${msg.id}_${msg.type || 'permission'}`;
+    const queuedPermission: QueuedPermission = {
+      message: msg,
+      reason,
+      retryCount: 0,
+      queuedAt: new Date(),
+      nextRetryAt: new Date(Date.now() + this.RETRY_INTERVAL_MS)
+    };
+
+    this.retryQueue.set(key, queuedPermission);
+    this.logger.info(`Queued permission ${msg.id} for retry: ${reason}`);
+  }
+
+  private startRetryProcessor(): void {
+    this.retryInterval = setInterval(async () => {
+      await this.processRetryQueue();
+    }, this.RETRY_INTERVAL_MS);
+
+    this.logger.info("Started permission retry processor");
+  }
+
+  private async processRetryQueue(): Promise<void> {
+    const now = new Date();
+    const keysToRetry: string[] = [];
+
+    for (const [key, queuedPermission] of this.retryQueue.entries()) {
+      if (queuedPermission.nextRetryAt <= now && queuedPermission.retryCount < this.MAX_RETRY_ATTEMPTS) {
+        keysToRetry.push(key);
+      }
+    }
+
+    for (const key of keysToRetry) {
+      const queuedPermission = this.retryQueue.get(key)!;
+      try {
+        this.logger.info(`Retrying permission ${queuedPermission.message.id} (attempt ${queuedPermission.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS})`);
+
+        const result = await this.handleSetPermissionVPToValidated(queuedPermission.message);
+
+        if (result && result.success !== false) {
+          this.retryQueue.delete(key);
+          this.logger.info(`Successfully processed queued permission ${queuedPermission.message.id}`);
+        } else {
+          queuedPermission.retryCount++;
+          const delay = this.RETRY_INTERVAL_MS * (this.RETRY_BACKOFF_MULTIPLIER ** (queuedPermission.retryCount - 1));
+          queuedPermission.nextRetryAt = new Date(Date.now() + delay);
+          this.logger.warn(`Permission ${queuedPermission.message.id} still failed, scheduled next retry in ${delay}ms`);
+        }
+      } catch (error) {
+        queuedPermission.retryCount++;
+        const delay = this.RETRY_INTERVAL_MS * (this.RETRY_BACKOFF_MULTIPLIER ** (queuedPermission.retryCount - 1));
+        queuedPermission.nextRetryAt = new Date(Date.now() + delay);
+        this.logger.error(`Error retrying permission ${queuedPermission.message.id}:`, error);
+      }
+    }
+
+    for (const [key, queuedPermission] of this.retryQueue.entries()) {
+      if (queuedPermission.retryCount >= this.MAX_RETRY_ATTEMPTS) {
+        this.retryQueue.delete(key);
+        this.logger.error(`Permission ${queuedPermission.message.id} exceeded max retries (${this.MAX_RETRY_ATTEMPTS}), giving up`);
+      }
+    }
+
+    if (this.retryQueue.size > 0) {
+      this.logger.info(`Retry queue status: ${this.retryQueue.size} permissions waiting`);
+    }
+  }
+
+  public async started(): Promise<void> {
+    this.startRetryProcessor();
+  }
+
+  public async stopped(): Promise<void> {
+    if (this.retryInterval) {
+      clearInterval(this.retryInterval);
+      this.retryInterval = null;
+    }
+    this.logger.info("Stopped permission retry processor");
   }
 }

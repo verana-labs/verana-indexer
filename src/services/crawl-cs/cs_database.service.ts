@@ -6,9 +6,25 @@ import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
 
-function mapToHistoryRow(row: any, overrides: Partial<any> = {}) {
+let heightColumnExistsCache: boolean | null = null;
+
+async function checkHeightColumnExists(): Promise<boolean> {
+  if (heightColumnExistsCache !== null) {
+    return heightColumnExistsCache;
+  }
+  try {
+    const result = await knex.schema.hasColumn('credential_schema_history', 'height');
+    heightColumnExistsCache = result;
+    return result;
+  } catch (error) {
+    heightColumnExistsCache = false;
+    return false;
+  }
+}
+
+function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
   const height = Number(overrides.height) || 0;
-  return {
+  const baseRow: any = {
     credential_schema_id: row.id,
     tr_id: row.tr_id,
     json_schema: row.json_schema,
@@ -27,8 +43,13 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}) {
     changes: overrides.changes ?? null,
     action: overrides.action ?? "unknown",
     created_at: knex.fn.now(),
-    height: height, // Explicitly set as number
   };
+  
+  if (includeHeight) {
+    baseRow.height = height;
+  }
+  
+  return baseRow;
 }
 
 @Service({
@@ -52,12 +73,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           .insert(schemaPayload)
           .returning("*");
 
+        const hasHeightColumn = await checkHeightColumnExists();
         const historyRow = mapToHistoryRow(inserted, {
           changes: null,
           action: "create",
           height: blockHeight,
-        });
-        this.logger.info(`[CS] Saving create history with height: ${blockHeight}`, historyRow);
+        }, hasHeightColumn);
         await trx("credential_schema_history").insert(historyRow);
 
         return inserted;
@@ -113,12 +134,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       // Only record history if there are actual changes
       if (Object.keys(changes).length > 0) {
+        const hasHeightColumn = await checkHeightColumnExists();
         const historyRow = mapToHistoryRow(updated, {
           changes: changes,
           action: "update",
           height: blockHeight,
-        });
-        this.logger.info(`[CS] Saving update history with height: ${blockHeight}`, historyRow);
+        }, hasHeightColumn);
         await knex("credential_schema_history").insert(historyRow);
       }
 
@@ -164,6 +185,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .update(updates)
         .returning("*");
       
+      const hasHeightColumn = await checkHeightColumnExists();
       const historyRow = mapToHistoryRow(updated, {
         changes: {
           archived: { old: schemaRecord.archived, new: updated.archived },
@@ -171,8 +193,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         },
         action: archive ? "archive" : "unarchive",
         height: blockHeight,
-      });
-      this.logger.info(`[CS] Saving ${archive ? "archive" : "unarchive"} history with height: ${blockHeight}`, historyRow);
+      }, hasHeightColumn);
       await knex("credential_schema_history").insert(historyRow);
 
       return ApiResponder.success(ctx, { success: true, updated }, 200);
@@ -194,14 +215,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { id } = ctx.params;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
-      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
-        const historyRecord = await knex("credential_schema_history")
-          .where({ credential_schema_id: id })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
+        const hasHeightColumn = await checkHeightColumnExists();
+        let query = knex("credential_schema_history")
+          .where({ credential_schema_id: id });
+        
+        if (hasHeightColumn) {
+          query = query.where("height", "<=", blockHeight)
+            .orderBy("height", "desc");
+        }
+        query = query.orderBy("created_at", "desc");
+        
+        const historyRecord = await query.first();
 
         if (!historyRecord) {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
@@ -274,15 +299,29 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
 
       if (typeof blockHeight === "number") {
-        const subquery = knex("credential_schema_history")
-          .select("credential_schema_id")
-          .select(
-            knex.raw(
-              `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn`
+        const hasHeightColumn = await checkHeightColumnExists();
+        let subquery;
+        
+        if (hasHeightColumn) {
+          subquery = knex("credential_schema_history")
+            .select("credential_schema_id")
+            .select(
+              knex.raw(
+                `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn`
+              )
             )
-          )
-          .where("height", "<=", blockHeight)
-          .as("ranked");
+            .where("height", "<=", blockHeight)
+            .as("ranked");
+        } else {
+          subquery = knex("credential_schema_history")
+            .select("credential_schema_id")
+            .select(
+              knex.raw(
+                `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY created_at DESC) as rn`
+              )
+            )
+            .as("ranked");
+        }
 
         const latestHistory = await knex
           .from(subquery)
@@ -297,12 +336,17 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         const items = await Promise.all(
           schemaIdsAtHeight.map(async (schemaId: number) => {
-            const historyRecord = await knex("credential_schema_history")
-              .where({ credential_schema_id: schemaId })
-              .where("height", "<=", blockHeight)
-              .orderBy("height", "desc")
-              .orderBy("created_at", "desc")
-              .first();
+            const hasHeightColumn = await checkHeightColumnExists();
+            let query = knex("credential_schema_history")
+              .where({ credential_schema_id: schemaId });
+            
+            if (hasHeightColumn) {
+              query = query.where("height", "<=", blockHeight)
+                .orderBy("height", "desc");
+            }
+            query = query.orderBy("created_at", "desc");
+            
+            const historyRecord = await query.first();
 
             if (!historyRecord) return null;
 
@@ -430,15 +474,19 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { id } = ctx.params;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
-      // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === "number") {
-        const historyRecord = await knex("credential_schema_history")
+        const hasHeightColumn = await checkHeightColumnExists();
+        let query = knex("credential_schema_history")
           .select("json_schema")
-          .where({ credential_schema_id: id })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
+          .where({ credential_schema_id: id });
+        
+        if (hasHeightColumn) {
+          query = query.where("height", "<=", blockHeight)
+            .orderBy("height", "desc");
+        }
+        query = query.orderBy("created_at", "desc");
+        
+        const historyRecord = await query.first();
 
         if (!historyRecord) {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
@@ -447,7 +495,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.success(ctx, { schema: JSON.stringify(historyRecord.json_schema) }, 200);
       }
 
-      // Otherwise, return latest state
       const schemaRecord = await knex("credential_schemas")
         .select("json_schema")
         .where({ id })

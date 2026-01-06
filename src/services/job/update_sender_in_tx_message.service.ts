@@ -31,9 +31,16 @@ export default class UpdateSenderInTxMessages extends BullableService {
       return;
     }
 
+    const isReindexing = blockCheckpoint?.height === 0 || 
+      (blockCheckpoint?.height ?? 0) < 1000;
+    const jobConfig = config.jobUpdateSenderInTxMessages;
+    const effectiveConfig = isReindexing && jobConfig.reindexing 
+      ? { ...jobConfig, ...jobConfig.reindexing }
+      : jobConfig;
+
     let lastBlock =
       (blockCheckpoint?.height ?? 0) +
-      config.jobUpdateSenderInTxMessages.blocksPerCall;
+      effectiveConfig.blocksPerCall;
     if (lastBlock > _payload.lastBlockCrawled) {
       lastBlock = _payload.lastBlockCrawled;
     }
@@ -51,6 +58,7 @@ export default class UpdateSenderInTxMessages extends BullableService {
       .orderBy('id', 'asc')
       .where('height', '>=', blockCheckpoint?.height ?? 0)
       .andWhere('height', '<', lastBlock);
+    
     const listUpdates = listTx.map((tx) => {
       try {
         const sender = this._findFirstAttribute(tx.events, 'message', 'sender');
@@ -59,7 +67,9 @@ export default class UpdateSenderInTxMessages extends BullableService {
           sender,
         };
       } catch (error) {
-        this.logger.warn('Tx error not has message.sender: ', tx.hash);
+       if (!isReindexing) {
+          this.logger.debug(`Tx ${tx.hash} does not have message.sender attribute (this is normal for some transaction types)`);
+        }
         return {
           tx_id: tx.id,
           sender: '',
@@ -67,18 +77,31 @@ export default class UpdateSenderInTxMessages extends BullableService {
       }
     });
 
-    await knex.transaction(async (trx) => {
-      if (listUpdates.length > 0) {
-        const stringListUpdates = listUpdates
-          .map((update) => `(${update.tx_id}, '${update.sender}')`)
-          .join(',');
+    const chunkSize = effectiveConfig.chunkSize || 1000;
+    type UpdateItem = { tx_id: number; sender: string };
+    const chunks: UpdateItem[][] = [];
+    for (let i = 0; i < listUpdates.length; i += chunkSize) {
+      chunks.push(listUpdates.slice(i, i + chunkSize));
+    }
 
-        await knex
-          .raw(
-            `UPDATE transaction_message SET sender = temp.sender from (VALUES ${stringListUpdates}) as temp(tx_id, sender) where temp.tx_id = transaction_message.tx_id`
-          )
-          .transacting(trx);
+    await knex.transaction(async (trx) => {
+      for (const chunk of chunks) {
+        if (chunk.length > 0) {
+          const stringListUpdates = chunk
+            .map((update: UpdateItem) => {
+              const escapedSender = (update.sender || '').replace(/'/g, "''");
+              return `(${update.tx_id}, '${escapedSender}')`;
+            })
+            .join(',');
+
+          await knex
+            .raw(
+              `UPDATE transaction_message SET sender = temp.sender from (VALUES ${stringListUpdates}) as temp(tx_id, sender) where temp.tx_id = transaction_message.tx_id`
+            )
+            .transacting(trx);
+        }
       }
+      
       await BlockCheckpoint.query()
         .update(
           BlockCheckpoint.fromJson({
@@ -91,6 +114,15 @@ export default class UpdateSenderInTxMessages extends BullableService {
         })
         .transacting(trx);
     });
+
+    if (listUpdates.length > 0) {
+      const missingSenderCount = listUpdates.filter(u => !u.sender).length;
+      if (missingSenderCount > 0 && !isReindexing) {
+        this.logger.debug(
+          `Processed ${listUpdates.length} transactions, ${missingSenderCount} without message.sender (normal for some tx types)`
+        );
+      }
+    }
   }
 
   private _findFirstAttribute(

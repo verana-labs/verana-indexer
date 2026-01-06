@@ -95,11 +95,10 @@ function fixImportsInFile(filePath) {
             return match.replace(importPath, `${importPath}.js`);
           }
         }
-
         if (importPath.startsWith("@verana-labs/verana-types/")) {
-          return match; // Leave as-is, no .js needed
+          modified = true;
+          return match.replace(importPath, `${importPath}.js`);
         }
-
         return match; // leave other imports untouched
       }
     );
