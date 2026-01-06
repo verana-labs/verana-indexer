@@ -59,6 +59,84 @@
         }
       }
     },
+    "/verana/indexer/v1/version": {
+      "get": {
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "Get indexer version and environment info",
+        "description": "Return the indexer version and network environment configuration details.",
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "Indexer version and environment information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "appVersion": {
+                      "type": "string",
+                      "example": "v1.0.0-dev.31"
+                    },
+                    "environment": {
+                      "type": "object",
+                      "properties": {
+                        "network": {
+                          "type": "object",
+                          "properties": {
+                            "chainId": {
+                              "type": "string",
+                              "example": "vna-testnet-1"
+                            },
+                            "rpcEndpoint": {
+                              "type": "string",
+                              "example": "https://rpc.testnet.verana.network"
+                            },
+                            "lcdEndpoint": {
+                              "type": "string",
+                              "example": "https://api.testnet.verana.network"
+                            },
+                            "cosmosSdkVersion": {
+                              "type": "string",
+                              "example": "0.46.0"
+                            },
+                            "nodeVersion": {
+                              "type": "string",
+                              "example": "v0.1.0"
+                            },
+                            "appName": {
+                              "type": "string",
+                              "example": "verana-indexer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "appVersion": "v1.0.0-dev.31",
+                  "environment": {
+                    "network": {
+                      "chainId": "vna-testnet-1",
+                      "rpcEndpoint": "https://rpc.testnet.verana.network",
+                      "lcdEndpoint": "https://api.testnet.verana.network",
+                      "cosmosSdkVersion": "0.46.0",
+                      "nodeVersion": "v0.1.0",
+                      "appName": "verana-indexer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/indexer/v1/changes/{block_height}": {
       "get": {
         "tags": [
