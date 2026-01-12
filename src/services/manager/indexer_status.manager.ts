@@ -39,7 +39,9 @@ class IndexerStatusManager {
   };
   private statusChangeCallback: StatusChangeCallback | null = null;
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   private constructor() {
+    // Singleton pattern - constructor must be empty and private
   }
 
   public static getInstance(): IndexerStatusManager {
@@ -131,7 +133,7 @@ class IndexerStatusManager {
   private async stopAllCrawlingJobs(): Promise<void> {
     try {
       if (!Config.QUEUE_JOB_REDIS) {
-        //eslint-disable-next-line-no-console
+        // eslint-disable-next-line no-console
         console.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
         return;
       }
@@ -158,12 +160,14 @@ class IndexerStatusManager {
 
           await queue.pause();
         } catch (err) {
+          // eslint-disable-next-line no-console
           console.error(`Failed to stop queue ${jobName}:`, err);
         }
       }
 
       await redisClient.quit();
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error("Error stopping crawling jobs:", error);
     }
   }
