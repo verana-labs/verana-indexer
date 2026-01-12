@@ -4,7 +4,8 @@ import {
 } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { PermissionMessageTypes, SERVICE } from "../../common/constant";
+import { VeranaPermissionMessageTypes } from "../../common/verana-message-types";
+import { SERVICE } from "../../common";
 
 @Service({
   name: SERVICE.V1.PermProcessorService.key,
@@ -40,61 +41,61 @@ export default class PermProcessorService extends BullableService {
         delete payload["@type"];
 
         switch (msg.type) {
-          case PermissionMessageTypes.CreateRootPermission:
+          case VeranaPermissionMessageTypes.CreateRootPermission:
             await this.broker.call("permIngest.handleMsgCreateRootPermission", {
               data: payload,
             });
             break;
-        case PermissionMessageTypes.CreatePermission:
+        case VeranaPermissionMessageTypes.CreatePermission:
           await this.broker.call("permIngest.handleMsgCreatePermission", {
             data: payload,
           });
           break;
-        case PermissionMessageTypes.ExtendPermission:
+        case VeranaPermissionMessageTypes.ExtendPermission:
           await this.broker.call("permIngest.handleMsgExtendPermission", {
             data: payload,
           });
           break;
-        case PermissionMessageTypes.RevokePermission:
+        case VeranaPermissionMessageTypes.RevokePermission:
           await this.broker.call("permIngest.handleMsgRevokePermission", {
             data: payload,
           });
           break;
-        case PermissionMessageTypes.StartPermissionVP:
+        case VeranaPermissionMessageTypes.StartPermissionVP:
           await this.broker.call("permIngest.handleMsgStartPermissionVP", {
             data: payload,
           });
           break;
-        case PermissionMessageTypes.SetPermissionVPToValidated:
+        case VeranaPermissionMessageTypes.SetPermissionVPToValidated:
           await this.broker.call(
             "permIngest.handleMsgSetPermissionVPToValidated",
             { data: payload }
           );
           break;
-        case PermissionMessageTypes.RenewPermissionVP:
+        case VeranaPermissionMessageTypes.RenewPermissionVP:
           await this.broker.call("permIngest.handleMsgRenewPermissionVP", {
             data: payload,
           });
           break;
-        case PermissionMessageTypes.CancelPermissionVPLastRequest:
+        case VeranaPermissionMessageTypes.CancelPermissionVPLastRequest:
           await this.broker.call(
             "permIngest.handleMsgCancelPermissionVPLastRequest",
             { data: payload }
           );
           break;
-        case PermissionMessageTypes.CreateOrUpdatePermissionSession:
+        case VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession:
           await this.broker.call(
             "permIngest.handleMsgCreateOrUpdatePermissionSession",
             { data: payload }
           );
           break;
-        case PermissionMessageTypes.SlashPermissionTrustDeposit:
+        case VeranaPermissionMessageTypes.SlashPermissionTrustDeposit:
           await this.broker.call(
             "permIngest.handleMsgSlashPermissionTrustDeposit",
             { data: payload }
           );
           break;
-        case PermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
+        case VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
           await this.broker.call(
             "permIngest.handleMsgRepayPermissionSlashedTrustDeposit",
             { data: payload }

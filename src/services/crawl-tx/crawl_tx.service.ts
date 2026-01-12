@@ -15,15 +15,21 @@ import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
-  CredentialSchemaMessageType,
-  DidMessages,
   getHttpBatchClient,
   getLcdClient,
-  PermissionMessageTypes,
   SERVICE,
-  TrustDepositMessageTypes,
-  TrustRegistryMessageTypes
 } from '../../common';
+import { indexerStatusManager } from '../manager/indexer_status.service';
+import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
+import {
+  isVeranaMessageType,
+  shouldSkipUnknownMessages,
+  VeranaDidMessageTypes,
+  VeranaTrustRegistryMessageTypes,
+  VeranaCredentialSchemaMessageTypes,
+  VeranaPermissionMessageTypes,
+  VeranaTrustDepositMessageTypes,
+} from '../../common/verana-message-types';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
@@ -59,6 +65,13 @@ export default class CrawlTxService extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_TRANSACTION,
   })
   public async jobCrawlTx(): Promise<void> {
+    try {
+      checkCrawlingStatus();
+    } catch {
+      this.logger.warn('⏸️ Crawling is stopped, skipping transaction crawl');
+      return;
+    }
+
     const [startBlock, endBlock, blockCheckpoint] =
       await BlockCheckpoint.getCheckpoint(
         BULL_JOB_NAME.CRAWL_TRANSACTION,
@@ -95,6 +108,13 @@ export default class CrawlTxService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_TRANSACTION,
   })
   public async jobHandlerCrawlTx(): Promise<void> {
+    try {
+      checkCrawlingStatus();
+    } catch {
+      this.logger.warn('⏸️ [HANDLE_TRANSACTION] Crawling is stopped, skipping transaction handling');
+      return;
+    }
+
     if (this._processingLock) {
       this.logger.debug('⏸️ [HANDLE_TRANSACTION] Already in progress, skipping...');
       return;
@@ -177,8 +197,11 @@ export default class CrawlTxService extends BullableService {
         );
       }
     } catch (error) {
-      this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing transactions:`, error);
-      throw error;
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlTransaction.key,
+        '[HANDLE_TRANSACTION] Error processing transactions'
+      );
     } finally {
       this._processingLock = false;
     }
@@ -542,7 +565,7 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
     const DIDfiltered = successfulMsgs
-      .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
+      .filter((msg: any) => Object.values(VeranaDidMessageTypes).includes(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         const controller = extractController(msg.content || {});
@@ -574,7 +597,7 @@ export default class CrawlTxService extends BullableService {
 
     const trustRegistryList = successfulMsgs
       .filter((msg: any) =>
-        Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes)
+        Object.values(VeranaTrustRegistryMessageTypes).includes(msg.type as any)
       )
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
@@ -604,7 +627,7 @@ export default class CrawlTxService extends BullableService {
 
     const credentialSchemaMessages = successfulMsgs
       .filter((msg: any) =>
-        Object.values(CredentialSchemaMessageType).includes(msg.type as CredentialSchemaMessageType)
+        Object.values(VeranaCredentialSchemaMessageTypes).includes(msg.type as any)
       )
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
@@ -633,7 +656,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const permissionMessages = successfulMsgs
-      .filter((msg: any) => Object.values(PermissionMessageTypes).includes(msg.type))
+      .filter((msg: any) => Object.values(VeranaPermissionMessageTypes).includes(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -661,7 +684,7 @@ export default class CrawlTxService extends BullableService {
 
     const trustDepositList = resultInsertMsgs
       .filter((msg: any) =>
-        Object.values(TrustDepositMessageTypes).includes(msg.type as TrustDepositMessageTypes),
+        Object.values(VeranaTrustDepositMessageTypes).includes(msg.type as any),
       )
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
@@ -682,7 +705,67 @@ export default class CrawlTxService extends BullableService {
       );
     }
 
+    await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx);
+
     this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
+  }
+
+  private async validateAllMessagesProcessed(successfulMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
+    const knownVeranaMessageTypes = new Set([
+      ...Object.values(VeranaDidMessageTypes),
+      ...Object.values(VeranaTrustRegistryMessageTypes),
+      ...Object.values(VeranaCredentialSchemaMessageTypes),
+      ...Object.values(VeranaPermissionMessageTypes),
+      ...Object.values(VeranaTrustDepositMessageTypes),
+    ]);
+
+    const unknownMessages: any[] = [];
+
+    successfulMsgs.forEach((msg: any) => {
+      const isVeranaMessage = isVeranaMessageType(msg.type);
+      if (!isVeranaMessage) {
+        return;
+      }
+
+      if (!knownVeranaMessageTypes.has(msg.type)) {
+        unknownMessages.push(msg);
+      }
+    });
+
+    if (unknownMessages.length > 0) {
+      const unknownTypes = [...new Set(unknownMessages.map((msg: any) => msg.type))];
+      const skipUnknown = shouldSkipUnknownMessages();
+
+      this.logger.error(`INDEXER COLLISION RISK: Unknown Verana message types detected: ${unknownTypes.join(', ')}`);
+      console.error('='.repeat(80));
+      console.error('🚨 CRITICAL: UNKNOWN VERANA MESSAGE TYPES DETECTED');
+      console.error('='.repeat(80));
+      console.error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
+      console.error(`This indicates a protocol change or new feature that requires indexer updates.`);
+      console.error(`Affected transactions: ${unknownMessages.length}`);
+      console.error(`Skip mode: ${skipUnknown ? 'ENABLED (TESTING)' : 'DISABLED (PRODUCTION)'}`);
+      console.error('');
+      console.error('Sample affected transactions:');
+      unknownMessages.slice(0, 3).forEach((msg: any, index: number) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const height = parentTx?.height ?? 'unknown';
+        console.error(`  ${index + 1}. TX ${msg.tx_id} at height ${height}: ${msg.type}`);
+      });
+      console.error('');
+      console.error(skipUnknown ?
+        '⚠️ Continuing in test mode - monitor for protocol changes' :
+        '🛑 Indexer stopped - update message handlers for new message types');
+      console.error('='.repeat(80));
+
+      if (!skipUnknown) {
+        console.error(`⏸️ STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`);
+        const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
+        // Stop only crawling, not the entire indexer - APIs remain available
+        await handleErrorGracefully(error, SERVICE.V1.CrawlTransaction.key, 'Unknown Verana message types', true);
+      } else {
+        this.logger.warn(`TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`);
+      }
+    }
   }
 
   private checkMappingEventToLog(tx: any) {
@@ -823,21 +906,53 @@ export default class CrawlTxService extends BullableService {
   }
 
   public async _start() {
-    const providerRegistry = await getProviderRegistry();
-    this._registry = new ChainRegistry(this.logger, providerRegistry);
-    
     try {
-      const lcdClient = await getLcdClient();
-      const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
-        () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
-        'getNodeInfo'
-      );
-      const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
-      if (cosmosSdkVersion) {
-        this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+      const providerRegistry = await getProviderRegistry();
+      this._registry = new ChainRegistry(this.logger, providerRegistry);
+      
+      try {
+        const lcdClient = await getLcdClient();
+        const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
+          () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+          'getNodeInfo'
+        );
+        const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
+        if (cosmosSdkVersion) {
+          this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+        }
+      } catch (error: any) {
+        const wasStopped = await handleErrorGracefully(
+          error,
+          SERVICE.V1.CrawlTransaction.key,
+          'Failed to initialize LCD client'
+        );
+        
+        if (!wasStopped) {
+          // Non-critical error, continue without SDK version update
+          this.logger.warn(`⚠️ Failed to get node info (non-critical): ${error}. Continuing without SDK version update.`);
+        } else {
+          // Indexer was stopped, log warning but don't throw
+          this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+        }
       }
-    } catch (error) {
-      this.logger.warn(`⚠️ Failed to get node info (non-critical): ${error}. Continuing without SDK version update.`);
+    } catch (error: any) {
+      // Handle any other startup errors
+      if (!indexerStatusManager.isIndexerRunning()) {
+        // Already stopped, just log and continue
+        this.logger.error(`❌ Service startup encountered error (indexer already stopped): ${error}`);
+        this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+      } else {
+        const wasStopped = await handleErrorGracefully(
+          error,
+          SERVICE.V1.CrawlTransaction.key,
+          'Service startup error'
+        );
+        
+        if (wasStopped) {
+          // Don't throw - let service start so it can respond to API requests with error status
+          this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+        }
+      }
     }
 
     this.createJob(

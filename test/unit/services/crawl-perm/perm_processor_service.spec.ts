@@ -1,9 +1,9 @@
 import { ServiceBroker } from "moleculer";
 import PermProcessorService from "../../../../src/services/crawl-perm/perm_processor.service";
 import {
-  PermissionMessageTypes,
   SERVICE,
 } from "../../../../src/common/constant";
+import { VeranaPermissionMessageTypes as PermissionMessageTypes } from "../../../../src/common/verana-message-types";
 
 describe("🧪 PermProcessorService", () => {
   let broker: ServiceBroker;

@@ -61,20 +61,31 @@ export async function getProviderFactory(): Promise<{
 export async function getLcdClient() {
   const lcd = Network?.LCD || "";
   if (!client.lcdClient.provider) {
-    const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
-      await getProviderFactory();
-    client.lcdClient.provider = await providerClient.createLCDClient({
-      restEndpoint: lcd,
-    });
-    client.lcdClient.cosmwasm = await cosmwasmClient.createLCDClient({
-      restEndpoint: lcd,
-    });
-    client.lcdClient.ibc = await ibcClient.createLCDClient({
-      restEndpoint: lcd,
-    });
-    client.lcdClient.cosmos = await cosmosClient.createLCDClient({
-      restEndpoint: lcd,
-    });
+    try {
+      const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
+        await getProviderFactory();
+      client.lcdClient.provider = await providerClient.createLCDClient({
+        restEndpoint: lcd,
+      });
+      client.lcdClient.cosmwasm = await cosmwasmClient.createLCDClient({
+        restEndpoint: lcd,
+      });
+      client.lcdClient.ibc = await ibcClient.createLCDClient({
+        restEndpoint: lcd,
+      });
+      client.lcdClient.cosmos = await cosmosClient.createLCDClient({
+        restEndpoint: lcd,
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      const errorCode = error?.code || 'UNKNOWN';
+      const enhancedError = new Error(
+        `Failed to create LCD client: ${errorMessage} (code: ${errorCode})`
+      );
+      (enhancedError as any).code = errorCode;
+      (enhancedError as any).originalError = error;
+      throw enhancedError;
+    }
   }
 
   return client.lcdClient;

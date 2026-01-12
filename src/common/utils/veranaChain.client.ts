@@ -9,27 +9,21 @@ import { MsgAddGovernanceFrameworkDocument, MsgArchiveTrustRegistry, MsgCreateTr
 export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
     // verana.dd.v1
     ["/verana.dd.v1.MsgAddDID", MsgAddDID],
-    ["/veranablockchain.diddirectory.MsgAddDID", MsgAddDID],
     ["/verana.dd.v1.MsgRenewDID", MsgRenewDID],
-    ["/veranablockchain.diddirectory.MsgRenewDID", MsgRenewDID],
     ["/verana.dd.v1.MsgTouchDID", MsgTouchDID],
-    ["/veranablockchain.diddirectory.MsgTouchDID", MsgTouchDID],
     ["/verana.dd.v1.MsgRemoveDID", MsgRemoveDID],
-    ["/veranablockchain.diddirectory.MsgRemoveDID", MsgRemoveDID],
     // verana.td.v1
     ["/verana.td.v1.MsgReclaimTrustDepositYield", MsgReclaimTrustDepositYield],
     ["/verana.td.v1.MsgReclaimTrustDeposit", MsgReclaimTrustDeposit],
     ["/verana.td.v1.MsgRepaySlashedTrustDeposit", MsgRepaySlashedTrustDeposit],
     // verana.tr.v1
     ["/verana.tr.v1.MsgCreateTrustRegistry", MsgCreateTrustRegistry],
-    ["/veranablockchain.trustregistry.MsgCreateTrustRegistry", MsgCreateTrustRegistry],
     ["/verana.tr.v1.MsgUpdateTrustRegistry", MsgUpdateTrustRegistry],
     ["/verana.tr.v1.MsgArchiveTrustRegistry", MsgArchiveTrustRegistry],
     ["/verana.tr.v1.MsgAddGovernanceFrameworkDocument", MsgAddGovernanceFrameworkDocument],
     ["/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion", MsgIncreaseActiveGovernanceFrameworkVersion],
     // verana.cs.v1
     ["/verana.cs.v1.MsgCreateCredentialSchema", MsgCreateCredentialSchema],
-    ["/veranablockchain.credentialschema.MsgCreateCredentialSchema", MsgCreateCredentialSchema],
     ["/verana.cs.v1.MsgUpdateCredentialSchema", MsgUpdateCredentialSchema],
     ["/verana.cs.v1.MsgArchiveCredentialSchema", MsgArchiveCredentialSchema],
     // verana.perm.v1

@@ -7,8 +7,8 @@ import BullableService from "../../base/bullable.service";
 import {
   ModulesParamsNamesTypes,
   SERVICE,
-  TrustDepositMessageTypes,
 } from "../../common";
+import { VeranaTrustDepositMessageTypes } from "../../common/verana-message-types";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
@@ -202,13 +202,13 @@ export default class TrustDepositMessageProcessorService extends BullableService
     this.logger.info(`[TrustDeposit] Processing ${type} for ${account}`);
 
     switch (type) {
-      case TrustDepositMessageTypes.RECLAIM_YIELD:
+      case VeranaTrustDepositMessageTypes.ReclaimYield:
         return this.reclaimYield(content, params, trx, blockHeight);
 
-      case TrustDepositMessageTypes.RECLAIM_DEPOSIT:
+      case VeranaTrustDepositMessageTypes.ReclaimDeposit:
         return this.reclaimDeposit(content, params, trx, blockHeight);
 
-      case TrustDepositMessageTypes.REPAY_SLASHED:
+      case VeranaTrustDepositMessageTypes.RepaySlashed:
         return this.repaySlashed(content, ts, params, trx, blockHeight);
 
       default:

@@ -8,4 +8,5 @@ export * from './utils/verana_client';
 export * from './utils/cosmjs_client';
 export * from './utils/helper';
 export * from './utils/request';
+export * from './utils/error_handler';
 export * from './types/interfaces';

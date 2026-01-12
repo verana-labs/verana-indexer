@@ -9,6 +9,7 @@ import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 import { eventsBroadcaster } from "./events_broadcaster";
+import { indexerStatusManager } from "../manager/indexer_status.service";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 
@@ -59,6 +60,14 @@ async function parseAtBlockHeight(
   req: IncomingMessage,
   required: boolean = false
 ) {
+  const status = indexerStatusManager.getStatus();
+  if (!status.isRunning) {
+    throw new Errors.MoleculerError(
+      `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
+      503,
+      "INDEXER_STOPPED"
+    );
+  }
   ctx.meta = ctx.meta || {};
   const headerValue = getHeaderValue(req);
 
@@ -125,6 +134,24 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       );
       res.setHeader("X-Height", checkpoint.height.toString());
     }
+
+    const status = indexerStatusManager.getStatus();
+    if (!status.isCrawling) {
+      res.setHeader("X-Crawling-Status", "stopped");
+      res.setHeader("X-Indexer-Status", "running");
+      if (status.stoppedReason) {
+        res.setHeader("X-Crawling-Reason", status.stoppedReason);
+      }
+      if (status.lastError?.message) {
+        res.setHeader("X-Crawling-Error", status.lastError.message);
+      }
+      if (status.stoppedAt) {
+        res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
+      }
+    } else {
+      res.setHeader("X-Crawling-Status", "active");
+      res.setHeader("X-Indexer-Status", "running");
+    }
   } catch (err) {
     console.log(err);
   }
@@ -138,18 +165,46 @@ function createOnBeforeCall(required: boolean = true) {
     _route: Route,
     req: IncomingMessage
   ) {
+    const status = indexerStatusManager.getStatus();
+    if (!status.isRunning) {
+      throw new Errors.MoleculerError(
+        `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
+        503,
+        "INDEXER_STOPPED"
+      );
+    }
     await parseAtBlockHeight(ctx, req, required);
   };
 }
 
 function createOnError() {
-  return function (
+  return async function (
     req: IncomingMessage,
     res: ServerResponse,
     err: any
   ) {
     const status = err.code || 400;
     const errorMessage = err.message || "Missing At-Block-Height header";
+    
+    const indexerStatus = indexerStatusManager.getStatus();
+    if (!indexerStatus.isCrawling) {
+      res.setHeader("X-Crawling-Status", "stopped");
+      res.setHeader("X-Indexer-Status", indexerStatus.isRunning ? "running" : "stopped");
+      if (indexerStatus.stoppedReason) {
+        res.setHeader("X-Crawling-Reason", indexerStatus.stoppedReason);
+      }
+      if (indexerStatus.lastError?.message) {
+        res.setHeader("X-Crawling-Error", indexerStatus.lastError.message);
+      }
+      if (indexerStatus.stoppedAt) {
+        res.setHeader("X-Crawling-Stopped-At", indexerStatus.stoppedAt);
+      }
+    } else {
+      res.setHeader("X-Crawling-Status", "active");
+      res.setHeader("X-Indexer-Status", "running");
+    }
+    res.setHeader("X-Query-At", new Date().toISOString());
+    
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status, error: errorMessage }));
   };
@@ -230,6 +285,7 @@ function createRoute(
         "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
+        "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
       }),
       {
         path: "/",

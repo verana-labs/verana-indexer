@@ -20,6 +20,8 @@ import {
   SERVICE,
   Config,
 } from '../../common';
+import { indexerStatusManager } from '../manager/indexer_status.service';
+import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
 import { Block, BlockCheckpoint, Event, EventAttribute } from '../../models';
 import BullableService, { QueueHandler, DEFAULT_PREFIX } from '../../base/bullable.service';
 import config from '../../config.json' with { type: 'json' };
@@ -88,8 +90,11 @@ export default class CrawlBlockService extends BullableService {
         this.logger.info('⏭️ Skipping this cycle due to network issues');
         return;
       }
-      this.logger.error(`❌ Unexpected error in job handler: ${error}`);
-      this.logger.error('💀 Fatal error, exiting process...');
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlBlock.key,
+        'Unexpected error in job handler'
+      );
     }
   }
 
@@ -97,12 +102,18 @@ export default class CrawlBlockService extends BullableService {
     try {
       this._lcdClient = await getLcdClient();
     } catch (error: any) {
-      if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
-        this.logger.error(`❌ Failed to initialize LCD client due to network error (${error.code}): ${error.message}`);
-        throw error; 
+      const wasStopped = await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlBlock.key,
+        'Failed to initialize LCD client'
+      );
+      
+      if (wasStopped) {
+        throw error; // Re-throw to stop the job handler
+      } else {
+        // Non-critical error, but still throw to be safe
+        throw error;
       }
-      this.logger.error(`❌ Failed to initialize LCD client: ${error}`);
-      throw error;
     }
 
     try {
@@ -164,6 +175,13 @@ export default class CrawlBlockService extends BullableService {
   }
 
   async handleJobCrawlBlock() {
+    try {
+      checkCrawlingStatus();
+    } catch {
+      this.logger.warn('⏸️ Crawling is stopped, skipping block crawl');
+      return;
+    }
+
     if (this._processingLock) {
       return;
     }
@@ -374,8 +392,11 @@ export default class CrawlBlockService extends BullableService {
         this.logger.error(`❌ Network connection error in block crawling (${error.code}): ${error.message}`);
         this.logger.info('⏭️ Skipping this cycle, will retry on next polling interval');
       } else {
-        this.logger.error(`❌ Critical error in block crawling: ${error}`);
-        this.logger.error('💀 Fatal error, exiting process...');
+        await handleErrorGracefully(
+          error,
+          SERVICE.V1.CrawlBlock.key,
+          'Critical error in block crawling'
+        );
       }
     } finally {
       this._processingLock = false;
@@ -557,8 +578,11 @@ export default class CrawlBlockService extends BullableService {
         await this.updateJobInterval(targetInterval);
         this._currentInterval = targetInterval;
       } catch (error) {
-        this.logger.error(`❌ Critical error updating job interval: ${error}`);
-        this.logger.error('💀 Fatal error, exiting process...');
+        await handleErrorGracefully(
+          error,
+          SERVICE.V1.CrawlBlock.key,
+          'Critical error updating job interval'
+        );
       } finally {
         this._updatingInterval = false;
       }
@@ -715,38 +739,57 @@ export default class CrawlBlockService extends BullableService {
         });
       }
     } catch (error) {
-      this.logger.error(`❌ Critical error in handleListBlock: ${error}`);
-      this.logger.error('💀 Fatal error, exiting process...');
-      
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlBlock.key,
+        'Critical error in handleListBlock'
+      );
     }
   }
 
   public async _start() {
-    const providerRegistry = await getProviderRegistry();
-    this._registry = new ChainRegistry(this.logger, providerRegistry);
+    try {
+      const providerRegistry = await getProviderRegistry();
+      this._registry = new ChainRegistry(this.logger, providerRegistry);
 
-    await this.waitForServices(SERVICE.V1.CrawlTransaction.name);
-    
-    this.logger.info(
-      `🚀 CrawlBlock Service Starting | Initial Polling Interval: ${config.crawlBlock.millisecondCrawl}ms | ` +
-      `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
-      `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
-    );
-    
-    this.createJob(
-      `${BULL_JOB_NAME.CRAWL_BLOCK}`,
-      `${BULL_JOB_NAME.CRAWL_BLOCK}`,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: config.crawlBlock.millisecondCrawl,
-        },
+      await this.waitForServices(SERVICE.V1.CrawlTransaction.name);
+      
+      this.logger.info(
+        `🚀 CrawlBlock Service Starting | Initial Polling Interval: ${config.crawlBlock.millisecondCrawl}ms | ` +
+        `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
+        `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
+      );
+      
+      // Only create job if indexer is running
+      if (indexerStatusManager.isIndexerRunning()) {
+        this.createJob(
+          `${BULL_JOB_NAME.CRAWL_BLOCK}`,
+          `${BULL_JOB_NAME.CRAWL_BLOCK}`,
+          {},
+          {
+            removeOnComplete: true,
+            removeOnFail: {
+              count: 3,
+            },
+            repeat: {
+              every: config.crawlBlock.millisecondCrawl,
+            },
+          }
+        );
+      } else {
+        this.logger.warn('⚠️ Indexer is stopped, not creating crawl block job. APIs will return error status.');
       }
-    );
+    } catch (error: any) {
+      const wasStopped = await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlBlock.key,
+        'CrawlBlock service startup error'
+      );
+      
+      if (wasStopped) {
+        this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+      }
+    }
     return super._start();
   }
 
@@ -754,12 +797,16 @@ export default class CrawlBlockService extends BullableService {
     this._registry = registry;
   }
 
-  private getWebSocketUrl(): string {
+  private async getWebSocketUrl(): Promise<string> {
     const rpcUrl = Network?.RPC || '';
     if (!rpcUrl) {
-      this.logger.error('❌ RPC_ENDPOINT is not configured');
-      this.logger.error('💀 Fatal error, exiting process...');
-      
+      const error = new Error('RPC_ENDPOINT is not configured');
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlBlock.key,
+        'RPC_ENDPOINT configuration error'
+      );
+      throw error;
     }
 
     let wsUrl = rpcUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
@@ -785,7 +832,7 @@ export default class CrawlBlockService extends BullableService {
     }
 
     try {
-      const wsUrl = this.getWebSocketUrl();
+      const wsUrl = await this.getWebSocketUrl();
       this.logger.info(`🔌 Connecting to Verana RPC WebSocket: ${wsUrl}`);
 
       this._websocket = new WebSocket(wsUrl);
@@ -869,10 +916,12 @@ export default class CrawlBlockService extends BullableService {
         }
       });
     } catch (error) {
-      this.logger.error(`❌ Critical error starting WebSocket subscription: ${error}`);
       this._websocketConnected = false;
-      this.logger.error('💀 Fatal error, exiting process...');
-      
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlBlock.key,
+        'Critical error starting WebSocket subscription'
+      );
     }
   }
 

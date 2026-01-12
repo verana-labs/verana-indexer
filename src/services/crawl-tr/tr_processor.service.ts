@@ -7,8 +7,8 @@ import BullableService from "../../base/bullable.service";
 import {
   ModulesParamsNamesTypes,
   SERVICE,
-  TrustRegistryMessageTypes,
 } from "../../common";
+import { VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import { requireController } from "../../common/utils/extract_controller";
@@ -57,30 +57,30 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         delete processedTR?.["@type"];
 
         if (
-          processedTR.type === TrustRegistryMessageTypes.Create ||
-          processedTR.type === TrustRegistryMessageTypes.CreateLegacy
+          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
+          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
         ) {
           await this.processCreateTR(processedTR);
         }
 
         if (
-          processedTR.type === TrustRegistryMessageTypes.AddGovernanceFrameworkDoc
+          processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
         ) {
           await this.processAddGovFrameworkDoc(processedTR);
         }
 
-        if (processedTR.type === TrustRegistryMessageTypes.Update) {
+        if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
           await this.processUpdateTR(processedTR);
         }
 
         if (
           processedTR.type ===
-          TrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
+          VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
         ) {
           await this.processIncreaseActiveGFV(processedTR);
         }
 
-        if (processedTR.type === TrustRegistryMessageTypes.Archive) {
+        if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
           await this.processArchiveTR(processedTR);
         }
       } catch (err) {
