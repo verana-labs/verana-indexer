@@ -131,6 +131,7 @@ class IndexerStatusManager {
   private async stopAllCrawlingJobs(): Promise<void> {
     try {
       if (!Config.QUEUE_JOB_REDIS) {
+        //eslint-disable-next-line-no-console
         console.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
         return;
       }
