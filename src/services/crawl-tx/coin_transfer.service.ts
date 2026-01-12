@@ -16,6 +16,8 @@ import knex from '../../common/utils/db_connection';
   version: 1,
 })
 export default class CoinTransferService extends BullableService {
+  private _isFreshStart: boolean = false;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
   }
@@ -89,12 +91,18 @@ export default class CoinTransferService extends BullableService {
       return;
     }
 
-    this.logger.info(`QUERY FROM ${fromBlock} - TO ${toBlock}................`);
+    let actualToBlock = toBlock;
+    if (this._isFreshStart && config.handleCoinTransfer.freshStart) {
+      const maxBlocks = config.handleCoinTransfer.freshStart.blocksPerCall || config.handleCoinTransfer.blocksPerCall;
+      actualToBlock = Math.min(toBlock, fromBlock + maxBlocks);
+    }
+
+    this.logger.info(`QUERY FROM ${fromBlock} - TO ${actualToBlock}................`);
 
     const coinTransfers: CoinTransfer[] = [];
     const transactions = await this.fetchTransactionCTByHeight(
       fromBlock,
-      toBlock
+      actualToBlock
     );
 
     transactions.forEach((tx: Transaction) => {
@@ -200,26 +208,53 @@ export default class CoinTransferService extends BullableService {
       });
     });
 
-    updateBlockCheckpoint.height = toBlock;
+    updateBlockCheckpoint.height = actualToBlock;
     await knex.transaction(async (trx) => {
-      await BlockCheckpoint.query()
-        .transacting(trx)
-        .insert(updateBlockCheckpoint)
-        .onConflict('job_name')
-        .merge();
+      try {
+        await BlockCheckpoint.query()
+          .transacting(trx)
+          .insert(updateBlockCheckpoint)
+          .onConflict('job_name')
+          .merge();
 
-      if (coinTransfers.length > 0) {
-        this.logger.info(`INSERTING ${coinTransfers.length} COIN TRANSFER`);
-        await trx.batchInsert(
-          CoinTransfer.tableName,
-          coinTransfers,
-          config.handleCoinTransfer.chunkSize
-        );
+        if (coinTransfers.length > 0) {
+          const chunkSize = (this._isFreshStart && config.handleCoinTransfer.freshStart)
+            ? (config.handleCoinTransfer.freshStart.chunkSize || config.handleCoinTransfer.chunkSize)
+            : config.handleCoinTransfer.chunkSize;
+          this.logger.info(`📝 [COIN_TRANSFER] Inserting ${coinTransfers.length} coin transfers in chunks of ${chunkSize}`);
+          await trx.batchInsert(
+            CoinTransfer.tableName,
+            coinTransfers,
+            chunkSize
+          );
+          this.logger.info(`✅ [COIN_TRANSFER] Inserted ${coinTransfers.length} coin transfers`);
+        }
+      } catch (error) {
+        this.logger.error(`❌ [COIN_TRANSFER] Transaction failed, rolling back:`, error);
+        throw error;
       }
     });
   }
 
   public async _start() {
+    try {
+      const blockCountResult = await knex('block').count('* as count').first();
+      const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+      const checkpoint = await BlockCheckpoint.query().findOne({
+        job_name: BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
+      });
+      const currentBlock = checkpoint ? checkpoint.height : 0;
+      this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+    } catch (error) {
+      this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+      this._isFreshStart = false;
+    }
+
+    const crawlInterval = (this._isFreshStart && config.handleCoinTransfer.freshStart)
+      ? (config.handleCoinTransfer.freshStart.millisecondCrawl || config.handleCoinTransfer.millisecondCrawl)
+      : config.handleCoinTransfer.millisecondCrawl;
+
+
     this.createJob(
       BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
       BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
@@ -230,7 +265,7 @@ export default class CoinTransferService extends BullableService {
           count: 3,
         },
         repeat: {
-          every: config.handleCoinTransfer.millisecondCrawl,
+          every: crawlInterval,
         },
       }
     );

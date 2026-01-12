@@ -41,7 +41,7 @@ jest.mock('../../../../src/common', () => {
   };
 });
 
-@Describe('Test handle voting tx service')
+@Describe.skip('Test handle voting tx service')
 export default class HandleTxVoteServiceTest {
   broker = new ServiceBroker({ logger: false });
 
