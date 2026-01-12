@@ -9,7 +9,7 @@ import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 import { eventsBroadcaster } from "./events_broadcaster";
-import { indexerStatusManager } from "../manager/indexer_status.service";
+import { indexerStatusManager } from "../manager/indexer_status.manager";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 
@@ -135,6 +135,7 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       res.setHeader("X-Height", checkpoint.height.toString());
     }
 
+    // Always attach crawling status headers - APIs continue to work
     const status = indexerStatusManager.getStatus();
     if (!status.isCrawling) {
       res.setHeader("X-Crawling-Status", "stopped");
@@ -173,6 +174,7 @@ function createOnBeforeCall(required: boolean = true) {
         "INDEXER_STOPPED"
       );
     }
+    // Note: Crawling status is communicated via HTTP headers, not ctx.meta
     await parseAtBlockHeight(ctx, req, required);
   };
 }

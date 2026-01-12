@@ -19,7 +19,7 @@ import {
   getLcdClient,
   SERVICE,
 } from '../../common';
-import { indexerStatusManager } from '../manager/indexer_status.service';
+import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
 import {
   isVeranaMessageType,

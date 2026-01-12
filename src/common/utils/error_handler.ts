@@ -1,4 +1,4 @@
-import { indexerStatusManager } from '../../services/manager/indexer_status.service';
+import { indexerStatusManager } from '../../services/manager/indexer_status.manager';
 
 export interface ErrorInfo {
   isNetworkError: boolean;

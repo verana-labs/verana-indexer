@@ -20,7 +20,7 @@ import {
   SERVICE,
   Config,
 } from '../../common';
-import { indexerStatusManager } from '../manager/indexer_status.service';
+import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
 import { Block, BlockCheckpoint, Event, EventAttribute } from '../../models';
 import BullableService, { QueueHandler, DEFAULT_PREFIX } from '../../base/bullable.service';

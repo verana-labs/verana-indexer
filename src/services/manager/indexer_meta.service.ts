@@ -8,7 +8,7 @@ import knex from "../../common/utils/db_connection";
 import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
-import { indexerStatusManager } from "./indexer_status.service";
+import { indexerStatusManager } from "./indexer_status.manager";
 
 type ChangeOperation = "create" | "update" | "delete";
 
