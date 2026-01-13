@@ -1033,12 +1033,10 @@ export default class CrawlTxService extends BullableService {
           
           if (wasStopped) {
             this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+          } else if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
+            this.logger.warn(`⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`);
           } else {
-            if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
-              this.logger.warn(`⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`);
-            } else {
-              this.logger.warn(`⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`);
-            }
+            this.logger.warn(`⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`);
           }
         }
       }
