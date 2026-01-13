@@ -232,6 +232,11 @@ export default class TrustDepositMessageProcessorService extends BullableService
       if (slashed > repaid) this.logger.warn("Deposit slashed and not repaid");
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
+      if (shareValue === BigInt(0)) {
+        this.logger.error(`[TrustDeposit] ❌ Division by zero: trust_deposit_share_value is 0`);
+        throw new Error("trust_deposit_share_value cannot be zero");
+      }
+      
       const claimableYield =
         toBigIntSafe(td.share) * shareValue - toBigIntSafe(td.amount);
 
@@ -254,10 +259,12 @@ export default class TrustDepositMessageProcessorService extends BullableService
       this.logger.info(
         `[TrustDeposit] ✅ Yield reclaimed for ${account}: ${claimableYield}`
       );
-    } catch (error) {
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
       this.logger.error(
-        `[TrustDeposit] ❌ Yield reclaim failed for  — ${error || error}`
+        `[TrustDeposit] ❌ Yield reclaim failed: ${errorMessage}`
       );
+      throw error;
     }
   }
 
@@ -265,10 +272,16 @@ export default class TrustDepositMessageProcessorService extends BullableService
     try {
       const account = requireController(content, "TrustDeposit RECLAIM_DEPOSIT");
       const claimed = toBigIntSafe(content.claimed);
-      if (claimed <= BigInt(0)) this.logger.warn("❌ Claimed must be > 0");
+      if (claimed <= BigInt(0)) {
+        this.logger.warn("❌ Claimed must be > 0");
+        return;
+      }
 
       const td: any = await TrustDeposit.query(trx).findOne({ account });
-      if (!td) this.logger.warn(`❌ No trust deposit found for ${account}`);
+      if (!td) {
+        this.logger.warn(`❌ No trust deposit found for ${account}`);
+        return;
+      }
       const previousRecord = { ...td };
       const slashed = toBigIntSafe(td.slashed_deposit);
       const repaid = toBigIntSafe(td.repaid_deposit);
@@ -283,6 +296,11 @@ export default class TrustDepositMessageProcessorService extends BullableService
       }
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
+      if (shareValue === BigInt(0)) {
+        this.logger.error(`[TrustDeposit] ❌ Division by zero: trust_deposit_share_value is 0`);
+        throw new Error("trust_deposit_share_value cannot be zero");
+      }
+      
       const requiredMinimum = toBigIntSafe(td.share) * shareValue;
       const newDeposit = toBigIntSafe(td.amount) - claimed;
 
@@ -350,6 +368,11 @@ export default class TrustDepositMessageProcessorService extends BullableService
       }
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
+      if (shareValue === BigInt(0)) {
+        this.logger.error(`[TrustDeposit] ❌ Division by zero: trust_deposit_share_value is 0`);
+        throw new Error("trust_deposit_share_value cannot be zero");
+      }
+      
       const newDeposit = toBigIntSafe(td.amount) + amount;
       const newShare = toBigIntSafe(td.share) + amount / shareValue;
       const newRepaid = repaid + amount;
@@ -373,11 +396,12 @@ export default class TrustDepositMessageProcessorService extends BullableService
       this.logger.info(
         `[TrustDeposit] ✅ Slashed deposit repaid ${amount} for ${account}`
       );
-    } catch (error) {
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
       this.logger.error(
-        `[TrustDeposit] ❌ Slashed deposit repay failed for  — ${error || error
-        }`
+        `[TrustDeposit] ❌ Slashed deposit repay failed: ${errorMessage}`
       );
+      throw error;
     }
   }
 }

@@ -10,30 +10,36 @@ import Utils from './utils';
 import { IProviderRegistry } from './provider.registry';
 import { veranaRegistry } from './veranaChain.client';
 
+interface MessageWithTypeUrl {
+  typeUrl: string;
+  value?: string | Uint8Array;
+  [key: string]: unknown;
+}
+
 export default class ChainRegistry {
   public registry!: Registry;
 
   private _logger: LoggerInstance;
 
-  public cosmos: any;
+  public cosmos: unknown;
 
-  public ibc: any;
+  public ibc: unknown;
 
-  public ethermint: any;
+  public ethermint: unknown;
 
-  public seiprotocol: any;
+  public seiprotocol: unknown;
 
-  public aura: any;
+  public aura: unknown;
 
-  public evmos: any;
+  public evmos: unknown;
 
   public cosmosSdkVersion: SemVer = new SemVer('v0.45.17');
 
-  public decodeAttribute: any;
+  public decodeAttribute: ((input: string) => string) | undefined;
 
-  public encodeAttribute: any;
+  public encodeAttribute: ((input: string) => string) | undefined;
 
-  public txRegistryType: any;
+  public txRegistryType: unknown;
 
   constructor(logger: LoggerInstance, providerRegistry: IProviderRegistry) {
     this._logger = logger;
@@ -46,48 +52,61 @@ export default class ChainRegistry {
     this.ethermint = providerRegistry.ethermint;
 
     // set default registry to decode msg
+    const txRegistryTypes = Array.isArray(this.txRegistryType) 
+      ? (this.txRegistryType as string[]).map((type: string) => [
+          type,
+          _.get(this, type.slice(1)),
+        ])
+      : [];
     this.registry = new Registry([
       ...defaultStargateTypes,
       ...wasmTypes,
       ...veranaRegistry,
-      ...this.txRegistryType.map((type: string) => [
-        type,
-        _.get(this, type.slice(1)),
-      ]),
-    ]);
+      ...txRegistryTypes,
+    ] as any);
   }
 
-  public decodeMsg(msg: any): any {
+  public decodeMsg(msg: unknown): unknown {
     this._logger.warn("Decoding msg:", msg);
-    let result: any = {};
+    let result: Record<string, unknown> = {};
     if (!msg) {
-      return;
+      return result;
     }
-    if (msg.typeUrl) {
-      result['@type'] = msg.typeUrl;
+    
+    const typedMsg = msg as MessageWithTypeUrl;
+    if (typedMsg && typeof typedMsg === 'object' && 'typeUrl' in typedMsg && typeof typedMsg.typeUrl === 'string') {
+      result['@type'] = typedMsg.typeUrl;
       const msgType = this.registry.lookupType(
-        msg.typeUrl
+        typedMsg.typeUrl
       ) as TsProtoGeneratedType;
       this._logger.warn("msgType", msgType);
       if (!msgType) {
         const formattedValue =
-          msg.value instanceof Uint8Array ? toBase64(msg.value) : msg.value;
+          typedMsg.value instanceof Uint8Array ? toBase64(typedMsg.value) : typedMsg.value;
         this._logger.info("formattedValue",formattedValue);
         result.value = formattedValue;
         this._logger.error('This typeUrl is not supported');
-        this._logger.error(msg.typeUrl);
+        this._logger.error(typedMsg.typeUrl);
       } else {
-        // Utils.isBase64();
-        const decoded: any = msgType.toJSON(
+        const msgValue = typedMsg.value;
+        let decodedValue: Uint8Array;
+        if (msgValue instanceof Uint8Array) {
+          decodedValue = msgValue;
+        } else if (typeof msgValue === 'string' && Utils.isBase64(msgValue)) {
+          decodedValue = fromBase64(msgValue);
+        } else if (typeof msgValue === 'string') {
+          decodedValue = new TextEncoder().encode(msgValue);
+        } else {
+          decodedValue = new Uint8Array();
+        }
+        const decoded: Record<string, unknown> = msgType.toJSON(
           this.registry.decode({
-            typeUrl: msg.typeUrl,
-            value: Utils.isBase64(msg.value)
-              ? fromBase64(msg.value)
-              : msg.value,
-          })
-        );
+            typeUrl: typedMsg.typeUrl,
+            value: decodedValue,
+          } as { typeUrl: string; value: Uint8Array })
+        ) as Record<string, unknown>;
         Object.keys(decoded).forEach((key) => {
-          if (decoded[key].typeUrl) {
+          if (decoded[key] && typeof decoded[key] === 'object' && 'typeUrl' in decoded[key]) {
             const resultRecursive = this.decodeMsg(decoded[key]);
             result[key] = resultRecursive;
           } else {
@@ -96,62 +115,77 @@ export default class ChainRegistry {
         });
       }
 
-      // parse JSON some field
       if (
-        msg.typeUrl === MSG_TYPE.MSG_EXECUTE_CONTRACT ||
-        msg.typeUrl === MSG_TYPE.MSG_INSTANTIATE_CONTRACT ||
-        msg.typeUrl === MSG_TYPE.MSG_INSTANTIATE2_CONTRACT
+        typedMsg.typeUrl === MSG_TYPE.MSG_EXECUTE_CONTRACT ||
+        typedMsg.typeUrl === MSG_TYPE.MSG_INSTANTIATE_CONTRACT ||
+        typedMsg.typeUrl === MSG_TYPE.MSG_INSTANTIATE2_CONTRACT
       ) {
-        if (result.msg) {
+        if (result.msg && typeof result.msg === 'string') {
           try {
             result.msg = fromUtf8(fromBase64(result.msg));
           } catch (error) {
             this._logger.error('This msg instantite/execute is not valid JSON');
           }
         }
-      } else if (msg.typeUrl === MSG_TYPE.MSG_ACKNOWLEDGEMENT) {
+      } else if (typedMsg.typeUrl === MSG_TYPE.MSG_ACKNOWLEDGEMENT) {
         try {
-          result.packet.data = JSON.parse(
-            fromUtf8(fromBase64(result.packet.data))
-          );
-          result.acknowledgement = JSON.parse(
-            fromUtf8(fromBase64(result.acknowledgement))
-          );
+          const packet = result.packet as { data?: string } | undefined;
+          const acknowledgement = result.acknowledgement;
+          if (packet?.data && typeof packet.data === 'string') {
+            result.packet = {
+              ...packet,
+              data: JSON.parse(
+                fromUtf8(fromBase64(packet.data))
+              ),
+            };
+          }
+          if (acknowledgement && typeof acknowledgement === 'string') {
+            result.acknowledgement = JSON.parse(
+              fromUtf8(fromBase64(acknowledgement))
+            );
+          }
         } catch (error) {
           this._logger.error('This msg ibc acknowledgement is not valid JSON');
         }
-      } else if (msg.typeUrl === MSG_TYPE.MSG_AUTHZ_EXEC) {
+      } else if (typedMsg.typeUrl === MSG_TYPE.MSG_AUTHZ_EXEC) {
         try {
-          result.msgs = result.msgs.map((subMsg: any) =>
-            this.decodeMsg({
-              typeUrl: subMsg.typeUrl,
-              value: Utils.isBase64(subMsg.value)
-                ? fromBase64(subMsg.value)
-                : subMsg.value,
-            })
-          );
+          const msgs = result.msgs as Array<{ typeUrl: string; value: string | Uint8Array }> | undefined;
+          if (Array.isArray(msgs)) {
+            result.msgs = msgs.map((subMsg) => {
+              const valueStr = typeof subMsg.value === 'string' ? subMsg.value : String(subMsg.value);
+              return this.decodeMsg({
+                typeUrl: subMsg.typeUrl,
+                value: Utils.isBase64(valueStr)
+                  ? fromBase64(valueStr)
+                  : subMsg.value,
+              });
+            });
+          }
         } catch (error) {
           this._logger.error('Cannot decoded sub messages authz exec');
         }
-      } else if (msg.typeUrl === MSG_TYPE.MSG_SUBMIT_PROPOSAL_V1) {
+      } else if (typedMsg.typeUrl === MSG_TYPE.MSG_SUBMIT_PROPOSAL_V1) {
         try {
-          result.messages = result.messages.map((subMsg: any) =>
-            this.decodeMsg({
-              typeUrl: subMsg.typeUrl,
-              value: Utils.isBase64(subMsg.value)
-                ? fromBase64(subMsg.value)
-                : subMsg.value,
-            })
-          );
+          const messages = result.messages as Array<{ typeUrl: string; value: string | Uint8Array }> | undefined;
+          if (Array.isArray(messages)) {
+            result.messages = messages.map((subMsg) => {
+              const valueStr = typeof subMsg.value === 'string' ? subMsg.value : String(subMsg.value);
+              return this.decodeMsg({
+                typeUrl: subMsg.typeUrl,
+                value: Utils.isBase64(valueStr)
+                  ? fromBase64(valueStr)
+                  : subMsg.value,
+              });
+            });
+          }
         } catch (error) {
           this._logger.error('Cannot decoded sub messages in proposal');
         }
       }
     } else {
-      result = msg;
+      result = msg as Record<string, unknown>;
     }
 
-    // eslint-disable-next-line consistent-return
     return result;
   }
 

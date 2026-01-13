@@ -48,7 +48,12 @@ export default class CrawlValidatorService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async handleCrawlAllValidator(_payload: object): Promise<void> {
-    this._lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient();
+    if (!lcdClient?.provider) {
+      this.logger.warn('LCD client not available, skipping validator crawl. Will retry on next job execution.');
+      return;
+    }
+    this._lcdClient = lcdClient;
 
     const [startHeight, endHeight, updateBlockCheckpoint] =
       await BlockCheckpoint.getCheckpoint(BULL_JOB_NAME.CRAWL_VALIDATOR, [
@@ -77,16 +82,20 @@ export default class CrawlValidatorService extends BullableService {
 
     await knex.transaction(async (trx) => {
       if (resultTx.length > 0 && updateValidators.length > 0) {
-        await Validator.query()
-          .insert(updateValidators)
-          .onConflict('operator_address')
-          .merge()
-          .returning('id')
-          .transacting(trx)
-          .catch((error) => {
-            this.logger.error('Error insert or update validators');
-            this.logger.error(error);
-          });
+        const chunkSize = config.crawlValidator.chunkSize || 5000;
+        for (let i = 0; i < updateValidators.length; i += chunkSize) {
+          const chunk = updateValidators.slice(i, i + chunkSize);
+          await Validator.query()
+            .insert(chunk)
+            .onConflict('operator_address')
+            .merge()
+            .returning('id')
+            .transacting(trx)
+            .catch((error) => {
+              this.logger.error('Error insert or update validators');
+              this.logger.error(error);
+            });
+        }
       }
 
       updateBlockCheckpoint.height = endHeight;

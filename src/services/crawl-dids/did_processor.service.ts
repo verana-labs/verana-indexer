@@ -5,7 +5,7 @@ import { VeranaDidMessageTypes } from "../../common/verana-message-types";
 import { SERVICE } from "../../common";
 import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import { addYearsToDate, formatTimestamp } from "../../common/utils/date_utils";
-import { extractController, requireController } from "../../common/utils/extract_controller";
+import { extractController } from "../../common/utils/extract_controller";
 
 
 
@@ -88,15 +88,6 @@ export default class DidMessageProcessorService extends BullableService {
                 this.logger.info(`📝 Processing DID message: type=${message.type}, did=${message.did}, height=${message.height}`);
                 let processedDID: DidMessageTypes | null = null;
                 
-                let depositAmount = 0;
-                try {
-                    depositAmount = await calculateDidDeposit();
-                } catch (depositErr) {
-                    this.logger.error(`❌ Failed to calculate DID deposit:`, depositErr);
-                    console.error("FATAL DID DEPOSIT ERROR:", depositErr);
-                    
-                }
-                
                 // ---------------- ADD ----------------
                 if ([VeranaDidMessageTypes.AddDid, VeranaDidMessageTypes.AddDidLegacy].includes(message.type as any)) {
                     this.logger.info(`🆕 Creating new DID: ${message.did} at height ${message.height}`);
@@ -104,12 +95,23 @@ export default class DidMessageProcessorService extends BullableService {
                     if (!controller) {
                         this.logger.warn(`⚠️ Missing controller/creator for DID ${message.did}, message keys: ${Object.keys(message).join(', ')}`);
                     }
+                    
+                    const years = message.years ? (typeof message.years === 'string' ? parseInt(message.years, 10) : Number(message.years)) : 1;
+                    let depositAmount = 0;
+                    try {
+                        depositAmount = await calculateDidDeposit(years);
+                    } catch (depositErr) {
+                        this.logger.error(`❌ Failed to calculate DID deposit:`, depositErr);
+                        console.error("FATAL DID DEPOSIT ERROR:", depositErr);
+                        
+                    }
+                    
                     processedDID = {
                     event_type: message.type,
                     did: message.did,
                     controller: controller || null,
                     height: message.height ?? 0,
-                    years: message.years ? String(message.years) : undefined,
+                    years: String(years),
                     deposit: String(depositAmount) ?? "0",
                     created: formatTimestamp(message?.timestamp),
                     modified: formatTimestamp(message?.timestamp),
@@ -132,9 +134,12 @@ export default class DidMessageProcessorService extends BullableService {
             else if (
                 (message.type === VeranaDidMessageTypes.RenewDid || message.type === VeranaDidMessageTypes.RenewDidLegacy)
                 && message.did) {
+                const yearsToAdd = message.years 
+                    ? (typeof message.years === 'string' ? parseInt(message.years, 10) : Number(message.years))
+                    : 1;
                 let renewDeposit = 0;
                 try {
-                    renewDeposit = await calculateDidDeposit(message?.years) ?? 0;
+                    renewDeposit = await calculateDidDeposit(yearsToAdd) ?? 0;
                 } catch (depositErr) {
                     this.logger.error(`❌ Failed to calculate renew deposit:`, depositErr);
                     console.error("FATAL DID RENEW DEPOSIT ERROR:", depositErr);
@@ -147,7 +152,6 @@ export default class DidMessageProcessorService extends BullableService {
                     );
 
                 if (existingDid) {
-                    const yearsToAdd = parseInt(message.years || "0");
                     const newDeposit = String(renewDeposit);
 
                     const updatedDid: DidMessageTypes = {

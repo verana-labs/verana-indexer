@@ -39,54 +39,107 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     ctx: Context<{ trustRegistryList: any[] }>
   ) {
     const { trustRegistryList } = ctx.params;
-    this.logger.info(`🔄 Processing ${trustRegistryList?.length || 0} TrustRegistry messages`);
+    this.logger.info(` Processing ${trustRegistryList?.length || 0} TrustRegistry messages`);
 
-    for (const message of trustRegistryList) {
-      try {
-        this.logger.info(`📝 Processing TR message: type=${message.type}, height=${message.height}`);
+    if (!trustRegistryList || trustRegistryList.length === 0) {
+      this.logger.warn("⚠️ No TrustRegistry messages to process");
+      return;
+    }
 
-        const processedTR: any = { ...message, ...message.content };
+    const chunkSize = 500; 
+    const failThreshold = 0.1;
+    const failedMessages: any[] = [];
+    let processedCount = 0;
+    let successCount = 0;
 
-        if (message.content?.id) {
-          processedTR.trust_registry_id = message.content.id;
+    for (let i = 0; i < trustRegistryList.length; i += chunkSize) {
+      const chunk = trustRegistryList.slice(i, i + chunkSize);
+      this.logger.info(`📦 Processing chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(trustRegistryList.length / chunkSize)} (${chunk.length} messages)`);
+
+      for (const message of chunk) {
+        processedCount++;
+        try {
+          this.logger.info(` Processing TR message ${processedCount}/${trustRegistryList.length}: type=${message.type}, height=${message.height}, did=${message.content?.did || message.did || 'N/A'}`);
+
+          if (!message.type) {
+            this.logger.error(`❌ TR message missing type:`, JSON.stringify(message));
+            failedMessages.push({ message, error: "Missing type" });
+            continue;
+          }
+
+          const processedTR: any = { ...message, ...message.content };
+
+          if (message.content?.id) {
+            processedTR.trust_registry_id = message.content.id;
+          }
+
+          delete processedTR?.content;
+          delete processedTR?.id;
+          delete processedTR?.tx_id;
+          delete processedTR?.["@type"];
+
+          let processed = false;
+          if (
+            processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
+            processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
+          ) {
+            await this.processCreateTR(processedTR);
+            processed = true;
+          }
+
+          if (
+            processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
+          ) {
+            await this.processAddGovFrameworkDoc(processedTR);
+            processed = true;
+          }
+
+          if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
+            await this.processUpdateTR(processedTR);
+            processed = true;
+          }
+
+          if (
+            processedTR.type ===
+            VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
+          ) {
+            await this.processIncreaseActiveGFV(processedTR);
+            processed = true;
+          }
+
+          if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
+            await this.processArchiveTR(processedTR);
+            processed = true;
+          }
+
+          if (!processed) {
+            this.logger.warn(`⚠️ Unknown TR message type: ${processedTR.type}`);
+            failedMessages.push({ message, error: `Unknown type: ${processedTR.type}` });
+          } else {
+            successCount++;
+          }
+        } catch (err: any) {
+          const errorMessage = err?.message || String(err);
+          this.logger.error(`❌ Error processing TR message ${processedCount}:`, errorMessage);
+          this.logger.error(`❌ Message details:`, JSON.stringify(message));
+          console.error("FATAL TR ERROR:", err);
+          failedMessages.push({ message, error: errorMessage });
         }
+      }
+    }
 
-        delete processedTR?.content;
-        delete processedTR?.id;
-        delete processedTR?.tx_id;
-        delete processedTR?.["@type"];
+    this.logger.info(`✅ TrustRegistry processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${processedCount} total`);
 
-        if (
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
-        ) {
-          await this.processCreateTR(processedTR);
-        }
-
-        if (
-          processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
-        ) {
-          await this.processAddGovFrameworkDoc(processedTR);
-        }
-
-        if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
-          await this.processUpdateTR(processedTR);
-        }
-
-        if (
-          processedTR.type ===
-          VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
-        ) {
-          await this.processIncreaseActiveGFV(processedTR);
-        }
-
-        if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
-          await this.processArchiveTR(processedTR);
-        }
-      } catch (err) {
-        this.logger.error(`❌ Error processing TR message:`, err);
-        console.error("FATAL TR ERROR:", err);
-        
+    if (failedMessages.length > 0) {
+      this.logger.error(`❌ Failed to process ${failedMessages.length} TrustRegistry messages:`);
+      failedMessages.forEach((failed, idx) => {
+        this.logger.error(`  ${idx + 1}. Type: ${failed.message.type}, Error: ${failed.error}`);
+      });
+      
+      if (failedMessages.length > processedCount * failThreshold) {
+        const failureRate = ((failedMessages.length / processedCount) * 100).toFixed(2);
+        this.logger.error(`💀 CRITICAL: ${failureRate}% of TR messages failed (${failedMessages.length}/${processedCount})! This indicates a serious issue.`);
+        throw new Error(`Failed to process ${failedMessages.length} out of ${processedCount} TrustRegistry messages (${failureRate}% failure rate). This exceeds the ${(failThreshold * 100).toFixed(0)}% threshold.`);
       }
     }
   }
@@ -220,11 +273,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-    } catch (err) {
+      this.logger.info(`✅ Successfully archived TR: id=${tr.id}`);
+    } catch (err: any) {
       await trx.rollback();
-      this.logger.error("❌ Failed to process ArchiveTrustRegistry", err);
+      const errorMessage = err?.message || String(err);
+      this.logger.error(`❌ Failed to process ArchiveTrustRegistry for id=${message.trust_registry_id}:`, errorMessage);
       console.error("FATAL TR ARCHIVE ERROR:", err);
-      
+      throw err;
     }
   }
 
@@ -259,25 +314,33 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-    } catch (err) {
+      this.logger.info(`✅ Successfully updated TR: id=${tr.id}`);
+    } catch (err: any) {
       await trx.rollback();
-      this.logger.error("❌ Failed to process UpdateTrustRegistry", err);
+      const errorMessage = err?.message || String(err);
+      this.logger.error(`❌ Failed to process UpdateTrustRegistry for id=${message.trust_registry_id}:`, errorMessage);
       console.error("FATAL TR UPDATE ERROR:", err);
-      
+      throw err;
     }
   }
 
   private async processCreateTR(message: any) {
-    this.logger.info("🔄 Processing CreateTR message:", JSON.stringify(message));
+    this.logger.info(" Processing CreateTR message:", JSON.stringify(message));
+    
+    if (!message.did) {
+      throw new Error("CreateTR message missing required field: did");
+    }
+
     const trx = await knex.transaction();
     try {
       const params = await trx("module_params")
         .where({ module: ModulesParamsNamesTypes?.TR })
         .first();
       if (!params) {
-        this.logger.error("❌ TR module_params not found! Cannot create TrustRegistry.");
+        const errorMsg = "❌ TR module_params not found! Cannot create TrustRegistry.";
+        this.logger.error(errorMsg);
         await trx.rollback();
-        return;
+        throw new Error(errorMsg);
       }
 
       const parsedParams =
@@ -292,7 +355,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       const timestamp = formatTimestamp(message.timestamp);
       const blockHeight = Number(message.height) || 0;
       
-      this.logger.info(`📝 Creating TR with height: ${blockHeight}, did: ${message.did}`);
+      this.logger.info(` Creating TR with height: ${blockHeight}, did: ${message.did}`);
 
       // Check if TR already exists with same DID
       const existingTR = await trx("trust_registry").where({ did: message.did }).first();
@@ -338,16 +401,33 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         tr
       );
 
-      const [gfv] = await trx("governance_framework_version")
-        .insert({
+      let gfv = await trx("governance_framework_version")
+        .where({
           tr_id: tr.id,
-          created: timestamp,
           version: 1,
-          active_since: timestamp,
         })
-        .onConflict(["tr_id", "version"])
-        .merge()
-        .returning("*");
+        .first();
+
+      if (!gfv) {
+        [gfv] = await trx("governance_framework_version")
+          .insert({
+            tr_id: tr.id,
+            created: timestamp,
+            version: 1,
+            active_since: timestamp,
+          })
+          .returning("*");
+      } else {
+        await trx("governance_framework_version")
+          .where({ id: gfv.id })
+          .update({
+            created: timestamp,
+            active_since: timestamp,
+          });
+        gfv = await trx("governance_framework_version")
+          .where({ id: gfv.id })
+          .first();
+      }
 
       await this.recordGFVHistory(
         trx,
@@ -359,17 +439,27 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         gfv
       );
 
-      const [gfd] = await trx("governance_framework_document")
-        .insert({
+      const existingDoc = await trx("governance_framework_document")
+        .where({
           gfv_id: gfv.id,
-          created: timestamp,
-          language: message.language,
           url: message.doc_url,
-          digest_sri: message.doc_digest_sri,
         })
-        .onConflict(["gfv_id", "url"])
-        .merge()
-        .returning("*");
+        .first();
+
+      let gfd;
+      if (existingDoc) {
+        gfd = existingDoc;
+      } else {
+        [gfd] = await trx("governance_framework_document")
+          .insert({
+            gfv_id: gfv.id,
+            created: timestamp,
+            language: message.language,
+            url: message.doc_url,
+            digest_sri: message.doc_digest_sri,
+          })
+          .returning("*");
+      }
 
       await this.recordGFDHistory(
         trx,
@@ -383,11 +473,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-    } catch (err) {
+      this.logger.info(`✅ Successfully created/updated TR: did=${message.did}, id=${tr.id}`);
+    } catch (err: any) {
       await trx.rollback();
-      this.logger.error("❌ Failed to process CreateTrustRegistry", err);
+      const errorMessage = err?.message || String(err);
+      this.logger.error(`❌ Failed to process CreateTrustRegistry for did=${message.did}:`, errorMessage);
       console.error("FATAL TR CREATE ERROR:", err);
-      
+      throw err;
     }
   }
 
@@ -404,16 +496,33 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       const timestamp = formatTimestamp(message.timestamp);
 
-      const [gfv] = await trx("governance_framework_version")
-        .insert({
+      let gfv = await trx("governance_framework_version")
+        .where({
           tr_id: tr.id,
-          created: timestamp,
           version: message.version,
-          active_since: timestamp,
         })
-        .onConflict(["tr_id", "version"])
-        .merge()
-        .returning("*");
+        .first();
+
+      if (!gfv) {
+        [gfv] = await trx("governance_framework_version")
+          .insert({
+            tr_id: tr.id,
+            created: timestamp,
+            version: message.version,
+            active_since: timestamp,
+          })
+          .returning("*");
+      } else {
+        await trx("governance_framework_version")
+          .where({ id: gfv.id })
+          .update({
+            created: timestamp,
+            active_since: timestamp,
+          });
+        gfv = await trx("governance_framework_version")
+          .where({ id: gfv.id })
+          .first();
+      }
 
       const blockHeight = Number(message.height) || 0;
       await this.recordGFVHistory(
@@ -426,17 +535,27 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         gfv
       );
 
-      const [gfd] = await trx("governance_framework_document")
-        .insert({
+      const existingDoc = await trx("governance_framework_document")
+        .where({
           gfv_id: gfv.id,
-          created: timestamp,
-          language: message.doc_language,
           url: message.doc_url,
-          digest_sri: message.doc_digest_sri,
         })
-        .onConflict(["gfv_id", "url"])
-        .merge()
-        .returning("*");
+        .first();
+
+      let gfd;
+      if (existingDoc) {
+        gfd = existingDoc;
+      } else {
+        [gfd] = await trx("governance_framework_document")
+          .insert({
+            gfv_id: gfv.id,
+            created: timestamp,
+            language: message.doc_language || message.language,
+            url: message.doc_url,
+            digest_sri: message.doc_digest_sri || message.digest_sri,
+          })
+          .returning("*");
+      }
 
       await this.recordGFDHistory(
         trx,
@@ -450,14 +569,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-    } catch (err) {
+      this.logger.info(`✅ Successfully added GFV/GFD: tr_id=${tr.id}, version=${message.version}`);
+    } catch (err: any) {
       await trx.rollback();
-      this.logger.error(
-        "❌ Failed to process AddGovernanceFrameworkDocument",
-        err
-      );
+      const errorMessage = err?.message || String(err);
+      this.logger.error(`❌ Failed to process AddGovernanceFrameworkDocument for tr_id=${message.trust_registry_id}:`, errorMessage);
       console.error("FATAL TR ADD GFD ERROR:", err);
-      
+      throw err;
     }
   }
 
@@ -510,11 +628,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-    } catch (err) {
+      this.logger.info(`✅ Successfully increased active GFV: tr_id=${tr.id}, version=${nextVersion}`);
+    } catch (err: any) {
       await trx.rollback();
-      this.logger.error("❌ Failed to process IncreaseActiveGFV", err);
+      const errorMessage = err?.message || String(err);
+      this.logger.error(`❌ Failed to process IncreaseActiveGFV for tr_id=${message.trust_registry_id}:`, errorMessage);
       console.error("FATAL TR INCREASE GFV ERROR:", err);
-      
+      throw err;
     }
   }
 

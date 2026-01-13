@@ -29,6 +29,7 @@ import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import { Network } from '../../network';
+import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus } from '../../common/utils/health_check';
 
 @Service({
   name: SERVICE.V1.CrawlBlock.key,
@@ -45,7 +46,7 @@ export default class CrawlBlockService extends BullableService {
 
   private _isCaughtUp: boolean = false;
 
-  private _currentInterval: number = config.crawlBlock.millisecondCrawl;
+  private _currentInterval: number = 2000;
 
   private _updatingInterval: boolean = false;
 
@@ -71,6 +72,12 @@ export default class CrawlBlockService extends BullableService {
 
   private _lastRpcBackupCheck: number = 0;
 
+  private _isFreshStart: boolean = false;
+
+  private _lastHealthCheck: HealthStatus | null = null;
+
+  private _lastHealthCheckTime: number = 0;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
     this._httpBatchClient = getHttpBatchClient();
@@ -80,13 +87,14 @@ export default class CrawlBlockService extends BullableService {
     queueName: BULL_JOB_NAME.CRAWL_BLOCK,
     jobName: BULL_JOB_NAME.CRAWL_BLOCK,
   })
-  private async jobHandler(_payload: any): Promise<void> {
+  private async jobHandler(_payload: unknown): Promise<void> {
     try {
       await this.initEnv();
       await this.handleJobCrawlBlock();
-    } catch (error: any) {
-      if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
-        this.logger.error(`❌ Network connection error (${error.code}): ${error.message}. Will retry on next job execution.`);
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') {
+        this.logger.error(`❌ Network connection error (${err.code}): ${err.message}. Will retry on next job execution.`);
         this.logger.info('⏭️ Skipping this cycle due to network issues');
         return;
       }
@@ -100,7 +108,18 @@ export default class CrawlBlockService extends BullableService {
 
   private async initEnv() {
     try {
-      this._lcdClient = await getLcdClient();
+      const lcdClient = await getLcdClient();
+      if (!lcdClient) {
+        this.logger.warn(`⚠️ LCD client initialization failed (non-critical). Service will continue and retry later.`);
+        this._lcdClient = null as any;
+        return; 
+      }
+      this._lcdClient = lcdClient;
+
+      if (!this._lcdClient?.provider) {
+        this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
+        return;
+      }
     } catch (error: any) {
       const wasStopped = await handleErrorGracefully(
         error,
@@ -111,8 +130,10 @@ export default class CrawlBlockService extends BullableService {
       if (wasStopped) {
         throw error; // Re-throw to stop the job handler
       } else {
-        // Non-critical error, but still throw to be safe
-        throw error;
+        // Non-critical error, log and continue
+        this.logger.warn(`⚠️ LCD client initialization failed (non-critical): ${error?.message || error}. Service will continue and retry later.`);
+        this._lcdClient = null as any;
+        return;
       }
     }
 
@@ -125,9 +146,10 @@ export default class CrawlBlockService extends BullableService {
       if (cosmosSdkVersion) {
         this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
       }
-    } catch (error: any) {
-      if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
-        this.logger.warn(`⚠️ Failed to get node info due to network error (${error.code}): ${error.message}. Continuing without SDK version update.`);
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND' || err?.message?.includes('timeout')) {
+        this.logger.warn(`⚠️ Failed to get node info due to network/timeout error (${err.code || 'timeout'}): ${err.message}. Continuing without SDK version update.`);
       } else {
         this.logger.warn(`⚠️ Failed to get node info (non-critical): ${error}. Continuing without SDK version update.`);
       }
@@ -145,7 +167,23 @@ export default class CrawlBlockService extends BullableService {
     }
 
     this._currentBlock = blockHeightCrawled ? blockHeightCrawled.height : 0;
+
+    const blockCountResult = await knex('block').count('* as count').first();
+    const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+    this._isFreshStart = totalBlocks < 100 && this._currentBlock < 1000;
     
+    if (this._isFreshStart) {
+      this.logger.info(`🆕 Fresh start detected (${totalBlocks} blocks in DB, checkpoint at ${this._currentBlock}). Using conservative config.`);
+    } else {
+      this.logger.info(` Reindexing mode detected (${totalBlocks} blocks in DB, checkpoint at ${this._currentBlock}). Using optimized config.`);
+    }
+    
+    // Only try to get latest block if LCD client is available
+    if (!this._lcdClient?.provider) {
+      this.logger.warn(`LCD client not available, skipping latest block fetch. Will retry on next operation.`);
+      return;
+    }
+
     try {
       const latestBlockResponse: GetLatestBlockResponseSDKType = await this.retryRpcCall(
         () => this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getLatestBlock(),
@@ -160,7 +198,7 @@ export default class CrawlBlockService extends BullableService {
       if (blocksBehind > 0) {
         this._initialSyncComplete = false;
         this.logger.info(
-          `📊 Initial Sync Status: NOT COMPLETE | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Blocks Behind: ${blocksBehind} | Status: Catching up with existing blocks...`
+          ` Initial Sync Status: NOT COMPLETE | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Blocks Behind: ${blocksBehind} | Status: Catching up with existing blocks...`
         );
       } else {
         this._initialSyncComplete = true;
@@ -253,7 +291,86 @@ export default class CrawlBlockService extends BullableService {
 
       const startBlock = this._currentBlock + 1;
 
-      let endBlock = startBlock + config.crawlBlock.blocksPerCall - 1;
+      let blocksPerCall = this._isFreshStart 
+        ? (config.crawlBlock.freshStart?.blocksPerCall || 50)
+        : (config.crawlBlock.reindexing?.blocksPerCall || 5000);
+      let crawlDelay = this._isCaughtUp 
+        ? config.crawlBlock.millisecondCrawlCaughtUp 
+        : (this._isFreshStart 
+          ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
+          : (config.crawlBlock.reindexing?.millisecondCrawl || 100));
+
+      if ((config.crawlBlock.freshStart?.enableHealthCheck && this._isFreshStart) ||
+          (config.crawlBlock.reindexing?.enableHealthCheck && !this._isFreshStart)) {
+        const healthCheckInterval = this._isFreshStart 
+          ? (config.crawlBlock.freshStart?.healthCheckInterval || 10000)
+          : (config.crawlBlock.reindexing?.healthCheckInterval || 5000);
+        
+        if (Date.now() - this._lastHealthCheckTime > healthCheckInterval) {
+          this._lastHealthCheck = await checkHealth();
+          this._lastHealthCheckTime = Date.now();
+          
+          if (this._isFreshStart) {
+            blocksPerCall = getOptimalBlocksPerCall(
+              config.crawlBlock.freshStart?.blocksPerCall || 50,
+              this._lastHealthCheck,
+              true
+            );
+            crawlDelay = getOptimalDelay(
+              config.crawlBlock.freshStart?.millisecondCrawl || 5000,
+              this._lastHealthCheck,
+              true
+            );
+            this.logger.info(`🏥 Health: ${this._lastHealthCheck.overall} | DB: ${this._lastHealthCheck.database.connectionUsagePercent?.toFixed(1)}% | Memory: ${this._lastHealthCheck.server.memoryUsagePercent?.toFixed(1)}% | Using ${blocksPerCall} blocks/call, ${crawlDelay}ms delay`);
+          } else {
+            blocksPerCall = getOptimalBlocksPerCall(
+              config.crawlBlock.reindexing?.blocksPerCall || 5000,
+              this._lastHealthCheck,
+              false
+            );
+            crawlDelay = getOptimalDelay(
+              config.crawlBlock.reindexing?.millisecondCrawl || 100,
+              this._lastHealthCheck,
+              false
+            );
+            if (this._lastHealthCheck.overall !== 'healthy') {
+              this.logger.info(`🏥 Health: ${this._lastHealthCheck.overall} | DB: ${this._lastHealthCheck.database.connectionUsagePercent?.toFixed(1)}% | Memory: ${this._lastHealthCheck.server.memoryUsagePercent?.toFixed(1)}% | Using ${blocksPerCall} blocks/call, ${crawlDelay}ms delay`);
+            }
+          }
+        } else if (this._lastHealthCheck) {
+          if (this._isFreshStart) {
+            blocksPerCall = getOptimalBlocksPerCall(
+              config.crawlBlock.freshStart?.blocksPerCall || 50,
+              this._lastHealthCheck,
+              true
+            );
+            crawlDelay = getOptimalDelay(
+              config.crawlBlock.freshStart?.millisecondCrawl || 5000,
+              this._lastHealthCheck,
+              true
+            );
+          } else {
+            blocksPerCall = getOptimalBlocksPerCall(
+              config.crawlBlock.reindexing?.blocksPerCall || 5000,
+              this._lastHealthCheck,
+              false
+            );
+            crawlDelay = getOptimalDelay(
+              config.crawlBlock.reindexing?.millisecondCrawl || 100,
+              this._lastHealthCheck,
+              false
+            );
+          }
+        }
+      } else if (this._isFreshStart && config.crawlBlock.freshStart) {
+        blocksPerCall = config.crawlBlock.freshStart.blocksPerCall || blocksPerCall;
+        crawlDelay = config.crawlBlock.freshStart.millisecondCrawl || crawlDelay;
+      } else if (!this._isFreshStart && config.crawlBlock.reindexing) {
+        blocksPerCall = config.crawlBlock.reindexing.blocksPerCall || blocksPerCall;
+        crawlDelay = config.crawlBlock.reindexing.millisecondCrawl || crawlDelay;
+      }
+
+      let endBlock = startBlock + blocksPerCall - 1;
       if (endBlock > latestBlockNetwork) {
         endBlock = latestBlockNetwork;
       }
@@ -326,10 +443,20 @@ export default class CrawlBlockService extends BullableService {
         this.logger.warn(`⚠️ ${failedBlocks} block(s) failed to fetch, but processing ${blockResponses.length / 2} successful blocks`);
       }
 
-      const mergeBlockResponses: any[] = [];
+      interface MergedBlockResponse {
+        block?: {
+          header?: {
+            height?: string | number;
+          };
+        };
+        block_result?: unknown;
+        [key: string]: unknown;
+      }
+
+      const mergeBlockResponses: MergedBlockResponse[] = [];
 
       for (let i = 0; i < blockResponses?.length; i += 2) {
-        const blockData = blockResponses[i]?.result;
+        const blockData = blockResponses[i]?.result as MergedBlockResponse | undefined;
         const blockResultData = blockResponses[i + 1]?.result;
         
         if (!blockData || !blockResultData) {
@@ -353,7 +480,7 @@ export default class CrawlBlockService extends BullableService {
 
       let highestSavedBlock = this._currentBlock;
       mergeBlockResponses.forEach((block) => {
-        const height = parseInt(block?.block?.header?.height ?? '0', 10);
+        const height = parseInt(String(block?.block?.header?.height ?? '0'), 10);
         if (height > highestSavedBlock) {
           highestSavedBlock = height;
         }
@@ -387,9 +514,18 @@ export default class CrawlBlockService extends BullableService {
       }
 
       await this.adjustPollingInterval(latestBlockNetwork);
-    } catch (error: any) {
-      if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
-        this.logger.error(`❌ Network connection error in block crawling (${error.code}): ${error.message}`);
+
+      if (crawlDelay > 0 && this._blocksProcessedThisCycle > 0 && !isCaughtUp) {
+        await new Promise<void>(resolve => {
+          setTimeout(() => {
+            resolve();
+          }, crawlDelay);
+        });
+      }
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') {
+        this.logger.error(`❌ Network connection error in block crawling (${err.code}): ${err.message}`);
         this.logger.info('⏭️ Skipping this cycle, will retry on next polling interval');
       } else {
         await handleErrorGracefully(
@@ -415,9 +551,10 @@ export default class CrawlBlockService extends BullableService {
           : '0',
         10
       );
-    } catch (error: any) {
-      if (error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND') {
-        this.logger.error(`❌ Failed to get latest block height due to network error (${error.code}): ${error.message}`);
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') {
+        this.logger.error(`❌ Failed to get latest block height due to network error (${err.code}): ${err.message}`);
       } else {
         this.logger.error(`❌ Failed to get latest block height after retries: ${error}`);
       }
@@ -430,6 +567,19 @@ export default class CrawlBlockService extends BullableService {
     operationName: string,
     maxAttempts?: number
   ): Promise<T> {
+    if (!this._lcdClient?.provider) {
+      try {
+        const lcdClient = await getLcdClient();
+        if (!lcdClient?.provider) {
+          throw new Error('LCD client not available');
+        }
+        this._lcdClient = lcdClient;
+      } catch (error: any) {
+        const errorMessage = error?.message || String(error);
+        throw new Error(`LCD client not available for ${operationName}: ${errorMessage}`);
+      }
+    }
+
     const attempts = maxAttempts || config.crawlBlock.rpcRetryAttempts || 3;
     const delay = config.crawlBlock.rpcRetryDelay || 1000;
     const timeout = config.crawlBlock.rpcTimeout || 30000;
@@ -443,22 +593,29 @@ export default class CrawlBlockService extends BullableService {
             setTimeout(() => reject(new Error('RPC call timeout')), timeout);
           }),
         ]);
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error;
         const isLastAttempt = attempt === attempts;
+        const err = error as NodeJS.ErrnoException;
         
-        const isNetworkError = error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || 
-                              error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND';
+        const errorMessage = err?.message || String(error);
+        const isNetworkError = err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || 
+                              err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND' ||
+                              err?.code === 'ECONNABORTED' || errorMessage.includes('timeout');
         
         if (isLastAttempt || isNetworkError) {
           if (isNetworkError) {
-            this.logger.error(
-              `❌ RPC call failed due to network error (${error.code}): ${operationName}. ${error.message}`
+            this.logger.warn(
+              `⚠️ RPC call failed due to network/timeout error (${err.code || 'timeout'}): ${operationName}. ${err.message || errorMessage}. This is non-critical.`
             );
           } else {
             this.logger.error(
-              `❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${error}`
+              `❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${errorMessage}`
             );
+          }
+          // For timeout errors, don't crash - return a default value or throw a non-fatal error
+          if (isNetworkError && errorMessage.includes('timeout')) {
+            throw new Error(`Timeout error (non-critical): ${operationName} - service will continue`);
           }
           throw error;
         }
@@ -467,8 +624,10 @@ export default class CrawlBlockService extends BullableService {
         this.logger.warn(
           `⚠️ RPC call failed (attempt ${attempt}/${attempts}): ${operationName}. Retrying in ${backoffDelay}ms...`
         );
-        await new Promise((resolve) => {
-          setTimeout(resolve, backoffDelay);
+        await new Promise<void>((resolve) => {
+          setTimeout(() => {
+            resolve();
+          }, backoffDelay);
         });
       }
     }
@@ -495,17 +654,18 @@ export default class CrawlBlockService extends BullableService {
             setTimeout(() => reject(new Error('RPC call timeout')), timeout);
           }),
         ]);
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error;
         const isLastAttempt = attempt === attempts;
+        const err = error as NodeJS.ErrnoException;
         
-        const isNetworkError = error?.code === 'EACCES' || error?.code === 'ECONNREFUSED' || 
-                              error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND';
+        const isNetworkError = err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || 
+                              err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND';
         
         if (isLastAttempt || isNetworkError) {
           if (isNetworkError) {
             this.logger.error(
-              `❌ RPC batch call failed due to network error (${error.code}): ${operationName}. ${error.message}`
+              `❌ RPC batch call failed due to network error (${err.code}): ${operationName}. ${err.message}`
             );
           } else {
             this.logger.error(
@@ -516,8 +676,10 @@ export default class CrawlBlockService extends BullableService {
         }
 
         const backoffDelay = delay * (2 ** (attempt - 1));
-        await new Promise((resolve) => {
-          setTimeout(resolve, backoffDelay);
+        await new Promise<void>((resolve) => {
+          setTimeout(() => {
+            resolve();
+          }, backoffDelay);
         });
       }
     }
@@ -525,6 +687,119 @@ export default class CrawlBlockService extends BullableService {
     throw lastError instanceof Error 
       ? lastError 
       : new Error(`Failed to execute ${operationName} after ${attempts} attempts`);
+  }
+
+  private async ensureInitialPartitionExists(): Promise<void> {
+    const step = config.migrationBlockToPartition.step || 100000000;
+    const initialPartitionName = `block_partition_0_${step}`;
+    
+    try {
+      const existPartition = await knex.raw(`
+        SELECT
+          parent.relname AS parent,
+          child.relname AS child
+        FROM pg_inherits
+        JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+        JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+        WHERE parent.relname = 'block' AND child.relname = ?
+      `, [initialPartitionName]);
+
+      if (existPartition.rows.length === 0) {
+        this.logger.info(`🔧 Creating initial partition: ${initialPartitionName} for heights 0-${step}`);
+        
+        try {
+          await knex.transaction(async (trx) => {
+            await knex
+              .raw(
+                `CREATE TABLE ${initialPartitionName} (LIKE block INCLUDING ALL EXCLUDING CONSTRAINTS)`
+              )
+              .transacting(trx);
+            await knex
+              .raw(
+                `ALTER TABLE block ATTACH PARTITION ${initialPartitionName} FOR VALUES FROM (0) TO (${step})`
+              )
+              .transacting(trx);
+          });
+          
+          this.logger.info(`✅ Created initial partition: ${initialPartitionName}`);
+        } catch (error: unknown) {
+          const err = error as NodeJS.ErrnoException;
+          if (err.message?.includes('already exists') || err.message?.includes('duplicate')) {
+            this.logger.debug(`Initial partition ${initialPartitionName} already exists, skipping`);
+          } else {
+            this.logger.warn(`⚠️ Failed to create initial partition ${initialPartitionName}: ${err.message}`);
+          }
+        }
+      }
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      this.logger.warn(`⚠️ Could not check initial partition: ${err.message}`);
+    }
+  }
+
+  private async ensurePartitionsExist(listBlockModel: any[]): Promise<void> {
+    if (listBlockModel.length === 0) return;
+
+    const heights = listBlockModel.map((block: any) => parseInt(String(block.height || 0), 10)).filter((h: number) => h > 0);
+    if (heights.length === 0) return;
+
+    const minHeight = Math.min(...heights);
+    const maxHeight = Math.max(...heights);
+
+    const step = config.migrationBlockToPartition.step || 100000000;
+    
+    const partitionsToCheck: Array<{ fromHeight: number; toHeight: number; partitionName: string }> = [];
+    
+    for (let height = minHeight; height <= maxHeight; height += step) {
+      const fromHeight = Math.floor(height / step) * step;
+      const toHeight = fromHeight + step;
+      const partitionName = `block_partition_${fromHeight}_${toHeight}`;
+      
+      if (!partitionsToCheck.some(p => p.partitionName === partitionName)) {
+        partitionsToCheck.push({ fromHeight, toHeight, partitionName });
+      }
+    }
+
+    for (const partitionInfo of partitionsToCheck) {
+      try {
+        const existPartition = await knex.raw(`
+          SELECT
+            parent.relname AS parent,
+            child.relname AS child
+          FROM pg_inherits
+          JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+          JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+          WHERE parent.relname = 'block' AND child.relname = ?
+        `, [partitionInfo.partitionName]);
+
+        if (existPartition.rows.length === 0) {
+          this.logger.info(`🔧 Creating missing partition: ${partitionInfo.partitionName} for heights ${partitionInfo.fromHeight}-${partitionInfo.toHeight}`);
+          
+          await knex.transaction(async (trx) => {
+            await knex
+              .raw(
+                `CREATE TABLE ${partitionInfo.partitionName} (LIKE block INCLUDING ALL EXCLUDING CONSTRAINTS)`
+              )
+              .transacting(trx);
+            await knex
+              .raw(
+                `ALTER TABLE block ATTACH PARTITION ${partitionInfo.partitionName} FOR VALUES FROM (${partitionInfo.fromHeight}) TO (${partitionInfo.toHeight})`
+              )
+              .transacting(trx);
+          });
+          
+          this.logger.info(`✅ Created partition: ${partitionInfo.partitionName}`);
+        }
+      } catch (error: unknown) {
+        const err = error as NodeJS.ErrnoException;
+        if (err.message?.includes('already exists') || err.message?.includes('duplicate')) {
+          this.logger.debug(`Partition ${partitionInfo.partitionName} already exists, skipping`);
+        } else {
+          this.logger.error(`❌ Failed to create partition ${partitionInfo.partitionName}: ${err.message}`);
+          throw error;
+        }
+      }
+    }
   }
 
   private async adjustPollingInterval(latestBlockNetwork: number): Promise<void> {
@@ -542,33 +817,46 @@ export default class CrawlBlockService extends BullableService {
     if (config.crawlBlock.enableWebSocketSubscription) {
       if (isCaughtUp && !wasCaughtUp && this._initialSyncComplete) {
         this.logger.info(
-          `🔄 Sync Status: CAUGHT UP | Blocks Behind: ${blocksBehind} (threshold: ${threshold}) | Initial Sync: COMPLETE | Action: Starting WebSocket subscription for instant block notifications`
+          ` Sync Status: CAUGHT UP | Blocks Behind: ${blocksBehind} (threshold: ${threshold}) | Initial Sync: COMPLETE | Action: Starting WebSocket subscription for instant block notifications`
         );
         await this.startWebSocketSubscription();
       } else if (isCaughtUp && !wasCaughtUp && !this._initialSyncComplete) {
         this.logger.info(
-          `⏳ Sync Status: Within threshold but initial sync NOT COMPLETE | Blocks Behind: ${blocksBehind} | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Action: Continuing to crawl existing blocks before starting WebSocket`
+          ` Sync Status: Within threshold but initial sync NOT COMPLETE | Blocks Behind: ${blocksBehind} | Current Block: ${this._currentBlock} | Latest Block: ${latestBlockNetwork} | Action: Continuing to crawl existing blocks before starting WebSocket`
         );
       } else if (!isCaughtUp && wasCaughtUp) {
         this.logger.info(
-          `🔄 Sync Status: FELL BEHIND | Blocks Behind: ${blocksBehind} (threshold: ${threshold}) | Action: Stopping WebSocket subscription, using polling instead`
+          ` Sync Status: FELL BEHIND | Blocks Behind: ${blocksBehind} (threshold: ${threshold}) | Action: Stopping WebSocket subscription, using polling instead`
         );
         await this.stopWebSocketSubscription();
       } else if (isCaughtUp && this._initialSyncComplete && !this._websocketConnected) {
         this.logger.info(
-          `🔄 Sync Status: CAUGHT UP | Initial Sync: COMPLETE | WebSocket: NOT CONNECTED | Action: Attempting to start WebSocket subscription`
+          ` Sync Status: CAUGHT UP | Initial Sync: COMPLETE | WebSocket: NOT CONNECTED | Action: Attempting to start WebSocket subscription`
         );
         await this.startWebSocketSubscription();
       }
     }
 
-    const targetInterval = isCaughtUp
+    let targetInterval = isCaughtUp
       ? (config.crawlBlock.millisecondCrawlCaughtUp || 500)
-      : config.crawlBlock.millisecondCrawl;
+      : (this._isFreshStart 
+        ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
+        : (config.crawlBlock.reindexing?.millisecondCrawl || 100));
+
+    if (this._lastHealthCheck && 
+        ((config.crawlBlock.freshStart?.enableHealthCheck && this._isFreshStart) ||
+         (config.crawlBlock.reindexing?.enableHealthCheck && !this._isFreshStart))) {
+      const baseDelay = isCaughtUp
+        ? (config.crawlBlock.freshStart?.millisecondCrawl || config.crawlBlock.reindexing?.millisecondCrawl || 500)
+        : (this._isFreshStart 
+          ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
+          : (config.crawlBlock.reindexing?.millisecondCrawl || 100));
+      targetInterval = getOptimalDelay(baseDelay, this._lastHealthCheck, this._isFreshStart);
+    }
 
     if (targetInterval !== this._currentInterval) {
       this.logger.info(
-        `🔄 Sync status changed: ${wasCaughtUp ? 'caught up' : 'catching up'} -> ${isCaughtUp ? 'caught up' : 'catching up'} ` +
+        ` Sync status changed: ${wasCaughtUp ? 'caught up' : 'catching up'} -> ${isCaughtUp ? 'caught up' : 'catching up'} ` +
         `(blocks behind: ${blocksBehind}, threshold: ${threshold}). ` +
         `Updating polling interval: ${this._currentInterval}ms -> ${targetInterval}ms`
       );
@@ -708,15 +996,15 @@ export default class CrawlBlockService extends BullableService {
                 (attribute: any, index: number) => ({
                   block_height: block?.block?.header?.height,
                   index,
-                  composite_key: attribute?.key
+                  composite_key: attribute?.key && this._registry.decodeAttribute
                     ? `${event.type}.${this._registry.decodeAttribute(
                       attribute?.key
                     )}`
                     : null,
-                  key: attribute?.key
+                  key: attribute?.key && this._registry.decodeAttribute
                     ? this._registry.decodeAttribute(attribute?.key)
                     : null,
-                  value: attribute?.value
+                  value: attribute?.value && this._registry.decodeAttribute
                     ? this._registry.decodeAttribute(attribute?.value)
                     : null,
                 })
@@ -729,6 +1017,7 @@ export default class CrawlBlockService extends BullableService {
 
 
       if (listBlockModel.length) {
+        await this.ensurePartitionsExist(listBlockModel);
         await knex.transaction(async (trx) => {
           await Block.query()
             .insertGraph(listBlockModel)
@@ -754,8 +1043,24 @@ export default class CrawlBlockService extends BullableService {
 
       await this.waitForServices(SERVICE.V1.CrawlTransaction.name);
       
+      try {
+        const blockCountResult = await knex('block').count('* as count').first();
+        const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+        const checkpoint = await BlockCheckpoint.query().findOne({
+          job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+        });
+        const currentBlock = checkpoint ? checkpoint.height : 0;
+        this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+        this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
+      } catch (error) {
+        this.logger.warn(`Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+        this._isFreshStart = false;
+      }
+      
+      await this.ensureInitialPartitionExists();
+
       this.logger.info(
-        `🚀 CrawlBlock Service Starting | Initial Polling Interval: ${config.crawlBlock.millisecondCrawl}ms | ` +
+        `🚀 CrawlBlock Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
         `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
         `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
       );
@@ -772,7 +1077,9 @@ export default class CrawlBlockService extends BullableService {
               count: 3,
             },
             repeat: {
-              every: config.crawlBlock.millisecondCrawl,
+              every: this._isFreshStart 
+                ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
+                : (config.crawlBlock.reindexing?.millisecondCrawl || 100),
             },
           }
         );
@@ -854,7 +1161,7 @@ export default class CrawlBlockService extends BullableService {
               }
             })
           );
-          this.logger.info('📡 WebSocket Subscription: Subscribed to NewBlock events | Status: ACTIVE');
+          this.logger.info(' WebSocket Subscription: Subscribed to NewBlock events | Status: ACTIVE');
         }
       });
 
@@ -930,7 +1237,7 @@ export default class CrawlBlockService extends BullableService {
     if (this._websocketReconnectTimer) {
       clearTimeout(this._websocketReconnectTimer);
       this._websocketReconnectTimer = null;
-      this.logger.debug('🔄 WebSocket: Cancelled pending reconnection timer');
+      this.logger.debug(' WebSocket: Cancelled pending reconnection timer');
     }
 
     if (this._websocket) {
