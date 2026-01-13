@@ -33,14 +33,33 @@ export default class CrawlTrustDepositService extends BullableService {
 
   public async started() {
     try {
+      try {
+        const blockCountResult = await knex('block').count('* as count').first();
+        const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+        const checkpoint = await BlockCheckpoint.query().findOne({
+          job_name: (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT,
+        });
+        const currentBlock = checkpoint ? checkpoint.height : 0;
+        this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+      } catch (error) {
+        this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+        this._isFreshStart = false;
+      }
+
       const checkpoint = await this.ensureCheckpoint();
       await this.processBlocks(checkpoint);
 
+      const crawlInterval = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
+        ? (config.crawlTrustDeposit.freshStart.millisecondCrawl || config.crawlTrustDeposit.millisecondCrawl)
+        : config.crawlTrustDeposit.millisecondCrawl;
+
       this.timer = setInterval(
         () => this.processBlocks(checkpoint),
-        config.crawlTrustDeposit.millisecondCrawl,
+        crawlInterval,
       );
-      this.logger.info('[CrawlTrustDepositService] 🚀 Service started');
+      this.logger.info(
+        `[CrawlTrustDepositService] Service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms`
+      );
     } catch (err) {
       this.logger.error('[CrawlTrustDepositService] ❌ Failed to start', err);
     }
@@ -73,7 +92,6 @@ export default class CrawlTrustDepositService extends BullableService {
 
       const updated = await BlockCheckpoint.query(knex).patch(patchObj).where(where);
       if (updated) {
-        this.logger.info(`[CrawlTrustDepositService] ✅ Updated checkpoint to height ${newHeight}`);
       } else if (blockCheckpointRow?.id) {
         await BlockCheckpoint.query(knex).patch(patchObj).where('id', blockCheckpointRow.id);
         this.logger.info(`[CrawlTrustDepositService] ✅ Patched checkpoint by id ${blockCheckpointRow.id}`);
@@ -90,7 +108,10 @@ export default class CrawlTrustDepositService extends BullableService {
     const jobName = (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT;
     const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, []);
     let lastHeight = startBlock || 0;
-    const maxBlockBatch = config?.crawlTrustDeposit?.chunkSize || 100;
+    
+    const maxBlockBatch = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
+      ? (config.crawlTrustDeposit.freshStart.chunkSize || config.crawlTrustDeposit.chunkSize || 100)
+      : (config.crawlTrustDeposit.chunkSize || 100);
 
     while (true) {
       const nextBlocks = await Block.query()
@@ -160,9 +181,9 @@ export default class CrawlTrustDepositService extends BullableService {
 
       const payload: TrustDepositAdjustPayload & { height: number } = {
         account,
-        newAmount: attrs.new_amount ? BigInt(attrs.new_amount) : null,
-        newShare: attrs.new_share ? BigInt(attrs.new_share) : null,
-        newClaimable: attrs.new_claimable ? BigInt(attrs.new_claimable) : null,
+        newAmount: attrs.new_amount ? BigInt(attrs.new_amount.split('.')[0]) : null,
+        newShare: attrs.new_share ? BigInt(attrs.new_share.split('.')[0]) : null,
+        newClaimable: attrs.new_claimable ? BigInt(attrs.new_claimable.split('.')[0]) : null,
         height,
       };
 

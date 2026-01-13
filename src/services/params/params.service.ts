@@ -2,6 +2,8 @@ import {
   Action,
   Service,
 } from "@ourparentcenter/moleculer-decorators-extended";
+import { fromBase64, fromUtf8 } from '@cosmjs/encoding';
+import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
 import fs from "fs";
 import { Context, ServiceBroker } from "moleculer";
 import path from "path";
@@ -10,10 +12,12 @@ import {
   BULL_JOB_NAME,
   SERVICE,
   UpdateParamsMessageTypes,
-  ModulesParamsNamesTypes
+  ModulesParamsNamesTypes,
+  getHttpBatchClient
 } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { recordModuleParamsHistorySafe, hasMeaningfulChanges } from "../../common/utils/params_utils";
+import { Network } from "../../network";
 
 @Service({
   name: SERVICE.V1.GenesisParamsService.key,
@@ -64,6 +68,12 @@ export default class GenesisParamsService extends BullableService {
 
   public async started() {
     this.logger.info("🚀 GenesisParamsService started. Running initial sync...");
+    
+    if (!fs.existsSync(this.genesisPath)) {
+      this.logger.info("genesis.json not found. Attempting to fetch from network...");
+      await this.fetchGenesisFromNetwork();
+    }
+    
     await this.sync();
 
     if (fs.existsSync(this.genesisPath)) {
@@ -76,13 +86,100 @@ export default class GenesisParamsService extends BullableService {
       this.logger.info("👀 Watching genesis.json for live changes...");
     } else {
       this.logger.warn("⚠️ genesis.json not found. Watching disabled.");
-
     }
 
     this.intervalId = setInterval(async () => {
       this.logger.info(`🕒 Scheduled sync check every ${this.syncIntervalSeconds}s`);
+      if (!fs.existsSync(this.genesisPath)) {
+        await this.fetchGenesisFromNetwork();
+      }
       await this.sync();
     }, this.syncIntervalSeconds * 1000);
+  }
+
+  private async fetchGenesisFromNetwork(): Promise<void> {
+    try {
+      const rpc = Network?.RPC;
+      if (!rpc) {
+        this.logger.warn("RPC endpoint not configured. Cannot fetch genesis.json");
+        return;
+      }
+
+      const httpBatchClient = getHttpBatchClient();
+      
+      try {
+        const genesisResponse = await httpBatchClient.execute(
+          createJsonRpcRequest('genesis')
+        );
+
+        fs.writeFileSync(
+          this.genesisPath,
+          JSON.stringify(genesisResponse.result.genesis, null, 2),
+          'utf-8'
+        );
+        this.logger.info('Full genesis fetched successfully from network.');
+      } catch (error: any) {
+        let errCode = 0;
+        try {
+          errCode = JSON.parse(error.message).code;
+        } catch {
+          errCode = 0;
+        }
+
+        if (errCode !== -32603) {
+          this.logger.warn(` Failed to fetch genesis (code ${errCode}): ${error.message}`);
+          return;
+        }
+
+        this.logger.warn('⚙️ Falling back to chunked genesis fetch...');
+        let index = 0;
+        let done = false;
+        const chunks: string[] = [];
+
+        while (!done) {
+          try {
+            this.logger.info(`Fetching genesis_chunked: chunk ${index}`);
+            const resultChunk = await httpBatchClient.execute(
+              createJsonRpcRequest('genesis_chunked', { chunk: index.toString() })
+            );
+
+            const decoded = fromUtf8(fromBase64(resultChunk.result.data));
+            chunks.push(decoded);
+            index += 1;
+          } catch (chunkError: any) {
+            try {
+              const parsed = JSON.parse(chunkError.message || '{}');
+              if (parsed.code !== -32603) {
+                this.logger.warn(`Chunk fetch failed: ${chunkError.message}`);
+                return;
+              }
+            } catch {
+              this.logger.warn(`Unknown error while parsing chunk error: ${chunkError.message}`);
+            }
+            done = true;
+          }
+        }
+
+        if (chunks.length > 0) {
+          this.logger.info(`Retrieved ${chunks.length} genesis chunks. Combining...`);
+          const combinedData = chunks.join('');
+
+          try {
+            const parsedGenesis = JSON.parse(combinedData);
+            fs.writeFileSync(
+              this.genesisPath,
+              JSON.stringify(parsedGenesis, null, 2),
+              'utf-8'
+            );
+            this.logger.info(' Chunked genesis combined & saved successfully.');
+          } catch (parseErr: any) {
+            this.logger.warn(`Failed to parse combined genesis data: ${parseErr.message}`);
+          }
+        }
+      }
+    } catch (error: any) {
+      this.logger.warn(`Failed to fetch genesis.json from network: ${error.message}`);
+    }
   }
 
   public async stopped() {

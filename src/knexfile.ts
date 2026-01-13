@@ -4,8 +4,9 @@ import { Config } from "./common";
 import { Network } from "./network";
 
 
-const DEFAULT_POOL_MAX = 50;
-const DEFAULT_STATEMENT_TIMEOUT = 20000;
+const DEFAULT_POOL_MAX = 100;
+const DEFAULT_STATEMENT_TIMEOUT = 600000;
+const DEFAULT_QUERY_TIMEOUT = 600000; 
 const DEFAULT_CONNECTION_TIMEOUT = 60000;
 
 const databaseName = Network.databaseName;
@@ -26,6 +27,9 @@ const toInt = (value: string | number | undefined, fallback: number): number =>
   parseInt(String(value ?? fallback), 10);
 
 const connectionTimeoutSource = (Config as Record<string, unknown>).POSTGRES_CONNECTION_TIMEOUT;
+const statementTimeoutSource = (Config as Record<string, unknown>).POSTGRES_STATEMENT_TIMEOUT;
+const queryTimeoutSource = (Config as Record<string, unknown>).POSTGRES_QUERY_TIMEOUT;
+
 const getBaseConnection = () => ({
   host: Config.POSTGRES_HOST || "localhost",
   user: Config.POSTGRES_USER,
@@ -34,7 +38,8 @@ const getBaseConnection = () => ({
   connectionTimeoutMillis: isLightweightMode()
     ? 120000
     : toInt(connectionTimeoutSource as string | number | undefined, DEFAULT_CONNECTION_TIMEOUT),
-  statement_timeout: toInt(Config.POSTGRES_STATEMENT_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT),
+  statement_timeout: toInt(statementTimeoutSource as string | number | undefined, DEFAULT_STATEMENT_TIMEOUT),
+  query_timeout: toInt(queryTimeoutSource as string | number | undefined, DEFAULT_QUERY_TIMEOUT),
 });
 
 const baseMigrations = {
@@ -42,17 +47,32 @@ const baseMigrations = {
   loadExtensions: [migrationExtension],
 };
 
-const createPool = (min: number, max: number, acquireTimeout: number = 120000) => ({
-  min,
-  max,
-  acquireTimeoutMillis: acquireTimeout,
-  idleTimeoutMillis: 10000,
-  reapIntervalMillis: 1000,
-  createTimeoutMillis: 30000,
-  destroyTimeoutMillis: 5000,
-  propagateCreateError: false,
-  createRetryIntervalMillis: 200,
-});
+const createPool = (min: number, max: number, acquireTimeout: number = 60000) => {
+  const poolAcquireTimeout = toInt(
+    (Config as Record<string, unknown>).POSTGRES_POOL_ACQUIRE_TIMEOUT as string | number | undefined,
+    acquireTimeout
+  );
+  const poolCreateTimeout = toInt(
+    (Config as Record<string, unknown>).POSTGRES_POOL_CREATE_TIMEOUT as string | number | undefined,
+    30000
+  );
+  const poolDestroyTimeout = toInt(
+    (Config as Record<string, unknown>).POSTGRES_POOL_DESTROY_TIMEOUT as string | number | undefined,
+    5000
+  );
+
+  return {
+    min,
+    max,
+    acquireTimeoutMillis: poolAcquireTimeout,
+    idleTimeoutMillis: 5000,
+    reapIntervalMillis: 500,
+    createTimeoutMillis: poolCreateTimeout,
+    destroyTimeoutMillis: poolDestroyTimeout,
+    propagateCreateError: false,
+    createRetryIntervalMillis: 200,
+  };
+};
 
 const isLightweightMode = () => process.env.MIGRATION_MODE === "lightweight";
 const lightweightAcquireTimeout = 120000;
@@ -68,8 +88,8 @@ export const knexConfig: Record<string, Knex.Config> = {
     connection: { ...getBaseConnection(), database: databaseName },
     pool: isLightweightMode()
       ? createPool(1, 2, lightweightAcquireTimeout)
-      : createPool(2, toInt(Config.POSTGRES_POOL_MAX, DEFAULT_POOL_MAX), 120000),
-    acquireConnectionTimeout: isLightweightMode() ? lightweightAcquireTimeout : 120000,
+      : createPool(2, toInt(Config.POSTGRES_POOL_MAX, DEFAULT_POOL_MAX), 60000),
+    acquireConnectionTimeout: isLightweightMode() ? lightweightAcquireTimeout : 60000,
     asyncStackTraces: false,
   },
   test: {
@@ -82,8 +102,8 @@ export const knexConfig: Record<string, Knex.Config> = {
     connection: { ...getBaseConnection(), database: Config.POSTGRES_DB_TEST, host: "localhost" },
     pool: isLightweightMode()
       ? createPool(1, 2, lightweightAcquireTimeout)
-      : createPool(1, 5, 120000),
-    acquireConnectionTimeout: isLightweightMode() ? lightweightAcquireTimeout : 120000,
+      : createPool(1, 5, 60000),
+    acquireConnectionTimeout: isLightweightMode() ? lightweightAcquireTimeout : 60000,
     asyncStackTraces: false,
   },
   production: {
@@ -96,8 +116,8 @@ export const knexConfig: Record<string, Knex.Config> = {
     connection: { ...getBaseConnection(), database: databaseName },
     pool: isLightweightMode()
       ? createPool(1, 2, lightweightAcquireTimeout)
-      : createPool(2, toInt(Config.POSTGRES_POOL_MAX, DEFAULT_POOL_MAX), 120000),
-    acquireConnectionTimeout: isLightweightMode() ? lightweightAcquireTimeout : 120000,
+      : createPool(2, toInt(Config.POSTGRES_POOL_MAX, DEFAULT_POOL_MAX), 60000),
+    acquireConnectionTimeout: isLightweightMode() ? lightweightAcquireTimeout : 60000,
     asyncStackTraces: false,
   },
 };

@@ -46,7 +46,12 @@ export default class CrawlProposalService extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_PROPOSAL,
   })
   public async handleCrawlProposals(_payload: object): Promise<void> {
-    this._lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient();
+    if (!lcdClient?.provider) {
+      this.logger.warn('LCD client not available, skipping proposal crawl. Will retry on next job execution.');
+      return;
+    }
+    this._lcdClient = lcdClient;
 
     const listProposals: Proposal[] = [];
 
@@ -82,8 +87,11 @@ export default class CrawlProposalService extends BullableService {
             await this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
           const cosmosSdkVersion =
             nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99';
-          await Promise.all(
-            proposalIds.map(async (proposalId: number) => {
+          const chunkSize = config.crawlProposal.chunkSize || 5000;
+          for (let i = 0; i < proposalIds.length; i += chunkSize) {
+            const chunk = proposalIds.slice(i, i + chunkSize);
+            await Promise.all(
+              chunk.map(async (proposalId: number) => {
               try {
                 let proposal;
                 if (Utils.compareVersion(cosmosSdkVersion, 'v0.45.99') === -1) {
@@ -154,8 +162,9 @@ export default class CrawlProposalService extends BullableService {
                 }
               }
             })
-          );
-
+            );
+          }
+          
           if (listProposals.length > 0)
             await Proposal.query()
               .insert(listProposals)

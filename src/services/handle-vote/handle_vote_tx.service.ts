@@ -65,15 +65,21 @@ export default class HandleTxVoteService extends BullableService {
     });
 
     await knex.transaction(async (trx) => {
-      votesInsert.forEach(async (vote) => {
-        const resultInsert = await Vote.query(trx)
-          .insert(vote)
-          .onConflict(['proposal_id', 'voter'])
-          .merge(['vote_option', 'height', 'tx_id', 'txhash'])
-          .where('vote.height', '<=', vote.height)
-          .transacting(trx);
-        this.logger.debug('result insert vote: ', resultInsert);
-      });
+      const chunkSize = config.handleVoteTx.chunkSize || 5000;
+      for (let i = 0; i < votesInsert.length; i += chunkSize) {
+        const chunk = votesInsert.slice(i, i + chunkSize);
+        await Promise.all(
+          chunk.map(async (vote) => {
+            const resultInsert = await Vote.query(trx)
+              .insert(vote)
+              .onConflict(['proposal_id', 'voter'])
+              .merge(['vote_option', 'height', 'tx_id', 'txhash'])
+              .where('vote.height', '<=', vote.height)
+              .transacting(trx);
+            this.logger.debug('result insert vote: ', resultInsert);
+          })
+        );
+      }
       if (blockCheckpoint) {
         blockCheckpoint.height = endBlock;
 
