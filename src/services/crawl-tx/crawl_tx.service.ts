@@ -22,7 +22,8 @@ import {
   PermissionMessageTypes,
   SERVICE,
   TrustDepositMessageTypes,
-  TrustRegistryMessageTypes
+  TrustRegistryMessageTypes,
+  UpdateParamsMessageTypes
 } from '../../common';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
@@ -742,6 +743,35 @@ export default class CrawlTxService extends BullableService {
         { trustDepositList },
       );
     }
+
+    const updateParamsList = successfulMsgs
+      .filter((msg: any) =>
+        Object.values(UpdateParamsMessageTypes).includes(msg.type as UpdateParamsMessageTypes),
+      )
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          message: msg,
+          height: parentTx?.height,
+          txHash: parentTx?.hash,
+        };
+      });
+
+    for (const updateMsg of updateParamsList) {
+      this.logger.info(`[insertRelatedTx] Processing UpdateParams message at height ${updateMsg.height}`);
+      try {
+        await this.broker.call(
+          `${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`,
+          updateMsg,
+        );
+        this.logger.info(`[insertRelatedTx] UpdateParams message processed successfully`);
+      } catch (err) {
+        this.logger.error(`❌ [insertRelatedTx] Failed to process UpdateParams message:`, err);
+        console.error("FATAL CRAWL_TX UPDATE_PARAMS ERROR:", err);
+      }
+    }
+
+    this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
   }
 
   private checkMappingEventToLog(tx: any) {

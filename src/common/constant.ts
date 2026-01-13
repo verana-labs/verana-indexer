@@ -176,6 +176,15 @@ export enum TrustDepositMessageTypes {
   RECLAIM_YIELD = "/verana.td.v1.MsgReclaimTrustDepositYield",
   RECLAIM_DEPOSIT = "/verana.td.v1.MsgReclaimTrustDeposit",
   REPAY_SLASHED = "/verana.td.v1.MsgRepaySlashedTrustDeposit",
+  UPDATE_PARAMS = "/verana.td.v1.MsgUpdateParams",
+}
+
+export enum UpdateParamsMessageTypes {
+  CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
+  DID_DIRECTORY = "/verana.dd.v1.MsgUpdateParams",
+  PERMISSION = "/verana.perm.v1.MsgUpdateParams",
+  TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
+  TRUST_REGISTRY = "/verana.tr.v1.MsgUpdateParams",
 }
 export enum TrustDepositEventType {
   ADJUST = "adjust_trust_deposit",

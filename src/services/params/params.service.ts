@@ -8,8 +8,15 @@ import fs from "fs";
 import { Context, ServiceBroker } from "moleculer";
 import path from "path";
 import BullableService from "../../base/bullable.service";
-import { BULL_JOB_NAME, SERVICE, getHttpBatchClient } from "../../common";
+import {
+  BULL_JOB_NAME,
+  SERVICE,
+  UpdateParamsMessageTypes,
+  ModulesParamsNamesTypes,
+  getHttpBatchClient
+} from "../../common";
 import knex from "../../common/utils/db_connection";
+import { recordModuleParamsHistorySafe, hasMeaningfulChanges } from "../../common/utils/params_utils";
 import { Network } from "../../network";
 
 @Service({
@@ -33,6 +40,31 @@ export default class GenesisParamsService extends BullableService {
   public async syncParams(ctx: Context<unknown>) {
     return this.sync();
   }
+
+  @Action({
+    name: "handleUpdateParams",
+    params: {
+      message: { type: "object" },
+      height: { type: "number" },
+      txHash: { type: "string", optional: true },
+    },
+  })
+  public async handleUpdateParams(ctx: Context<{
+    message: any;
+    height: number;
+    txHash?: string;
+  }>) {
+    const { message, height, txHash } = ctx.params;
+
+    try {
+      const result = await this.processUpdateParams(message, height, txHash);
+      return result;
+    } catch (err) {
+      this.logger.error(`[UpdateParams] ❌ Failed to process UpdateParams message`, err);
+      return { success: false, message: "Failed to process UpdateParams", error: err };
+    }
+  }
+
 
   public async started() {
     this.logger.info("🚀 GenesisParamsService started. Running initial sync...");
@@ -191,43 +223,7 @@ export default class GenesisParamsService extends BullableService {
     }
   }
 
-  private computeParamsChanges(
-    oldParams: any,
-    newParams: any
-  ): Record<string, { old: any; new: any }> | null {
-    if (!oldParams) return null;
-    const changes: Record<string, { old: any; new: any }> = {};
-    const allKeys = new Set([
-      ...Object.keys(oldParams || {}),
-      ...Object.keys(newParams || {}),
-    ]);
-    for (const key of allKeys) {
-      const oldValue = oldParams?.[key];
-      const newValue = newParams?.[key];
-      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-        changes[key] = { old: oldValue ?? null, new: newValue ?? null };
-      }
-    }
-    return Object.keys(changes).length ? changes : null;
-  }
 
-  private async recordModuleParamsHistory(
-    trx: any,
-    module: string,
-    params: any,
-    eventType: string,
-    height: number,
-    previousParams?: any
-  ) {
-    const changes = this.computeParamsChanges(previousParams, params);
-    await trx("module_params_history").insert({
-      module,
-      params: JSON.stringify(params),
-      event_type: eventType,
-      height,
-      changes: changes ? JSON.stringify(changes) : null,
-    });
-  }
 
   private async sync() {
     if (!fs.existsSync(this.genesisPath)) {
@@ -283,9 +279,7 @@ export default class GenesisParamsService extends BullableService {
                 : null;
 
               const newParamsData = data as any;
-              const isNewOrChanged =
-                !existing ||
-                JSON.stringify(previousParams) !== JSON.stringify(newParamsData);
+              const isNewOrChanged = !existing || hasMeaningfulChanges(previousParams, newParamsData);
 
               if (isNewOrChanged) {
                 await trx("module_params")
@@ -297,7 +291,7 @@ export default class GenesisParamsService extends BullableService {
                   .onConflict("module")
                   .merge();
 
-                await this.recordModuleParamsHistory(
+                await recordModuleParamsHistorySafe(
                   trx,
                   module,
                   newParamsData,
@@ -323,6 +317,115 @@ export default class GenesisParamsService extends BullableService {
     } catch (err) {
       this.logger.error("❌ Unexpected error reading genesis.json", err);
       return { success: false, message: "Unexpected error", error: err };
+    }
+  }
+
+
+  private async processUpdateParams(message: any, height: number, txHash?: string): Promise<any> {
+    const { type, authority, params } = message;
+
+    if (!type || !params) {
+      return { success: false, message: "Invalid UpdateParams message structure" };
+    }
+
+    let module: string;
+    switch (type) {
+      case UpdateParamsMessageTypes.CREDENTIAL_SCHEMA:
+        module = ModulesParamsNamesTypes.CS;
+        break;
+      case UpdateParamsMessageTypes.DID_DIRECTORY:
+        module = ModulesParamsNamesTypes.DD;
+        break;
+      case UpdateParamsMessageTypes.PERMISSION:
+        module = ModulesParamsNamesTypes.PERM;
+        break;
+      case UpdateParamsMessageTypes.TRUST_DEPOSIT:
+        module = ModulesParamsNamesTypes.TD;
+        break;
+      case UpdateParamsMessageTypes.TRUST_REGISTRY:
+        module = ModulesParamsNamesTypes.TR;
+        break;
+      default:
+        return { success: false, message: `Unknown UpdateParams message type: ${type}` };
+    }
+
+    this.logger.info(`[UpdateParams] Processing ${module} module params update at height ${height}`);
+
+    try {
+      const result = await this.updateModuleParams(module, params, height, authority, txHash);
+
+      this.logger.info(`[UpdateParams] Successfully updated ${module} params at height ${height}`);
+      return result;
+
+    } catch (err) {
+      this.logger.error(`[UpdateParams] ❌ Failed to update ${module} params`, err);
+      return { success: false, message: `Failed to update ${module} params`, error: err };
+    }
+  }
+
+
+  private async updateModuleParams(
+    module: string,
+    params: any,
+    height: number,
+    authority?: string,
+    txHash?: string
+  ): Promise<any> {
+    const trx = await knex.transaction();
+
+    try {
+      const existing = await trx("module_params").where({ module }).first();
+      const previousParams = existing?.params
+        ? typeof existing.params === "string"
+          ? JSON.parse(existing.params)
+          : existing.params
+        : null;
+
+      const hasChanges = !existing || hasMeaningfulChanges(previousParams, params);
+
+      if (!hasChanges) {
+        await trx.rollback();
+        this.logger.info(`[UpdateParams] No meaningful changes for ${module} params`);
+        return { success: true, message: "No changes detected", module };
+      }
+
+      const paramsJson = JSON.stringify(params);
+      await trx("module_params")
+        .insert({
+          module,
+          params: paramsJson,
+          updated_at: trx.fn.now(),
+        })
+        .onConflict("module")
+        .merge();
+
+      await recordModuleParamsHistorySafe(
+        trx,
+        module,
+        params,
+        "UPDATE_PARAMS",
+        height,
+        previousParams
+      );
+
+      await trx.commit();
+
+      this.logger.info(`[UpdateParams] Updated ${module} params:`, params);
+
+      return {
+        success: true,
+        message: `Successfully updated ${module} parameters`,
+        module,
+        params,
+        height,
+        authority,
+        txHash,
+        previousParams
+      };
+
+    } catch (err) {
+      await trx.rollback();
+      throw err;
     }
   }
 }
