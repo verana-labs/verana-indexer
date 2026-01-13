@@ -93,11 +93,15 @@ jobs:
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}.${{ steps.semantic.outputs.release-patch }}
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.release-version }}
 
-      - name: Set up kubectl
-        if: steps.semantic.outputs.new-release-published == 'true'
-        uses: azure/setup-kubectl@v3
-        with:
-          kubeconfig: ${{ secrets.KUBECONFIG }}        
+      - name: Configure KUBECONFIG
+        shell: bash
+        run: |
+          KUBECONFIG_PATH=${{ github.workspace }}/kubeconfig
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH" || {
+            echo "❌ Failed to decode kubeconfig. Check that the input is valid base64."
+            exit 1
+          }
+          echo "KUBECONFIG=$KUBECONFIG_PATH" >> $GITHUB_ENV
 
       - name: Set up Helm
         if: steps.semantic.outputs.new-release-published == 'true'
