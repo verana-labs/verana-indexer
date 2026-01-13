@@ -95,7 +95,7 @@ jobs:
 
       - name: Set up kubectl
         if: steps.semantic.outputs.new-release-published == 'true'
-        uses: azure/setup-kubectl@v3
+        uses: 2060-io/devops/actions/setup-kube@main
         with:
           kubeconfig: ${{ secrets.KUBECONFIG }}        
 
