@@ -5,10 +5,10 @@ import {
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import {
-  CredentialSchemaMessageType,
   ModulesParamsNamesTypes,
   SERVICE,
 } from "../../common";
+import { VeranaCredentialSchemaMessageTypes } from "../../common/verana-message-types";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import { getModeString } from "./cs_types";
@@ -116,15 +116,15 @@ export default class ProcessCredentialSchemaService extends BullableService {
     for (const schemaMessage of credentialSchemaMessages) {
       try {
         if (
-          schemaMessage.type === CredentialSchemaMessageType.Create ||
-          schemaMessage.type === CredentialSchemaMessageType.CreateLegacy
+          schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
+          schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
         ) {
           await this.createSchema(ctx, schemaMessage, deposit);
         }
-        if (schemaMessage.type === CredentialSchemaMessageType.Update) {
+        if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema) {
           await this.updateSchema(ctx, schemaMessage, deposit);
         }
-        if (schemaMessage.type === CredentialSchemaMessageType.Archive) {
+        if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema) {
           await this.archiveSchema(ctx, schemaMessage);
         }
       } catch (err) {

@@ -8,6 +8,7 @@ import knex from "../../common/utils/db_connection";
 import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
+import { indexerStatusManager } from "./indexer_status.manager";
 
 type ChangeOperation = "create" | "update" | "delete";
 
@@ -133,6 +134,15 @@ export default class IndexerMetaService extends BaseService {
 
   @Action()
   public async getBlockHeight(ctx: Context) {
+    const status = indexerStatusManager.getStatus();
+    if (!status.isRunning) {
+      return ApiResponder.error(
+        ctx,
+        `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
+        503
+      );
+    }
+   
     const checkpoint = await knex("block_checkpoint")
       .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
       .first();

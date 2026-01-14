@@ -137,6 +137,142 @@
         }
       }
     },
+    "/verana/indexer/v1/status": {
+      "get": {
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "Get indexer operational status",
+        "description": "Return the current operational status of the indexer, including whether it is running, whether crawling is active, and any error information if crawling or the indexer has stopped. This endpoint is useful for monitoring and debugging indexer issues.",
+        "operationId": "getIndexerStatus",
+        "responses": {
+          "200": {
+            "description": "Indexer status information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "isRunning": {
+                      "type": "boolean",
+                      "description": "Whether the indexer service is running. If false, all APIs will return 503.",
+                      "example": true
+                    },
+                    "isCrawling": {
+                      "type": "boolean",
+                      "description": "Whether the indexer is actively crawling new blocks and transactions. If false, APIs remain available but no new data is being indexed.",
+                      "example": false
+                    },
+                    "stoppedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the indexer or crawling stopped (if applicable)",
+                      "example": "2024-01-15T10:30:00Z"
+                    },
+                    "stoppedReason": {
+                      "type": "string",
+                      "description": "Human-readable reason why crawling or the indexer stopped (if applicable)",
+                      "example": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available."
+                    },
+                    "lastError": {
+                      "type": "object",
+                      "description": "Details about the last error that caused crawling or indexer to stop (if applicable)",
+                      "properties": {
+                        "message": {
+                          "type": "string",
+                          "description": "Error message",
+                          "example": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission"
+                        },
+                        "stack": {
+                          "type": "string",
+                          "description": "Error stack trace (if available)",
+                          "example": "Error: Unknown Verana message types...\n    at ..."
+                        },
+                        "timestamp": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When the error occurred",
+                          "example": "2024-01-15T10:30:00Z"
+                        },
+                        "service": {
+                          "type": "string",
+                          "description": "Service name where the error occurred",
+                          "example": "crawl-tx"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "isRunning",
+                    "isCrawling"
+                  ]
+                },
+                "example": {
+                  "isRunning": true,
+                  "isCrawling": false,
+                  "stoppedAt": "2024-01-15T10:30:00Z",
+                  "stoppedReason": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available.",
+                  "lastError": {
+                    "message": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "service": "crawl-tx"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Crawling-Status": {
+                "description": "Current crawling status: 'active' or 'stopped'",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "stopped"
+                  ],
+                  "example": "stopped"
+                }
+              },
+              "X-Indexer-Status": {
+                "description": "Current indexer status: 'running' or 'stopped'",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "stopped"
+                  ],
+                  "example": "running"
+                }
+              },
+              "X-Crawling-Reason": {
+                "description": "Reason why crawling stopped (only present when crawling is stopped)",
+                "schema": {
+                  "type": "string",
+                  "example": "Crawling stopped due to: Unknown Verana message types..."
+                }
+              },
+              "X-Crawling-Error": {
+                "description": "Error message that caused crawling to stop (only present when crawling is stopped)",
+                "schema": {
+                  "type": "string",
+                  "example": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission"
+                }
+              },
+              "X-Crawling-Stopped-At": {
+                "description": "ISO 8601 timestamp when crawling stopped (only present when crawling is stopped)",
+                "schema": {
+                  "type": "string",
+                  "format": "date-time",
+                  "example": "2024-01-15T10:30:00Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/indexer/v1/changes/{block_height}": {
       "get": {
         "tags": [

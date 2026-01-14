@@ -1,4 +1,12 @@
-import { ModulesParamsNamesTypes, UpdateParamsMessageTypes } from '../../../src/common';
+import { ModulesParamsNamesTypes } from '../../../src/common/constant';
+import {
+  UpdateParamsMessageTypes,
+  VeranaCredentialSchemaMessageTypes,
+  VeranaDidMessageTypes,
+  VeranaPermissionMessageTypes,
+  VeranaTrustDepositMessageTypes,
+  VeranaTrustRegistryMessageTypes,
+} from '../../../src/common/verana-message-types';
 import { hasMeaningfulChanges } from '../../../src/common/utils/params_utils';
 
 /**
@@ -12,26 +20,31 @@ describe('UpdateParams Message Processing', () => {
   describe('Message Type to Module Mapping', () => {
     it('should map CREDENTIAL_SCHEMA to CS module', () => {
       expect(UpdateParamsMessageTypes.CREDENTIAL_SCHEMA).toBe('/verana.cs.v1.MsgUpdateParams');
+      expect(VeranaCredentialSchemaMessageTypes.UpdateParams).toBe('/verana.cs.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.CS).toBe('cs');
     });
 
     it('should map DID_DIRECTORY to DD module', () => {
       expect(UpdateParamsMessageTypes.DID_DIRECTORY).toBe('/verana.dd.v1.MsgUpdateParams');
+      expect(VeranaDidMessageTypes.UpdateParams).toBe('/verana.dd.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.DD).toBe('dd');
     });
 
     it('should map PERMISSION to PERM module', () => {
       expect(UpdateParamsMessageTypes.PERMISSION).toBe('/verana.perm.v1.MsgUpdateParams');
+      expect(VeranaPermissionMessageTypes.UpdateParams).toBe('/verana.perm.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.PERM).toBe('perm');
     });
 
     it('should map TRUST_DEPOSIT to TD module', () => {
       expect(UpdateParamsMessageTypes.TRUST_DEPOSIT).toBe('/verana.td.v1.MsgUpdateParams');
+      expect(VeranaTrustDepositMessageTypes.UpdateParams).toBe('/verana.td.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.TD).toBe('td');
     });
 
     it('should map TRUST_REGISTRY to TR module', () => {
       expect(UpdateParamsMessageTypes.TRUST_REGISTRY).toBe('/verana.tr.v1.MsgUpdateParams');
+      expect(VeranaTrustRegistryMessageTypes.UpdateParams).toBe('/verana.tr.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.TR).toBe('tr');
     });
   });

@@ -15,16 +15,23 @@ import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import {
   BULL_JOB_NAME,
-  CredentialSchemaMessageType,
-  DidMessages,
   getHttpBatchClient,
   getLcdClient,
-  PermissionMessageTypes,
   SERVICE,
-  TrustDepositMessageTypes,
-  TrustRegistryMessageTypes,
-  UpdateParamsMessageTypes
 } from '../../common';
+import { indexerStatusManager } from '../manager/indexer_status.manager';
+import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
+import {
+  isVeranaMessageType,
+  shouldSkipUnknownMessages,
+  isUpdateParamsMessageType,
+  isCredentialSchemaMessageType,
+  isPermissionMessageType,
+  isTrustDepositMessageType,
+  isTrustRegistryMessageType,
+  isDidMessageType,
+  isKnownVeranaMessageType,
+} from '../../common/verana-message-types';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
@@ -62,6 +69,13 @@ export default class CrawlTxService extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_TRANSACTION,
   })
   public async jobCrawlTx(): Promise<void> {
+    try {
+      checkCrawlingStatus();
+    } catch {
+      this.logger.warn('⏸️ Crawling is stopped, skipping transaction crawl');
+      return;
+    }
+
     const [startBlock, endBlock, blockCheckpoint] =
       await BlockCheckpoint.getCheckpoint(
         BULL_JOB_NAME.CRAWL_TRANSACTION,
@@ -103,6 +117,13 @@ export default class CrawlTxService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_TRANSACTION,
   })
   public async jobHandlerCrawlTx(): Promise<void> {
+    try {
+      checkCrawlingStatus();
+    } catch {
+      this.logger.warn('⏸️ [HANDLE_TRANSACTION] Crawling is stopped, skipping transaction handling');
+      return;
+    }
+
     if (this._processingLock) {
       this.logger.debug(' [HANDLE_TRANSACTION] Already in progress, skipping...');
       return;
@@ -200,8 +221,11 @@ export default class CrawlTxService extends BullableService {
         );
       }
     } catch (error) {
-      this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing transactions:`, error);
-      throw error;
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlTransaction.key,
+        '[HANDLE_TRANSACTION] Error processing transactions'
+      );
     } finally {
       this._processingLock = false;
     }
@@ -593,7 +617,7 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
     const DIDfiltered = successfulMsgs
-      .filter((msg: any) => Object.values(DidMessages).includes(msg.type))
+      .filter((msg: any) => isDidMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         const controller = extractController(msg.content || {});
@@ -624,9 +648,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const trustRegistryList = successfulMsgs
-      .filter((msg: any) =>
-        Object.values(TrustRegistryMessageTypes).includes(msg.type as TrustRegistryMessageTypes)
-      )
+      .filter((msg: any) => isTrustRegistryMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -654,9 +676,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const credentialSchemaMessages = successfulMsgs
-      .filter((msg: any) =>
-        Object.values(CredentialSchemaMessageType).includes(msg.type as CredentialSchemaMessageType)
-      )
+      .filter((msg: any) => isCredentialSchemaMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -684,7 +704,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const permissionMessages = successfulMsgs
-      .filter((msg: any) => Object.values(PermissionMessageTypes).includes(msg.type))
+      .filter((msg: any) => isPermissionMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -724,9 +744,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const trustDepositList = resultInsertMsgs
-      .filter((msg: any) =>
-        Object.values(TrustDepositMessageTypes).includes(msg.type as TrustDepositMessageTypes),
-      )
+      .filter((msg: any) => isTrustDepositMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -745,9 +763,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const updateParamsList = successfulMsgs
-      .filter((msg: any) =>
-        Object.values(UpdateParamsMessageTypes).includes(msg.type as UpdateParamsMessageTypes),
-      )
+      .filter((msg: any) => isUpdateParamsMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -766,12 +782,72 @@ export default class CrawlTxService extends BullableService {
         );
         this.logger.info(`[insertRelatedTx] UpdateParams message processed successfully`);
       } catch (err) {
-        this.logger.error(`❌ [insertRelatedTx] Failed to process UpdateParams message:`, err);
+        this.logger.error(`[insertRelatedTx] Failed to process UpdateParams message:`, err);
         console.error("FATAL CRAWL_TX UPDATE_PARAMS ERROR:", err);
       }
     }
 
-    this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
+    await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx);
+
+    this.logger.info(`[insertRelatedTx] Completed processing all messages`);
+  }
+
+  private async validateAllMessagesProcessed(successfulMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
+    const unknownMessages: any[] = [];
+
+    successfulMsgs.forEach((msg: any) => {
+      const isVeranaMessage = isVeranaMessageType(msg.type);
+      if (!isVeranaMessage) {
+        return;
+      }
+
+      if (!isKnownVeranaMessageType(msg.type)) {
+        unknownMessages.push(msg);
+      }
+    });
+
+    if (unknownMessages.length > 0) {
+      const unknownTypes = [...new Set(unknownMessages.map((msg: any) => msg.type))];
+      const skipUnknown = shouldSkipUnknownMessages();
+
+      this.logger.error(`INDEXER COLLISION RISK: Unknown Verana message types detected: ${unknownTypes.join(', ')}`);
+      console.error('='.repeat(80));
+      console.error('CRITICAL: UNKNOWN VERANA MESSAGE TYPES DETECTED');
+      console.error('='.repeat(80));
+      console.error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
+      console.error(`This indicates a protocol change or new feature that requires indexer updates.`);
+      console.error(`Affected transactions: ${unknownMessages.length}`);
+      console.error(`Skip mode: ${skipUnknown ? 'ENABLED (TESTING)' : 'DISABLED (PRODUCTION)'}`);
+      console.error('');
+      console.error('Sample affected transactions:');
+      unknownMessages.slice(0, 3).forEach((msg: any, index: number) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const height = parentTx?.height ?? 'unknown';
+        console.error(`  ${index + 1}. TX ${msg.tx_id} at height ${height}: ${msg.type}`);
+      });
+      console.error('');
+      console.error(
+        skipUnknown
+          ? 'Continuing in test mode - monitor for protocol changes'
+          : 'Indexer stopped - update message handlers for new message types'
+      );
+      console.error('='.repeat(80));
+
+      if (!skipUnknown) {
+        console.error(`STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`);
+        const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
+        await handleErrorGracefully(
+          error,
+          SERVICE.V1.CrawlTransaction.key,
+          'Unknown Verana message types',
+          true
+        );
+      } else {
+        this.logger.warn(
+          `TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`
+        );
+      }
+    }
   }
 
   private checkMappingEventToLog(tx: any) {
@@ -912,53 +988,88 @@ export default class CrawlTxService extends BullableService {
   }
 
   public async _start() {
-    await this.waitForServices(SERVICE.V1.CrawlBlock.name);
-    const providerRegistry = await getProviderRegistry();
-    this._registry = new ChainRegistry(this.logger, providerRegistry);
-
     try {
-      const blockCountResult = await knex('block').count('* as count').first();
-      const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
-      const checkpoint = await BlockCheckpoint.query().findOne({
-        job_name: BULL_JOB_NAME.CRAWL_TRANSACTION,
-      });
-      const currentBlock = checkpoint ? checkpoint.height : 0;
-      this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
-      this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
-    } catch (error) {
-      this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
-      this._isFreshStart = false;
-    }
+      await this.waitForServices(SERVICE.V1.CrawlBlock.name);
+      const providerRegistry = await getProviderRegistry();
+      this._registry = new ChainRegistry(this.logger, providerRegistry);
 
-    try {
-      const lcdClient = await getLcdClient();
-      if (!lcdClient?.provider) {
-        this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
-      } else {
-        try {
-          const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
-            () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
-            'getNodeInfo'
-          );
-          const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
-          if (cosmosSdkVersion) {
-            this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+      try {
+        const blockCountResult = await knex('block').count('* as count').first();
+        const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+        const checkpoint = await BlockCheckpoint.query().findOne({
+          job_name: BULL_JOB_NAME.CRAWL_TRANSACTION,
+        });
+        const currentBlock = checkpoint ? checkpoint.height : 0;
+        this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+        this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
+      } catch (error) {
+        this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+        this._isFreshStart = false;
+      }
+
+      try {
+        const lcdClient = await getLcdClient();
+        if (!lcdClient?.provider) {
+          this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
+        } else {
+          try {
+            const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
+              () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+              'getNodeInfo'
+            );
+            const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
+            if (cosmosSdkVersion) {
+              this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+            }
+          } catch (error: any) {
+            const errorMessage = error?.message || String(error);
+            const wasStopped = await handleErrorGracefully(
+              error,
+              SERVICE.V1.CrawlTransaction.key,
+              'Failed to get node info'
+            );
+            
+            if (!wasStopped) {
+              if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
+                this.logger.warn(`⚠️ Failed to get node info due to timeout (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+              } else {
+                this.logger.warn(`⚠️ Failed to get node info (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+              }
+            } else {
+              this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+            }
           }
-        } catch (error: any) {
-          const errorMessage = error?.message || String(error);
-          if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
-            this.logger.warn(`⚠️ Failed to get node info due to timeout (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+        }
+      } catch (error: any) {
+        const errorMessage = error?.message || String(error);
+        if (!indexerStatusManager.isIndexerRunning()) {
+          this.logger.error(`❌ Service startup encountered error (indexer already stopped): ${errorMessage}`);
+          this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+        } else {
+          const wasStopped = await handleErrorGracefully(
+            error,
+            SERVICE.V1.CrawlTransaction.key,
+            'Service startup error'
+          );
+          
+          if (wasStopped) {
+            this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+          } else if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
+            this.logger.warn(`⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`);
           } else {
-            this.logger.warn(`⚠️ Failed to get node info (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+            this.logger.warn(`⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`);
           }
         }
       }
     } catch (error: any) {
-      const errorMessage = error?.message || String(error);
-      if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
-        this.logger.warn(`⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`);
-      } else {
-        this.logger.warn(`⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`);
+      const wasStopped = await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlTransaction.key,
+        'Service startup error'
+      );
+      
+      if (wasStopped) {
+        this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
       }
     }
 

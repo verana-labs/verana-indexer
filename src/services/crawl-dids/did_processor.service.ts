@@ -1,7 +1,8 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { DidMessages, SERVICE } from "../../common";
+import { VeranaDidMessageTypes } from "../../common/verana-message-types";
+import { SERVICE } from "../../common";
 import { calculateDidDeposit } from "../../common/utils/calculate_deposit";
 import { addYearsToDate, formatTimestamp } from "../../common/utils/date_utils";
 import { extractController } from "../../common/utils/extract_controller";
@@ -88,7 +89,7 @@ export default class DidMessageProcessorService extends BullableService {
                 let processedDID: DidMessageTypes | null = null;
                 
                 // ---------------- ADD ----------------
-                if ([DidMessages.AddDid, DidMessages.AddDidLegacy].includes(message.type as DidMessages)) {
+                if ([VeranaDidMessageTypes.AddDid, VeranaDidMessageTypes.AddDidLegacy].includes(message.type as any)) {
                     this.logger.info(`🆕 Creating new DID: ${message.did} at height ${message.height}`);
                     const controller = extractController(message);
                     if (!controller) {
@@ -131,7 +132,7 @@ export default class DidMessageProcessorService extends BullableService {
 
             // ---------------- RENEW ----------------
             else if (
-                (message.type === DidMessages.RenewDid || message.type === DidMessages.RenewDidLegacy)
+                (message.type === VeranaDidMessageTypes.RenewDid || message.type === VeranaDidMessageTypes.RenewDidLegacy)
                 && message.did) {
                 const yearsToAdd = message.years 
                     ? (typeof message.years === 'string' ? parseInt(message.years, 10) : Number(message.years))
@@ -184,7 +185,7 @@ export default class DidMessageProcessorService extends BullableService {
 
             // ---------------- TOUCH ----------------
             else if (
-                (message.type === DidMessages.TouchDid || message.type === DidMessages.TouchDidLegacy)
+                (message.type === VeranaDidMessageTypes.TouchDid || message.type === VeranaDidMessageTypes.TouchDidLegacy)
                 && message.did
             ) {
                 const existingDid: DidMessageTypes | null =
@@ -215,7 +216,7 @@ export default class DidMessageProcessorService extends BullableService {
 
             // ---------------- REMOVE ----------------
             else if (
-                (message.type === DidMessages.RemoveDid || message.type === DidMessages.RemoveDidLegacy)
+                (message.type === VeranaDidMessageTypes.RemoveDid || message.type === VeranaDidMessageTypes.RemoveDidLegacy)
                 && message.did
             ) {
                 const existingDid: DidMessageTypes | null =

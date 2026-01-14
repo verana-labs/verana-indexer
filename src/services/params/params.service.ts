@@ -8,16 +8,12 @@ import fs from "fs";
 import { Context, ServiceBroker } from "moleculer";
 import path from "path";
 import BullableService from "../../base/bullable.service";
-import {
-  BULL_JOB_NAME,
-  SERVICE,
-  UpdateParamsMessageTypes,
-  ModulesParamsNamesTypes,
-  getHttpBatchClient
-} from "../../common";
+import { BULL_JOB_NAME, ModulesParamsNamesTypes, SERVICE, getHttpBatchClient } from "../../common";
 import knex from "../../common/utils/db_connection";
-import { recordModuleParamsHistorySafe, hasMeaningfulChanges } from "../../common/utils/params_utils";
 import { Network } from "../../network";
+import { hasMeaningfulChanges, recordModuleParamsHistorySafe } from "../../common/utils/params_utils";
+import { clearParamsCache } from "../../common/utils/params_service";
+import { VeranaCredentialSchemaMessageTypes, VeranaDidMessageTypes, VeranaPermissionMessageTypes, VeranaTrustDepositMessageTypes, VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
 
 @Service({
   name: SERVICE.V1.GenesisParamsService.key,
@@ -300,6 +296,7 @@ export default class GenesisParamsService extends BullableService {
                   previousParams
                 );
 
+                clearParamsCache(module);
                 updatedModules++;
               }
             }
@@ -329,24 +326,18 @@ export default class GenesisParamsService extends BullableService {
     }
 
     let module: string;
-    switch (type) {
-      case UpdateParamsMessageTypes.CREDENTIAL_SCHEMA:
-        module = ModulesParamsNamesTypes.CS;
-        break;
-      case UpdateParamsMessageTypes.DID_DIRECTORY:
-        module = ModulesParamsNamesTypes.DD;
-        break;
-      case UpdateParamsMessageTypes.PERMISSION:
-        module = ModulesParamsNamesTypes.PERM;
-        break;
-      case UpdateParamsMessageTypes.TRUST_DEPOSIT:
-        module = ModulesParamsNamesTypes.TD;
-        break;
-      case UpdateParamsMessageTypes.TRUST_REGISTRY:
-        module = ModulesParamsNamesTypes.TR;
-        break;
-      default:
-        return { success: false, message: `Unknown UpdateParams message type: ${type}` };
+    if (type === VeranaCredentialSchemaMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.CS;
+    } else if (type === VeranaDidMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.DD;
+    } else if (type === VeranaPermissionMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.PERM;
+    } else if (type === VeranaTrustDepositMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.TD;
+    } else if (type === VeranaTrustRegistryMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.TR;
+    } else {
+      return { success: false, message: `Unknown UpdateParams message type: ${type}` };
     }
 
     this.logger.info(`[UpdateParams] Processing ${module} module params update at height ${height}`);
@@ -409,6 +400,7 @@ export default class GenesisParamsService extends BullableService {
       );
 
       await trx.commit();
+      clearParamsCache(module);
 
       this.logger.info(`[UpdateParams] Updated ${module} params:`, params);
 

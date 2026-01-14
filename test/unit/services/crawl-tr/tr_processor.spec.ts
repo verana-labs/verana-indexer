@@ -1,8 +1,8 @@
 import { ServiceBroker } from "moleculer";
 import {
   ModulesParamsNamesTypes,
-  TrustRegistryMessageTypes,
 } from "../../../../src/common";
+import { VeranaTrustRegistryMessageTypes as TrustRegistryMessageTypes } from "../../../../src/common/verana-message-types";
 import knex from "../../../../src/common/utils/db_connection";
 import TrustRegistryMessageProcessorService from "../../../../src/services/crawl-tr/tr_processor.service";
 
@@ -54,7 +54,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const dummyTR = [
       {
-        type: TrustRegistryMessageTypes.Create,
+        type: TrustRegistryMessageTypes.CreateTrustRegistry,
         content: {
           did: "did:example:insert",
           creator: "creator_test",
@@ -129,7 +129,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const UpdateResponse = [
       {
-        type: TrustRegistryMessageTypes.Update,
+        type: TrustRegistryMessageTypes.UpdateTrustRegistry,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_update",
@@ -190,7 +190,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const archiveTrustRegistry = [
       {
-        type: TrustRegistryMessageTypes.Archive,
+        type: TrustRegistryMessageTypes.ArchiveTrustRegistry,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_archive",
@@ -223,7 +223,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const unarchiveTrustRegistry = [
       {
-        type: TrustRegistryMessageTypes.Archive,
+        type: TrustRegistryMessageTypes.ArchiveTrustRegistry,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_archive",

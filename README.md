@@ -165,6 +165,7 @@ These have sensible defaults but may need adjustment for specific deployments:
 - `PORT` - API Gateway port (default: `3001`)
 - `LOGLEVEL` - Logging level (default: `info`)
 - `NODE_ENV` - Environment mode: `development` or `production`
+- `SKIP_UNKNOWN_MESSAGES` - Set to `true` to allow indexer to continue processing unknown message types (test/debug mode only)
 
 #### Advanced Configuration
 
@@ -178,6 +179,9 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 - `EVM_JSON_RPC` / `EVM_CHAIN_ID` – Optional EVM endpoint and chain ID that some services use when they need an EVM-compatible RPC.
 - `REDIS_DB_NUMBER` – Alternate Redis logical database when you need to isolate queues/caches.
 - `MOLECULER_NAMESPACE` – Overrides the default service namespace so multiple indexers can share the same Redis.
+
+**Safety & Validation**
+- `SKIP_UNKNOWN_MESSAGES` – Set to `true` to disable indexer stopping on unknown message types (use only for testing/debugging)
 
 **Database tuning**
 - `POSTGRES_POOL_MAX` – Upper bound for knex pool size. Increase for higher concurrency, decrease to protect light instances.

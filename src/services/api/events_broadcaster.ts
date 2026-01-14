@@ -1,5 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 import { Server } from "http";
+import { indexerStatusManager } from "../manager/indexer_status.manager";
 
 export class EventsBroadcaster {
   private wss: WebSocketServer | null = null;
@@ -8,15 +9,72 @@ export class EventsBroadcaster {
   private pingInterval: NodeJS.Timeout | null = null;
   private readonly MAX_CLIENTS = 10000;
   private readonly PING_INTERVAL = 30000;
-  private logger: any = console;
+  private logger: {
+    info?: (...args: any[]) => void;
+    warn?: (...args: any[]) => void;
+    error?: (...args: any[]) => void;
+  } = console;
 
-  setLogger(logger: any): void {
+  setLogger(logger: {
+    info?: (...args: any[]) => void;
+    warn?: (...args: any[]) => void;
+    error?: (...args: any[]) => void;
+  }): void {
     this.logger = logger;
   }
 
+  private logInfo(...args: any[]): void {
+    if (this.logger.info) {
+      this.logger.info(...args);
+    } else {
+      console.log(...args);
+    }
+  }
+
+  private logWarn(...args: any[]): void {
+    if (this.logger.warn) {
+      this.logger.warn(...args);
+    } else {
+      console.warn(...args);
+    }
+  }
+
+  private logError(...args: any[]): void {
+    if (this.logger.error) {
+      this.logger.error(...args);
+    } else {
+      console.error(...args);
+    }
+  }
+
+ 
+  private getCurrentIndexerStatus(): {
+    indexerStatus: "running" | "stopped";
+    crawlingStatus: "active" | "stopped";
+    stoppedAt?: string;
+    stoppedReason?: string;
+    lastError?: {
+      message: string;
+      timestamp: string;
+      service?: string;
+    };
+  } {
+    const status = indexerStatusManager.getStatus();
+    return {
+      indexerStatus: status.isRunning ? "running" : "stopped",
+      crawlingStatus: status.isCrawling ? "active" : "stopped",
+      stoppedAt: status.stoppedAt,
+      stoppedReason: status.stoppedReason,
+      lastError: status.lastError,
+    };
+  }
+
   initialize(server: Server): void {
+    indexerStatusManager.setStatusChangeCallback((status) => {
+      this.broadcastIndexerStatus(status);
+    });
     if (this.wss) {
-      this.logger.warn("[EventsBroadcaster] WebSocket server already initialized");
+      this.logWarn("[EventsBroadcaster] WebSocket server already initialized");
       return;
     }
 
@@ -27,7 +85,7 @@ export class EventsBroadcaster {
       maxPayload: 1024,
       verifyClient: () => {
         if (this.wsClients.size >= this.MAX_CLIENTS) {
-          this.logger.warn(`[EventsBroadcaster] Max clients reached (${this.MAX_CLIENTS}), rejecting connection`);
+          this.logWarn(`[EventsBroadcaster] Max clients reached (${this.MAX_CLIENTS}), rejecting connection`);
           return false;
         }
         return true;
@@ -43,19 +101,37 @@ export class EventsBroadcaster {
       this.wsClients.add(ws);
       this.clientAlive.set(ws, true);
 
-      if (this.logger.info) {
-        this.logger.info(`[EventsBroadcaster] New WebSocket client connected. Total clients: ${this.wsClients.size}`);
-      } else {
-        console.log(`[EventsBroadcaster] New WebSocket client connected. Total clients: ${this.wsClients.size}`);
-      }
+      this.logInfo(`[EventsBroadcaster] New WebSocket client connected. Total clients: ${this.wsClients.size}`);
 
       try {
-        ws.send(JSON.stringify({
+        const status = this.getCurrentIndexerStatus();
+        const connectionMessage: any = {
           type: "connected",
-          message: "Connected to Verana Indexer Events"
-        }), { compress: false });
+          message: "Connected to Verana Indexer Events",
+          indexerStatus: status.indexerStatus,
+          crawlingStatus: status.crawlingStatus,
+          timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+        };
+        
+        if (status.crawlingStatus === "stopped") {
+          if (status.stoppedAt) {
+            connectionMessage.stoppedAt = status.stoppedAt;
+          }
+          if (status.stoppedReason) {
+            connectionMessage.stoppedReason = status.stoppedReason;
+          }
+          if (status.lastError) {
+            connectionMessage.lastError = {
+              message: status.lastError.message,
+              timestamp: status.lastError.timestamp,
+              service: status.lastError.service
+            };
+          }
+        }
+        
+        ws.send(JSON.stringify(connectionMessage), { compress: false });
       } catch (error) {
-        this.logger.error("[EventsBroadcaster] Error sending welcome message:", error);
+        this.logError("[EventsBroadcaster] Error sending welcome message:", error);
         this.wsClients.delete(ws);
         this.clientAlive.delete(ws);
         return;
@@ -64,14 +140,12 @@ export class EventsBroadcaster {
       const cleanup = () => {
         this.wsClients.delete(ws);
         this.clientAlive.delete(ws);
-        if (this.logger.info) {
-          this.logger.info(`[EventsBroadcaster] WebSocket client disconnected. Total clients: ${this.wsClients.size}`);
-        }
+        this.logInfo(`[EventsBroadcaster] WebSocket client disconnected. Total clients: ${this.wsClients.size}`);
       };
 
       ws.on("close", cleanup);
       ws.on("error", (error) => {
-        this.logger.error("[EventsBroadcaster] WebSocket error:", error);
+        this.logError("[EventsBroadcaster] WebSocket error:", error);
         cleanup();
       });
 
@@ -81,16 +155,14 @@ export class EventsBroadcaster {
     });
 
     this.wss.on("error", (error) => {
-      this.logger.error("[EventsBroadcaster] WebSocketServer error:", error);
+      this.logError("[EventsBroadcaster] WebSocketServer error:", error);
     });
 
     this.pingInterval = setInterval(() => {
       this.pingClients();
     }, this.PING_INTERVAL);
 
-    if (this.logger.info) {
-      this.logger.info("[EventsBroadcaster] WebSocket server initialized on /verana/indexer/v1/events");
-    }
+    this.logInfo("[EventsBroadcaster] WebSocket server initialized on /verana/indexer/v1/events");
   }
 
   private pingClients(): void {
@@ -136,8 +208,44 @@ export class EventsBroadcaster {
       height,
       timestamp: timestampFormatted
     };
-    const message = JSON.stringify(eventData);
+    this.broadcastMessage(eventData);
+  }
 
+
+  broadcastIndexerStatus(status: {
+    indexerStatus: "running" | "stopped";
+    crawlingStatus: "active" | "stopped";
+    stoppedAt?: string;
+    stoppedReason?: string;
+    lastError?: {
+      message: string;
+      timestamp: string;
+      service?: string;
+    };
+  }): void {
+    if (this.wsClients.size === 0) {
+      return;
+    }
+
+    const eventData = {
+      type: "indexer-status",
+      indexerStatus: status.indexerStatus,
+      crawlingStatus: status.crawlingStatus,
+      stoppedAt: status.stoppedAt,
+      stoppedReason: status.stoppedReason,
+      lastError: status.lastError,
+      timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+    };
+    this.broadcastMessage(eventData);
+  }
+
+ 
+  private broadcastMessage(eventData: Record<string, any>): void {
+    if (this.wsClients.size === 0) {
+      return;
+    }
+
+    const message = JSON.stringify(eventData);
     const deadClients: WebSocket[] = [];
     let sentCount = 0;
     
@@ -161,8 +269,8 @@ export class EventsBroadcaster {
       });
     }
 
-    if (sentCount > 0 && this.logger.info) {
-      this.logger.info(`[EventsBroadcaster] Broadcasted block ${height} to ${sentCount} WebSocket client(s)`);
+    if (sentCount > 0) {
+      this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} WebSocket client(s)`);
     }
   }
 
@@ -193,9 +301,7 @@ export class EventsBroadcaster {
 
     if (this.wss) {
       this.wss.close(() => {
-        if (this.logger.info) {
-          this.logger.info("[EventsBroadcaster] WebSocket server closed");
-        }
+        this.logInfo("[EventsBroadcaster] WebSocket server closed");
       });
       this.wss = null;
     }

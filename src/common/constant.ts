@@ -116,32 +116,6 @@ export const BULL_JOB_NAME = {
   CP_CRAWL_DID: "checkpoint:did-directory",
 };
 
-export enum DidMessages {
-  AddDid = "/verana.dd.v1.MsgAddDID",
-  AddDidLegacy = "/veranablockchain.diddirectory.MsgAddDID",
-  RenewDid = "/verana.dd.v1.MsgRenewDID",
-  RenewDidLegacy = "/veranablockchain.diddirectory.MsgRenewDID",
-  TouchDid = "/verana.dd.v1.MsgTouchDID",
-  TouchDidLegacy = "/veranablockchain.diddirectory.MsgTouchDID",
-  RemoveDid = "/verana.dd.v1.MsgRemoveDID",
-  RemoveDidLegacy = "/veranablockchain.diddirectory.MsgRemoveDID",
-}
-
-export enum TrustRegistryMessageTypes {
-  Create = "/verana.tr.v1.MsgCreateTrustRegistry",
-  CreateLegacy = "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
-  Update = "/verana.tr.v1.MsgUpdateTrustRegistry",
-  Archive = "/verana.tr.v1.MsgArchiveTrustRegistry",
-  AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
-  IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
-}
-
-export enum CredentialSchemaMessageType {
-  Create = "/verana.cs.v1.MsgCreateCredentialSchema",
-  CreateLegacy = "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
-  Update = "/verana.cs.v1.MsgUpdateCredentialSchema",
-  Archive = "/verana.cs.v1.MsgArchiveCredentialSchema",
-}
 export enum ModulesParamsNamesTypes {
   AUTH = "auth",
   BANK = "bank",
@@ -159,33 +133,6 @@ export enum ModulesParamsNamesTypes {
   TRANSFER = "transfer",
 }
 
-export enum PermissionMessageTypes {
-  CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
-  CreatePermission = "/verana.perm.v1.MsgCreatePermission",
-  StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
-  RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
-  RevokePermission = "/verana.perm.v1.MsgRevokePermission",
-  ExtendPermission = "/verana.perm.v1.MsgExtendPermission",
-  SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
-  CreateOrUpdatePermissionSession = "/verana.perm.v1.MsgCreateOrUpdatePermissionSession",
-  SlashPermissionTrustDeposit = "/verana.perm.v1.MsgSlashPermissionTrustDeposit",
-  RepayPermissionSlashedTrustDeposit = "/verana.perm.v1.MsgRepayPermissionSlashedTrustDeposit",
-  CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
-}
-export enum TrustDepositMessageTypes {
-  RECLAIM_YIELD = "/verana.td.v1.MsgReclaimTrustDepositYield",
-  RECLAIM_DEPOSIT = "/verana.td.v1.MsgReclaimTrustDeposit",
-  REPAY_SLASHED = "/verana.td.v1.MsgRepaySlashedTrustDeposit",
-  UPDATE_PARAMS = "/verana.td.v1.MsgUpdateParams",
-}
-
-export enum UpdateParamsMessageTypes {
-  CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
-  DID_DIRECTORY = "/verana.dd.v1.MsgUpdateParams",
-  PERMISSION = "/verana.perm.v1.MsgUpdateParams",
-  TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
-  TRUST_REGISTRY = "/verana.tr.v1.MsgUpdateParams",
-}
 export enum TrustDepositEventType {
   ADJUST = "adjust_trust_deposit",
   SLASH = "slash_trust_deposit",
@@ -240,6 +187,10 @@ export const SERVICE = {
     IndexerEventsService: {
       key: "IndexerEventsService",
       path: "v1.IndexerEventsService",
+    },
+    IndexerStatusService: {
+      key: "IndexerStatusService",
+      path: "v1.IndexerStatusService",
     },
     GenesisParamsService: {
       key: "GenesisParamsService",
@@ -576,6 +527,8 @@ export const MSG_TYPE = {
   MSG_UNDELEGATE: "/cosmos.staking.v1beta1.MsgUndelegate",
   MSG_CANCEL_UNDELEGATE: "/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation",
   MSG_CREATE_VALIDATOR: "/cosmos.staking.v1beta1.MsgCreateValidator",
+  MSG_EDIT_VALIDATOR: "/cosmos.staking.v1beta1.MsgEditValidator",
+  MSG_UNJAIL: "/cosmos.slashing.v1beta1.MsgUnjail",
   MSG_SUBMIT_PROPOSAL: "/cosmos.gov.v1beta1.MsgSubmitProposal",
   MSG_SUBMIT_PROPOSAL_V1: "/cosmos.gov.v1.MsgSubmitProposal",
   MSG_AUTHZ_EXEC: "/cosmos.authz.v1beta1.MsgExec",
