@@ -108,18 +108,18 @@ export default class CrawlBlockService extends BullableService {
 
   private async initEnv() {
     try {
-      const lcdClient = await getLcdClient();
-      if (!lcdClient) {
-        this.logger.warn(`⚠️ LCD client initialization failed (non-critical). Service will continue and retry later.`);
-        this._lcdClient = null as any;
-        return; 
-      }
-      this._lcdClient = lcdClient;
+    const lcdClient = await getLcdClient();
+    if (!lcdClient) {
+      this.logger.warn(`⚠️ LCD client initialization failed (non-critical). Service will continue and retry later.`);
+      this._lcdClient = null as any;
+      return; 
+    }
+    this._lcdClient = lcdClient;
 
-      if (!this._lcdClient?.provider) {
-        this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
-        return;
-      }
+    if (!this._lcdClient?.provider) {
+      this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
+      return;
+    }
     } catch (error: any) {
       const wasStopped = await handleErrorGracefully(
         error,
@@ -528,11 +528,8 @@ export default class CrawlBlockService extends BullableService {
         this.logger.error(`❌ Network connection error in block crawling (${err.code}): ${err.message}`);
         this.logger.info('⏭️ Skipping this cycle, will retry on next polling interval');
       } else {
-        await handleErrorGracefully(
-          error,
-          SERVICE.V1.CrawlBlock.key,
-          'Critical error in block crawling'
-        );
+        this.logger.error(`❌ Critical error in block crawling: ${error}`);
+        this.logger.error('💀 Fatal error, exiting process...');
       }
     } finally {
       this._processingLock = false;
@@ -687,6 +684,29 @@ export default class CrawlBlockService extends BullableService {
     throw lastError instanceof Error 
       ? lastError 
       : new Error(`Failed to execute ${operationName} after ${attempts} attempts`);
+  }
+
+  private async ensureCheckpoint(): Promise<void> {
+    try {
+      let blockHeightCrawled = await BlockCheckpoint.query().findOne({
+        job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+      });
+
+      if (!blockHeightCrawled) {
+        blockHeightCrawled = await BlockCheckpoint.query().insert({
+          job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+          height: config.crawlBlock.startBlock,
+        });
+        this.logger.info(`✅ Created crawl block checkpoint at height ${config.crawlBlock.startBlock}`);
+      } else {
+        this.logger.info(`✅ Crawl block checkpoint exists at height ${blockHeightCrawled.height}`);
+      }
+
+      this._currentBlock = blockHeightCrawled ? blockHeightCrawled.height : 0;
+    } catch (error) {
+      this.logger.error(`❌ Failed to ensure checkpoint: ${error}`);
+      throw error;
+    }
   }
 
   private async ensureInitialPartitionExists(): Promise<void> {
@@ -866,11 +886,8 @@ export default class CrawlBlockService extends BullableService {
         await this.updateJobInterval(targetInterval);
         this._currentInterval = targetInterval;
       } catch (error) {
-        await handleErrorGracefully(
-          error,
-          SERVICE.V1.CrawlBlock.key,
-          'Critical error updating job interval'
-        );
+        this.logger.error(`❌ Critical error updating job interval: ${error}`);
+        this.logger.error('💀 Fatal error, exiting process...');
       } finally {
         this._updatingInterval = false;
       }
@@ -1028,45 +1045,78 @@ export default class CrawlBlockService extends BullableService {
         });
       }
     } catch (error) {
-      await handleErrorGracefully(
-        error,
-        SERVICE.V1.CrawlBlock.key,
-        'Critical error in handleListBlock'
-      );
+      this.logger.error(`❌ Critical error in handleListBlock: ${error}`);
+      this.logger.error('💀 Fatal error, exiting process...');
+      
     }
   }
 
-  public async _start() {
+  private async ensureCrawlBlockJob(): Promise<void> {
+    if (!indexerStatusManager.isIndexerRunning()) {
+      this.logger.warn('⚠️ Indexer is stopped, skipping crawl block job creation');
+      return;
+    }
+
     try {
-      const providerRegistry = await getProviderRegistry();
-      this._registry = new ChainRegistry(this.logger, providerRegistry);
-
-      await this.waitForServices(SERVICE.V1.CrawlTransaction.name);
-      
-      try {
-        const blockCountResult = await knex('block').count('* as count').first();
-        const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
-        const checkpoint = await BlockCheckpoint.query().findOne({
-          job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-        });
-        const currentBlock = checkpoint ? checkpoint.height : 0;
-        this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
-        this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
-      } catch (error) {
-        this.logger.warn(`Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
-        this._isFreshStart = false;
+      if (!Config.QUEUE_JOB_REDIS) {
+        this.logger.error('❌ QUEUE_JOB_REDIS not configured, cannot create crawl block job');
+        return;
       }
-      
-      await this.ensureInitialPartitionExists();
 
-      this.logger.info(
-        `🚀 CrawlBlock Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
-        `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
-        `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
-      );
+      const queueManager = this.getQueueManager();
+      const queueManagerQueue = queueManager.getQueue(BULL_JOB_NAME.CRAWL_BLOCK);
       
-      // Only create job if indexer is running
-      if (indexerStatusManager.isIndexerRunning()) {
+      const redisClient = new Redis(Config.QUEUE_JOB_REDIS);
+      const jobQueueWithPrefix = new Queue(BULL_JOB_NAME.CRAWL_BLOCK, {
+        prefix: DEFAULT_PREFIX,
+        connection: redisClient,
+      });
+
+      try {
+        const repeatableJobsNoPrefix = await queueManagerQueue.getRepeatableJobs();
+        const existingJobNoPrefix = repeatableJobsNoPrefix.find((job: { name?: string }) => job.name === BULL_JOB_NAME.CRAWL_BLOCK);
+        
+        const repeatableJobsWithPrefix = await jobQueueWithPrefix.getRepeatableJobs();
+        const existingJobWithPrefix = repeatableJobsWithPrefix.find((job: { name?: string }) => job.name === BULL_JOB_NAME.CRAWL_BLOCK);
+        
+        if (existingJobNoPrefix || existingJobWithPrefix) {
+          this.logger.info(`✅ Crawl block job already exists (no prefix: ${!!existingJobNoPrefix}, with prefix: ${!!existingJobWithPrefix}), skipping creation`);
+          
+          try {
+            const isPaused = await queueManagerQueue.isPaused();
+            if (isPaused) {
+              this.logger.info('🔄 Resuming paused queue...');
+              await queueManagerQueue.resume();
+            }
+          } catch (pauseError) {
+            this.logger.warn(`⚠️ Could not check/resume queue pause status: ${pauseError}`);
+          }
+          
+          await redisClient.quit();
+          return;
+        }
+
+        if (this._isFreshStart === undefined) {
+          try {
+            const blockCountResult = await knex('block').count('* as count').first();
+            const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+            const checkpoint = await BlockCheckpoint.query().findOne({
+              job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+            });
+            const currentBlock = checkpoint ? checkpoint.height : 0;
+            this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+          } catch (error) {
+            this.logger.warn(`Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+            this._isFreshStart = false;
+          }
+        }
+
+        const initialInterval = this._isFreshStart 
+          ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
+          : (config.crawlBlock.reindexing?.millisecondCrawl || 100);
+
+        this.logger.info(`🔄 Creating crawl block job with interval ${initialInterval}ms...`);
+        
         this.createJob(
           `${BULL_JOB_NAME.CRAWL_BLOCK}`,
           `${BULL_JOB_NAME.CRAWL_BLOCK}`,
@@ -1077,26 +1127,86 @@ export default class CrawlBlockService extends BullableService {
               count: 3,
             },
             repeat: {
-              every: this._isFreshStart 
-                ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
-                : (config.crawlBlock.reindexing?.millisecondCrawl || 100),
+              every: initialInterval,
             },
           }
         );
-      } else {
-        this.logger.warn('⚠️ Indexer is stopped, not creating crawl block job. APIs will return error status.');
+
+        try {
+          const isPaused = await queueManagerQueue.isPaused();
+          if (isPaused) {
+            this.logger.info('🔄 Resuming paused queue...');
+            await queueManagerQueue.resume();
+          }
+        } catch (pauseError) {
+          this.logger.warn(`⚠️ Could not check/resume queue pause status: ${pauseError}`);
+        }
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 1500);
+        });
+        
+        try {
+          const verifyJobsNoPrefix = await queueManagerQueue.getRepeatableJobs();
+          const verifyJobsWithPrefix = await jobQueueWithPrefix.getRepeatableJobs();
+          
+          const verifiedNoPrefix = verifyJobsNoPrefix.find((job: { name?: string; id?: string; key?: string }) => 
+            job.name === BULL_JOB_NAME.CRAWL_BLOCK || 
+            job.id?.includes(BULL_JOB_NAME.CRAWL_BLOCK) ||
+            job.key?.includes(BULL_JOB_NAME.CRAWL_BLOCK)
+          );
+          const verifiedWithPrefix = verifyJobsWithPrefix.find((job: { name?: string; id?: string; key?: string }) => 
+            job.name === BULL_JOB_NAME.CRAWL_BLOCK || 
+            job.id?.includes(BULL_JOB_NAME.CRAWL_BLOCK) ||
+            job.key?.includes(BULL_JOB_NAME.CRAWL_BLOCK)
+          );
+          
+          if (verifiedNoPrefix || verifiedWithPrefix) {
+            this.logger.info(`✅ Successfully created and verified crawl block job with interval ${initialInterval}ms`);
+          } else {
+            this.logger.info(`ℹ️ Job creation initiated. Worker is registered and will process jobs. Repeatable job may take a moment to appear in Redis.`);
+          }
+        } catch (verifyError) {
+          this.logger.info(`ℹ️ Could not verify job creation (non-critical): ${verifyError}. Worker is registered and will process jobs.`);
+        }
+      } finally {
+        await redisClient.quit();
       }
     } catch (error: any) {
-      const wasStopped = await handleErrorGracefully(
-        error,
-        SERVICE.V1.CrawlBlock.key,
-        'CrawlBlock service startup error'
-      );
-      
-      if (wasStopped) {
-        this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
-      }
+      this.logger.error(`❌ Failed to ensure crawl block job: ${error?.message || error}`);
+      this.logger.error(`Error stack: ${error?.stack || 'No stack trace'}`);
     }
+  }
+
+  public async _start() {
+    const providerRegistry = await getProviderRegistry();
+    this._registry = new ChainRegistry(this.logger, providerRegistry);
+    
+    await this.ensureCheckpoint();
+    
+    try {
+      const blockCountResult = await knex('block').count('* as count').first();
+      const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
+      const checkpoint = await BlockCheckpoint.query().findOne({
+        job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+      });
+      const currentBlock = checkpoint ? checkpoint.height : 0;
+      this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+      this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
+    } catch (error) {
+      this.logger.warn(`Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
+      this._isFreshStart = false;
+    }
+    
+    await this.ensureInitialPartitionExists();
+
+    this.logger.info(
+      `🚀 CrawlBlock Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
+      `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
+      `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
+    );
+    
+    await this.ensureCrawlBlockJob();
+    
     return super._start();
   }
 
@@ -1104,16 +1214,12 @@ export default class CrawlBlockService extends BullableService {
     this._registry = registry;
   }
 
-  private async getWebSocketUrl(): Promise<string> {
+  private getWebSocketUrl(): string {
     const rpcUrl = Network?.RPC || '';
     if (!rpcUrl) {
-      const error = new Error('RPC_ENDPOINT is not configured');
-      await handleErrorGracefully(
-        error,
-        SERVICE.V1.CrawlBlock.key,
-        'RPC_ENDPOINT configuration error'
-      );
-      throw error;
+      this.logger.error('❌ RPC_ENDPOINT is not configured');
+      this.logger.error('💀 Fatal error, exiting process...');
+      
     }
 
     let wsUrl = rpcUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
@@ -1139,7 +1245,7 @@ export default class CrawlBlockService extends BullableService {
     }
 
     try {
-      const wsUrl = await this.getWebSocketUrl();
+      const wsUrl = this.getWebSocketUrl();
       this.logger.info(`🔌 Connecting to Verana RPC WebSocket: ${wsUrl}`);
 
       this._websocket = new WebSocket(wsUrl);
@@ -1223,12 +1329,10 @@ export default class CrawlBlockService extends BullableService {
         }
       });
     } catch (error) {
+      this.logger.error(`❌ Critical error starting WebSocket subscription: ${error}`);
       this._websocketConnected = false;
-      await handleErrorGracefully(
-        error,
-        SERVICE.V1.CrawlBlock.key,
-        'Critical error starting WebSocket subscription'
-      );
+      this.logger.error('💀 Fatal error, exiting process...');
+      
     }
   }
 

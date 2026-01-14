@@ -24,11 +24,13 @@ import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/e
 import {
   isVeranaMessageType,
   shouldSkipUnknownMessages,
-  VeranaDidMessageTypes,
-  VeranaTrustRegistryMessageTypes,
-  VeranaCredentialSchemaMessageTypes,
-  VeranaPermissionMessageTypes,
-  VeranaTrustDepositMessageTypes,
+  isUpdateParamsMessageType,
+  isCredentialSchemaMessageType,
+  isPermissionMessageType,
+  isTrustDepositMessageType,
+  isTrustRegistryMessageType,
+  isDidMessageType,
+  isKnownVeranaMessageType,
 } from '../../common/verana-message-types';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
@@ -615,7 +617,7 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
     const DIDfiltered = successfulMsgs
-      .filter((msg: any) => Object.values(VeranaDidMessageTypes).includes(msg.type))
+      .filter((msg: any) => isDidMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         const controller = extractController(msg.content || {});
@@ -646,9 +648,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const trustRegistryList = successfulMsgs
-      .filter((msg: any) =>
-        Object.values(VeranaTrustRegistryMessageTypes).includes(msg.type as any)
-      )
+      .filter((msg: any) => isTrustRegistryMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -676,9 +676,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const credentialSchemaMessages = successfulMsgs
-      .filter((msg: any) =>
-        Object.values(VeranaCredentialSchemaMessageTypes).includes(msg.type as any)
-      )
+      .filter((msg: any) => isCredentialSchemaMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -706,7 +704,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const permissionMessages = successfulMsgs
-      .filter((msg: any) => Object.values(VeranaPermissionMessageTypes).includes(msg.type))
+      .filter((msg: any) => isPermissionMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -746,9 +744,7 @@ export default class CrawlTxService extends BullableService {
     }
 
     const trustDepositList = resultInsertMsgs
-      .filter((msg: any) =>
-        Object.values(VeranaTrustDepositMessageTypes).includes(msg.type as any),
-      )
+      .filter((msg: any) => isTrustDepositMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -766,20 +762,37 @@ export default class CrawlTxService extends BullableService {
       );
     }
 
+    const updateParamsList = successfulMsgs
+      .filter((msg: any) => isUpdateParamsMessageType(msg.type))
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          message: msg,
+          height: parentTx?.height,
+          txHash: parentTx?.hash,
+        };
+      });
+
+    for (const updateMsg of updateParamsList) {
+      this.logger.info(`[insertRelatedTx] Processing UpdateParams message at height ${updateMsg.height}`);
+      try {
+        await this.broker.call(
+          `${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`,
+          updateMsg,
+        );
+        this.logger.info(`[insertRelatedTx] UpdateParams message processed successfully`);
+      } catch (err) {
+        this.logger.error(`[insertRelatedTx] Failed to process UpdateParams message:`, err);
+        console.error("FATAL CRAWL_TX UPDATE_PARAMS ERROR:", err);
+      }
+    }
+
     await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx);
 
-    this.logger.info(`✅ [insertRelatedTx] Completed processing all messages`);
+    this.logger.info(`[insertRelatedTx] Completed processing all messages`);
   }
 
   private async validateAllMessagesProcessed(successfulMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
-    const knownVeranaMessageTypes = new Set([
-      ...Object.values(VeranaDidMessageTypes),
-      ...Object.values(VeranaTrustRegistryMessageTypes),
-      ...Object.values(VeranaCredentialSchemaMessageTypes),
-      ...Object.values(VeranaPermissionMessageTypes),
-      ...Object.values(VeranaTrustDepositMessageTypes),
-    ]);
-
     const unknownMessages: any[] = [];
 
     successfulMsgs.forEach((msg: any) => {
@@ -788,7 +801,7 @@ export default class CrawlTxService extends BullableService {
         return;
       }
 
-      if (!knownVeranaMessageTypes.has(msg.type)) {
+      if (!isKnownVeranaMessageType(msg.type)) {
         unknownMessages.push(msg);
       }
     });
@@ -799,7 +812,7 @@ export default class CrawlTxService extends BullableService {
 
       this.logger.error(`INDEXER COLLISION RISK: Unknown Verana message types detected: ${unknownTypes.join(', ')}`);
       console.error('='.repeat(80));
-      console.error('🚨 CRITICAL: UNKNOWN VERANA MESSAGE TYPES DETECTED');
+      console.error('CRITICAL: UNKNOWN VERANA MESSAGE TYPES DETECTED');
       console.error('='.repeat(80));
       console.error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
       console.error(`This indicates a protocol change or new feature that requires indexer updates.`);
@@ -813,18 +826,26 @@ export default class CrawlTxService extends BullableService {
         console.error(`  ${index + 1}. TX ${msg.tx_id} at height ${height}: ${msg.type}`);
       });
       console.error('');
-      console.error(skipUnknown ?
-        '⚠️ Continuing in test mode - monitor for protocol changes' :
-        '🛑 Indexer stopped - update message handlers for new message types');
+      console.error(
+        skipUnknown
+          ? 'Continuing in test mode - monitor for protocol changes'
+          : 'Indexer stopped - update message handlers for new message types'
+      );
       console.error('='.repeat(80));
 
       if (!skipUnknown) {
-        console.error(`⏸️ STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`);
+        console.error(`STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`);
         const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
-        // Stop only crawling, not the entire indexer - APIs remain available
-        await handleErrorGracefully(error, SERVICE.V1.CrawlTransaction.key, 'Unknown Verana message types', true);
+        await handleErrorGracefully(
+          error,
+          SERVICE.V1.CrawlTransaction.key,
+          'Unknown Verana message types',
+          true
+        );
       } else {
-        this.logger.warn(`TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`);
+        this.logger.warn(
+          `TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`
+        );
       }
     }
   }

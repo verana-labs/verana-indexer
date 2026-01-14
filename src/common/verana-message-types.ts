@@ -52,6 +52,13 @@ export enum VeranaTrustRegistryMessageTypes {
   IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }
 
+export enum UpdateParamsMessageTypes {
+  CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
+  DID_DIRECTORY = "/verana.dd.v1.MsgUpdateParams",
+  PERMISSION = "/verana.perm.v1.MsgUpdateParams",
+  TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
+  TRUST_REGISTRY = "/verana.tr.v1.MsgUpdateParams",
+}
 export enum CosmosStakingMessageTypes {
   CreateValidator = "/cosmos.staking.v1beta1.MsgCreateValidator",
   EditValidator = "/cosmos.staking.v1beta1.MsgEditValidator",
@@ -90,4 +97,32 @@ export function shouldSkipUnknownMessages(): boolean {
 
 export function isVeranaMessageType(messageType: string): boolean {
   return messageType.startsWith('/verana.');
+}
+
+export function isDidMessageType(messageType: string): boolean {
+  return Object.values(VeranaDidMessageTypes).includes(messageType as VeranaDidMessageTypes);
+}
+
+export function isTrustRegistryMessageType(messageType: string): boolean {
+  return Object.values(VeranaTrustRegistryMessageTypes).includes(messageType as VeranaTrustRegistryMessageTypes);
+}
+
+export function isCredentialSchemaMessageType(messageType: string): boolean {
+  return Object.values(VeranaCredentialSchemaMessageTypes).includes(messageType as VeranaCredentialSchemaMessageTypes);
+}
+
+export function isPermissionMessageType(messageType: string): boolean {
+  return Object.values(VeranaPermissionMessageTypes).includes(messageType as VeranaPermissionMessageTypes);
+}
+
+export function isTrustDepositMessageType(messageType: string): boolean {
+  return Object.values(VeranaTrustDepositMessageTypes).includes(messageType as VeranaTrustDepositMessageTypes);
+}
+
+export function isUpdateParamsMessageType(messageType: string): boolean {
+  return messageType === VeranaDidMessageTypes.UpdateParams ||
+         messageType === VeranaCredentialSchemaMessageTypes.UpdateParams ||
+         messageType === VeranaPermissionMessageTypes.UpdateParams ||
+         messageType === VeranaTrustDepositMessageTypes.UpdateParams ||
+         messageType === VeranaTrustRegistryMessageTypes.UpdateParams;
 }
