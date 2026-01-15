@@ -10,6 +10,7 @@ import {
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
+import { detectStartMode } from '../../common/utils/start_mode_detector';
 
 @Service({
   name: SERVICE.V1.CoinTransfer.key,
@@ -237,18 +238,8 @@ export default class CoinTransferService extends BullableService {
   }
 
   public async _start() {
-    try {
-      const blockCountResult = await knex('block').count('* as count').first();
-      const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
-      const checkpoint = await BlockCheckpoint.query().findOne({
-        job_name: BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
-      });
-      const currentBlock = checkpoint ? checkpoint.height : 0;
-      this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
-    } catch (error) {
-      this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
-      this._isFreshStart = false;
-    }
+    const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_COIN_TRANSFER);
+    this._isFreshStart = startMode.isFreshStart;
 
     const crawlInterval = (this._isFreshStart && config.handleCoinTransfer.freshStart)
       ? (config.handleCoinTransfer.freshStart.millisecondCrawl || config.handleCoinTransfer.millisecondCrawl)

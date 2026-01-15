@@ -15,6 +15,7 @@ import {
 } from '../../models';
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import config from '../../config.json' with { type: 'json' };
+import { detectStartMode } from '../../common/utils/start_mode_detector';
 
 @Service({
   name: SERVICE.V1.HandleStakeEventService.key,
@@ -29,6 +30,7 @@ export default class HandleStakeEventService extends BullableService {
   ];
 
   private cosmosSdkVersion!: SemVer;
+  private _isFreshStart: boolean = false;
 
   // map to get index of amount attribute inside event stake based on cosmos sdk version
   private mapIndexAmountWithEventStakes = {
@@ -48,6 +50,28 @@ export default class HandleStakeEventService extends BullableService {
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  public async _start() {
+    const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_STAKE_EVENT);
+    this._isFreshStart = startMode.isFreshStart;
+    this.logger.info(`HandleStakeEvent service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    
+    try {
+      const lcdClient = await getLcdClient();
+      if (lcdClient?.provider) {
+        const nodeInfo: GetNodeInfoResponseSDKType =
+          await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
+        const cosmosSdkVersion =
+          nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99';
+        this.cosmosSdkVersion = new SemVer(cosmosSdkVersion);
+      }
+    } catch (error) {
+      this.logger.warn('Failed to get Cosmos SDK version, using default:', error);
+      this.cosmosSdkVersion = new SemVer('v0.45.99');
+    }
+    
+    return super._start();
   }
 
   @QueueHandler({
@@ -220,52 +244,4 @@ export default class HandleStakeEventService extends BullableService {
     return amountRaw;
   }
 
-  public async _start() {
-    try {
-      const lcdClient = await getLcdClient();
-      if (!lcdClient?.provider) {
-        this.logger.warn('LCD client not available during startup, skipping SDK version detection. Will retry later.');
-      } else {
-        // set version cosmos sdk to registry
-        try {
-          const nodeInfo: GetNodeInfoResponseSDKType =
-            await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
-          if (nodeInfo.application_version?.cosmos_sdk_version) {
-            this.cosmosSdkVersion = new SemVer(
-              nodeInfo.application_version.cosmos_sdk_version
-            );
-          } else {
-            this.logger.warn('Cannot find cosmos sdk version, using default');
-          }
-        } catch (error: any) {
-          const errorMessage = error?.message || String(error);
-          if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
-            this.logger.warn(`LCD client timeout during startup (non-critical): ${errorMessage}. Service will continue.`);
-          } else {
-            this.logger.warn(`Failed to get node info during startup (non-critical): ${errorMessage}. Service will continue.`);
-          }
-        }
-      }
-    } catch (error: any) {
-      const errorMessage = error?.message || String(error);
-      this.logger.warn(`LCD client initialization failed during startup (non-critical): ${errorMessage}. Service will continue.`);
-    }
-
-    this.createJob(
-      BULL_JOB_NAME.HANDLE_STAKE_EVENT,
-      BULL_JOB_NAME.HANDLE_STAKE_EVENT,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: config.handleStakeEvent.millisecondCrawl,
-        },
-      }
-    );
-
-    return super._start();
-  }
 }

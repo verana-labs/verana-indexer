@@ -79,7 +79,7 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
     const blockExists = await db.schema.hasTable("block");
     
     try {
-      const [completed, pending] = await db.migrate.list();
+      const [pending] = await db.migrate.list();
       
       if (!pending || pending.length === 0) {
         console.log(`Database is up to date (env: ${environment}). No migrations required.`);
@@ -99,11 +99,24 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
         console.log("Migrations finished successfully.");
       }
     } catch (migrateError: any) {
-      if (migrateError.message.includes("corrupt") || migrateError.message.includes("missing")) {
-        console.log("  Migration validation error detected, handling gracefully...");
-        console.log("  This usually happens after reindexing. Migrations will be handled by reindex script.");
-        console.log("  If you see this on a fresh database, there may be an issue with migration files.");
-      } else if (migrateError.message.includes("already exists") && migrateError.message.includes("block")) {
+      const errorMsg = migrateError.message || String(migrateError);
+      
+      if (errorMsg.includes("corrupt") || errorMsg.includes("missing")) {
+        console.log("  Migration validation error detected (this is normal after reindexing)");
+        console.log("  Migration state may be inconsistent after reindexing operations.");
+        console.log("  If you're running reindex, migrations will be handled by the reindex script.");
+        console.log("  If this is a fresh database, you may need to run: pnpm run reindex");
+        
+        const hasTables = await db.schema.hasTable("block");
+        if (hasTables) {
+          console.log("  Database tables exist - continuing without running migrations.");
+          console.log("  This is expected behavior after reindexing.");
+        } else {
+          console.log("  No tables found - you may need to run migrations manually.");
+          console.log("  Try running: pnpm run reindex");
+          process.exitCode = 1;
+        }
+      } else if (errorMsg.includes("already exists") && errorMsg.includes("block")) {
         console.log("  Init migration tried to create block table (skipping)");
         console.log("  Continuing with remaining migrations...");
         try {

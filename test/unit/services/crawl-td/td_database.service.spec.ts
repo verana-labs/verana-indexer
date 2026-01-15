@@ -10,6 +10,13 @@ jest.mock("../../../../src/models/modules_params");
 jest.mock("../../../../src/common/utils/db_connection", () => ({
   transaction: jest.fn((fn) => fn({})),
 }));
+jest.mock("../../../../src/common/utils/params_service", () => {
+  const actual = jest.requireActual("../../../../src/common/utils/params_service");
+  return {
+    ...actual,
+    getModuleParamsAction: jest.fn()
+  };
+});
 
 describe("🧪 TrustDepositDatabaseService", () => {
   const broker = new ServiceBroker({ logger: false });
@@ -84,41 +91,34 @@ describe("🧪 TrustDepositDatabaseService", () => {
   });
 
   describe("Action: getModuleParams", () => {
-    it("✅ should return module params successfully", async () => {
-      (ModuleParams.query as any).mockReturnValue({
-        findOne: jest.fn().mockResolvedValue({
-          module: "TD",
-          params: JSON.stringify({
-            params: {
-              key1: "value1",
-              key2: "value2",
-            },
-          }),
-        }),
-      });
+    it("should return module params successfully", async () => {
+      const paramsService = await import("../../../../src/common/utils/params_service");
+      const mockGetModuleParamsAction = jest.fn().mockResolvedValue({ params: { key1: "value1", key2: "value2" } });
+      jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction);
 
       const res: any = await broker.call(
         SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
       );
 
+      expect(res).toBeDefined();
+      expect(res.params).toBeDefined();
       expect(res.params.key1).toBe("value1");
       expect(res.params.key2).toBe("value2");
     });
 
-    it("❌ should return 404 when params not found", async () => {
-      (ModuleParams.query as any).mockReturnValue({
-        findOne: jest.fn().mockResolvedValue(null),
+    it("should return 404 when params not found", async () => {
+      const paramsService = await import("../../../../src/common/utils/params_service");
+      const mockGetModuleParamsAction = jest.fn().mockResolvedValue({
+        status: 404,
+        error: "Module parameters not found: trustdeposit"
       });
+      jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction);
 
-      try {
-        const res: any = await broker.call(
-          SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
-        );
-        expect(res.status).toBe(404);
-        expect(res.error).toBe("Module parameters not found");
-      } catch (err: any) {
-        expect(err?.data?.action).toBe("v1.TrustDepositApiService.getModuleParams");
-      }
+      const res: any = await broker.call(
+        SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
+      );
+      expect(res.status).toBe(404);
+      expect(res.error).toBe("Module parameters not found: trustdeposit");
     });
   });
 });

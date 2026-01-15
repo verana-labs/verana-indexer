@@ -30,18 +30,18 @@ async function fetchBlockCheckpoint() {
 
 function getHeaderValue(req: IncomingMessage): string | null {
   const normalizedHeader = "at-block-height";
-    let value = req.headers[normalizedHeader];
-    if (Array.isArray(value)) {
+  let value = req.headers[normalizedHeader];
+  if (Array.isArray(value)) {
     value = value[0];
   }
-    if (value !== undefined && value !== null) {
+  if (value !== undefined && value !== null) {
     const strValue = String(value).trim();
     return strValue || null;
   }
-    const headerKey = Object.keys(req.headers).find(
+  const headerKey = Object.keys(req.headers).find(
     key => key.toLowerCase() === normalizedHeader
   );
-    if (headerKey) {
+  if (headerKey) {
     let fallbackValue = req.headers[headerKey];
     if (Array.isArray(fallbackValue)) {
       fallbackValue = fallbackValue[0];
@@ -51,7 +51,7 @@ function getHeaderValue(req: IncomingMessage): string | null {
       return strValue || null;
     }
   }
-  
+
   return null;
 }
 
@@ -124,7 +124,11 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   try {
     let checkpoint = ctx?.meta?.latestCheckpoint;
     if (!checkpoint) {
-      checkpoint = await fetchBlockCheckpoint();
+      try {
+        checkpoint = await fetchBlockCheckpoint();
+      } catch (err: any) {
+        console.error("Error fetching checkpoint:", err);
+      }
     }
 
     if (checkpoint) {
@@ -135,11 +139,11 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       res.setHeader("X-Height", checkpoint.height.toString());
     }
 
-    // Always attach crawling status headers - APIs continue to work
     const status = indexerStatusManager.getStatus();
+    res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
+    res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
+
     if (!status.isCrawling) {
-      res.setHeader("X-Crawling-Status", "stopped");
-      res.setHeader("X-Indexer-Status", "running");
       if (status.stoppedReason) {
         res.setHeader("X-Crawling-Reason", status.stoppedReason);
       }
@@ -149,12 +153,12 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       if (status.stoppedAt) {
         res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
       }
-    } else {
-      res.setHeader("X-Crawling-Status", "active");
-      res.setHeader("X-Indexer-Status", "running");
     }
-  } catch (err) {
-    console.log(err);
+  } catch (err: any) {
+    console.error("Error attaching headers:", err);
+    const status = indexerStatusManager.getStatus();
+    res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
+    res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
   }
 
   res.setHeader("X-Query-At", new Date().toISOString());
@@ -166,16 +170,27 @@ function createOnBeforeCall(required: boolean = true) {
     _route: Route,
     req: IncomingMessage
   ) {
-    const status = indexerStatusManager.getStatus();
-    if (!status.isRunning) {
-      throw new Errors.MoleculerError(
-        `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
-        503,
-        "INDEXER_STOPPED"
-      );
+    try {
+      const status = indexerStatusManager.getStatus();
+      if (!status.isRunning) {
+        const error = new Errors.MoleculerError(
+          `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
+          503,
+          "INDEXER_STOPPED"
+        );
+        throw error;
+      }
+      await parseAtBlockHeight(ctx, req, required);
+    } catch (err: any) {
+      const error = err instanceof Errors.MoleculerError
+        ? err
+        : new Errors.MoleculerError(
+          err?.message || "Internal error",
+          err?.code || 500,
+          err?.type || "INTERNAL_ERROR"
+        );
+      throw error;
     }
-    // Note: Crawling status is communicated via HTTP headers, not ctx.meta
-    await parseAtBlockHeight(ctx, req, required);
   };
 }
 
@@ -185,30 +200,43 @@ function createOnError() {
     res: ServerResponse,
     err: any
   ) {
-    const status = err.code || 400;
-    const errorMessage = err.message || "Missing At-Block-Height header";
-    
-    const indexerStatus = indexerStatusManager.getStatus();
-    if (!indexerStatus.isCrawling) {
-      res.setHeader("X-Crawling-Status", "stopped");
+    try {
+      const status = err.code || err.status || 500;
+      const errorMessage = err.message || err.error || "Internal Server Error";
+      const errorType = err.type || err.name || "UNKNOWN_ERROR";
+
+      const indexerStatus = indexerStatusManager.getStatus();
+
       res.setHeader("X-Indexer-Status", indexerStatus.isRunning ? "running" : "stopped");
-      if (indexerStatus.stoppedReason) {
-        res.setHeader("X-Crawling-Reason", indexerStatus.stoppedReason);
+      res.setHeader("X-Crawling-Status", indexerStatus.isCrawling ? "active" : "stopped");
+      res.setHeader("X-Error-Type", errorType);
+      res.setHeader("X-Error-Message", errorMessage);
+
+      if (!indexerStatus.isCrawling) {
+        if (indexerStatus.stoppedReason) {
+          res.setHeader("X-Crawling-Reason", indexerStatus.stoppedReason);
+        }
+        if (indexerStatus.lastError?.message) {
+          res.setHeader("X-Crawling-Error", indexerStatus.lastError.message);
+        }
+        if (indexerStatus.stoppedAt) {
+          res.setHeader("X-Crawling-Stopped-At", indexerStatus.stoppedAt);
+        }
       }
-      if (indexerStatus.lastError?.message) {
-        res.setHeader("X-Crawling-Error", indexerStatus.lastError.message);
+
+      res.setHeader("X-Query-At", new Date().toISOString());
+
+      if (!res.headersSent) {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status, error: errorMessage, type: errorType }));
       }
-      if (indexerStatus.stoppedAt) {
-        res.setHeader("X-Crawling-Stopped-At", indexerStatus.stoppedAt);
+    } catch (handlerError: any) {
+      console.error("Error in onError handler:", handlerError);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: 500, error: "Internal Server Error" }));
       }
-    } else {
-      res.setHeader("X-Crawling-Status", "active");
-      res.setHeader("X-Indexer-Status", "running");
     }
-    res.setHeader("X-Query-At", new Date().toISOString());
-    
-    res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status, error: errorMessage }));
   };
 }
 
@@ -288,6 +316,7 @@ function createRoute(
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
+
       }),
       {
         path: "/",
@@ -307,7 +336,7 @@ export default class ApiService extends BaseService {
         resolve();
       }, 1000);
     });
-    
+
     const server = (this as unknown as { server?: Server }).server;
     if (server) {
       eventsBroadcaster.setLogger(this.logger);

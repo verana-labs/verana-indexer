@@ -4,10 +4,9 @@ import {
 } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { ModulesParamsNamesTypes, SERVICE } from "../../common";
+import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import ModuleParams from "../../models/modules_params";
 import TrustDeposit from "../../models/trust_deposit";
 
 @Service({
@@ -111,67 +110,8 @@ export default class TrustDepositApiService extends BullableService {
     name: "getModuleParams",
   })
   public async getModuleParams(ctx: Context) {
-    try {
-      const blockHeight = (ctx.meta as any)?.blockHeight;
-
-      // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
-        const historyRecord = await knex("module_params_history")
-          .where({ module: ModulesParamsNamesTypes.TD })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-
-        if (!historyRecord || !historyRecord.params) {
-          this.logger.warn("Module parameters not found for Trust Deposit");
-          return ApiResponder.error(ctx, "Module parameters not found", 404);
-        }
-
-        let parsedParams: Record<string, any>;
-        try {
-          parsedParams =
-            typeof historyRecord.params === "string"
-              ? JSON.parse(historyRecord.params)
-              : historyRecord.params;
-        } catch (parseErr) {
-          this.logger.error("Failed to parse module.params JSON:", parseErr);
-          return ApiResponder.error(ctx, "Invalid module parameters format", 500);
-        }
-        const params = parsedParams.params || parsedParams || {};
-        return ApiResponder.success(ctx, { params }, 200);
-      }
-
-      // Otherwise, return latest state
-      const module = await ModuleParams.query().findOne({
-        module: ModulesParamsNamesTypes.TD,
-      });
-
-      if (!module || !module.params) {
-        this.logger.warn("Module parameters not found for Trust Deposit");
-        return ApiResponder.error(ctx, "Module parameters not found", 404);
-      }
-
-      let parsedParams: Record<string, any>;
-      try {
-        parsedParams =
-          typeof module.params === "string"
-            ? JSON.parse(module.params)
-            : module.params;
-      } catch (parseErr) {
-        this.logger.error("Failed to parse module.params JSON:", parseErr);
-        return ApiResponder.error(ctx, "Invalid module parameters format", 500);
-      }
-      const params = parsedParams.params || parsedParams || {}
-      return ApiResponder.success(
-        ctx,
-        { params },
-        200
-      );
-    } catch (err: any) {
-      this.logger.error("Error fetching module params:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
-    }
+    const { getModuleParamsAction } = await import("../../common/utils/params_service");
+    return getModuleParamsAction(ctx, ModulesParamsNamesTypes.TD, MODULE_DISPLAY_NAMES.TRUST_DEPOSIT);
   }
 
   @Action({

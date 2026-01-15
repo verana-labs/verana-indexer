@@ -410,52 +410,64 @@ async function runMigrations(db: Knex): Promise<void> {
       }
     }
     
-    if (missingTables.length > 0) {
-      console.log(`  Found ${missingTables.length} missing tables, will run migrations to recreate them...`);
-      
-      const needsTransactionTables = !await checkTableExists(db, "transaction") || !await checkTableExists(db, "transaction_message");
-      
-      if (needsTransactionTables) {
-        console.log("  Transaction tables are missing, will recreate base tables first...");
-        await recreateTransactionTables(db);
-      }
-      
-      const transactionPartitionMigrations = completed.filter((m: Migration) => 
-        m && m.name && typeof m.name === 'string' && transactionPartitionMigrationNames.some(name => m.name.includes(name))
-      );
-      
-      if (transactionPartitionMigrations.length > 0) {
-        console.log(`  Removing ${transactionPartitionMigrations.length} transaction partition migration records to re-run...`);
-        for (const migration of transactionPartitionMigrations) {
-          await db("knex_migrations")
+    console.log(`  Found ${missingTables.length} missing tables (after dropping), will run migrations to recreate them...`);
+    
+    const needsTransactionTables = !await checkTableExists(db, "transaction") || !await checkTableExists(db, "transaction_message");
+    
+    if (needsTransactionTables) {
+      console.log("  Transaction tables are missing, will recreate base tables first...");
+      await recreateTransactionTables(db);
+    }
+    
+    const transactionPartitionMigrations = completed.filter((m: Migration) => 
+      m && m.name && typeof m.name === 'string' && transactionPartitionMigrationNames.some(name => m.name.includes(name))
+    );
+    
+    if (transactionPartitionMigrations.length > 0) {
+      console.log(`  Removing ${transactionPartitionMigrations.length} transaction partition migration records to re-run...`);
+      for (const migration of transactionPartitionMigrations) {
+        try {
+          const deleted = await db("knex_migrations")
             .where("name", migration.name)
             .delete();
-          console.log(`     Removed: ${migration.name}`);
-        }
-      }
-      
-      const moduleMigrations = completed.filter((m: Migration) => 
-        m && m.name && moduleOnlyMigrationNames.some(name => m.name.includes(name))
-      );
-      
-      if (moduleMigrations.length > 0) {
-        console.log(`  Removing ${moduleMigrations.length} module migration records to force re-run...`);
-        for (const migration of moduleMigrations) {
-          const isInit = migration.name && migration.name.includes("init_horoscope_layer_1_model");
-          if (!isInit) {
-            await db("knex_migrations")
-              .where("name", migration.name)
-              .delete();
+          if (deleted > 0) {
             console.log(`     Removed: ${migration.name}`);
-          } else {
-            console.log(`     Skipping init migration: ${migration.name}`);
           }
+        } catch (err: unknown) {
+          const error = err as NodeJS.ErrnoException;
+          console.warn(`     Could not remove ${migration.name}: ${error.message}`);
         }
       }
     }
     
+    const moduleMigrations = completed.filter((m: Migration) => 
+      m && m.name && moduleOnlyMigrationNames.some(name => m.name.includes(name))
+    );
+    
+    if (moduleMigrations.length > 0) {
+      console.log(`  Removing ${moduleMigrations.length} module migration records to force re-run...`);
+      for (const migration of moduleMigrations) {
+        const isInit = migration.name && migration.name.includes("init_horoscope_layer_1_model");
+        if (!isInit) {
+          try {
+            const deleted = await db("knex_migrations")
+              .where("name", migration.name)
+              .delete();
+            if (deleted > 0) {
+              console.log(`     Removed: ${migration.name}`);
+            }
+          } catch (err: unknown) {
+            const error = err as NodeJS.ErrnoException;
+            console.warn(`     Could not remove ${migration.name}: ${error.message}`);
+          }
+        } else {
+          console.log(`     Skipping init migration: ${migration.name}`);
+        }
+      }
+    }
+    
+    console.log(`  Running migrations using Knex migrate.latest()...`);
     try {
-      console.log(`  Running migrations using Knex migrate.latest()...`);
       await db.migrate.latest();
       console.log("   Migrations completed successfully");
     } catch (migrateError: unknown) {
@@ -468,7 +480,7 @@ async function runMigrations(db: Knex): Promise<void> {
           console.log("   Migrations completed successfully");
         } catch (retryError: unknown) {
           const retryErr = retryError as Error;
-          console.error("  ❌ Migration retry failed:", retryErr.message);
+          console.error("  Migration retry failed:", retryErr.message);
           throw retryError;
         }
       } else if (err.message?.includes("corrupt") || err.message?.includes("missing")) {
@@ -479,12 +491,28 @@ async function runMigrations(db: Knex): Promise<void> {
           console.log("   Migrations completed successfully");
         } catch (retryError: unknown) {
           const retryErr = retryError as Error;
-          console.error("  ❌ Migration retry failed:", retryErr.message);
+          console.error("  Migration retry failed:", retryErr.message);
           throw retryError;
         }
       } else {
+        console.error("  Migration error:", err.message);
         throw migrateError;
       }
+    }
+    
+    const finalMissingTables = [];
+    for (const tableName of TABLES_TO_DROP) {
+      const exists = await checkTableExists(db, tableName);
+      if (!exists) {
+        finalMissingTables.push(tableName);
+      }
+    }
+    
+    if (finalMissingTables.length > 0) {
+      console.warn(`  Warning: ${finalMissingTables.length} tables still missing after migrations: ${finalMissingTables.join(", ")}`);
+      console.warn("  This may indicate missing migration files or migration errors");
+    } else {
+      console.log("  All tables verified and recreated successfully");
     }
     
     console.log(" Tables recreated successfully\n");
@@ -494,7 +522,7 @@ async function runMigrations(db: Knex): Promise<void> {
       console.log("    Migration tried to recreate block table (skipping)");
     } else if (err.message?.includes("corrupt") || err.message?.includes("missing")) {
       console.log("    Migration validation error, checking if init migration needs to be skipped...");
-      const [completedCheck, pendingCheck] = await db.migrate.list().catch(() => [[], []]);
+      const [, pendingCheck] = await db.migrate.list().catch(() => [[], []]);
       const migrationsToRun = await skipInitMigrationIfPending(db, pendingCheck);
       if (migrationsToRun.length > 0) {
         console.log(`  Found ${migrationsToRun.length} migrations to run (excluding init)`);
@@ -518,14 +546,14 @@ async function runMigrations(db: Knex): Promise<void> {
           } catch (err: unknown) {
             const error = err as NodeJS.ErrnoException;
             if (!error.message?.includes("already exists") || !error.message.includes("block")) {
-              console.error(`    ❌ Failed to apply ${migration.name}: ${error.message}`);
+              console.error(`    Failed to apply ${migration.name}: ${error.message}`);
               throw err;
             }
           }
         }
       }
     } else {
-      console.error(`  ❌ Migration failed: ${err.message}`);
+      console.error(`  Migration failed: ${err.message}`);
       throw error;
     }
   }
@@ -590,7 +618,7 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
   
   const blocksExists = await checkTableExists(db, "block");
   if (!blocksExists) {
-    throw new Error("❌ CRITICAL: block table does not exist! This should never be dropped.");
+    throw new Error("CRITICAL: block table does not exist! This should never be dropped.");
   }
   
   const blockCount = await db("block").count("* as count").first();
@@ -649,7 +677,7 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
 
   } catch (error: unknown) {
     const err = error as Error;
-    console.error("\n❌ Reindexing failed:", err.message);
+    console.error("\nReindexing failed:", err.message);
     if (err.stack) {
       console.error(err.stack);
     }

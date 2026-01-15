@@ -56,14 +56,22 @@ export class BlockCheckpoint extends BaseModel {
       });
     }
 
-    if (lastHeightCheckpoint)
-      endHeight = configName
-        ? Math.min(
-          startHeight + (config as any)[configName].blocksPerCall,
-          lastHeightCheckpoint.height
-        )
-        : lastHeightCheckpoint.height;
+    if (lastHeightCheckpoint) {
+      const lastHeight = Number(lastHeightCheckpoint.height);
+      if (configName) {
+        const blocksPerCall = Number((config as any)[configName]?.blocksPerCall) || 0;
+        const calculatedEnd = startHeight + blocksPerCall;
+        endHeight = Number.isFinite(calculatedEnd) && Number.isFinite(lastHeight)
+          ? Math.min(calculatedEnd, lastHeight)
+          : (Number.isFinite(lastHeight) ? lastHeight : 0);
+      } else {
+        endHeight = Number.isFinite(lastHeight) ? lastHeight : 0;
+      }
+    }
 
-    return [startHeight, endHeight, updateBlockCheckpoint];
+    const validStartHeight = Number.isFinite(startHeight) && !Number.isNaN(startHeight) ? Number(startHeight) : 0;
+    const validEndHeight = Number.isFinite(endHeight) && !Number.isNaN(endHeight) ? Number(endHeight) : 0;
+
+    return [validStartHeight, validEndHeight, updateBlockCheckpoint];
   }
 }

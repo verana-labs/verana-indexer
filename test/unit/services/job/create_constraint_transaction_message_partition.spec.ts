@@ -49,47 +49,59 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
     await knex.raw(
       'TRUNCATE TABLE transaction_message RESTART IDENTITY CASCADE'
     );
-    const partitions =
-      await this.createConstaintTxMsgJob?.getTxMsgPartitionInfo();
-
-    // We have 2 partition by default after run migration
-    expect(partitions?.length).toEqual(2);
-    if (!partitions) throw Error('No partition found');
+    
+    // Drop any existing constraints on partitions
+    const partitions = await this.createConstaintTxMsgJob?.getTxMsgPartitionInfo();
+    if (partitions) {
+      for (const partition of partitions) {
+        try {
+          await knex.raw(`ALTER TABLE ${partition.name} DROP CONSTRAINT IF EXISTS txmsg_ct_${partition.name}_inserting`);
+        } catch {}
+        try {
+          await knex.raw(`ALTER TABLE ${partition.name} DROP CONSTRAINT IF EXISTS txmsg_ct_${partition.name}_done`);
+        } catch {}
+      }
+    }
+    
+    const partitions2 = await this.createConstaintTxMsgJob?.getTxMsgPartitionInfo();
+    expect(partitions2?.length).toEqual(2);
+    if (!partitions2) throw Error('No partition found');
 
     // Now partition is empty so result return will be empty and no constraint create
     const emptyStatus =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
-        partitions[0]
+        partitions2[0]
       );
     expect(emptyStatus).toEqual(
       this.createConstaintTxMsgJob?.createConstraintTxMsgStatus
         .currentPartitionEmpty
     );
 
-    // After insert one tx, now we expect constraint created
-    await this.insertFakeTxMsgWithInputId(Number(partitions[0].fromId) + 1);
+    // After insert one tx, partition is still inserting, so we expect constraint created with "inserting" status
+    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].fromId) + 1);
     const constraintUpdated =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
-        partitions[0]
+        partitions2[0]
       );
+    // When partition is inserting and no constraint exists, it should create constraint and return constraintUpdated
     expect(constraintUpdated).toEqual(
       this.createConstaintTxMsgJob?.createConstraintTxMsgStatus
         .constraintUpdated
     );
 
-    // Verify constraint created
-    const expectedInsertingConstraintName = `txmsg_ct_${partitions[0].name}_${this.createConstaintTxMsgJob?.insertionStatus.inserting}`;
+    // Verify constraint created with "inserting" status (since partition is still inserting)
+    const expectedInsertingConstraintName = `txmsg_ct_${partitions2[0].name}_${this.createConstaintTxMsgJob?.insertionStatus.inserting}`;
     const isInsertingConstraintExist = await this.isConstraintNameExist(
-      partitions[0].name,
+      partitions2[0].name,
       expectedInsertingConstraintName
     );
     expect(isInsertingConstraintExist).toEqual(true);
 
     // After insert next tx, because id now not reach to max id of partition, and we already have constraint created before, so now status will be still inserting or done
-    await this.insertFakeTxMsgWithInputId(Number(partitions[0].fromId) + 10);
+    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].fromId) + 10);
     const stillInsertingOrDont =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
-        partitions[0]
+        partitions2[0]
       );
     expect(stillInsertingOrDont).toEqual(
       this.createConstaintTxMsgJob?.createConstraintTxMsgStatus
@@ -97,24 +109,24 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
     );
 
     // After insert tx with id reach to max id of partition, now partition is ready for create full constraint, constraint now will be updated
-    await this.insertFakeTxMsgWithInputId(Number(partitions[0].toId) - 1);
+    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].toId) - 1);
     const constraintCreatedDone =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
-        partitions[0]
+        partitions2[0]
       );
     expect(constraintCreatedDone).toEqual(
       this.createConstaintTxMsgJob?.createConstraintTxMsgStatus
         .constraintUpdated
     );
 
-    // Verify constraint created
-    const expectedDoneConstraintName = `txmsg_ct_${partitions[0].name}_${this.createConstaintTxMsgJob?.insertionStatus.done}`;
+    // Verify constraint created with "done" status (since partition is now done)
+    const expectedDoneConstraintName = `txmsg_ct_${partitions2[0].name}_${this.createConstaintTxMsgJob?.insertionStatus.done}`;
     const isDoneConstraintExist = await this.isConstraintNameExist(
-      partitions[0].name,
+      partitions2[0].name,
       expectedDoneConstraintName
     );
     const isInsertingConstraintNotExist = await this.isConstraintNameExist(
-      partitions[0].name,
+      partitions2[0].name,
       expectedInsertingConstraintName
     );
     expect(isDoneConstraintExist).toEqual(true);
@@ -122,7 +134,7 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
 
     const checkAgainStatus =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
-        partitions[0]
+        partitions2[0]
       );
     expect(checkAgainStatus).toEqual(
       this.createConstaintTxMsgJob?.createConstraintTxMsgStatus
@@ -130,7 +142,7 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
     );
 
     await knex.raw(`
-      ALTER TABLE ${partitions[0].name} DROP CONSTRAINT ${expectedDoneConstraintName};
+      ALTER TABLE ${partitions2[0].name} DROP CONSTRAINT IF EXISTS ${expectedDoneConstraintName};
     `);
   }
 }

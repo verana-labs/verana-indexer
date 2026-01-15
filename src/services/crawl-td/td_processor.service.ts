@@ -7,6 +7,7 @@ import knex from '../../common/utils/db_connection';
 import { Block } from '../../models';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { formatTimestamp } from '../../common/utils/date_utils';
+import { detectStartMode } from '../../common/utils/start_mode_detector';
 
 interface TrustDepositAdjustPayload {
   account: string;
@@ -33,18 +34,8 @@ export default class CrawlTrustDepositService extends BullableService {
 
   public async started() {
     try {
-      try {
-        const blockCountResult = await knex('block').count('* as count').first();
-        const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
-        const checkpoint = await BlockCheckpoint.query().findOne({
-          job_name: (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT,
-        });
-        const currentBlock = checkpoint ? checkpoint.height : 0;
-        this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
-      } catch (error) {
-        this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
-        this._isFreshStart = false;
-      }
+      const startMode = await detectStartMode((BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT);
+      this._isFreshStart = startMode.isFreshStart;
 
       const checkpoint = await this.ensureCheckpoint();
       await this.processBlocks(checkpoint);
@@ -120,9 +111,19 @@ export default class CrawlTrustDepositService extends BullableService {
         .limit(maxBlockBatch);
       if (!nextBlocks.length) break;
 
+      const processDelay = this._isFreshStart ? 2000 : 500;
+      
       try {
         for (const block of nextBlocks) {
           await this.processBlockEvents(block);
+          
+          if (this._isFreshStart) {
+            await new Promise<void>(resolve => {
+              setTimeout(() => {
+                resolve();
+              }, processDelay);
+            });
+          }
         }
 
         const newHeight = nextBlocks[nextBlocks.length - 1].height;
@@ -131,7 +132,12 @@ export default class CrawlTrustDepositService extends BullableService {
 
         if (nextBlocks.length < maxBlockBatch) break;
       } catch (err) {
-        this.logger.error(`[CrawlTrustDepositService] ❌ Error processing blocks:`, err);
+        this.logger.error(`[CrawlTrustDepositService] Error processing blocks:`, err);
+        await new Promise<void>(resolve => {
+          setTimeout(() => {
+            resolve();
+          }, 5000);
+        });
         break;
       }
     }
@@ -154,16 +160,62 @@ export default class CrawlTrustDepositService extends BullableService {
     const slashEvents = filteredEvents.filter((e: any) => e.type === TrustDepositEventType.SLASH);
 
     if (adjustEvents.length) {
-      this.logger.info(`[CrawlTrustDepositService] 📈 Found ${adjustEvents.length} adjust events`);
-      for (const event of adjustEvents) {
-        await this.handleAdjustTrustDepositEvent(block.height, event);
+      this.logger.info(`[CrawlTrustDepositService] Found ${adjustEvents.length} adjust events`);
+      
+      const maxConcurrent = this._isFreshStart ? 2 : 3;
+      const batchSize = this._isFreshStart ? 3 : 5;
+      const delayBetweenBatches = this._isFreshStart ? 2000 : 1000;
+      
+      for (let i = 0; i < adjustEvents.length; i += batchSize) {
+        const batch = adjustEvents.slice(i, i + batchSize);
+        
+        const promises = batch.slice(0, maxConcurrent).map(async (event: any) => {
+          try {
+            await this.handleAdjustTrustDepositEvent(block.height, event);
+          } catch (err) {
+            this.logger.error(`[AdjustEvent] Error processing event:`, err);
+          }
+        });
+        
+        await Promise.all(promises);
+        
+        if (i + batchSize < adjustEvents.length) {
+          await new Promise<void>(resolve => {
+            setTimeout(() => {
+              resolve();
+            }, delayBetweenBatches);
+          });
+        }
       }
     }
 
     if (slashEvents.length) {
-      this.logger.info(`[CrawlTrustDepositService] ⚠️ Found ${slashEvents.length} slash events`);
-      for (const event of slashEvents) {
-        await this.handleSlashTrustDepositEvent(block.height, event);
+      this.logger.info(`[CrawlTrustDepositService] Found ${slashEvents.length} slash events`);
+      
+      const maxConcurrent = this._isFreshStart ? 1 : 2;
+      const batchSize = this._isFreshStart ? 2 : 3;
+      const delayBetweenBatches = this._isFreshStart ? 2000 : 1000;
+      
+      for (let i = 0; i < slashEvents.length; i += batchSize) {
+        const batch = slashEvents.slice(i, i + batchSize);
+        
+        const promises = batch.slice(0, maxConcurrent).map(async (event: any) => {
+          try {
+            await this.handleSlashTrustDepositEvent(block.height, event);
+          } catch (err) {
+            this.logger.error(`[SlashEvent] Error processing event:`, err);
+          }
+        });
+        
+        await Promise.all(promises);
+        
+        if (i + batchSize < slashEvents.length) {
+          await new Promise<void>(resolve => {
+            setTimeout(() => {
+              resolve();
+            }, delayBetweenBatches);
+          });
+        }
       }
     }
   }
@@ -175,7 +227,7 @@ export default class CrawlTrustDepositService extends BullableService {
 
       const account = attrs.account;
       if (!account) {
-        this.logger.warn(`[AdjustEvent] ⚠️ Missing account attribute at height ${height}`);
+        this.logger.warn(`[AdjustEvent] Missing account attribute at height ${height}`);
         return;
       }
 
@@ -193,12 +245,12 @@ export default class CrawlTrustDepositService extends BullableService {
       );
 
       if (result) {
-        this.logger.info(`[AdjustEvent] ✅ Processed adjust event for account ${account} at height ${height}`);
+        this.logger.info(`[AdjustEvent] Processed adjust event for account ${account} at height ${height}`);
       } else {
-        this.logger.warn(`[AdjustEvent] ⚠️ Failed processing for account ${account}: ${result || 'Unknown error'}`);
+        this.logger.warn(`[AdjustEvent] Failed processing for account ${account}: ${result || 'Unknown error'}`);
       }
     } catch (err) {
-      this.logger.error('[AdjustEvent] ❌ Error processing adjust event:', err);
+      this.logger.error('[AdjustEvent] Error processing adjust event:', err);
     }
   }
 
@@ -212,7 +264,7 @@ export default class CrawlTrustDepositService extends BullableService {
       const slashCount = attrs.slash_count ? parseInt(attrs.slash_count) : 0;
       const slashed = BigInt(attrs.amount || '0');
 
-      this.logger.warn(`[SlashEvent] ⚔️ Account ${account} was slashed ${slashed} at height ${height}`);
+      this.logger.warn(`[SlashEvent] Account ${account} was slashed ${slashed} at height ${height}`);
 
       const result = await this.broker.call(
         `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_trust_deposit`,

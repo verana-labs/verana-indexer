@@ -37,6 +37,7 @@ import knex from '../../common/utils/db_connection';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import Utils from '../../common/utils/utils';
 import { extractController } from '../../common/utils/extract_controller';
+import { detectStartMode } from '../../common/utils/start_mode_detector';
 import {
   Block,
   BlockCheckpoint,
@@ -979,11 +980,29 @@ export default class CrawlTxService extends BullableService {
       );
       const jobInDelayed = await queue.getDelayed();
       if (jobInDelayed?.length > 0) {
-        await jobInDelayed[0].promote();
+        const job = jobInDelayed[0];
+        try {
+          const jobState = await job.getState();
+          if (jobState === 'delayed') {
+            await job.promote();
+            this.logger.debug(`Promoted delayed job ${job.id}`);
+          } else {
+            this.logger.debug(`Job ${job.id} is not in delayed state (current: ${jobState}), skipping promotion`);
+          }
+        } catch (promoteError: any) {
+          if (promoteError?.message?.includes('not in the delayed state') || promoteError?.message?.includes('is not in the delayed state')) {
+            this.logger.debug(`Job ${job.id} cannot be promoted (not in delayed state), this is normal if job was already processed`);
+          } else {
+            this.logger.warn(`Failed to promote job ${job.id}:`, promoteError);
+          }
+        }
       }
-    } catch (error) {
-      this.logger.error('No job can be promoted');
-      this.logger.error(error);
+    } catch (error: any) {
+      if (error?.message?.includes('not in the delayed state') || error?.message?.includes('is not in the delayed state')) {
+        this.logger.debug('Job promotion skipped (job not in delayed state), this is normal');
+      } else {
+        this.logger.warn('Error checking/promoting delayed jobs:', error);
+      }
     }
   }
 
@@ -993,19 +1012,9 @@ export default class CrawlTxService extends BullableService {
       const providerRegistry = await getProviderRegistry();
       this._registry = new ChainRegistry(this.logger, providerRegistry);
 
-      try {
-        const blockCountResult = await knex('block').count('* as count').first();
-        const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
-        const checkpoint = await BlockCheckpoint.query().findOne({
-          job_name: BULL_JOB_NAME.CRAWL_TRANSACTION,
-        });
-        const currentBlock = checkpoint ? checkpoint.height : 0;
-        this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
-        this.logger.info(` Start mode detection: totalBlocks=${totalBlocks}, currentBlock=${currentBlock}, isFreshStart=${this._isFreshStart}`);
-      } catch (error) {
-        this.logger.warn(` Could not determine start mode: ${error}. Defaulting to reindexing mode.`);
-        this._isFreshStart = false;
-      }
+      const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_TRANSACTION);
+      this._isFreshStart = startMode.isFreshStart;
+      this.logger.info(`Start mode detection: totalBlocks=${startMode.totalBlocks}, currentBlock=${startMode.currentBlock}, isFreshStart=${this._isFreshStart}`);
 
       try {
         const lcdClient = await getLcdClient();

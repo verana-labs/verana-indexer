@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { dirname, join, resolve } from 'path';
+import { join, resolve } from 'path';
 import { execSync } from 'child_process';
 
 let cachedVersion: string | null = null;

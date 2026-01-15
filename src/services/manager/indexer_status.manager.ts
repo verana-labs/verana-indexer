@@ -61,12 +61,15 @@ class IndexerStatusManager {
 
   private notifyStatusChange(): void {
     if (this.statusChangeCallback) {
-      this.statusChangeCallback({
+      Promise.resolve(this.statusChangeCallback({
         indexerStatus: this.status.isRunning ? "running" : "stopped",
         crawlingStatus: this.status.isCrawling ? "active" : "stopped",
         stoppedAt: this.status.stoppedAt,
         stoppedReason: this.status.stoppedReason,
         lastError: this.status.lastError,
+      })).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("Error in status change callback:", err);
       });
     }
   }

@@ -26,6 +26,7 @@ import {
 } from '../../common';
 import { BlockCheckpoint, Proposal, EventAttribute } from '../../models';
 import Utils from '../../common/utils/utils';
+import { detectStartMode } from '../../common/utils/start_mode_detector';
 
 @Service({
   name: SERVICE.V1.CrawlProposalService.key,
@@ -35,10 +36,62 @@ export default class CrawlProposalService extends BullableService {
   private _lcdClient!: IProviderJSClientFactory;
 
   private _httpBatchClient: HttpBatchClient;
+  private _isFreshStart: boolean = false;
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
     this._httpBatchClient = getHttpBatchClient();
+  }
+
+  public async _start() {
+    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_PROPOSAL);
+    this._isFreshStart = startMode.isFreshStart;
+    this.logger.info(`CrawlProposal service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    
+    await this.createJob(
+      BULL_JOB_NAME.CRAWL_PROPOSAL,
+      BULL_JOB_NAME.CRAWL_PROPOSAL,
+      {},
+      {
+        removeOnComplete: true,
+        removeOnFail: {
+          count: 3,
+        },
+        repeat: {
+          every: config.crawlProposal.millisecondRepeatJob || config.crawlProposal.crawlProposal.millisecondCrawl,
+        },
+      }
+    );
+    await this.createJob(
+      BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
+      BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
+      {},
+      {
+        removeOnComplete: true,
+        removeOnFail: {
+          count: 3,
+        },
+        repeat: {
+          every: config.crawlProposal.handleEndedProposal.millisecondCrawl,
+        },
+      }
+    );
+    await this.createJob(
+      BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
+      BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
+      {},
+      {
+        removeOnComplete: true,
+        removeOnFail: {
+          count: 3,
+        },
+        repeat: {
+          every: config.crawlProposal.handleNotEnoughDepositProposal.millisecondCrawl,
+        },
+      }
+    );
+    
+    return super._start();
   }
 
   @QueueHandler({
@@ -62,12 +115,21 @@ export default class CrawlProposalService extends BullableService {
         config.crawlProposal.key
       );
     this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`);
-    if (startHeight >= endHeight) return;
+    
+    const validStartHeight = Number.isFinite(startHeight) && !Number.isNaN(startHeight) ? Number(startHeight) : 0;
+    const validEndHeight = Number.isFinite(endHeight) && !Number.isNaN(endHeight) ? Number(endHeight) : 0;
+    
+    if (!Number.isFinite(validStartHeight) || !Number.isFinite(validEndHeight) || Number.isNaN(validStartHeight) || Number.isNaN(validEndHeight)) {
+      this.logger.warn(`Invalid checkpoint heights: startHeight=${startHeight}, endHeight=${endHeight}. Skipping proposal crawl.`);
+      return;
+    }
+    
+    if (validStartHeight >= validEndHeight) return;
 
     let proposalIds: number[] = [];
     const resultTx = await EventAttribute.query()
-      .where('block_height', '>', startHeight)
-      .andWhere('block_height', '<=', endHeight)
+      .where('block_height', '>', validStartHeight)
+      .andWhere('block_height', '<=', validEndHeight)
       .andWhere('key', EventAttribute.ATTRIBUTE_KEY.PROPOSAL_ID)
       .select('value');
 
@@ -87,11 +149,16 @@ export default class CrawlProposalService extends BullableService {
             await this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
           const cosmosSdkVersion =
             nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99';
-          const chunkSize = config.crawlProposal.chunkSize || 5000;
+          const chunkSize = this._isFreshStart 
+            ? (config.crawlProposal.freshStart?.chunkSize || 100)
+            : (config.crawlProposal.chunkSize || 5000);
+          const maxConcurrent = this._isFreshStart ? 3 : 10;
+          
           for (let i = 0; i < proposalIds.length; i += chunkSize) {
             const chunk = proposalIds.slice(i, i + chunkSize);
+            const concurrentChunk = chunk.slice(0, maxConcurrent);
             await Promise.all(
-              chunk.map(async (proposalId: number) => {
+              concurrentChunk.map(async (proposalId: number) => {
               try {
                 let proposal;
                 if (Utils.compareVersion(cosmosSdkVersion, 'v0.45.99') === -1) {
@@ -183,7 +250,7 @@ export default class CrawlProposalService extends BullableService {
               });
         }
 
-        updateBlockCheckpoint.height = endHeight;
+        updateBlockCheckpoint.height = validEndHeight;
         await BlockCheckpoint.query()
           .insert(updateBlockCheckpoint)
           .onConflict('job_name')
@@ -349,52 +416,4 @@ export default class CrawlProposalService extends BullableService {
       });
   }
 
-  public async _start() {
-    this.createJob(
-      BULL_JOB_NAME.CRAWL_PROPOSAL,
-      BULL_JOB_NAME.CRAWL_PROPOSAL,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: config.crawlProposal.crawlProposal.millisecondCrawl,
-        },
-      }
-    );
-    this.createJob(
-      BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
-      BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: config.crawlProposal.handleEndedProposal.millisecondCrawl,
-        },
-      }
-    );
-    this.createJob(
-      BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
-      BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every:
-            config.crawlProposal.handleNotEnoughDepositProposal
-              .millisecondCrawl,
-        },
-      }
-    );
-
-    return super._start();
-  }
 }

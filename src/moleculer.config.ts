@@ -288,7 +288,7 @@ const brokerConfig: BrokerOptions = {
     broker.logger?.info(' Broker started successfully. Services will retry LCD connections if needed.');
   },
   
-  stopped: async (broker: ServiceBroker): Promise<void> => {
+  stopped: async (_broker: ServiceBroker): Promise<void> => {
   },
 };
 

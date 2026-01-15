@@ -4,10 +4,18 @@ import DidDatabaseService from "../../../../src/services/crawl-dids/dids_databas
 import knex from "../../../../src/common/utils/db_connection";
 import ModuleParams from "../../../../src/models/modules_params";
 import ApiResponder from "../../../../src/common/utils/apiResponse";
+import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES } from "../../../../src/common";
 
 jest.mock("../../../../src/common/utils/db_connection");
 jest.mock("../../../../src/models/modules_params");
 jest.mock("../../../../src/common/utils/apiResponse");
+jest.mock("../../../../src/common/utils/params_service", () => {
+  const actual = jest.requireActual("../../../../src/common/utils/params_service");
+  return {
+    ...actual,
+    getModuleParamsAction: jest.fn()
+  };
+});
 
 describe("DidDatabaseService", () => {
     let broker: ServiceBroker;
@@ -130,23 +138,31 @@ describe("DidDatabaseService", () => {
 
     describe("getDidParams", () => {
         it("should return parsed module params", async () => {
-            (ModuleParams.query as any).mockReturnValue({
-                findOne: jest.fn().mockResolvedValue({ params: JSON.stringify({ params: { key: "value" } }) }),
-            });
+            const paramsService = await import("../../../../src/common/utils/params_service");
+            const mockGetModuleParamsAction = jest.fn().mockResolvedValue({ params: { key: "value" } });
+            jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction);
 
-            const ctx: any = {};
-            await service.getDidParams(ctx);
-            ApiResponder.success(ctx, { params: { key: "value" } }, 200);
+            const ctx: any = { meta: {} };
+            const result = await service.getDidParams(ctx);
+            expect(result).toEqual({ params: { key: "value" } });
+            expect(mockGetModuleParamsAction).toHaveBeenCalledWith(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
         });
 
         it("should return 404 if module params not found", async () => {
-            (ModuleParams.query as any).mockReturnValue({
-                findOne: jest.fn().mockResolvedValue(null),
+            const paramsService = await import("../../../../src/common/utils/params_service");
+            const mockGetModuleParamsAction = jest.fn().mockResolvedValue({
+                status: 404,
+                error: "Module parameters not found: diddirectory"
             });
+            jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction);
 
-            const ctx: any = {};
-            await service.getDidParams(ctx);
-            expect(ApiResponder.error).toHaveBeenCalledWith(ctx, "Module parameters not found: diddirectory", 404);
+            const ctx: any = { meta: {} };
+            const result = await service.getDidParams(ctx);
+            expect(result).toEqual({
+                status: 404,
+                error: "Module parameters not found: diddirectory"
+            });
+            expect(mockGetModuleParamsAction).toHaveBeenCalledWith(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
         });
     });
 });

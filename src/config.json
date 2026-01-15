@@ -140,8 +140,15 @@
   },
   "crawlProposal": {
     "key": "crawlProposal",
-    "blocksPerCall": 100,
+    "blocksPerCall": 1000,
     "chunkSize": 5000,
+    "millisecondRepeatJob": 5000,
+    "freshStart": {
+      "chunkSize": 100
+    },
+    "reindexing": {
+      "chunkSize": 5000
+    },
     "crawlProposal": {
       "millisecondCrawl": 5000
     },
@@ -384,9 +391,11 @@
   "crawlIbcIcs20": {
     "key": "crawlIbcIcs20",
     "millisecondRepeatJob": 2000,
-    "blocksPerCall": 100,
     "chunkSize": 5000,
-    "port": "transfer"
+    "port": "transfer",
+    "freshStart": {
+      "chunkSize": 100
+    }
   },
   "ibcStatistic": {
     "timeRefreshIbcRelayerStats": "2 * * * *"

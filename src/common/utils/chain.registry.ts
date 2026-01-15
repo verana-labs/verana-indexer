@@ -106,8 +106,9 @@ export default class ChainRegistry {
           } as { typeUrl: string; value: Uint8Array })
         ) as Record<string, unknown>;
         Object.keys(decoded).forEach((key) => {
-          if (decoded[key] && typeof decoded[key] === 'object' && 'typeUrl' in decoded[key]) {
-            const resultRecursive = this.decodeMsg(decoded[key]);
+          const value = decoded[key];
+          if (value && typeof value === 'object' && value !== null && 'typeUrl' in value) {
+            const resultRecursive = this.decodeMsg(value as MessageWithTypeUrl);
             result[key] = resultRecursive;
           } else {
             result[key] = decoded[key];

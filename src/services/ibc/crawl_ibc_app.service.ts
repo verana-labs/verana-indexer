@@ -7,6 +7,7 @@ import config from '../../config.json' with { type: 'json' };
 import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import { getAttributeFrom } from '../../common/utils/smart_contract';
+import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 import {
   BlockCheckpoint,
   Event,
@@ -28,25 +29,31 @@ export default class CrawlIbcAppService extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_IBC_APP,
   })
   public async crawlIbcApp(): Promise<void> {
-    const [startHeight, endHeight, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.CRAWL_IBC_APP,
-        [BULL_JOB_NAME.CRAWL_IBC_TAO],
-        config.crawlIbcApp.key
+    try {
+      if (!(await tableExists("event")) || !(await tableExists("transaction_message")) || !(await tableExists("transaction"))) {
+        this.logger.warn("Required tables do not exist yet, waiting for migrations...");
+        return;
+      }
+
+      const [startHeight, endHeight, updateBlockCheckpoint] =
+        await BlockCheckpoint.getCheckpoint(
+          BULL_JOB_NAME.CRAWL_IBC_APP,
+          [BULL_JOB_NAME.CRAWL_IBC_TAO],
+          config.crawlIbcApp.key
+        );
+      this.logger.info(
+        `Handle IBC/APP, startHeight: ${startHeight}, endHeight: ${endHeight}`
       );
-    this.logger.info(
-      `Handle IBC/APP, startHeight: ${startHeight}, endHeight: ${endHeight}`
-    );
-    if (startHeight > endHeight) return;
-    const events = await Event.query()
-      .withGraphFetched('attributes')
-      .joinRelated('message.transaction')
-      .select(
-        'event.id',
-        'event.type',
-        'message.id as message_id',
-        'message:transaction.hash as tx_hash'
-      )
+      if (startHeight > endHeight) return;
+      const events = await Event.query()
+        .withGraphFetched('attributes')
+        .joinRelated('message.transaction')
+        .select(
+          'event.id',
+          'event.type',
+          'message.id as message_id',
+          'message:transaction.hash as tx_hash'
+        )
       .whereIn('event.type', [
         IbcMessage.EVENT_TYPE.ACKNOWLEDGE_PACKET,
         IbcMessage.EVENT_TYPE.RECV_PACKET,
@@ -65,6 +72,13 @@ export default class CrawlIbcAppService extends BullableService {
         .onConflict('job_name')
         .merge();
     });
+    } catch (error: any) {
+      if (isTableMissingError(error)) {
+        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
+        return;
+      }
+      throw error;
+    }
   }
 
   async handleIbcMessage(events: Event[], trx: Knex.Transaction) {

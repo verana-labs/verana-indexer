@@ -40,6 +40,7 @@ import {
   Validator,
 } from '../../models';
 import { ALLOWANCE_TYPE, FEEGRANT_STATUS } from '../feegrant/feegrant.service';
+import { isTableMissingError } from '../../common/utils/db_health';
 
 @Service({
   name: SERVICE.V1.CrawlGenesisService.key,
@@ -967,42 +968,58 @@ export default class CrawlGenesisService extends BullableService {
   }
 
   private async terminateProcess() {
-    const checkpoint = await BlockCheckpoint.query().whereIn(
-      'job_name',
-      this.genesisJobs
-    );
+    try {
+      const checkpoint = await BlockCheckpoint.query().whereIn(
+        'job_name',
+        this.genesisJobs
+      );
 
-    if (
-      checkpoint.length < this.genesisJobs.length ||
-      checkpoint.find((check) => check.height !== 1)
-    ) {
-      this.logger.info('Crawl genesis jobs are still processing');
-      return;
+      if (
+        checkpoint.length < this.genesisJobs.length ||
+        checkpoint.find((check) => check.height !== 1)
+      ) {
+        this.logger.info('Crawl genesis jobs are still processing');
+        return;
+      }
+      this.logger.info('✅ All genesis jobs finished successfully');
+    } catch (error: any) {
+      if (isTableMissingError(error)) {
+        this.logger.warn("block_checkpoint table does not exist yet, skipping termination check");
+        return;
+      }
+      throw error;
     }
-    this.logger.info('✅ All genesis jobs finished successfully');
   }
   public async _start() {
-    const genesisBlkCheck: BlockCheckpoint | undefined =
-      await BlockCheckpoint.query()
-        .select('*')
-        .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS);
+    try {
+      const genesisBlkCheck: BlockCheckpoint | undefined =
+        await BlockCheckpoint.query()
+          .select('*')
+          .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS);
 
-    if (!genesisBlkCheck || genesisBlkCheck.height === 0) {
-      this.logger.info("Scheduling initial Crawl Genesis job...");
-      await this.createJob(
-        BULL_JOB_NAME.CRAWL_GENESIS,
-        BULL_JOB_NAME.CRAWL_GENESIS,
-        {},
-        {
-          removeOnComplete: true,
-          removeOnFail: { count: 3 },
-          attempts: config.jobRetryAttempt,
-          backoff: config.jobRetryBackoff,
-        }
-      );
-      this.handleGenesis({});
-    } else {
-      this.logger.info("Genesis job already processed, skipping scheduling");
+      if (!genesisBlkCheck || genesisBlkCheck.height === 0) {
+        this.logger.info("Scheduling initial Crawl Genesis job...");
+        await this.createJob(
+          BULL_JOB_NAME.CRAWL_GENESIS,
+          BULL_JOB_NAME.CRAWL_GENESIS,
+          {},
+          {
+            removeOnComplete: true,
+            removeOnFail: { count: 3 },
+            attempts: config.jobRetryAttempt,
+            backoff: config.jobRetryBackoff,
+          }
+        );
+        this.handleGenesis({});
+      } else {
+        this.logger.info("Genesis job already processed, skipping scheduling");
+      }
+    } catch (error: any) {
+      if (isTableMissingError(error)) {
+        this.logger.warn("block_checkpoint table does not exist yet, waiting for migrations...");
+        return super._start();
+      }
+      throw error;
     }
 
     return super._start();

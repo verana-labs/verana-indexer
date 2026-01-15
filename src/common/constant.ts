@@ -133,6 +133,14 @@ export enum ModulesParamsNamesTypes {
   TRANSFER = "transfer",
 }
 
+export const MODULE_DISPLAY_NAMES = {
+  DID_DIRECTORY: "diddirectory",
+  TRUST_REGISTRY: "trustregistry",
+  CREDENTIAL_SCHEMA: "credentialschema",
+  TRUST_DEPOSIT: "trustdeposit",
+  PERMISSION: "permission",
+} as const;
+
 export enum TrustDepositEventType {
   ADJUST = "adjust_trust_deposit",
   SLASH = "slash_trust_deposit",

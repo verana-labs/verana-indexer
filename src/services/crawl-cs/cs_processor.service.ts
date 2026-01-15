@@ -12,6 +12,8 @@ import { VeranaCredentialSchemaMessageTypes } from "../../common/verana-message-
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import { getModeString } from "./cs_types";
+import { MessageProcessorBase } from "../../common/utils/message_processor_base";
+import { detectStartMode } from "../../common/utils/start_mode_detector";
 
 function extractOptionalUInt32(value: unknown): number {
   if (value === undefined || value === null) {
@@ -97,8 +99,20 @@ async function calculateDeposit(): Promise<number> {
   version: 1,
 })
 export default class ProcessCredentialSchemaService extends BullableService {
+  private processorBase: MessageProcessorBase;
+  private _isFreshStart: boolean = false;
+
   constructor(broker: ServiceBroker) {
     super(broker);
+    this.processorBase = new MessageProcessorBase(this);
+  }
+
+  public async _start() {
+    const startMode = await detectStartMode();
+    this._isFreshStart = startMode.isFreshStart;
+    this.processorBase.setFreshStartMode(this._isFreshStart);
+    this.logger.info(`CredentialSchema processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    return super._start();
   }
 
   @Action({ name: "handleCredentialSchemas" })
@@ -113,26 +127,28 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
     const deposit = await calculateDeposit();
 
-    for (const schemaMessage of credentialSchemaMessages) {
-      try {
-        if (
-          schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
-          schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
-        ) {
-          await this.createSchema(ctx, schemaMessage, deposit);
-        }
-        if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema) {
-          await this.updateSchema(ctx, schemaMessage, deposit);
-        }
-        if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema) {
-          await this.archiveSchema(ctx, schemaMessage);
-        }
-      } catch (err) {
-        this.logger.error(`❌ Error processing CS message:`, err);
-        console.error("FATAL CS ERROR:", err);
-        
+    const processMessage = async (schemaMessage: CredentialSchemaMessage) => {
+      if (
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
+      ) {
+        await this.createSchema(ctx, schemaMessage, deposit);
+      } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema) {
+        await this.updateSchema(ctx, schemaMessage, deposit);
+      } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema) {
+        await this.archiveSchema(ctx, schemaMessage);
       }
-    }
+    };
+
+    await this.processorBase.processInBatches(
+      credentialSchemaMessages,
+      processMessage,
+      {
+        maxConcurrent: this._isFreshStart ? 3 : 8,
+        batchSize: this._isFreshStart ? 20 : 50,
+        delayBetweenBatches: this._isFreshStart ? 500 : 200,
+      }
+    );
 
     return { success: true };
   }
