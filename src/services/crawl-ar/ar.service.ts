@@ -158,7 +158,7 @@ export default class CrawlNewAccountsService extends BullableService {
                 } catch (queryError: any) {
                     if (queryError?.code === '57014' || queryError?.message?.includes('statement timeout') || queryError?.message?.includes('canceling statement')) {
                         this.logger.warn(`[CrawlNewAccountsService] Query timeout at height ${lastHeight}, waiting before retry...`);
-                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        await new Promise<void>(resolve => { setTimeout(() => resolve(), 5000); });
                         continue;
                     }
                     throw queryError;
@@ -225,12 +225,12 @@ export default class CrawlNewAccountsService extends BullableService {
 
                     const processDelay = this._isFreshStart ? 1000 : 200;
                     if (processDelay > 0) {
-                        await new Promise(resolve => setTimeout(resolve, processDelay));
+                        await new Promise<void>(resolve => { setTimeout(() => resolve(), processDelay); });
                     }
                 } catch (err: any) {
                     if (err?.code === '57014' || err?.message?.includes('statement timeout') || err?.message?.includes('canceling statement')) {
                         this.logger.warn(`[CrawlNewAccountsService] Statement timeout in batch processing at height ${lastHeight + 1}, waiting before retry...`);
-                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        await new Promise<void>(resolve => { setTimeout(() => resolve(), 5000); });
                         continue;
                     }
                     this.logger.error(`[CrawlNewAccountsService] Error processing batch starting at height ${lastHeight + 1}:`, err);
