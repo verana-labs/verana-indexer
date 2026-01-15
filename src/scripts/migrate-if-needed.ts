@@ -62,6 +62,12 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
   process.env.NODE_ENV = environment;
   process.env.MIGRATION_MODE = "lightweight";
 
+  const isTestMode = environment === "test";
+  
+  if (isTestMode) {
+    console.log("Test mode detected - running migrations only (no destructive operations).");
+  }
+
   let db: Knex | undefined;
 
   try {
@@ -77,16 +83,53 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
     db = knex(config);
 
     const blockExists = await db.schema.hasTable("block");
+    let migrationsTableExists = await db.schema.hasTable("knex_migrations");
     
     try {
-      const [pending] = await db.migrate.list();
+      let pending: any[] = [];
+      let completed: any[] = [];
       
-      if (!pending || pending.length === 0) {
-        console.log(`Database is up to date (env: ${environment}). No migrations required.`);
+      if (migrationsTableExists) {
+        try {
+          [completed, pending] = await db.migrate.list();
+        } catch (listError: any) {
+          const errorMsg = listError?.message || String(listError);
+          if (errorMsg.includes("does not exist") || errorMsg.includes("relation") || errorMsg.includes("knex_migrations")) {
+            console.log("Migration table exists but list() failed - treating as empty and will run migrations.");
+            migrationsTableExists = false;
+          } else {
+            throw listError;
+          }
+        }
       } else {
-        console.log(`Found ${pending.length} pending migration(s) (env: ${environment})...`);
+        console.log("Migration table does not exist - will run all migrations from scratch.");
+      }
+      
+      const shouldRunMigrations = !blockExists || !migrationsTableExists || (pending && pending.length > 0);
+      
+      if (!shouldRunMigrations) {
+        console.log(`Database is up to date (env: ${environment}). No migrations required.`);
+        console.log(`  Completed migrations: ${completed?.length || 0}`);
+        console.log(`  Pending migrations: ${pending?.length || 0}`);
+        if (isTestMode) {
+          console.log(`  Test mode: Database ready for tests.`);
+        }
+      } else {
+        if (pending && pending.length > 0) {
+          console.log(`Found ${pending.length} pending migration(s) (env: ${environment})...`);
+        } else if (!migrationsTableExists) {
+          console.log(`Migration table missing - running all migrations from scratch (env: ${environment})...`);
+          if (isTestMode) {
+            console.log(`  Test mode: This is expected after database cleanup in CI.`);
+          }
+        } else if (!blockExists) {
+          console.log(`Database tables missing - running all migrations from scratch (env: ${environment})...`);
+          if (isTestMode) {
+            console.log(`  Test mode: This is expected after database cleanup in CI.`);
+          }
+        }
         
-        if (blockExists) {
+        if (blockExists && pending && pending.length > 0) {
           const initMigration = pending.find((m: any) => m && m.name && m.name.includes("init_horoscope_layer_1_model"));
           if (initMigration) {
             console.log(`    Init migration detected but block table exists, will skip it`);

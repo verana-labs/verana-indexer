@@ -631,6 +631,13 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
   process.env.NODE_ENV = environment;
   process.env.MIGRATION_MODE = "lightweight";
 
+  if (environment === "test") {
+    console.error("ERROR: Reindex script cannot run in test mode.");
+    console.error("Reindexing is only for development and production environments.");
+    console.error("Test environment should only run migrations, not reindex operations.");
+    process.exit(1);
+  }
+
   let db: Knex | undefined;
 
   try {

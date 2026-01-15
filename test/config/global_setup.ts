@@ -7,19 +7,20 @@ export default async function setUp(
   _projectConfig: Config.ProjectConfig
 ) {
   try {
-    console.log('Running database migrations for tests...');
+    console.log('Verifying test database setup...');
     
-    const [pending] = await knex.migrate.list();
+    const hasBlockTable = await knex.schema.hasTable('block');
+    const hasMigrationsTable = await knex.schema.hasTable('knex_migrations');
     
-    if (pending && pending.length > 0) {
-      console.log(`Found ${pending.length} pending migration(s), running migrations...`);
-      await knex.migrate.latest();
-      console.log('Migrations completed successfully.');
+    if (!hasBlockTable || !hasMigrationsTable) {
+      console.warn('⚠️  Database tables are missing. Migrations should have been run by the workflow step.');
+      console.warn('⚠️  If you see this in CI, check that "Run migrations" step completed successfully.');
+      console.warn('⚠️  Tests may fail if required tables are missing.');
     } else {
-      console.log('No pending migrations, database is up to date.');
+      console.log('✅ Database tables verified. Test database is ready.');
     }
   } catch (error: any) {
-    console.error('Error running migrations in test setup:', error?.message || error);
-    throw error;
+    console.error('Error verifying database setup:', error?.message || error);
+    console.warn('⚠️  Continuing with tests - migrations should have been run by workflow step.');
   }
 }
