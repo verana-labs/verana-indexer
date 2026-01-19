@@ -34,23 +34,34 @@ if (process.env.NODE_ENV !== 'test') {
 
       if ((usedCount >= warningThreshold || pendingCount > 10) &&
           (now - lastWarningTime > WARNING_INTERVAL)) {
-        console.warn(
-          `⚠️ [DB Pool] High usage - Used: ${usedCount}/${poolMax}, ` +
-          `Free: ${freeCount}, Pending: ${pendingCount}. ` +
-          `Consider increasing POSTGRES_POOL_MAX (current: ${poolMax})`
-        );
+        const logger = (global as any).logger;
+        const message = `[DB Pool] High usage - Used: ${usedCount}/${poolMax}, Free: ${freeCount}, Pending: ${pendingCount}. Consider increasing POSTGRES_POOL_MAX (current: ${poolMax})`;
+        if (logger?.warn) {
+          logger.warn(message);
+        } else {
+          console.warn(message);
+        }
         lastWarningTime = now;
       }
 
       if (pendingCount > 100) {
-        console.error(
-          `🚨 [DB Pool] CRITICAL: ${pendingCount} pending connections! ` +
-          `Used: ${usedCount}/${poolMax}. Immediate action required.`
-        );
+        const logger = (global as any).logger;
+        const message = `[DB Pool] CRITICAL: ${pendingCount} pending connections! Used: ${usedCount}/${poolMax}. Immediate action required.`;
+        if (logger?.error) {
+          logger.error(message);
+        } else {
+          console.error(message);
+        }
       }
 
       if (pendingCount > 200) {
-        console.warn('[DB Pool] Excessive pending connections detected. Attempting cleanup...');
+        const logger = (global as any).logger;
+        const message = '[DB Pool] Excessive pending connections detected. Attempting cleanup...';
+        if (logger?.warn) {
+          logger.warn(message);
+        } else {
+          console.warn(message);
+        }
         
         if (pool.free && pool.free.length > 0) {
           const staleConnections = pool.free.filter((conn: any) => {
@@ -71,11 +82,22 @@ if (process.env.NODE_ENV !== 'test') {
         }
         
         if (pendingCount > 300 && pool.destroyAllNow) {
-          console.error('[DB Pool] Forcing emergency pool cleanup');
+          const logger = (global as any).logger;
+          const message = '[DB Pool] Forcing emergency pool cleanup';
+          if (logger?.error) {
+            logger.error(message);
+          } else {
+            console.error(message);
+          }
           try {
             pool.destroyAllNow();
           } catch (err) {
-            console.error('[DB Pool] Error during emergency cleanup:', err);
+            const errorMsg = '[DB Pool] Error during emergency cleanup:';
+            if (logger?.error) {
+              logger.error(errorMsg, err);
+            } else {
+              console.error(errorMsg, err);
+            }
           }
         }
       }

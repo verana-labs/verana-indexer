@@ -286,6 +286,18 @@ const brokerConfig: BrokerOptions = {
   
   started: async (broker: ServiceBroker): Promise<void> => {
     broker.logger?.info(' Broker started successfully. Services will retry LCD connections if needed.');
+    
+    process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+      broker.logger?.error('Unhandled Promise Rejection:', reason);
+      broker.logger?.error('Promise:', promise);
+      console.error('Unhandled Promise Rejection:', reason);
+    });
+    
+    process.on('uncaughtException', (error: Error) => {
+      broker.logger?.error('Uncaught Exception:', error);
+      console.error('Uncaught Exception:', error);
+      process.exit(1);
+    });
   },
   
   stopped: async (_broker: ServiceBroker): Promise<void> => {

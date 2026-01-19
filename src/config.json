@@ -125,7 +125,10 @@
   "crawlSigningInfo": {
     "millisecondCrawl": null,
     "patternCrawl": "0 */1 * * * *",
-    "chunkSize": 5000
+    "chunkSize": 5000,
+    "rpcRetryAttempts": 3,
+    "rpcRetryDelay": 2000,
+    "rpcTimeout": 30000
   },
   "handleAddress": {
     "key": "handleAddress",
@@ -161,7 +164,10 @@
   },
   "crawlTallyProposal": {
     "millisecondCrawl": 10000,
-    "chunkSize": 5000
+    "chunkSize": 5000,
+    "rpcRetryAttempts": 3,
+    "rpcRetryDelay": 2000,
+    "rpcTimeout": 30000
   },
   "countVoteProposal": {
     "millisecondCrawl": 5000,

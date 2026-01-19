@@ -15,6 +15,10 @@ export default class IndexerStatusService extends BaseService {
     super(broker);
   }
 
+  async started() {
+    indexerStatusManager.setLogger(this.logger);
+  }
+
   @Action()
   public async getStatus(ctx: Context): Promise<any> {
     const status = indexerStatusManager.getStatus();

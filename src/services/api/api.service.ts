@@ -60,14 +60,6 @@ async function parseAtBlockHeight(
   req: IncomingMessage,
   required: boolean = false
 ) {
-  const status = indexerStatusManager.getStatus();
-  if (!status.isRunning) {
-    throw new Errors.MoleculerError(
-      `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
-      503,
-      "INDEXER_STOPPED"
-    );
-  }
   ctx.meta = ctx.meta || {};
   const headerValue = getHeaderValue(req);
 
@@ -100,16 +92,12 @@ async function parseAtBlockHeight(
   if (!checkpoint) {
     checkpoint = await fetchBlockCheckpoint();
     if (!checkpoint) {
-      throw new Errors.MoleculerError(
-        "Indexer checkpoint unavailable",
-        503,
-        "AT_BLOCK_HEIGHT_UNAVAILABLE"
-      );
+     checkpoint = { height: 0 } as any;
     }
     ctx.meta.latestCheckpoint = checkpoint;
   }
 
-  if (parsedHeight > checkpoint.height) {
+  if (checkpoint && checkpoint.height > 0 && parsedHeight > checkpoint.height) {
     throw new Errors.MoleculerError(
       `Requested height ${parsedHeight} exceeds indexed height ${checkpoint.height}`,
       409,
@@ -118,6 +106,27 @@ async function parseAtBlockHeight(
   }
 
   ctx.meta.blockHeight = parsedHeight;
+}
+
+function isTemporaryError(errorMessage: string): boolean {
+  if (!errorMessage) return false;
+  const lowerMessage = errorMessage.toLowerCase();
+  return lowerMessage.includes('timeout') ||
+         lowerMessage.includes('exceeded') ||
+         lowerMessage.includes('timed out') ||
+         lowerMessage.includes('econnrefused') ||
+         lowerMessage.includes('etimedout') ||
+         lowerMessage.includes('econaborted') ||
+         lowerMessage.includes('network') ||
+         lowerMessage.includes('connection') ||
+         lowerMessage.includes('non-critical') ||
+         lowerMessage.includes('service will continue');
+}
+
+function isUnknownMessageError(errorMessage: string): boolean {
+  if (!errorMessage) return false;
+  return errorMessage.includes('Unknown Verana message types') ||
+         errorMessage.includes('UNKNOWN VERANA MESSAGE TYPES');
 }
 
 async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
@@ -143,42 +152,70 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
     res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
     res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
 
-    if (!status.isCrawling) {
-      if (status.stoppedReason) {
-        res.setHeader("X-Crawling-Reason", status.stoppedReason);
-      }
-      if (status.lastError?.message) {
-        res.setHeader("X-Crawling-Error", status.lastError.message);
+    if (!status.isRunning || !status.isCrawling) {
+      const errorMessage = status.lastError?.message || status.stoppedReason || '';
+      const isUnknown = isUnknownMessageError(errorMessage);
+      
+      if (isUnknown) {
+        if (status.stoppedReason) {
+          res.setHeader("X-Crawling-Reason", status.stoppedReason);
+        }
+        if (status.lastError?.message) {
+          res.setHeader("X-Crawling-Error", status.lastError.message);
+        }
       }
       if (status.stoppedAt) {
         res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
       }
     }
   } catch (err: any) {
-    console.error("Error attaching headers:", err);
     const status = indexerStatusManager.getStatus();
     res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
     res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
+    
+    if (!status.isRunning || !status.isCrawling) {
+      const errorMessage = status.lastError?.message || status.stoppedReason || '';
+      const isUnknown = isUnknownMessageError(errorMessage);
+      
+      if (isUnknown) {
+        if (status.stoppedReason) {
+          res.setHeader("X-Crawling-Reason", status.stoppedReason);
+        }
+        if (status.lastError?.message) {
+          res.setHeader("X-Crawling-Error", status.lastError.message);
+        }
+      }
+      if (status.stoppedAt) {
+        res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
+      }
+    }
   }
 
   res.setHeader("X-Query-At", new Date().toISOString());
 }
 
-function createOnBeforeCall(required: boolean = true) {
+function createOnBeforeCall(required: boolean = true, checkIndexerStatus: boolean = false) {
   return async function (
     ctx: Context<any, any>,
     _route: Route,
     req: IncomingMessage
   ) {
     try {
-      const status = indexerStatusManager.getStatus();
-      if (!status.isRunning) {
-        const error = new Errors.MoleculerError(
-          `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
-          503,
-          "INDEXER_STOPPED"
-        );
-        throw error;
+      const urlPath = req.url || '';
+      const isStatusEndpoint = urlPath.includes('/verana/indexer/v1/status') || 
+                               urlPath.endsWith('/status') ||
+                               (ctx.action?.name || '').includes('IndexerStatusService.getStatus');
+      
+      if (isStatusEndpoint) {
+        const status = indexerStatusManager.getStatus();
+        if (!status.isRunning) {
+          const error = new Errors.MoleculerError(
+            `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
+            503,
+            "INDEXER_STOPPED"
+          );
+          throw error;
+        }
       }
       await parseAtBlockHeight(ctx, req, required);
     } catch (err: any) {
@@ -209,15 +246,24 @@ function createOnError() {
 
       res.setHeader("X-Indexer-Status", indexerStatus.isRunning ? "running" : "stopped");
       res.setHeader("X-Crawling-Status", indexerStatus.isCrawling ? "active" : "stopped");
-      res.setHeader("X-Error-Type", errorType);
-      res.setHeader("X-Error-Message", errorMessage);
+      
+      const isUnknown = isUnknownMessageError(errorMessage);
+      if (isUnknown) {
+        res.setHeader("X-Error-Type", errorType);
+        res.setHeader("X-Error-Message", errorMessage);
+      }
 
       if (!indexerStatus.isCrawling) {
-        if (indexerStatus.stoppedReason) {
-          res.setHeader("X-Crawling-Reason", indexerStatus.stoppedReason);
-        }
-        if (indexerStatus.lastError?.message) {
-          res.setHeader("X-Crawling-Error", indexerStatus.lastError.message);
+        const statusError = indexerStatus.lastError?.message || indexerStatus.stoppedReason || '';
+        const isStatusUnknown = isUnknownMessageError(statusError);
+        
+        if (isStatusUnknown) {
+          if (indexerStatus.stoppedReason) {
+            res.setHeader("X-Crawling-Reason", indexerStatus.stoppedReason);
+          }
+          if (indexerStatus.lastError?.message) {
+            res.setHeader("X-Crawling-Error", indexerStatus.lastError.message);
+          }
         }
         if (indexerStatus.stoppedAt) {
           res.setHeader("X-Crawling-Stopped-At", indexerStatus.stoppedAt);
@@ -256,13 +302,14 @@ function createOnAfterCall() {
 function createRoute(
   path: string,
   aliases: Record<string, string>,
-  requireBlockHeight: boolean = false
+  requireBlockHeight: boolean = false,
+  checkIndexerStatus: boolean = false
 ) {
   return {
     path,
     aliases,
     ...DEFAULT_ROUTE_CONFIG,
-    onBeforeCall: createOnBeforeCall(requireBlockHeight),
+    onBeforeCall: createOnBeforeCall(requireBlockHeight, checkIndexerStatus),
     onError: createOnError(),
     onAfterCall: createOnAfterCall(),
   };
@@ -316,8 +363,7 @@ function createRoute(
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
-
-      }),
+      }), 
       {
         path: "/",
         ...swaggerUiComponent(),

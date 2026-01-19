@@ -2,6 +2,27 @@ import { WebSocket, WebSocketServer } from "ws";
 import { Server } from "http";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 
+function isTemporaryError(errorMessage: string): boolean {
+  if (!errorMessage) return false;
+  const lowerMessage = errorMessage.toLowerCase();
+  return lowerMessage.includes('timeout') ||
+         lowerMessage.includes('exceeded') ||
+         lowerMessage.includes('timed out') ||
+         lowerMessage.includes('econnrefused') ||
+         lowerMessage.includes('etimedout') ||
+         lowerMessage.includes('econaborted') ||
+         lowerMessage.includes('network') ||
+         lowerMessage.includes('connection') ||
+         lowerMessage.includes('non-critical') ||
+         lowerMessage.includes('service will continue');
+}
+
+function isUnknownMessageError(errorMessage: string): boolean {
+  if (!errorMessage) return false;
+  return errorMessage.includes('Unknown Verana message types') ||
+         errorMessage.includes('UNKNOWN VERANA MESSAGE TYPES');
+}
+
 export class EventsBroadcaster {
   private wss: WebSocketServer | null = null;
   private wsClients: Set<WebSocket> = new Set();
@@ -117,15 +138,20 @@ export class EventsBroadcaster {
           if (status.stoppedAt) {
             connectionMessage.stoppedAt = status.stoppedAt;
           }
-          if (status.stoppedReason) {
-            connectionMessage.stoppedReason = status.stoppedReason;
-          }
-          if (status.lastError) {
-            connectionMessage.lastError = {
-              message: status.lastError.message,
-              timestamp: status.lastError.timestamp,
-              service: status.lastError.service
-            };
+          const errorMessage = status.lastError?.message || status.stoppedReason || '';
+          const isUnknown = isUnknownMessageError(errorMessage);
+          
+          if (isUnknown) {
+            if (status.stoppedReason) {
+              connectionMessage.stoppedReason = status.stoppedReason;
+            }
+            if (status.lastError) {
+              connectionMessage.lastError = {
+                message: status.lastError.message,
+                timestamp: status.lastError.timestamp,
+                service: status.lastError.service
+              };
+            }
           }
         }
         
@@ -227,15 +253,33 @@ export class EventsBroadcaster {
       return;
     }
 
-    const eventData = {
+    const errorMessage = status.lastError?.message || status.stoppedReason || '';
+    const isUnknown = isUnknownMessageError(errorMessage);
+
+    const eventData: any = {
       type: "indexer-status",
       indexerStatus: status.indexerStatus,
       crawlingStatus: status.crawlingStatus,
-      stoppedAt: status.stoppedAt,
-      stoppedReason: status.stoppedReason,
-      lastError: status.lastError,
       timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
     };
+
+    if (status.stoppedAt) {
+      eventData.stoppedAt = status.stoppedAt;
+    }
+
+    if (isUnknown) {
+      if (status.stoppedReason) {
+        eventData.stoppedReason = status.stoppedReason;
+      }
+      if (status.lastError) {
+        eventData.lastError = {
+          message: status.lastError.message,
+          timestamp: status.lastError.timestamp,
+          service: status.lastError.service
+        };
+      }
+    }
+
     this.broadcastMessage(eventData);
   }
 

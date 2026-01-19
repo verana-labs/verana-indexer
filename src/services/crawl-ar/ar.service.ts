@@ -104,33 +104,16 @@ export default class CrawlNewAccountsService extends BullableService {
     }
 
     private async ensureCheckpoint() {
-        let checkpoint = await BlockCheckpoint.query(knex).findOne({ job_name: this.JOB_NAME });
-
-        if (!checkpoint) {
-            checkpoint = await BlockCheckpoint.query(knex).insertAndFetch({
-                job_name: this.JOB_NAME,
-                height: 0,
-            });
-        }
-        return checkpoint;
+        const { CheckpointManager } = await import('../../common/utils/checkpoint_manager');
+        const checkpointManager = new CheckpointManager(this.logger);
+        return await checkpointManager.ensureCheckpoint(this.JOB_NAME, 0);
     }
 
     private async updateCheckpoint(newHeight: number) {
         try {
-            const updated = await BlockCheckpoint.query(knex)
-                .patch({
-                    height: newHeight,
-                })
-                .where({ job_name: this.JOB_NAME });
-            
-            if (updated === 0) {
-
-                await BlockCheckpoint.query(knex).insert({
-                    job_name: this.JOB_NAME,
-                    height: newHeight,
-                });
-                this.logger.info(`[CrawlNewAccountsService] Created new checkpoint at height: ${newHeight}`);
-            }
+            const { CheckpointManager } = await import('../../common/utils/checkpoint_manager');
+            const checkpointManager = new CheckpointManager(this.logger);
+            await checkpointManager.updateCheckpoint(this.JOB_NAME, newHeight);
         } catch (err) {
             this.logger.error(`[CrawlNewAccountsService] Error updating checkpoint to height ${newHeight}:`, err);
             throw err;
@@ -156,9 +139,16 @@ export default class CrawlNewAccountsService extends BullableService {
                         .limit(this.BATCH_SIZE)
                         .timeout(30000);
                 } catch (queryError: any) {
-                    if (queryError?.code === '57014' || queryError?.message?.includes('statement timeout') || queryError?.message?.includes('canceling statement')) {
+                    const errorCode = queryError?.code;
+                    const errorMessage = queryError?.message || String(queryError);
+                    
+                    if (errorCode === '57014' || 
+                        errorMessage.includes('statement timeout') || 
+                        errorMessage.includes('canceling statement') ||
+                        errorMessage.includes('query timeout')) {
                         this.logger.warn(`[CrawlNewAccountsService] Query timeout at height ${lastHeight}, waiting before retry...`);
-                        await new Promise<void>(resolve => { setTimeout(() => resolve(), 5000); });
+                        const { delay } = await import('../../common/utils/db_query_helper');
+                        await delay(5000);
                         continue;
                     }
                     throw queryError;
@@ -225,12 +215,14 @@ export default class CrawlNewAccountsService extends BullableService {
 
                     const processDelay = this._isFreshStart ? 1000 : 200;
                     if (processDelay > 0) {
-                        await new Promise<void>(resolve => { setTimeout(() => resolve(), processDelay); });
+                        const { delay } = await import('../../common/utils/db_query_helper');
+                        await delay(processDelay);
                     }
                 } catch (err: any) {
                     if (err?.code === '57014' || err?.message?.includes('statement timeout') || err?.message?.includes('canceling statement')) {
                         this.logger.warn(`[CrawlNewAccountsService] Statement timeout in batch processing at height ${lastHeight + 1}, waiting before retry...`);
-                        await new Promise<void>(resolve => { setTimeout(() => resolve(), 5000); });
+                        const { delay } = await import('../../common/utils/db_query_helper');
+                        await delay(5000);
                         continue;
                     }
                     this.logger.error(`[CrawlNewAccountsService] Error processing batch starting at height ${lastHeight + 1}:`, err);
@@ -577,7 +569,8 @@ export default class CrawlNewAccountsService extends BullableService {
             
 
             if (i + batchSize < uniqueAddresses.length) {
-                await new Promise<void>(resolve => { setTimeout(resolve, 50); });
+                const { delay } = await import('../../common/utils/db_query_helper');
+                await delay(50);
             }
         }
         

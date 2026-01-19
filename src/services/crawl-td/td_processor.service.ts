@@ -3,11 +3,13 @@ import { ServiceBroker } from 'moleculer';
 import config from '../../config.json' with { type: 'json' };
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE, TrustDepositEventType } from '../../common';
-import knex from '../../common/utils/db_connection';
 import { Block } from '../../models';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { formatTimestamp } from '../../common/utils/date_utils';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { CheckpointManager } from '../../common/utils/checkpoint_manager';
+import { BatchProcessor } from '../../common/utils/batch_processor';
+import { queryWithAutoRetry, delay, isStatementTimeoutError } from '../../common/utils/db_query_helper';
 
 interface TrustDepositAdjustPayload {
   account: string;
@@ -27,9 +29,14 @@ interface TrustDepositAdjustPayload {
 export default class CrawlTrustDepositService extends BullableService {
   private timer: NodeJS.Timeout | null = null;
   private checkpointColumn: 'job_name' | null = 'job_name';
+  private checkpointManager: CheckpointManager;
+  private batchProcessor: BatchProcessor;
+  private isProcessing: boolean = false;
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
+    this.checkpointManager = new CheckpointManager(this.logger);
+    this.batchProcessor = new BatchProcessor(this.logger);
   }
 
   public async started() {
@@ -38,14 +45,23 @@ export default class CrawlTrustDepositService extends BullableService {
       this._isFreshStart = startMode.isFreshStart;
 
       const checkpoint = await this.ensureCheckpoint();
-      await this.processBlocks(checkpoint);
-
+      
       const crawlInterval = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
         ? (config.crawlTrustDeposit.freshStart.millisecondCrawl || config.crawlTrustDeposit.millisecondCrawl)
         : config.crawlTrustDeposit.millisecondCrawl;
 
+      this.processBlocks(checkpoint, true).catch((err) => {
+        this.logger.error('[CrawlTrustDepositService] Error in initial processBlocks:', err);
+      });
+
       this.timer = setInterval(
-        () => this.processBlocks(checkpoint),
+        () => {
+          if (!this.isProcessing) {
+            this.processBlocks(checkpoint, false).catch((err) => {
+              this.logger.error('[CrawlTrustDepositService] Error in scheduled processBlocks:', err);
+            });
+          }
+        },
         crawlInterval,
       );
       this.logger.info(
@@ -63,52 +79,59 @@ export default class CrawlTrustDepositService extends BullableService {
 
   private async ensureCheckpoint() {
     const jobName = (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT;
-    let checkpoint = await BlockCheckpoint.query(knex).findOne({ job_name: jobName });
-
-    if (!checkpoint) {
-      checkpoint = await BlockCheckpoint.query(knex).insertAndFetch({
-        job_name: jobName,
-        height: 0,
-      });
-      this.logger.info(`[CrawlTrustDepositService] 🆕 Created checkpoint for ${jobName}`);
-    }
-    return checkpoint;
+    const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, []);
+    return await this.checkpointManager.ensureCheckpoint(jobName, startBlock || 0);
   }
 
   private async updateCheckpoint(jobKey: string, newHeight: number, blockCheckpointRow?: any) {
-    const patchObj: any = { height: newHeight, updated_at: new Date().toISOString() };
-    try {
-      const where: any = {};
-      where[this.checkpointColumn!] = jobKey;
-
-      const updated = await BlockCheckpoint.query(knex).patch(patchObj).where(where);
-      if (updated) {
-      } else if (blockCheckpointRow?.id) {
-        await BlockCheckpoint.query(knex).patch(patchObj).where('id', blockCheckpointRow.id);
-        this.logger.info(`[CrawlTrustDepositService] ✅ Patched checkpoint by id ${blockCheckpointRow.id}`);
-      } else {
-        this.logger.warn(`[CrawlTrustDepositService] ⚠️ No checkpoint row matched for ${jobKey}`);
-      }
-    } catch (err) {
-      this.logger.error('[CrawlTrustDepositService] ❌ Error updating checkpoint:', err);
-    }
+    await this.checkpointManager.updateCheckpoint(jobKey, newHeight, {
+      logger: this.logger
+    });
   }
 
   @Action({ name: 'processBlocks' })
-  public async processBlocks(blockCheckpointRow?: any) {
-    const jobName = (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT;
-    const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, []);
-    let lastHeight = startBlock || 0;
-    
-    const maxBlockBatch = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
-      ? (config.crawlTrustDeposit.freshStart.chunkSize || config.crawlTrustDeposit.chunkSize || 100)
-      : (config.crawlTrustDeposit.chunkSize || 100);
+  public async processBlocks(blockCheckpointRow?: any, runInfiniteLoop: boolean = false) {
+    if (this.isProcessing) {
+      this.logger.debug('[CrawlTrustDepositService] Already processing, skipping...');
+      return;
+    }
 
-    while (true) {
-      const nextBlocks = await Block.query()
-        .where('height', '>', lastHeight)
-        .orderBy('height', 'asc')
-        .limit(maxBlockBatch);
+    this.isProcessing = true;
+    try {
+      const jobName = (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT;
+      const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, []);
+      let lastHeight = startBlock || 0;
+      
+      const maxBlockBatch = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
+        ? (config.crawlTrustDeposit.freshStart.chunkSize || config.crawlTrustDeposit.chunkSize || 100)
+        : (config.crawlTrustDeposit.chunkSize || 100);
+
+      do {
+      let nextBlocks: Block[] = [];
+      const currentLastHeight = lastHeight;
+      try {
+        nextBlocks = await queryWithAutoRetry(
+          async () => {
+            const result = await Block.query()
+              .where('height', '>', currentLastHeight)
+              .orderBy('height', 'asc')
+              .limit(maxBlockBatch)
+              .timeout(30000);
+            return result;
+          },
+          { timeout: 30000, retries: 3 },
+          this.logger
+        );
+      } catch (queryError: any) {
+        if (isStatementTimeoutError(queryError)) {
+          this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
+          await delay(5000);
+          continue;
+        }
+        this.logger.error(`[CrawlTrustDepositService] Error fetching blocks:`, queryError);
+        break;
+      }
+      
       if (!nextBlocks.length) break;
 
       const processDelay = this._isFreshStart ? 2000 : 500;
@@ -118,28 +141,43 @@ export default class CrawlTrustDepositService extends BullableService {
           await this.processBlockEvents(block);
           
           if (this._isFreshStart) {
-            await new Promise<void>(resolve => {
-              setTimeout(() => {
-                resolve();
-              }, processDelay);
-            });
+          await delay(processDelay);
           }
         }
 
         const newHeight = nextBlocks[nextBlocks.length - 1].height;
-        await this.updateCheckpoint(jobName, newHeight, blockCheckpointRow);
-        lastHeight = newHeight;
+        if (newHeight > lastHeight) {
+          await this.updateCheckpoint(jobName, newHeight, blockCheckpointRow);
+          lastHeight = newHeight;
+          this.logger.info(`[CrawlTrustDepositService] Processed blocks up to height ${newHeight}, checkpoint updated`);
+        }
 
         if (nextBlocks.length < maxBlockBatch) break;
-      } catch (err) {
+        
+        if (!this._isFreshStart) {
+          await delay(100);
+        }
+      } catch (err: any) {
+        const errorCode = err?.code;
+        const errorMessage = err?.message || String(err);
+        
+        if (isStatementTimeoutError(err)) {
+          this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
+          await delay(5000);
+          continue;
+        }
+        
         this.logger.error(`[CrawlTrustDepositService] Error processing blocks:`, err);
-        await new Promise<void>(resolve => {
-          setTimeout(() => {
-            resolve();
-          }, 5000);
-        });
+        await delay(5000);
         break;
       }
+      } while (runInfiniteLoop);
+      
+      this.isProcessing = false;
+    } catch (error) {
+      this.isProcessing = false;
+      this.logger.error('[CrawlTrustDepositService] Fatal error in processBlocks:', error);
+      throw error;
     }
   }
 
@@ -162,61 +200,35 @@ export default class CrawlTrustDepositService extends BullableService {
     if (adjustEvents.length) {
       this.logger.info(`[CrawlTrustDepositService] Found ${adjustEvents.length} adjust events`);
       
-      const maxConcurrent = this._isFreshStart ? 2 : 3;
-      const batchSize = this._isFreshStart ? 3 : 5;
-      const delayBetweenBatches = this._isFreshStart ? 2000 : 1000;
-      
-      for (let i = 0; i < adjustEvents.length; i += batchSize) {
-        const batch = adjustEvents.slice(i, i + batchSize);
-        
-        const promises = batch.slice(0, maxConcurrent).map(async (event: any) => {
-          try {
-            await this.handleAdjustTrustDepositEvent(block.height, event);
-          } catch (err) {
-            this.logger.error(`[AdjustEvent] Error processing event:`, err);
-          }
-        });
-        
-        await Promise.all(promises);
-        
-        if (i + batchSize < adjustEvents.length) {
-          await new Promise<void>(resolve => {
-            setTimeout(() => {
-              resolve();
-            }, delayBetweenBatches);
-          });
+      await this.batchProcessor.processInBatches(
+        adjustEvents,
+        async (event: any) => {
+          await this.handleAdjustTrustDepositEvent(block.height, event);
+        },
+        {
+          maxConcurrent: this._isFreshStart ? 2 : 3,
+          batchSize: this._isFreshStart ? 3 : 5,
+          delayBetweenBatches: this._isFreshStart ? 2000 : 1000,
+          logger: this.logger
         }
-      }
+      );
     }
 
     if (slashEvents.length) {
       this.logger.info(`[CrawlTrustDepositService] Found ${slashEvents.length} slash events`);
       
-      const maxConcurrent = this._isFreshStart ? 1 : 2;
-      const batchSize = this._isFreshStart ? 2 : 3;
-      const delayBetweenBatches = this._isFreshStart ? 2000 : 1000;
-      
-      for (let i = 0; i < slashEvents.length; i += batchSize) {
-        const batch = slashEvents.slice(i, i + batchSize);
-        
-        const promises = batch.slice(0, maxConcurrent).map(async (event: any) => {
-          try {
-            await this.handleSlashTrustDepositEvent(block.height, event);
-          } catch (err) {
-            this.logger.error(`[SlashEvent] Error processing event:`, err);
-          }
-        });
-        
-        await Promise.all(promises);
-        
-        if (i + batchSize < slashEvents.length) {
-          await new Promise<void>(resolve => {
-            setTimeout(() => {
-              resolve();
-            }, delayBetweenBatches);
-          });
+      await this.batchProcessor.processInBatches(
+        slashEvents,
+        async (event: any) => {
+          await this.handleSlashTrustDepositEvent(block.height, event);
+        },
+        {
+          maxConcurrent: this._isFreshStart ? 1 : 2,
+          batchSize: this._isFreshStart ? 2 : 3,
+          delayBetweenBatches: this._isFreshStart ? 2000 : 1000,
+          logger: this.logger
         }
-      }
+      );
     }
   }
 

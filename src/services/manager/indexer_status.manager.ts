@@ -1,8 +1,10 @@
 import { Queue } from "bullmq";
 import Redis from "ioredis";
+import { LoggerInstance } from "moleculer";
 import { BULL_JOB_NAME } from "../../common/constant";
 import ConfigClass from "../../common/config";
 import { DEFAULT_PREFIX } from "../../base/bullable.service";
+import { getLcdClient } from "../../common/utils/verana_client";
 
 const Config = new ConfigClass();
 
@@ -38,10 +40,13 @@ class IndexerStatusManager {
     isCrawling: true, 
   };
   private statusChangeCallback: StatusChangeCallback | null = null;
+  private logger: LoggerInstance | null = null;
+  private recoveryCheckInterval: NodeJS.Timeout | null = null;
+  private readonly RECOVERY_CHECK_INTERVAL = 30000;
+  private readonly RECOVERY_CHECK_TIMEOUT = 10000;
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   private constructor() {
-    // Singleton pattern - constructor must be empty and private
+    // Singleton pattern - private constructor to prevent instantiation
   }
 
   public static getInstance(): IndexerStatusManager {
@@ -51,12 +56,12 @@ class IndexerStatusManager {
     return IndexerStatusManager.instance;
   }
 
-  /**
-   * Register a callback to be notified when status changes
-   * This breaks the dependency cycle by using a callback pattern
-   */
   public setStatusChangeCallback(callback: StatusChangeCallback): void {
     this.statusChangeCallback = callback;
+  }
+
+  public setLogger(logger: LoggerInstance): void {
+    this.logger = logger;
   }
 
   private notifyStatusChange(): void {
@@ -68,8 +73,11 @@ class IndexerStatusManager {
         stoppedReason: this.status.stoppedReason,
         lastError: this.status.lastError,
       })).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error("Error in status change callback:", err);
+        if (this.logger) {
+          this.logger.error("Error in status change callback:", err);
+        } else {
+          console.error("Error in status change callback:", err);
+        }
       });
     }
   }
@@ -96,6 +104,17 @@ class IndexerStatusManager {
 
     await this.stopAllCrawlingJobs();
 
+    const errorMessage = error.message || String(error);
+    const isNetworkError = errorMessage.toLowerCase().includes('timeout') ||
+                          errorMessage.toLowerCase().includes('network') ||
+                          errorMessage.toLowerCase().includes('connection') ||
+                          errorMessage.toLowerCase().includes('econnrefused') ||
+                          errorMessage.toLowerCase().includes('etimedout');
+    
+    if (isNetworkError) {
+      this.startRecoveryChecker();
+    }
+
     this.notifyStatusChange();
   }
 
@@ -116,6 +135,17 @@ class IndexerStatusManager {
 
     await this.stopAllCrawlingJobs();
 
+    const errorMessage = error.message || String(error);
+    const isNetworkError = errorMessage.toLowerCase().includes('timeout') ||
+                          errorMessage.toLowerCase().includes('network') ||
+                          errorMessage.toLowerCase().includes('connection') ||
+                          errorMessage.toLowerCase().includes('econnrefused') ||
+                          errorMessage.toLowerCase().includes('etimedout');
+    
+    if (isNetworkError) {
+      this.startRecoveryChecker();
+    }
+
     this.notifyStatusChange();
   }
 
@@ -126,7 +156,159 @@ class IndexerStatusManager {
     this.status.lastError = undefined;
     this.status.stoppedReason = undefined;
 
+    this.stopRecoveryChecker();
+
+    await this.resumeAllCrawlingJobs();
+
     this.notifyStatusChange();
+  }
+
+  private startRecoveryChecker(): void {
+    this.stopRecoveryChecker();
+
+    if (this.logger) {
+      this.logger.info(`Starting automatic recovery checker (checking every ${this.RECOVERY_CHECK_INTERVAL / 1000}s)...`);
+    } else {
+      console.log(`Starting automatic recovery checker (checking every ${this.RECOVERY_CHECK_INTERVAL / 1000}s)...`);
+    }
+
+    this.recoveryCheckInterval = setInterval(async () => {
+      await this.checkAndRecover();
+    }, this.RECOVERY_CHECK_INTERVAL);
+  }
+
+  private stopRecoveryChecker(): void {
+    if (this.recoveryCheckInterval) {
+      clearInterval(this.recoveryCheckInterval);
+      this.recoveryCheckInterval = null;
+      if (this.logger) {
+        this.logger.info('Stopped automatic recovery checker');
+      } else {
+        console.log('Stopped automatic recovery checker');
+      }
+    }
+  }
+
+  private async checkAndRecover(): Promise<void> {
+    if (!this.status.isCrawling || !this.status.isRunning) {
+      try {
+        if (this.logger) {
+          this.logger.info('Checking if connection is restored...');
+        } else {
+          console.log('Checking if connection is restored...');
+        }
+        
+        const isHealthy = await this.checkConnectionHealth();
+        
+        if (isHealthy) {
+          if (this.logger) {
+            this.logger.info('Connection restored! Automatically resuming indexer...');
+          } else {
+            console.log('Connection restored! Automatically resuming indexer...');
+          }
+          await this.resumeIndexer();
+          if (this.logger) {
+            this.logger.info('Indexer resumed successfully');
+          } else {
+            console.log('Indexer resumed successfully');
+          }
+          return;
+        }
+        if (this.logger) {
+          this.logger.info('Connection not yet restored, will retry...');
+        } else {
+          console.log('Connection not yet restored, will retry...');
+        }
+      } catch (error: any) {
+        if (this.logger) {
+          this.logger.info(`Recovery check failed: ${error?.message || error}. Will retry...`);
+        } else {
+          console.log(`Recovery check failed: ${error?.message || error}. Will retry...`);
+        }
+      }
+    } else if (this.status.isCrawling && this.status.isRunning) {
+      this.stopRecoveryChecker();
+    }
+  }
+
+  private async checkConnectionHealth(): Promise<boolean> {
+    try {
+      const lcdClient = await getLcdClient();
+      if (!lcdClient?.provider) {
+        return false;
+      }
+
+      const healthCheck = Promise.race([
+        lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Health check timeout')), this.RECOVERY_CHECK_TIMEOUT);
+        }),
+      ]);
+
+      await healthCheck;
+      return true;
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      if (!errorMessage.includes('timeout') && !errorMessage.includes('Health check timeout')) {
+        if (this.logger) {
+          this.logger.info(`Health check error: ${errorMessage}`);
+        } else {
+          console.log(`Health check error: ${errorMessage}`);
+        }
+      }
+      return false;
+    }
+  }
+
+  private async resumeAllCrawlingJobs(): Promise<void> {
+    try {
+      if (!Config.QUEUE_JOB_REDIS) {
+        if (this.logger) {
+          this.logger.warn("QUEUE_JOB_REDIS not configured, cannot resume jobs");
+        } else {
+          console.warn("QUEUE_JOB_REDIS not configured, cannot resume jobs");
+        }
+        return;
+      }
+
+      const redisClient = new Redis(Config.QUEUE_JOB_REDIS);
+      
+      const crawlingJobs = [
+        BULL_JOB_NAME.CRAWL_BLOCK,
+        BULL_JOB_NAME.CRAWL_TRANSACTION,
+        BULL_JOB_NAME.HANDLE_TRANSACTION,
+      ];
+
+      for (const jobName of crawlingJobs) {
+        try {
+          const queue = new Queue(jobName, {
+            prefix: DEFAULT_PREFIX,
+            connection: redisClient,
+          });
+
+          await queue.resume();
+          if (this.logger) {
+            this.logger.info(`Resumed queue: ${jobName}`);
+          } else {
+            console.log(`Resumed queue: ${jobName}`);
+          }
+        } catch (err) {
+          if (this.logger) {
+            this.logger.error(`Failed to resume queue ${jobName}:`, err);
+          } else {
+            console.error(`Failed to resume queue ${jobName}:`, err);
+          }
+        }
+      }
+
+      await redisClient.quit();
+    } catch (error) {
+      if (this.logger) {
+        this.logger.error("Error resuming crawling jobs:", error);
+      } else {
+        console.error("Error resuming crawling jobs:", error);
+      }
+    }
   }
 
   public isCrawlingActive(): boolean {
@@ -136,8 +318,11 @@ class IndexerStatusManager {
   private async stopAllCrawlingJobs(): Promise<void> {
     try {
       if (!Config.QUEUE_JOB_REDIS) {
-        // eslint-disable-next-line no-console
-        console.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
+        if (this.logger) {
+          this.logger.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
+        } else {
+          console.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
+        }
         return;
       }
 
@@ -163,15 +348,21 @@ class IndexerStatusManager {
 
           await queue.pause();
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error(`Failed to stop queue ${jobName}:`, err);
+          if (this.logger) {
+            this.logger.error(`Failed to stop queue ${jobName}:`, err);
+          } else {
+            console.error(`Failed to stop queue ${jobName}:`, err);
+          }
         }
       }
 
       await redisClient.quit();
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("Error stopping crawling jobs:", error);
+      if (this.logger) {
+        this.logger.error("Error stopping crawling jobs:", error);
+      } else {
+        console.error("Error stopping crawling jobs:", error);
+      }
     }
   }
 

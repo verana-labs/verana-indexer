@@ -134,21 +134,20 @@ export default class IndexerMetaService extends BaseService {
 
   @Action()
   public async getBlockHeight(ctx: Context) {
-    const status = indexerStatusManager.getStatus();
-    if (!status.isRunning) {
-      return ApiResponder.error(
-        ctx,
-        `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`,
-        503
-      );
-    }
-   
     const checkpoint = await knex("block_checkpoint")
       .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
       .first();
 
     if (!checkpoint) {
-      return ApiResponder.error(ctx, "Block checkpoint not found", 404);
+      return ApiResponder.success(
+        ctx,
+        {
+          type: "block-processed",
+          height: 0,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
     const updatedAt =
@@ -184,6 +183,20 @@ export default class IndexerMetaService extends BaseService {
         400
       );
     }
+   const queryHistoryTable = async (tableName: string, height: number) => {
+      try {
+        return await knex(tableName).where("height", height);
+      } catch (error: any) {
+        const errorMsg = error?.message || String(error);
+        if (errorMsg.includes("does not exist") && errorMsg.includes("height")) {
+          this.logger.warn(
+            `Table ${tableName} is missing 'height' column. This usually means migrations need to run. Returning empty results.`
+          );
+          return [];
+        }
+        throw error;
+      }
+    };
 
     const [
       didHistory,
@@ -196,15 +209,15 @@ export default class IndexerMetaService extends BaseService {
       tdHistory,
       moduleParamsHistory,
     ] = await Promise.all([
-      knex("did_history").where("height", blockHeight),
-      knex("trust_registry_history").where("height", blockHeight),
-      knex("governance_framework_version_history").where("height", blockHeight),
-      knex("governance_framework_document_history").where("height", blockHeight),
-      knex("credential_schema_history").where("height", blockHeight),
-      knex("permission_history").where("height", blockHeight),
-      knex("permission_session_history").where("height", blockHeight),
-      knex("trust_deposit_history").where("height", blockHeight),
-      knex("module_params_history").where("height", blockHeight),
+      queryHistoryTable("did_history", blockHeight),
+      queryHistoryTable("trust_registry_history", blockHeight),
+      queryHistoryTable("governance_framework_version_history", blockHeight),
+      queryHistoryTable("governance_framework_document_history", blockHeight),
+      queryHistoryTable("credential_schema_history", blockHeight),
+      queryHistoryTable("permission_history", blockHeight),
+      queryHistoryTable("permission_session_history", blockHeight),
+      queryHistoryTable("trust_deposit_history", blockHeight),
+      queryHistoryTable("module_params_history", blockHeight),
     ]);
 
     const changeEntries: IndexerChange[] = [];

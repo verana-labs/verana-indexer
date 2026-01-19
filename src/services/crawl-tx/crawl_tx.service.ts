@@ -108,6 +108,7 @@ export default class CrawlTxService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
+          .timeout(10000)
           .transacting(trx);
       }
     });
@@ -174,6 +175,7 @@ export default class CrawlTxService extends BullableService {
                 .onConflict('job_name')
                 .merge()
                 .returning('id')
+                .timeout(10000)
                 .transacting(trx);
             } catch (error) {
               this.logger.error(`❌ [HANDLE_TRANSACTION] Error updating checkpoint:`, error);
@@ -194,6 +196,7 @@ export default class CrawlTxService extends BullableService {
                 .onConflict('job_name')
                 .merge()
                 .returning('id')
+                .timeout(10000)
                 .transacting(trx);
             }
           } catch (error) {
@@ -354,10 +357,9 @@ export default class CrawlTxService extends BullableService {
           // check if tx existed
           const mapExistedTx: Map<string, boolean> = new Map();
           const listHash = listTx.txs.map((tx: any) => tx.hash);
-          const listTxExisted = await Transaction.query().whereIn(
-            'hash',
-            listHash
-          );
+          const listTxExisted = await Transaction.query()
+            .whereIn('hash', listHash)
+            .timeout(30000);
           listTxExisted.forEach((tx) => {
             mapExistedTx.set(tx.hash, true);
           });
@@ -600,6 +602,7 @@ export default class CrawlTxService extends BullableService {
         const chunk = listMsgModel.slice(i, i + chunkSize);
         const resultInsertMsgs = await TransactionMessage.query()
           .insert(chunk)
+          .timeout(60000)
           .transacting(transactionDB);
         const messagesArray = (Array.isArray(resultInsertMsgs) ? resultInsertMsgs : [resultInsertMsgs]) as any[];
         allInsertedMsgs.push(...messagesArray);
@@ -719,7 +722,8 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`📋 [insertRelatedTx] Permission messages: ${permissionMessages.length}`);
     if (permissionMessages?.length) {
       this.logger.info(` [insertRelatedTx] Waiting 1s for schema transactions to commit before processing permissions`);
-      await new Promise<void>(resolve => { setTimeout(resolve, 1000); });
+      const { delay } = await import('../../common/utils/db_query_helper');
+      await delay(1000);
       const permissionBatchSize = 50;
       for (let i = 0; i < permissionMessages.length; i += permissionBatchSize) {
         const batch = permissionMessages.slice(i, i + permissionBatchSize);
@@ -737,7 +741,8 @@ export default class CrawlTxService extends BullableService {
         }
 
         if (i + permissionBatchSize < permissionMessages.length) {
-          await new Promise<void>(resolve => { setTimeout(resolve, 200); });
+          const { delay } = await import('../../common/utils/db_query_helper');
+          await delay(200);
         }
       }
 
@@ -990,7 +995,10 @@ export default class CrawlTxService extends BullableService {
             this.logger.debug(`Job ${job.id} is not in delayed state (current: ${jobState}), skipping promotion`);
           }
         } catch (promoteError: any) {
-          if (promoteError?.message?.includes('not in the delayed state') || promoteError?.message?.includes('is not in the delayed state')) {
+          const errorMessage = promoteError?.message || String(promoteError);
+          if (errorMessage.includes('not in the delayed state') || 
+              errorMessage.includes('is not in the delayed state') ||
+              errorMessage.includes('Job is not in delayed state')) {
             this.logger.debug(`Job ${job.id} cannot be promoted (not in delayed state), this is normal if job was already processed`);
           } else {
             this.logger.warn(`Failed to promote job ${job.id}:`, promoteError);
@@ -1160,9 +1168,8 @@ export default class CrawlTxService extends BullableService {
         this.logger.warn(
           `⚠️ RPC call failed (attempt ${attempt}/${attempts}): ${operationName}. Retrying in ${backoffDelay}ms...`
         );
-        await new Promise((resolve) => {
-          setTimeout(resolve, backoffDelay);
-        });
+        const { delay: delayUtil } = await import('../../common/utils/db_query_helper');
+        await delayUtil(backoffDelay);
       }
     }
 

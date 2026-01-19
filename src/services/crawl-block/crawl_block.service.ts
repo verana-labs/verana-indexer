@@ -158,15 +158,19 @@ export default class CrawlBlockService extends BullableService {
       }
     }
 
-    let blockHeightCrawled = await BlockCheckpoint.query().findOne({
-      job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-    });
+    let blockHeightCrawled = await BlockCheckpoint.query()
+      .findOne({
+        job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+      })
+      .timeout(10000);
 
     if (!blockHeightCrawled) {
-      blockHeightCrawled = await BlockCheckpoint.query().insert({
-        job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-        height: config.crawlBlock.startBlock,
-      });
+      blockHeightCrawled = await BlockCheckpoint.query()
+        .insert({
+          job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+          height: config.crawlBlock.startBlock,
+        })
+        .timeout(10000);
     }
 
     this._currentBlock = blockHeightCrawled ? blockHeightCrawled.height : 0;
@@ -498,7 +502,8 @@ export default class CrawlBlockService extends BullableService {
           )
           .where({
             job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-          });
+          })
+          .timeout(10000);
         this._currentBlock = highestSavedBlock;
         
         if (highestSavedBlock < endBlock) {
@@ -526,9 +531,14 @@ export default class CrawlBlockService extends BullableService {
       }
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
-      if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') {
-        this.logger.error(`❌ Network connection error in block crawling (${err.code}): ${err.message}`);
-        this.logger.info('⏭️ Skipping this cycle, will retry on next polling interval');
+      const errorMessage = err?.message || String(error);
+      const isNetworkError = err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || 
+                            err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND' ||
+                            err?.code === 'ECONNABORTED' || errorMessage.toLowerCase().includes('timeout') ||
+                            errorMessage.toLowerCase().includes('non-critical');
+      
+      if (isNetworkError) {
+        this.logger.warn(`Network/timeout error in block crawling (${err.code || 'timeout'}): ${errorMessage}. Skipping this cycle, will retry on next polling interval`);
       } else {
         await handleErrorGracefully(
           error,
@@ -693,15 +703,19 @@ export default class CrawlBlockService extends BullableService {
 
   private async ensureCheckpoint(): Promise<void> {
     try {
-      let blockHeightCrawled = await BlockCheckpoint.query().findOne({
-        job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-      });
+      let blockHeightCrawled = await BlockCheckpoint.query()
+        .findOne({
+          job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+        })
+        .timeout(10000);
 
       if (!blockHeightCrawled) {
-        blockHeightCrawled = await BlockCheckpoint.query().insert({
-          job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-          height: config.crawlBlock.startBlock,
-        });
+        blockHeightCrawled = await BlockCheckpoint.query()
+          .insert({
+            job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+            height: config.crawlBlock.startBlock,
+          })
+          .timeout(10000);
         this.logger.info(`Created crawl block checkpoint at height ${config.crawlBlock.startBlock}`);
       } else {
         this.logger.info(`Crawl block checkpoint exists at height ${blockHeightCrawled.height}`);
@@ -959,10 +973,9 @@ export default class CrawlBlockService extends BullableService {
         }
       });
       if (listBlockHeight.length) {
-        const listExistedBlock = await Block.query().whereIn(
-          'height',
-          listBlockHeight
-        );
+        const listExistedBlock = await Block.query()
+          .whereIn('height', listBlockHeight)
+          .timeout(30000);
         listExistedBlock?.forEach((block) => {
           if (block?.height != null) {
             mapExistedBlock.set(block.height, true);
@@ -1048,6 +1061,7 @@ export default class CrawlBlockService extends BullableService {
         await knex.transaction(async (trx) => {
           await Block.query()
             .insertGraph(listBlockModel)
+            .timeout(60000)
             .transacting(trx);
           await this.broker.call(
             SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path
@@ -1143,9 +1157,8 @@ export default class CrawlBlockService extends BullableService {
         } catch (pauseError) {
           this.logger.warn(`⚠️ Could not check/resume queue pause status: ${pauseError}`);
         }
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 1500);
-        });
+        const { delay } = await import('../../common/utils/db_query_helper');
+        await delay(1500);
         try {
           const verifyJobsNoPrefix = await queueManagerQueue.getRepeatableJobs();
           const verifyJobsWithPrefix = await jobQueueWithPrefix.getRepeatableJobs();
