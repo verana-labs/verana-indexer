@@ -14,6 +14,8 @@ import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
 import TrustDeposit from "../../models/trust_deposit";
 import { extractController, requireController } from "../../common/utils/extract_controller";
+import { MessageProcessorBase } from "../../common/utils/message_processor_base";
+import { detectStartMode } from "../../common/utils/start_mode_detector";
 
 function toBigIntSafe(value: any): bigint {
   if (value === null || value === undefined) return BigInt(0);
@@ -116,14 +118,16 @@ async function recordTrustDepositHistory(
   });
 }
 
-function parseDecimalToIntMultiplier(value: any): bigint {
+function parseDecimalToIntMultiplier(value: any, logger?: any): bigint {
   if (value === null || value === undefined) return BigInt(0);
   const str = String(value).trim();
 
   if (str === "" || Number.isNaN(Number(str))) {
-    console.warn(
-      `[TrustDeposit] ⚠️ Invalid decimal multiplier "${str}", defaulting to 0`
-    );
+    if (logger) {
+      logger.warn(
+        `[TrustDeposit] ⚠️ Invalid decimal multiplier "${str}", defaulting to 0`
+      );
+    }
     return BigInt(0);
   }
 
@@ -132,8 +136,8 @@ function parseDecimalToIntMultiplier(value: any): bigint {
   return BigInt(scaled);
 }
 
-function applyBurn(amount: bigint, burnRate: any): bigint {
-  const burnInt = parseDecimalToIntMultiplier(burnRate);
+function applyBurn(amount: bigint, burnRate: any, logger?: any): bigint {
+  const burnInt = parseDecimalToIntMultiplier(burnRate, logger);
   if (burnInt <= BigInt(0)) return BigInt(0);
   return (amount * burnInt) / BigInt(1_000_000);
 }
@@ -144,12 +148,19 @@ function applyBurn(amount: bigint, burnRate: any): bigint {
 })
 export default class TrustDepositMessageProcessorService extends BullableService {
   private trustDepositParams: any = {};
+  private processorBase: MessageProcessorBase;
+  private _isFreshStart: boolean = false;
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
+    this.processorBase = new MessageProcessorBase(this);
   }
 
   async started() {
+    const startMode = await detectStartMode();
+    this._isFreshStart = startMode.isFreshStart;
+    this.processorBase.setFreshStartMode(this._isFreshStart);
+    this.logger.info(`TrustDeposit message processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
     await this.loadTrustDepositParams();
   }
 
@@ -181,15 +192,25 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
     try {
       await knex.transaction(async (trx) => {
-        for (const msg of trustDepositList) {
+        const processMessageInTx = async (msg: any) => {
           await this.processMessage(msg, params, trx);
-        }
+        };
+
+        await this.processorBase.processInBatches(
+          trustDepositList,
+          processMessageInTx,
+          {
+            maxConcurrent: this._isFreshStart ? 2 : 5,
+            batchSize: this._isFreshStart ? 10 : 25,
+            delayBetweenBatches: this._isFreshStart ? 1000 : 300,
+          }
+        );
       });
 
       return { success: true };
     } catch (error) {
-      this.logger.error("[TrustDeposit] ❌ Error processing messages:", error);
-      return false
+      this.logger.error("[TrustDeposit] Error processing messages:", error);
+      return false;
     }
   }
 
@@ -315,7 +336,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
       }
 
       const burnRate = params.trust_deposit_reclaim_burn_rate ?? "0";
-      const burn = applyBurn(claimed, burnRate);
+      const burn = applyBurn(claimed, burnRate, this.logger);
       const transfer = claimed - burn;
       const newClaimable = claimable - claimed;
       const newShare = toBigIntSafe(td.share) - claimed / shareValue;

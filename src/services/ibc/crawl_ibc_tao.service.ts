@@ -15,6 +15,7 @@ import {
   IbcConnection,
 } from '../../models';
 import { getAttributeFrom } from '../../common/utils/smart_contract';
+import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 
 @Service({
   name: SERVICE.V1.CrawlIBCTaoService.key,
@@ -30,20 +31,26 @@ export default class CrawlIbcTaoService extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_IBC_TAO,
   })
   public async crawlIbcTao(): Promise<void> {
-    const [startHeight, endHeight, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.CRAWL_IBC_TAO,
-        [BULL_JOB_NAME.HANDLE_TRANSACTION],
-        config.crawlIbcTao.key
+    try {
+      if (!(await tableExists("event")) || !(await tableExists("transaction_message"))) {
+        this.logger.warn("Event or transaction_message tables do not exist yet, waiting for migrations...");
+        return;
+      }
+
+      const [startHeight, endHeight, updateBlockCheckpoint] =
+        await BlockCheckpoint.getCheckpoint(
+          BULL_JOB_NAME.CRAWL_IBC_TAO,
+          [BULL_JOB_NAME.HANDLE_TRANSACTION],
+          config.crawlIbcTao.key
+        );
+      this.logger.info(
+        `Handle IBC/TAO, startHeight: ${startHeight}, endHeight: ${endHeight}`
       );
-    this.logger.info(
-      `Handle IBC/TAO, startHeight: ${startHeight}, endHeight: ${endHeight}`
-    );
-    if (startHeight > endHeight) return;
-    const events = await Event.query()
-      .withGraphFetched('attributes')
-      .joinRelated('message')
-      .select('event.id', 'event.type', 'message.content')
+      if (startHeight > endHeight) return;
+      const events = await Event.query()
+        .withGraphFetched('attributes')
+        .joinRelated('message')
+        .select('event.id', 'event.type', 'message.content')
       .whereIn('event.type', [
         Event.EVENT_TYPE.CREATE_CLIENT,
         Event.EVENT_TYPE.CONNECTION_OPEN_ACK,
@@ -94,6 +101,13 @@ export default class CrawlIbcTaoService extends BullableService {
         .onConflict('job_name')
         .merge();
     });
+    } catch (error: any) {
+      if (isTableMissingError(error)) {
+        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
+        return;
+      }
+      throw error;
+    }
   }
 
   async handleNewIbcClient(events: Event[], trx: Knex.Transaction) {

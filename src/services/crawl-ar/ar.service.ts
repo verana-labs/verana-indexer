@@ -8,6 +8,8 @@ import knex from '../../common/utils/db_connection';
 import { Block } from '../../models';
 import { Account } from '../../models/account';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
+import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 
 interface Balance {
     denom: string;
@@ -59,15 +61,11 @@ export default class CrawlNewAccountsService extends BullableService {
 
             this.logger.info(`[CrawlNewAccountsService] Genesis crawl completed. Starting account service...`);
 
-            const blockCountResult = await knex('block').count('* as count').first();
-            const totalBlocks = blockCountResult ? parseInt(String((blockCountResult as { count: string | number }).count), 10) : 0;
-            
-
             const checkpoint = await this.ensureCheckpoint();
-            const currentBlock = checkpoint ? checkpoint.height : 0;
-            this._isFreshStart = totalBlocks < 100 && currentBlock < 1000;
+            const startMode = await detectStartMode();
+            this._isFreshStart = startMode.isFreshStart;
 
-            this.logger.info(`[CrawlNewAccountsService] Starting - Block count: ${totalBlocks}, Current checkpoint: ${currentBlock}, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+            this.logger.info(`[CrawlNewAccountsService] Starting - Block count: ${startMode.totalBlocks}, Current checkpoint: ${startMode.currentBlock}, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
 
             if (this._isFreshStart && config.crawlAccounts.freshStart) {
                 this.BATCH_SIZE = config.crawlAccounts.freshStart.chunkSize || 100;
@@ -106,33 +104,16 @@ export default class CrawlNewAccountsService extends BullableService {
     }
 
     private async ensureCheckpoint() {
-        let checkpoint = await BlockCheckpoint.query(knex).findOne({ job_name: this.JOB_NAME });
-
-        if (!checkpoint) {
-            checkpoint = await BlockCheckpoint.query(knex).insertAndFetch({
-                job_name: this.JOB_NAME,
-                height: 0,
-            });
-        }
-        return checkpoint;
+        const { CheckpointManager } = await import('../../common/utils/checkpoint_manager');
+        const checkpointManager = new CheckpointManager(this.logger);
+        return await checkpointManager.ensureCheckpoint(this.JOB_NAME, 0);
     }
 
     private async updateCheckpoint(newHeight: number) {
         try {
-            const updated = await BlockCheckpoint.query(knex)
-                .patch({
-                    height: newHeight,
-                })
-                .where({ job_name: this.JOB_NAME });
-            
-            if (updated === 0) {
-
-                await BlockCheckpoint.query(knex).insert({
-                    job_name: this.JOB_NAME,
-                    height: newHeight,
-                });
-                this.logger.info(`[CrawlNewAccountsService] Created new checkpoint at height: ${newHeight}`);
-            }
+            const { CheckpointManager } = await import('../../common/utils/checkpoint_manager');
+            const checkpointManager = new CheckpointManager(this.logger);
+            await checkpointManager.updateCheckpoint(this.JOB_NAME, newHeight);
         } catch (err) {
             this.logger.error(`[CrawlNewAccountsService] Error updating checkpoint to height ${newHeight}:`, err);
             throw err;
@@ -150,10 +131,28 @@ export default class CrawlNewAccountsService extends BullableService {
             this.logger.info(`[CrawlNewAccountsService] Processing blocks starting from height: ${lastHeight}`);
 
             while (true) {
-                const nextBlocks = await Block.query()
-                    .where('height', '>', lastHeight)
-                    .orderBy('height', 'asc')
-                    .limit(this.BATCH_SIZE);
+                let nextBlocks: Block[];
+                try {
+                    nextBlocks = await Block.query()
+                        .where('height', '>', lastHeight)
+                        .orderBy('height', 'asc')
+                        .limit(this.BATCH_SIZE)
+                        .timeout(30000);
+                } catch (queryError: any) {
+                    const errorCode = queryError?.code;
+                    const errorMessage = queryError?.message || String(queryError);
+                    
+                    if (errorCode === '57014' || 
+                        errorMessage.includes('statement timeout') || 
+                        errorMessage.includes('canceling statement') ||
+                        errorMessage.includes('query timeout')) {
+                        this.logger.warn(`[CrawlNewAccountsService] Query timeout at height ${lastHeight}, waiting before retry...`);
+                        const { delay } = await import('../../common/utils/db_query_helper');
+                        await delay(5000);
+                        continue;
+                    }
+                    throw queryError;
+                }
 
                 if (!nextBlocks.length) {
                     if (totalBlocksProcessed > 0) {
@@ -196,13 +195,36 @@ export default class CrawlNewAccountsService extends BullableService {
                     await this.updateCheckpoint(newHeight);
                     lastHeight = newHeight;
 
+                    if (this.accountCache.size > this.cacheSize * 0.8) {
+                        const entries = Array.from(this.accountCache.entries());
+                        entries.slice(0, Math.floor(this.accountCache.size * 0.3)).forEach(([key]) => {
+                            this.accountCache.delete(key);
+                        });
+                    }
+
+                    if (totalBlocksProcessed % 100 === 0 && global.gc) {
+                        global.gc();
+                    }
+
                     this.logger.info(`[CrawlNewAccountsService] ✅ Processed batch: heights ${batchStartHeight}-${batchEndHeight} (${nextBlocks.length} blocks, ${batchTransfers} transfers), checkpoint updated to ${newHeight}`);
 
                     if (nextBlocks.length < this.BATCH_SIZE) {
                         this.logger.info(`[CrawlNewAccountsService] Reached end of available blocks at height: ${newHeight}`);
                         break;
                     }
-                } catch (err) {
+
+                    const processDelay = this._isFreshStart ? 1000 : 200;
+                    if (processDelay > 0) {
+                        const { delay } = await import('../../common/utils/db_query_helper');
+                        await delay(processDelay);
+                    }
+                } catch (err: any) {
+                    if (err?.code === '57014' || err?.message?.includes('statement timeout') || err?.message?.includes('canceling statement')) {
+                        this.logger.warn(`[CrawlNewAccountsService] Statement timeout in batch processing at height ${lastHeight + 1}, waiting before retry...`);
+                        const { delay } = await import('../../common/utils/db_query_helper');
+                        await delay(5000);
+                        continue;
+                    }
                     this.logger.error(`[CrawlNewAccountsService] Error processing batch starting at height ${lastHeight + 1}:`, err);
                     break;
                 }
@@ -239,13 +261,14 @@ export default class CrawlNewAccountsService extends BullableService {
             const blockResult = blockData?.block_result;
             if (!blockResult) return { success: true, transfersProcessed: 0 };
 
-            const transferEvents: any[] = [];
+            const transferEvents: Array<{ type: string; attributes?: Array<{ key: string; value: string }>; source: string }> = [];
 
-            const extractEvents = (events: any[], source: string) => {
+            const extractEvents = (events: unknown[], source: string) => {
                 if (Array.isArray(events)) {
                     for (const event of events) {
-                        if (event?.type === 'transfer') {
-                            transferEvents.push({ ...event, source });
+                        const evt = event as { type?: string };
+                        if (evt?.type === 'transfer') {
+                            transferEvents.push({ ...(event as { type: string; attributes?: Array<{ key: string; value: string }> }), source });
                         }
                     }
                 }
@@ -266,7 +289,7 @@ export default class CrawlNewAccountsService extends BullableService {
             for (const event of transferEvents) {
                 try {
                     const attrs = Object.fromEntries(
-                        (event.attributes || []).map((a: any) => [a.key, a.value])
+                        (event.attributes || []).map((a: { key: string; value: string }) => [a.key, a.value])
                     ) as Record<string, string>;
 
                     const sender = attrs.sender;
@@ -356,6 +379,11 @@ export default class CrawlNewAccountsService extends BullableService {
         }
 
         try {
+            if (!(await tableExists("account"))) {
+                this.logger.warn("[ENSURE_ACCOUNT] Account table does not exist yet, waiting for migrations...");
+                return;
+            }
+
             const existing = await Account.query(knex)
                 .whereIn('address', addresses)
                 .select('address');
@@ -376,6 +404,8 @@ export default class CrawlNewAccountsService extends BullableService {
                             return rest;
                         });
                         await Account.query(knex).insert(retryData);
+                    } else if (isTableMissingError(err)) {
+                        this.logger.warn("[ENSURE_ACCOUNT] Account table does not exist yet, waiting for migrations...");
                     } else {
                         throw err;
                     }
@@ -383,7 +413,10 @@ export default class CrawlNewAccountsService extends BullableService {
             }
         } catch (err: unknown) {
             const e = err as { code?: string; nativeError?: { code?: string } };
-            if (e?.code === '23505' || e?.nativeError?.code === '23505') {
+            if (isTableMissingError(err)) {
+                this.logger.warn("[ENSURE_ACCOUNT] Account table does not exist yet, waiting for migrations...");
+            } else if (e?.code === '23505' || e?.nativeError?.code === '23505') {
+                // Duplicate key error - ignore
             } else {
                 this.logger.error(`[ENSURE_ACCOUNT] Batch insert error:`, err);
             }
@@ -400,11 +433,23 @@ export default class CrawlNewAccountsService extends BullableService {
             return this.accountCache.get(address)!;
         }
 
-        const account = await Account.query(knex).findOne({ address });
-        if (account && this.accountCache.size < this.cacheSize) {
-            this.accountCache.set(address, account);
+        try {
+            if (!(await tableExists("account"))) {
+                return null;
+            }
+
+            const account = await Account.query(knex).findOne({ address });
+            if (account && this.accountCache.size < this.cacheSize) {
+                this.accountCache.set(address, account);
+            }
+            return account || null;
+        } catch (err: unknown) {
+            if (isTableMissingError(err)) {
+                return null;
+            }
+            this.logger.error(`[TRANSFER] Failed:`, err);
+            return null;
         }
-        return account || null;
     }
 
     async saveOrUpdateAccount(address: string, msgAmount: Balance[], height: number) {
@@ -426,15 +471,28 @@ export default class CrawlNewAccountsService extends BullableService {
         }
 
         const updatedBalances = this.combineBalances(existing?.balances || [], balances);
-        await Account.query(knex)
-            .patch({
-                balances: updatedBalances,
-                spendable_balances: updatedBalances,
-                updated_at: new Date().toISOString(),
-            })
-            .where({ address });
+        try {
+            if (!(await tableExists("account"))) {
+                this.logger.warn("[SAVE_OR_UPDATE] Account table does not exist yet, waiting for migrations...");
+                return;
+            }
 
-        this.accountCache.delete(address);
+            await Account.query(knex)
+                .patch({
+                    balances: updatedBalances,
+                    spendable_balances: updatedBalances,
+                    updated_at: new Date().toISOString(),
+                })
+                .where({ address });
+
+            this.accountCache.delete(address);
+        } catch (err: unknown) {
+            if (isTableMissingError(err)) {
+                this.logger.warn("[SAVE_OR_UPDATE] Account table does not exist yet, waiting for migrations...");
+                return;
+            }
+            throw err;
+        }
     }
 
     async decreaseBalance(address: string, amountArray: Balance[]) {
@@ -461,15 +519,28 @@ export default class CrawlNewAccountsService extends BullableService {
             }
         }
 
-        await Account.query(knex)
-            .patch({
-                balances: newBalances,
-                spendable_balances: newBalances,
-                updated_at: new Date().toISOString(),
-            })
-            .where({ address });
+        try {
+            if (!(await tableExists("account"))) {
+                this.logger.warn("[DECREASE_BALANCE] Account table does not exist yet, waiting for migrations...");
+                return;
+            }
 
-        this.accountCache.delete(address);
+            await Account.query(knex)
+                .patch({
+                    balances: newBalances,
+                    spendable_balances: newBalances,
+                    updated_at: new Date().toISOString(),
+                })
+                .where({ address });
+
+            this.accountCache.delete(address);
+        } catch (err: unknown) {
+            if (isTableMissingError(err)) {
+                this.logger.warn("[DECREASE_BALANCE] Account table does not exist yet, waiting for migrations...");
+                return;
+            }
+            throw err;
+        }
     }
 
     private combineBalances(oldBalances: any[], newBalances: any[]) {
@@ -498,7 +569,8 @@ export default class CrawlNewAccountsService extends BullableService {
             
 
             if (i + batchSize < uniqueAddresses.length) {
-                await new Promise<void>(resolve => { setTimeout(resolve, 50); });
+                const { delay } = await import('../../common/utils/db_query_helper');
+                await delay(50);
             }
         }
         

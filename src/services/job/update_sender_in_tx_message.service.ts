@@ -6,6 +6,7 @@ import BullableService, { QueueHandler } from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE } from '../../common';
 import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
+import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 
 @Service({
   name: SERVICE.V1.JobService.UpdateSenderInTxMessages.key,
@@ -21,30 +22,39 @@ export default class UpdateSenderInTxMessages extends BullableService {
     jobName: BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
   })
   async updateSender(_payload: { lastBlockCrawled: number }) {
-    const blockCheckpoint = await BlockCheckpoint.query().findOne({
-      job_name: BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
-    });
-    this.logger.info(
-      `Update sender in transaction_message table start from block ${blockCheckpoint?.height}`
-    );
-    if (blockCheckpoint?.height === _payload.lastBlockCrawled) {
-      return;
-    }
+    try {
+      const transactionTableExists = await tableExists("transaction");
+      const transactionMessageTableExists = await tableExists("transaction_message");
+      
+      if (!transactionTableExists || !transactionMessageTableExists) {
+        this.logger.warn("Transaction or transaction_message tables do not exist yet, waiting for migrations...");
+        return;
+      }
 
-    const isReindexing = blockCheckpoint?.height === 0 || 
-      (blockCheckpoint?.height ?? 0) < 1000;
-    const jobConfig = config.jobUpdateSenderInTxMessages;
-    const effectiveConfig = isReindexing && jobConfig.reindexing 
-      ? { ...jobConfig, ...jobConfig.reindexing }
-      : jobConfig;
+      const blockCheckpoint = await BlockCheckpoint.query().findOne({
+        job_name: BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
+      });
+      this.logger.info(
+        `Update sender in transaction_message table start from block ${blockCheckpoint?.height}`
+      );
+      if (blockCheckpoint?.height === _payload.lastBlockCrawled) {
+        return;
+      }
 
-    let lastBlock =
-      (blockCheckpoint?.height ?? 0) +
-      effectiveConfig.blocksPerCall;
-    if (lastBlock > _payload.lastBlockCrawled) {
-      lastBlock = _payload.lastBlockCrawled;
-    }
-    const listTx = await Transaction.query()
+      const isReindexing = blockCheckpoint?.height === 0 || 
+        (blockCheckpoint?.height ?? 0) < 1000;
+      const jobConfig = config.jobUpdateSenderInTxMessages;
+      const effectiveConfig = isReindexing && jobConfig.reindexing 
+        ? { ...jobConfig, ...jobConfig.reindexing }
+        : jobConfig;
+
+      let lastBlock =
+        (blockCheckpoint?.height ?? 0) +
+        effectiveConfig.blocksPerCall;
+      if (lastBlock > _payload.lastBlockCrawled) {
+        lastBlock = _payload.lastBlockCrawled;
+      }
+      const listTx = await Transaction.query()
       .withGraphFetched('events.[attributes]')
       .modifyGraph('events', (builder) => {
         builder.orderBy('id', 'asc');
@@ -122,6 +132,13 @@ export default class UpdateSenderInTxMessages extends BullableService {
           `Processed ${listUpdates.length} transactions, ${missingSenderCount} without message.sender (normal for some tx types)`
         );
       }
+    }
+    } catch (error: any) {
+      if (isTableMissingError(error)) {
+        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
+        return;
+      }
+      throw error;
     }
   }
 

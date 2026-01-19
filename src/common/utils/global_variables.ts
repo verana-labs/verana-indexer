@@ -1,4 +1,5 @@
 import ModuleParams from "../../models/modules_params";
+import { parseModuleParams } from "./params_service";
 
 export default async function getGlobalVariables() {
   try {
@@ -12,13 +13,7 @@ export default async function getGlobalVariables() {
 
     for (const module of modules) {
       if (!module || !module.params) continue;
-
-      const parsedParams =
-        typeof module.params === "string"
-          ? JSON.parse(module.params)
-          : module.params;
-
-      globalVariables[module.module] = parsedParams.params || parsedParams;
+      globalVariables[module.module] = parseModuleParams(module.params);
     }
 
     return globalVariables;

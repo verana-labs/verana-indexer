@@ -3,6 +3,8 @@ export default {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/*.spec.ts'],
+  globalSetup: '<rootDir>/test/config/global_setup.ts',
+  globalTeardown: '<rootDir>/test/config/global_teardown.ts',
   transform: {
     '^.+\\.ts$': [
       'ts-jest',

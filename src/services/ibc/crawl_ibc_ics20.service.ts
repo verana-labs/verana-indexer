@@ -12,14 +12,25 @@ import {
   IbcIcs20,
   IbcMessage,
 } from '../../models';
+import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 
 @Service({
   name: SERVICE.V1.CrawlIBCIcs20Service.key,
   version: 1,
 })
 export default class CrawlIBCIcs20Service extends BullableService {
+  private _isFreshStart: boolean = false;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  public async _start() {
+    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_IBC_ICS20);
+    this._isFreshStart = startMode.isFreshStart;
+    this.logger.info(`CrawlIBCIcs20 service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    return super._start();
   }
 
   @QueueHandler({
@@ -27,17 +38,23 @@ export default class CrawlIBCIcs20Service extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_IBC_ICS20,
   })
   public async crawlIbcIcs20(): Promise<void> {
-    const [startHeight, endHeight, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.CRAWL_IBC_ICS20,
-        [BULL_JOB_NAME.CRAWL_IBC_APP],
-        config.crawlIbcIcs20.key
+    try {
+      if (!(await tableExists("ibc_message")) || !(await tableExists("transaction_message")) || !(await tableExists("transaction"))) {
+        this.logger.warn("Required tables do not exist yet, waiting for migrations...");
+        return;
+      }
+
+      const [startHeight, endHeight, updateBlockCheckpoint] =
+        await BlockCheckpoint.getCheckpoint(
+          BULL_JOB_NAME.CRAWL_IBC_ICS20,
+          [BULL_JOB_NAME.CRAWL_IBC_APP],
+          config.crawlIbcIcs20.key
+        );
+      this.logger.info(
+        `Handle IBC/ICS20, startHeight: ${startHeight}, endHeight: ${endHeight}`
       );
-    this.logger.info(
-      `Handle IBC/ICS20, startHeight: ${startHeight}, endHeight: ${endHeight}`
-    );
-    if (startHeight > endHeight) return;
-    await knex.transaction(async (trx) => {
+      if (startHeight > endHeight) return;
+      await knex.transaction(async (trx) => {
       await this.handleIcs20Send(startHeight, endHeight, trx);
       await this.handleIcs20Recv(startHeight, endHeight, trx);
       await this.handleIcs20Ack(startHeight, endHeight, trx);
@@ -49,6 +66,13 @@ export default class CrawlIBCIcs20Service extends BullableService {
         .onConflict('job_name')
         .merge();
     });
+    } catch (error: any) {
+      if (isTableMissingError(error)) {
+        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
+        return;
+      }
+      throw error;
+    }
   }
 
   async handleIcs20Send(
@@ -90,7 +114,9 @@ export default class CrawlIBCIcs20Service extends BullableService {
           start_time: msg.timestamp,
         })
       );
-      const chunkSize = config.crawlIbcIcs20.chunkSize || 5000;
+      const chunkSize = this._isFreshStart 
+        ? (config.crawlIbcIcs20.freshStart?.chunkSize || 100)
+        : (config.crawlIbcIcs20.chunkSize || 5000);
       for (let i = 0; i < ibcIcs20s.length; i += chunkSize) {
         const chunk = ibcIcs20s.slice(i, i + chunkSize);
         await IbcIcs20.query().insert(chunk).transacting(trx);
@@ -174,7 +200,9 @@ export default class CrawlIBCIcs20Service extends BullableService {
           finish_time: msg.timestamp,
         });
       });
-      const chunkSize = config.crawlIbcIcs20.chunkSize || 5000;
+      const chunkSize = this._isFreshStart 
+        ? (config.crawlIbcIcs20.freshStart?.chunkSize || 100)
+        : (config.crawlIbcIcs20.chunkSize || 5000);
       for (let i = 0; i < ibcIcs20s.length; i += chunkSize) {
         const chunk = ibcIcs20s.slice(i, i + chunkSize);
         await IbcIcs20.query().insert(chunk).transacting(trx);
@@ -312,21 +340,4 @@ export default class CrawlIBCIcs20Service extends BullableService {
     }
   }
 
-  async _start(): Promise<void> {
-    await this.createJob(
-      BULL_JOB_NAME.CRAWL_IBC_ICS20,
-      BULL_JOB_NAME.CRAWL_IBC_ICS20,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: config.crawlIbcIcs20.millisecondRepeatJob,
-        },
-      }
-    );
-    return super._start();
-  }
 }

@@ -89,7 +89,13 @@ export default class CrawlSigningInfoTest {
     this.crawlSigningInfoService.getQueueManager().stopAll();
 
     // Clean table WITHOUT soft-delete (avoids missing delete_at errors)
-    await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+    try {
+      await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+    } catch (err: any) {
+      if (err?.nativeError?.code !== '42P01') {
+        throw err;
+      }
+    }
 
     // Seed
     await Validator.query().insert(this.validator);
@@ -98,7 +104,13 @@ export default class CrawlSigningInfoTest {
   @AfterAll()
   async tearDown() {
     // Clean hard + shutdown
-    await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+    try {
+      await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+    } catch (err: any) {
+      if (err?.nativeError?.code !== '42P01') {
+        throw err;
+      }
+    }
     await this.broker.stop();
     await knex.destroy();
   }

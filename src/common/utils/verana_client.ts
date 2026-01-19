@@ -60,6 +60,14 @@ export async function getProviderFactory(): Promise<{
 
 export async function getLcdClient() {
   const lcd = Network?.LCD || "";
+  if (!lcd) {
+    const error = new Error(
+      `LCD_ENDPOINT is not configured. Please set LCD_ENDPOINT environment variable.`
+    );
+    (error as any).code = 'CONFIG_ERROR';
+    throw error;
+  }
+  
   if (!client.lcdClient.provider) {
     try {
       const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
@@ -80,7 +88,7 @@ export async function getLcdClient() {
       const errorMessage = error?.message || String(error);
       const errorCode = error?.code || 'UNKNOWN';
       const enhancedError = new Error(
-        `Failed to create LCD client: ${errorMessage} (code: ${errorCode})`
+        `Failed to create LCD client for endpoint "${lcd}": ${errorMessage} (code: ${errorCode})`
       );
       (enhancedError as any).code = errorCode;
       (enhancedError as any).originalError = error;
@@ -93,22 +101,40 @@ export async function getLcdClient() {
 
 export async function getRpcClient() {
   const rpc = Network.RPC || "";
+  if (!rpc) {
+    const error = new Error(
+      `RPC_ENDPOINT is not configured. Please set RPC_ENDPOINT environment variable.`
+    );
+    (error as any).code = 'CONFIG_ERROR';
+    throw error;
+  }
 
   if (!client.rpcClient.provider) {
-    const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
-      await getProviderFactory();
-    client.rpcClient.provider = await providerClient.createRPCQueryClient({
-      rpcEndpoint: rpc,
-    });
-    client.lcdClient.cosmwasm = await cosmwasmClient.createRPCQueryClient({
-      rpcEndpoint: rpc,
-    });
-    client.lcdClient.ibc = await ibcClient.createRPCQueryClient({
-      rpcEndpoint: rpc,
-    });
-    client.lcdClient.cosmos = await cosmosClient.createRPCQueryClient({
-      rpcEndpoint: rpc,
-    });
+    try {
+      const { providerClient, cosmwasmClient, ibcClient, cosmosClient } =
+        await getProviderFactory();
+      client.rpcClient.provider = await providerClient.createRPCQueryClient({
+        rpcEndpoint: rpc,
+      });
+      client.rpcClient.cosmwasm = await cosmwasmClient.createRPCQueryClient({
+        rpcEndpoint: rpc,
+      });
+      client.rpcClient.ibc = await ibcClient.createRPCQueryClient({
+        rpcEndpoint: rpc,
+      });
+      client.rpcClient.cosmos = await cosmosClient.createRPCQueryClient({
+        rpcEndpoint: rpc,
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      const errorCode = error?.code || 'UNKNOWN';
+      const enhancedError = new Error(
+        `Failed to create RPC client for endpoint "${rpc}": ${errorMessage} (code: ${errorCode})`
+      );
+      (enhancedError as any).code = errorCode;
+      (enhancedError as any).originalError = error;
+      throw enhancedError;
+    }
   }
   return client.rpcClient;
 }

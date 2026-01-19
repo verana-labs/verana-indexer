@@ -12,13 +12,13 @@
     "clean": "rimraf ./dist/",
     "docker:dev": "pnpm run up && pnpm run migrate:dev && pnpm run dev",
     "docker": "pnpm run up && pnpm run build && pnpm run migrate && pnpm run start",
-    "start": "node --max-old-space-size=8192 --max-semi-space-size=256 --expose-gc ./node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./dist/src/moleculer.config.js ./dist/src/services/**/*.service.js",
-    "dev": "cross-env NODE_OPTIONS=\"--loader=ts-node/esm --max-old-space-size=8192 --expose-gc\" node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts",
+    "start": "node --max-old-space-size=12288 --max-semi-space-size=256 --expose-gc ./node_modules/moleculer/bin/moleculer-runner.mjs --env --config ./dist/src/moleculer.config.js ./dist/src/services/**/*.service.js",
+    "dev": "cross-env NODE_OPTIONS=\"--import=tsx --max-old-space-size=12288 --expose-gc\" node ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config ./src/moleculer.config.ts",
     "watch": "nodemon",
     "migrate": "node dist/src/scripts/migrate-if-needed.js",
-    "migrate:dev": "cross-env  NODE_OPTIONS=\"--loader ts-node/esm\" node ./src/scripts/migrate-if-needed.ts",
-    "reindex": "node dist/src/scripts/reindex-modules.js && pnpm run docker",
-    "reindex:dev": "cross-env NODE_OPTIONS=\"--loader ts-node/esm\" node ./src/scripts/reindex-modules.ts && pnpm run docker:dev",
+    "migrate:dev": "cross-env NODE_OPTIONS=\"--import=tsx\" node ./src/scripts/migrate-if-needed.ts",
+    "reindex": "pnpm run build && node dist/src/scripts/reindex-modules.js && pnpm run docker",
+    "reindex:dev": "cross-env NODE_OPTIONS=\"--import=tsx\" node ./src/scripts/reindex-modules.ts && pnpm run docker:dev",
     "build": "pnpm run clean && tsc --project tsconfig.build.json && node ./src/scripts/fix-imports.cjs",
     "up": "docker-compose -f ./docker/docker-compose.yml up -d",
     "stop": "docker-compose -f ./docker/docker-compose.yml stop",
@@ -28,7 +28,7 @@
     "test-ci": "jest --verbose --runInBand --forceExit --passWithNoTests",
     "test-watch": "pnpm run jest --watch",
     "test-coverage": "pnpm run jest --coverage",
-    "lint": "eslint \"src/**/*.{ts,tsx,js}\" --cache --cache-location .eslintcache --no-error-on-unmatched-pattern --max-warnings=9999"
+    "lint": "eslint \"src/**/*.{ts,tsx,js}\" --cache --cache-location .eslintcache --no-error-on-unmatched-pattern --quiet && node -e \"console.log('✅ Lint check passed - no errors found')\""
   },
   "nodemonConfig": {
     "ignore": [
@@ -40,7 +40,7 @@
     "watch": [
       "src"
     ],
-    "exec": "node --loader ts-node/esm --experimental-specifier-resolution=node --max-old-space-size=8192 ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
+    "exec": "node --import=tsx --max-old-space-size=12288 --expose-gc ./node_modules/moleculer/bin/moleculer-runner.mjs --hot --repl --env --config src/moleculer.config.ts",
     "ext": "ts, js"
   },
   "dependencies": {
@@ -153,7 +153,8 @@
     "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "5.9.2"
+    "tsx": "4.21.0",
+    "typescript": "5.4.5"
   },
   "engines": {
     "node": ">=22.0.0"

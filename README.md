@@ -282,7 +282,7 @@ Both scripts use optimized Node.js flags:
 ```json
 {
   "start": "node --max-old-space-size=8192 --max-semi-space-size=256 --expose-gc ...",
-  "dev": "NODE_OPTIONS=\"--loader=ts-node/esm --max-old-space-size=8192 --expose-gc\" ..."
+  "dev": "NODE_OPTIONS=\"--import=tsx --max-old-space-size=8192 --expose-gc\" ..."
 }
 ```
 
@@ -369,7 +369,7 @@ All messages are JSON strings with the following structure:
 
 ```bash
 # Run the test script (make sure indexer is running first)
-node --loader ts-node/esm test/manual/test-websocket.ts
+node --import=tsx test/manual/test-websocket.ts
 ```
 
 You should see:

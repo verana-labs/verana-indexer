@@ -47,7 +47,12 @@ export function analyzeError(error: any): ErrorInfo {
     'timed out',
     'ETIMEDOUT',
     'ECONNABORTED',
+    'statement timeout',
+    'query timeout',
+    'canceling statement',
   ];
+  
+  const postgresTimeoutCodes = ['57014'];
 
   const serverErrorPatterns = [
     'Bad Gateway',
@@ -81,15 +86,20 @@ export function analyzeError(error: any): ErrorInfo {
   const isTimeoutError =
     errorCode === 'ETIMEDOUT' ||
     errorCode === 'ECONNABORTED' ||
+    postgresTimeoutCodes.includes(errorCode) ||
     timeoutPatterns.some(pattern =>
       errorMessage.toLowerCase().includes(pattern.toLowerCase())
     );
 
+  const isNonCritical = errorMessage.toLowerCase().includes('non-critical') ||
+    errorMessage.toLowerCase().includes('service will continue');
   const shouldStopIndexer =
-    isNetworkError ||
-    isServerError ||
-    isTimeoutError ||
-    (statusCode && statusCode >= 500);
+    !isNonCritical && (
+      isNetworkError ||
+      isServerError ||
+      isTimeoutError ||
+      (statusCode && statusCode >= 500)
+    );
 
   return {
     isNetworkError,
@@ -134,36 +144,77 @@ export async function handleErrorGracefully(
   stopCrawlingOnly: boolean = false
 ): Promise<boolean> {
   const errorInfo = analyzeError(error);
+  const errorMessage = error?.message || error?.response?.data?.message || error?.response?.statusText || String(error);
 
-  if (stopCrawlingOnly) {
-    const errorMessage = error?.message || error?.response?.data?.message || error?.response?.statusText || String(error);
+  const isNonCritical = errorMessage.toLowerCase().includes('non-critical') ||
+    errorMessage.toLowerCase().includes('service will continue');
+  
+  const isTimeoutError = errorInfo.isTimeoutError || 
+    errorMessage.toLowerCase().includes('timeout') ||
+    errorMessage.toLowerCase().includes('exceeded') ||
+    errorMessage.toLowerCase().includes('timed out') ||
+    error?.code === 'ETIMEDOUT' ||
+    error?.code === 'ECONNABORTED';
+
+  const logger = (global as any).logger || console;
+  
+  if (isNonCritical && isTimeoutError) {
+    if (logger.warn) {
+      logger.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+    } else {
+      console.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+    }
+    return false;
+  }
+
+  if (stopCrawlingOnly && !isNonCritical) {
     const enhancedError = createEnhancedError(error, context);
-    
-    console.error(`❌ ${context || 'Error'}: ${errorMessage}`);
-    console.error('⏸️ Stopping crawling only - APIs remain available...');
-    
+    if (logger.error) {
+      logger.error(`Error in ${serviceName}: ${errorMessage}`);
+      logger.error('Stopping crawling only - APIs remain available...');
+    } else {
+      console.error(`Error in ${serviceName}: ${errorMessage}`);
+      console.error('Stopping crawling only - APIs remain available...');
+    }
     await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);
-    
-    console.error(`✅ Crawling stopped. Error details available via /verana/indexer/v1/status API`);
-    
+    if (logger.warn) {
+      logger.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`);
+    } else {
+      console.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`);
+    }
     return true;
   }
 
-  if (errorInfo.shouldStopIndexer) {
+  if (errorInfo.shouldStopIndexer && !isNonCritical) {
     const enhancedError = createEnhancedError(error, context);
-
     const logMessage = errorInfo.statusCode
-      ? `❌ ${context || 'Error'} (${errorInfo.errorCode || 'NETWORK_ERROR'} HTTP ${errorInfo.statusCode}): ${errorInfo.errorMessage}`
-      : `❌ ${context || 'Error'} (${errorInfo.errorCode || 'NETWORK_ERROR'}): ${errorInfo.errorMessage}`;
-
-    console.error(logMessage);
-    console.error('🛑 Stopping indexer gracefully due to error...');
+      ? `Error (${errorInfo.errorCode || 'NETWORK_ERROR'} HTTP ${errorInfo.statusCode}): ${errorInfo.errorMessage}`
+      : `Error (${errorInfo.errorCode || 'NETWORK_ERROR'}): ${errorInfo.errorMessage}`;
+    if (logger.error) {
+      logger.error(logMessage);
+      logger.error('Stopping indexer gracefully due to error...');
+    } else {
+      console.error(logMessage);
+      console.error('Stopping indexer gracefully due to error...');
+    }
     await indexerStatusManager.stopIndexer(enhancedError, serviceName);
-
     return true;
   }
 
-  console.warn(`⚠️ Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`);
+  if (isNonCritical) {
+    if (logger.warn) {
+      logger.warn(`Non-critical error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+    } else {
+      console.warn(`Non-critical error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+    }
+    return false;
+  }
+
+  if (logger.warn) {
+    logger.warn(`Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`);
+  } else {
+    console.warn(`Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`);
+  }
   return false;
 }
 
@@ -190,4 +241,5 @@ export function checkCrawlingStatus(): void {
     throw error;
   }
 }
+
 

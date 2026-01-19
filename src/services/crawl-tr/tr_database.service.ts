@@ -3,9 +3,8 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
-import { ModulesParamsNamesTypes, SERVICE } from "../../common";
+import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
-import ModuleParams from "../../models/modules_params";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 
@@ -372,46 +371,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
     @Action()
     public async getParams(ctx: Context) {
-        try {
-            const blockHeight = (ctx.meta as any)?.blockHeight;
-
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
-                const historyRecord = await knex("module_params_history")
-                    .where({ module: ModulesParamsNamesTypes?.TR })
-                    .where("height", "<=", blockHeight)
-                    .orderBy("height", "desc")
-                    .orderBy("created_at", "desc")
-                    .first();
-
-                if (!historyRecord || !historyRecord.params) {
-                    return ApiResponder.error(ctx, "Module parameters not found: trustregistry", 404);
-                }
-
-                const parsedParams =
-                    typeof historyRecord.params === "string"
-                        ? JSON.parse(historyRecord.params)
-                        : historyRecord.params;
-
-                return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
-            }
-
-            // Otherwise, return latest state
-            const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.TR });
-
-            if (!module || !module.params) {
-                return ApiResponder.error(ctx, "Module parameters not found: trustregistry", 404);
-            }
-
-            const parsedParams =
-                typeof module.params === "string"
-                    ? JSON.parse(module.params)
-                    : module.params;
-
-            return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
-        } catch (err: any) {
-            this.logger.error("Error fetching trustregistry params", err);
-            return ApiResponder.error(ctx, "Internal Server Error", 500);
-        }
+        const { getModuleParamsAction } = await import("../../common/utils/params_service");
+        return getModuleParamsAction(ctx, ModulesParamsNamesTypes.TR, MODULE_DISPLAY_NAMES.TRUST_REGISTRY);
     }
 }

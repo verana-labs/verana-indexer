@@ -33,7 +33,7 @@ export default class GenesisParamsService extends BullableService {
     name: SERVICE.V1.GenesisParamsService.key,
     description: "Manually trigger Genesis params sync",
   })
-  public async syncParams(ctx: Context<unknown>) {
+  public async syncParams(_ctx: Context<unknown>) {
     return this.sync();
   }
 

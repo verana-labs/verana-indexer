@@ -12,26 +12,31 @@ import { VeranaTrustRegistryMessageTypes } from "../../common/verana-message-typ
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import { requireController } from "../../common/utils/extract_controller";
+import { MessageProcessorBase } from "../../common/utils/message_processor_base";
+import { detectStartMode } from "../../common/utils/start_mode_detector";
 
 type ChangeRecord = Record<string, { old: any; new: any }>;
-
-function computeChanges(oldData: any, newData: any): ChangeRecord {
-  const changes: ChangeRecord = {};
-  for (const key of Object.keys(newData)) {
-    if (oldData?.[key] !== newData[key]) {
-      changes[key] = { old: oldData?.[key] ?? null, new: newData[key] };
-    }
-  }
-  return changes;
-}
 
 @Service({
   name: SERVICE.V1.TrustRegistryMessageProcessorService.key,
   version: 1,
 })
 export default class TrustRegistryMessageProcessorService extends BullableService {
+  private processorBase: MessageProcessorBase;
+  private _isFreshStart: boolean = false;
+
   constructor(broker: ServiceBroker) {
     super(broker);
+    this.processorBase = new MessageProcessorBase(this);
+  }
+
+  public async _start() {
+    const startMode = await detectStartMode();
+    this._isFreshStart = startMode.isFreshStart;
+    this.processorBase.setFreshStartMode(this._isFreshStart);
+    this.logger.info(`TrustRegistry processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    await super._start();
+    this.logger.info("TrustRegistryMessageProcessorService started and ready.");
   }
 
   @Action({ name: "handleTrustRegistryMessages" })
@@ -46,99 +51,96 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       return;
     }
 
-    const chunkSize = 500; 
     const failThreshold = 0.1;
     const failedMessages: any[] = [];
     let processedCount = 0;
-    let successCount = 0;
 
-    for (let i = 0; i < trustRegistryList.length; i += chunkSize) {
-      const chunk = trustRegistryList.slice(i, i + chunkSize);
-      this.logger.info(`📦 Processing chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(trustRegistryList.length / chunkSize)} (${chunk.length} messages)`);
-
-      for (const message of chunk) {
-        processedCount++;
-        try {
-          this.logger.info(` Processing TR message ${processedCount}/${trustRegistryList.length}: type=${message.type}, height=${message.height}, did=${message.content?.did || message.did || 'N/A'}`);
-
-          if (!message.type) {
-            this.logger.error(`❌ TR message missing type:`, JSON.stringify(message));
-            failedMessages.push({ message, error: "Missing type" });
-            continue;
-          }
-
-          const processedTR: any = { ...message, ...message.content };
-
-          if (message.content?.id) {
-            processedTR.trust_registry_id = message.content.id;
-          }
-
-          delete processedTR?.content;
-          delete processedTR?.id;
-          delete processedTR?.tx_id;
-          delete processedTR?.["@type"];
-
-          let processed = false;
-          if (
-            processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
-            processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
-          ) {
-            await this.processCreateTR(processedTR);
-            processed = true;
-          }
-
-          if (
-            processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
-          ) {
-            await this.processAddGovFrameworkDoc(processedTR);
-            processed = true;
-          }
-
-          if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
-            await this.processUpdateTR(processedTR);
-            processed = true;
-          }
-
-          if (
-            processedTR.type ===
-            VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
-          ) {
-            await this.processIncreaseActiveGFV(processedTR);
-            processed = true;
-          }
-
-          if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
-            await this.processArchiveTR(processedTR);
-            processed = true;
-          }
-
-          if (!processed) {
-            this.logger.warn(`⚠️ Unknown TR message type: ${processedTR.type}`);
-            failedMessages.push({ message, error: `Unknown type: ${processedTR.type}` });
-          } else {
-            successCount++;
-          }
-        } catch (err: any) {
-          const errorMessage = err?.message || String(err);
-          this.logger.error(`❌ Error processing TR message ${processedCount}:`, errorMessage);
-          this.logger.error(`❌ Message details:`, JSON.stringify(message));
-          console.error("FATAL TR ERROR:", err);
-          failedMessages.push({ message, error: errorMessage });
-        }
+    const processMessage = async (message: any) => {
+      processedCount++;
+      
+      if (!message.type) {
+        this.logger.error(`TR message missing type:`, JSON.stringify(message));
+        failedMessages.push({ message, error: "Missing type" });
+        return;
       }
-    }
 
-    this.logger.info(`✅ TrustRegistry processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${processedCount} total`);
+      this.logger.info(`Processing TR message ${processedCount}/${trustRegistryList.length}: type=${message.type}, height=${message.height}`);
+
+      const processedTR: any = { ...message, ...message.content };
+
+      if (message.content?.id) {
+        processedTR.trust_registry_id = message.content.id;
+      }
+
+      delete processedTR?.content;
+      delete processedTR?.id;
+      delete processedTR?.tx_id;
+      delete processedTR?.["@type"];
+
+      let processed = false;
+      if (
+        processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
+        processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
+      ) {
+        await this.processCreateTR(processedTR);
+        processed = true;
+      }
+
+      if (
+        processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
+      ) {
+        await this.processAddGovFrameworkDoc(processedTR);
+        processed = true;
+      }
+
+      if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
+        await this.processUpdateTR(processedTR);
+        processed = true;
+      }
+
+      if (
+        processedTR.type ===
+        VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
+      ) {
+        await this.processIncreaseActiveGFV(processedTR);
+        processed = true;
+      }
+
+      if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
+        await this.processArchiveTR(processedTR);
+        processed = true;
+      }
+
+      if (!processed) {
+        this.logger.warn(`Unknown TR message type: ${processedTR.type}`);
+        failedMessages.push({ message, error: `Unknown type: ${processedTR.type}` });
+        throw new Error(`Unknown TR message type: ${processedTR.type}`);
+      }
+    };
+
+    const result = await this.processorBase.processInBatches(
+      trustRegistryList,
+      processMessage,
+      {
+        maxConcurrent: this._isFreshStart ? 3 : 10,
+        batchSize: this._isFreshStart ? 50 : 200,
+        delayBetweenBatches: this._isFreshStart ? 1000 : 200,
+      }
+    );
+
+    const successCount = result.success;
+
+    this.logger.info(`TrustRegistry processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${processedCount} total`);
 
     if (failedMessages.length > 0) {
-      this.logger.error(`❌ Failed to process ${failedMessages.length} TrustRegistry messages:`);
+      this.logger.error(`Failed to process ${failedMessages.length} TrustRegistry messages:`);
       failedMessages.forEach((failed, idx) => {
         this.logger.error(`  ${idx + 1}. Type: ${failed.message.type}, Error: ${failed.error}`);
       });
       
       if (failedMessages.length > processedCount * failThreshold) {
         const failureRate = ((failedMessages.length / processedCount) * 100).toFixed(2);
-        this.logger.error(`💀 CRITICAL: ${failureRate}% of TR messages failed (${failedMessages.length}/${processedCount})! This indicates a serious issue.`);
+        this.logger.error(`CRITICAL: ${failureRate}% of TR messages failed (${failedMessages.length}/${processedCount})! This indicates a serious issue.`);
         throw new Error(`Failed to process ${failedMessages.length} out of ${processedCount} TrustRegistry messages (${failureRate}% failure rate). This exceeds the ${(failThreshold * 100).toFixed(0)}% threshold.`);
       }
     }
@@ -155,7 +157,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     let changes: ChangeRecord | null = null;
 
     if (oldData) {
-      const computed = computeChanges(oldData, newData);
+      const computed = this.processorBase.computeChanges(oldData, newData);
       changes = Object.keys(computed).length > 0 ? computed : null;
       
       if (!changes) {
@@ -191,7 +193,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
   ) {
     let changes: ChangeRecord | null = null;
     if (oldData) {
-      const computed = computeChanges(oldData, newData);
+      const computed = this.processorBase.computeChanges(oldData, newData);
       changes = Object.keys(computed).length > 0 ? computed : null;
       
       if (!changes) {
@@ -222,7 +224,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
   ) {
     let changes: ChangeRecord | null = null;
     if (oldData) {
-      const computed = computeChanges(oldData, newData);
+      const computed = this.processorBase.computeChanges(oldData, newData);
       changes = Object.keys(computed).length > 0 ? computed : null;
       
       if (!changes) {
@@ -638,8 +640,4 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     }
   }
 
-  public async _start() {
-    await super._start();
-    this.logger.info("TrustRegistryMessageProcessorService started and ready.");
-  }
 }

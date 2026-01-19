@@ -1,7 +1,7 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { ModulesParamsNamesTypes, SERVICE } from "../../common";
+import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import ModuleParams from "../../models/modules_params";
@@ -197,7 +197,6 @@ export default class DidDatabaseService extends BullableService {
                     return ApiResponder.success(ctx, { dids: [] }, 200);
                 }
 
-                // For each DID, get the latest history record at or before block height
                 const items = await Promise.all(
                     didsAtHeight.map(async (did: string) => {
                         const historyRecord = await knex("did_history")
@@ -293,46 +292,7 @@ export default class DidDatabaseService extends BullableService {
 
     @Action({ rest: "GET params" })
     public async getDidParams(ctx: Context) {
-        try {
-            const blockHeight = (ctx.meta as any)?.blockHeight;
-
-            // If AtBlockHeight is provided, query historical state
-            if (typeof blockHeight === "number") {
-                const historyRecord = await knex("module_params_history")
-                    .where({ module: ModulesParamsNamesTypes?.DD })
-                    .where("height", "<=", blockHeight)
-                    .orderBy("height", "desc")
-                    .orderBy("created_at", "desc")
-                    .first();
-
-                if (!historyRecord || !historyRecord.params) {
-                    return ApiResponder.error(ctx, "Module parameters not found: diddirectory", 404);
-                }
-
-                const parsedParams =
-                    typeof historyRecord.params === "string"
-                        ? JSON.parse(historyRecord.params)
-                        : historyRecord.params;
-
-                return ApiResponder.success(ctx, { params: parsedParams.params || parsedParams }, 200);
-            }
-
-            // Otherwise, return latest state
-            const module = await ModuleParams.query().findOne({ module: ModulesParamsNamesTypes?.DD });
-
-            if (!module || !module.params) {
-                return ApiResponder.error(ctx, "Module parameters not found: diddirectory", 404);
-            }
-
-            const parsedParams =
-                typeof module.params === "string"
-                    ? JSON.parse(module.params)
-                    : module.params;
-
-            return ApiResponder.success(ctx, { params: parsedParams.params }, 200);
-        } catch (err: any) {
-            this.logger.error("Error fetching diddirectory params", err);
-            return ApiResponder.error(ctx, "Internal Server Error", 500);
-        }
+        const { getModuleParamsAction } = await import("../../common/utils/params_service");
+        return getModuleParamsAction(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
     }
 }

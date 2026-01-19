@@ -68,9 +68,47 @@ function fixImportsInFile(filePath) {
     const importExportRegex =
       /\b(import|export)\s+(?:[\s\S]+?\s+from\s+)?['"]([^'"]+)['"]/g;
 
+    const dynamicImportRegex = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
     content = content.replace(
       importExportRegex,
       (match, keyword, importPath) => {
+        // Skip if already .js or .json
+        if (importPath.endsWith(".js") || importPath.endsWith(".json")) {
+          return match;
+        }
+
+        // Handle known packages
+        const jsExtType = needsJsExtension(importPath);
+        if (jsExtType) {
+          modified = true;
+          if (jsExtType === "index") {
+            return match.replace(importPath, `${importPath}/index.js`);
+          }
+          return match.replace(importPath, `${importPath}.js`);
+        }
+
+        // Handle relative imports (./ or ../)
+        if (importPath.startsWith("./") || importPath.startsWith("../")) {
+          modified = true;
+          if (isDirectory(fileDir, importPath)) {
+            return match.replace(importPath, `${importPath}/index.js`);
+          } else {
+            return match.replace(importPath, `${importPath}.js`);
+          }
+        }
+        if (importPath.startsWith("@verana-labs/verana-types/")) {
+          modified = true;
+          return match.replace(importPath, `${importPath}.js`);
+        }
+        return match; // leave other imports untouched
+      }
+    );
+
+    // Fix dynamic imports
+    content = content.replace(
+      dynamicImportRegex,
+      (match, importPath) => {
         // Skip if already .js or .json
         if (importPath.endsWith(".js") || importPath.endsWith(".json")) {
           return match;
