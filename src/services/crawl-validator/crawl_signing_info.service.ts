@@ -114,13 +114,13 @@ export default class CrawlSigningInfoService extends BullableService {
         const paramSlashing = await this.retryRpcCall(
           () => this._lcdClient.provider.cosmos.slashing.v1beta1.params(),
           'getSlashingParams'
-        );
+        ) as any;
 
-      let resultCallApi;
-      let done = false;
-      const pagination: IPagination = {
-        limit: Long.fromInt(config.crawlValidator.queryPageLimit),
-      };
+        let resultCallApi: any;
+        let done = false;
+        const pagination: IPagination = {
+          limit: Long.fromInt(config.crawlValidator.queryPageLimit),
+        };
 
         while (!done) {
           resultCallApi = await this.retryRpcCall(
@@ -128,7 +128,7 @@ export default class CrawlSigningInfoService extends BullableService {
               pagination,
             }),
             'getSigningInfos'
-          );
+          ) as any;
 
           signingInfos.push(...resultCallApi.info);
           if (resultCallApi.pagination.next_key === null) {

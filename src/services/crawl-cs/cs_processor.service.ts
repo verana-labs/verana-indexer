@@ -161,7 +161,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const timestamp = formatTimestamp(schemaMessage.timestamp);
       const content = schemaMessage?.content ?? {};
       const trId = content.tr_id ?? content.trId ?? "";
-      const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
 
       const jsonSchema = content.json_schema ?? content.jsonSchema ?? "";
       const baseSchema =
@@ -171,7 +170,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
       const payload: Record<string, any> = {
         tr_id: trId,
-        json_schema: JSON.stringify(baseSchema),
+        json_schema: baseSchema,
         deposit: deposit?.toString() ?? "0",
         created: timestamp ?? null,
         modified: timestamp ?? null,
@@ -210,25 +209,8 @@ export default class ProcessCredentialSchemaService extends BullableService {
         throw new Error("❌ Failed to get generated ID from DB");
       }
 
-      const updatedSchema = {
-        ...baseSchema,
-        $id: `vpr:verana:${chainId}/cs/v1/js/${generatedId}`,
-      };
-
-      const updatePayload: Record<string, any> = {
-        id: generatedId,
-        json_schema: JSON.stringify(updatedSchema),
-        height: schemaMessage.height ?? 0,
-      };
-
-      await ctx.call(
-        `${SERVICE.V1.CredentialSchemaDatabaseService.path}.update`,
-        { payload: updatePayload }
-      );
-
       this.logger.info(
-        `✅ Stored credential schema tr_id=${trId} with final ID=${generatedId}`,
-        updatePayload
+        `✅ Stored credential schema tr_id=${trId} with final ID=${generatedId}`
       );
     } catch (err) {
       this.logger.error("❌ Error storing credential schema:", err);

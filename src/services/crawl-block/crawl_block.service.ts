@@ -710,13 +710,26 @@ export default class CrawlBlockService extends BullableService {
         .timeout(10000);
 
       if (!blockHeightCrawled) {
-        blockHeightCrawled = await BlockCheckpoint.query()
-          .insert({
-            job_name: BULL_JOB_NAME.CRAWL_BLOCK,
-            height: config.crawlBlock.startBlock,
-          })
-          .timeout(10000);
-        this.logger.info(`Created crawl block checkpoint at height ${config.crawlBlock.startBlock}`);
+        try {
+          blockHeightCrawled = await BlockCheckpoint.query()
+            .insert({
+              job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+              height: config.crawlBlock.startBlock,
+            })
+            .timeout(10000);
+          this.logger.info(`Created crawl block checkpoint at height ${config.crawlBlock.startBlock}`);
+        } catch (insertError: any) {
+          if (insertError?.code === '23505' || insertError?.constraint === 'block_checkpoint_job_name_unique') {
+            blockHeightCrawled = await BlockCheckpoint.query()
+              .findOne({
+                job_name: BULL_JOB_NAME.CRAWL_BLOCK,
+              })
+              .timeout(10000);
+            this.logger.info(`Checkpoint already exists (created by another service) at height ${blockHeightCrawled?.height || 0}`);
+          } else {
+            throw insertError;
+          }
+        }
       } else {
         this.logger.info(`Crawl block checkpoint exists at height ${blockHeightCrawled.height}`);
       }

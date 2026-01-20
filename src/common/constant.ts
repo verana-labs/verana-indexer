@@ -112,8 +112,6 @@ export const BULL_JOB_NAME = {
   JOB_UPDATE_ASSETS: "job:update-assets",
   JOB_CW721_UPDATE: "job:cw721-update",
   CHECKPOINT_UPDATE_DELEGATOR: "job:checkpoint_update_delegator",
-  JOB_CRAWL_DID: "crawl:did-directory",
-  CP_CRAWL_DID: "checkpoint:did-directory",
 };
 
 export enum ModulesParamsNamesTypes {

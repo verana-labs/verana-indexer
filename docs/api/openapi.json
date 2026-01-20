@@ -968,7 +968,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter only active"
+            "description": "Filter by active status. If true, returns only active schemas (archived is null or false). If false or omitted, returns all schemas (both active and archived). Active/inactive is determined by the archived field."
           },
           {
             "name": "issuer_perm_management_mode",
