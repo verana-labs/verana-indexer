@@ -23,23 +23,27 @@ async function checkHeightColumnExists(): Promise<boolean> {
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
+  if (!row || !row.id) {
+    throw new Error(`Invalid row data: missing id. Row: ${JSON.stringify(row)}`);
+  }
+  
   const height = Number(overrides.height) || 0;
   const baseRow: any = {
-    credential_schema_id: row.id,
-    tr_id: row.tr_id,
-    json_schema: row.json_schema,
-    deposit: row.deposit,
-    issuer_grantor_validation_validity_period: row.issuer_grantor_validation_validity_period,
-    verifier_grantor_validation_validity_period: row.verifier_grantor_validation_validity_period,
-    issuer_validation_validity_period: row.issuer_validation_validity_period,
-    verifier_validation_validity_period: row.verifier_validation_validity_period,
-    holder_validation_validity_period: row.holder_validation_validity_period,
-    issuer_perm_management_mode: row.issuer_perm_management_mode,
-    verifier_perm_management_mode: row.verifier_perm_management_mode,
-    archived: row.archived,
-    is_active: row.is_active,
-    created: row.created,
-    modified: row.modified,
+    credential_schema_id: Number(row.id),
+    tr_id: row.tr_id ?? null,
+    json_schema: row.json_schema ?? null,
+    deposit: row.deposit ?? "0",
+    issuer_grantor_validation_validity_period: Number(row.issuer_grantor_validation_validity_period) || 0,
+    verifier_grantor_validation_validity_period: Number(row.verifier_grantor_validation_validity_period) || 0,
+    issuer_validation_validity_period: Number(row.issuer_validation_validity_period) || 0,
+    verifier_validation_validity_period: Number(row.verifier_validation_validity_period) || 0,
+    holder_validation_validity_period: Number(row.holder_validation_validity_period) || 0,
+    issuer_perm_management_mode: row.issuer_perm_management_mode ?? null,
+    verifier_perm_management_mode: row.verifier_perm_management_mode ?? null,
+    archived: row.archived ?? null,
+    is_active: row.is_active ?? false,
+    created: row.created ?? null,
+    modified: row.modified ?? null,
     changes: overrides.changes ?? null,
     action: overrides.action ?? "unknown",
     created_at: knex.fn.now(),
@@ -73,15 +77,55 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           .insert(schemaPayload)
           .returning("*");
 
+        let finalRecord = inserted;
+        
+        const jsonSchema = inserted.json_schema;
+        if (jsonSchema) {
+          let schemaObj: any;
+          if (typeof jsonSchema === 'string') {
+            try {
+              schemaObj = JSON.parse(jsonSchema);
+            } catch {
+              schemaObj = null;
+            }
+          } else {
+            schemaObj = jsonSchema;
+          }
+          
+          if (schemaObj && typeof schemaObj === 'object' && schemaObj.$id) {
+            const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
+            const placeholderPattern = /VPR_CHAIN_ID|VPR_CREDENTIAL_SCHEMA_ID/;
+            
+            if (typeof schemaObj.$id === 'string' && placeholderPattern.test(schemaObj.$id)) {
+              const canonicalId = `vpr:verana:${chainId}/cs/v1/js/${inserted.id}`;
+              const updatedSchema = {
+                ...schemaObj,
+                $id: canonicalId,
+              };
+              
+              const [updated] = await trx("credential_schemas")
+                .where({ id: inserted.id })
+                .update({ json_schema: updatedSchema })
+                .returning("*");
+              
+              if (updated && updated.id && updated.id === inserted.id) {
+                finalRecord = updated;
+              } else {
+                throw new Error(`Failed to update json_schema for schema id=${inserted.id}. Updated record is invalid or ID mismatch.`);
+              }
+            }
+          }
+        }
+
         const hasHeightColumn = await checkHeightColumnExists();
-        const historyRow = mapToHistoryRow(inserted, {
+        const historyRow = mapToHistoryRow(finalRecord, {
           changes: null,
           action: "create",
           height: blockHeight,
         }, hasHeightColumn);
         await trx("credential_schema_history").insert(historyRow);
 
-        return inserted;
+        return finalRecord;
       });
 
       return ApiResponder.success(ctx, { success: true, result }, 200);
@@ -374,7 +418,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             archived: historyRecord.archived,
             created: historyRecord.created,
             modified: historyRecord.modified,
-            is_active: historyRecord.is_active,
           }));
 
         if (trId) filteredItems = filteredItems.filter(item => String(item.tr_id) === String(trId));
@@ -394,13 +437,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         if (onlyActiveBool === true) {
-          filteredItems = filteredItems.filter(item => item.is_active === true);
-        } else if (onlyActiveBool === false) {
-          filteredItems = filteredItems.filter(item => item.is_active === false);
+          filteredItems = filteredItems.filter(item => !item.archived);
         }
-
-        const finalItems = filteredItems.map(({ is_active, ...rest }) => rest);
-        filteredItems = finalItems as typeof filteredItems;
 
         if (issuerPerm !== undefined) {
           filteredItems = filteredItems.filter(item => item.issuer_perm_management_mode === issuerPerm);
@@ -434,9 +472,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       if (onlyActiveBool === true) {
-        query.where("is_active", true);
-      } else if (onlyActiveBool === false) {
-        query.where("is_active", false);
+        query.where(function() {
+          this.whereNull("archived").orWhere("archived", false);
+        });
       }
 
       if (issuerPerm !== undefined) {
@@ -536,7 +574,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .where({ credential_schema_id: id })
         .orderBy("created_at", "asc");
 
-      const cleanHistory = historyRecords.map(record => ({
+      const cleanHistory = historyRecords.map(({ is_active, ...record }) => ({
         ...record,
         json_schema:
           record.json_schema && typeof record.json_schema !== "string"
