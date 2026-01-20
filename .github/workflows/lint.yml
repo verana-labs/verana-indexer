@@ -30,15 +30,3 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm exec eslint "src/**/*.{ts,tsx,js}" --max-warnings=9999
-
-  lint-pr:
-    name: Validate PR title
-    runs-on: ubuntu-latest
-    steps:
-      # Please look up the latest version from
-      # https://github.com/amannn/action-semantic-pull-request/releases
-      - uses: amannn/action-semantic-pull-request@v6.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          validateSingleCommit: true
