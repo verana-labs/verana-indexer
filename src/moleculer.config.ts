@@ -87,17 +87,18 @@ const brokerConfig: BrokerOptions = {
   requestTimeout: +(Config.REQUEST_TIMEOUT || process.env.REQUEST_TIMEOUT || 300000), // 5 minutes default
 
   // Retry policy settings. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Retry
+  // Retry policy automatically retries failed requests for transient errors
   retryPolicy: {
-    // Enable feature
-    enabled: Config.RETRYPOLICY,
+    // Enable feature - default to true for production stability
+    enabled: Config.RETRYPOLICY !== false,
     // Count of retries
-    retries: Config.RETRIES,
+    retries: Config.RETRIES || 3,
     // First delay in milliseconds.
-    delay: Config.RETRYDELAY,
+    delay: Config.RETRYDELAY || 100,
     // Maximum delay in milliseconds.
-    maxDelay: Config.RETRYMAXDELAY,
+    maxDelay: Config.RETRYMAXDELAY || 2000,
     // Backoff factor for delay. 2 means exponential backoff.
-    factor: Config.RETRYFACTOR,
+    factor: Config.RETRYFACTOR || 2,
     // A function to check failed requests.
     check: (err: Error): boolean =>
       err && err instanceof MoleculerRetryableError && !!err.retryable,
@@ -135,30 +136,32 @@ const brokerConfig: BrokerOptions = {
   },
 
   // Settings of Circuit Breaker. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Circuit-Breaker
+  // Circuit breaker helps prevent cascading failures by stopping requests to failing services
   circuitBreaker: {
-    // Enable feature
-    enabled: Config.BREAKER_ENABLED || false,
+    // Enable feature - default to true for production stability
+    enabled: Config.BREAKER_ENABLED !== false,
     // Threshold value. 0.5 means that 50% should be failed for tripping.
     threshold: Config.BREAKERTHRESHOLD || 0.5,
     // Minimum request count. Below it, CB does not trip.
-    minRequestCount: Config.BREAKERMINREQCOUNT || 20,
+    minRequestCount: Config.BREAKERMINREQCOUNT || 10,
     // Number of seconds for time window.
-    windowTime: Config.WINDOWTIME || 60,
+    windowTime: Config.WINDOWTIME || 30,
     // Number of milliseconds to switch from open to half-open state
-    halfOpenTime: Config.HALFOPENTIME || 10 * 1000,
+    halfOpenTime: Config.HALFOPENTIME || 5 * 1000,
     // A function to check failed requests.
     check: (err: Error): boolean =>
       err && err instanceof MoleculerRetryableError && err.code >= 500,
   },
 
   // Settings of bulkhead feature. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Bulkhead
+  // Bulkhead isolates failing services and prevents them from affecting others
   bulkhead: {
-    // Enable feature.
-    enabled: Config.BULKHEAD_ENABLED || false,
-    // Maximum concurrent executions.
-    concurrency: Config.CONCURRENCY || 10,
-    // Maximum size of queue
-    maxQueueSize: Config.MAXQUEUESIZE || 100,
+    // Enable feature - default to true for production stability
+    enabled: Config.BULKHEAD_ENABLED !== false,
+    // Maximum concurrent executions per action.
+    concurrency: Config.CONCURRENCY || 50,
+    // Maximum size of queue - requests will wait in queue if concurrency limit is reached
+    maxQueueSize: Config.MAXQUEUESIZE || 200,
   },
 
   // Enable action & event parameter validation. More info: https://moleculer.services/docs/0.14/validating.html

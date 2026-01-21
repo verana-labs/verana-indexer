@@ -31,6 +31,15 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/enable-cors: "{{ .Values.ingress.public.enableCors | default "true" }}"
+    # Timeout settings to match application timeouts and prevent 502 errors
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "{{ .Values.nginx.connectTimeout | default "30" }}"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "{{ .Values.nginx.readTimeout | default "300" }}"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "{{ .Values.nginx.sendTimeout | default "300" }}"
+    nginx.ingress.kubernetes.io/proxy-body-size: "{{ .Values.nginx.bodySize | default "10m" }}"
+    # Retry settings for transient failures
+    nginx.ingress.kubernetes.io/proxy-next-upstream: "error timeout http_502 http_503 http_504"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-tries: "3"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-timeout: "10"
 spec:
   ingressClassName: nginx
   tls:
@@ -152,6 +161,44 @@ spec:
 {{- end }}
             ports:
             -  containerPort: {{ .Values.apiPort }}
+            # Liveness probe - checks if the process is alive (simple health check)
+            livenessProbe:
+              httpGet:
+                path: /health/live
+                port: {{ .Values.apiPort }}
+              initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds | default 30 }}
+              periodSeconds: {{ .Values.probes.liveness.periodSeconds | default 15 }}
+              timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds | default 5 }}
+              failureThreshold: {{ .Values.probes.liveness.failureThreshold | default 3 }}
+              successThreshold: 1
+            # Readiness probe - checks if service can receive traffic
+            readinessProbe:
+              httpGet:
+                path: /health/ready
+                port: {{ .Values.apiPort }}
+              initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds | default 15 }}
+              periodSeconds: {{ .Values.probes.readiness.periodSeconds | default 10 }}
+              timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds | default 5 }}
+              failureThreshold: {{ .Values.probes.readiness.failureThreshold | default 3 }}
+              successThreshold: 1
+            # Startup probe - allows slow startup without killing the container
+            startupProbe:
+              httpGet:
+                path: /health/live
+                port: {{ .Values.apiPort }}
+              initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds | default 10 }}
+              periodSeconds: {{ .Values.probes.startup.periodSeconds | default 5 }}
+              timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds | default 5 }}
+              failureThreshold: {{ .Values.probes.startup.failureThreshold | default 30 }}
+              successThreshold: 1
+            # Resource limits to prevent OOM and ensure stability
+            resources:
+              requests:
+                cpu: {{ .Values.resources.requests.cpu | default "250m" }}
+                memory: {{ .Values.resources.requests.memory | default "512Mi" }}
+              limits:
+                cpu: {{ .Values.resources.limits.cpu | default "1000m" }}
+                memory: {{ .Values.resources.limits.memory | default "4Gi" }}
         {{- if .Values.database.enabled }}
          -  name: postgres
             image: postgres:14-alpine

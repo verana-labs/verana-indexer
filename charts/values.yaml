@@ -1,5 +1,5 @@
 # Global configuration for the application
-global: 
+global:
   domain: testnet.verana.network # Domain for the application
 
 # General configuration
@@ -9,14 +9,40 @@ replicas: 1 # Number of replicas for the Indexer service
 # Ports
 apiPort: 3001
 
-#FIXME: Limit resources as soon as we can calculate requirements (especially for db migration at startup)
-#resources:
-#  requests:
-#    cpu: 250m
-#    memory: 512Mi
-#  limits:
-#    cpu: 500m
-#    memory: 1Gi
+# Resource limits for the indexer container
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 4Gi
+
+# Nginx ingress timeout settings (in seconds)
+# These should match or exceed the application's request timeout
+nginx:
+  connectTimeout: "30"
+  readTimeout: "300"    # 5 minutes - matches Moleculer's REQUEST_TIMEOUT
+  sendTimeout: "300"
+  bodySize: "10m"
+
+# Health check probes configuration
+probes:
+  liveness:
+    initialDelaySeconds: 30  # Wait for service to start
+    periodSeconds: 15        # Check every 15 seconds
+    timeoutSeconds: 5        # Timeout for probe
+    failureThreshold: 3      # Restart after 3 failures
+  readiness:
+    initialDelaySeconds: 15  # Shorter initial delay
+    periodSeconds: 10        # Check every 10 seconds
+    timeoutSeconds: 5        # Timeout for probe
+    failureThreshold: 3      # Remove from LB after 3 failures
+  startup:
+    initialDelaySeconds: 10  # Start checking early
+    periodSeconds: 5         # Check frequently during startup
+    timeoutSeconds: 5        # Timeout for probe
+    failureThreshold: 30     # Allow up to 150 seconds (30*5) for startup
 
 # DB and Redis configuration
 database:

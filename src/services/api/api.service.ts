@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { Service } from "@ourparentcenter/moleculer-decorators-extended";
+import { Service, Action } from "@ourparentcenter/moleculer-decorators-extended";
 import { IncomingMessage, Server, ServerResponse } from "http";
 import { Context, ServiceBroker, Errors } from "moleculer";
 import OpenApiMixin from "moleculer-auto-openapi";
@@ -13,6 +13,12 @@ import { indexerStatusManager } from "../manager/indexer_status.manager";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 
+// Cache for block checkpoint to reduce database calls
+let cachedCheckpoint: { height: number; updated_at: Date | string } | null = null;
+let checkpointCacheTime = 0;
+let checkpointFetchPromise: Promise<{ height: number; updated_at: Date | string } | null> | null = null;
+const CHECKPOINT_CACHE_TTL = 2000; // 2 seconds cache
+
 
 const DEFAULT_ROUTE_CONFIG = {
   mappingPolicy: "restrict" as const,
@@ -23,9 +29,41 @@ const DEFAULT_ROUTE_CONFIG = {
 };
 
 async function fetchBlockCheckpoint() {
-  return knex("block_checkpoint")
-    .where("job_name", BLOCK_CHECKPOINT_JOB)
-    .first();
+  const now = Date.now();
+  // Return cached value if still valid
+  if (cachedCheckpoint && (now - checkpointCacheTime) < CHECKPOINT_CACHE_TTL) {
+    return cachedCheckpoint;
+  }
+
+  // If a fetch is already in progress, wait for it (prevents cache stampede)
+  if (checkpointFetchPromise) {
+    return checkpointFetchPromise;
+  }
+
+  checkpointFetchPromise = (async () => {
+    try {
+      const result = await knex("block_checkpoint")
+        .where("job_name", BLOCK_CHECKPOINT_JOB)
+        .first();
+
+      if (result) {
+        cachedCheckpoint = result;
+        checkpointCacheTime = Date.now();
+      }
+      return result;
+    } catch (err) {
+      // Return stale cache if DB query fails
+      if (cachedCheckpoint) {
+        console.warn("[API] Using stale checkpoint cache due to DB error");
+        return cachedCheckpoint;
+      }
+      throw err;
+    } finally {
+      checkpointFetchPromise = null;
+    }
+  })();
+
+  return checkpointFetchPromise;
 }
 
 function getHeaderValue(req: IncomingMessage): string | null {
@@ -366,7 +404,17 @@ function createRoute(
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
-      }), 
+      }),
+      // Lightweight health endpoint for Kubernetes probes (no DB access)
+      {
+        path: "/health",
+        mappingPolicy: "restrict" as const,
+        aliases: {
+          "GET /": "api.health",
+          "GET /live": "api.liveness",
+          "GET /ready": "api.readiness",
+        },
+      },
       {
         path: "/",
         ...swaggerUiComponent(),
@@ -377,6 +425,65 @@ function createRoute(
 export default class ApiService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  /**
+   * Lightweight health check - no DB access
+   * Returns basic service status for Kubernetes probes
+   */
+  @Action({ name: "health" })
+  async health() {
+    const status = indexerStatusManager.getStatus();
+    return {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      service: "verana-indexer",
+      indexer: status.isRunning ? "running" : "stopped",
+      crawling: status.isCrawling ? "active" : "stopped",
+    };
+  }
+
+  /**
+   * Liveness probe - just checks if the process is alive
+   * This should NEVER hit the database
+   */
+  @Action({ name: "liveness" })
+  async liveness() {
+    return {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Readiness probe - checks if the service is ready to receive traffic
+   * Uses cached checkpoint to avoid DB load
+   */
+  @Action({ name: "readiness" })
+  async readiness() {
+    const status = indexerStatusManager.getStatus();
+
+    // Service is ready if it's running (even if crawling is stopped)
+    if (!status.isRunning) {
+      const error = new Errors.MoleculerError(
+        "Service not ready: indexer stopped",
+        503,
+        "SERVICE_NOT_READY"
+      );
+      throw error;
+    }
+
+    // Try to get cached checkpoint (doesn't force DB query)
+    const checkpoint = cachedCheckpoint;
+
+    return {
+      status: "ok",
+      ready: true,
+      timestamp: new Date().toISOString(),
+      indexer: "running",
+      crawling: status.isCrawling ? "active" : "stopped",
+      lastHeight: checkpoint?.height || null,
+    };
   }
 
   async started() {
