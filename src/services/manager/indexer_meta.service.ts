@@ -9,6 +9,90 @@ import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
 import { indexerStatusManager } from "./indexer_status.manager";
+import {
+  VeranaTrustRegistryMessageTypes,
+  VeranaCredentialSchemaMessageTypes,
+  VeranaDidMessageTypes,
+  VeranaPermissionMessageTypes,
+} from "../../common/verana-message-types";
+
+const MSG_TYPE_TO_ACTION: Record<string, string> = {
+  [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: "CreateTrustRegistry",
+  [VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy]: "CreateTrustRegistry",
+  [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry]: "UpdateTrustRegistry",
+  [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: "ArchiveTrustRegistry",
+  [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: "AddGovernanceFrameworkDocument",
+  [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion]: "IncreaseGovernanceFrameworkVersion",
+  [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: "CreateCredentialSchema",
+  [VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy]: "CreateCredentialSchema",
+  [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
+  [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
+  [VeranaDidMessageTypes.AddDid]: "AddDID",
+  [VeranaDidMessageTypes.RenewDid]: "RenewDID",
+  [VeranaDidMessageTypes.TouchDid]: "TouchDID",
+  [VeranaDidMessageTypes.RemoveDid]: "RemoveDID",
+  [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
+  [VeranaPermissionMessageTypes.CreatePermission]: "CreatePermission",
+  [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
+  [VeranaPermissionMessageTypes.RenewPermissionVP]: "RenewPermissionVP",
+  [VeranaPermissionMessageTypes.RevokePermission]: "RevokePermission",
+  [VeranaPermissionMessageTypes.ExtendPermission]: "ExtendPermission",
+  [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: "SetPermissionVPToValidated",
+  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: "CreateOrUpdatePermissionSession",
+  [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: "SlashPermissionTrustDeposit",
+  [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit]: "RepayPermissionSlashedTrustDeposit",
+  [VeranaPermissionMessageTypes.CancelPermissionVPLastRequest]: "CancelPermissionVPLastRequest",
+};
+
+function normalizeEventType(eventType: string): string {
+  let normalized = eventType.replace(/^.*\./, "");
+  
+  if (normalized.includes("_")) {
+    normalized = normalized
+      .split("_")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join("");
+  } else if (normalized === normalized.toUpperCase()) {
+    normalized = normalized
+      .split(/(?=[A-Z])/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join("");
+  }
+  
+  return normalized;
+}
+
+function getActionFromMessageType(msgType: string, eventType?: string, action?: string): string {
+  if (msgType && MSG_TYPE_TO_ACTION[msgType]) {
+    return MSG_TYPE_TO_ACTION[msgType];
+  }
+  if (eventType) {
+    return normalizeEventType(eventType);
+  }
+  if (action) {
+    return normalizeEventType(action);
+  }
+  return "Unknown";
+}
+
+function filterChangedValues(changes: any): any {
+  if (!changes || typeof changes !== "object") {
+    return changes;
+  }
+  
+  const filtered: any = {};
+  for (const [key, value] of Object.entries(changes)) {
+    if (value && typeof value === "object" && ("old" in value || "new" in value)) {
+      const val = value as { old?: any; new?: any };
+      if (JSON.stringify(val.old) !== JSON.stringify(val.new)) {
+        filtered[key] = value;
+      }
+    } else if (value !== null && value !== undefined) {
+      filtered[key] = value;
+    }
+  }
+  return Object.keys(filtered).length > 0 ? filtered : null;
+}
 
 type ChangeOperation = "create" | "update" | "delete";
 
@@ -183,9 +267,54 @@ export default class IndexerMetaService extends BaseService {
         400
       );
     }
-   const queryHistoryTable = async (tableName: string, height: number) => {
+
+      const queryHistoryWithTx = async (
+      tableName: string,
+      height: number,
+      entityType: string,
+      idField: string,
+      entityIdField: string,
+      msgTypePrefixes: string[]
+    ) => {
       try {
-        return await knex(tableName).where("height", height);
+        const quotedTable = `"${tableName}"`;
+        const prefixes = msgTypePrefixes || [];
+        const msgTypeCondition = prefixes.length > 0 
+          ? `AND (${prefixes.map((p, idx) => {
+              const escapedPrefix = p.replace(/'/g, "''");
+              return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
+            }).join(' ')})`
+          : '';
+
+        return await knex(tableName)
+          .select(
+            `${tableName}.*`,
+            "transaction.timestamp",
+            knex.raw('? as activity_entity_type', [entityType]),
+            knex.raw(`COALESCE(CAST(${tableName}.${entityIdField} AS TEXT), CAST(${tableName}.id AS TEXT)) as activity_entity_id`),
+            knex.raw(`(
+              SELECT transaction_message.type 
+              FROM transaction_message 
+              INNER JOIN transaction t ON t.id = transaction_message.tx_id
+              WHERE t.height = ${quotedTable}.height
+              ${msgTypeCondition}
+              ORDER BY transaction_message.index ASC
+              LIMIT 1
+            ) as msg_type`),
+            knex.raw(`(
+              SELECT transaction_message.sender 
+              FROM transaction_message 
+              INNER JOIN transaction t ON t.id = transaction_message.tx_id
+              WHERE t.height = ${quotedTable}.height
+              ${msgTypeCondition}
+              ORDER BY transaction_message.index ASC
+              LIMIT 1
+            ) as sender`)
+          )
+          .leftJoin("transaction", function () {
+            this.on(`${tableName}.height`, "=", "transaction.height");
+          })
+          .where(`${tableName}.height`, height);
       } catch (error: any) {
         const errorMsg = error?.message || String(error);
         if (errorMsg.includes("does not exist") && errorMsg.includes("height")) {
@@ -209,188 +338,104 @@ export default class IndexerMetaService extends BaseService {
       tdHistory,
       moduleParamsHistory,
     ] = await Promise.all([
-      queryHistoryTable("did_history", blockHeight),
-      queryHistoryTable("trust_registry_history", blockHeight),
-      queryHistoryTable("governance_framework_version_history", blockHeight),
-      queryHistoryTable("governance_framework_document_history", blockHeight),
-      queryHistoryTable("credential_schema_history", blockHeight),
-      queryHistoryTable("permission_history", blockHeight),
-      queryHistoryTable("permission_session_history", blockHeight),
-      queryHistoryTable("trust_deposit_history", blockHeight),
-      queryHistoryTable("module_params_history", blockHeight),
+      queryHistoryWithTx("did_history", blockHeight, "DID", "did", "did", ["/verana.dd.v1", "/veranablockchain.diddirectory"]),
+      queryHistoryWithTx("trust_registry_history", blockHeight, "TrustRegistry", "tr_id", "tr_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"]),
+      queryHistoryWithTx("governance_framework_version_history", blockHeight, "GovernanceFrameworkVersion", "tr_id", "gfv_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"]),
+      queryHistoryWithTx("governance_framework_document_history", blockHeight, "GovernanceFrameworkDocument", "tr_id", "gfd_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"]),
+      queryHistoryWithTx("credential_schema_history", blockHeight, "CredentialSchema", "credential_schema_id", "credential_schema_id", ["/verana.cs.v1", "/veranablockchain.credentialschema"]),
+      queryHistoryWithTx("permission_history", blockHeight, "Permission", "permission_id", "permission_id", ["/verana.perm.v1"]),
+      queryHistoryWithTx("permission_session_history", blockHeight, "PermissionSession", "session_id", "session_id", ["/verana.perm.v1"]),
+      queryHistoryWithTx("trust_deposit_history", blockHeight, "TrustDeposit", "account", "account", ["/verana.td.v1"]),
+      queryHistoryWithTx("module_params_history", blockHeight, "GlobalVariables", "module", "module", []),
     ]);
 
-    const changeEntries: IndexerChange[] = [];
+    const activityItems: any[] = [];
+
+    const toActivityItem = (record: any, entityType: string, entityId: string) => {
+      let changes = record.changes;
+      if (typeof changes === "string") {
+        try {
+          changes = JSON.parse(changes);
+        } catch {
+          changes = null;
+        }
+      }
+      changes = filterChangedValues(changes);
+
+      const action = getActionFromMessageType(
+        record.msg_type,
+        record.event_type,
+        record.action
+      );
+
+      const activityItem: any = {
+        timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : null,
+        block_height: String(record.height || blockHeight),
+        entity_type: entityType,
+        entity_id: entityId,
+        msg: action,
+        changes: changes,
+      };
+
+      if (record.sender) {
+        activityItem.account = record.sender;
+      }
+
+      return activityItem;
+    };
 
     for (const record of didHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "DidDirectory",
-        entity_id: record.did,
-        operation: toOperation(eventType, record.is_deleted),
-        payload: {
-          ...snapshot,
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "DID", record.did));
     }
 
     for (const record of trHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "TrustRegistry",
-        entity_id: String(record.tr_id),
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "TrustRegistry", String(record.tr_id)));
     }
 
     for (const record of gfvHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "GovernanceFrameworkVersion",
-        entity_id: String(record.gfv_id ?? record.id),
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "GovernanceFrameworkVersion", String(record.gfv_id ?? record.id)));
     }
 
     for (const record of gfdHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "GovernanceFrameworkDocument",
-        entity_id: String(record.gfd_id ?? record.id),
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "GovernanceFrameworkDocument", String(record.gfd_id ?? record.id)));
     }
 
     for (const record of csHistory) {
-      const {
-        action: actionType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "CredentialSchema",
-        entity_id: String(record.credential_schema_id ?? record.id),
-        operation: toOperation(actionType),
-        payload: {
-          ...snapshot,
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "CredentialSchema", String(record.credential_schema_id ?? record.id)));
     }
 
-    // Permission
     for (const record of permHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "Permission",
-        entity_id: String(record.permission_id),
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "Permission", String(record.permission_id)));
     }
 
-    // PermissionSession
     for (const record of permSessionHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "PermissionSession",
-        entity_id: record.session_id,
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          authz: safeJsonParse(record.authz),
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "PermissionSession", record.session_id));
     }
 
-    // TrustDeposit
     for (const record of tdHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "TrustDeposit",
-        entity_id: record.account,
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          amount: record.amount?.toString(),
-          share: record.share?.toString(),
-          claimable: record.claimable?.toString(),
-          slashed_deposit: record.slashed_deposit?.toString(),
-          repaid_deposit: record.repaid_deposit?.toString(),
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "TrustDeposit", record.account));
     }
 
-    // GlobalVariables (module_params)
     for (const record of moduleParamsHistory) {
-      const {
-        event_type: eventType,
-        changes: recordChanges,
-        ...snapshot
-      } = record;
-      changeEntries.push({
-        entity_type: "GlobalVariables",
-        entity_id: record.module,
-        operation: toOperation(eventType),
-        payload: {
-          ...snapshot,
-          params: safeJsonParse(record.params),
-          changes: safeJsonParse(recordChanges),
-        },
-      });
+      activityItems.push(toActivityItem(record, "GlobalVariables", record.module));
     }
+
+    activityItems.sort((a, b) => {
+      if (!a.timestamp && !b.timestamp) return 0;
+      if (!a.timestamp) return 1;
+      if (!b.timestamp) return -1;
+      const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      const entityDiff = a.entity_type.localeCompare(b.entity_type);
+      if (entityDiff !== 0) return entityDiff;
+      return a.entity_id.localeCompare(b.entity_id);
+    });
 
     return ApiResponder.success(
       ctx,
       {
         block_height: blockHeight,
-        changes: changeEntries,
+        activity: activityItems,
       },
       200
     );

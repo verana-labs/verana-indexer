@@ -1467,11 +1467,19 @@ export default class PermIngestService extends Service {
       return;
     }
     
+    const initialPerm: { schema_id: string; validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: permId }).select('schema_id', 'validator_perm_id').first();
+    if (!initialPerm) return;
+    
+    const schemaId = initialPerm.schema_id;
     let currentPermId: string | null = permId;
     
     while (currentPermId) {
-      const perm: { validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: currentPermId }).select('validator_perm_id').first();
+      const perm: { schema_id: string; validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_perm_id').first();
       if (!perm) break;
+      if (perm.schema_id !== schemaId) {
+        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+        break;
+      }
 
       const updates: any = {};
       if (incrementIssued && hasIssuedColumn) {
@@ -1523,29 +1531,35 @@ export default class PermIngestService extends Service {
 
       const [agentPerm, walletAgentPerm, issuerPerm, verifierPerm] =
         await Promise.all([
-          knex("permissions").where({ id: agentPermId }).first(),
-          knex("permissions").where({ id: walletAgentPermId }).first(),
+          trx("permissions").where({ id: agentPermId }).first(),
+          trx("permissions").where({ id: walletAgentPermId }).first(),
           issuerPermId
-            ? knex("permissions").where({ id: issuerPermId }).first()
+            ? trx("permissions").where({ id: issuerPermId }).first()
             : null,
           verifierPermId
-            ? knex("permissions").where({ id: verifierPermId }).first()
+            ? trx("permissions").where({ id: verifierPermId }).first()
             : null,
         ]);
 
-      if (!agentPerm || !walletAgentPerm) {
-        this.logger.warn(`Agent or Wallet Agent permission not found. agentPermId=${agentPermId}, walletAgentPermId=${walletAgentPermId}. Skipping session creation.`);
-        await trx.rollback();
-        
-
-        return { success: false, reason: "Agent or Wallet Agent permission not found" };
+      if (!agentPerm) {
+        this.logger.warn(
+          `Agent permission not found for session ${msg.id}. agentPermId=${agentPermId}. Session will be saved but statistics may be incomplete.`
+        );
       }
-
-      if (issuerPermId && issuerPerm?.type !== "ISSUER") {
-        throw new Error("Invalid issuer permission type");
+      if (!walletAgentPerm) {
+        this.logger.warn(
+          `Wallet Agent permission not found for session ${msg.id}. walletAgentPermId=${walletAgentPermId}. Session will be saved but statistics may be incomplete.`
+        );
       }
-      if (verifierPermId && verifierPerm?.type !== "VERIFIER") {
-        throw new Error("Invalid verifier permission type");
+      if (issuerPermId && issuerPerm && issuerPerm.type !== "ISSUER") {
+        this.logger.warn(
+          `Invalid issuer permission type for session ${msg.id}. Expected ISSUER, got ${issuerPerm.type}. issuerPermId=${issuerPermId}. Session will be saved.`
+        );
+      }
+      if (verifierPermId && verifierPerm && verifierPerm.type !== "VERIFIER") {
+        this.logger.warn(
+          `Invalid verifier permission type for session ${msg.id}. Expected VERIFIER, got ${verifierPerm.type}. verifierPermId=${verifierPermId}. Session will be saved.`
+        );
       }
 
       const existing = await trx("permission_sessions")

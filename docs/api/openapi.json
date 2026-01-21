@@ -305,47 +305,29 @@
                       "type": "integer",
                       "minimum": 0
                     },
-                    "changes": {
+                    "activity": {
                       "type": "array",
+                      "description": "List of activity items at this block height (same format as history endpoints)",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "entity_type": {
-                            "type": "string"
-                          },
-                          "entity_id": {
-                            "type": "string"
-                          },
-                          "operation": {
-                            "type": "string",
-                            "enum": [
-                              "create",
-                              "update",
-                              "delete"
-                            ]
-                          },
-                          "payload": {
-                            "type": "object"
-                          }
-                        }
+                        "$ref": "#/components/schemas/ActivityItem"
                       }
                     }
                   }
                 },
                 "example": {
                   "block_height": 123450,
-                  "changes": [
+                  "activity": [
                     {
-                      "entity_type": "DidDirectory",
+                      "timestamp": "2025-11-24T07:00:00.000Z",
+                      "block_height": "123450",
+                      "entity_type": "DID",
                       "entity_id": "did:verana:abc123",
-                      "operation": "create",
-                      "payload": {
-                        "controller": "verana1abcd...",
-                        "changes": {
-                          "created": {
-                            "old": null,
-                            "new": "2025-11-24T07:00:00.000Z"
-                          }
+                      "account": "verana1abcd...",
+                      "msg": "AddDID",
+                      "changes": {
+                        "created": {
+                          "old": null,
+                          "new": "2025-11-24T07:00:00.000Z"
                         }
                       }
                     }
@@ -543,8 +525,8 @@
         "tags": [
           "DID"
         ],
-        "summary": "Get DID history",
-        "description": "Retrieve the complete history and changes for a specific DID",
+        "summary": "Get DID activity timeline",
+        "description": "Retrieve the activity timeline for a DID, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
         "operationId": "getDIDHistory",
         "parameters": [
           {
@@ -557,16 +539,38 @@
             "description": "The Decentralized Identifier to retrieve history for"
           },
           {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 64
+            },
+            "description": "Maximum number of activity items to return (default: 64)"
+          },
+          {
+            "name": "transaction_timestamp_older_than",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with DID history",
+            "description": "Successful response with DID activity timeline",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DIDHistoryResponse"
+                  "$ref": "#/components/schemas/ActivityTimelineResponse"
                 }
               }
             }
@@ -779,8 +783,8 @@
         "tags": [
           "Trust Registry"
         ],
-        "summary": "Get Trust Registry history",
-        "description": "Retrieve the complete history and changes for a specific Trust Registry",
+        "summary": "Get Trust Registry activity timeline",
+        "description": "Retrieve the activity timeline for a Trust Registry, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
         "operationId": "getTrustRegistryHistory",
         "parameters": [
           {
@@ -793,16 +797,38 @@
             "description": "The Trust Registry ID to retrieve history for"
           },
           {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 64
+            },
+            "description": "Maximum number of activity items to return (default: 64)"
+          },
+          {
+            "name": "transaction_timestamp_older_than",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Trust Registry history",
+            "description": "Successful response with Trust Registry activity timeline",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TrustRegistryHistoryResponse"
+                  "$ref": "#/components/schemas/ActivityTimelineResponse"
                 }
               }
             }
@@ -1069,8 +1095,8 @@
         "tags": [
           "Credential Schema"
         ],
-        "summary": "Get Credential Schema history",
-        "description": "Retrieve the complete history and changes for a specific Credential Schema",
+        "summary": "Get Credential Schema activity timeline",
+        "description": "Retrieve the activity timeline for a Credential Schema, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
         "operationId": "getCredentialSchemaHistory",
         "parameters": [
           {
@@ -1081,6 +1107,28 @@
               "type": "string"
             },
             "description": "The Credential Schema ID to retrieve history for"
+          },
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 64
+            },
+            "description": "Maximum number of activity items to return (default: 64)"
+          },
+          {
+            "name": "transaction_timestamp_older_than",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1545,8 +1593,8 @@
         "tags": [
           "Permissions"
         ],
-        "summary": "Get Permission History",
-        "description": "Retrieve the recorded history for a specific Permission ID.",
+        "summary": "Get Permission activity timeline",
+        "description": "Retrieve the activity timeline for a Permission, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
         "operationId": "getPermissionHistory",
         "parameters": [
           {
@@ -1559,22 +1607,44 @@
             "description": "Permission ID whose history will be returned"
           },
           {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 64
+            },
+            "description": "Maximum number of activity items to return (default: 64)"
+          },
+          {
+            "name": "transaction_timestamp_older_than",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "History entries for the given Permission",
+            "description": "Successful response with Permission activity timeline",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PermissionHistoryResponse"
+                  "$ref": "#/components/schemas/ActivityTimelineResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "No history entries found",
+            "description": "Permission history not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -1750,8 +1820,8 @@
         "tags": [
           "TrustDeposit"
         ],
-        "summary": "Get Trust Deposit History",
-        "description": "Retrieve the complete history of changes for a specific account's trust deposit",
+        "summary": "Get Trust Deposit activity timeline",
+        "description": "Retrieve the activity timeline for a Trust Deposit, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
         "operationId": "getTrustDepositHistory",
         "parameters": [
           {
@@ -1764,37 +1834,38 @@
             "description": "The account address to retrieve trust deposit history for"
           },
           {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 64
+            },
+            "description": "Maximum number of activity items to return (default: 64)"
+          },
+          {
+            "name": "transaction_timestamp_older_than",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with trust deposit history",
+            "description": "Successful response with Trust Deposit activity timeline",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TrustDepositHistoryResponse"
-                },
-                "example": {
-                  "history": [
-                    {
-                      "id": 1,
-                      "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
-                      "share": "20000000",
-                      "amount": "20000000",
-                      "claimable": "0",
-                      "slashed_deposit": "0",
-                      "repaid_deposit": "0",
-                      "last_slashed": null,
-                      "last_repaid": null,
-                      "slash_count": 0,
-                      "last_repaid_by": "",
-                      "event_type": "CREATE_TRUST_DEPOSIT",
-                      "height": 12345,
-                      "changes": null,
-                      "created_at": "2025-11-26T08:35:35.199Z"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ActivityTimelineResponse"
                 }
               }
             }
@@ -2654,6 +2725,92 @@
               "description": "Account that last performed repayment"
             }
           }
+        },
+        "ActivityTimelineResponse": {
+          "type": "object",
+          "properties": {
+            "entity_type": {
+              "type": "string",
+              "description": "The entity type (VPR spec name)",
+              "enum": [
+                "TrustRegistry",
+                "CredentialSchema",
+                "GovernanceFrameworkDocument",
+                "GovernanceFrameworkVersion",
+                "DID",
+                "Permission",
+                "TrustDeposit"
+              ]
+            },
+            "entity_id": {
+              "type": "string",
+              "description": "The entity ID"
+            },
+            "activity": {
+              "type": "array",
+              "description": "List of activity items ordered by timestamp descending",
+              "items": {
+                "$ref": "#/components/schemas/ActivityItem"
+              }
+            }
+          },
+          "required": [
+            "entity_type",
+            "entity_id",
+            "activity"
+          ]
+        },
+        "ActivityItem": {
+          "type": "object",
+          "properties": {
+            "timestamp": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Transaction timestamp (ISO 8601)",
+              "nullable": true
+            },
+            "block_height": {
+              "type": "string",
+              "description": "Block height when the change occurred"
+            },
+            "entity_type": {
+              "type": "string",
+              "description": "Entity type (VPR spec name). Only included when different from the top-level entity_type (e.g., for related entities in TrustRegistry history)."
+            },
+            "entity_id": {
+              "type": "string",
+              "description": "Entity ID. Only included when different from the top-level entity_id (e.g., for related entities in TrustRegistry history)."
+            },
+            "account": {
+              "type": "string",
+              "description": "Account address that made the change. Only included when available (omitted for system-generated events)."
+            },
+            "msg": {
+              "type": "string",
+              "description": "Message/action type (e.g., CreateTrustRegistry, AddGovernanceFrameworkDocument)"
+            },
+            "changes": {
+              "type": "object",
+              "description": "Only changed values (fields that actually changed). Null if no changes or for create actions.",
+              "nullable": true,
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "old": {
+                    "description": "Previous value"
+                  },
+                  "new": {
+                    "description": "New value"
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "timestamp",
+            "block_height",
+            "msg"
+          ]
         },
         "TrustDepositResponse": {
           "type": "object",
@@ -4217,6 +4374,10 @@
     {
       "name": "Indexer",
       "description": "Indexer state and changes tracking operations"
+    },
+    {
+      "name": "Activity",
+      "description": "Activity timeline operations for tracking entity changes"
     },
     {
       "description": "## Real-Time Event (WebSocket)\n\n**Endpoint URLs:**\n- Local: `ws://localhost:3001/verana/indexer/v1/events`\n- Testnet: `wss://idx.testnet.verana.network/verana/indexer/v1/events`\n\n**Message Format:**\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**Event Type:** `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height (ISO 8601 format with 'Z' designator).\n\n**Example:**\n```javascript\nconst ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  if (data.type === 'block-processed') {\n    console.log(`Block ${data.height} processed`);\n    // Now safe to query indexer API for updated data\n  }\n};\n```"

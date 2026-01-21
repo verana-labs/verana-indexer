@@ -1,5 +1,5 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
+import { Context, ServiceBroker } from 'moleculer';
 import config from '../../config.json' with { type: 'json' };
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE, TrustDepositEventType } from '../../common';
@@ -138,7 +138,7 @@ export default class CrawlTrustDepositService extends BullableService {
       
       try {
         for (const block of nextBlocks) {
-          await this.processBlockEvents(block);
+          await this.processBlockEventsInternal(block);
           
           if (this._isFreshStart) {
           await delay(processDelay);
@@ -181,7 +181,13 @@ export default class CrawlTrustDepositService extends BullableService {
     }
   }
 
-  private async processBlockEvents(block: Block) {
+  @Action({ name: 'processBlockEvents' })
+  public async processBlockEvents(ctx: Context<{ block: Block }>) {
+    const { block } = ctx.params;
+    return await this.processBlockEventsInternal(block);
+  }
+
+  private async processBlockEventsInternal(block: Block) {
     const blockResult = block.data?.block_result;
     if (!blockResult) return;
 

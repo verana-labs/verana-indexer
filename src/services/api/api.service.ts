@@ -106,6 +106,9 @@ async function parseAtBlockHeight(
   }
 
   ctx.meta.blockHeight = parsedHeight;
+  ctx.meta.$headers = ctx.meta.$headers || {};
+  ctx.meta.$headers["at-block-height"] = String(parsedHeight);
+  ctx.meta.$headers["At-Block-Height"] = String(parsedHeight);
 }
 
 function isTemporaryError(errorMessage: string): boolean {
