@@ -4,6 +4,7 @@ import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 import ModuleParams from "../../models/modules_params";
 
 let heightColumnExistsCache: boolean | null = null;
@@ -326,6 +327,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_perm_management_mode: { type: "string", optional: true },
       verifier_perm_management_mode: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
+      sort: { type: "string", optional: true },
     },
   })
   async list(ctx: Context<any>) {
@@ -337,7 +339,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         issuer_perm_management_mode: issuerPerm,
         verifier_perm_management_mode: verifierPerm,
         response_max_size: maxSize,
+        sort,
       } = ctx.params;
+
+      try {
+        validateSortParameter(sort);
+      } catch (err: any) {
+        return ApiResponder.error(ctx, err.message, 400);
+      }
 
       const blockHeight = (ctx.meta as any)?.blockHeight;
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
@@ -448,8 +457,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           filteredItems = filteredItems.filter(item => item.verifier_perm_management_mode === verifierPerm);
         }
 
-        filteredItems.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
-        filteredItems = filteredItems.slice(0, limit);
+        filteredItems = sortByStandardAttributes(filteredItems, sort, {
+          getId: (item: { id: number }) => item.id,
+          getCreated: (item: { created: string }) => item.created,
+          getModified: (item: { modified: string }) => item.modified,
+          defaultAttribute: "modified",
+          defaultDirection: "asc",
+        }).slice(0, limit);
 
         return ApiResponder.success(ctx, { schemas: filteredItems }, 200);
       }
@@ -484,7 +498,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (verifierPerm !== undefined) {
         query.where("verifier_perm_management_mode", verifierPerm);
       }
-      const items = await query.orderBy("modified", "asc").limit(limit);
+      // Apply ordering
+      const orderedQuery = applyOrdering(query, sort);
+      const items = await orderedQuery.limit(limit);
 
       const cleanItems = items?.map(({ is_active, ...rest }) => ({
         ...rest,
@@ -559,30 +575,43 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     name: "getHistory",
     params: {
       id: { type: "number", integer: true, positive: true },
+      response_max_size: { type: "number", optional: true, default: 64 },
+      transaction_timestamp_older_than: { type: "string", optional: true },
     },
   })
-  async getHistory(ctx: Context<{ id: number }>) {
+  async getHistory(ctx: Context<{ id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
-      const { id } = ctx.params;
+      const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
 
       const schemaExists = await knex("credential_schemas").where({ id }).first();
       if (!schemaExists) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
 
-      const historyRecords = await knex("credential_schema_history")
-        .where({ credential_schema_id: id })
-        .orderBy("created_at", "asc");
+      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
+      const activity = await buildActivityTimeline(
+        {
+          entityType: "CredentialSchema",
+          historyTable: "credential_schema_history",
+          idField: "credential_schema_id",
+          entityId: id,
+          msgTypePrefixes: ["/verana.cs.v1", "/veranablockchain.credentialschema"],
+        },
+        {
+          responseMaxSize,
+          transactionTimestampOlderThan,
+          atBlockHeight,
+        }
+      );
 
-      const cleanHistory = historyRecords.map(({ is_active, ...record }) => ({
-        ...record,
-        json_schema:
-          record.json_schema && typeof record.json_schema !== "string"
-            ? JSON.stringify(record.json_schema)
-            : record.json_schema,
-      }));
-      const csResult = { id, history: cleanHistory }
-      return ApiResponder.success(ctx, { schema: csResult }, 200);
+      const result = {
+        entity_type: "CredentialSchema",
+        entity_id: String(id),
+        activity: activity || [],
+      };
+
+      return ApiResponder.success(ctx, result, 200);
     } catch (err: any) {
       this.logger.error("Error fetching CredentialSchema history:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);

@@ -118,17 +118,19 @@ export default class TrustDepositApiService extends BullableService {
     name: "getTrustDepositHistory",
     params: {
       account: { type: "string", min: 5 },
+      response_max_size: { type: "number", optional: true, default: 64 },
+      transaction_timestamp_older_than: { type: "string", optional: true },
     },
   })
-  public async getTrustDepositHistory(ctx: Context<{ account: string }>) {
+  public async getTrustDepositHistory(ctx: Context<{ account: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
-      const { account } = ctx.params;
+      const { account, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
 
       if (!this.isValidAccount(account)) {
         return ApiResponder.error(ctx, "Invalid account format", 400);
       }
 
-      // First check if the trust deposit exists
       const trustDeposit = await TrustDeposit.query().findOne({ account });
       if (!trustDeposit) {
         return ApiResponder.error(
@@ -138,31 +140,29 @@ export default class TrustDepositApiService extends BullableService {
         );
       }
 
-      const history = await knex("trust_deposit_history")
-        .where("account", account)
-        .orderBy("height", "asc")
-        .orderBy("created_at", "asc");
+      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
+      const activity = await buildActivityTimeline(
+        {
+          entityType: "TrustDeposit",
+          historyTable: "trust_deposit_history",
+          idField: "account",
+          entityId: account,
+          msgTypePrefixes: ["/verana.td.v1"],
+        },
+        {
+          responseMaxSize,
+          transactionTimestampOlderThan,
+          atBlockHeight,
+        }
+      );
 
-      // If no history but trust deposit exists, return empty array (history tracking started after creation)
-      const cleanHistory = history.map((record: any) => ({
-        id: record.id,
-        account: record.account,
-        share: record.share?.toString(),
-        amount: record.amount?.toString(),
-        claimable: record.claimable?.toString(),
-        slashed_deposit: record.slashed_deposit?.toString(),
-        repaid_deposit: record.repaid_deposit?.toString(),
-        last_slashed: record.last_slashed,
-        last_repaid: record.last_repaid,
-        slash_count: record.slash_count,
-        last_repaid_by: record.last_repaid_by,
-        event_type: record.event_type,
-        height: record.height,
-        changes: record.changes,
-        created_at: record.created_at,
-      }));
+      const result = {
+        entity_type: "TrustDeposit",
+        entity_id: account,
+        activity: activity || [],
+      };
 
-      return ApiResponder.success(ctx, { history: cleanHistory }, 200);
+      return ApiResponder.success(ctx, result, 200);
     } catch (err: any) {
       this.logger.error("Error in getTrustDepositHistory:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);

@@ -143,10 +143,16 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should get history records for the schema", async () => {
     const res = await broker.call(`${serviceKey}.getHistory`, { id: schema.id });
-    const history = res?.schema?.history;
-
-    expect(Array.isArray(history)).toBe(true);
-    expect(history.length).toBeGreaterThan(0);
-    expect(history[0].credential_schema_id).toBe(schema.id);
+    
+    expect(res).toBeDefined();
+    expect(res.entity_type).toBe("CredentialSchema");
+    expect(res.entity_id).toBe(String(schema.id));
+    expect(Array.isArray(res.activity)).toBe(true);
+    expect(res.activity.length).toBeGreaterThan(0);
+    expect(res.activity[0].timestamp).toBeDefined();
+    expect(res.activity[0].block_height).toBeDefined();
+    expect(res.activity[0].entity_type).toBe("CredentialSchema");
+    expect(res.activity[0].entity_id).toBe(String(schema.id));
+    expect(res.activity[0].msg).toBeDefined();
   });
 });

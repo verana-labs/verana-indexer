@@ -4,6 +4,7 @@ import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 import ModuleParams from "../../models/modules_params";
 
 function isValidDid(did: string): boolean {
@@ -141,7 +142,8 @@ export default class DidDatabaseService extends BullableService {
             modified: { type: "string", optional: true },
             expired: { type: "boolean", optional: true, convert: true },
             over_grace: { type: "boolean", optional: true, convert: true },
-            response_max_size: { type: "number", optional: true, default: 64, convert: true }
+            response_max_size: { type: "number", optional: true, default: 64, convert: true },
+            sort: { type: "string", optional: true }
         }
     })
 
@@ -151,6 +153,7 @@ export default class DidDatabaseService extends BullableService {
         expired?: boolean;
         over_grace?: boolean;
         response_max_size?: number;
+        sort?: string;
     }>) {
         try {
             const {
@@ -158,8 +161,15 @@ export default class DidDatabaseService extends BullableService {
                 modified,
                 expired,
                 over_grace: overGrace,
-                response_max_size: responseMaxSize
+                response_max_size: responseMaxSize,
+                sort
             } = ctx.params;
+
+            try {
+                validateSortParameter(sort);
+            } catch (err: any) {
+                return ApiResponder.error(ctx, err.message, 400);
+            }
 
             const blockHeight = (ctx.meta as any)?.blockHeight;
             const effectiveLimit = Math.min(responseMaxSize || 64, 1024);
@@ -247,9 +257,14 @@ export default class DidDatabaseService extends BullableService {
                         });
                 }
 
-                // Sort and limit
-                filteredItems.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
-                filteredItems = filteredItems.slice(0, effectiveLimit);
+                // Sort and limit (reusable in‑memory helper)
+                filteredItems = sortByStandardAttributes(filteredItems, sort, {
+                    getId: (item: { did: string }) => item.did,
+                    getCreated: (item: { created: string }) => item.created,
+                    getModified: (item: { modified: string }) => item.modified,
+                    defaultAttribute: "modified",
+                    defaultDirection: "asc",
+                }).slice(0, effectiveLimit);
 
                 return ApiResponder.success(ctx, { dids: filteredItems }, 200);
             }
@@ -279,9 +294,9 @@ export default class DidDatabaseService extends BullableService {
                     : query.andWhereRaw(`exp + interval '30 days' >= ?`, [now]);
             }
 
-            const items = await query
-                .orderBy("modified", "asc")
-                .limit(effectiveLimit);
+            // Apply ordering
+            const orderedQuery = applyOrdering(query, sort);
+            const items = await orderedQuery.limit(effectiveLimit);
 
             return ApiResponder.success(ctx, { dids: items }, 200);
         } catch (err: any) {

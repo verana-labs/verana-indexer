@@ -186,24 +186,40 @@ export default class CrawlTxService extends BullableService {
         return;
       }
 
-        await knex.transaction(async (trx) => {
-          try {
-            await this.insertRelatedTx(listTxRaw, trx);
-            if (blockCheckpoint) {
-              blockCheckpoint.height = actualEndBlock;
-              await BlockCheckpoint.query()
-                .insert(blockCheckpoint)
-                .onConflict('job_name')
-                .merge()
-                .returning('id')
-                .timeout(10000)
-                .transacting(trx);
+        const [trustDepositResult, transactionResult] = await Promise.allSettled([
+          this.processTrustDepositEventsForBlocks(startBlock, actualEndBlock),
+          knex.transaction(async (trx) => {
+            try {
+              await this.insertRelatedTx(listTxRaw, trx);
+              if (blockCheckpoint) {
+                blockCheckpoint.height = actualEndBlock;
+                await BlockCheckpoint.query()
+                  .insert(blockCheckpoint)
+                  .onConflict('job_name')
+                  .merge()
+                  .returning('id')
+                  .timeout(10000)
+                  .transacting(trx);
+              }
+            } catch (error) {
+              this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
+              throw error;
             }
-          } catch (error) {
-            this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
-            throw error;
-          }
-        });
+          })
+        ]);
+
+        // Log TrustDeposit processing result
+        if (trustDepositResult.status === 'rejected') {
+          this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing TrustDeposit events:`, trustDepositResult.reason);
+        } else {
+          this.logger.info(`✅ [HANDLE_TRANSACTION] TrustDeposit events processed successfully`);
+        }
+
+        // Transaction processing must succeed - throw if it failed
+        if (transactionResult.status === 'rejected') {
+          this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction processing failed:`, transactionResult.reason);
+          throw transactionResult.reason;
+        }
 
       this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${actualEndBlock}`);
 
@@ -1134,6 +1150,37 @@ export default class CrawlTxService extends BullableService {
     return super._start();
   }
 
+
+ 
+  private async processTrustDepositEventsForBlocks(startBlock: number, endBlock: number): Promise<void> {
+    try {
+      const blocks = await Block.query()
+        .where('height', '>', startBlock)
+        .andWhere('height', '<=', endBlock)
+        .orderBy('height', 'asc');
+
+      if (!blocks.length) {
+        return;
+      }
+
+      this.logger.info(`[HANDLE_TRANSACTION] Processing TrustDeposit events for ${blocks.length} blocks (${startBlock} to ${endBlock})`);
+
+      for (const block of blocks) {
+        try {
+          await this.broker.call(
+            `${SERVICE.V1.CrawlTrustDepositService.path}.processBlockEvents`,
+            { block },
+            { timeout: 30000 }
+          );
+        } catch (err: any) {
+          this.logger.warn(`[HANDLE_TRANSACTION] Failed to process TrustDeposit events for block ${block.height}:`, err?.message || err);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`[HANDLE_TRANSACTION] Error in processTrustDepositEventsForBlocks:`, error);
+      throw error;
+    }
+  }
 
   private async retryRpcCall<T>(
     rpcCall: () => Promise<T>,

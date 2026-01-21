@@ -7,6 +7,7 @@ import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../co
 import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
@@ -170,14 +171,22 @@ export default class TrustRegistryDatabaseService extends BaseService {
         active_gf_only?: string | boolean;
         preferred_language?: string;
         response_max_size?: number;
+        sort?: string;
     }>) {
         try {
             const {
                 controller,
                 modified_after: modifiedAfter,
                 preferred_language: preferredLanguage,
-                response_max_size: responseMaxSizeRaw
+                response_max_size: responseMaxSizeRaw,
+                sort
             } = ctx.params;
+
+            try {
+                validateSortParameter(sort);
+            } catch (err: any) {
+                return ApiResponder.error(ctx, err.message, 400);
+            }
 
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
@@ -192,38 +201,45 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             // If AtBlockHeight is provided, query historical state
             if (typeof blockHeight === "number") {
-                // Get all unique TR IDs that existed at or before the block height
-                const latestHistorySubquery = knex("trust_registry_history")
-                    .select("tr_id")
-                    .select(
-                        knex.raw(
-                            `ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn`
-                        )
-                    )
-                    .where("height", "<=", blockHeight)
+                let filteredSubquery = knex("trust_registry_history")
+                    .select("*")
+                    .where("height", "<=", blockHeight);
+
+                if (controller) {
+                    filteredSubquery = filteredSubquery.where("controller", controller);
+                }
+                if (modifiedAfter) {
+                    const ts = new Date(modifiedAfter);
+                    if (!Number.isNaN(ts.getTime())) {
+                        filteredSubquery = filteredSubquery.where("modified", ">", ts.toISOString());
+                    }
+                }
+
+                const rankedSubquery = knex
+                    .select("*")
+                    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn"))
+                    .from(filteredSubquery.as("filtered"))
                     .as("ranked");
 
-                const trIdsAtHeight = await knex
-                    .from(latestHistorySubquery)
-                    .select("tr_id")
-                    .where("rn", 1)
-                    .then((rows: any[]) => rows.map((r: any) => r.tr_id));
+                const latestTrHistory = await knex
+                    .from(rankedSubquery)
+                    .where("rn", 1);
 
-                if (trIdsAtHeight.length === 0) {
+                const sortedHistory = sortByStandardAttributes(latestTrHistory, sort, {
+                    getId: (row) => row.tr_id,
+                    getCreated: (row) => row.created,
+                    getModified: (row) => row.modified,
+                    defaultAttribute: "id",
+                    defaultDirection: "desc",
+                }).slice(0, responseMaxSize);
+
+                if (sortedHistory.length === 0) {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
 
-                // For each TR, get the latest history record and reconstruct
                 const registries = await Promise.all(
-                    trIdsAtHeight.map(async (trId: number) => {
-                        const trHistory = await knex("trust_registry_history")
-                            .where({ tr_id: trId })
-                            .where("height", "<=", blockHeight)
-                            .orderBy("height", "desc")
-                            .orderBy("created_at", "desc")
-                            .first();
-
-                        if (!trHistory) return null;
+                    sortedHistory.map(async (trHistory: any) => {
+                        const trId = trHistory.tr_id;
 
                         // Get versions (simplified - just get latest state for each version)
                         const gfvHistory = await knex("governance_framework_version_history")
@@ -303,24 +319,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     })
                 );
 
-                // Filter out nulls and apply filters
-                let filteredRegistries = registries.filter((r): r is NonNullable<typeof registries[0]> => r !== null);
-
-                if (controller) {
-                    filteredRegistries = filteredRegistries.filter(r => r.controller === controller);
-                }
-                if (modifiedAfter) {
-                    const ts = new Date(modifiedAfter);
-                    filteredRegistries = filteredRegistries.filter(r => new Date(r.modified) > ts);
-                }
-
-                // Sort and limit
-                if (modifiedAfter) {
-                    filteredRegistries.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
-                } else {
-                    filteredRegistries.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
-                }
-                filteredRegistries = filteredRegistries.slice(0, responseMaxSize);
+                const filteredRegistries = registries.filter((r): r is NonNullable<typeof registries[0]> => r !== null);
 
                 return ApiResponder.success(ctx, { trust_registries: filteredRegistries }, 200);
             }
@@ -333,10 +332,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
             }
 
             if (modifiedAfter) {
-                query = query.where("modified", ">", modifiedAfter).orderBy("modified", "desc");
-            } else {
-                query = query.orderBy("modified", "asc");
+                query = query.where("modified", ">", modifiedAfter);
             }
+
+            applyOrdering(query as any, sort);
 
             const registries = await query.limit(responseMaxSize);
 

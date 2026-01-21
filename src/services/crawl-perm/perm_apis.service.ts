@@ -8,6 +8,7 @@ import { SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
@@ -360,6 +361,13 @@ export default class PermAPIService extends BullableService {
         }
       }
 
+      if (permissionIds.size === 0) {
+        return { issued: "0", verified: "0" };
+      }
+
+      let issuedCount = BigInt(0);
+      let verifiedCount = BigInt(0);
+
       if (blockHeight !== undefined) {
         const latestHistorySubquery = knex("permission_session_history")
           .select("session_id")
@@ -379,8 +387,22 @@ export default class PermAPIService extends BullableService {
           })
           .select("psh.authz");
 
-        let issuedCount = BigInt(0);
-        let verifiedCount = BigInt(0);
+        for (const session of sessions) {
+          const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
+          if (Array.isArray(authz)) {
+            for (const entry of authz) {
+              if (entry.issuer_perm_id && permissionIds.has(String(entry.issuer_perm_id))) {
+                issuedCount += BigInt(1);
+              }
+              if (entry.verifier_perm_id && permissionIds.has(String(entry.verifier_perm_id))) {
+                verifiedCount += BigInt(1);
+              }
+            }
+          }
+        }
+      } else {
+        const sessions = await knex("permission_sessions")
+          .select("authz");
 
         for (const session of sessions) {
           const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
@@ -395,39 +417,6 @@ export default class PermAPIService extends BullableService {
             }
           }
         }
-
-        return {
-          issued: issuedCount.toString(),
-          verified: verifiedCount.toString(),
-        };
-      }
-      
-      let issuedCount = BigInt(0);
-      let verifiedCount = BigInt(0);
-
-      if (permissionIds.size === 0) {
-        return { issued: "0", verified: "0" };
-      }
-
-      try {
-        const perms = await knex("permissions")
-          .whereIn("id", Array.from(permissionIds))
-          .where("schema_id", String(schemaId))
-          .select("issued", "verified");
-
-        for (const perm of perms) {
-          const issued = perm.issued !== null && perm.issued !== undefined ? Number(perm.issued) : 0;
-          const verified = perm.verified !== null && perm.verified !== undefined ? Number(perm.verified) : 0;
-          issuedCount += BigInt(issued);
-          verifiedCount += BigInt(verified);
-        }
-      } catch (err: any) {
-        const errorMsg = err?.message || String(err);
-        if (errorMsg.includes("column") && (errorMsg.includes("does not exist") || errorMsg.includes("doesn't exist"))) {
-          this.logger.warn(`Columns 'issued' or 'verified' do not exist yet. Migration may not have been run. Returning 0 for statistics.`);
-          return { issued: "0", verified: "0" };
-        }
-        throw err;
       }
 
       return {
@@ -467,6 +456,7 @@ export default class PermAPIService extends BullableService {
       vp_state: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
       when: { type: "string", optional: true },
+      sort: { type: "string", optional: true },
     },
   })
   async listPermissions(ctx: Context<any>) {
@@ -475,6 +465,12 @@ export default class PermAPIService extends BullableService {
       const blockHeight = getBlockHeight(ctx);
       const now = new Date().toISOString();
       const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
+
+      try {
+        validateSortParameter(p.sort);
+      } catch (err: any) {
+        return ApiResponder.error(ctx, err.message, 400);
+      }
 
       const onlyValid = p.only_valid === "true" || p.only_valid === true;
       const onlySlashed = p.only_slashed === "true" || p.only_slashed === true;
@@ -643,9 +639,13 @@ export default class PermAPIService extends BullableService {
           filteredPermissions = filteredPermissions.filter(perm => perm.perm_state === requestedState);
         }
 
-        // Sort and limit
-        filteredPermissions.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
-        filteredPermissions = filteredPermissions.slice(0, limit);
+        filteredPermissions = sortByStandardAttributes(filteredPermissions, p.sort, {
+          getId: (item) => Number(item.id),
+          getCreated: (item) => item.created,
+          getModified: (item) => item.modified,
+          defaultAttribute: "modified",
+          defaultDirection: "asc",
+        }).slice(0, limit);
 
         return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
       }
@@ -741,7 +741,8 @@ export default class PermAPIService extends BullableService {
         else query.whereNull("repaid");
       }
 
-      const results = await query.orderBy("modified", "asc").limit(limit);
+      const orderedQuery = applyOrdering(query, p.sort);
+      const results = await orderedQuery.limit(limit);
       // Normalize IDs to strings and enrich with state and actions
       const normalizedResults = results.map(perm => ({
         ...perm,
@@ -876,21 +877,52 @@ export default class PermAPIService extends BullableService {
     rest: "GET history/:id",
     params: {
       id: { type: "string", pattern: /^[0-9]+$/ },
+      response_max_size: { type: "number", optional: true, default: 64 },
+      transaction_timestamp_older_than: { type: "string", optional: true },
     },
   })
-  async getPermissionHistory(ctx: Context<{ id: string }>) {
+  async getPermissionHistory(ctx: Context<{ id: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
-      const history = await knex("permission_history")
-        .where("permission_id", ctx.params.id)
-        .orderBy("height", "asc")
-        .orderBy("created_at", "asc");
-      if (!history.length) {
-        return ApiResponder.error(ctx, "Permission history not found", 404);
+      const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
+
+      const permissionExists = await knex("permissions").where({ id }).first();
+      if (!permissionExists) {
+        return ApiResponder.error(ctx, `Permission with id=${id} not found`, 404);
       }
-      return ApiResponder.success(ctx, { history }, 200);
+
+      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
+      const activity = await buildActivityTimeline(
+        {
+          entityType: "Permission",
+          historyTable: "permission_history",
+          idField: "permission_id",
+          entityId: id,
+          msgTypePrefixes: ["/verana.perm.v1"],
+        },
+        {
+          responseMaxSize,
+          transactionTimestampOlderThan,
+          atBlockHeight,
+        }
+      );
+
+      const result = {
+        entity_type: "Permission",
+        entity_id: String(id),
+        activity: activity || [],
+      };
+
+      return ApiResponder.success(ctx, result, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermissionHistory:", err);
-      return ApiResponder.error(ctx, "Failed to get permission history", 500);
+      this.logger.error("Error stack:", err?.stack);
+      this.logger.error("Error details:", {
+        message: err?.message,
+        code: err?.code,
+        name: err?.name,
+      });
+      return ApiResponder.error(ctx, `Failed to get permission history: ${err?.message || "Unknown error"}`, 500);
     }
   }
 
@@ -1070,27 +1102,57 @@ export default class PermAPIService extends BullableService {
     rest: "GET permission-session-history/:id",
     params: {
       id: { type: "string", pattern: /^[0-9a-fA-F-]+$/ },
+      response_max_size: { type: "number", optional: true, default: 64 },
+      transaction_timestamp_older_than: { type: "string", optional: true },
     },
   })
-  async getPermissionSessionHistory(ctx: Context<{ id: string }>) {
+  async getPermissionSessionHistory(ctx: Context<{ id: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
-      const history = await knex("permission_session_history")
-        .where("session_id", ctx.params.id)
-        .orderBy("height", "asc")
-        .orderBy("created_at", "asc");
-      if (!history.length) {
-        return ApiResponder.error(
-          ctx,
-          "PermissionSession history not found",
-          404
-        );
+      const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
+
+      const [currentSession, historySession] = await Promise.all([
+        knex("permission_sessions").where({ id }).first(),
+        knex("permission_session_history").where({ session_id: id }).first(),
+      ]);
+      if (!currentSession && !historySession) {
+        return ApiResponder.error(ctx, `PermissionSession ${id} not found`, 404);
       }
-      return ApiResponder.success(ctx, { history }, 200);
+
+      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
+      const activity = await buildActivityTimeline(
+        {
+          entityType: "PERMISSION_SESSION",
+          historyTable: "permission_session_history",
+          idField: "session_id",
+          entityId: id,
+          msgTypePrefixes: ["/verana.perm.v1"],
+        },
+        {
+          responseMaxSize,
+          transactionTimestampOlderThan,
+          atBlockHeight,
+        }
+      );
+
+      const result = {
+        entity_type: "PERMISSION_SESSION",
+        entity_id: id,
+        activity: activity || [],
+      };
+
+      return ApiResponder.success(ctx, result, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermissionSessionHistory:", err);
+      this.logger.error("Error stack:", err?.stack);
+      this.logger.error("Error details:", {
+        message: err?.message,
+        code: err?.code,
+        name: err?.name,
+      });
       return ApiResponder.error(
         ctx,
-        "Failed to get PermissionSession history",
+        `Failed to get PermissionSession history: ${err?.message || "Unknown error"}`,
         500
       );
     }
@@ -1101,6 +1163,7 @@ export default class PermAPIService extends BullableService {
     params: {
       modified_after: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
+      sort: { type: "string", optional: true },
     },
   })
   async listPermissionSessions(ctx: Context<any>) {
@@ -1108,7 +1171,14 @@ export default class PermAPIService extends BullableService {
       const {
         modified_after: modifiedAfter,
         response_max_size: responseMaxSize,
+        sort,
       } = ctx.params;
+
+      try {
+        validateSortParameter(sort);
+      } catch (err: any) {
+        return ApiResponder.error(ctx, err.message, 400);
+      }
       const blockHeight = getBlockHeight(ctx);
       const limit = Math.min(Math.max(responseMaxSize || 64, 1), 1024);
 
@@ -1169,9 +1239,13 @@ export default class PermAPIService extends BullableService {
           }
         }
 
-        // Sort and limit
-        filteredSessions.sort((a, b) => new Date(a.modified).getTime() - new Date(b.modified).getTime());
-        filteredSessions = filteredSessions.slice(0, limit);
+        filteredSessions = sortByStandardAttributes(filteredSessions, sort, {
+          getId: (item) => item.id,
+          getCreated: (item) => item.created,
+          getModified: (item) => item.modified,
+          defaultAttribute: "modified",
+          defaultDirection: "asc",
+        }).slice(0, limit);
 
         return ApiResponder.success(ctx, { sessions: filteredSessions }, 200);
       }
@@ -1184,7 +1258,8 @@ export default class PermAPIService extends BullableService {
           query.where("modified", ">", ts.toISOString());
       }
 
-      const results = await query.orderBy("modified", "asc").limit(limit);
+      const orderedQuery = applyOrdering(query, sort);
+      const results = await orderedQuery.limit(limit);
       return ApiResponder.success(ctx, { sessions: results }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissionSessions:", err);
