@@ -21,6 +21,7 @@ import {
 } from '../../common';
 import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
+import { triggerGC } from '../../common/utils/health_check';
 import {
   isVeranaMessageType,
   shouldSkipUnknownMessages,
@@ -99,6 +100,9 @@ export default class CrawlTxService extends BullableService {
 
     const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock);
     const listdecodedTx = await this.decodeListRawTx(listTxRaw);
+    
+    listTxRaw.length = 0;
+    
     await knex.transaction(async (trx) => {
       await this.insertTxDecoded(listdecodedTx, trx);
       if (blockCheckpoint) {
@@ -112,6 +116,13 @@ export default class CrawlTxService extends BullableService {
           .transacting(trx);
       }
     });
+    
+    const txCount = listdecodedTx.length;
+    if (txCount > 25) {
+      triggerGC();
+    }
+    
+    listdecodedTx.length = 0;
   }
 
   @QueueHandler({
@@ -346,6 +357,10 @@ export default class CrawlTxService extends BullableService {
         if (listTxs.length !== block.tx_count) {
           const error = `Error in block ${block.height}: ${listTxs.length} txs found, ${block.tx_count} txs expected`;
           this.logger.error(error);
+          promises.length = 0;
+          resultPromisesResults.length = 0;
+          resultPromises.length = 0;
+          blocks.length = 0;
           throw new Error(error);
         }
         listRawTxs.push({
@@ -358,6 +373,12 @@ export default class CrawlTxService extends BullableService {
         });
       }
     });
+    
+    promises.length = 0;
+    resultPromisesResults.length = 0;
+    resultPromises.length = 0;
+    blocks.length = 0;
+    
     return listRawTxs;
   }
 
@@ -369,16 +390,18 @@ export default class CrawlTxService extends BullableService {
       listRawTx.map(async (payloadBlock) => {
         const { listTx, timestamp, height } = payloadBlock;
         const listHandleTx: any[] = [];
+        const mapExistedTx: Map<string, boolean> = new Map();
+        let listHash: string[] = [];
         try {
           // check if tx existed
-          const mapExistedTx: Map<string, boolean> = new Map();
-          const listHash = listTx.txs.map((tx: any) => tx.hash);
+          listHash = listTx.txs.map((tx: any) => tx.hash);
           const listTxExisted = await Transaction.query()
             .whereIn('hash', listHash)
             .timeout(30000);
           listTxExisted.forEach((tx) => {
             mapExistedTx.set(tx.hash, true);
           });
+          listTxExisted.length = 0;
 
           // parse tx to format LCD return
           listTx.txs.forEach((tx: any) => {
@@ -466,9 +489,14 @@ export default class CrawlTxService extends BullableService {
             listHandleTx.push(parsedTx);
           });
 
+          mapExistedTx.clear();
+          listHash.length = 0;
+          
           return { listTx: listHandleTx, timestamp, height };
         } catch (error) {
           this.logger.error(error);
+          mapExistedTx.clear();
+          listHash.length = 0;
           throw error;
         }
       })

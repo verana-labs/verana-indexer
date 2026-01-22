@@ -258,13 +258,22 @@ export default class DidDatabaseService extends BullableService {
                 }
 
                 // Sort and limit (reusable in‑memory helper)
-                filteredItems = sortByStandardAttributes(filteredItems, sort, {
-                    getId: (item: { did: string }) => item.did,
-                    getCreated: (item: { created: string }) => item.created,
-                    getModified: (item: { modified: string }) => item.modified,
+                type FilteredDidItem = {
+                    did: string;
+                    controller: any;
+                    deposit: any;
+                    exp: any;
+                    created: string;
+                    modified: string;
+                };
+                const typedFilteredItems = filteredItems as FilteredDidItem[];
+                filteredItems = sortByStandardAttributes<FilteredDidItem>(typedFilteredItems, sort, {
+                    getId: (item) => item.did,
+                    getCreated: (item) => item.created,
+                    getModified: (item) => item.modified,
                     defaultAttribute: "modified",
                     defaultDirection: "asc",
-                }).slice(0, effectiveLimit);
+                }).slice(0, effectiveLimit) as typeof filteredItems;
 
                 return ApiResponder.success(ctx, { dids: filteredItems }, 200);
             }

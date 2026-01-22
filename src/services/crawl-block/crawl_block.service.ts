@@ -245,7 +245,7 @@ export default class CrawlBlockService extends BullableService {
             `Heap: ${preCheckHealth.server.heapUsagePercent?.toFixed(1)}% | Pausing ${pauseMs}ms for GC`
           );
           triggerGC();
-          await new Promise<void>(resolve => setTimeout(resolve, pauseMs));
+          await new Promise<void>(resolve => { setTimeout(resolve, pauseMs); });
         }
       } catch (healthCheckError) {
         this.logger.warn(`Health check failed: ${healthCheckError}. Continuing with processing.`);
@@ -460,6 +460,8 @@ export default class CrawlBlockService extends BullableService {
 
       if (blockResponses.length === 0) {
         this.logger.error('All block RPC calls failed. Skipping this cycle.');
+        blockQueries.length = 0;
+        blockResponsesResults.length = 0;
         return;
       }
 
@@ -497,6 +499,9 @@ export default class CrawlBlockService extends BullableService {
 
       if (mergeBlockResponses.length === 0) {
         this.logger.warn('⚠️ No valid blocks to process. Skipping this cycle.');
+        blockQueries.length = 0;
+        blockResponsesResults.length = 0;
+        blockResponses.length = 0;
         return;
       }
 
@@ -540,6 +545,8 @@ export default class CrawlBlockService extends BullableService {
       }
 
       // Clear large arrays AFTER processing to help garbage collection
+      blockQueries.length = 0;
+      blockResponsesResults.length = 0;
       blockResponses.length = 0;
       mergeBlockResponses.length = 0;
 
@@ -553,8 +560,8 @@ export default class CrawlBlockService extends BullableService {
         });
       }
 
-      // Trigger garbage collection after batch processing to free memory
-      if (this._blocksProcessedThisCycle > 50) {
+      // Trigger garbage collection after batch processing to free memory (aggressive threshold for low memory usage)
+      if (this._blocksProcessedThisCycle > 10) {
         triggerGC();
       }
     } catch (error: unknown) {
@@ -1022,6 +1029,7 @@ export default class CrawlBlockService extends BullableService {
             mapExistedBlock.set(block.height, true);
           }
         });
+        listExistedBlock.length = 0;
       }
       const listBlockModel: any[] = [];
 
@@ -1111,11 +1119,17 @@ export default class CrawlBlockService extends BullableService {
 
         // Clear the model array to help garbage collection
         listBlockModel.length = 0;
+        
+        listBlockHeight.length = 0;
+        mapExistedBlock.clear();
 
-        // Trigger GC after large batch insertions
-        if (listBlock.length > 100) {
+        // Trigger GC after large batch insertions (aggressive threshold for low memory)
+        if (listBlock.length > 25) {
           triggerGC();
         }
+      } else {
+        listBlockHeight.length = 0;
+        mapExistedBlock.clear();
       }
     } catch (error) {
       await handleErrorGracefully(

@@ -277,6 +277,8 @@ export async function buildActivityTimeline(
       allRecords.push(...result);
     }
   }
+  
+  allResults.length = 0;
 
   const sortedRecords = allRecords.sort((a, b) => {
     if (!a.timestamp && !b.timestamp) {
@@ -298,6 +300,9 @@ export async function buildActivityTimeline(
   });
 
   const limitedRecords = sortedRecords.slice(0, responseMaxSize);
+  
+  sortedRecords.length = 0;
+  allRecords.length = 0;
 
   return limitedRecords.map((record: any) => {
     let changes = record.changes;
