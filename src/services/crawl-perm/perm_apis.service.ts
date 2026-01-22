@@ -30,7 +30,7 @@ export default class PermAPIService extends BullableService {
     permissions: any[],
     blockHeight: number | undefined,
     now: Date,
-    batchSize: number = 10
+    batchSize: number = 50
   ): Promise<any[]> {
     const results: any[] = [];
     for (let i = 0; i < permissions.length; i += batchSize) {
@@ -292,27 +292,91 @@ export default class PermAPIService extends BullableService {
       now
     );
 
-    let weight = "0";
-    try {
-      weight = await this.calculatePermissionWeight(
-        String(perm.id),
-        String(perm.schema_id),
-        blockHeight
-      );
-    } catch (err: any) {
-      this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
+    if (blockHeight === undefined) {
+      const [weight, statistics, participants, slashStats] = await Promise.all([
+        perm.weight !== undefined && perm.weight !== null
+          ? Promise.resolve(String(perm.weight || "0"))
+          : this.calculatePermissionWeight(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
+              this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
+              return "0";
+            }),
+        perm.issued !== undefined && perm.verified !== undefined && perm.issued !== null && perm.verified !== null
+          ? Promise.resolve({ issued: String(perm.issued || "0"), verified: String(perm.verified || "0") })
+          : this.calculatePermissionStatistics(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
+              this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
+              return { issued: "0", verified: "0" };
+            }),
+        perm.participants !== undefined && perm.participants !== null
+          ? Promise.resolve(Number(perm.participants || 0))
+          : this.calculateParticipants(String(perm.id), String(perm.schema_id), permState, blockHeight, now).catch((err: any) => {
+              this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
+              return 0;
+            }),
+        perm.ecosystem_slash_events !== undefined && perm.ecosystem_slash_events !== null
+          ? Promise.resolve({
+              ecosystem_slash_events: Number(perm.ecosystem_slash_events || 0),
+              ecosystem_slashed_amount: String(perm.ecosystem_slashed_amount || "0"),
+              ecosystem_slashed_amount_repaid: String(perm.ecosystem_slashed_amount_repaid || "0"),
+              network_slash_events: Number(perm.network_slash_events || 0),
+              network_slashed_amount: String(perm.network_slashed_amount || "0"),
+              network_slashed_amount_repaid: String(perm.network_slashed_amount_repaid || "0"),
+            })
+          : this.calculateSlashStatistics(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
+              this.logger.warn(`Failed to calculate slash statistics for permission ${perm.id}:`, err?.message || err);
+              return {
+                ecosystem_slash_events: 0,
+                ecosystem_slashed_amount: "0",
+                ecosystem_slashed_amount_repaid: "0",
+                network_slash_events: 0,
+                network_slashed_amount: "0",
+                network_slashed_amount_repaid: "0",
+              };
+            }),
+      ]);
+
+      return {
+        ...perm,
+        perm_state: permState,
+        grantee_available_actions: granteeActions,
+        validator_available_actions: validatorActions,
+        weight: weight,
+        issued: statistics.issued,
+        verified: statistics.verified,
+        participants: participants,
+        ecosystem_slash_events: slashStats.ecosystem_slash_events,
+        ecosystem_slashed_amount: slashStats.ecosystem_slashed_amount,
+        ecosystem_slashed_amount_repaid: slashStats.ecosystem_slashed_amount_repaid,
+        network_slash_events: slashStats.network_slash_events,
+        network_slashed_amount: slashStats.network_slashed_amount,
+        network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
+      };
     }
 
-    let statistics = { issued: "0", verified: "0" };
-    try {
-      statistics = await this.calculatePermissionStatistics(
-        String(perm.id),
-        String(perm.schema_id),
-        blockHeight
-      );
-    } catch (err: any) {
-      this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
-    }
+    const [weight, statistics, participants, slashStats] = await Promise.all([
+      this.calculatePermissionWeight(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
+        this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
+        return "0";
+      }),
+      this.calculatePermissionStatistics(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
+        this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
+        return { issued: "0", verified: "0" };
+      }),
+      this.calculateParticipants(String(perm.id), String(perm.schema_id), permState, blockHeight, now).catch((err: any) => {
+        this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
+        return 0;
+      }),
+      this.calculateSlashStatistics(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
+        this.logger.warn(`Failed to calculate slash statistics for permission ${perm.id}:`, err?.message || err);
+        return {
+          ecosystem_slash_events: 0,
+          ecosystem_slashed_amount: "0",
+          ecosystem_slashed_amount_repaid: "0",
+          network_slash_events: 0,
+          network_slashed_amount: "0",
+          network_slashed_amount_repaid: "0",
+        };
+      }),
+    ]);
 
     return {
       ...perm,
@@ -322,6 +386,13 @@ export default class PermAPIService extends BullableService {
       weight: weight,
       issued: statistics.issued,
       verified: statistics.verified,
+      participants: participants,
+      ecosystem_slash_events: slashStats.ecosystem_slash_events,
+      ecosystem_slashed_amount: slashStats.ecosystem_slashed_amount,
+      ecosystem_slashed_amount_repaid: slashStats.ecosystem_slashed_amount_repaid,
+      network_slash_events: slashStats.network_slash_events,
+      network_slashed_amount: slashStats.network_slashed_amount,
+      network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
     };
   }
 
@@ -433,6 +504,271 @@ export default class PermAPIService extends BullableService {
     }
   }
 
+ 
+  private async calculateParticipants(
+    permId: string,
+    schemaId: string,
+    permState: PermState,
+    blockHeight?: number,
+    now: Date = new Date()
+  ): Promise<number> {
+    try {
+      let count = 0;
+      
+      if (permState === "ACTIVE") {
+        count = 1;
+      }
+      
+      if (blockHeight !== undefined) {
+        const latestHistorySubquery = knex("permission_history")
+          .select("permission_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
+            )
+          )
+          .where("schema_id", String(schemaId))
+          .where("height", "<=", blockHeight)
+          .as("ranked");
+
+        const children = await knex
+          .from(latestHistorySubquery)
+          .join("permission_history as ph", function () {
+            this.on("ranked.permission_id", "=", "ph.permission_id")
+              .andOn("ranked.rn", "=", knex.raw("1"));
+          })
+          .where("ph.validator_perm_id", permId)
+          .select("ph.permission_id", "ph.repaid", "ph.slashed", "ph.revoked", "ph.effective_from", "ph.effective_until", "ph.type", "ph.vp_state", "ph.vp_exp", "ph.validator_perm_id");
+
+        for (const child of children) {
+          const childState = calculatePermState(
+            {
+              repaid: child.repaid,
+              slashed: child.slashed,
+              revoked: child.revoked,
+              effective_from: child.effective_from,
+              effective_until: child.effective_until,
+              type: child.type,
+              vp_state: child.vp_state,
+              vp_exp: child.vp_exp,
+              validator_perm_id: child.validator_perm_id,
+            },
+            now
+          );
+          
+          if (childState === "ACTIVE") {
+            count++;
+          }
+          
+          const childCount = await this.calculateParticipants(
+            String(child.permission_id),
+            schemaId,
+            childState,
+            blockHeight,
+            now
+          );
+          count += childCount;
+        }
+      } else {
+        const children = await knex("permissions")
+          .where("validator_perm_id", permId)
+          .where("schema_id", String(schemaId))
+          .select("id", "repaid", "slashed", "revoked", "effective_from", "effective_until", "type", "vp_state", "vp_exp", "validator_perm_id");
+
+        for (const child of children) {
+          const childState = calculatePermState(
+            {
+              repaid: child.repaid,
+              slashed: child.slashed,
+              revoked: child.revoked,
+              effective_from: child.effective_from,
+              effective_until: child.effective_until,
+              type: child.type,
+              vp_state: child.vp_state,
+              vp_exp: child.vp_exp,
+              validator_perm_id: child.validator_perm_id,
+            },
+            now
+          );
+          
+          if (childState === "ACTIVE") {
+            count++;
+          }
+          
+          const childCount = await this.calculateParticipants(
+            String(child.id),
+            schemaId,
+            childState,
+            blockHeight,
+            now
+          );
+          count += childCount;
+        }
+      }
+
+      return count;
+    } catch (err: any) {
+      this.logger.warn(`Failed to calculate participants for permission ${permId}:`, err?.message || err);
+      return 0;
+    }
+  }
+
+
+  private async calculateSlashStatistics(
+    permId: string,
+    schemaId: string,
+    blockHeight?: number
+  ): Promise<{
+    ecosystem_slash_events: number;
+    ecosystem_slashed_amount: string;
+    ecosystem_slashed_amount_repaid: string;
+    network_slash_events: number;
+    network_slashed_amount: string;
+    network_slashed_amount_repaid: string;
+  }> {
+    try {
+      const schema = await knex("credential_schemas")
+        .where("id", String(schemaId))
+        .first();
+      
+      let trController: string | null = null;
+      if (schema?.tr_id) {
+        const tr = await knex("trust_registry")
+          .where("id", schema.tr_id)
+          .first();
+        trController = tr?.controller || null;
+      }
+
+      const permissionIds = new Set<string>();
+      let currentPermId: string | null = permId;
+
+      if (blockHeight !== undefined) {
+        while (currentPermId) {
+          permissionIds.add(currentPermId);
+          const permHistory: { validator_perm_id: string | null; type: string } | undefined = await knex("permission_history")
+            .where("permission_id", currentPermId)
+            .where("schema_id", String(schemaId))
+            .where("height", "<=", blockHeight)
+            .orderBy("height", "desc")
+            .orderBy("created_at", "desc")
+            .first()
+            .select("validator_perm_id", "type");
+
+          currentPermId = permHistory?.validator_perm_id || null;
+        }
+      } else {
+        while (currentPermId) {
+          permissionIds.add(currentPermId);
+          const perm: { validator_perm_id: string | null; type: string } | undefined = await knex("permissions")
+            .where("id", currentPermId)
+            .where("schema_id", String(schemaId))
+            .first()
+            .select("validator_perm_id", "type");
+
+          currentPermId = perm?.validator_perm_id || null;
+        }
+      }
+
+       let slashEvents: any[] = [];
+      
+      if (blockHeight !== undefined) {
+        slashEvents = await knex("permission_history")
+          .whereIn("permission_id", Array.from(permissionIds))
+          .where("schema_id", String(schemaId))
+          .where("height", "<=", blockHeight)
+          .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
+          .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+          .orderBy("permission_id", "asc")
+          .orderBy("height", "asc")
+          .orderBy("created_at", "asc");
+      } else {
+        slashEvents = await knex("permission_history")
+          .whereIn("permission_id", Array.from(permissionIds))
+          .where("schema_id", String(schemaId))
+          .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
+          .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+          .orderBy("permission_id", "asc")
+          .orderBy("height", "asc")
+          .orderBy("created_at", "asc");
+      }
+
+      let ecosystemSlashEvents = 0;
+      let ecosystemSlashedAmount = BigInt(0);
+      let ecosystemSlashedAmountRepaid = BigInt(0);
+      let networkSlashEvents = 0;
+      let networkSlashedAmount = BigInt(0);
+      let networkSlashedAmountRepaid = BigInt(0);
+
+      const prevSlashedDeposits = new Map<string, string>();
+      const prevRepaidDeposits = new Map<string, string>();
+
+      for (const event of slashEvents) {
+        const permIdStr = String(event.permission_id);
+        const prevSlashed = prevSlashedDeposits.get(permIdStr) || "0";
+        const currentSlashed = event.slashed_deposit || "0";
+        const incrementalSlashed = BigInt(currentSlashed) - BigInt(prevSlashed);
+        
+        if (incrementalSlashed <= 0) {
+          prevSlashedDeposits.set(permIdStr, currentSlashed);
+          const currentRepaid = event.repaid_deposit || "0";
+          prevRepaidDeposits.set(permIdStr, currentRepaid);
+          continue;
+        }
+
+        prevSlashedDeposits.set(permIdStr, currentSlashed);
+
+        const isEcosystemPermission = event.type === "ECOSYSTEM";
+        const isSlashedByEcosystemGov = trController && event.slashed_by === trController;
+
+        if (isEcosystemPermission) {
+          networkSlashEvents++;
+          networkSlashedAmount += incrementalSlashed;
+          
+          const repaid = event.repaid_deposit || "0";
+          const prevRepaid = prevRepaidDeposits.get(permIdStr) || "0";
+          const incrementalRepaid = BigInt(repaid) - BigInt(prevRepaid);
+          if (incrementalRepaid > 0) {
+            networkSlashedAmountRepaid += incrementalRepaid;
+          }
+          prevRepaidDeposits.set(permIdStr, repaid);
+        } else if (isSlashedByEcosystemGov) {
+          ecosystemSlashEvents++;
+          ecosystemSlashedAmount += incrementalSlashed;
+          
+          const repaid = event.repaid_deposit || "0";
+          const prevRepaid = prevRepaidDeposits.get(permIdStr) || "0";
+          const incrementalRepaid = BigInt(repaid) - BigInt(prevRepaid);
+          if (incrementalRepaid > 0) {
+            ecosystemSlashedAmountRepaid += incrementalRepaid;
+          }
+          prevRepaidDeposits.set(permIdStr, repaid);
+        } else {
+          const repaid = event.repaid_deposit || "0";
+          prevRepaidDeposits.set(permIdStr, repaid);
+        }
+      }
+
+      return {
+        ecosystem_slash_events: ecosystemSlashEvents,
+        ecosystem_slashed_amount: ecosystemSlashedAmount.toString(),
+        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid.toString(),
+        network_slash_events: networkSlashEvents,
+        network_slashed_amount: networkSlashedAmount.toString(),
+        network_slashed_amount_repaid: networkSlashedAmountRepaid.toString(),
+      };
+    } catch (err: any) {
+      this.logger.warn(`Failed to calculate slash statistics for permission ${permId}:`, err?.message || err);
+      return {
+        ecosystem_slash_events: 0,
+        ecosystem_slashed_amount: "0",
+        ecosystem_slashed_amount_repaid: "0",
+        network_slash_events: 0,
+        network_slashed_amount: "0",
+        network_slashed_amount_repaid: "0",
+      };
+    }
+  }
+
   /**
    * List Permissions [MOD-PERM-QRY-1]
    */
@@ -457,6 +793,19 @@ export default class PermAPIService extends BullableService {
       response_max_size: { type: "number", optional: true, default: 64 },
       when: { type: "string", optional: true },
       sort: { type: "string", optional: true },
+
+      min_participants: { type: "number", integer: true, optional: true },
+      max_participants: { type: "number", integer: true, optional: true },
+      min_weight: { type: "string", optional: true },
+      max_weight: { type: "string", optional: true },
+      min_issued: { type: "string", optional: true },
+      max_issued: { type: "string", optional: true },
+      min_verified: { type: "string", optional: true },
+      max_verified: { type: "string", optional: true },
+      min_ecosystem_slash_events: { type: "number", integer: true, optional: true },
+      max_ecosystem_slash_events: { type: "number", integer: true, optional: true },
+      min_network_slash_events: { type: "number", integer: true, optional: true },
+      max_network_slash_events: { type: "number", integer: true, optional: true },
     },
   })
   async listPermissions(ctx: Context<any>) {
@@ -639,21 +988,69 @@ export default class PermAPIService extends BullableService {
           filteredPermissions = filteredPermissions.filter(perm => perm.perm_state === requestedState);
         }
 
+        if (p.min_participants !== undefined) {
+          filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) >= p.min_participants);
+        }
+        if (p.max_participants !== undefined) {
+          filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) < p.max_participants);
+        }
+        if (p.min_weight !== undefined) {
+          const minWeight = BigInt(p.min_weight);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.weight || "0") >= minWeight);
+        }
+        if (p.max_weight !== undefined) {
+          const maxWeight = BigInt(p.max_weight);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.weight || "0") < maxWeight);
+        }
+        if (p.min_issued !== undefined) {
+          const minIssued = BigInt(p.min_issued);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.issued || "0") >= minIssued);
+        }
+        if (p.max_issued !== undefined) {
+          const maxIssued = BigInt(p.max_issued);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.issued || "0") < maxIssued);
+        }
+        if (p.min_verified !== undefined) {
+          const minVerified = BigInt(p.min_verified);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.verified || "0") >= minVerified);
+        }
+        if (p.max_verified !== undefined) {
+          const maxVerified = BigInt(p.max_verified);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.verified || "0") < maxVerified);
+        }
+        if (p.min_ecosystem_slash_events !== undefined) {
+          filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
+        }
+        if (p.max_ecosystem_slash_events !== undefined) {
+          filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
+        }
+        if (p.min_network_slash_events !== undefined) {
+          filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
+        }
+        if (p.max_network_slash_events !== undefined) {
+          filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
+        }
+
         filteredPermissions = sortByStandardAttributes(filteredPermissions, p.sort, {
           getId: (item) => Number(item.id),
           getCreated: (item) => item.created,
           getModified: (item) => item.modified,
+          getParticipants: (item) => item.participants,
+          getWeight: (item) => item.weight,
+          getIssued: (item) => item.issued,
+          getVerified: (item) => item.verified,
+          getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
+          getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
+          getNetworkSlashEvents: (item) => item.network_slash_events,
+          getNetworkSlashedAmount: (item) => item.network_slashed_amount,
           defaultAttribute: "modified",
-          defaultDirection: "asc",
+          defaultDirection: "desc",
         }).slice(0, limit);
 
         return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
       }
 
-      // Otherwise, return latest state
-      // Note: We don't select "issued" and "verified" here as they may not exist if migration hasn't run
-      // They will be added by enrichPermissionWithStateAndActions
-      const query = knex("permissions").select([
+      const baseColumns = [
         "id",
         "schema_id",
         "type",
@@ -688,7 +1085,40 @@ export default class PermAPIService extends BullableService {
         "vp_exp",
         "vp_validator_deposit",
         "vp_term_requested",
-      ]);
+      ];
+
+      const hasIssuedColumn = await knex.schema.hasColumn("permissions", "issued");
+      const hasVerifiedColumn = await knex.schema.hasColumn("permissions", "verified");
+      const hasParticipantsColumn = await knex.schema.hasColumn("permissions", "participants");
+      const hasWeightColumn = await knex.schema.hasColumn("permissions", "weight");
+      const hasEcosystemSlashEventsColumn = await knex.schema.hasColumn("permissions", "ecosystem_slash_events");
+
+      const selectColumns: any[] = [...baseColumns];
+      
+      if (hasIssuedColumn) {
+        selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
+      }
+      if (hasVerifiedColumn) {
+        selectColumns.push(knex.raw("COALESCE(verified, 0) as verified"));
+      }
+      if (hasParticipantsColumn) {
+        selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
+      }
+      if (hasWeightColumn) {
+        selectColumns.push(knex.raw("COALESCE(weight, '0') as weight"));
+      }
+      if (hasEcosystemSlashEventsColumn) {
+        selectColumns.push(
+          knex.raw("COALESCE(ecosystem_slash_events, 0) as ecosystem_slash_events"),
+          knex.raw("COALESCE(ecosystem_slashed_amount, '0') as ecosystem_slashed_amount"),
+          knex.raw("COALESCE(ecosystem_slashed_amount_repaid, '0') as ecosystem_slashed_amount_repaid"),
+          knex.raw("COALESCE(network_slash_events, 0) as network_slash_events"),
+          knex.raw("COALESCE(network_slashed_amount, '0') as network_slashed_amount"),
+          knex.raw("COALESCE(network_slashed_amount_repaid, '0') as network_slashed_amount_repaid")
+        );
+      }
+
+      const query = knex("permissions").select(selectColumns);
 
       if (p.schema_id !== undefined) query.where("schema_id", String(p.schema_id));
       if (p.grantee) query.where("grantee", p.grantee);
@@ -763,6 +1193,65 @@ export default class PermAPIService extends BullableService {
         const requestedState = String(p.perm_state).toUpperCase();
         finalResults = enrichedResults.filter(perm => perm.perm_state === requestedState);
       }
+
+      if (p.min_participants !== undefined) {
+        finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
+      }
+      if (p.max_participants !== undefined) {
+        finalResults = finalResults.filter(perm => (perm.participants || 0) < p.max_participants);
+      }
+      if (p.min_weight !== undefined) {
+        const minWeight = BigInt(p.min_weight);
+        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") >= minWeight);
+      }
+      if (p.max_weight !== undefined) {
+        const maxWeight = BigInt(p.max_weight);
+        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") < maxWeight);
+      }
+      if (p.min_issued !== undefined) {
+        const minIssued = BigInt(p.min_issued);
+        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") >= minIssued);
+      }
+      if (p.max_issued !== undefined) {
+        const maxIssued = BigInt(p.max_issued);
+        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") < maxIssued);
+      }
+      if (p.min_verified !== undefined) {
+        const minVerified = BigInt(p.min_verified);
+        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") >= minVerified);
+      }
+      if (p.max_verified !== undefined) {
+        const maxVerified = BigInt(p.max_verified);
+        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") < maxVerified);
+      }
+      if (p.min_ecosystem_slash_events !== undefined) {
+        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
+      }
+      if (p.max_ecosystem_slash_events !== undefined) {
+        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
+      }
+      if (p.min_network_slash_events !== undefined) {
+        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
+      }
+      if (p.max_network_slash_events !== undefined) {
+        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
+      }
+
+      finalResults = sortByStandardAttributes(finalResults, p.sort, {
+        getId: (item) => Number(item.id),
+        getCreated: (item) => item.created,
+        getModified: (item) => item.modified,
+        getParticipants: (item) => item.participants,
+        getWeight: (item) => item.weight,
+        getIssued: (item) => item.issued,
+        getVerified: (item) => item.verified,
+        getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
+        getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
+        getNetworkSlashEvents: (item) => item.network_slash_events,
+        getNetworkSlashedAmount: (item) => item.network_slashed_amount,
+        defaultAttribute: "modified",
+        defaultDirection: "desc",
+      }).slice(0, limit);
 
       return ApiResponder.success(ctx, { permissions: finalResults }, 200);
     } catch (err: any) {

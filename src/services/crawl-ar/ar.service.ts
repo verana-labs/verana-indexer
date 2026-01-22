@@ -9,6 +9,7 @@ import { Block } from '../../models';
 import { Account } from '../../models/account';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 
 interface Balance {
@@ -68,14 +69,19 @@ export default class CrawlNewAccountsService extends BullableService {
             this.logger.info(`[CrawlNewAccountsService] Starting - Block count: ${startMode.totalBlocks}, Current checkpoint: ${startMode.currentBlock}, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
 
             if (this._isFreshStart && config.crawlAccounts.freshStart) {
-                this.BATCH_SIZE = config.crawlAccounts.freshStart.chunkSize || 100;
-                this.CRAWL_INTERVAL = config.crawlAccounts.freshStart.millisecondCrawl || 1000;
+                const baseBatchSize = config.crawlAccounts.freshStart.chunkSize || 100;
+                const baseInterval = config.crawlAccounts.freshStart.millisecondCrawl || 1000;
+                this.BATCH_SIZE = applySpeedToBatchSize(baseBatchSize, false);
+                this.CRAWL_INTERVAL = applySpeedToDelay(baseInterval, false);
             } else if (!this._isFreshStart && config.crawlAccounts.reindexing) {
-                this.BATCH_SIZE = config.crawlAccounts.reindexing.chunkSize || 1000;
-                this.CRAWL_INTERVAL = config.crawlAccounts.reindexing.millisecondCrawl || 1000;
+                const baseBatchSize = config.crawlAccounts.reindexing.chunkSize || 1000;
+                const baseInterval = config.crawlAccounts.reindexing.millisecondCrawl || 1000;
+                this.BATCH_SIZE = applySpeedToBatchSize(baseBatchSize, true);
+                this.CRAWL_INTERVAL = applySpeedToDelay(baseInterval, true);
             }
 
-            this.logger.info(`[CrawlNewAccountsService] Config - Batch: ${this.BATCH_SIZE}, Interval: ${this.CRAWL_INTERVAL}ms, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+            const speedMultiplier = getCrawlSpeedMultiplier();
+            this.logger.info(`[CrawlNewAccountsService] Config - Batch: ${this.BATCH_SIZE}, Interval: ${this.CRAWL_INTERVAL}ms, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Speed Multiplier: ${speedMultiplier}x`);
 
 
             await this.processBlocks();
@@ -137,7 +143,7 @@ export default class CrawlNewAccountsService extends BullableService {
                         .where('height', '>', lastHeight)
                         .orderBy('height', 'asc')
                         .limit(this.BATCH_SIZE)
-                        .timeout(30000);
+                        .timeout(120000);
                 } catch (queryError: any) {
                     const errorCode = queryError?.code;
                     const errorMessage = queryError?.message || String(queryError);

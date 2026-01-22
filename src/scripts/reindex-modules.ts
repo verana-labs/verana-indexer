@@ -412,7 +412,9 @@ async function runMigrations(db: Knex): Promise<void> {
       "20251125000003_create_module_params_history",
       "123456765_Create_did_histry",
       "20251124120000_add_height_to_credential_schema_history",
-      "20251125113000_add_height_indexes_to_history_tables"
+      "20251125113000_add_height_indexes_to_history_tables",
+      "20251210000000_add_permission_statistics",
+      "20250115000000_add_permission_new_attributes"
     ];
     
     const transactionPartitionMigrationNames = [
@@ -470,11 +472,12 @@ async function runMigrations(db: Knex): Promise<void> {
         const isInit = migration.name && migration.name.includes("init_horoscope_layer_1_model");
         if (!isInit) {
           try {
+            // Remove all duplicates, not just one
             const deleted = await db("knex_migrations")
               .where("name", migration.name)
               .delete();
             if (deleted > 0) {
-              console.log(`     Removed: ${migration.name}`);
+              console.log(`     Removed ${deleted} record(s): ${migration.name}`);
             }
           } catch (err: unknown) {
             const error = err as NodeJS.ErrnoException;
@@ -486,10 +489,52 @@ async function runMigrations(db: Knex): Promise<void> {
       }
     }
     
+    // Clean up any remaining duplicates before running migrations
+    try {
+      console.log(`  Cleaning up duplicate migration entries...`);
+      const duplicates = await db.raw(`
+        DELETE FROM knex_migrations 
+        WHERE id NOT IN (
+          SELECT DISTINCT ON (name) id 
+          FROM knex_migrations 
+          ORDER BY name, migration_time DESC, id DESC
+        )
+      `);
+      if (duplicates.rowCount > 0) {
+        console.log(`     Removed ${duplicates.rowCount} duplicate migration record(s)`);
+      }
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      console.warn(`     Could not clean duplicates: ${error.message}`);
+    }
+    
     console.log(`  Running migrations using Knex migrate.latest()...`);
     try {
+      const [, pendingBefore] = await db.migrate.list();
+      if (pendingBefore && pendingBefore.length > 0) {
+        console.log(`   Found ${pendingBefore.length} pending migration(s) to run`);
+        for (const mig of pendingBefore) {
+          let migName: string;
+          if (typeof mig === 'string') {
+            migName = mig;
+          } else if (mig && typeof mig === 'object') {
+            migName = (mig as any).name || (mig as any).file || JSON.stringify(mig);
+          } else {
+            migName = String(mig);
+          }
+          console.log(`     - ${migName}`);
+        }
+      }
       await db.migrate.latest();
       console.log("   Migrations completed successfully");
+      
+      // Verify new permission columns were added
+      const hasParticipantsColumn = await db.schema.hasColumn("permissions", "participants");
+      if (hasParticipantsColumn) {
+        console.log("   ✓ New permission attributes (participants, slash stats) verified in permissions table");
+      } else {
+        console.warn("   ⚠ Warning: participants column not found in permissions table after migrations");
+      }
     } catch (migrateError: unknown) {
       const err = migrateError as Error;
       if (err.message?.includes("already exists") && err.message.includes("block")) {
@@ -535,6 +580,24 @@ async function runMigrations(db: Knex): Promise<void> {
       console.log("  All tables verified and recreated successfully");
     }
     
+    // Verify permission table has new columns
+    const permissionsTableExists = await checkTableExists(db, "permissions");
+    if (permissionsTableExists) {
+      const hasParticipants = await db.schema.hasColumn("permissions", "participants");
+      const hasEcosystemSlashEvents = await db.schema.hasColumn("permissions", "ecosystem_slash_events");
+      const hasNetworkSlashEvents = await db.schema.hasColumn("permissions", "network_slash_events");
+      
+      if (hasParticipants && hasEcosystemSlashEvents && hasNetworkSlashEvents) {
+        console.log("  ✓ Permission table has all new attributes (participants, ecosystem_slash_events, network_slash_events, etc.)");
+      } else {
+        console.warn("  ⚠ Warning: Permission table is missing some new attributes:");
+        if (!hasParticipants) console.warn("     - Missing: participants");
+        if (!hasEcosystemSlashEvents) console.warn("     - Missing: ecosystem_slash_events");
+        if (!hasNetworkSlashEvents) console.warn("     - Missing: network_slash_events");
+        console.warn("  You may need to manually run: npm run migrate:dev");
+      }
+    }
+    
     console.log(" Tables recreated successfully\n");
   } catch (error: unknown) {
     const err = error as NodeJS.ErrnoException;
@@ -548,6 +611,15 @@ async function runMigrations(db: Knex): Promise<void> {
         console.log(`  Found ${migrationsToRun.length} migrations to run (excluding init)`);
         for (const migration of migrationsToRun) {
           try {
+            const existing = await db("knex_migrations")
+              .where("name", migration.name)
+              .first();
+            
+            if (existing) {
+              console.log(`     Skipping ${migration.name} - already recorded`);
+              continue;
+            }
+
             const migrationPath = `../migrations/${migration.name}.ts`;
             const migrationFile = await import(migrationPath);
             if (migrationFile.up) {
@@ -556,15 +628,28 @@ async function runMigrations(db: Knex): Promise<void> {
               const nextBatch = (maxBatch && (maxBatch as { max: number | null }).max) 
                 ? ((maxBatch as { max: number }).max + 1) 
                 : 1;
-              await db("knex_migrations").insert({
-                name: migration.name,
-                batch: nextBatch,
-                migration_time: new Date()
-              });
-              console.log(`     Applied: ${migration.name}`);
+              
+              const stillExists = await db("knex_migrations")
+                .where("name", migration.name)
+                .first();
+              
+              if (!stillExists) {
+                await db("knex_migrations").insert({
+                  name: migration.name,
+                  batch: nextBatch,
+                  migration_time: new Date()
+                });
+                console.log(`     Applied: ${migration.name}`);
+              } else {
+                console.log(`     Skipping ${migration.name} - was added concurrently`);
+              }
             }
           } catch (err: unknown) {
             const error = err as NodeJS.ErrnoException;
+            if (error.message?.includes("duplicate key") || error.message?.includes("unique constraint")) {
+              console.log(`     Skipping ${migration.name} - duplicate entry detected`);
+              continue;
+            }
             if (!error.message?.includes("already exists") || !error.message.includes("block")) {
               console.error(`    Failed to apply ${migration.name}: ${error.message}`);
               throw err;

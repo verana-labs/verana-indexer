@@ -11,6 +11,7 @@ import BullableService, { QueueHandler } from '../../base/bullable.service';
 import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 
 @Service({
   name: SERVICE.V1.CoinTransfer.key,
@@ -98,7 +99,6 @@ export default class CoinTransferService extends BullableService {
       actualToBlock = Math.min(toBlock, fromBlock + maxBlocks);
     }
 
-    this.logger.info(`QUERY FROM ${fromBlock} - TO ${actualToBlock}................`);
 
     const coinTransfers: CoinTransfer[] = [];
     const transactions = await this.fetchTransactionCTByHeight(
@@ -219,9 +219,10 @@ export default class CoinTransferService extends BullableService {
           .merge();
 
         if (coinTransfers.length > 0) {
-          const chunkSize = (this._isFreshStart && config.handleCoinTransfer.freshStart)
+          const baseChunkSize = (this._isFreshStart && config.handleCoinTransfer.freshStart)
             ? (config.handleCoinTransfer.freshStart.chunkSize || config.handleCoinTransfer.chunkSize)
             : config.handleCoinTransfer.chunkSize;
+          const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
           this.logger.info(`📝 [COIN_TRANSFER] Inserting ${coinTransfers.length} coin transfers in chunks of ${chunkSize}`);
           await trx.batchInsert(
             CoinTransfer.tableName,
@@ -241,10 +242,13 @@ export default class CoinTransferService extends BullableService {
     const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_COIN_TRANSFER);
     this._isFreshStart = startMode.isFreshStart;
 
-    const crawlInterval = (this._isFreshStart && config.handleCoinTransfer.freshStart)
+    const baseCrawlInterval = (this._isFreshStart && config.handleCoinTransfer.freshStart)
       ? (config.handleCoinTransfer.freshStart.millisecondCrawl || config.handleCoinTransfer.millisecondCrawl)
       : config.handleCoinTransfer.millisecondCrawl;
+    const crawlInterval = applySpeedToDelay(baseCrawlInterval, !this._isFreshStart);
 
+    const speedMultiplier = getCrawlSpeedMultiplier();
+    this.logger.info(`CoinTransfer Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms | Speed Multiplier: ${speedMultiplier}x`);
 
     this.createJob(
       BULL_JOB_NAME.HANDLE_COIN_TRANSFER,

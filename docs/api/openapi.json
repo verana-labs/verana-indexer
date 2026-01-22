@@ -1445,6 +1445,123 @@
             "description": "Filter by permission state (calculated based on repaid, slashed, revoked, and effective dates)"
           },
           {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+          },
+          {
+            "name": "min_participants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Minimum number of participants (inclusive)"
+          },
+          {
+            "name": "max_participants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Maximum number of participants (exclusive)"
+          },
+          {
+            "name": "min_weight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum weight (inclusive)"
+          },
+          {
+            "name": "max_weight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum weight (exclusive)"
+          },
+          {
+            "name": "min_issued",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum number of issued credentials (inclusive)"
+          },
+          {
+            "name": "max_issued",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum number of issued credentials (exclusive)"
+          },
+          {
+            "name": "min_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum number of verified credentials (inclusive)"
+          },
+          {
+            "name": "max_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum number of verified credentials (exclusive)"
+          },
+          {
+            "name": "min_ecosystem_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Minimum accepted number of ecosystem slash events (inclusive)"
+          },
+          {
+            "name": "max_ecosystem_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Maximum accepted number of ecosystem slash events (exclusive)"
+          },
+          {
+            "name": "min_network_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Minimum accepted number of network slash events (inclusive)"
+          },
+          {
+            "name": "max_network_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Maximum accepted number of network slash events (exclusive)"
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
@@ -2352,6 +2469,34 @@
             "verified": {
               "type": "string",
               "description": "Number of credentials verified using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
+            },
+            "participants": {
+              "type": "integer",
+              "description": "Current number of active participants (perm_state=ACTIVE) (subtree, plus this permission if it is ACTIVE). Supports AtBlockHeight directive."
+            },
+            "ecosystem_slash_events": {
+              "type": "integer",
+              "description": "Total ecosystem-governance–based slash events (when an ecosystem participant is slashed by ecosystem governance). Supports AtBlockHeight directive."
+            },
+            "ecosystem_slashed_amount": {
+              "type": "string",
+              "description": "Cumulated ecosystem-governance–based slashed amount. Supports AtBlockHeight directive."
+            },
+            "ecosystem_slashed_amount_repaid": {
+              "type": "string",
+              "description": "Cumulated ecosystem-governance–based slashed amount repaid by participants. Supports AtBlockHeight directive."
+            },
+            "network_slash_events": {
+              "type": "integer",
+              "description": "Total network-governance–based slash events (when a full Ecosystem is slashed by Verana Council). Supports AtBlockHeight directive."
+            },
+            "network_slashed_amount": {
+              "type": "string",
+              "description": "Cumulated network-governance–based slashed amount. Supports AtBlockHeight directive."
+            },
+            "network_slashed_amount_repaid": {
+              "type": "string",
+              "description": "Cumulated network-governance–based slashed amount repaid by the ecosystem. Supports AtBlockHeight directive."
             },
             "schema_id": {
               "type": "string"
@@ -3539,6 +3684,86 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "perm_state": {
+            "type": "string",
+            "enum": [
+              "REPAID",
+              "SLASHED",
+              "REVOKED",
+              "EXPIRED",
+              "ACTIVE",
+              "FUTURE",
+              "INACTIVE"
+            ],
+            "description": "The current state of the permission, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
+          },
+          "grantee_available_actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VP_RENEW",
+                "VP_CANCEL",
+                "PERM_REVOKE",
+                "PERM_EXTEND",
+                "PERM_REPAY"
+              ]
+            },
+            "description": "List of actions available to the grantee for this permission"
+          },
+          "validator_available_actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VP_SET_VALIDATED",
+                "PERM_REVOKE",
+                "PERM_EXTEND",
+                "PERM_SLASH"
+              ]
+            },
+            "description": "List of actions available to the validator for this permission"
+          },
+          "weight": {
+            "type": "string",
+            "description": "The node weight of the permission, calculated as the sum of all trust deposits of this permission and all permissions in its subtree"
+          },
+          "issued": {
+            "type": "string",
+            "description": "Number of credentials issued using this permission and its ancestors"
+          },
+          "verified": {
+            "type": "string",
+            "description": "Number of credentials verified using this permission and its ancestors"
+          },
+          "participants": {
+            "type": "integer",
+            "description": "Current number of active participants (perm_state=ACTIVE) (subtree, plus this permission if it is ACTIVE)"
+          },
+          "ecosystem_slash_events": {
+            "type": "integer",
+            "description": "Total ecosystem-governance–based slash events (when an ecosystem participant is slashed by ecosystem governance)"
+          },
+          "ecosystem_slashed_amount": {
+            "type": "string",
+            "description": "Cumulated ecosystem-governance–based slashed amount"
+          },
+          "ecosystem_slashed_amount_repaid": {
+            "type": "string",
+            "description": "Cumulated ecosystem-governance–based slashed amount repaid by participants"
+          },
+          "network_slash_events": {
+            "type": "integer",
+            "description": "Total network-governance–based slash events (when a full Ecosystem is slashed by Verana Council)"
+          },
+          "network_slashed_amount": {
+            "type": "string",
+            "description": "Cumulated network-governance–based slashed amount"
+          },
+          "network_slashed_amount_repaid": {
+            "type": "string",
+            "description": "Cumulated network-governance–based slashed amount repaid by the ecosystem"
           },
           "schema_id": {
             "type": "string"

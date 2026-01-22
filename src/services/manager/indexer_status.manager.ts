@@ -140,9 +140,24 @@ class IndexerStatusManager {
                           errorMessage.toLowerCase().includes('network') ||
                           errorMessage.toLowerCase().includes('connection') ||
                           errorMessage.toLowerCase().includes('econnrefused') ||
-                          errorMessage.toLowerCase().includes('etimedout');
+                          errorMessage.toLowerCase().includes('etimedout') ||
+                          errorMessage.toLowerCase().includes('query read timeout') ||
+                          errorMessage.toLowerCase().includes('knextimeouterror') ||
+                          errorMessage.toLowerCase().includes('query timeout');
     
     if (isNetworkError) {
+      if (this.logger) {
+        this.logger.info(`Network/timeout error detected. Starting recovery checker...`);
+      } else {
+        console.log(`Network/timeout error detected. Starting recovery checker...`);
+      }
+      this.startRecoveryChecker();
+    } else {
+      if (this.logger) {
+        this.logger.warn(`Non-network error stopped crawling. Starting recovery checker anyway to attempt auto-resume...`);
+      } else {
+        console.warn(`Non-network error stopped crawling. Starting recovery checker anyway to attempt auto-resume...`);
+      }
       this.startRecoveryChecker();
     }
 
@@ -193,9 +208,9 @@ class IndexerStatusManager {
     if (!this.status.isCrawling || !this.status.isRunning) {
       try {
         if (this.logger) {
-          this.logger.info('Checking if connection is restored...');
+          this.logger.info(`Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`);
         } else {
-          console.log('Checking if connection is restored...');
+          console.log(`Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`);
         }
         
         const isHealthy = await this.checkConnectionHealth();
@@ -214,16 +229,22 @@ class IndexerStatusManager {
           }
           return;
         }
+        
+        const timeSinceStopped = this.status.stoppedAt 
+          ? Date.now() - new Date(this.status.stoppedAt).getTime()
+          : 0;
+        const minutesStopped = Math.floor(timeSinceStopped / 60000);
+        
         if (this.logger) {
-          this.logger.info('Connection not yet restored, will retry...');
+          this.logger.info(`Connection not yet restored (stopped ${minutesStopped} minutes ago), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
         } else {
-          console.log('Connection not yet restored, will retry...');
+          console.log(`Connection not yet restored (stopped ${minutesStopped} minutes ago), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
         }
       } catch (error: any) {
         if (this.logger) {
-          this.logger.info(`Recovery check failed: ${error?.message || error}. Will retry...`);
+          this.logger.warn(`Recovery check failed: ${error?.message || error}. Will retry...`);
         } else {
-          console.log(`Recovery check failed: ${error?.message || error}. Will retry...`);
+          console.warn(`Recovery check failed: ${error?.message || error}. Will retry...`);
         }
       }
     } else if (this.status.isCrawling && this.status.isRunning) {
@@ -235,6 +256,9 @@ class IndexerStatusManager {
     try {
       const lcdClient = await getLcdClient();
       if (!lcdClient?.provider) {
+        if (this.logger) {
+          this.logger.debug('LCD client not available for health check');
+        }
         return false;
       }
 
@@ -246,12 +270,15 @@ class IndexerStatusManager {
       ]);
 
       await healthCheck;
+      if (this.logger) {
+        this.logger.debug('Connection health check passed');
+      }
       return true;
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
       if (!errorMessage.includes('timeout') && !errorMessage.includes('Health check timeout')) {
         if (this.logger) {
-          this.logger.info(`Health check error: ${errorMessage}`);
+          this.logger.debug(`Health check error: ${errorMessage}`);
         } else {
           console.log(`Health check error: ${errorMessage}`);
         }

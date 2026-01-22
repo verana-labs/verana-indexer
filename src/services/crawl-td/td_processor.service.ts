@@ -7,19 +7,16 @@ import { Block } from '../../models';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { formatTimestamp } from '../../common/utils/date_utils';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { CheckpointManager } from '../../common/utils/checkpoint_manager';
 import { BatchProcessor } from '../../common/utils/batch_processor';
 import { queryWithAutoRetry, delay, isStatementTimeoutError } from '../../common/utils/db_query_helper';
 
 interface TrustDepositAdjustPayload {
   account: string;
-  augend?: bigint;
-  adjustmentType?: string;
   newAmount: bigint | null;
   newShare: bigint | null;
   newClaimable: bigint | null;
-  newSlashed?: bigint | null;
-  newRepaid?: bigint | null;
 }
 
 @Service({
@@ -28,10 +25,10 @@ interface TrustDepositAdjustPayload {
 })
 export default class CrawlTrustDepositService extends BullableService {
   private timer: NodeJS.Timeout | null = null;
-  private checkpointColumn: 'job_name' | null = 'job_name';
   private checkpointManager: CheckpointManager;
   private batchProcessor: BatchProcessor;
   private isProcessing: boolean = false;
+  private _isFreshStart: boolean = false;
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
@@ -46,9 +43,10 @@ export default class CrawlTrustDepositService extends BullableService {
 
       const checkpoint = await this.ensureCheckpoint();
       
-      const crawlInterval = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
+      const baseCrawlInterval = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
         ? (config.crawlTrustDeposit.freshStart.millisecondCrawl || config.crawlTrustDeposit.millisecondCrawl)
         : config.crawlTrustDeposit.millisecondCrawl;
+      const crawlInterval = applySpeedToDelay(baseCrawlInterval, !this._isFreshStart);
 
       this.processBlocks(checkpoint, true).catch((err) => {
         this.logger.error('[CrawlTrustDepositService] Error in initial processBlocks:', err);
@@ -64,8 +62,9 @@ export default class CrawlTrustDepositService extends BullableService {
         },
         crawlInterval,
       );
+      const speedMultiplier = getCrawlSpeedMultiplier();
       this.logger.info(
-        `[CrawlTrustDepositService] Service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms`
+        `[CrawlTrustDepositService] Service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms | Speed Multiplier: ${speedMultiplier}x`
       );
     } catch (err) {
       this.logger.error('[CrawlTrustDepositService] ❌ Failed to start', err);
@@ -102,9 +101,10 @@ export default class CrawlTrustDepositService extends BullableService {
       const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, []);
       let lastHeight = startBlock || 0;
       
-      const maxBlockBatch = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
+      const baseMaxBlockBatch = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
         ? (config.crawlTrustDeposit.freshStart.chunkSize || config.crawlTrustDeposit.chunkSize || 100)
         : (config.crawlTrustDeposit.chunkSize || 100);
+      const maxBlockBatch = applySpeedToBatchSize(baseMaxBlockBatch, !this._isFreshStart);
 
       do {
       let nextBlocks: Block[] = [];
@@ -116,10 +116,10 @@ export default class CrawlTrustDepositService extends BullableService {
               .where('height', '>', currentLastHeight)
               .orderBy('height', 'asc')
               .limit(maxBlockBatch)
-              .timeout(30000);
+              .timeout(120000);
             return result;
           },
-          { timeout: 30000, retries: 3 },
+          { timeout: 120000, retries: 3 },
           this.logger
         );
       } catch (queryError: any) {
@@ -134,7 +134,8 @@ export default class CrawlTrustDepositService extends BullableService {
       
       if (!nextBlocks.length) break;
 
-      const processDelay = this._isFreshStart ? 2000 : 500;
+      const baseProcessDelay = this._isFreshStart ? 2000 : 500;
+      const processDelay = applySpeedToDelay(baseProcessDelay, !this._isFreshStart);
       
       try {
         for (const block of nextBlocks) {
@@ -155,12 +156,11 @@ export default class CrawlTrustDepositService extends BullableService {
         if (nextBlocks.length < maxBlockBatch) break;
         
         if (!this._isFreshStart) {
-          await delay(100);
+          const baseDelay = 100;
+          const adjustedDelay = applySpeedToDelay(baseDelay, true);
+          await delay(adjustedDelay);
         }
       } catch (err: any) {
-        const errorCode = err?.code;
-        const errorMessage = err?.message || String(err);
-        
         if (isStatementTimeoutError(err)) {
           this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
           await delay(5000);
@@ -213,8 +213,8 @@ export default class CrawlTrustDepositService extends BullableService {
         },
         {
           maxConcurrent: this._isFreshStart ? 2 : 3,
-          batchSize: this._isFreshStart ? 3 : 5,
-          delayBetweenBatches: this._isFreshStart ? 2000 : 1000,
+          batchSize: applySpeedToBatchSize(this._isFreshStart ? 3 : 5, !this._isFreshStart),
+          delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
           logger: this.logger
         }
       );
@@ -230,8 +230,8 @@ export default class CrawlTrustDepositService extends BullableService {
         },
         {
           maxConcurrent: this._isFreshStart ? 1 : 2,
-          batchSize: this._isFreshStart ? 2 : 3,
-          delayBetweenBatches: this._isFreshStart ? 2000 : 1000,
+          batchSize: applySpeedToBatchSize(this._isFreshStart ? 2 : 3, !this._isFreshStart),
+          delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
           logger: this.logger
         }
       );

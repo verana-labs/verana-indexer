@@ -22,6 +22,7 @@ import {
 import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
 import { triggerGC } from '../../common/utils/health_check';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import {
   isVeranaMessageType,
   shouldSkipUnknownMessages,
@@ -94,7 +95,12 @@ export default class CrawlTxService extends BullableService {
 
     let actualEndBlock = endBlock;
     if (this._isFreshStart && config.crawlTransaction.freshStart) {
-      const maxBlocks = config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall;
+      const baseMaxBlocks = config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall;
+      const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false);
+      actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+    } else if (!this._isFreshStart) {
+      const baseMaxBlocks = config.crawlTransaction.blocksPerCall || 200;
+      const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true);
       actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
     }
 
@@ -163,7 +169,12 @@ export default class CrawlTxService extends BullableService {
 
       let actualEndBlock = endBlock;
       if (this._isFreshStart && config.handleTransaction.freshStart) {
-        const maxBlocks = config.handleTransaction.freshStart.blocksPerCall || config.handleTransaction.blocksPerCall;
+        const baseMaxBlocks = config.handleTransaction.freshStart.blocksPerCall || config.handleTransaction.blocksPerCall;
+        const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false);
+        actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+      } else if (!this._isFreshStart) {
+        const baseMaxBlocks = config.handleTransaction.blocksPerCall || 500;
+        const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true);
         actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
       }
 
@@ -312,9 +323,10 @@ export default class CrawlTxService extends BullableService {
     blocks.forEach((block) => {
       if (block.tx_count > 0) {
         this.logger.info('crawl tx by height: ', block.height);
-        const txsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
+        const baseTxsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
           ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
           : config.handleTransaction.txsPerCall;
+        const txsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart);
 
         const totalPages = Math.ceil(
           block.tx_count / txsPerCall
@@ -397,7 +409,7 @@ export default class CrawlTxService extends BullableService {
           listHash = listTx.txs.map((tx: any) => tx.hash);
           const listTxExisted = await Transaction.query()
             .whereIn('hash', listHash)
-            .timeout(30000);
+            .timeout(120000);
           listTxExisted.forEach((tx) => {
             mapExistedTx.set(tx.hash, true);
           });
@@ -539,7 +551,8 @@ export default class CrawlTxService extends BullableService {
       const effectiveConfig = this._isFreshStart && config.crawlTransaction.freshStart
         ? config.crawlTransaction.freshStart
         : config.crawlTransaction;
-      const chunkSize = effectiveConfig.chunkSize || config.crawlTransaction.chunkSize;
+      const baseChunkSize = effectiveConfig.chunkSize || config.crawlTransaction.chunkSize;
+      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
       const resultInsert = await transactionDB.batchInsert(
         Transaction.tableName,
         listTxModel,
@@ -624,7 +637,8 @@ export default class CrawlTxService extends BullableService {
       const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
         ? config.handleTransaction.freshStart
         : config.handleTransaction;
-      const chunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      const baseChunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
       this.logger.info(`📝 [insertRelatedTx] Inserting ${listEventModel.length} events in chunks of ${chunkSize}`);
       for (let i = 0; i < listEventModel.length; i += chunkSize) {
         const chunk = listEventModel.slice(i, i + chunkSize);
@@ -639,11 +653,12 @@ export default class CrawlTxService extends BullableService {
       const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
         ? config.handleTransaction.freshStart
         : config.handleTransaction;
-      const chunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
-      this.logger.info(`📝 [insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSize}`);
+      const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart);
+      this.logger.info(`📝 [insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSizeMsg}`);
       const allInsertedMsgs: any[] = [];
-      for (let i = 0; i < listMsgModel.length; i += chunkSize) {
-        const chunk = listMsgModel.slice(i, i + chunkSize);
+      for (let i = 0; i < listMsgModel.length; i += chunkSizeMsg) {
+        const chunk = listMsgModel.slice(i, i + chunkSizeMsg);
         const resultInsertMsgs = await TransactionMessage.query()
           .insert(chunk)
           .timeout(60000)
@@ -1134,17 +1149,21 @@ export default class CrawlTxService extends BullableService {
       }
     }
 
-    const crawlTxInterval = (this._isFreshStart && config.crawlTransaction.freshStart)
+    const baseCrawlTxInterval = (this._isFreshStart && config.crawlTransaction.freshStart)
       ? (config.crawlTransaction.freshStart.millisecondCrawl || config.crawlTransaction.millisecondCrawl)
       : config.crawlTransaction.millisecondCrawl;
+    const crawlTxInterval = applySpeedToDelay(baseCrawlTxInterval, !this._isFreshStart);
 
-    const handleTxInterval = (this._isFreshStart && config.handleTransaction.freshStart)
+    const baseHandleTxInterval = (this._isFreshStart && config.handleTransaction.freshStart)
       ? (config.handleTransaction.freshStart.millisecondCrawl || config.handleTransaction.millisecondCrawl)
       : config.handleTransaction.millisecondCrawl;
+    const handleTxInterval = applySpeedToDelay(baseHandleTxInterval, !this._isFreshStart);
 
+    const speedMultiplier = getCrawlSpeedMultiplier();
     this.logger.info(
       `🚀 CrawlTx Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
-      `CrawlTx Interval: ${crawlTxInterval}ms | HandleTx Interval: ${handleTxInterval}ms`
+      `CrawlTx Interval: ${crawlTxInterval}ms | HandleTx Interval: ${handleTxInterval}ms | ` +
+      `Speed Multiplier: ${speedMultiplier}x ${speedMultiplier !== 1.0 ? `(${this._isFreshStart ? 'slower/conservative' : 'faster'})` : '(default)'}`
     );
 
     this.createJob(
