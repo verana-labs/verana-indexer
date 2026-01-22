@@ -39,27 +39,27 @@
     "rpcRetryDelay": 2000,
     "rpcTimeout": 30000,
     "freshStart": {
-      "blocksPerCall": 100,
-      "millisecondCrawl": 3000,
+      "blocksPerCall": 50,
+      "millisecondCrawl": 5000,
       "enableHealthCheck": true,
-      "healthCheckInterval": 5000
+      "healthCheckInterval": 3000
     },
     "reindexing": {
-      "blocksPerCall": 1000,
-      "millisecondCrawl": 100,
+      "blocksPerCall": 200,
+      "millisecondCrawl": 300,
       "enableHealthCheck": true,
-      "healthCheckInterval": 5000
+      "healthCheckInterval": 3000
     }
   },
   "crawlTransaction": {
     "key": "crawlTransaction",
     "millisecondCrawl": 500,
-    "blocksPerCall": 1000,
-    "chunkSize": 2000,
+    "blocksPerCall": 200,
+    "chunkSize": 500,
     "freshStart": {
-      "blocksPerCall": 50,
-      "chunkSize": 300,
-      "millisecondCrawl": 2000
+      "blocksPerCall": 25,
+      "chunkSize": 100,
+      "millisecondCrawl": 3000
     }
   },
   "crawlTrustDeposit": {
@@ -77,14 +77,14 @@
   "crawlAccounts": {
     "key": "crawlAccounts",
     "freshStart": {
-      "blocksPerCall": 50,
-      "chunkSize": 100,
-      "millisecondCrawl": 500
+      "blocksPerCall": 25,
+      "chunkSize": 50,
+      "millisecondCrawl": 1000
     },
     "reindexing": {
-      "blocksPerCall": 2000,
-      "chunkSize": 2000,
-      "millisecondCrawl": 200
+      "blocksPerCall": 200,
+      "chunkSize": 300,
+      "millisecondCrawl": 500
     },
     "reconcile": {
       "enabled": true
@@ -103,10 +103,10 @@
   },
   "handleTransaction": {
     "key": "handleTransaction",
-    "blocksPerCall": 5000,
+    "blocksPerCall": 500,
     "millisecondCrawl": 500,
-    "chunkSize": 10000,
-    "txsPerCall": 5000,
+    "chunkSize": 1000,
+    "txsPerCall": 500,
     "saveRawLog": true,
     "lastEventsTypeTx": [
       "tx",
@@ -116,10 +116,10 @@
     "rpcRetryDelay": 1000,
     "rpcTimeout": 30000,
     "freshStart": {
-      "blocksPerCall": 50,
-      "txsPerCall": 100,
-      "chunkSize": 500,
-      "millisecondCrawl": 1500
+      "blocksPerCall": 25,
+      "txsPerCall": 50,
+      "chunkSize": 100,
+      "millisecondCrawl": 2000
     }
   },
   "crawlSigningInfo": {

@@ -29,7 +29,7 @@ import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import { Network } from '../../network';
-import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus } from '../../common/utils/health_check';
+import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus, triggerGC, shouldPauseForMemory, getMemoryRecoveryPauseMs } from '../../common/utils/health_check';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
 
 @Service({
@@ -230,23 +230,41 @@ export default class CrawlBlockService extends BullableService {
       return;
     }
 
-    const isCaughtUp = this._isCaughtUp && this._initialSyncComplete;
-    const isWebSocketActive = config.crawlBlock.enableWebSocketSubscription &&
-      this._websocketConnected &&
-      isCaughtUp;
-    
-    if (isWebSocketActive && !this._websocketTriggeredFetch) {
-      const now = Date.now();
-      const backupInterval = 5000;
-      if (this._lastRpcBackupCheck > 0 && (now - this._lastRpcBackupCheck) < backupInterval) {
-        return;
-      }
-      this._lastRpcBackupCheck = now;
-    }
-
+    // Acquire lock IMMEDIATELY to prevent race conditions
     this._processingLock = true;
 
     try {
+      // Memory pressure check - pause if memory is critically high
+      let preCheckHealth;
+      try {
+        preCheckHealth = await checkHealth();
+        if (shouldPauseForMemory(preCheckHealth)) {
+          const pauseMs = getMemoryRecoveryPauseMs(preCheckHealth);
+          this.logger.warn(
+            `⚠️ Memory pressure detected | Memory: ${preCheckHealth.server.memoryUsagePercent?.toFixed(1)}% | ` +
+            `Heap: ${preCheckHealth.server.heapUsagePercent?.toFixed(1)}% | Pausing ${pauseMs}ms for GC`
+          );
+          triggerGC();
+          await new Promise<void>(resolve => { setTimeout(resolve, pauseMs); });
+        }
+      } catch (healthCheckError) {
+        this.logger.warn(`Health check failed: ${healthCheckError}. Continuing with processing.`);
+      }
+
+      const isCaughtUp = this._isCaughtUp && this._initialSyncComplete;
+      const isWebSocketActive = config.crawlBlock.enableWebSocketSubscription &&
+        this._websocketConnected &&
+        isCaughtUp;
+
+      if (isWebSocketActive && !this._websocketTriggeredFetch) {
+        const now = Date.now();
+        const backupInterval = 5000;
+        if (this._lastRpcBackupCheck > 0 && (now - this._lastRpcBackupCheck) < backupInterval) {
+          return;
+        }
+        this._lastRpcBackupCheck = now;
+      }
+
       if (
         config.crawlBlock.enableOptimizedPolling &&
         config.crawlBlock.heightCheckOptimization &&
@@ -442,6 +460,8 @@ export default class CrawlBlockService extends BullableService {
 
       if (blockResponses.length === 0) {
         this.logger.error('All block RPC calls failed. Skipping this cycle.');
+        blockQueries.length = 0;
+        blockResponsesResults.length = 0;
         return;
       }
 
@@ -479,11 +499,15 @@ export default class CrawlBlockService extends BullableService {
 
       if (mergeBlockResponses.length === 0) {
         this.logger.warn('⚠️ No valid blocks to process. Skipping this cycle.');
+        blockQueries.length = 0;
+        blockResponsesResults.length = 0;
+        blockResponses.length = 0;
         return;
       }
 
       await this.handleListBlock(mergeBlockResponses);
 
+      // Calculate highest block BEFORE clearing arrays
       let highestSavedBlock = this._currentBlock;
       mergeBlockResponses.forEach((block) => {
         const height = parseInt(String(block?.block?.header?.height ?? '0'), 10);
@@ -520,6 +544,12 @@ export default class CrawlBlockService extends BullableService {
         }
       }
 
+      // Clear large arrays AFTER processing to help garbage collection
+      blockQueries.length = 0;
+      blockResponsesResults.length = 0;
+      blockResponses.length = 0;
+      mergeBlockResponses.length = 0;
+
       await this.adjustPollingInterval(latestBlockNetwork);
 
       if (crawlDelay > 0 && this._blocksProcessedThisCycle > 0 && !isCaughtUp) {
@@ -528,6 +558,11 @@ export default class CrawlBlockService extends BullableService {
             resolve();
           }, crawlDelay);
         });
+      }
+
+      // Trigger garbage collection after batch processing to free memory (aggressive threshold for low memory usage)
+      if (this._blocksProcessedThisCycle > 10) {
+        triggerGC();
       }
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
@@ -994,6 +1029,7 @@ export default class CrawlBlockService extends BullableService {
             mapExistedBlock.set(block.height, true);
           }
         });
+        listExistedBlock.length = 0;
       }
       const listBlockModel: any[] = [];
 
@@ -1080,6 +1116,20 @@ export default class CrawlBlockService extends BullableService {
             SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path
           );
         });
+
+        // Clear the model array to help garbage collection
+        listBlockModel.length = 0;
+        
+        listBlockHeight.length = 0;
+        mapExistedBlock.clear();
+
+        // Trigger GC after large batch insertions (aggressive threshold for low memory)
+        if (listBlock.length > 25) {
+          triggerGC();
+        }
+      } else {
+        listBlockHeight.length = 0;
+        mapExistedBlock.clear();
       }
     } catch (error) {
       await handleErrorGracefully(

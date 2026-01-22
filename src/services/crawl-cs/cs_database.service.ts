@@ -457,13 +457,30 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           filteredItems = filteredItems.filter(item => item.verifier_perm_management_mode === verifierPerm);
         }
 
-        filteredItems = sortByStandardAttributes(filteredItems, sort, {
-          getId: (item: { id: number }) => item.id,
-          getCreated: (item: { created: string }) => item.created,
-          getModified: (item: { modified: string }) => item.modified,
+        type FilteredItem = {
+          id: number;
+          tr_id: any;
+          json_schema: any;
+          deposit: any;
+          issuer_grantor_validation_validity_period: any;
+          verifier_grantor_validation_validity_period: any;
+          issuer_validation_validity_period: any;
+          verifier_validation_validity_period: any;
+          holder_validation_validity_period: any;
+          issuer_perm_management_mode: any;
+          verifier_perm_management_mode: any;
+          archived: any;
+          created: string;
+          modified: string;
+        };
+        const typedFilteredItems = filteredItems as FilteredItem[];
+        filteredItems = sortByStandardAttributes<FilteredItem>(typedFilteredItems, sort, {
+          getId: (item) => item.id,
+          getCreated: (item) => item.created,
+          getModified: (item) => item.modified,
           defaultAttribute: "modified",
           defaultDirection: "asc",
-        }).slice(0, limit);
+        }).slice(0, limit) as typeof filteredItems;
 
         return ApiResponder.success(ctx, { schemas: filteredItems }, 200);
       }
