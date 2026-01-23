@@ -30,3 +30,4 @@ export * from './ibc_ics20';
 export * from "./trust_registry_history";
 export * from "./governance_framework_version_history";
 export * from "./governance_framework_document_history";
+export * from "./stats";
