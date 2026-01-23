@@ -520,13 +520,22 @@ export default class CrawlTxService extends BullableService {
     listTxDecoded: { listTx: any; height: number; timestamp: string }[],
     transactionDB: Knex.Transaction
   ) {
-    this.logger.warn(listTxDecoded);
+    const totalTxs = listTxDecoded.reduce((sum, block) => {
+      const txList = Array.isArray(block.listTx) ? block.listTx : (block.listTx?.txs || []);
+      return sum + txList.length;
+    }, 0);
+    if (totalTxs > 0) {
+      this.logger.info(`[insertTxDecoded] Processing ${totalTxs} transactions across ${listTxDecoded.length} blocks`);
+    }
     const listTxModel: any[] = [];
     listTxDecoded.forEach((payloadBlock) => {
       const { listTx, height, timestamp } = payloadBlock;
-      listTx.forEach((tx: any) => {
-        this.logger.warn(tx, timestamp, "dataArray");
-
+      const txArray = Array.isArray(listTx) ? listTx : (listTx?.txs || []);
+      if (txArray.length === 0) {
+        this.logger.debug(`[insertTxDecoded] No transactions found for block ${height}`);
+        return;
+      }
+      txArray.forEach((tx: any) => {
         const txInsert = {
           ...Transaction.fromJson({
             index: tx.tx_response.index,
@@ -558,7 +567,8 @@ export default class CrawlTxService extends BullableService {
         listTxModel,
         chunkSize
       );
-      this.logger.warn('result insert tx', resultInsert);
+      this.logger.info(`[insertTxDecoded] Successfully inserted ${listTxModel.length} transactions`);
+      listTxModel.length = 0;
     }
   }
 
@@ -569,7 +579,7 @@ export default class CrawlTxService extends BullableService {
     listDecodedTx: Transaction[],
     transactionDB: Knex.Transaction
   ) {
-    this.logger.warn(listDecodedTx);
+    this.logger.info(`[insertRelatedTx] Processing ${listDecodedTx.length} decoded transactions`);
     const listEventModel: any[] = [];
     const listMsgModel: any[] = [];
     listDecodedTx.forEach((tx) => {
@@ -668,6 +678,9 @@ export default class CrawlTxService extends BullableService {
       }
       this.logger.info(`✅ [insertRelatedTx] Inserted ${listMsgModel.length} messages`);
       await this.processMessageTypes(allInsertedMsgs, listDecodedTx);
+      listEventModel.length = 0;
+      listMsgModel.length = 0;
+      allInsertedMsgs.length = 0;
     }
   }
 

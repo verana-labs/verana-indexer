@@ -992,7 +992,7 @@ export default class PermAPIService extends BullableService {
           filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) >= p.min_participants);
         }
         if (p.max_participants !== undefined) {
-          filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) < p.max_participants);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) <= p.max_participants);
         }
         if (p.min_weight !== undefined) {
           const minWeight = BigInt(p.min_weight);
@@ -1000,7 +1000,7 @@ export default class PermAPIService extends BullableService {
         }
         if (p.max_weight !== undefined) {
           const maxWeight = BigInt(p.max_weight);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.weight || "0") < maxWeight);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.weight || "0") <= maxWeight);
         }
         if (p.min_issued !== undefined) {
           const minIssued = BigInt(p.min_issued);
@@ -1008,7 +1008,7 @@ export default class PermAPIService extends BullableService {
         }
         if (p.max_issued !== undefined) {
           const maxIssued = BigInt(p.max_issued);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.issued || "0") < maxIssued);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.issued || "0") <= maxIssued);
         }
         if (p.min_verified !== undefined) {
           const minVerified = BigInt(p.min_verified);
@@ -1016,19 +1016,19 @@ export default class PermAPIService extends BullableService {
         }
         if (p.max_verified !== undefined) {
           const maxVerified = BigInt(p.max_verified);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.verified || "0") < maxVerified);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.verified || "0") <= maxVerified);
         }
         if (p.min_ecosystem_slash_events !== undefined) {
           filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
         }
         if (p.max_ecosystem_slash_events !== undefined) {
-          filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) <= p.max_ecosystem_slash_events);
         }
         if (p.min_network_slash_events !== undefined) {
           filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
         }
         if (p.max_network_slash_events !== undefined) {
-          filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) <= p.max_network_slash_events);
         }
 
         filteredPermissions = sortByStandardAttributes(filteredPermissions, p.sort, {
@@ -1198,7 +1198,7 @@ export default class PermAPIService extends BullableService {
         finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
       }
       if (p.max_participants !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.participants || 0) < p.max_participants);
+        finalResults = finalResults.filter(perm => (perm.participants || 0) <= p.max_participants);
       }
       if (p.min_weight !== undefined) {
         const minWeight = BigInt(p.min_weight);
@@ -1206,7 +1206,7 @@ export default class PermAPIService extends BullableService {
       }
       if (p.max_weight !== undefined) {
         const maxWeight = BigInt(p.max_weight);
-        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") < maxWeight);
+        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") <= maxWeight);
       }
       if (p.min_issued !== undefined) {
         const minIssued = BigInt(p.min_issued);
@@ -1214,7 +1214,7 @@ export default class PermAPIService extends BullableService {
       }
       if (p.max_issued !== undefined) {
         const maxIssued = BigInt(p.max_issued);
-        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") < maxIssued);
+        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") <= maxIssued);
       }
       if (p.min_verified !== undefined) {
         const minVerified = BigInt(p.min_verified);
@@ -1222,19 +1222,19 @@ export default class PermAPIService extends BullableService {
       }
       if (p.max_verified !== undefined) {
         const maxVerified = BigInt(p.max_verified);
-        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") < maxVerified);
+        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") <= maxVerified);
       }
       if (p.min_ecosystem_slash_events !== undefined) {
         finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
       }
       if (p.max_ecosystem_slash_events !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
+        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) <= p.max_ecosystem_slash_events);
       }
       if (p.min_network_slash_events !== undefined) {
         finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
       }
       if (p.max_network_slash_events !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
+        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) <= p.max_network_slash_events);
       }
 
       finalResults = sortByStandardAttributes(finalResults, p.sort, {
