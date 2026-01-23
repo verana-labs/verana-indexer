@@ -5,6 +5,7 @@ import { SERVICE } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
 import { mapPermissionType } from "../../common/utils/utils";
 import { requireController } from "../../common/utils/extract_controller";
+import { calculatePermState } from "./perm_state_utils";
 import {
   getPermissionTypeString,
   MsgCancelPermissionVPLastRequest,
@@ -48,6 +49,14 @@ const PERMISSION_HISTORY_FIELDS = [
   "validator_perm_id",
   "vp_state",
   "vp_last_state_change",
+  "participants",
+  "weight",
+  "ecosystem_slash_events",
+  "ecosystem_slashed_amount",
+  "ecosystem_slashed_amount_repaid",
+  "network_slash_events",
+  "network_slashed_amount",
+  "network_slashed_amount_repaid",
   "vp_current_fees",
   "vp_current_deposit",
   "vp_summary_digest_sri",
@@ -137,12 +146,26 @@ async function pickPermissionSnapshot(record: any) {
   
   const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
   const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
+  const hasParticipantsColumn = await checkPermissionHistoryColumnExists("participants");
+  const hasWeightColumn = await checkPermissionHistoryColumnExists("weight");
+  const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
   
   for (const field of PERMISSION_HISTORY_FIELDS) {
     if (field === "issued" && !hasIssuedColumn) {
       continue;
     }
     if (field === "verified" && !hasVerifiedColumn) {
+      continue;
+    }
+    if (field === "participants" && !hasParticipantsColumn) {
+      continue;
+    }
+    if (field === "weight" && !hasWeightColumn) {
+      continue;
+    }
+    if ((field === "ecosystem_slash_events" || field === "ecosystem_slashed_amount" || 
+         field === "ecosystem_slashed_amount_repaid" || field === "network_slash_events" ||
+         field === "network_slashed_amount" || field === "network_slashed_amount_repaid") && !hasEcosystemSlashEventsColumn) {
       continue;
     }
     snapshot[field] = normalizeValue(record[field]);
@@ -161,10 +184,20 @@ async function recordPermissionHistory(
   
   const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
   const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
+  const hasParticipantsColumn = await checkPermissionHistoryColumnExists("participants");
+  const hasWeightColumn = await checkPermissionHistoryColumnExists("weight");
+  const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
   
   const fieldsToUse = PERMISSION_HISTORY_FIELDS.filter(field => {
     if (field === "issued" && !hasIssuedColumn) return false;
     if (field === "verified" && !hasVerifiedColumn) return false;
+    if (field === "participants" && !hasParticipantsColumn) return false;
+    if (field === "weight" && !hasWeightColumn) return false;
+    if ((field === "ecosystem_slash_events" || field === "ecosystem_slashed_amount" || 
+         field === "ecosystem_slashed_amount_repaid" || field === "network_slash_events" ||
+         field === "network_slashed_amount" || field === "network_slashed_amount_repaid") && !hasEcosystemSlashEventsColumn) {
+      return false;
+    }
     return true;
   });
   
@@ -400,6 +433,14 @@ export default class PermIngestService extends Service {
         );
        
       }
+
+      try {
+        await knex.transaction(async (trx) => {
+          await this.updateParticipants(trx, String(permission.id));
+        });
+      } catch (participantsErr: any) {
+        this.logger.warn(`Failed to update participants for root permission ${permission.id}:`, participantsErr?.message || participantsErr);
+      }
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleCreateRootPermission:", err);
       console.error("FATAL PERM CREATE ROOT ERROR:", err);
@@ -483,6 +524,14 @@ export default class PermIngestService extends Service {
           historyErr
         );
        
+      }
+
+      try {
+        await knex.transaction(async (trx) => {
+          await this.updateParticipants(trx, String(permission.id));
+        });
+      } catch (participantsErr: any) {
+        this.logger.warn(`Failed to update participants for permission ${permission.id}:`, participantsErr?.message || participantsErr);
       }
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleCreatePermission:", err);
@@ -607,6 +656,12 @@ export default class PermIngestService extends Service {
           );
          
         }
+
+        try {
+          await this.updateParticipants(trx, String(msg.id));
+        } catch (participantsErr: any) {
+          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+        }
       });
 
       this.logger.info(
@@ -713,6 +768,12 @@ export default class PermIngestService extends Service {
             historyErr
           );
          
+        }
+
+        try {
+          await this.updateParticipants(trx, String(msg.id));
+        } catch (participantsErr: any) {
+          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
         }
       });
 
@@ -828,6 +889,15 @@ export default class PermIngestService extends Service {
           historyErr
         );
        
+      }
+
+      try {
+        await knex.transaction(async (trx) => {
+          await this.updateWeight(trx, String(newPermission.id));
+          await this.updateParticipants(trx, String(newPermission.id));
+        });
+      } catch (updateErr: any) {
+        this.logger.warn(`Failed to update weight/participants for new permission ${newPermission.id}:`, updateErr?.message || updateErr);
       }
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleStartPermissionVP:", err);
@@ -1031,6 +1101,14 @@ export default class PermIngestService extends Service {
        
       }
 
+      try {
+        await knex.transaction(async (trx) => {
+          await this.updateParticipants(trx, String(msg.id));
+        });
+      } catch (participantsErr: any) {
+        this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+      }
+
       this.logger.info(`Permission ${msg.id} successfully validated`);
       return { success: true };
     } catch (err: any) {
@@ -1134,6 +1212,18 @@ export default class PermIngestService extends Service {
           );
          
         }
+
+        try {
+          await this.updateWeight(trx, String(msg.id));
+        } catch (weightErr: any) {
+          this.logger.warn(`Failed to update weight for permission ${msg.id} after VP renewal:`, weightErr?.message || weightErr);
+        }
+
+        try {
+          await this.updateParticipants(trx, String(msg.id));
+        } catch (participantsErr: any) {
+          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+        }
       });
 
       this.logger.info(`Permission ${msg.id} successfully renewed`);
@@ -1207,6 +1297,14 @@ export default class PermIngestService extends Service {
           historyErr
         );
        
+      }
+
+      try {
+        await knex.transaction(async (trx) => {
+          await this.updateParticipants(trx, String(msg.id));
+        });
+      } catch (participantsErr: any) {
+        this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
       }
 
       this.logger.info(
@@ -1293,13 +1391,74 @@ export default class PermIngestService extends Service {
       const height = Number((msg as any)?.height) || 0;
       const prevSlashed = Number(perm.slashed_deposit || 0);
 
+      // Determine if this is ecosystem or network slash
+      const isEcosystemPermission = perm.type === "ECOSYSTEM";
+      let isEcosystemSlash = false;
+      let isNetworkSlash = false;
+      let trController: string | null = null;
+      let classificationReason = '';
+      
+      if (isEcosystemPermission) {
+        isNetworkSlash = true; // ECOSYSTEM permission slashed = network slash
+        classificationReason = 'ECOSYSTEM permission type';
+        this.logger.info(`[Slash] Permission ${msg.id} is ECOSYSTEM type - marking as network slash`);
+      } else if (perm.schema_id) {
+        const schema = await knex("credential_schemas")
+          .where({ id: perm.schema_id })
+          .first();
+        
+        if (!schema) {
+          this.logger.warn(`[Slash] Permission ${msg.id} has schema_id ${perm.schema_id} but schema not found in database`);
+          classificationReason = `Schema ${perm.schema_id} not found`;
+        } else if (!schema.tr_id) {
+          this.logger.warn(`[Slash] Permission ${msg.id} schema ${perm.schema_id} has no tr_id`);
+          classificationReason = `Schema ${perm.schema_id} has no tr_id`;
+        } else {
+          const tr = await knex("trust_registry")
+            .where({ id: schema.tr_id })
+            .first();
+          
+          if (!tr) {
+            this.logger.warn(`[Slash] Permission ${msg.id} schema ${perm.schema_id} references TR ${schema.tr_id} but TR not found in database`);
+            classificationReason = `TR ${schema.tr_id} not found`;
+            trController = null;
+          } else {
+            trController = tr.controller || null;
+            if (!trController) {
+              this.logger.warn(`[Slash] Permission ${msg.id} TR ${schema.tr_id} exists but has no controller field`);
+              classificationReason = `TR ${schema.tr_id} has no controller`;
+            } else if (tr.controller === caller) {
+              isEcosystemSlash = true;
+              classificationReason = `Slashed by TR controller ${caller}`;
+              this.logger.info(`[Slash] Permission ${msg.id} slashed by TR controller ${caller} - marking as ecosystem slash`);
+            } else {
+              this.logger.warn(`[Slash] Permission ${msg.id} slashed by ${caller} but TR controller is ${tr.controller} - no slash type determined`);
+              classificationReason = `Caller ${caller} != TR controller ${tr.controller}`;
+            }
+          }
+        }
+      } else {
+        this.logger.warn(`[Slash] Permission ${msg.id} has no schema_id - no slash type determined`);
+        classificationReason = 'No schema_id';
+      }
+
+      if (!isEcosystemSlash && !isNetworkSlash) {
+        this.logger.error(`[Slash] CRITICAL: Could not classify slash for permission ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${perm.schema_id || 'N/A'}, Type: ${perm.type}, Caller: ${caller}, TR Controller: ${trController || 'N/A'}`);
+      }
+
       await knex.transaction(async (trx) => {
+        const currentDeposit = BigInt(perm.deposit || "0");
+        const newDeposit = currentDeposit > BigInt(amountNum) 
+          ? currentDeposit - BigInt(amountNum) 
+          : BigInt(0);
+        
         const [updated] = await trx("permissions")
           .where({ id: msg.id })
           .update({
             slashed: now,
             slashed_by: caller,
             slashed_deposit: String(prevSlashed + amountNum),
+            deposit: String(newDeposit),
             modified: now,
           })
           .returning("*");
@@ -1309,6 +1468,37 @@ export default class PermIngestService extends Service {
             `CRITICAL: Failed to slash permission ${msg.id} - update returned no record`
           );
          
+        }
+
+        // Update slash statistics for this permission and ancestors
+        try {
+          if (isEcosystemSlash || isNetworkSlash) {
+            await this.updateSlashStatistics(
+              trx,
+              String(msg.id),
+              isEcosystemSlash,
+              isNetworkSlash,
+              String(amountNum),
+              null
+            );
+            this.logger.info(`[Slash] Updated slash statistics for permission ${msg.id} - ecosystem: ${isEcosystemSlash}, network: ${isNetworkSlash}, amount: ${amountNum}`);
+          } else {
+            this.logger.warn(`[Slash] Skipping slash statistics update for permission ${msg.id} - neither ecosystem nor network slash detected`);
+          }
+        } catch (statsErr: any) {
+          this.logger.warn(`Failed to update slash statistics: ${statsErr?.message || statsErr}`);
+        }
+
+        try {
+          await this.updateWeight(trx, String(msg.id));
+        } catch (weightErr: any) {
+          this.logger.warn(`Failed to update weight for permission ${String(msg.id)}:`, weightErr?.message || weightErr);
+        }
+
+        try {
+          await this.updateParticipants(trx, String(msg.id));
+        } catch (participantsErr: any) {
+          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
         }
 
         try {
@@ -1388,14 +1578,70 @@ export default class PermIngestService extends Service {
       const now = formatTimestamp(msg.timestamp);
       const height = Number((msg as any)?.height) || 0;
 
+      // Determine if this was ecosystem or network slash based on previous slash
+      const isEcosystemPermission = perm.type === "ECOSYSTEM";
+      let isEcosystemSlash = false;
+      let isNetworkSlash = false;
+      let trController: string | null = null;
+      let classificationReason = '';
+      
+      if (isEcosystemPermission) {
+        isNetworkSlash = true;
+        classificationReason = 'ECOSYSTEM permission type';
+      } else if (perm.slashed_by && perm.schema_id) {
+        const schema = await knex("credential_schemas")
+          .where({ id: perm.schema_id })
+          .first();
+        
+        if (!schema) {
+          this.logger.warn(`[Repay] Permission ${msg.id} has schema_id ${perm.schema_id} but schema not found`);
+          classificationReason = `Schema ${perm.schema_id} not found`;
+        } else if (!schema.tr_id) {
+          this.logger.warn(`[Repay] Permission ${msg.id} schema ${perm.schema_id} has no tr_id`);
+          classificationReason = `Schema ${perm.schema_id} has no tr_id`;
+        } else {
+          const tr = await knex("trust_registry")
+            .where({ id: schema.tr_id })
+            .first();
+          
+          if (!tr) {
+            this.logger.warn(`[Repay] Permission ${msg.id} TR ${schema.tr_id} not found`);
+            classificationReason = `TR ${schema.tr_id} not found`;
+            trController = null;
+          } else {
+            trController = tr.controller || null;
+            if (!trController) {
+              this.logger.warn(`[Repay] Permission ${msg.id} TR ${schema.tr_id} has no controller`);
+              classificationReason = `TR ${schema.tr_id} has no controller`;
+            } else if (tr.controller === perm.slashed_by) {
+              isEcosystemSlash = true;
+              classificationReason = `Slashed by TR controller ${perm.slashed_by}`;
+            } else {
+              classificationReason = `Slashed by ${perm.slashed_by} != TR controller ${tr.controller}`;
+            }
+          }
+        }
+      } else {
+        classificationReason = perm.slashed_by ? 'No schema_id' : 'No slashed_by';
+      }
+
+      if (!isEcosystemSlash && !isNetworkSlash) {
+        this.logger.error(`[Repay] CRITICAL: Could not classify repay for permission ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${perm.schema_id || 'N/A'}, Type: ${perm.type}, Slashed by: ${perm.slashed_by || 'N/A'}, TR Controller: ${trController || 'N/A'}`);
+      }
+
       await knex.transaction(async (trx) => {
         const creator = requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
+        const currentDeposit = BigInt(perm.deposit || "0");
+        const repaidAmount = BigInt(slashedDeposit);
+        const newDeposit = currentDeposit + repaidAmount;
+        
         const [updated] = await trx("permissions")
           .where({ id: msg.id })
           .update({
             repaid: now,
             repaid_by: creator,
             repaid_deposit: String(slashedDeposit),
+            deposit: String(newDeposit),
             modified: now,
           })
           .returning("*");
@@ -1405,6 +1651,20 @@ export default class PermIngestService extends Service {
             `CRITICAL: Failed to repay permission ${msg.id} - update returned no record`
           );
          
+        }
+
+        // Update repaid amount in slash statistics
+        try {
+          await this.updateSlashStatistics(
+            trx,
+            String(msg.id),
+            isEcosystemSlash,
+            isNetworkSlash,
+            "0", // No new slash, just repayment
+            String(slashedDeposit)
+          );
+        } catch (statsErr: any) {
+          this.logger.warn(`Failed to update slash statistics for repay: ${statsErr?.message || statsErr}`);
         }
 
         try {
@@ -1422,6 +1682,18 @@ export default class PermIngestService extends Service {
           );
          
         }
+
+        try {
+          await this.updateWeight(trx, String(msg.id));
+        } catch (weightErr: any) {
+          this.logger.warn(`Failed to update weight for permission ${String(msg.id)} after repay:`, weightErr?.message || weightErr);
+        }
+
+        try {
+          await this.updateParticipants(trx, String(msg.id));
+        } catch (participantsErr: any) {
+          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+        }
       });
       this.logger.info(
         `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${msg.creator}`
@@ -1438,19 +1710,19 @@ export default class PermIngestService extends Service {
     }
   }
 
-  private permissionsColumnExistsCache: { issued?: boolean; verified?: boolean } | null = null;
+  private permissionsColumnExistsCache: Record<string, boolean> | null = null;
 
   private async checkPermissionsColumnExists(columnName: string): Promise<boolean> {
     if (this.permissionsColumnExistsCache === null) {
       this.permissionsColumnExistsCache = {};
     }
     
-    if (this.permissionsColumnExistsCache[columnName as keyof typeof this.permissionsColumnExistsCache] !== undefined) {
-      return this.permissionsColumnExistsCache[columnName as keyof typeof this.permissionsColumnExistsCache] as boolean;
+    if (this.permissionsColumnExistsCache[columnName] !== undefined) {
+      return this.permissionsColumnExistsCache[columnName];
     }
     
     const exists = await knex.schema.hasColumn("permissions", columnName);
-    this.permissionsColumnExistsCache[columnName as keyof typeof this.permissionsColumnExistsCache] = exists;
+    this.permissionsColumnExistsCache[columnName] = exists;
     return exists;
   }
 
@@ -1464,7 +1736,16 @@ export default class PermIngestService extends Service {
     const hasVerifiedColumn = await this.checkPermissionsColumnExists("verified");
     
     if (!hasIssuedColumn && !hasVerifiedColumn) {
+      this.logger.warn(`[incrementPermissionStatistics] Neither issued nor verified column exists for permission ${permId}`);
       return;
+    }
+    
+    if (incrementIssued && !hasIssuedColumn) {
+      this.logger.warn(`[incrementPermissionStatistics] Attempted to increment issued for permission ${permId} but issued column does not exist`);
+    }
+    
+    if (incrementVerified && !hasVerifiedColumn) {
+      this.logger.warn(`[incrementPermissionStatistics] Attempted to increment verified for permission ${permId} but verified column does not exist`);
     }
     
     const initialPerm: { schema_id: string; validator_perm_id: string | null } | undefined = await trx("permissions").where({ id: permId }).select('schema_id', 'validator_perm_id').first();
@@ -1504,6 +1785,242 @@ export default class PermIngestService extends Service {
       }
 
       currentPermId = perm.validator_perm_id;
+    }
+  }
+
+  /**
+   * Update slash statistics for a permission and all its ancestors
+   * when a slash or repay event occurs
+   */
+  private async updateSlashStatistics(
+    trx: any,
+    permId: string,
+    isEcosystemSlash: boolean,
+    isNetworkSlash: boolean,
+    slashAmount: string,
+    repayAmount: string | null
+  ): Promise<void> {
+    const hasEcosystemSlashEventsColumn = await this.checkPermissionsColumnExists("ecosystem_slash_events");
+    if (!hasEcosystemSlashEventsColumn) {
+      this.logger.warn(`[updateSlashStatistics] Column ecosystem_slash_events does not exist, skipping update for permission ${permId}`);
+      return;
+    }
+    
+    if (!isEcosystemSlash && !isNetworkSlash) {
+      this.logger.warn(`[updateSlashStatistics] Neither ecosystem nor network slash flag is set for permission ${permId}, skipping update`);
+      return;
+    }
+
+    const initialPerm: { schema_id: string; validator_perm_id: string | null; type: string } | undefined = 
+      await trx("permissions").where({ id: permId }).select('schema_id', 'validator_perm_id', 'type').first();
+    if (!initialPerm) return;
+    
+    const schemaId = initialPerm.schema_id;
+    let currentPermId: string | null = permId;
+    
+    while (currentPermId) {
+      const perm: { schema_id: string; validator_perm_id: string | null } | undefined = 
+        await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_perm_id').first();
+      if (!perm) break;
+      if (perm.schema_id !== schemaId) {
+        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+        break;
+      }
+
+      const updates: any = {};
+      
+      if (isEcosystemSlash) {
+        if (slashAmount !== "0") {
+          updates.ecosystem_slash_events = knex.raw("COALESCE(ecosystem_slash_events, 0) + 1");
+          updates.ecosystem_slashed_amount = knex.raw(`(COALESCE(ecosystem_slashed_amount, '0')::numeric + ${slashAmount}::numeric)::text`);
+        }
+        if (repayAmount) {
+          updates.ecosystem_slashed_amount_repaid = knex.raw(`(COALESCE(ecosystem_slashed_amount_repaid, '0')::numeric + ${repayAmount}::numeric)::text`);
+        }
+      }
+      
+      if (isNetworkSlash) {
+        if (slashAmount !== "0") {
+          updates.network_slash_events = knex.raw("COALESCE(network_slash_events, 0) + 1");
+          updates.network_slashed_amount = knex.raw(`(COALESCE(network_slashed_amount, '0')::numeric + ${slashAmount}::numeric)::text`);
+        }
+        if (repayAmount) {
+          updates.network_slashed_amount_repaid = knex.raw(`(COALESCE(network_slashed_amount_repaid, '0')::numeric + ${repayAmount}::numeric)::text`);
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        try {
+          const result = await trx("permissions")
+            .where({ id: currentPermId })
+            .update(updates);
+          this.logger.debug(`[updateSlashStatistics] Updated permission ${currentPermId} with ${Object.keys(updates).length} fields, rows affected: ${result}`);
+        } catch (error: any) {
+          if (error?.nativeError?.code === '42703') {
+            this.logger.warn(`[updateSlashStatistics] Column does not exist, clearing cache for permission ${currentPermId}`);
+            this.permissionsColumnExistsCache = null;
+            return;
+          }
+          throw error;
+        }
+      } else {
+        this.logger.warn(`[updateSlashStatistics] No updates to apply for permission ${currentPermId} - isEcosystemSlash: ${isEcosystemSlash}, isNetworkSlash: ${isNetworkSlash}, slashAmount: ${slashAmount}, repayAmount: ${repayAmount}`);
+      }
+
+      currentPermId = perm.validator_perm_id;
+    }
+  }
+
+
+  private async updateWeight(trx: any, permId: string): Promise<void> {
+    const hasWeightColumn = await this.checkPermissionsColumnExists("weight");
+    if (!hasWeightColumn) {
+      return;
+    }
+
+    const initialPerm: { schema_id: string; validator_perm_id: string | null; deposit: string } | undefined = 
+      await trx("permissions").where({ id: permId }).select('schema_id', 'validator_perm_id', 'deposit').first();
+    if (!initialPerm) return;
+    
+    const schemaId = initialPerm.schema_id;
+    let currentPermId: string | null = permId;
+    
+    const permStack: string[] = [];
+    while (currentPermId) {
+      permStack.push(currentPermId);
+      const perm: { schema_id: string; validator_perm_id: string | null } | undefined = 
+        await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_perm_id').first();
+      if (!perm) break;
+      if (perm.schema_id !== schemaId) {
+        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+        break;
+      }
+      currentPermId = perm.validator_perm_id;
+    }
+
+    for (let i = permStack.length - 1; i >= 0; i--) {
+      const pid = permStack[i];
+      const perm = await trx("permissions").where({ id: pid }).select('deposit', 'schema_id').first();
+      if (!perm) continue;
+
+      const children = await trx("permissions")
+        .where("validator_perm_id", pid)
+        .where("schema_id", perm.schema_id)
+        .select("weight");
+
+      let childWeightSum = BigInt(0);
+      for (const child of children) {
+        const childWeight = child.weight ? BigInt(child.weight) : BigInt(0);
+        childWeightSum += childWeight;
+      }
+
+      const ownDeposit = BigInt(perm.deposit || "0");
+      const totalWeight = ownDeposit + childWeightSum;
+
+      try {
+        await trx("permissions")
+          .where({ id: pid })
+          .update({ weight: String(totalWeight) });
+      } catch (error: any) {
+        if (error?.nativeError?.code === '42703') {
+          this.permissionsColumnExistsCache = null;
+          return;
+        }
+        throw error;
+      }
+    }
+  }
+
+  private async updateParticipants(trx: any, permId: string): Promise<void> {
+    const hasParticipantsColumn = await this.checkPermissionsColumnExists("participants");
+    if (!hasParticipantsColumn) {
+      return;
+    }
+
+    const initialPerm: { schema_id: string; validator_perm_id: string | null } | undefined = 
+      await trx("permissions").where({ id: permId }).select('schema_id', 'validator_perm_id').first();
+    if (!initialPerm) return;
+    
+    const schemaId = initialPerm.schema_id;
+    let currentPermId: string | null = permId;
+    const permStack: string[] = [];
+    
+    while (currentPermId) {
+      permStack.push(currentPermId);
+      const perm: { schema_id: string; validator_perm_id: string | null } | undefined = 
+        await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_perm_id').first();
+      if (!perm) break;
+      if (perm.schema_id !== schemaId) {
+        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+        break;
+      }
+      currentPermId = perm.validator_perm_id;
+    }
+
+    const now = new Date();
+    
+    for (let i = permStack.length - 1; i >= 0; i--) {
+      const pid = permStack[i];
+      const perm = await trx("permissions").where({ id: pid }).select('repaid', 'slashed', 'revoked', 'effective_from', 'effective_until', 'type', 'vp_state', 'vp_exp', 'validator_perm_id', 'schema_id').first();
+      if (!perm) continue;
+
+      const permState = calculatePermState(
+        {
+          repaid: perm.repaid,
+          slashed: perm.slashed,
+          revoked: perm.revoked,
+          effective_from: perm.effective_from,
+          effective_until: perm.effective_until,
+          type: perm.type,
+          vp_state: perm.vp_state,
+          vp_exp: perm.vp_exp,
+          validator_perm_id: perm.validator_perm_id,
+        },
+        now
+      );
+
+      let count = permState === "ACTIVE" ? 1 : 0;
+
+      const children = await trx("permissions")
+        .where("validator_perm_id", pid)
+        .where("schema_id", perm.schema_id)
+        .select("repaid", "slashed", "revoked", "effective_from", "effective_until", "type", "vp_state", "vp_exp", "validator_perm_id", "participants");
+
+      for (const child of children) {
+        const childState = calculatePermState(
+          {
+            repaid: child.repaid,
+            slashed: child.slashed,
+            revoked: child.revoked,
+            effective_from: child.effective_from,
+            effective_until: child.effective_until,
+            type: child.type,
+            vp_state: child.vp_state,
+            vp_exp: child.vp_exp,
+            validator_perm_id: child.validator_perm_id,
+          },
+          now
+        );
+
+        if (childState === "ACTIVE") {
+          count++;
+        }
+
+        const childParticipants = child.participants ? Number(child.participants) : 0;
+        count += childParticipants;
+      }
+
+      try {
+        await trx("permissions")
+          .where({ id: pid })
+          .update({ participants: count });
+      } catch (error: any) {
+        if (error?.nativeError?.code === '42703') {
+          this.permissionsColumnExistsCache = null;
+          return;
+        }
+        throw error;
+      }
     }
   }
 
@@ -1604,10 +2121,18 @@ export default class PermIngestService extends Service {
         );
 
         if (issuerPermId) {
-          await this.incrementPermissionStatistics(trx, String(issuerPermId), true, false);
+          try {
+            await this.incrementPermissionStatistics(trx, String(issuerPermId), true, false);
+          } catch (issuedErr: any) {
+            this.logger.error(`[Session] Failed to increment issued for permission ${issuerPermId}:`, issuedErr?.message || issuedErr);
+          }
         }
         if (verifierPermId) {
-          await this.incrementPermissionStatistics(trx, String(verifierPermId), false, true);
+          try {
+            await this.incrementPermissionStatistics(trx, String(verifierPermId), false, true);
+          } catch (verifiedErr: any) {
+            this.logger.error(`[Session] Failed to increment verified for permission ${verifierPermId}:`, verifiedErr?.message || verifiedErr);
+          }
         }
       } else {
         let existingAuthz: any[] = [];
@@ -1657,12 +2182,20 @@ export default class PermIngestService extends Service {
 
         for (const issuerId of newIssuerPermIds) {
           if (!previousIssuerPermIds.has(issuerId)) {
-            await this.incrementPermissionStatistics(trx, String(issuerId), true, false);
+            try {
+              await this.incrementPermissionStatistics(trx, String(issuerId), true, false);
+            } catch (issuedErr: any) {
+              this.logger.error(`[Session] Failed to increment issued for permission ${issuerId}:`, issuedErr?.message || issuedErr);
+            }
           }
         }
         for (const verifierId of newVerifierPermIds) {
           if (!previousVerifierPermIds.has(verifierId)) {
-            await this.incrementPermissionStatistics(trx, String(verifierId), false, true);
+            try {
+              await this.incrementPermissionStatistics(trx, String(verifierId), false, true);
+            } catch (verifiedErr: any) {
+              this.logger.error(`[Session] Failed to increment verified for permission ${verifierId}:`, verifiedErr?.message || verifiedErr);
+            }
           }
         }
       }

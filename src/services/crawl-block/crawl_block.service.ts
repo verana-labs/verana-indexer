@@ -31,6 +31,7 @@ import { getProviderRegistry } from '../../common/utils/provider.registry';
 import { Network } from '../../network';
 import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus, triggerGC, shouldPauseForMemory, getMemoryRecoveryPauseMs } from '../../common/utils/health_check';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 
 @Service({
   name: SERVICE.V1.CrawlBlock.key,
@@ -315,14 +316,17 @@ export default class CrawlBlockService extends BullableService {
 
       const startBlock = this._currentBlock + 1;
 
-      let blocksPerCall = this._isFreshStart 
+      const baseBlocksPerCall = this._isFreshStart 
         ? (config.crawlBlock.freshStart?.blocksPerCall || 50)
         : (config.crawlBlock.reindexing?.blocksPerCall || 5000);
-      let crawlDelay = this._isCaughtUp 
+      let blocksPerCall = applySpeedToBatchSize(baseBlocksPerCall, !this._isFreshStart);
+      
+      const baseCrawlDelay = this._isCaughtUp 
         ? config.crawlBlock.millisecondCrawlCaughtUp 
         : (this._isFreshStart 
           ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
           : (config.crawlBlock.reindexing?.millisecondCrawl || 100));
+      let crawlDelay = applySpeedToDelay(baseCrawlDelay, !this._isFreshStart);
 
       if ((config.crawlBlock.freshStart?.enableHealthCheck && this._isFreshStart) ||
           (config.crawlBlock.reindexing?.enableHealthCheck && !this._isFreshStart)) {
@@ -335,25 +339,29 @@ export default class CrawlBlockService extends BullableService {
           this._lastHealthCheckTime = Date.now();
           
           if (this._isFreshStart) {
+            const baseFreshBlocks = config.crawlBlock.freshStart?.blocksPerCall || 50;
+            const baseFreshDelay = config.crawlBlock.freshStart?.millisecondCrawl || 5000;
             blocksPerCall = getOptimalBlocksPerCall(
-              config.crawlBlock.freshStart?.blocksPerCall || 50,
+              applySpeedToBatchSize(baseFreshBlocks, false),
               this._lastHealthCheck,
               true
             );
             crawlDelay = getOptimalDelay(
-              config.crawlBlock.freshStart?.millisecondCrawl || 5000,
+              applySpeedToDelay(baseFreshDelay, false),
               this._lastHealthCheck,
               true
             );
             this.logger.info(`🏥 Health: ${this._lastHealthCheck.overall} | DB: ${this._lastHealthCheck.database.connectionUsagePercent?.toFixed(1)}% | Memory: ${this._lastHealthCheck.server.memoryUsagePercent?.toFixed(1)}% | Using ${blocksPerCall} blocks/call, ${crawlDelay}ms delay`);
           } else {
+            const baseReindexBlocks = config.crawlBlock.reindexing?.blocksPerCall || 5000;
+            const baseReindexDelay = config.crawlBlock.reindexing?.millisecondCrawl || 100;
             blocksPerCall = getOptimalBlocksPerCall(
-              config.crawlBlock.reindexing?.blocksPerCall || 5000,
+              applySpeedToBatchSize(baseReindexBlocks, true),
               this._lastHealthCheck,
               false
             );
             crawlDelay = getOptimalDelay(
-              config.crawlBlock.reindexing?.millisecondCrawl || 100,
+              applySpeedToDelay(baseReindexDelay, true),
               this._lastHealthCheck,
               false
             );
@@ -363,35 +371,39 @@ export default class CrawlBlockService extends BullableService {
           }
         } else if (this._lastHealthCheck) {
           if (this._isFreshStart) {
+            const baseFreshBlocks = config.crawlBlock.freshStart?.blocksPerCall || 50;
+            const baseFreshDelay = config.crawlBlock.freshStart?.millisecondCrawl || 5000;
             blocksPerCall = getOptimalBlocksPerCall(
-              config.crawlBlock.freshStart?.blocksPerCall || 50,
+              applySpeedToBatchSize(baseFreshBlocks, false),
               this._lastHealthCheck,
               true
             );
             crawlDelay = getOptimalDelay(
-              config.crawlBlock.freshStart?.millisecondCrawl || 5000,
+              applySpeedToDelay(baseFreshDelay, false),
               this._lastHealthCheck,
               true
             );
           } else {
+            const baseReindexBlocks = config.crawlBlock.reindexing?.blocksPerCall || 5000;
+            const baseReindexDelay = config.crawlBlock.reindexing?.millisecondCrawl || 100;
             blocksPerCall = getOptimalBlocksPerCall(
-              config.crawlBlock.reindexing?.blocksPerCall || 5000,
+              applySpeedToBatchSize(baseReindexBlocks, true),
               this._lastHealthCheck,
               false
             );
             crawlDelay = getOptimalDelay(
-              config.crawlBlock.reindexing?.millisecondCrawl || 100,
+              applySpeedToDelay(baseReindexDelay, true),
               this._lastHealthCheck,
               false
             );
           }
         }
       } else if (this._isFreshStart && config.crawlBlock.freshStart) {
-        blocksPerCall = config.crawlBlock.freshStart.blocksPerCall || blocksPerCall;
-        crawlDelay = config.crawlBlock.freshStart.millisecondCrawl || crawlDelay;
+        blocksPerCall = applySpeedToBatchSize(config.crawlBlock.freshStart.blocksPerCall || blocksPerCall, false);
+        crawlDelay = applySpeedToDelay(config.crawlBlock.freshStart.millisecondCrawl || crawlDelay, false);
       } else if (!this._isFreshStart && config.crawlBlock.reindexing) {
-        blocksPerCall = config.crawlBlock.reindexing.blocksPerCall || blocksPerCall;
-        crawlDelay = config.crawlBlock.reindexing.millisecondCrawl || crawlDelay;
+        blocksPerCall = applySpeedToBatchSize(config.crawlBlock.reindexing.blocksPerCall || blocksPerCall, true);
+        crawlDelay = applySpeedToDelay(config.crawlBlock.reindexing.millisecondCrawl || crawlDelay, true);
       }
 
       let endBlock = startBlock + blocksPerCall - 1;
@@ -924,11 +936,12 @@ export default class CrawlBlockService extends BullableService {
       }
     }
 
-    let targetInterval = isCaughtUp
+    const baseTargetInterval = isCaughtUp
       ? (config.crawlBlock.millisecondCrawlCaughtUp || 500)
       : (this._isFreshStart 
         ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
         : (config.crawlBlock.reindexing?.millisecondCrawl || 100));
+    let targetInterval = applySpeedToDelay(baseTargetInterval, !this._isFreshStart);
 
     if (this._lastHealthCheck && 
         ((config.crawlBlock.freshStart?.enableHealthCheck && this._isFreshStart) ||
@@ -938,7 +951,8 @@ export default class CrawlBlockService extends BullableService {
         : (this._isFreshStart 
           ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
           : (config.crawlBlock.reindexing?.millisecondCrawl || 100));
-      targetInterval = getOptimalDelay(baseDelay, this._lastHealthCheck, this._isFreshStart);
+      const adjustedBaseDelay = applySpeedToDelay(baseDelay, !this._isFreshStart);
+      targetInterval = getOptimalDelay(adjustedBaseDelay, this._lastHealthCheck, this._isFreshStart);
     }
 
     if (targetInterval !== this._currentInterval) {
@@ -1190,9 +1204,10 @@ export default class CrawlBlockService extends BullableService {
           this._isFreshStart = startMode.isFreshStart;
         }
 
-        const initialInterval = this._isFreshStart 
+        const baseInitialInterval = this._isFreshStart 
           ? (config.crawlBlock.freshStart?.millisecondCrawl || 5000)
           : (config.crawlBlock.reindexing?.millisecondCrawl || 100);
+        const initialInterval = applySpeedToDelay(baseInitialInterval, !this._isFreshStart);
 
         this.logger.info(`Creating crawl block job with interval ${initialInterval}ms...`);
         
@@ -1266,10 +1281,12 @@ export default class CrawlBlockService extends BullableService {
     
     await this.ensureInitialPartitionExists();
 
+    const speedMultiplier = getCrawlSpeedMultiplier();
     this.logger.info(
       `CrawlBlock Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
       `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +
-      `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks`
+      `Caught Up Threshold: ${config.crawlBlock.caughtUpThreshold} blocks | ` +
+      `Crawl Speed Multiplier: ${speedMultiplier}x ${speedMultiplier !== 1.0 ? `(${this._isFreshStart ? 'slower/conservative' : 'faster'})` : '(default)'}`
     );
     
     await this.ensureCrawlBlockJob();

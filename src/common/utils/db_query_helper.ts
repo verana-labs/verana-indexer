@@ -4,9 +4,9 @@ export interface QueryOptions {
   retryDelay?: number;
 }
 
-const DEFAULT_QUERY_TIMEOUT = 30000;
+const DEFAULT_QUERY_TIMEOUT = 120000;
 const DEFAULT_RETRIES = 3;
-const DEFAULT_RETRY_DELAY = 1000;
+const DEFAULT_RETRY_DELAY = 2000;
 
 export function isStatementTimeoutError(error: any): boolean {
   const errorCode = error?.code;
@@ -25,7 +25,9 @@ export function isPoolExhaustionError(error: any): boolean {
   return errorCode === 'ECONNREFUSED' ||
     errorMessage.includes('timeout acquiring connection') ||
     errorMessage.includes('pool is full') ||
-    errorMessage.includes('connection pool exhausted');
+    errorMessage.includes('connection pool exhausted') ||
+    errorMessage.includes('Query read timeout') ||
+    errorMessage.includes('KnexTimeoutError');
 }
 
 export function delay(ms: number): Promise<void> {
@@ -73,11 +75,11 @@ export async function executeWithRetry<T>(
         }
       } else if (isPoolExhaustionError(error)) {
         if (logger) {
-          logger.warn(`Pool exhaustion (attempt ${attempt}/${maxRetries}): ${error?.message || error}`);
+          logger.warn(`Pool exhaustion or query timeout (attempt ${attempt}/${maxRetries}): ${error?.message || error}`);
         }
         
         if (attempt < maxRetries) {
-          const backoffDelay = retryDelay * (2 ** (attempt - 1));
+          const backoffDelay = Math.min(retryDelay * (2 ** (attempt - 1)), 10000);
           if (logger) {
             logger.info(`Waiting for pool availability, retrying after ${backoffDelay}ms...`);
           }
