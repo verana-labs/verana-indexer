@@ -5,6 +5,7 @@ export const ALLOWED_SORT_ATTRIBUTES = [
   "modified",
   "created",
   "participants",
+  "active_schemas",
   "weight",
   "issued",
   "verified",
@@ -103,6 +104,7 @@ export function sortByStandardAttributes<T>(
     getCreated?: (item: T) => string | Date | undefined | null;
     getModified?: (item: T) => string | Date | undefined | null;
     getParticipants?: (item: T) => number | undefined | null;
+    getActiveSchemas?: (item: T) => number | undefined | null;
     getWeight?: (item: T) => string | undefined | null;
     getIssued?: (item: T) => string | undefined | null;
     getVerified?: (item: T) => string | undefined | null;
@@ -142,8 +144,17 @@ export function sortByStandardAttributes<T>(
       let bv: number | string | bigint = 0;
 
       if (attribute === "id") {
-        av = String(opts.getId(a));
-        bv = String(opts.getId(b));
+        const aId = opts.getId(a);
+        const bId = opts.getId(b);
+        const aNum = typeof aId === "number" ? aId : Number(aId);
+        const bNum = typeof bId === "number" ? bId : Number(bId);
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          av = aNum;
+          bv = bNum;
+        } else {
+          av = String(aId);
+          bv = String(bId);
+        }
       } else if (attribute === "created") {
         av = getDateMs(opts.getCreated ? opts.getCreated(a) : undefined);
         bv = getDateMs(opts.getCreated ? opts.getCreated(b) : undefined);
@@ -153,6 +164,9 @@ export function sortByStandardAttributes<T>(
       } else if (attribute === "participants") {
         av = opts.getParticipants ? (opts.getParticipants(a) || 0) : 0;
         bv = opts.getParticipants ? (opts.getParticipants(b) || 0) : 0;
+      } else if (attribute === "active_schemas") {
+        av = opts.getActiveSchemas ? (opts.getActiveSchemas(a) || 0) : 0;
+        bv = opts.getActiveSchemas ? (opts.getActiveSchemas(b) || 0) : 0;
       } else if (attribute === "weight") {
         av = opts.getWeight ? getBigInt(opts.getWeight(a)) : BigInt(0);
         bv = opts.getWeight ? getBigInt(opts.getWeight(b)) : BigInt(0);

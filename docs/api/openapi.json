@@ -725,6 +725,149 @@
             "description": "Filter by controller account"
           },
           {
+            "name": "min_active_schemas",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum number of active schemas (inclusive)"
+          },
+          {
+            "name": "max_active_schemas",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum number of active schemas (inclusive). When min_active_schemas equals max_active_schemas, performs exact match."
+          },
+          {
+            "name": "min_participants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum number of participants (inclusive)"
+          },
+          {
+            "name": "max_participants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum number of participants (inclusive). When min_participants equals max_participants, performs exact match."
+          },
+          {
+            "name": "min_weight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum weight (inclusive)"
+          },
+          {
+            "name": "max_weight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum weight (inclusive). When min_weight equals max_weight, performs exact match."
+          },
+          {
+            "name": "min_issued",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum number of issued credentials (inclusive)"
+          },
+          {
+            "name": "max_issued",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum number of issued credentials (inclusive). When min_issued equals max_issued, performs exact match."
+          },
+          {
+            "name": "min_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum number of verified credentials (inclusive)"
+          },
+          {
+            "name": "max_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum number of verified credentials (inclusive). When min_verified equals max_verified, performs exact match."
+          },
+          {
+            "name": "min_ecosystem_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum accepted number of ecosystem slash events (inclusive)"
+          },
+          {
+            "name": "max_ecosystem_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum accepted number of ecosystem slash events (inclusive). When min_ecosystem_slash_events equals max_ecosystem_slash_events, performs exact match."
+          },
+          {
+            "name": "min_network_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum accepted number of network slash events (inclusive)"
+          },
+          {
+            "name": "max_network_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum accepted number of network slash events (inclusive). When min_network_slash_events equals max_network_slash_events, performs exact match."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
@@ -1035,6 +1178,129 @@
               "default": 64
             },
             "description": "Maximum number of records to return in the response"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+          },
+          {
+            "name": "min_participants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum of participants (inclusive)"
+          },
+          {
+            "name": "max_participants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum of participants (inclusive). When min_participants equals max_participants, performs exact match."
+          },
+          {
+            "name": "min_weight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum weight (inclusive)"
+          },
+          {
+            "name": "max_weight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum weight (inclusive). When min_weight equals max_weight, performs exact match."
+          },
+          {
+            "name": "min_issued",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum number of issued credentials (inclusive)"
+          },
+          {
+            "name": "max_issued",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum number of issued credentials (inclusive). When min_issued equals max_issued, performs exact match."
+          },
+          {
+            "name": "min_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minimum number of verified credentials (inclusive)"
+          },
+          {
+            "name": "max_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Maximum number of verified credentials (inclusive). When min_verified equals max_verified, performs exact match."
+          },
+          {
+            "name": "min_ecosystem_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum accepted number of ecosystem slashs (inclusive)"
+          },
+          {
+            "name": "max_ecosystem_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum accepted number of ecosystem slashs (inclusive). When min_ecosystem_slash_events equals max_ecosystem_slash_events, performs exact match."
+          },
+          {
+            "name": "min_network_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Minimum accepted number of network slashs (inclusive)"
+          },
+          {
+            "name": "max_network_slash_events",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Maximum accepted number of network slashs (inclusive). When min_network_slash_events equals max_network_slash_events, performs exact match."
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1469,7 +1735,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Maximum number of participants (exclusive)"
+            "description": "Maximum number of participants (inclusive). When min_participants equals max_participants, performs exact match."
           },
           {
             "name": "min_weight",
@@ -1487,7 +1753,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum weight (exclusive)"
+            "description": "Maximum weight (inclusive). When min_weight equals max_weight, performs exact match."
           },
           {
             "name": "min_issued",
@@ -1505,7 +1771,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of issued credentials (exclusive)"
+            "description": "Maximum number of issued credentials (inclusive). When min_issued equals max_issued, performs exact match."
           },
           {
             "name": "min_verified",
@@ -1523,7 +1789,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of verified credentials (exclusive)"
+            "description": "Maximum number of verified credentials (inclusive). When min_verified equals max_verified, performs exact match."
           },
           {
             "name": "min_ecosystem_slash_events",
@@ -1541,7 +1807,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Maximum accepted number of ecosystem slash events (exclusive)"
+            "description": "Maximum accepted number of ecosystem slash events (inclusive). When min_ecosystem_slash_events equals max_ecosystem_slash_events, performs exact match."
           },
           {
             "name": "min_network_slash_events",
@@ -1559,7 +1825,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Maximum accepted number of network slash events (exclusive)"
+            "description": "Maximum accepted number of network slash events (inclusive). When min_network_slash_events equals max_network_slash_events, performs exact match."
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2350,6 +2616,46 @@
             "modified": {
               "type": "string",
               "format": "date-time"
+            },
+            "participants": {
+              "type": "integer",
+              "description": "Current number of active participants (perm_state=ACTIVE) in this Credential Schema"
+            },
+            "weight": {
+              "type": "string",
+              "description": "Trust deposit value (sum) of the full permission tree of this schema since the schema was created"
+            },
+            "issued": {
+              "type": "string",
+              "description": "Total issued credentials (sum) by all issuers of this Credential Schema since it was created"
+            },
+            "verified": {
+              "type": "string",
+              "description": "Total verified credentials (sum) by all verifiers of this Credential Schema since it was created"
+            },
+            "ecosystem_slash_events": {
+              "type": "integer",
+              "description": "Total ecosystem-governance–based slash events (when an ecosystem participant is slashed by ecosystem governance)"
+            },
+            "ecosystem_slashed_amount": {
+              "type": "string",
+              "description": "Cumulated ecosystem-governance–based slashed amount"
+            },
+            "ecosystem_slashed_amount_repaid": {
+              "type": "string",
+              "description": "Cumulated ecosystem-governance–based slashed amount repaid by participants"
+            },
+            "network_slash_events": {
+              "type": "integer",
+              "description": "Total network-governance–based slash events (when a full Ecosystem is slashed by Verana Council)"
+            },
+            "network_slashed_amount": {
+              "type": "string",
+              "description": "Cumulated network-governance–based slashed amount"
+            },
+            "network_slashed_amount_repaid": {
+              "type": "string",
+              "description": "Cumulated network-governance–based slashed amount repaid by the ecosystem"
             }
           }
         },
@@ -3429,6 +3735,54 @@
           "active_version": {
             "type": "integer"
           },
+          "participants": {
+            "type": "integer",
+            "description": "Current number of active participants (perm_state=ACTIVE) in this Trust Registry"
+          },
+          "active_schemas": {
+            "type": "integer",
+            "description": "Current number of active schema (not archived) in this Trust Registry"
+          },
+          "archived_schemas": {
+            "type": "integer",
+            "description": "Current number of archived schemas in this Trust Registry"
+          },
+          "weight": {
+            "type": "string",
+            "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
+          },
+          "issued": {
+            "type": "string",
+            "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
+          },
+          "verified": {
+            "type": "string",
+            "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Trust Registry since it was created"
+          },
+          "ecosystem_slash_events": {
+            "type": "integer",
+            "description": "Total ecosystem-governance–based slash events (when an Ecosystem participant is slashed by Ecosystem governance)"
+          },
+          "ecosystem_slashed_amount": {
+            "type": "string",
+            "description": "Cumulated ecosystem-governance–based slashed amount"
+          },
+          "ecosystem_slashed_amount_repaid": {
+            "type": "string",
+            "description": "Cumulated ecosystem-governance–based slashed amount repaid by participants"
+          },
+          "network_slash_events": {
+            "type": "integer",
+            "description": "Total network-governance–based slash events (when a full Ecosystem is slashed by Verana Council)"
+          },
+          "network_slashed_amount": {
+            "type": "string",
+            "description": "Cumulated network-governance–based slashed amount"
+          },
+          "network_slashed_amount_repaid": {
+            "type": "string",
+            "description": "Cumulated network-governance–based slashed amount repaid by the ecosystem"
+          },
           "versions": {
             "type": "array",
             "items": {
@@ -3549,6 +3903,54 @@
               "active_version": {
                 "type": "integer"
               },
+              "participants": {
+                "type": "integer",
+                "description": "Current number of active participants (perm_state=ACTIVE) in this Trust Registry"
+              },
+              "active_schemas": {
+                "type": "integer",
+                "description": "Current number of active schema (not archived) in this Trust Registry"
+              },
+              "archived_schemas": {
+                "type": "integer",
+                "description": "Current number of archived schemas in this Trust Registry"
+              },
+              "weight": {
+                "type": "string",
+                "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
+              },
+              "issued": {
+                "type": "string",
+                "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
+              },
+              "verified": {
+                "type": "string",
+                "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Trust Registry since it was created"
+              },
+              "ecosystem_slash_events": {
+                "type": "integer",
+                "description": "Total ecosystem-governance–based slash events (when an Ecosystem participant is slashed by Ecosystem governance)"
+              },
+              "ecosystem_slashed_amount": {
+                "type": "string",
+                "description": "Cumulated ecosystem-governance–based slashed amount"
+              },
+              "ecosystem_slashed_amount_repaid": {
+                "type": "string",
+                "description": "Cumulated ecosystem-governance–based slashed amount repaid by participants"
+              },
+              "network_slash_events": {
+                "type": "integer",
+                "description": "Total network-governance–based slash events (when a full Ecosystem is slashed by Verana Council)"
+              },
+              "network_slashed_amount": {
+                "type": "string",
+                "description": "Cumulated network-governance–based slashed amount"
+              },
+              "network_slashed_amount_repaid": {
+                "type": "string",
+                "description": "Cumulated network-governance–based slashed amount repaid by the ecosystem"
+              },
               "versions": {
                 "type": "array",
                 "items": {
@@ -3605,29 +4007,69 @@
               "GRANTOR_VALIDATION"
             ]
           },
-          "archived": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
+            "archived": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "modified": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "participants": {
+              "type": "integer",
+              "description": "Current number of active participants (perm_state=ACTIVE) in this Credential Schema"
+            },
+            "weight": {
+              "type": "string",
+              "description": "Trust deposit value (sum) of the full permission tree of this schema since the schema was created"
+            },
+            "issued": {
+              "type": "string",
+              "description": "Total issued credentials (sum) by all issuers of this Credential Schema since it was created"
+            },
+            "verified": {
+              "type": "string",
+              "description": "Total verified credentials (sum) by all verifiers of this Credential Schema since it was created"
+            },
+            "ecosystem_slash_events": {
+              "type": "integer",
+              "description": "Total ecosystem-governance–based slash events (when an ecosystem participant is slashed by ecosystem governance)"
+            },
+            "ecosystem_slashed_amount": {
+              "type": "string",
+              "description": "Cumulated ecosystem-governance–based slashed amount"
+            },
+            "ecosystem_slashed_amount_repaid": {
+              "type": "string",
+              "description": "Cumulated ecosystem-governance–based slashed amount repaid by participants"
+            },
+            "network_slash_events": {
+              "type": "integer",
+              "description": "Total network-governance–based slash events (when a full Ecosystem is slashed by Verana Council)"
+            },
+            "network_slashed_amount": {
+              "type": "string",
+              "description": "Cumulated network-governance–based slashed amount"
+            },
+            "network_slashed_amount_repaid": {
+              "type": "string",
+              "description": "Cumulated network-governance–based slashed amount repaid by the ecosystem"
+            }
           }
-        }
-      },
-      "CredentialSchemaResponse": {
-        "type": "object",
-        "properties": {
-          "schema": {
-            "$ref": "#/components/schemas/CredentialSchema"
+        },
+        "CredentialSchemaResponse": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "$ref": "#/components/schemas/CredentialSchema"
+            }
           }
-        }
-      },
+        },
       "JsonSchemaResponse": {
         "type": "object",
         "properties": {
