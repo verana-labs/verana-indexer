@@ -31,56 +31,62 @@ export default class StatsAPIService extends BaseService {
     timestamp?: string;
     entity_type?: EntityType;
     entity_id?: string;
-  }>): Promise<any> {
-    const { id, granularity, timestamp, entity_type, entity_id } = ctx.params;
+  }>): Promise<unknown> {
+    try {
+      const { id, granularity, timestamp, entity_type: entityType, entity_id: entityId } = ctx.params;
 
-    if (id) {
-      const stat = await Stats.query().findById(id);
-      if (!stat) {
-        throw new Errors.MoleculerError("Stats not found", 404, "NOT_FOUND");
-      }
-      return ApiResponder.success(ctx, stat, 200);
-    }
-
-    if (!granularity || !timestamp || !entity_type) {
-      throw new Errors.MoleculerError(
-        "Either 'id' or all of 'granularity', 'timestamp', 'entity_type' must be provided",
-        400,
-        "INVALID_PARAMS"
-      );
-    }
-
-    if (entity_type === "GLOBAL" && entity_id) {
-      throw new Errors.MoleculerError("entity_id must be null for GLOBAL entity_type", 400, "INVALID_PARAMS");
-    }
-
-    if (entity_type !== "GLOBAL" && !entity_id) {
-      throw new Errors.MoleculerError(`entity_id is required for entity_type ${entity_type}`, 400, "INVALID_PARAMS");
-    }
-
-    const timestampDate = new Date(timestamp);
-    if (isNaN(timestampDate.getTime())) {
-      throw new Errors.MoleculerError("Invalid timestamp format", 400, "INVALID_PARAMS");
-    }
-
-    const stat = await Stats.query()
-      .where("granularity", granularity)
-      .where("timestamp", timestampDate)
-      .where("entity_type", entity_type)
-      .where((builder) => {
-        if (entity_type === "GLOBAL") {
-          builder.whereNull("entity_id");
-        } else {
-          builder.where("entity_id", entity_id);
+      if (id) {
+        const stat = await Stats.query().findById(id);
+        if (!stat) {
+          return ApiResponder.error(ctx, "Stats not found", 404, "NOT_FOUND");
         }
-      })
-      .first();
+        return ApiResponder.success(ctx, stat, 200);
+      }
 
-    if (!stat) {
-      throw new Errors.MoleculerError("Stats not found", 404, "NOT_FOUND");
+      if (!granularity || !timestamp || !entityType) {
+        return ApiResponder.error(
+          ctx,
+          "Either 'id' or all of 'granularity', 'timestamp', 'entity_type' must be provided",
+          400,
+          "INVALID_PARAMS"
+        );
+      }
+
+      if (entityType === "GLOBAL" && entityId) {
+        return ApiResponder.error(ctx, "entity_id must be null for GLOBAL entity_type", 400, "INVALID_PARAMS");
+      }
+
+      if (entityType !== "GLOBAL" && !entityId) {
+        return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400, "INVALID_PARAMS");
+      }
+
+      const timestampDate = new Date(timestamp);
+      if (Number.isNaN(timestampDate.getTime())) {
+        return ApiResponder.error(ctx, "Invalid timestamp format", 400, "INVALID_PARAMS");
+      }
+
+      const stat = await Stats.query()
+        .where("granularity", granularity)
+        .where("timestamp", timestampDate)
+        .where("entity_type", entityType)
+        .where((builder) => {
+          if (entityType === "GLOBAL") {
+            builder.whereNull("entity_id");
+          } else if (entityId) {
+            builder.where("entity_id", entityId);
+          }
+        })
+        .first();
+
+      if (!stat) {
+        return ApiResponder.error(ctx, "Stats not found", 404, "NOT_FOUND");
+      }
+
+      return ApiResponder.success(ctx, stat, 200);
+    } catch (err: unknown) {
+      this.logger.error("Error in get:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500, "INTERNAL_ERROR");
     }
-
-    return ApiResponder.success(ctx, stat, 200);
   }
 
   @Action({
@@ -101,31 +107,32 @@ export default class StatsAPIService extends BaseService {
     entity_type: EntityType;
     entity_ids?: string;
     result_type?: "BUCKETS" | "TOTAL" | "BUCKETS_AND_TOTAL";
-  }>): Promise<any> {
-    const { granularity, timestamp_from, timestamp_until, entity_type, entity_ids, result_type = "BUCKETS_AND_TOTAL" } = ctx.params;
+  }>): Promise<unknown> {
+    try {
+      const { granularity, timestamp_from: timestampFrom, timestamp_until: timestampUntil, entity_type: entityType, entity_ids: entityIds, result_type: resultType = "BUCKETS_AND_TOTAL" } = ctx.params;
 
-    const fromDate = new Date(timestamp_from);
-    const untilDate = new Date(timestamp_until);
+    const fromDate = new Date(timestampFrom);
+    const untilDate = new Date(timestampUntil);
 
-    if (isNaN(fromDate.getTime()) || isNaN(untilDate.getTime())) {
-      throw new Errors.MoleculerError("Invalid timestamp format", 400, "INVALID_PARAMS");
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(untilDate.getTime())) {
+      return ApiResponder.error(ctx, "Invalid timestamp format", 400, "INVALID_PARAMS");
     }
 
     if (fromDate >= untilDate) {
-      throw new Errors.MoleculerError("timestamp_from must be before timestamp_until", 400, "INVALID_PARAMS");
+      return ApiResponder.error(ctx, "timestamp_from must be before timestamp_until", 400, "INVALID_PARAMS");
     }
 
-    const entityIds = (entity_ids || "")
+    const parsedEntityIds = (entityIds || "")
       .split(",")
       .map((id) => id.trim())
       .filter((id) => id.length > 0);
 
-    if (entity_type === "GLOBAL" && entityIds.length > 0) {
-      throw new Errors.MoleculerError("entity_ids must be empty for GLOBAL entity_type", 400, "INVALID_PARAMS");
+    if (entityType === "GLOBAL" && parsedEntityIds.length > 0) {
+      return ApiResponder.error(ctx, "entity_ids must be empty for GLOBAL entity_type", 400, "INVALID_PARAMS");
     }
 
-    if (entity_type !== "GLOBAL" && entityIds.length === 0) {
-      throw new Errors.MoleculerError(`entity_ids array is required for entity_type ${entity_type}`, 400, "INVALID_PARAMS");
+    if (entityType !== "GLOBAL" && parsedEntityIds.length === 0) {
+      return ApiResponder.error(ctx, `entity_ids array is required for entity_type ${entityType}`, 400, "INVALID_PARAMS");
     }
 
     let effectiveGranularity = granularity;
@@ -155,12 +162,12 @@ export default class StatsAPIService extends BaseService {
           .where("granularity", "MONTH")
           .where("timestamp", ">=", fromDate)
           .where("timestamp", "<", untilDate)
-          .where("entity_type", entity_type)
+          .where("entity_type", entityType)
           .where((builder) => {
-            if (entity_type === "GLOBAL") {
+            if (entityType === "GLOBAL") {
               builder.whereNull("entity_id");
             } else {
-              builder.whereIn("entity_id", entityIds);
+              builder.whereIn("entity_id", parsedEntityIds);
             }
           })
           .orderBy("timestamp", "asc");
@@ -168,35 +175,53 @@ export default class StatsAPIService extends BaseService {
         if (monthBuckets.length > 0) {
           buckets = monthBuckets;
           effectiveGranularity = "MONTH";
-        } else if (daysDiff >= 1) {
-          const dayBuckets = await Stats.query()
-            .where("granularity", "DAY")
-            .where("timestamp", ">=", fromDate)
-            .where("timestamp", "<", untilDate)
-            .where("entity_type", entity_type)
-            .where((builder) => {
-              if (entity_type === "GLOBAL") {
-                builder.whereNull("entity_id");
-              } else {
-                builder.whereIn("entity_id", entityIds);
-              }
-            })
-            .orderBy("timestamp", "asc");
+          } else if (daysDiff >= 1) {
+            const dayBuckets = await Stats.query()
+              .where("granularity", "DAY")
+              .where("timestamp", ">=", fromDate)
+              .where("timestamp", "<", untilDate)
+              .where("entity_type", entityType)
+              .where((builder) => {
+                if (entityType === "GLOBAL") {
+                  builder.whereNull("entity_id");
+                } else {
+                  builder.whereIn("entity_id", parsedEntityIds);
+                }
+              })
+              .orderBy("timestamp", "asc");
 
-          if (dayBuckets.length > 0) {
-            buckets = dayBuckets;
-            effectiveGranularity = "DAY";
+            if (dayBuckets.length > 0) {
+              buckets = dayBuckets;
+              effectiveGranularity = "DAY";
+            } else {
+              const hourBuckets = await Stats.query()
+                .where("granularity", "HOUR")
+                .where("timestamp", ">=", fromDate)
+                .where("timestamp", "<", untilDate)
+                .where("entity_type", entityType)
+                .where((builder) => {
+                  if (entityType === "GLOBAL") {
+                    builder.whereNull("entity_id");
+                  } else {
+                    builder.whereIn("entity_id", parsedEntityIds);
+                  }
+                })
+                .orderBy("timestamp", "asc");
+
+              buckets = hourBuckets;
+              effectiveGranularity = "HOUR";
+            }
           } else {
             const hourBuckets = await Stats.query()
               .where("granularity", "HOUR")
               .where("timestamp", ">=", fromDate)
               .where("timestamp", "<", untilDate)
-              .where("entity_type", entity_type)
+              .where("entity_type", entityType)
               .where((builder) => {
-                if (entity_type === "GLOBAL") {
+                if (entityType === "GLOBAL") {
                   builder.whereNull("entity_id");
                 } else {
-                  builder.whereIn("entity_id", entityIds);
+                  builder.whereIn("entity_id", parsedEntityIds);
                 }
               })
               .orderBy("timestamp", "asc");
@@ -204,35 +229,17 @@ export default class StatsAPIService extends BaseService {
             buckets = hourBuckets;
             effectiveGranularity = "HOUR";
           }
-        } else {
-          const hourBuckets = await Stats.query()
-            .where("granularity", "HOUR")
-            .where("timestamp", ">=", fromDate)
-            .where("timestamp", "<", untilDate)
-            .where("entity_type", entity_type)
-            .where((builder) => {
-              if (entity_type === "GLOBAL") {
-                builder.whereNull("entity_id");
-              } else {
-                builder.whereIn("entity_id", entityIds);
-              }
-            })
-            .orderBy("timestamp", "asc");
-
-          buckets = hourBuckets;
-          effectiveGranularity = "HOUR";
-        }
       } else if (daysDiff >= 1) {
         const dayBuckets = await Stats.query()
           .where("granularity", "DAY")
           .where("timestamp", ">=", fromDate)
           .where("timestamp", "<", untilDate)
-          .where("entity_type", entity_type)
+          .where("entity_type", entityType)
           .where((builder) => {
-            if (entity_type === "GLOBAL") {
+            if (entityType === "GLOBAL") {
               builder.whereNull("entity_id");
             } else {
-              builder.whereIn("entity_id", entityIds);
+              builder.whereIn("entity_id", parsedEntityIds);
             }
           })
           .orderBy("timestamp", "asc");
@@ -245,12 +252,12 @@ export default class StatsAPIService extends BaseService {
             .where("granularity", "HOUR")
             .where("timestamp", ">=", fromDate)
             .where("timestamp", "<", untilDate)
-            .where("entity_type", entity_type)
+            .where("entity_type", entityType)
             .where((builder) => {
-              if (entity_type === "GLOBAL") {
+              if (entityType === "GLOBAL") {
                 builder.whereNull("entity_id");
               } else {
-                builder.whereIn("entity_id", entityIds);
+                builder.whereIn("entity_id", parsedEntityIds);
               }
             })
             .orderBy("timestamp", "asc");
@@ -263,12 +270,12 @@ export default class StatsAPIService extends BaseService {
           .where("granularity", "HOUR")
           .where("timestamp", ">=", fromDate)
           .where("timestamp", "<", untilDate)
-          .where("entity_type", entity_type)
+          .where("entity_type", entityType)
           .where((builder) => {
-            if (entity_type === "GLOBAL") {
+            if (entityType === "GLOBAL") {
               builder.whereNull("entity_id");
             } else {
-              builder.whereIn("entity_id", entityIds);
+              builder.whereIn("entity_id", parsedEntityIds);
             }
           })
           .orderBy("timestamp", "asc");
@@ -281,12 +288,12 @@ export default class StatsAPIService extends BaseService {
         .where("granularity", effectiveGranularity)
         .where("timestamp", ">=", fromDate)
         .where("timestamp", "<", untilDate)
-        .where("entity_type", entity_type);
+        .where("entity_type", entityType);
 
-      if (entity_type === "GLOBAL") {
+      if (entityType === "GLOBAL") {
         query.whereNull("entity_id");
       } else {
-        query.whereIn("entity_id", entityIds);
+        query.whereIn("entity_id", parsedEntityIds);
       }
 
       query.orderBy("timestamp", "asc");
@@ -294,21 +301,21 @@ export default class StatsAPIService extends BaseService {
       buckets = await query;
     }
 
-    let total: any = null;
-    if (result_type === "TOTAL" || result_type === "BUCKETS_AND_TOTAL") {
+    let total: Record<string, unknown> | null = null;
+    if (resultType === "TOTAL" || resultType === "BUCKETS_AND_TOTAL") {
       let totalQuery = knex("stats")
         .where("timestamp", ">=", fromDate)
         .where("timestamp", "<", untilDate)
-        .where("entity_type", entity_type);
+        .where("entity_type", entityType);
 
       if (granularity) {
         totalQuery = totalQuery.where("granularity", effectiveGranularity);
       }
 
-      if (entity_type === "GLOBAL") {
+      if (entityType === "GLOBAL") {
         totalQuery = totalQuery.whereNull("entity_id");
       } else {
-        totalQuery = totalQuery.whereIn("entity_id", entityIds);
+        totalQuery = totalQuery.whereIn("entity_id", parsedEntityIds);
       }
 
       const totalResult = await totalQuery
@@ -331,16 +338,16 @@ export default class StatsAPIService extends BaseService {
       total = await totalResult;
     }
 
-    const response: any = {
+    const response: Record<string, unknown> = {
       granularity: effectiveGranularity,
-      timestamp_from: timestamp_from,
-      timestamp_until: timestamp_until,
-      entity_type: entity_type,
-      entity_ids: entityIds,
-      result_type: result_type,
+      timestamp_from: timestampFrom,
+      timestamp_until: timestampUntil,
+      entity_type: entityType,
+      entity_ids: parsedEntityIds,
+      result_type: resultType,
     };
 
-    if (result_type === "BUCKETS" || result_type === "BUCKETS_AND_TOTAL") {
+    if (resultType === "BUCKETS" || resultType === "BUCKETS_AND_TOTAL") {
       response.buckets = buckets.map((bucket) => {
         const timestamp = new Date(bucket.timestamp);
         return {
@@ -373,7 +380,7 @@ export default class StatsAPIService extends BaseService {
       });
     }
 
-    if (result_type === "TOTAL" || result_type === "BUCKETS_AND_TOTAL") {
+    if (resultType === "TOTAL" || resultType === "BUCKETS_AND_TOTAL") {
       response.total = {
         delta_participants: Number(total?.delta_participants || 0),
         delta_active_schemas: Number(total?.delta_active_schemas || 0),
@@ -390,6 +397,10 @@ export default class StatsAPIService extends BaseService {
       };
     }
 
-    return ApiResponder.success(ctx, response, 200);
+      return ApiResponder.success(ctx, response, 200);
+    } catch (err: unknown) {
+      this.logger.error("Error in stats:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500, "INTERNAL_ERROR");
+    }
   }
 }

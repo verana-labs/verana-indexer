@@ -1,13 +1,13 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
+import * as fs from "fs";
+import * as path from "path";
 import BullableService, { QueueHandler } from "../../base/bullable.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import Stats, { Granularity, EntityType } from "../../models/stats";
 import { BlockCheckpoint } from "../../models/block_checkpoint";
 import { Block } from "../../models/block";
 import knex from "../../common/utils/db_connection";
-import * as fs from "fs";
-import * as path from "path";
 
 @Service({
   name: SERVICE.V1.StatsCalculationService.key,
