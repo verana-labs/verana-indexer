@@ -112,6 +112,7 @@ export const BULL_JOB_NAME = {
   JOB_UPDATE_ASSETS: "job:update-assets",
   JOB_CW721_UPDATE: "job:cw721-update",
   CHECKPOINT_UPDATE_DELEGATOR: "job:checkpoint_update_delegator",
+  CALCULATE_STATS: "calculate:stats",
 };
 
 export enum ModulesParamsNamesTypes {
@@ -197,6 +198,14 @@ export const SERVICE = {
     IndexerStatusService: {
       key: "IndexerStatusService",
       path: "v1.IndexerStatusService",
+    },
+    StatsAPIService: {
+      key: "StatsAPIService",
+      path: "v1.StatsAPIService",
+    },
+    StatsCalculationService: {
+      key: "StatsCalculationService",
+      path: "v1.StatsCalculationService",
     },
     GenesisParamsService: {
       key: "GenesisParamsService",

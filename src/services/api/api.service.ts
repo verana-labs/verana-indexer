@@ -366,6 +366,10 @@ function createRoute(
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
+      }),
+      createRoute("/verana/stats/v1", {
+        "GET get": `${SERVICE.V1.StatsAPIService.path}.get`,
+        "GET stats": `${SERVICE.V1.StatsAPIService.path}.stats`,
       }), 
       {
         path: "/",
