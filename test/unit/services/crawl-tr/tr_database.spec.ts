@@ -6,6 +6,23 @@ import ApiResponder from "../../../../src/common/utils/apiResponse";
 
 jest.mock("../../../../src/models/trust_registry");
 jest.mock("../../../../src/common/utils/apiResponse");
+jest.mock("../../../../src/services/crawl-perm/perm_state_utils", () => ({
+    calculatePermState: jest.fn().mockReturnValue("ACTIVE"),
+}));
+jest.mock("../../../../src/services/crawl-tr/tr_stats", () => ({
+    calculateTrustRegistryStats: jest.fn(),
+}));
+
+jest.mock("../../../../src/common/utils/db_connection", () => {
+    const mockQuery: any = jest.fn(() => mockQuery);
+    mockQuery.whereIn = jest.fn(() => mockQuery);
+    mockQuery.select = jest.fn(() => mockQuery);
+    mockQuery.where = jest.fn(() => mockQuery);
+    mockQuery.orderBy = jest.fn(() => mockQuery);
+    mockQuery.limit = jest.fn(() => mockQuery);
+    mockQuery.first = jest.fn(() => mockQuery);
+    return mockQuery;
+});
 
 describe("TrustRegistryDatabaseService", () => {
     let broker: ServiceBroker;
@@ -55,6 +72,22 @@ describe("TrustRegistryDatabaseService", () => {
                 }),
             });
 
+            const { calculateTrustRegistryStats } = require("../../../../src/services/crawl-tr/tr_stats");
+            (calculateTrustRegistryStats as jest.Mock).mockResolvedValue({
+                participants: 0,
+                active_schemas: 0,
+                archived_schemas: 0,
+                weight: "0",
+                issued: "0",
+                verified: "0",
+                ecosystem_slash_events: 0,
+                ecosystem_slashed_amount: "0",
+                ecosystem_slashed_amount_repaid: "0",
+                network_slash_events: 0,
+                network_slashed_amount: "0",
+                network_slashed_amount_repaid: "0",
+            });
+
             const ctx: any = { params: { tr_id: 1, preferred_language: "en", active_gf_only: "true" } };
             await service.getTrustRegistry(ctx);
 
@@ -96,6 +129,41 @@ describe("TrustRegistryDatabaseService", () => {
                 limit: jest.fn().mockResolvedValue([mockTR]),
             };
             (TrustRegistry.query as any).mockReturnValue(mockQuery);
+
+            const knex = require("../../../../src/common/utils/db_connection");
+            (knex.select as jest.Mock).mockResolvedValueOnce([
+                {
+                    id: 1,
+                    participants: 0,
+                    active_schemas: 0,
+                    archived_schemas: 0,
+                    weight: "0",
+                    issued: "0",
+                    verified: "0",
+                    ecosystem_slash_events: 0,
+                    ecosystem_slashed_amount: "0",
+                    ecosystem_slashed_amount_repaid: "0",
+                    network_slash_events: 0,
+                    network_slashed_amount: "0",
+                    network_slashed_amount_repaid: "0",
+                },
+            ]);
+
+            const { calculateTrustRegistryStats } = require("../../../../src/services/crawl-tr/tr_stats");
+            (calculateTrustRegistryStats as jest.Mock).mockResolvedValue({
+                participants: 0,
+                active_schemas: 0,
+                archived_schemas: 0,
+                weight: "0",
+                issued: "0",
+                verified: "0",
+                ecosystem_slash_events: 0,
+                ecosystem_slashed_amount: "0",
+                ecosystem_slashed_amount_repaid: "0",
+                network_slash_events: 0,
+                network_slashed_amount: "0",
+                network_slashed_amount_repaid: "0",
+            });
 
             const ctx: any = {
                 params: { active_gf_only: "true", preferred_language: "fr", response_max_size: 2 },
