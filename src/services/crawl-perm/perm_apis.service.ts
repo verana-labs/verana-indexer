@@ -1194,47 +1194,74 @@ export default class PermAPIService extends BullableService {
         finalResults = enrichedResults.filter(perm => perm.perm_state === requestedState);
       }
 
-      if (p.min_participants !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
+      if (p.min_participants !== undefined && p.max_participants !== undefined && p.min_participants === p.max_participants) {
+        finalResults = finalResults.filter(perm => (perm.participants || 0) === p.min_participants);
+      } else {
+        if (p.min_participants !== undefined) {
+          finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
+        }
+        if (p.max_participants !== undefined) {
+          finalResults = finalResults.filter(perm => (perm.participants || 0) <= p.max_participants);
+        }
       }
-      if (p.max_participants !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.participants || 0) <= p.max_participants);
+      if (p.min_weight !== undefined && p.max_weight !== undefined && p.min_weight === p.max_weight) {
+        const exactWeight = BigInt(p.min_weight);
+        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") === exactWeight);
+      } else {
+        if (p.min_weight !== undefined) {
+          const minWeight = BigInt(p.min_weight);
+          finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") >= minWeight);
+        }
+        if (p.max_weight !== undefined) {
+          const maxWeight = BigInt(p.max_weight);
+          finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") <= maxWeight);
+        }
       }
-      if (p.min_weight !== undefined) {
-        const minWeight = BigInt(p.min_weight);
-        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") >= minWeight);
+      if (p.min_issued !== undefined && p.max_issued !== undefined && p.min_issued === p.max_issued) {
+        const exactIssued = BigInt(p.min_issued);
+        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") === exactIssued);
+      } else {
+        if (p.min_issued !== undefined) {
+          const minIssued = BigInt(p.min_issued);
+          finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") >= minIssued);
+        }
+        if (p.max_issued !== undefined) {
+          const maxIssued = BigInt(p.max_issued);
+          finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") <= maxIssued);
+        }
       }
-      if (p.max_weight !== undefined) {
-        const maxWeight = BigInt(p.max_weight);
-        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") <= maxWeight);
+      if (p.min_verified !== undefined && p.max_verified !== undefined && p.min_verified === p.max_verified) {
+        const exactVerified = BigInt(p.min_verified);
+        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") === exactVerified);
+      } else {
+        if (p.min_verified !== undefined) {
+          const minVerified = BigInt(p.min_verified);
+          finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") >= minVerified);
+        }
+        if (p.max_verified !== undefined) {
+          const maxVerified = BigInt(p.max_verified);
+          finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") <= maxVerified);
+        }
       }
-      if (p.min_issued !== undefined) {
-        const minIssued = BigInt(p.min_issued);
-        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") >= minIssued);
+      if (p.min_ecosystem_slash_events !== undefined && p.max_ecosystem_slash_events !== undefined && p.min_ecosystem_slash_events === p.max_ecosystem_slash_events) {
+        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) === p.min_ecosystem_slash_events);
+      } else {
+        if (p.min_ecosystem_slash_events !== undefined) {
+          finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
+        }
+        if (p.max_ecosystem_slash_events !== undefined) {
+          finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) <= p.max_ecosystem_slash_events);
+        }
       }
-      if (p.max_issued !== undefined) {
-        const maxIssued = BigInt(p.max_issued);
-        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") <= maxIssued);
-      }
-      if (p.min_verified !== undefined) {
-        const minVerified = BigInt(p.min_verified);
-        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") >= minVerified);
-      }
-      if (p.max_verified !== undefined) {
-        const maxVerified = BigInt(p.max_verified);
-        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") <= maxVerified);
-      }
-      if (p.min_ecosystem_slash_events !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
-      }
-      if (p.max_ecosystem_slash_events !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) <= p.max_ecosystem_slash_events);
-      }
-      if (p.min_network_slash_events !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
-      }
-      if (p.max_network_slash_events !== undefined) {
-        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) <= p.max_network_slash_events);
+      if (p.min_network_slash_events !== undefined && p.max_network_slash_events !== undefined && p.min_network_slash_events === p.max_network_slash_events) {
+        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) === p.min_network_slash_events);
+      } else {
+        if (p.min_network_slash_events !== undefined) {
+          finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
+        }
+        if (p.max_network_slash_events !== undefined) {
+          finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) <= p.max_network_slash_events);
+        }
       }
 
       finalResults = sortByStandardAttributes(finalResults, p.sort, {

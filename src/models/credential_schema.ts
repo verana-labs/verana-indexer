@@ -20,6 +20,16 @@ export default class CredentialSchema extends BaseModel {
   created!: Date;
   modified!: Date;
   is_active!: boolean;
+  participants?: number;
+  weight?: string;
+  issued?: string;
+  verified?: string;
+  ecosystem_slash_events?: number;
+  ecosystem_slashed_amount?: string;
+  ecosystem_slashed_amount_repaid?: string;
+  network_slash_events?: number;
+  network_slashed_amount?: string;
+  network_slashed_amount_repaid?: string;
 
   static useTimestamps = false;
 

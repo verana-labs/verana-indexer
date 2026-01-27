@@ -410,11 +410,13 @@ async function runMigrations(db: Knex): Promise<void> {
       "20251125000001_create_permission_session_history",
       "20251125000002_create_trust_deposit_history",
       "20251125000003_create_module_params_history",
-      "123456765_Create_did_histry",
+      "20260126000001_create_did_history",
       "20251124120000_add_height_to_credential_schema_history",
       "20251125113000_add_height_indexes_to_history_tables",
       "20251210000000_add_permission_statistics",
-      "20250115000000_add_permission_new_attributes"
+      "20250115000000_add_permission_new_attributes",
+      "20260126000000_add_trust_registry_statistics",
+      "20260126000002_add_credential_schema_statistics"
     ];
     
     const transactionPartitionMigrationNames = [
@@ -528,12 +530,18 @@ async function runMigrations(db: Knex): Promise<void> {
       await db.migrate.latest();
       console.log("   Migrations completed successfully");
       
-      // Verify new permission columns were added
       const hasParticipantsColumn = await db.schema.hasColumn("permissions", "participants");
       if (hasParticipantsColumn) {
         console.log("   ✓ New permission attributes (participants, slash stats) verified in permissions table");
       } else {
         console.warn("   ⚠ Warning: participants column not found in permissions table after migrations");
+      }
+
+      const hasTrustRegistryParticipantsColumn = await db.schema.hasColumn("trust_registry", "participants");
+      if (hasTrustRegistryParticipantsColumn) {
+        console.log("   ✓ New trust registry statistics attributes (participants, active_schemas, weight, etc.) verified in trust_registry table");
+      } else {
+        console.warn("   ⚠ Warning: participants column not found in trust_registry table after migrations");
       }
     } catch (migrateError: unknown) {
       const err = migrateError as Error;
@@ -580,7 +588,6 @@ async function runMigrations(db: Knex): Promise<void> {
       console.log("  All tables verified and recreated successfully");
     }
     
-    // Verify permission table has new columns
     const permissionsTableExists = await checkTableExists(db, "permissions");
     if (permissionsTableExists) {
       const hasParticipants = await db.schema.hasColumn("permissions", "participants");
@@ -592,6 +599,46 @@ async function runMigrations(db: Knex): Promise<void> {
       } else {
         console.warn("  ⚠ Warning: Permission table is missing some new attributes:");
         if (!hasParticipants) console.warn("     - Missing: participants");
+        if (!hasEcosystemSlashEvents) console.warn("     - Missing: ecosystem_slash_events");
+        if (!hasNetworkSlashEvents) console.warn("     - Missing: network_slash_events");
+        console.warn("  You may need to manually run: npm run migrate:dev");
+      }
+    }
+
+    const trustRegistryTableExists = await checkTableExists(db, "trust_registry");
+    if (trustRegistryTableExists) {
+      const hasParticipants = await db.schema.hasColumn("trust_registry", "participants");
+      const hasActiveSchemas = await db.schema.hasColumn("trust_registry", "active_schemas");
+      const hasWeight = await db.schema.hasColumn("trust_registry", "weight");
+      const hasEcosystemSlashEvents = await db.schema.hasColumn("trust_registry", "ecosystem_slash_events");
+      const hasNetworkSlashEvents = await db.schema.hasColumn("trust_registry", "network_slash_events");
+      
+      if (hasParticipants && hasActiveSchemas && hasWeight && hasEcosystemSlashEvents && hasNetworkSlashEvents) {
+        console.log("  ✓ Trust registry table has all new statistics attributes (participants, active_schemas, archived_schemas, weight, issued, verified, slash stats, etc.)");
+      } else {
+        console.warn("  ⚠ Warning: Trust registry table is missing some new statistics attributes:");
+        if (!hasParticipants) console.warn("     - Missing: participants");
+        if (!hasActiveSchemas) console.warn("     - Missing: active_schemas");
+        if (!hasWeight) console.warn("     - Missing: weight");
+        if (!hasEcosystemSlashEvents) console.warn("     - Missing: ecosystem_slash_events");
+        if (!hasNetworkSlashEvents) console.warn("     - Missing: network_slash_events");
+        console.warn("  You may need to manually run: npm run migrate:dev");
+      }
+    }
+
+    const credentialSchemaTableExists = await checkTableExists(db, "credential_schemas");
+    if (credentialSchemaTableExists) {
+      const hasParticipants = await db.schema.hasColumn("credential_schemas", "participants");
+      const hasWeight = await db.schema.hasColumn("credential_schemas", "weight");
+      const hasEcosystemSlashEvents = await db.schema.hasColumn("credential_schemas", "ecosystem_slash_events");
+      const hasNetworkSlashEvents = await db.schema.hasColumn("credential_schemas", "network_slash_events");
+      
+      if (hasParticipants && hasWeight && hasEcosystemSlashEvents && hasNetworkSlashEvents) {
+        console.log("  ✓ Credential schema table has all new statistics attributes (participants, weight, issued, verified, slash stats, etc.)");
+      } else {
+        console.warn("  ⚠ Warning: Credential schema table is missing some new statistics attributes:");
+        if (!hasParticipants) console.warn("     - Missing: participants");
+        if (!hasWeight) console.warn("     - Missing: weight");
         if (!hasEcosystemSlashEvents) console.warn("     - Missing: ecosystem_slash_events");
         if (!hasNetworkSlashEvents) console.warn("     - Missing: network_slash_events");
         console.warn("  You may need to manually run: npm run migrate:dev");
@@ -745,34 +792,143 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
 
   let db: Knex | undefined;
 
+  function logMemoryUsage(stage: string) {
+    if (global.gc) {
+      global.gc();
+    }
+    const memUsage = process.memoryUsage();
+    const formatMB = (bytes: number) => (bytes / 1024 / 1024).toFixed(2);
+    console.log(`\n[Memory ${stage}]`);
+    console.log(`  Heap Used: ${formatMB(memUsage.heapUsed)} MB`);
+    console.log(`  Heap Total: ${formatMB(memUsage.heapTotal)} MB`);
+    console.log(`  External: ${formatMB(memUsage.external)} MB`);
+    console.log(`  RSS: ${formatMB(memUsage.rss)} MB\n`);
+  }
+
+  const checkpointFile = path.join(process.cwd(), '.reindex-checkpoint.json');
+  let checkpointData: { completedSteps: string[]; lastCompletedStep?: string; attemptCount?: number; timestamp?: string } | null = null;
+  
   try {
+    if (process.env.REINDEX_CHECKPOINT) {
+      checkpointData = JSON.parse(process.env.REINDEX_CHECKPOINT);
+    } else if (fs.existsSync(checkpointFile)) {
+      const content = fs.readFileSync(checkpointFile, 'utf-8');
+      checkpointData = JSON.parse(content);
+    }
+  } catch (error) {
+    console.warn(`⚠️  Could not load checkpoint: ${error}`);
+  }
+  
+  if (!checkpointData) {
+    checkpointData = { completedSteps: [], attemptCount: 0 };
+  }
+  
+  const completedSteps: string[] = checkpointData.completedSteps || [];
+
+  function markStepComplete(stepName: string): void {
+    if (!completedSteps.includes(stepName)) {
+      completedSteps.push(stepName);
+      checkpointData!.completedSteps = completedSteps;
+      checkpointData!.lastCompletedStep = stepName;
+      checkpointData!.timestamp = new Date().toISOString();
+      process.env.REINDEX_CHECKPOINT = JSON.stringify(checkpointData);
+      
+      try {
+        fs.writeFileSync(checkpointFile, JSON.stringify(checkpointData, null, 2));
+      } catch (error) {
+        console.warn(`⚠️  Could not save checkpoint to file: ${error}`);
+      }
+    }
+  }
+
+  function isStepComplete(stepName: string): boolean {
+    return completedSteps.includes(stepName);
+  }
+
+  try {
+    logMemoryUsage("Start");
     console.log(" Starting Module Reindexing Process");
     console.log(`Environment: ${environment}\n`);
+    
+    if (checkpointData && completedSteps.length > 0) {
+      console.log(`📌 Resuming from checkpoint. Completed steps: ${completedSteps.join(', ')}\n`);
+    }
 
     const config = getConfigForEnv();
     const connInfo = config.connection as { database?: string; host?: string; port?: number };
     console.log(`Database: ${connInfo.database || 'unknown'} @ ${connInfo.host || 'unknown'}:${connInfo.port || 'unknown'}\n`);
 
-    console.log("Step 1: Connecting to database...");
-    await waitForDatabase(config);
-    console.log(" Database connection established\n");
+    if (!isStepComplete('connect')) {
+      console.log("Step 1: Connecting to database...");
+      await waitForDatabase(config);
+      console.log(" Database connection established\n");
+      markStepComplete('connect');
+    } else {
+      console.log("Step 1: Connecting to database... [SKIPPED - already completed]\n");
+    }
 
     db = knex(config);
 
-    await verifyBlocksTable(db);
+    if (!isStepComplete('verify-blocks')) {
+      await verifyBlocksTable(db);
+      markStepComplete('verify-blocks');
+    } else {
+      console.log("Step: Verify blocks table... [SKIPPED - already completed]\n");
+    }
 
-    await dropTables(db);
+    if (!isStepComplete('drop-tables')) {
+      await dropTables(db);
+      markStepComplete('drop-tables');
+    } else {
+      console.log("Step: Drop tables... [SKIPPED - already completed]\n");
+    }
 
-    await clearCheckpoints(db);
+    if (!isStepComplete('clear-checkpoints')) {
+      await clearCheckpoints(db);
+      markStepComplete('clear-checkpoints');
+    } else {
+      console.log("Step: Clear checkpoints... [SKIPPED - already completed]\n");
+    }
 
-    await runMigrations(db);
+    if (!isStepComplete('migrations')) {
+      await runMigrations(db);
+      markStepComplete('migrations');
+    } else {
+      console.log("Step: Run migrations... [SKIPPED - already completed]\n");
+    }
 
-    await resetSequences(db);
+    if (!isStepComplete('reset-sequences')) {
+      await resetSequences(db);
+      markStepComplete('reset-sequences');
+    } else {
+      console.log("Step: Reset sequences... [SKIPPED - already completed]\n");
+    }
 
-    await handleGenesisFile();
+    if (!isStepComplete('genesis')) {
+      await handleGenesisFile();
+      markStepComplete('genesis');
+    } else {
+      console.log("Step: Handle genesis file... [SKIPPED - already completed]\n");
+    }
 
-    await restoreMigrationCheckpoints(db);
+    if (!isStepComplete('restore-checkpoints')) {
+      await restoreMigrationCheckpoints(db);
+      markStepComplete('restore-checkpoints');
+    } else {
+      console.log("Step: Restore migration checkpoints... [SKIPPED - already completed]\n");
+    }
 
+    logMemoryUsage("End");
+    
+    try {
+      if (fs.existsSync(checkpointFile)) {
+        fs.unlinkSync(checkpointFile);
+        console.log(" ✅ Checkpoint file cleared\n");
+      }
+    } catch (error) {
+      console.warn(` ⚠️  Could not clear checkpoint file: ${error}\n`);
+    }
+    
     console.log(" Reindexing preparation completed successfully!");
     console.log("\n Next steps:");
     console.log("  1. Start the indexer services");
@@ -789,10 +945,19 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
 
   } catch (error: unknown) {
     const err = error as Error;
-    console.error("\nReindexing failed:", err.message);
+    logMemoryUsage("Error");
+    console.error("\n❌ Reindexing failed:", err.message);
     if (err.stack) {
       console.error(err.stack);
     }
+    
+    if (err.message?.includes("heap") || err.message?.includes("memory") || err.message?.includes("Allocation failed")) {
+      console.error("\n⚠️  Memory error detected. The process will be restarted automatically.");
+      console.error("   If this persists, try:");
+      console.error("   - Increasing NODE_OPTIONS='--max-old-space-size=12288'");
+      console.error("   - Processing data in smaller batches");
+    }
+    
     process.exitCode = 1;
   } finally {
     if (db) {

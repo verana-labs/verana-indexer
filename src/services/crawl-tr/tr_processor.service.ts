@@ -14,6 +14,7 @@ import knex from "../../common/utils/db_connection";
 import { requireController } from "../../common/utils/extract_controller";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
+import { calculateTrustRegistryStats } from "./tr_stats";
 
 type ChangeRecord = Record<string, { old: any; new: any }>;
 
@@ -276,6 +277,28 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully archived TR: id=${tr.id}`);
+      
+      try {
+        const stats = await calculateTrustRegistryStats(tr.id);
+        await knex("trust_registry")
+          .where("id", tr.id)
+          .update({
+            participants: stats.participants,
+            active_schemas: stats.active_schemas,
+            archived_schemas: stats.archived_schemas,
+            weight: stats.weight,
+            issued: stats.issued,
+            verified: stats.verified,
+            ecosystem_slash_events: stats.ecosystem_slash_events,
+            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+            network_slash_events: stats.network_slash_events,
+            network_slashed_amount: stats.network_slashed_amount,
+            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+          });
+      } catch (statsError: any) {
+        this.logger.warn(`⚠️ Failed to update statistics for TR ${tr.id}: ${statsError?.message || String(statsError)}`);
+      }
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
@@ -317,6 +340,28 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully updated TR: id=${tr.id}`);
+      
+      try {
+        const stats = await calculateTrustRegistryStats(tr.id);
+        await knex("trust_registry")
+          .where("id", tr.id)
+          .update({
+            participants: stats.participants,
+            active_schemas: stats.active_schemas,
+            archived_schemas: stats.archived_schemas,
+            weight: stats.weight,
+            issued: stats.issued,
+            verified: stats.verified,
+            ecosystem_slash_events: stats.ecosystem_slash_events,
+            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+            network_slash_events: stats.network_slash_events,
+            network_slashed_amount: stats.network_slashed_amount,
+            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+          });
+      } catch (statsError: any) {
+        this.logger.warn(`⚠️ Failed to update statistics for TR ${tr.id}: ${statsError?.message || String(statsError)}`);
+      }
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
@@ -476,6 +521,28 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully created/updated TR: did=${message.did}, id=${tr.id}`);
+      
+      try {
+        const stats = await calculateTrustRegistryStats(tr.id);
+        await knex("trust_registry")
+          .where("id", tr.id)
+          .update({
+            participants: stats.participants,
+            active_schemas: stats.active_schemas,
+            archived_schemas: stats.archived_schemas,
+            weight: stats.weight,
+            issued: stats.issued,
+            verified: stats.verified,
+            ecosystem_slash_events: stats.ecosystem_slash_events,
+            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+            network_slash_events: stats.network_slash_events,
+            network_slashed_amount: stats.network_slashed_amount,
+            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+          });
+      } catch (statsError: any) {
+        this.logger.warn(`⚠️ Failed to update statistics for TR ${tr.id}: ${statsError?.message || String(statsError)}`);
+      }
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
