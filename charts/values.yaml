@@ -16,11 +16,11 @@ resources:
     cpu: 250m
     memory: 512Mi
   limits:
-    cpu: "1"
-    memory: 2Gi
+    cpu: "2"
+    memory: 4Gi
 
 # Node.js memory settings (should be ~75% of memory limit)
-nodeOptions: "--max-old-space-size=1536"
+nodeOptions: "--max-old-space-size=3072"
 
 # DB and Redis configuration
 database:
