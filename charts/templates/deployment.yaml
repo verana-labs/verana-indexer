@@ -119,9 +119,13 @@ spec:
          -  name: {{ .Values.name }}-indexer-container
             image: veranalabs/verana-indexer:dev
             imagePullPolicy: Always
+            {{- if .Values.resources }}
+            resources:
+{{- toYaml .Values.resources | nindent 14 }}
+            {{- end }}
             env:
               - name: NODE_OPTIONS
-                value: "--max-old-space-size=4096"
+                value: {{ .Values.nodeOptions | default "--max-old-space-size=1536" | quote }}
               - name: TRANSPORTER
                 value: redis://{{ .Values.redis.host }}:6379
               - name: CACHER
