@@ -75,18 +75,14 @@ describe("🧪 TrustDepositDatabaseService", () => {
         findOne: jest.fn().mockResolvedValue(null),
       });
 
-      try {
-        const res: any = await broker.call(
-          SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
-          {
-            account: "verana1notfoundxyz",
-          }
-        );
-        expect(res.status).toBe(404);
-        expect(res.error).toContain("No trust deposit found");
-      } catch (err: any) {
-        expect(err?.data?.action).toBe("v1.TrustDepositApiService.getTrustDeposit");
-      }
+      const res: any = await broker.call(
+        SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
+        {
+          account: "verana1notfoundxyz",
+        }
+      );
+      expect(res.error).toContain("No trust deposit found");
+      expect(res.code).toBe(404);
     });
   });
 

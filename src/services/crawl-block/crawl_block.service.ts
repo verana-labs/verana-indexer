@@ -176,13 +176,13 @@ export default class CrawlBlockService extends BullableService {
 
     this._currentBlock = blockHeightCrawled ? blockHeightCrawled.height : 0;
 
-    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_BLOCK);
+    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_BLOCK, this.logger);
     this._isFreshStart = startMode.isFreshStart;
     
     if (this._isFreshStart) {
-      this.logger.info(`Fresh start detected (${startMode.totalBlocks} blocks in DB, checkpoint at ${startMode.currentBlock}). Using conservative config.`);
+      this.logger.info(`Fresh start detected: blocks=${startMode.totalBlocks}, checkpoint=${startMode.currentBlock}, cacheCleared=${startMode.cacheCleared || false}`);
     } else {
-      this.logger.info(`Reindexing mode detected (${startMode.totalBlocks} blocks in DB, checkpoint at ${startMode.currentBlock}). Using optimized config.`);
+      this.logger.info(`Reindexing mode: blocks=${startMode.totalBlocks}, checkpoint=${startMode.currentBlock}`);
     }
     
     // Only try to get latest block if LCD client is available
@@ -1155,6 +1155,11 @@ export default class CrawlBlockService extends BullableService {
   }
 
   private async ensureCrawlBlockJob(): Promise<void> {
+    if (process.env.NODE_ENV === 'test') {
+      this.logger.info('Test environment detected, skipping crawl block job creation');
+      return;
+    }
+    
     if (!indexerStatusManager.isIndexerRunning()) {
       this.logger.warn('⚠️ Indexer is stopped, skipping crawl block job creation');
       return;

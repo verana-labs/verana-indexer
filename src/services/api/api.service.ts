@@ -277,13 +277,13 @@ function createOnError() {
 
       if (!res.headersSent) {
         res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status, error: errorMessage, type: errorType }));
+        res.end(JSON.stringify({ error: errorMessage, code: status }));
       }
     } catch (handlerError: any) {
       console.error("Error in onError handler:", handlerError);
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: 500, error: "Internal Server Error" }));
+        res.end(JSON.stringify({ error: "Internal Server Error", code: 500 }));
       }
     }
   };

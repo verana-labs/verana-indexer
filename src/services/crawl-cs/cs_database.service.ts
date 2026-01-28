@@ -28,7 +28,7 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
   if (!row || !row.id) {
     throw new Error(`Invalid row data: missing id. Row: ${JSON.stringify(row)}`);
   }
-  
+
   const height = Number(overrides.height) || 0;
   const baseRow: any = {
     credential_schema_id: Number(row.id),
@@ -50,11 +50,11 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
     action: overrides.action ?? "unknown",
     created_at: knex.fn.now(),
   };
-  
+
   if (includeHeight) {
     baseRow.height = height;
   }
-  
+
   return baseRow;
 }
 
@@ -80,7 +80,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           .returning("*");
 
         let finalRecord = inserted;
-        
+
         const jsonSchema = inserted.json_schema;
         if (jsonSchema) {
           let schemaObj: any;
@@ -93,23 +93,23 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           } else {
             schemaObj = jsonSchema;
           }
-          
+
           if (schemaObj && typeof schemaObj === 'object' && schemaObj.$id) {
             const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
             const placeholderPattern = /VPR_CHAIN_ID|VPR_CREDENTIAL_SCHEMA_ID/;
-            
+
             if (typeof schemaObj.$id === 'string' && placeholderPattern.test(schemaObj.$id)) {
               const canonicalId = `vpr:verana:${chainId}/cs/v1/js/${inserted.id}`;
               const updatedSchema = {
                 ...schemaObj,
                 $id: canonicalId,
               };
-              
+
               const [updated] = await trx("credential_schemas")
                 .where({ id: inserted.id })
                 .update({ json_schema: updatedSchema })
                 .returning("*");
-              
+
               if (updated && updated.id && updated.id === inserted.id) {
                 finalRecord = updated;
               } else {
@@ -119,9 +119,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
 
+        const creationChanges: Record<string, any> = {};
+        for (const [key, value] of Object.entries(finalRecord)) {
+          if (value !== null && value !== undefined && key !== 'id' && key !== 'is_active') {
+            creationChanges[key] = value;
+          }
+        }
+
         const hasHeightColumn = await checkHeightColumnExists();
         const historyRow = mapToHistoryRow(finalRecord, {
-          changes: null,
+          changes: Object.keys(creationChanges).length > 0 ? JSON.stringify(creationChanges) : null,
           action: "create",
           height: blockHeight,
         }, hasHeightColumn);
@@ -211,18 +218,17 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .update(updatesWithoutHeight)
         .returning("*");
 
-      const changes: Record<string, { old: any; new: any }> = {};
+      const changes: Record<string, any> = {};
       for (const key of Object.keys(updatesWithoutHeight)) {
-        if (existing[key] !== updated[key]) {
-          changes[key] = { old: existing[key], new: updated[key] };
+        if (existing[key] !== updated[key] && key !== 'is_active') {
+          changes[key] = updated[key];
         }
       }
 
-      // Only record history if there are actual changes
       if (Object.keys(changes).length > 0) {
         const hasHeightColumn = await checkHeightColumnExists();
         const historyRow = mapToHistoryRow(updated, {
-          changes: changes,
+          changes: JSON.stringify(changes),
           action: "update",
           height: blockHeight,
         }, hasHeightColumn);
@@ -310,13 +316,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .where({ id })
         .update(updates)
         .returning("*");
-      
+
       const hasHeightColumn = await checkHeightColumnExists();
       const historyRow = mapToHistoryRow(updated, {
-        changes: {
-          archived: { old: schemaRecord.archived, new: updated.archived },
-          is_active: { old: schemaRecord.is_active, new: updated.is_active },
-        },
+        changes: JSON.stringify({
+          archived: updated.archived,
+        }),
         action: archive ? "archive" : "unarchive",
         height: blockHeight,
       }, hasHeightColumn);
@@ -385,13 +390,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const hasHeightColumn = await checkHeightColumnExists();
         let query = knex("credential_schema_history")
           .where({ credential_schema_id: id });
-        
+
         if (hasHeightColumn) {
           query = query.where("height", "<=", blockHeight)
             .orderBy("height", "desc");
         }
         query = query.orderBy("created_at", "desc");
-        
+
         const historyRecord = await query.first();
 
         if (!historyRecord) {
@@ -586,7 +591,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (typeof blockHeight === "number") {
         const hasHeightColumn = await checkHeightColumnExists();
         let subquery;
-        
+
         if (hasHeightColumn) {
           subquery = knex("credential_schema_history")
             .select("credential_schema_id")
@@ -624,13 +629,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             const hasHeightColumn = await checkHeightColumnExists();
             let query = knex("credential_schema_history")
               .where({ credential_schema_id: schemaId });
-            
+
             if (hasHeightColumn) {
               query = query.where("height", "<=", blockHeight)
                 .orderBy("height", "desc");
             }
             query = query.orderBy("created_at", "desc");
-            
+
             const historyRecord = await query.first();
 
             if (!historyRecord) return null;
@@ -728,7 +733,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         } else {
           const schemaIds = filteredItems.map((item) => item.id);
           const schemaStatsMap = new Map<number, any>();
-          
+
           if (schemaIds.length > 0) {
             const schemaStats = await knex("credential_schemas")
               .whereIn("id", schemaIds)
@@ -745,7 +750,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
                 "network_slashed_amount",
                 "network_slashed_amount_repaid"
               );
-            
+
             for (const stat of schemaStats) {
               schemaStatsMap.set(stat.id, stat);
             }
@@ -879,8 +884,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
           getNetworkSlashEvents: (item) => item.network_slash_events,
           getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-          defaultAttribute: "modified",
-          defaultDirection: "desc",
+          defaultAttribute: "created",
+          defaultDirection: "asc",
         }).slice(0, limit);
 
         return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
@@ -904,7 +909,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       if (onlyActiveBool === true) {
-        query.where(function() {
+        query.where(function () {
           this.whereNull("archived").orWhere("archived", false);
         });
       }
@@ -1073,13 +1078,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         let query = knex("credential_schema_history")
           .select("json_schema")
           .where({ credential_schema_id: id });
-        
+
         if (hasHeightColumn) {
           query = query.where("height", "<=", blockHeight)
             .orderBy("height", "desc");
         }
         query = query.orderBy("created_at", "desc");
-        
+
         const historyRecord = await query.first();
 
         if (!historyRecord) {

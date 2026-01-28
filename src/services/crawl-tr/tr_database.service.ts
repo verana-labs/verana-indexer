@@ -292,8 +292,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     getId: (row) => row.tr_id,
                     getCreated: (row) => row.created,
                     getModified: (row) => row.modified,
-                    defaultAttribute: "id",
-                    defaultDirection: "desc",
+                    defaultAttribute: "modified",
+                    defaultDirection: "asc",
                 }).slice(0, responseMaxSize);
 
                 if (sortedHistory.length === 0) {

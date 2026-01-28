@@ -72,12 +72,7 @@ function filterChangedValues(changes: any): any {
   
   const filtered: any = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (value && typeof value === "object" && ("old" in value || "new" in value)) {
-      const val = value as { old?: any; new?: any };
-      if (JSON.stringify(val.old) !== JSON.stringify(val.new)) {
-        filtered[key] = value;
-      }
-    } else if (value !== null && value !== undefined) {
+    if (value !== null && value !== undefined) {
       filtered[key] = value;
     }
   }
@@ -313,6 +308,18 @@ export async function buildActivityTimeline(
         changes = null;
       }
     }
+    
+    if (!changes || Object.keys(changes).length === 0) {
+      const computedChanges: Record<string, any> = {};
+      const excludeFields = ["id", "created_at", "event_type", "height", "changes", "msg_type", "sender", "timestamp", "activity_entity_type", "activity_entity_id"];
+      for (const [key, value] of Object.entries(record)) {
+        if (value !== null && value !== undefined && !excludeFields.includes(key)) {
+          computedChanges[key] = value;
+        }
+      }
+      changes = Object.keys(computedChanges).length > 0 ? computedChanges : null;
+    }
+    
     changes = filterChangedValues(changes);
 
     const action = getActionFromMessageType(

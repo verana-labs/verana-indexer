@@ -55,59 +55,59 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
     return new Promise((resolve, reject) => {
         const attemptCount = (checkpoint?.attemptCount || 0) + 1;
         log(`Starting reindex process (attempt ${attemptCount}/${MAX_RESTARTS + 1})...`);
-        
+
         if (checkpoint && checkpoint.completedSteps.length > 0) {
             log(`📌 Resuming from checkpoint. Completed steps: ${checkpoint.completedSteps.join(', ')}`);
             log(`📌 Last completed step: ${checkpoint.lastCompletedStep || 'none'}`);
         }
-        
+
         const currentFile = fileURLToPath(import.meta.url);
         const currentDir = path.dirname(currentFile);
-        const isProduction = process.env.NODE_ENV === 'production' || 
+        const isProduction = process.env.NODE_ENV === 'production' ||
             (process.env.NODE_OPTIONS && !process.env.NODE_OPTIONS.includes('tsx')) ||
             currentFile.endsWith('.js');
-        const scriptPath = isProduction 
+        const scriptPath = isProduction
             ? path.join(currentDir, 'reindex-modules.js')
             : path.join(currentDir, 'reindex-modules.ts');
-        
+
         const baseOptions = (process.env.NODE_OPTIONS || '').trim();
         const baseParts = baseOptions ? baseOptions.split(/\s+/).filter(Boolean) : [];
-        
+
         const hasTsx = baseParts.some(opt => opt.includes('tsx'));
         const hasMemoryLimit = baseParts.some(opt => opt.includes('--max-old-space-size'));
         const hasExposeGc = baseParts.some(opt => opt.includes('--expose-gc'));
-        
+
         const nodeOptionsParts: string[] = [];
-        
+
         if (!isProduction && !hasTsx) {
             nodeOptionsParts.push('--import=tsx');
         }
-        
+
         if (!hasMemoryLimit) {
             nodeOptionsParts.push('--max-old-space-size=4096');
         }
-        
+
         if (!hasExposeGc) {
             nodeOptionsParts.push('--expose-gc');
         }
-        
+
         baseParts.forEach(opt => {
             const isMemoryOpt = opt.includes('--max-old-space-size');
             const isExposeGcOpt = opt.includes('--expose-gc');
             const isTsxOpt = opt.includes('tsx');
-            
+
             if (isTsxOpt && !isProduction) {
                 nodeOptionsParts.push(opt);
             } else if (!isMemoryOpt && !isExposeGcOpt && !isTsxOpt) {
                 nodeOptionsParts.push(opt);
             }
         });
-        
+
         const nodeOptions = nodeOptionsParts.join(' ');
-        
+
         log(`🔧 Node options: ${nodeOptions}`);
         log(`📁 Script path: ${scriptPath}`);
-        
+
         const child = spawn('node', [
             ...nodeOptionsParts,
             scriptPath
@@ -142,15 +142,15 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
                 saveCheckpoint(newCheckpoint);
                 reject(new Error('Interrupted'));
             } else {
-                const errorType = code === 134 ? 'JavaScript heap out of memory' : 
-                                 code === null ? 'Unknown error' : 
-                                 `Exit code ${code}`;
+                const errorType = code === 134 ? 'JavaScript heap out of memory' :
+                    code === null ? 'Unknown error' :
+                        `Exit code ${code}`;
                 log(`❌ Reindex failed: ${errorType}${signal ? ` (signal: ${signal})` : ''}`);
-                
+
                 if (code === 134) {
                     log(`💡 Memory limit reached. The process will restart with checkpoint recovery.`);
                 }
-                
+
                 const newCheckpoint: ReindexCheckpoint = {
                     ...checkpoint || { completedSteps: [] },
                     attemptCount,
@@ -158,7 +158,7 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
                     timestamp: new Date().toISOString()
                 };
                 saveCheckpoint(newCheckpoint);
-                
+
                 if (attemptCount <= MAX_RESTARTS) {
                     log(`🔄 Will restart in ${RESTART_DELAY / 1000} seconds... (attempt ${attemptCount + 1}/${MAX_RESTARTS + 1})`);
                     setTimeout(() => {
@@ -208,7 +208,7 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
 async function main(): Promise<void> {
     try {
         const checkpoint = loadCheckpoint();
-        
+
         if (checkpoint && checkpoint.attemptCount > 0) {
             log(`📌 Found existing checkpoint from ${checkpoint.timestamp}`);
             log(`   Attempt count: ${checkpoint.attemptCount}`);
@@ -216,9 +216,9 @@ async function main(): Promise<void> {
                 log(`   Last error: ${checkpoint.lastError}`);
             }
         }
-        
+
         const exitCode = await runReindex(checkpoint);
-        
+
         if (exitCode === 0) {
             const isProduction = process.env.NODE_ENV === 'production';
             const dockerCommand = isProduction ? 'docker' : 'docker:dev';

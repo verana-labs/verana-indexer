@@ -42,8 +42,14 @@ export default class BullableService extends BaseService {
   }
 
   getQueueManager(): QueueManager {
-    if (!this.qm) this.qm = QueueManager.getInstance();
+    if (!this.qm) {
+      this.qm = QueueManager.getInstance();
+    }
     return this.qm;
+  }
+  
+  private isTestEnvironment(): boolean {
+    return process.env.NODE_ENV === 'test';
   }
 
   // //////////////////////////////////////// life cycle handler

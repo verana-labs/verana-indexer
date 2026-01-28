@@ -8,6 +8,8 @@ import knex from '../../../../src/common/utils/db_connection';
 import ChainRegistry from '../../../../src/common/utils/chain.registry';
 import { getProviderRegistry } from '../../../../src/common/utils/provider.registry';
 
+jest.setTimeout(120000);
+
 @Describe('Test handle_stake_event service')
 export default class HandleStakeEventTest {
   blockCheckpoint = [

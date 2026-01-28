@@ -24,14 +24,23 @@ const TRUST_DEPOSIT_HISTORY_FIELDS = [
 function computeTdChanges(
   oldRecord: any,
   newRecord: any
-): Record<string, { old: any; new: any }> | null {
-  if (!oldRecord) return null;
-  const changes: Record<string, { old: any; new: any }> = {};
-  for (const field of TRUST_DEPOSIT_HISTORY_FIELDS) {
-    const oldValue = oldRecord?.[field] ?? null;
-    const newValue = newRecord?.[field] ?? null;
-    if (String(oldValue) !== String(newValue)) {
-      changes[field] = { old: oldValue, new: newValue };
+): Record<string, any> | null {
+  const changes: Record<string, any> = {};
+  
+  if (!oldRecord) {
+    for (const field of TRUST_DEPOSIT_HISTORY_FIELDS) {
+      const newValue = newRecord?.[field] ?? null;
+      if (newValue !== null && newValue !== undefined) {
+        changes[field] = newValue;
+      }
+    }
+  } else {
+    for (const field of TRUST_DEPOSIT_HISTORY_FIELDS) {
+      const oldValue = oldRecord?.[field] ?? null;
+      const newValue = newRecord?.[field] ?? null;
+      if (String(oldValue) !== String(newValue)) {
+        changes[field] = newValue;
+      }
     }
   }
   return Object.keys(changes).length ? changes : null;

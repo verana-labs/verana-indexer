@@ -19,7 +19,8 @@ export function getRedisConnection(path?: string): RedisOptions {
 function getIORedisInstance(path: string): RedisOptions {
   try {
     const url = new URL(path);
-    const db = url.pathname ? parseInt(url.pathname.substr(1), 10) : 0;
+    const dbString = url.pathname ? url.pathname.substr(1) : '';
+    const db = dbString && !Number.isNaN(parseInt(dbString, 10)) ? parseInt(dbString, 10) : 0;
 
     return {
       host: url.hostname,

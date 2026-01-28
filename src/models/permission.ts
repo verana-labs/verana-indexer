@@ -50,6 +50,7 @@ export default class Permission extends BaseModel {
     vp_current_deposit!: string;
     vp_summary_digest_sri?: string;
     vp_term_requested?: string | null;
+    expire_soon?: boolean | null;
 
     static get jsonSchema() {
         return {
@@ -96,7 +97,8 @@ export default class Permission extends BaseModel {
                 revoked_by: { type: 'string', maxLength: 255 },
                 slashed_by: { type: 'string', maxLength: 255 },
                 repaid_by: { type: 'string', maxLength: 255 },
-                extended_by: { type: 'string', maxLength: 255 }
+                extended_by: { type: 'string', maxLength: 255 },
+                expire_soon: { type: ['boolean', 'null'] }
             }
         };
     }

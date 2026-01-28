@@ -136,7 +136,7 @@ describe("params_service", () => {
 
       const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
       expect(ctx.meta.$statusCode).toBe(404);
-      expect(result.status).toBe(404);
+      expect(result.code).toBe(404);
       expect(result.error).toBe("Module parameters not found: diddirectory");
     });
 
