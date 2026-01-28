@@ -136,6 +136,7 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
                 const newCheckpoint: ReindexCheckpoint = {
                     ...checkpoint,
                     attemptCount,
+                    completedSteps: [],
                     timestamp: new Date().toISOString()
                 };
                 saveCheckpoint(newCheckpoint);
