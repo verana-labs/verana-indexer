@@ -10,8 +10,8 @@ export default class ApiResponder {
     return data;
   }
 
-  static error(ctx: Context<any, Meta>, message: string, status = 500) {
-    ctx.meta.$statusCode = status;
-    return { status, error: message };
+  static error(ctx: Context<any, Meta>, message: string, code = 500) {
+    ctx.meta.$statusCode = code;
+    return { error: message, code };
   }
 }

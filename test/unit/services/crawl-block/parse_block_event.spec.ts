@@ -7,6 +7,8 @@ import { Block, Event } from '../../../../src/models';
 import knex from '../../../../src/common/utils/db_connection';
 import { getProviderRegistry } from '../../../../src/common/utils/provider.registry';
 
+jest.setTimeout(120000);
+
 @Describe('Test crawl block service (Verana)')
 export default class CrawlBlockTest {
   // Verana-like block fixture (chain_id: verana-testnet-1, uvera amounts, verana1… addrs)

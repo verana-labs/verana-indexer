@@ -78,10 +78,22 @@ export class BullQueueProvider implements QueueProvider {
    */
   public getQueue(name: string): Queue {
     if (!this._queues[name]) {
-      // queue not exist create and cache it
-      this._queues[name] = new Queue(name, {
-        connection: getRedisConnection(),
-      });
+      if (process.env.NODE_ENV === 'test') {
+        this._queues[name] = {
+          add: async () => ({ id: 'mock-job-id' }),
+          getRepeatableJobs: async () => [],
+          removeRepeatableByKey: async () => true,
+          isPaused: async () => false,
+          resume: async () => {},
+          pause: async () => {},
+          close: async () => {},
+        } as any;
+      } else {
+        // queue not exist create and cache it
+        this._queues[name] = new Queue(name, {
+          connection: getRedisConnection(),
+        });
+      }
     }
 
     return this._queues[name];

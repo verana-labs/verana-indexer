@@ -187,7 +187,15 @@ export default class CrawlTxService extends BullableService {
       this.logger.info(` [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
 
       if (listTxRaw.length === 0) {
-
+        const crawlTxCheckpoint = await BlockCheckpoint.query()
+          .select('height')
+          .where('job_name', BULL_JOB_NAME.CRAWL_TRANSACTION)
+          .first();
+        const crawlTxHeight = crawlTxCheckpoint?.height ?? 0;
+        if (crawlTxHeight < actualEndBlock) {
+          this.logger.info(`[HANDLE_TRANSACTION] No transactions found, crawl:transaction at ${crawlTxHeight}, waiting`);
+          return;
+        }
         if (blockCheckpoint) {
           await knex.transaction(async (trx) => {
             try {
@@ -665,22 +673,23 @@ export default class CrawlTxService extends BullableService {
         : config.handleTransaction;
       const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
       const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart);
-      this.logger.info(`📝 [insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSizeMsg}`);
-      const allInsertedMsgs: any[] = [];
+      this.logger.info(`[insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSizeMsg}`);
+      
+      const messagesForProcessing = [...listMsgModel];
+      
       for (let i = 0; i < listMsgModel.length; i += chunkSizeMsg) {
         const chunk = listMsgModel.slice(i, i + chunkSizeMsg);
-        const resultInsertMsgs = await TransactionMessage.query()
+        await TransactionMessage.query()
           .insert(chunk)
           .timeout(60000)
           .transacting(transactionDB);
-        const messagesArray = (Array.isArray(resultInsertMsgs) ? resultInsertMsgs : [resultInsertMsgs]) as any[];
-        allInsertedMsgs.push(...messagesArray);
       }
-      this.logger.info(`✅ [insertRelatedTx] Inserted ${listMsgModel.length} messages`);
-      await this.processMessageTypes(allInsertedMsgs, listDecodedTx);
+      this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`);
+      
+      await this.processMessageTypes(messagesForProcessing, listDecodedTx);
       listEventModel.length = 0;
       listMsgModel.length = 0;
-      allInsertedMsgs.length = 0;
+      messagesForProcessing.length = 0;
     }
   }
 
@@ -1092,9 +1101,9 @@ export default class CrawlTxService extends BullableService {
       const providerRegistry = await getProviderRegistry();
       this._registry = new ChainRegistry(this.logger, providerRegistry);
 
-      const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_TRANSACTION);
+      const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_TRANSACTION, this.logger);
       this._isFreshStart = startMode.isFreshStart;
-      this.logger.info(`Start mode detection: totalBlocks=${startMode.totalBlocks}, currentBlock=${startMode.currentBlock}, isFreshStart=${this._isFreshStart}`);
+      this.logger.info(`Start mode: blocks=${startMode.totalBlocks}, checkpoint=${startMode.currentBlock}, freshStart=${this._isFreshStart}, cacheCleared=${startMode.cacheCleared || false}`);
 
       try {
         const lcdClient = await getLcdClient();
@@ -1179,34 +1188,36 @@ export default class CrawlTxService extends BullableService {
       `Speed Multiplier: ${speedMultiplier}x ${speedMultiplier !== 1.0 ? `(${this._isFreshStart ? 'slower/conservative' : 'faster'})` : '(default)'}`
     );
 
-    this.createJob(
-      BULL_JOB_NAME.CRAWL_TRANSACTION,
-      BULL_JOB_NAME.CRAWL_TRANSACTION,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: crawlTxInterval,
-        },
-      }
-    );
-    this.createJob(
-      BULL_JOB_NAME.HANDLE_TRANSACTION,
-      BULL_JOB_NAME.HANDLE_TRANSACTION,
-      {},
-      {
-        removeOnComplete: true,
-        removeOnFail: {
-          count: 3,
-        },
-        repeat: {
-          every: handleTxInterval,
-        },
-      }
-    );
+    if (process.env.NODE_ENV !== 'test') {
+      this.createJob(
+        BULL_JOB_NAME.CRAWL_TRANSACTION,
+        BULL_JOB_NAME.CRAWL_TRANSACTION,
+        {},
+        {
+          removeOnComplete: true,
+          removeOnFail: {
+            count: 3,
+          },
+          repeat: {
+            every: crawlTxInterval,
+          },
+        }
+      );
+      this.createJob(
+        BULL_JOB_NAME.HANDLE_TRANSACTION,
+        BULL_JOB_NAME.HANDLE_TRANSACTION,
+        {},
+        {
+          removeOnComplete: true,
+          removeOnFail: {
+            count: 3,
+          },
+          repeat: {
+            every: handleTxInterval,
+          },
+        }
+      );
+    }
     return super._start();
   }
 

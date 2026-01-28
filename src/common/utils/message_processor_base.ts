@@ -74,11 +74,11 @@ export class MessageProcessorBase {
     return { success: successCount, failed: failedCount };
   }
 
-  computeChanges(oldData: Record<string, any>, newData: Record<string, any>): Record<string, { old: any; new: any }> {
-    const changes: Record<string, { old: any; new: any }> = {};
+  computeChanges(oldData: Record<string, any>, newData: Record<string, any>): Record<string, any> {
+    const changes: Record<string, any> = {};
     for (const key of Object.keys(newData)) {
       if (oldData?.[key] !== newData[key]) {
-        changes[key] = { old: oldData?.[key] ?? null, new: newData[key] };
+        changes[key] = newData[key];
       }
     }
     return changes;

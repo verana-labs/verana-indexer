@@ -121,7 +121,13 @@ export default class DidMessageProcessorService extends BullableService {
                     processedDID
                 );
                 const blockHeight = message.height ?? 0;
-                await this.saveHistory(processedDID, blockHeight, {});
+                const creationChanges: Record<string, any> = {};
+                for (const [key, value] of Object.entries(processedDID)) {
+                    if (value !== null && value !== undefined && key !== 'id') {
+                        creationChanges[key] = value;
+                    }
+                }
+                await this.saveHistory(processedDID, blockHeight, creationChanges);
             } else if (
                 (message.type === VeranaDidMessageTypes.RenewDid || message.type === VeranaDidMessageTypes.RenewDidLegacy)
                 && message.did) {

@@ -4,11 +4,12 @@ import {
 } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { SERVICE } from "../../common";
+import { SERVICE, ModulesParamsNamesTypes } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
+import { getModuleParams } from "../../common/utils/params_service";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
@@ -141,6 +142,45 @@ export default class PermAPIService extends BullableService {
       .select("deposit");
 
     return permission?.deposit || "0";
+  }
+
+  private async calculateExpireSoon(
+    perm: any,
+    now: Date,
+    blockHeight?: number
+  ): Promise<boolean | null> {
+    const isActive = this.isPermissionActive(perm, now);
+    if (!isActive) {
+      return null;
+    }
+    if (!perm.effective_until) {
+      return false;
+    }
+    let nDaysBefore = 0;
+    try {
+      const moduleParams = await getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
+      if (moduleParams?.params) {
+        nDaysBefore = moduleParams.params.PERMISSION_SET_EXPIRE_SOON_N_DAYS_BEFORE || 0;
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to get PERMISSION module params:`, error);
+      nDaysBefore = 0;
+    }
+    const expirationCheckDate = new Date(now);
+    expirationCheckDate.setDate(expirationCheckDate.getDate() + nDaysBefore);
+    const effectiveUntil = new Date(perm.effective_until);
+    return expirationCheckDate > effectiveUntil;
+  }
+
+  private isPermissionActive(perm: any, now: Date = new Date()): boolean {
+    const effectiveFrom = perm.effective_from ? new Date(perm.effective_from) : null;
+    const effectiveUntil = perm.effective_until ? new Date(perm.effective_until) : null;
+    if (effectiveFrom && now < effectiveFrom) return false;
+    if (effectiveUntil && now > effectiveUntil) return false;
+    if (perm.revoked) return false;
+    if (perm.slashed && !perm.repaid) return false;
+
+    return perm.vp_state === 'VALIDATED' || perm.type === 'ECOSYSTEM';
   }
 
   private async enrichPermissionWithStateAndActions(
@@ -334,6 +374,11 @@ export default class PermAPIService extends BullableService {
             }),
       ]);
 
+      const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight).catch((err: any) => {
+        this.logger.warn(`Failed to calculate expire_soon for permission ${perm.id}:`, err?.message || err);
+        return null;
+      });
+
       return {
         ...perm,
         perm_state: permState,
@@ -349,6 +394,7 @@ export default class PermAPIService extends BullableService {
         network_slash_events: slashStats.network_slash_events,
         network_slashed_amount: slashStats.network_slashed_amount,
         network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
+        expire_soon: expireSoon,
       };
     }
 
@@ -378,6 +424,11 @@ export default class PermAPIService extends BullableService {
       }),
     ]);
 
+    const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight).catch((err: any) => {
+      this.logger.warn(`Failed to calculate expire_soon for permission ${perm.id}:`, err?.message || err);
+      return null;
+    });
+
     return {
       ...perm,
       perm_state: permState,
@@ -393,6 +444,7 @@ export default class PermAPIService extends BullableService {
       network_slash_events: slashStats.network_slash_events,
       network_slashed_amount: slashStats.network_slashed_amount,
       network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
+      expire_soon: expireSoon,
     };
   }
 
@@ -1044,7 +1096,7 @@ export default class PermAPIService extends BullableService {
           getNetworkSlashEvents: (item) => item.network_slash_events,
           getNetworkSlashedAmount: (item) => item.network_slashed_amount,
           defaultAttribute: "modified",
-          defaultDirection: "desc",
+          defaultDirection: "asc",
         }).slice(0, limit);
 
         return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
@@ -1277,7 +1329,7 @@ export default class PermAPIService extends BullableService {
         getNetworkSlashEvents: (item) => item.network_slash_events,
         getNetworkSlashedAmount: (item) => item.network_slashed_amount,
         defaultAttribute: "modified",
-        defaultDirection: "desc",
+        defaultDirection: "asc",
       }).slice(0, limit);
 
       return ApiResponder.success(ctx, { permissions: finalResults }, 200);

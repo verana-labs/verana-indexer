@@ -1717,7 +1717,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: modified (ascending)"
           },
           {
             "name": "min_participants",
@@ -2779,6 +2779,11 @@
             "participants": {
               "type": "integer",
               "description": "Current number of active participants (perm_state=ACTIVE) (subtree, plus this permission if it is ACTIVE). Supports AtBlockHeight directive."
+            },
+            "expire_soon": {
+              "type": "boolean",
+              "nullable": true,
+              "description": "Indicates if the permission is close to expiration based on PERMISSION_SET_EXPIRE_SOON_N_DAYS_BEFORE configuration and effective_until. NULL for inactive permissions, false when there is no effective_until or it is not close to expiration."
             },
             "ecosystem_slash_events": {
               "type": "integer",

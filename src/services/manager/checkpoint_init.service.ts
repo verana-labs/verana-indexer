@@ -184,6 +184,108 @@ export default class CheckpointInitService extends BullableService {
     }
   }
 
+  @Action({
+    name: 'resetForReindex',
+    params: {
+      clearCache: { type: 'boolean', optional: true, default: true },
+      resetModules: { type: 'boolean', optional: true, default: true },
+    },
+  })
+  public async resetForReindex(ctx: Context<{ clearCache?: boolean; resetModules?: boolean }>) {
+    const { clearCache = true, resetModules = true } = ctx.params;
+    const results: any = { 
+      checkpointsReset: 0, 
+      cacheCleared: false, 
+      modulesCleared: [],
+      crawlBlockHeight: 0
+    };
+
+    try {
+      this.logger.info('Starting reindex reset');
+      const { default: knex } = await import('../../common/utils/db_connection');
+
+      const migrationJobNames = ['job:create-event-attr-partition'];
+      
+      const genesisJobNames = [
+        'crawl:genesis',
+        'crawl:genesis-account', 
+        'crawl:genesis-validator',
+        'crawl:genesis-proposal',
+        'crawl:genesis-code',
+        'crawl:genesis-contract',
+        'crawl:genesis-feegrant',
+        'crawl:genesis-ibc-tao'
+      ];
+
+      let highestBlock = 0;
+      try {
+        const result = await knex('block').max('height as max').first();
+        highestBlock = result && (result as { max: string | number | null }).max 
+          ? parseInt(String((result as { max: string | number }).max), 10) 
+          : 0;
+        this.logger.info(`Highest block in database: ${highestBlock}`);
+      } catch (err: any) {
+        this.logger.warn(`Could not get highest block: ${err.message}`);
+      }
+
+      const genesisReset = await BlockCheckpoint.query()
+        .patch({ height: 0 })
+        .whereIn('job_name', genesisJobNames);
+      this.logger.info(`Reset ${genesisReset} genesis checkpoints to 0`);
+
+      const otherReset = await BlockCheckpoint.query()
+        .patch({ height: 0 })
+        .whereNotIn('job_name', [...migrationJobNames, ...genesisJobNames, 'crawl:block']);
+      this.logger.info(`Reset ${otherReset} module checkpoints to 0`);
+      results.checkpointsReset = genesisReset + otherReset;
+
+      if (highestBlock > 0) {
+        const crawlBlockUpdated = await BlockCheckpoint.query()
+          .patch({ height: highestBlock })
+          .where('job_name', 'crawl:block');
+        if (crawlBlockUpdated === 0) {
+          await BlockCheckpoint.query().insert({
+            job_name: 'crawl:block',
+            height: highestBlock
+          });
+        }
+        results.crawlBlockHeight = highestBlock;
+        this.logger.info(`Set crawl:block checkpoint to ${highestBlock}`);
+      }
+
+      if (clearCache) {
+        try {
+          const { clearCacheForReindex } = await import('../../common/utils/start_mode_detector');
+          const cacheResult = await clearCacheForReindex(this.logger);
+          results.cacheCleared = cacheResult;
+          this.logger.info(`Redis cache cleared: ${cacheResult}`);
+        } catch (err: any) {
+          this.logger.warn(`Could not clear cache: ${err.message}`);
+        }
+      }
+
+      if (resetModules) {
+        const moduleTables = ['transaction_message', 'event'];
+        
+        for (const table of moduleTables) {
+          try {
+            const result = await knex(table).del();
+            results.modulesCleared.push({ table, deleted: result });
+            this.logger.info(`Cleared ${table}: ${result} rows deleted`);
+          } catch (err: any) {
+            this.logger.warn(`Could not clear ${table}: ${err.message}`);
+          }
+        }
+      }
+
+      this.logger.info('Reindex reset complete');
+      return results;
+    } catch (error: any) {
+      this.logger.error(`Error during reindex reset: ${error?.message || error}`);
+      throw error;
+    }
+  }
+
   public async _start() {
     try {
       this.logger.info(' CheckpointInitService starting...');

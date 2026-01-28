@@ -17,7 +17,7 @@ describe("AccountReputationService", () => {
             SERVICE.V1.AccountReputationService.path + ".getAccountReputation",
             { account: "abc" }
         );
-        expect(res.status).toBe(400);
+        expect(res.code).toBe(400);
         expect(res.error).toBe("Invalid account format");
     });
 
@@ -30,7 +30,7 @@ describe("AccountReputationService", () => {
             SERVICE.V1.AccountReputationService.path + ".getAccountReputation",
             { account: "verana1notfoundxx" }
         );
-        expect(res.status).toBe(404);
+        expect(res.code).toBe(404);
         expect(res.error).toContain("not found");
     });
 

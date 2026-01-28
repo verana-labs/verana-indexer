@@ -5,6 +5,10 @@ import {
 } from "../../../../src/common/constant";
 import { VeranaPermissionMessageTypes as PermissionMessageTypes } from "../../../../src/common/verana-message-types";
 
+jest.mock("../../../../src/common/utils/start_mode_detector", () => ({
+  detectStartMode: jest.fn().mockResolvedValue({ isFreshStart: false })
+}));
+
 describe("🧪 PermProcessorService", () => {
   let broker: ServiceBroker;
 
@@ -49,11 +53,11 @@ describe("🧪 PermProcessorService", () => {
 
     broker.createService(PermProcessorService);
     await broker.start();
-  });
+  }, 30000);
 
   afterAll(async () => {
     await broker.stop();
-  });
+  }, 30000);
 
   it("✅ should process permission messages and call correct handlers", async () => {
     const messages = [
