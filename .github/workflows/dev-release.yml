@@ -120,6 +120,7 @@ jobs:
             "v${{ steps.semantic.outputs.release-version }}"
           )
           for tag in "${TAGS[@]}"; do
+            sed -i "s/^version:.*/version: $tag/" ./charts/Chart.yaml
             CHART_NAME=$(grep '^name:' ./charts/Chart.yaml | awk '{print $2}')
             helm dependency update ./charts
             helm package ./charts --version $tag -d ./charts
