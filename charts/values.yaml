@@ -6,6 +6,13 @@ global:
 name: idx
 replicas: 1 # Number of replicas for the Indexer service
 
+# Image configuration
+image:
+  repository: veranalabs/verana-indexer
+  # Tag defaults to Chart.Version if not specified
+  tag: ""
+  pullPolicy: IfNotPresent
+
 # Ports
 apiPort: 3001
 
