@@ -4,8 +4,8 @@ import { calculatePermState } from "../crawl-perm/perm_state_utils";
 export interface CredentialSchemaStats {
     participants: number;
     weight: string;
-    issued: string;
-    verified: string;
+    issued: number;
+    verified: number;
     ecosystem_slash_events: number;
     ecosystem_slashed_amount: string;
     ecosystem_slashed_amount_repaid: string;
@@ -312,11 +312,20 @@ export async function calculateCredentialSchemaStats(
     networkSlashedAmount += slashStats.network_slashed_amount;
     networkSlashedAmountRepaid += slashStats.network_slashed_amount_repaid;
 
+    // Convert BigInt to number for issued and verified (counts, not amounts)
+    // Using Number() is safe here as credential counts are unlikely to exceed Number.MAX_SAFE_INTEGER
+    const issuedNumber = Number(totalIssued);
+    const verifiedNumber = Number(totalVerified);
+    
+    if (issuedNumber > Number.MAX_SAFE_INTEGER || verifiedNumber > Number.MAX_SAFE_INTEGER) {
+        console.warn(`Warning: issued (${totalIssued}) or verified (${totalVerified}) exceeds safe integer range for schema ${schemaId}`);
+    }
+
     return {
         participants: activeParticipants.size,
         weight: totalWeight.toString(),
-        issued: totalIssued.toString(),
-        verified: totalVerified.toString(),
+        issued: issuedNumber,
+        verified: verifiedNumber,
         ecosystem_slash_events: ecosystemSlashEvents,
         ecosystem_slashed_amount: ecosystemSlashedAmount.toString(),
         ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid.toString(),

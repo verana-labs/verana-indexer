@@ -22,8 +22,8 @@ export default class CredentialSchema extends BaseModel {
   is_active!: boolean;
   participants?: number;
   weight?: string;
-  issued?: string;
-  verified?: string;
+  issued?: number;
+  verified?: number;
   ecosystem_slash_events?: number;
   ecosystem_slashed_amount?: string;
   ecosystem_slashed_amount_repaid?: string;

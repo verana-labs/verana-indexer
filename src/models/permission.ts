@@ -51,6 +51,16 @@ export default class Permission extends BaseModel {
     vp_summary_digest_sri?: string;
     vp_term_requested?: string | null;
     expire_soon?: boolean | null;
+    participants?: number;
+    weight?: string;
+    issued?: number;
+    verified?: number;
+    ecosystem_slash_events?: number;
+    ecosystem_slashed_amount?: string;
+    ecosystem_slashed_amount_repaid?: string;
+    network_slash_events?: number;
+    network_slashed_amount?: string;
+    network_slashed_amount_repaid?: string;
 
     static get jsonSchema() {
         return {

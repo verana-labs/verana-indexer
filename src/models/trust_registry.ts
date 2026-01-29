@@ -19,8 +19,8 @@ export class TrustRegistry extends BaseModel {
   active_schemas?: number;
   archived_schemas?: number;
   weight?: string;
-  issued?: string;
-  verified?: string;
+  issued?: number;
+  verified?: number;
   ecosystem_slash_events?: number;
   ecosystem_slashed_amount?: string;
   ecosystem_slashed_amount_repaid?: string;

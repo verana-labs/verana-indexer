@@ -106,28 +106,33 @@ export default class CrawlTxService extends BullableService {
 
     const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock);
     const listdecodedTx = await this.decodeListRawTx(listTxRaw);
-    
+
     listTxRaw.length = 0;
-    
+
     await knex.transaction(async (trx) => {
       await this.insertTxDecoded(listdecodedTx, trx);
       if (blockCheckpoint) {
         blockCheckpoint.height = actualEndBlock;
+        blockCheckpoint.updated_at = new Date();
+
         await BlockCheckpoint.query()
           .insert(blockCheckpoint)
           .onConflict('job_name')
-          .merge()
+          .merge({
+            height: actualEndBlock,
+            updated_at: blockCheckpoint.updated_at,
+          })
           .returning('id')
           .timeout(10000)
           .transacting(trx);
-      }
-    });
-    
+        }
+      });
+
     const txCount = listdecodedTx.length;
     if (txCount > 25) {
       triggerGC();
     }
-    
+
     listdecodedTx.length = 0;
   }
 
@@ -200,13 +205,19 @@ export default class CrawlTxService extends BullableService {
           await knex.transaction(async (trx) => {
             try {
               blockCheckpoint.height = actualEndBlock;
+              blockCheckpoint.updated_at = new Date();
+
               await BlockCheckpoint.query()
                 .insert(blockCheckpoint)
                 .onConflict('job_name')
-                .merge()
+                .merge({
+                  height: actualEndBlock,
+                  updated_at: blockCheckpoint.updated_at,
+                })
                 .returning('id')
                 .timeout(10000)
                 .transacting(trx);
+
             } catch (error) {
               this.logger.error(`❌ [HANDLE_TRANSACTION] Error updating checkpoint:`, error);
               throw error;
@@ -216,40 +227,45 @@ export default class CrawlTxService extends BullableService {
         return;
       }
 
-        const [trustDepositResult, transactionResult] = await Promise.allSettled([
-          this.processTrustDepositEventsForBlocks(startBlock, actualEndBlock),
-          knex.transaction(async (trx) => {
-            try {
-              await this.insertRelatedTx(listTxRaw, trx);
-              if (blockCheckpoint) {
-                blockCheckpoint.height = actualEndBlock;
-                await BlockCheckpoint.query()
-                  .insert(blockCheckpoint)
-                  .onConflict('job_name')
-                  .merge()
-                  .returning('id')
-                  .timeout(10000)
-                  .transacting(trx);
+      const [trustDepositResult, transactionResult] = await Promise.allSettled([
+        this.processTrustDepositEventsForBlocks(startBlock, actualEndBlock),
+        knex.transaction(async (trx) => {
+          try {
+            await this.insertRelatedTx(listTxRaw, trx);
+            if (blockCheckpoint) {
+              blockCheckpoint.height = actualEndBlock;
+              blockCheckpoint.updated_at = new Date();
+
+              await BlockCheckpoint.query()
+                .insert(blockCheckpoint)
+                .onConflict('job_name')
+                .merge({
+                  height: actualEndBlock,
+                  updated_at: blockCheckpoint.updated_at,
+                })
+                .returning('id')
+                .timeout(10000)
+                .transacting(trx);
               }
             } catch (error) {
               this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
               throw error;
             }
           })
-        ]);
+      ]);
 
-        // Log TrustDeposit processing result
-        if (trustDepositResult.status === 'rejected') {
-          this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing TrustDeposit events:`, trustDepositResult.reason);
-        } else {
-          this.logger.info(`✅ [HANDLE_TRANSACTION] TrustDeposit events processed successfully`);
-        }
+      // Log TrustDeposit processing result
+      if (trustDepositResult.status === 'rejected') {
+        this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing TrustDeposit events:`, trustDepositResult.reason);
+      } else {
+        this.logger.info(`✅ [HANDLE_TRANSACTION] TrustDeposit events processed successfully`);
+      }
 
-        // Transaction processing must succeed - throw if it failed
-        if (transactionResult.status === 'rejected') {
-          this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction processing failed:`, transactionResult.reason);
-          throw transactionResult.reason;
-        }
+      // Transaction processing must succeed - throw if it failed
+      if (transactionResult.status === 'rejected') {
+        this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction processing failed:`, transactionResult.reason);
+        throw transactionResult.reason;
+      }
 
       this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${actualEndBlock}`);
 
@@ -393,12 +409,12 @@ export default class CrawlTxService extends BullableService {
         });
       }
     });
-    
+
     promises.length = 0;
     resultPromisesResults.length = 0;
     resultPromises.length = 0;
     blocks.length = 0;
-    
+
     return listRawTxs;
   }
 
@@ -511,7 +527,7 @@ export default class CrawlTxService extends BullableService {
 
           mapExistedTx.clear();
           listHash.length = 0;
-          
+
           return { listTx: listHandleTx, timestamp, height };
         } catch (error) {
           this.logger.error(error);
@@ -674,9 +690,9 @@ export default class CrawlTxService extends BullableService {
       const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
       const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart);
       this.logger.info(`[insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSizeMsg}`);
-      
+
       const messagesForProcessing = [...listMsgModel];
-      
+
       for (let i = 0; i < listMsgModel.length; i += chunkSizeMsg) {
         const chunk = listMsgModel.slice(i, i + chunkSizeMsg);
         await TransactionMessage.query()
@@ -685,7 +701,7 @@ export default class CrawlTxService extends BullableService {
           .transacting(transactionDB);
       }
       this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`);
-      
+
       await this.processMessageTypes(messagesForProcessing, listDecodedTx);
       listEventModel.length = 0;
       listMsgModel.length = 0;
@@ -1077,9 +1093,9 @@ export default class CrawlTxService extends BullableService {
           }
         } catch (promoteError: any) {
           const errorMessage = promoteError?.message || String(promoteError);
-          if (errorMessage.includes('not in the delayed state') || 
-              errorMessage.includes('is not in the delayed state') ||
-              errorMessage.includes('Job is not in delayed state')) {
+          if (errorMessage.includes('not in the delayed state') ||
+            errorMessage.includes('is not in the delayed state') ||
+            errorMessage.includes('Job is not in delayed state')) {
             this.logger.debug(`Job ${job.id} cannot be promoted (not in delayed state), this is normal if job was already processed`);
           } else {
             this.logger.warn(`Failed to promote job ${job.id}:`, promoteError);
@@ -1126,7 +1142,7 @@ export default class CrawlTxService extends BullableService {
               SERVICE.V1.CrawlTransaction.key,
               'Failed to get node info'
             );
-            
+
             if (!wasStopped) {
               if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
                 this.logger.warn(`⚠️ Failed to get node info due to timeout (non-critical): ${errorMessage}. Continuing without SDK version update.`);
@@ -1149,7 +1165,7 @@ export default class CrawlTxService extends BullableService {
             SERVICE.V1.CrawlTransaction.key,
             'Service startup error'
           );
-          
+
           if (wasStopped) {
             this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
           } else if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
@@ -1165,7 +1181,7 @@ export default class CrawlTxService extends BullableService {
         SERVICE.V1.CrawlTransaction.key,
         'Service startup error'
       );
-      
+
       if (wasStopped) {
         this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
       }
@@ -1222,7 +1238,7 @@ export default class CrawlTxService extends BullableService {
   }
 
 
- 
+
   private async processTrustDepositEventsForBlocks(startBlock: number, endBlock: number): Promise<void> {
     try {
       const blocks = await Block.query()

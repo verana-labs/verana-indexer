@@ -32,23 +32,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "job_name": {
-                      "type": "string"
+                    "type": {
+                      "type": "string",
+                      "description": "Response type identifier",
+                      "example": "block-processed"
                     },
                     "height": {
                       "type": "integer",
-                      "minimum": 0
+                      "minimum": 0,
+                      "description": "The latest block height that has been fully processed by the indexer"
                     },
-                    "updated_at": {
+                    "timestamp": {
                       "type": "string",
-                      "format": "date-time"
+                      "format": "date-time",
+                      "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
                     }
-                  }
+                  },
+                  "required": ["type", "height", "timestamp"]
                 },
                 "example": {
-                  "job_name": "crawl:block",
-                  "height": 123456,
-                  "updated_at": "2025-11-24T08:15:00.000Z"
+                  "type": "block-processed",
+                  "height": 1794800,
+                  "timestamp": "2025-12-17T04:42:55Z"
                 }
               }
             }
@@ -714,6 +719,15 @@
               "format": "date-time"
             },
             "description": "Filter by modification date"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter by active status. If true, returns only active trust registries (archived is null). If false, returns only archived trust registries (archived is not null). If omitted, returns all trust registries (both active and archived). Active/inactive is determined by the archived field (null for active, timestamp for archived)."
           },
           {
             "name": "controller",
@@ -2626,11 +2640,11 @@
               "description": "Trust deposit value (sum) of the full permission tree of this schema since the schema was created"
             },
             "issued": {
-              "type": "string",
+              "type": "integer",
               "description": "Total issued credentials (sum) by all issuers of this Credential Schema since it was created"
             },
             "verified": {
-              "type": "string",
+              "type": "integer",
               "description": "Total verified credentials (sum) by all verifiers of this Credential Schema since it was created"
             },
             "ecosystem_slash_events": {
@@ -2769,11 +2783,11 @@
               "description": "The node weight of the permission, calculated as the sum of all trust deposits of this permission and all permissions in its subtree. Includes all permissions regardless of state (expired, slashed, active, etc.). Supports AtBlockHeight directive."
             },
             "issued": {
-              "type": "string",
+              "type": "integer",
               "description": "Number of credentials issued using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
             },
             "verified": {
-              "type": "string",
+              "type": "integer",
               "description": "Number of credentials verified using this permission and its ancestors. Calculated from PermissionSession messages. Supports AtBlockHeight directive."
             },
             "participants": {
@@ -3757,11 +3771,11 @@
             "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
           },
           "issued": {
-            "type": "string",
+            "type": "integer",
             "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
           },
           "verified": {
-            "type": "string",
+            "type": "integer",
             "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Trust Registry since it was created"
           },
           "ecosystem_slash_events": {

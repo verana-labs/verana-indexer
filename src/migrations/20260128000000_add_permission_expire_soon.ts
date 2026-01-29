@@ -8,10 +8,11 @@ export async function up(knex: Knex): Promise<void> {
     });
   }
 
+  
   const hasHistoryExpireSoonColumn = await knex.schema.hasColumn("permission_history", "expire_soon");
-  if (!hasHistoryExpireSoonColumn) {
+  if (hasHistoryExpireSoonColumn) {
     await knex.schema.alterTable("permission_history", (table) => {
-      table.boolean("expire_soon").nullable();
+      table.dropColumn("expire_soon");
     });
   }
 }
