@@ -341,10 +341,10 @@ export default class PermAPIService extends BullableService {
               return "0";
             }),
         perm.issued !== undefined && perm.verified !== undefined && perm.issued !== null && perm.verified !== null
-          ? Promise.resolve({ issued: String(perm.issued || "0"), verified: String(perm.verified || "0") })
+          ? Promise.resolve({ issued: Number(perm.issued || 0), verified: Number(perm.verified || 0) })
           : this.calculatePermissionStatistics(String(perm.id), String(perm.schema_id), blockHeight).catch((err: any) => {
               this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
-              return { issued: "0", verified: "0" };
+              return { issued: 0, verified: 0 };
             }),
         perm.participants !== undefined && perm.participants !== null
           ? Promise.resolve(Number(perm.participants || 0))
@@ -452,7 +452,7 @@ export default class PermAPIService extends BullableService {
     permId: string,
     schemaId: string,
     blockHeight?: number
-  ): Promise<{ issued: string; verified: string }> {
+  ): Promise<{ issued: number; verified: number }> {
     try {
       const permissionIds = new Set<string>();
       let currentPermId: string | null = permId;
@@ -485,7 +485,7 @@ export default class PermAPIService extends BullableService {
       }
 
       if (permissionIds.size === 0) {
-        return { issued: "0", verified: "0" };
+        return { issued: 0, verified: 0 };
       }
 
       let issuedCount = BigInt(0);
@@ -542,15 +542,23 @@ export default class PermAPIService extends BullableService {
         }
       }
 
+      // Convert BigInt to number for issued and verified (counts, not amounts)
+      const issuedNumber = Number(issuedCount);
+      const verifiedNumber = Number(verifiedCount);
+      
+      if (issuedNumber > Number.MAX_SAFE_INTEGER || verifiedNumber > Number.MAX_SAFE_INTEGER) {
+        console.warn(`Warning: issued (${issuedCount}) or verified (${verifiedCount}) exceeds safe integer range for permission ${permId}`);
+      }
+
       return {
-        issued: issuedCount.toString(),
-        verified: verifiedCount.toString(),
+        issued: issuedNumber,
+        verified: verifiedNumber,
       };
     } catch (err: any) {
       const errorMsg = err?.message || String(err);
       if (errorMsg.includes("column") && (errorMsg.includes("does not exist") || errorMsg.includes("doesn't exist"))) {
         this.logger.warn(`Columns 'issued' or 'verified' do not exist yet. Migration may not have been run. Returning 0 for statistics.`);
-        return { issued: "0", verified: "0" };
+        return { issued: 0, verified: 0 };
       }
       throw err;
     }
@@ -1044,7 +1052,7 @@ export default class PermAPIService extends BullableService {
           filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) >= p.min_participants);
         }
         if (p.max_participants !== undefined) {
-          filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) <= p.max_participants);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) < p.max_participants);
         }
         if (p.min_weight !== undefined) {
           const minWeight = BigInt(p.min_weight);
@@ -1052,35 +1060,35 @@ export default class PermAPIService extends BullableService {
         }
         if (p.max_weight !== undefined) {
           const maxWeight = BigInt(p.max_weight);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.weight || "0") <= maxWeight);
+          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.weight || "0") < maxWeight);
         }
         if (p.min_issued !== undefined) {
-          const minIssued = BigInt(p.min_issued);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.issued || "0") >= minIssued);
+          const minIssued = Number(p.min_issued);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.issued || 0) >= minIssued);
         }
         if (p.max_issued !== undefined) {
-          const maxIssued = BigInt(p.max_issued);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.issued || "0") <= maxIssued);
+          const maxIssued = Number(p.max_issued);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.issued || 0) < maxIssued);
         }
         if (p.min_verified !== undefined) {
-          const minVerified = BigInt(p.min_verified);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.verified || "0") >= minVerified);
+          const minVerified = Number(p.min_verified);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.verified || 0) >= minVerified);
         }
         if (p.max_verified !== undefined) {
-          const maxVerified = BigInt(p.max_verified);
-          filteredPermissions = filteredPermissions.filter(perm => BigInt(perm.verified || "0") <= maxVerified);
+          const maxVerified = Number(p.max_verified);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.verified || 0) < maxVerified);
         }
         if (p.min_ecosystem_slash_events !== undefined) {
           filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
         }
         if (p.max_ecosystem_slash_events !== undefined) {
-          filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) <= p.max_ecosystem_slash_events);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
         }
         if (p.min_network_slash_events !== undefined) {
           filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
         }
         if (p.max_network_slash_events !== undefined) {
-          filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) <= p.max_network_slash_events);
+          filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
         }
 
         filteredPermissions = sortByStandardAttributes(filteredPermissions, p.sort, {
@@ -1253,7 +1261,7 @@ export default class PermAPIService extends BullableService {
           finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
         }
         if (p.max_participants !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.participants || 0) <= p.max_participants);
+          finalResults = finalResults.filter(perm => (perm.participants || 0) < p.max_participants);
         }
       }
       if (p.min_weight !== undefined && p.max_weight !== undefined && p.min_weight === p.max_weight) {
@@ -1266,33 +1274,33 @@ export default class PermAPIService extends BullableService {
         }
         if (p.max_weight !== undefined) {
           const maxWeight = BigInt(p.max_weight);
-          finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") <= maxWeight);
+          finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") < maxWeight);
         }
       }
       if (p.min_issued !== undefined && p.max_issued !== undefined && p.min_issued === p.max_issued) {
-        const exactIssued = BigInt(p.min_issued);
-        finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") === exactIssued);
+        const exactIssued = Number(p.min_issued);
+        finalResults = finalResults.filter(perm => (perm.issued || 0) === exactIssued);
       } else {
         if (p.min_issued !== undefined) {
-          const minIssued = BigInt(p.min_issued);
-          finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") >= minIssued);
+          const minIssued = Number(p.min_issued);
+          finalResults = finalResults.filter(perm => (perm.issued || 0) >= minIssued);
         }
         if (p.max_issued !== undefined) {
-          const maxIssued = BigInt(p.max_issued);
-          finalResults = finalResults.filter(perm => BigInt(perm.issued || "0") <= maxIssued);
+          const maxIssued = Number(p.max_issued);
+          finalResults = finalResults.filter(perm => (perm.issued || 0) < maxIssued);
         }
       }
       if (p.min_verified !== undefined && p.max_verified !== undefined && p.min_verified === p.max_verified) {
-        const exactVerified = BigInt(p.min_verified);
-        finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") === exactVerified);
+        const exactVerified = Number(p.min_verified);
+        finalResults = finalResults.filter(perm => (perm.verified || 0) === exactVerified);
       } else {
         if (p.min_verified !== undefined) {
-          const minVerified = BigInt(p.min_verified);
-          finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") >= minVerified);
+          const minVerified = Number(p.min_verified);
+          finalResults = finalResults.filter(perm => (perm.verified || 0) >= minVerified);
         }
         if (p.max_verified !== undefined) {
-          const maxVerified = BigInt(p.max_verified);
-          finalResults = finalResults.filter(perm => BigInt(perm.verified || "0") <= maxVerified);
+          const maxVerified = Number(p.max_verified);
+          finalResults = finalResults.filter(perm => (perm.verified || 0) < maxVerified);
         }
       }
       if (p.min_ecosystem_slash_events !== undefined && p.max_ecosystem_slash_events !== undefined && p.min_ecosystem_slash_events === p.max_ecosystem_slash_events) {
@@ -1302,7 +1310,7 @@ export default class PermAPIService extends BullableService {
           finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
         }
         if (p.max_ecosystem_slash_events !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) <= p.max_ecosystem_slash_events);
+          finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
         }
       }
       if (p.min_network_slash_events !== undefined && p.max_network_slash_events !== undefined && p.min_network_slash_events === p.max_network_slash_events) {
@@ -1312,7 +1320,7 @@ export default class PermAPIService extends BullableService {
           finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
         }
         if (p.max_network_slash_events !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) <= p.max_network_slash_events);
+          finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
         }
       }
 

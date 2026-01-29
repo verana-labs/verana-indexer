@@ -62,7 +62,7 @@ export class CheckpointManager {
       async () => {
         const patchObj = {
           height: newHeight,
-          updated_at: new Date().toISOString()
+          updated_at: new Date()
         };
 
         const updated = await BlockCheckpoint.query(knex)

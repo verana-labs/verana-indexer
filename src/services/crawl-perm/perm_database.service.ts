@@ -68,7 +68,6 @@ const PERMISSION_HISTORY_FIELDS = [
   "vp_term_requested",
   "issued",
   "verified",
-  "expire_soon",
 ];
 
 const PERMISSION_SESSION_HISTORY_FIELDS = [
@@ -164,6 +163,9 @@ async function pickPermissionSnapshot(record: any) {
   const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
   
   for (const field of PERMISSION_HISTORY_FIELDS) {
+    if (field === "expire_soon") {
+      continue;
+    }
     if (field === "issued" && !hasIssuedColumn) {
       continue;
     }
@@ -207,6 +209,8 @@ async function recordPermissionHistory(
   const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
   
   const fieldsToUse = PERMISSION_HISTORY_FIELDS.filter(field => {
+    // Exclude expire_soon - it's a computed field based on current date, not a historical attribute
+    if (field === "expire_soon") return false;
     if (field === "issued" && !hasIssuedColumn) return false;
     if (field === "verified" && !hasVerifiedColumn) return false;
     if (field === "participants" && !hasParticipantsColumn) return false;
@@ -1118,33 +1122,59 @@ export default class PermIngestService extends Service {
       return null;
     }
 
-    let validityPeriodField = null;
+    let validityPeriodField: number | null = null;
+    let validityPeriodFieldName = "";
 
     switch (perm.type) {
       case "ISSUER_GRANTOR":
         validityPeriodField = cs.issuer_grantor_validation_validity_period;
+        validityPeriodFieldName = "issuer_grantor_validation_validity_period";
         break;
       case "VERIFIER_GRANTOR":
         validityPeriodField = cs.verifier_grantor_validation_validity_period;
+        validityPeriodFieldName = "verifier_grantor_validation_validity_period";
         break;
       case "ISSUER":
         validityPeriodField = cs.issuer_validation_validity_period;
+        validityPeriodFieldName = "issuer_validation_validity_period";
         break;
       case "VERIFIER":
         validityPeriodField = cs.verifier_validation_validity_period;
+        validityPeriodFieldName = "verifier_validation_validity_period";
         break;
       case "HOLDER":
         validityPeriodField = cs.holder_validation_validity_period;
+        validityPeriodFieldName = "holder_validation_validity_period";
         break;
       default:
-        validityPeriodField = null;
+        this.logger.warn(`Unknown permission type '${perm.type}' for permission ${perm.id} - cannot compute vp_exp`);
+        return null;
     }
 
-    if (!validityPeriodField) {
+    if (validityPeriodField === null || validityPeriodField === undefined) {
+      this.logger.warn(
+        `CredentialSchema ${perm.schema_id} exists but validity period field '${validityPeriodFieldName}' is null/undefined ` +
+        `for permission ${perm.id} (type: ${perm.type}). Schema data: ${JSON.stringify({
+          id: cs.id,
+          issuer_grantor_validation_validity_period: cs.issuer_grantor_validation_validity_period,
+          verifier_grantor_validation_validity_period: cs.verifier_grantor_validation_validity_period,
+          issuer_validation_validity_period: cs.issuer_validation_validity_period,
+          verifier_validation_validity_period: cs.verifier_validation_validity_period,
+          holder_validation_validity_period: cs.holder_validation_validity_period,
+        })}`
+      );
       return null;
     }
 
     const validitySeconds = Number(validityPeriodField);
+    if (Number.isNaN(validitySeconds)) {
+      this.logger.warn(
+        `CredentialSchema ${perm.schema_id} has invalid validity period value '${validityPeriodField}' ` +
+        `for field '${validityPeriodFieldName}' (permission ${perm.id}, type: ${perm.type})`
+      );
+      return null;
+    }
+
     const now = new Date();
 
     let vpExp: Date;
@@ -1196,12 +1226,38 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Invalid fees" };
       }
 
-      const vpExp = await this.computeVpExp(perm, knex);
+      const schemaExists = await knex("credential_schemas")
+        .where({ id: perm.schema_id })
+        .first();
 
-      if (vpExp === null) {
+      if (!schemaExists) {
         await this.queuePermissionForRetry(msg, "SCHEMA_NOT_FOUND");
         this.logger.info(`Permission ${msg.id} queued for retry - waiting for CredentialSchema ${perm.schema_id}`);
         return { success: true, message: "Permission queued for retry - schema not ready" };
+      }
+
+      const vpExp = await this.computeVpExp(perm, knex);
+      if (vpExp === null) {
+        const validityPeriodFieldName = 
+          perm.type === "ISSUER_GRANTOR" ? "issuer_grantor_validation_validity_period" :
+          perm.type === "VERIFIER_GRANTOR" ? "verifier_grantor_validation_validity_period" :
+          perm.type === "ISSUER" ? "issuer_validation_validity_period" :
+          perm.type === "VERIFIER" ? "verifier_validation_validity_period" :
+          perm.type === "HOLDER" ? "holder_validation_validity_period" : "unknown";
+        await this.queuePermissionForRetry(msg, "VALIDITY_PERIOD_MISSING");
+        this.logger.error(
+          `Permission ${msg.id} queued for retry - CredentialSchema ${perm.schema_id} exists but ` +
+          `validity period field '${validityPeriodFieldName}' is missing/null for permission type '${perm.type}'. ` +
+          `This indicates a data integrity issue. Schema data: ${JSON.stringify({
+            id: schemaExists.id,
+            issuer_grantor_validation_validity_period: schemaExists.issuer_grantor_validation_validity_period,
+            verifier_grantor_validation_validity_period: schemaExists.verifier_grantor_validation_validity_period,
+            issuer_validation_validity_period: schemaExists.issuer_validation_validity_period,
+            verifier_validation_validity_period: schemaExists.verifier_validation_validity_period,
+            holder_validation_validity_period: schemaExists.holder_validation_validity_period,
+          })}`
+        );
+        return { success: true, message: "Permission queued for retry - validity period missing" };
       }
 
       const effectiveUntil =
@@ -1222,7 +1278,6 @@ export default class PermIngestService extends Service {
         ? perm.vp_current_deposit
         : perm.vp_validator_deposit;
 
-      // Calculate expire_soon for the updated permission
       const updatedPermData = {
         ...perm,
         vp_state: "VALIDATED",
@@ -1272,8 +1327,8 @@ export default class PermIngestService extends Service {
         if (feesChanged || countryChanged) {
           this.logger.warn("Cannot change fees or country during renewal");
           return {
-            success: false,
-            reason: "Cannot change fees/country on renewal",
+          success: false,
+          reason: "Cannot change fees/country on renewal",
           };
         }
 

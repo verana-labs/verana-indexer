@@ -203,6 +203,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
     public async listTrustRegistries(ctx: Context<{
         controller?: string;
         modified_after?: string;
+        only_active?: string | boolean;
         active_gf_only?: string | boolean;
         preferred_language?: string;
         response_max_size?: number;
@@ -227,6 +228,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 controller,
                 modified_after: modifiedAfter,
                 preferred_language: preferredLanguage,
+                only_active: onlyActiveRaw,
                 response_max_size: responseMaxSizeRaw,
                 sort,
                 min_active_schemas: minActiveSchemas,
@@ -251,6 +253,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 return ApiResponder.error(ctx, err.message, 400);
             }
 
+            const hasOnlyActive = typeof onlyActiveRaw !== "undefined";
+            const onlyActive =
+                String(onlyActiveRaw).toLowerCase() === "true";
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
             const blockHeight = (ctx.meta as any)?.blockHeight;
@@ -275,6 +280,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     const ts = new Date(modifiedAfter);
                     if (!Number.isNaN(ts.getTime())) {
                         filteredSubquery = filteredSubquery.where("modified", ">", ts.toISOString());
+                    }
+                }
+                if (hasOnlyActive) {
+                    if (onlyActive) {
+                        filteredSubquery = filteredSubquery.whereNull("archived");
+                    } else {
+                        filteredSubquery = filteredSubquery.whereNotNull("archived");
                     }
                 }
 
@@ -405,7 +417,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         filteredRegistries = filteredRegistries.filter((r) => r.active_schemas >= minActiveSchemas);
                     }
                     if (maxActiveSchemas !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.active_schemas <= maxActiveSchemas);
+                        filteredRegistries = filteredRegistries.filter((r) => r.active_schemas < maxActiveSchemas);
                     }
                 }
                 if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
@@ -415,7 +427,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
                     }
                     if (maxParticipants !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.participants <= maxParticipants);
+                        filteredRegistries = filteredRegistries.filter((r) => r.participants < maxParticipants);
                     }
                 }
                 if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
@@ -428,33 +440,33 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                     if (maxWeight !== undefined) {
                         const maxWeightBigInt = BigInt(maxWeight);
-                        filteredRegistries = filteredRegistries.filter((r) => BigInt(r.weight) <= maxWeightBigInt);
+                        filteredRegistries = filteredRegistries.filter((r) => BigInt(r.weight) < maxWeightBigInt);
                     }
                 }
                 if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-                    const exactIssuedBigInt = BigInt(minIssued);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.issued) === exactIssuedBigInt);
+                    const exactIssued = Number(minIssued);
+                    filteredRegistries = filteredRegistries.filter((r) => r.issued === exactIssued);
                 } else {
                     if (minIssued !== undefined) {
-                        const minIssuedBigInt = BigInt(minIssued);
-                        filteredRegistries = filteredRegistries.filter((r) => BigInt(r.issued) >= minIssuedBigInt);
+                        const minIssuedNum = Number(minIssued);
+                        filteredRegistries = filteredRegistries.filter((r) => r.issued >= minIssuedNum);
                     }
                     if (maxIssued !== undefined) {
-                        const maxIssuedBigInt = BigInt(maxIssued);
-                        filteredRegistries = filteredRegistries.filter((r) => BigInt(r.issued) <= maxIssuedBigInt);
+                        const maxIssuedNum = Number(maxIssued);
+                        filteredRegistries = filteredRegistries.filter((r) => r.issued < maxIssuedNum);
                     }
                 }
                 if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-                    const exactVerifiedBigInt = BigInt(minVerified);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.verified) === exactVerifiedBigInt);
+                    const exactVerified = Number(minVerified);
+                    filteredRegistries = filteredRegistries.filter((r) => r.verified === exactVerified);
                 } else {
                     if (minVerified !== undefined) {
-                        const minVerifiedBigInt = BigInt(minVerified);
-                        filteredRegistries = filteredRegistries.filter((r) => BigInt(r.verified) >= minVerifiedBigInt);
+                        const minVerifiedNum = Number(minVerified);
+                        filteredRegistries = filteredRegistries.filter((r) => r.verified >= minVerifiedNum);
                     }
                     if (maxVerified !== undefined) {
-                        const maxVerifiedBigInt = BigInt(maxVerified);
-                        filteredRegistries = filteredRegistries.filter((r) => BigInt(r.verified) <= maxVerifiedBigInt);
+                        const maxVerifiedNum = Number(maxVerified);
+                        filteredRegistries = filteredRegistries.filter((r) => r.verified < maxVerifiedNum);
                     }
                 }
                 if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
@@ -464,7 +476,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events >= minEcosystemSlashEvents);
                     }
                     if (maxEcosystemSlashEvents !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events <= maxEcosystemSlashEvents);
+                        filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events < maxEcosystemSlashEvents);
                     }
                 }
                 if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
@@ -474,7 +486,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events >= minNetworkSlashEvents);
                     }
                     if (maxNetworkSlashEvents !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events <= maxNetworkSlashEvents);
+                        filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events < maxNetworkSlashEvents);
                     }
                 }
 
@@ -506,6 +518,14 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             if (modifiedAfter) {
                 query = query.where("modified", ">", modifiedAfter);
+            }
+
+            if (hasOnlyActive) {
+                if (onlyActive) {
+                    query = query.whereNull("archived");
+                } else {
+                    query = query.whereNotNull("archived");
+                }
             }
 
             applyOrdering(query as any, sort);
@@ -608,8 +628,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         active_schemas: 0,
                         archived_schemas: 0,
                         weight: "0",
-                        issued: "0",
-                        verified: "0",
+                        issued: 0,
+                        verified: 0,
                         ecosystem_slash_events: 0,
                         ecosystem_slashed_amount: "0",
                         ecosystem_slashed_amount_repaid: "0",
@@ -625,8 +645,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         active_schemas: stats.active_schemas || 0,
                         archived_schemas: stats.archived_schemas || 0,
                         weight: stats.weight || "0",
-                        issued: stats.issued || "0",
-                        verified: stats.verified || "0",
+                        issued: stats.issued || 0,
+                        verified: stats.verified || 0,
                         ecosystem_slash_events: stats.ecosystem_slash_events || 0,
                         ecosystem_slashed_amount: stats.ecosystem_slashed_amount || "0",
                         ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid || "0",
@@ -646,7 +666,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     filteredRegistries = filteredRegistries.filter((r) => r.active_schemas >= minActiveSchemas);
                 }
                 if (maxActiveSchemas !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.active_schemas <= maxActiveSchemas);
+                    filteredRegistries = filteredRegistries.filter((r) => r.active_schemas < maxActiveSchemas);
                 }
             }
             if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
@@ -656,7 +676,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
                 }
                 if (maxParticipants !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants <= maxParticipants);
+                    filteredRegistries = filteredRegistries.filter((r) => r.participants < maxParticipants);
                 }
             }
             if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
@@ -669,33 +689,33 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
                 if (maxWeight !== undefined) {
                     const maxWeightBigInt = BigInt(maxWeight);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.weight) <= maxWeightBigInt);
+                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.weight) < maxWeightBigInt);
                 }
             }
             if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-                const exactIssuedBigInt = BigInt(minIssued);
-                filteredRegistries = filteredRegistries.filter((r) => BigInt(r.issued) === exactIssuedBigInt);
+                const exactIssued = Number(minIssued);
+                filteredRegistries = filteredRegistries.filter((r) => r.issued === exactIssued);
             } else {
                 if (minIssued !== undefined) {
-                    const minIssuedBigInt = BigInt(minIssued);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.issued) >= minIssuedBigInt);
+                    const minIssuedNum = Number(minIssued);
+                    filteredRegistries = filteredRegistries.filter((r) => r.issued >= minIssuedNum);
                 }
                 if (maxIssued !== undefined) {
-                    const maxIssuedBigInt = BigInt(maxIssued);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.issued) <= maxIssuedBigInt);
+                    const maxIssuedNum = Number(maxIssued);
+                    filteredRegistries = filteredRegistries.filter((r) => r.issued < maxIssuedNum);
                 }
             }
             if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-                const exactVerifiedBigInt = BigInt(minVerified);
-                filteredRegistries = filteredRegistries.filter((r) => BigInt(r.verified) === exactVerifiedBigInt);
+                const exactVerified = Number(minVerified);
+                filteredRegistries = filteredRegistries.filter((r) => r.verified === exactVerified);
             } else {
                 if (minVerified !== undefined) {
-                    const minVerifiedBigInt = BigInt(minVerified);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.verified) >= minVerifiedBigInt);
+                    const minVerifiedNum = Number(minVerified);
+                    filteredRegistries = filteredRegistries.filter((r) => r.verified >= minVerifiedNum);
                 }
                 if (maxVerified !== undefined) {
-                    const maxVerifiedBigInt = BigInt(maxVerified);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.verified) <= maxVerifiedBigInt);
+                    const maxVerifiedNum = Number(maxVerified);
+                    filteredRegistries = filteredRegistries.filter((r) => r.verified < maxVerifiedNum);
                 }
             }
             if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
@@ -705,7 +725,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events >= minEcosystemSlashEvents);
                 }
                 if (maxEcosystemSlashEvents !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events <= maxEcosystemSlashEvents);
+                    filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events < maxEcosystemSlashEvents);
                 }
             }
             if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
@@ -715,7 +735,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events >= minNetworkSlashEvents);
                 }
                 if (maxNetworkSlashEvents !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events <= maxNetworkSlashEvents);
+                    filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events < maxNetworkSlashEvents);
                 }
             }
 

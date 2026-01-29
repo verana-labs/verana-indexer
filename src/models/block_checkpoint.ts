@@ -4,7 +4,8 @@ import knex from '../common/utils/db_connection';
 
 export class BlockCheckpoint extends BaseModel {
   job_name!: string;
-
+  created_at!: Date;
+  updated_at!: Date;
   height!: number;
 
   static get tableName() {

@@ -144,10 +144,18 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
     }
 
     if (checkpoint) {
-      res.setHeader(
-        "X-Index-Ts",
-        checkpoint.updated_at?.toISOString?.() ?? checkpoint.updated_at
-      );
+      let indexTs: string;
+      if (checkpoint.updated_at) {
+        const updatedAt =
+          checkpoint.updated_at instanceof Date
+            ? checkpoint.updated_at
+            : new Date(checkpoint.updated_at);
+        const iso = updatedAt.toISOString();
+        indexTs = iso.replace(/\.\d{3}Z$/, "Z");
+      } else {
+        indexTs = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      }
+      res.setHeader("X-Index-Ts", indexTs);
       res.setHeader("X-Height", checkpoint.height.toString());
     }
 

@@ -112,8 +112,8 @@ export function sortByStandardAttributes<T>(
     getParticipants?: (item: T) => number | undefined | null;
     getActiveSchemas?: (item: T) => number | undefined | null;
     getWeight?: (item: T) => string | undefined | null;
-    getIssued?: (item: T) => string | undefined | null;
-    getVerified?: (item: T) => string | undefined | null;
+    getIssued?: (item: T) => number | undefined | null;
+    getVerified?: (item: T) => number | undefined | null;
     getEcosystemSlashEvents?: (item: T) => number | undefined | null;
     getEcosystemSlashedAmount?: (item: T) => string | undefined | null;
     getNetworkSlashEvents?: (item: T) => number | undefined | null;
@@ -136,7 +136,7 @@ export function sortByStandardAttributes<T>(
       return Number.isNaN(d.getTime()) ? 0 : d.getTime();
     };
 
-    const getBigInt = (v: string | undefined | null): bigint => {
+    const getBigInt = (v: number |string  | undefined | null): bigint => {
       if (!v) return BigInt(0);
       try {
         return BigInt(v);
