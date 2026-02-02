@@ -91,12 +91,12 @@ export function applyOrdering<T extends OrderableQueryBuilder>(
   const hasModifiedInSort = sortOrders.some(s => s.attribute === "modified");
   if (!hasModifiedInSort && sortOrders.length === 0) {
     const modifiedColumnName = `${tablePrefix}modified`;
-    resultQuery = resultQuery.orderBy(modifiedColumnName, "asc") as T;
+    resultQuery = resultQuery.orderBy(modifiedColumnName, "desc") as T;
   }
 
   if (!hasIdInSort) {
     const idColumnName = `${tablePrefix}id`;
-    resultQuery = resultQuery.orderBy(idColumnName, "asc") as T;
+    resultQuery = resultQuery.orderBy(idColumnName, "desc") as T;
   }
 
   return resultQuery;
@@ -126,7 +126,7 @@ export function sortByStandardAttributes<T>(
   const hasCustomSort = sortOrders.length > 0;
 
   const effectiveDefaultAttr: SortAttribute = opts.defaultAttribute || "modified";
-  const effectiveDefaultDir: "asc" | "desc" = opts.defaultDirection || "asc";
+  const effectiveDefaultDir: "asc" | "desc" = opts.defaultDirection || "desc";
 
   return items.sort((a, b) => {
     const getDateMs = (v: string | Date | undefined | null): number => {
@@ -219,7 +219,7 @@ export function sortByStandardAttributes<T>(
       if (c !== 0) return c;
     }
 
-    return applyOne("id", "asc");
+    return applyOne("id", "desc");
   });
 }
 

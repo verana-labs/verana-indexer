@@ -272,7 +272,7 @@ export default class DidDatabaseService extends BullableService {
                     getCreated: (item) => item.created,
                     getModified: (item) => item.modified,
                     defaultAttribute: "modified",
-                    defaultDirection: "asc",
+                    defaultDirection: "desc",
                 }).slice(0, effectiveLimit) as typeof filteredItems;
 
                 return ApiResponder.success(ctx, { dids: filteredItems }, 200);

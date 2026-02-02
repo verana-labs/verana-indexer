@@ -389,10 +389,81 @@ async function skipInitMigrationIfPending(db: Knex, pendingMigrations: Migration
   return pendingMigrations;
 }
 
+const MIGRATION_TO_TABLES: Record<string, string[]> = {
+  "20230317040849_create_account_table": ["account"],
+  "20230317041447_create_account_vesting_table": ["account_vesting"],
+  "20230704102018_create_table_daily_stats_account_stats": ["daily_statistics", "account_statistics"],
+  "20231226102519_add_balances_to_account": ["account_balance"],
+  "20250915120000_create_module_params": ["module_params"],
+  "20250919_create_credential_schema": ["credential_schemas"],
+  "20250905_create_trust_registry_tables": ["trust_registry", "governance_framework_version", "governance_framework_document"],
+  "20240924_create_permissions_table": ["permissions"],
+  "0123_create_trust_deposit_tables": ["trust_deposits"],
+  "20241201000000_create_did_records_table": ["dids"],
+  "20250919_create_credential_schema_history": ["credential_schema_history"],
+  "20250922_create_trust_registry_history": ["trust_registry_history", "governance_framework_version_history", "governance_framework_document_history"],
+  "20251125000000_create_permission_history": ["permission_history"],
+  "20251125000001_create_permission_session_history": ["permission_session_history"],
+  "20251125000002_create_trust_deposit_history": ["trust_deposit_history"],
+  "20251125000003_create_module_params_history": ["module_params_history"],
+  "20260126000001_create_did_history": ["did_history"],
+  "partition-transaction-table": ["transaction"],
+  "transaction_message_partition": ["transaction_message"]
+};
+
+const ALTER_MIGRATIONS = [
+  "20251124120000_add_height_to_credential_schema_history",
+  "20251125113000_add_height_indexes_to_history_tables",
+  "20251210000000_add_permission_statistics",
+  "20250115000000_add_permission_new_attributes",
+  "20260126000000_add_trust_registry_statistics",
+  "20260126000002_add_credential_schema_statistics",
+  "20260130000004_alter_gfv_combined"
+];
+
 async function runMigrations(db: Knex): Promise<void> {
   console.log("Step 4: Running migrations to recreate tables...");
   
   try {
+    console.log("  Checking which tables exist...");
+    const missingTables: string[] = [];
+    const existingTables: string[] = [];
+    
+    for (const tableName of TABLES_TO_DROP) {
+      const exists = await checkTableExists(db, tableName);
+      if (!exists) {
+        missingTables.push(tableName);
+      } else {
+        existingTables.push(tableName);
+      }
+    }
+    
+    console.log(`  ✓ Found ${existingTables.length} existing tables`);
+    console.log(`  ✗ Found ${missingTables.length} missing tables: ${missingTables.join(", ")}`);
+    
+    if (missingTables.length === 0) {
+      console.log("  All tables exist, no migrations needed!");
+      return;
+    }
+    
+    const neededMigrations = new Set<string>();
+    
+    for (const [migrationName, tables] of Object.entries(MIGRATION_TO_TABLES)) {
+      const hasMissingTable = tables.some(table => missingTables.includes(table));
+      if (hasMissingTable) {
+        neededMigrations.add(migrationName);
+        console.log(`  → Migration "${migrationName}" needed (creates: ${tables.filter(t => missingTables.includes(t)).join(", ")})`);
+      }
+    }
+    
+    for (const alterMigration of ALTER_MIGRATIONS) {
+      neededMigrations.add(alterMigration);
+    }
+    
+    console.log(`  Will run ${neededMigrations.size} migration(s) to create missing tables...`);
+    
+    const [completed] = await db.migrate.list();
+    
     const moduleOnlyMigrationNames = [
       "20230317040849_create_account_table",
       "20230317041447_create_account_vesting_table",
@@ -424,69 +495,115 @@ async function runMigrations(db: Knex): Promise<void> {
       "transaction_message_partition"
     ];
     
-    const [completed] = await db.migrate.list();
-    
-    const missingTables = [];
-    for (const tableName of TABLES_TO_DROP) {
-      const exists = await checkTableExists(db, tableName);
-      if (!exists) {
-        missingTables.push(tableName);
-      }
-    }
-    
-    console.log(`  Found ${missingTables.length} missing tables (after dropping), will run migrations to recreate them...`);
-    
-    const needsTransactionTables = !await checkTableExists(db, "transaction") || !await checkTableExists(db, "transaction_message");
+    const needsTransactionTables = missingTables.includes("transaction") || missingTables.includes("transaction_message");
     
     if (needsTransactionTables) {
       console.log("  Transaction tables are missing, will recreate base tables first...");
       await recreateTransactionTables(db);
     }
     
-    const transactionPartitionMigrations = completed.filter((m: Migration) => 
-      m && m.name && typeof m.name === 'string' && transactionPartitionMigrationNames.some(name => m.name.includes(name))
-    );
-    
-    if (transactionPartitionMigrations.length > 0) {
-      console.log(`  Removing ${transactionPartitionMigrations.length} transaction partition migration records to re-run...`);
-      for (const migration of transactionPartitionMigrations) {
-        try {
-          const deleted = await db("knex_migrations")
-            .where("name", migration.name)
-            .delete();
-          if (deleted > 0) {
-            console.log(`     Removed: ${migration.name}`);
-          }
-        } catch (err: unknown) {
-          const error = err as NodeJS.ErrnoException;
-          console.warn(`     Could not remove ${migration.name}: ${error.message}`);
+    console.log(`  Clearing migration records for needed migrations...`);
+    const allMigrationRecords = await db("knex_migrations").select("name");
+    const allMigrationNames = new Set(allMigrationRecords.map((m: any) => m.name));
+    const transactionPartitionMigrationsToClear: string[] = [];
+    for (const migName of transactionPartitionMigrationNames) {
+      for (const recordedName of allMigrationNames) {
+        if (recordedName.includes(migName) && neededMigrations.has(migName)) {
+          transactionPartitionMigrationsToClear.push(recordedName);
         }
       }
     }
     
-    const moduleMigrations = completed.filter((m: Migration) => 
-      m && m.name && moduleOnlyMigrationNames.some(name => m.name.includes(name))
-    );
-    
-    if (moduleMigrations.length > 0) {
-      console.log(`  Removing ${moduleMigrations.length} module migration records to force re-run...`);
-      for (const migration of moduleMigrations) {
-        const isInit = migration.name && migration.name.includes("init_horoscope_layer_1_model");
-        if (!isInit) {
-          try {
-            // Remove all duplicates, not just one
-            const deleted = await db("knex_migrations")
-              .where("name", migration.name)
-              .delete();
-            if (deleted > 0) {
-              console.log(`     Removed ${deleted} record(s): ${migration.name}`);
-            }
-          } catch (err: unknown) {
-            const error = err as NodeJS.ErrnoException;
-            console.warn(`     Could not remove ${migration.name}: ${error.message}`);
+    if (transactionPartitionMigrationsToClear.length > 0) {
+      console.log(`  Removing ${transactionPartitionMigrationsToClear.length} transaction partition migration record(s)...`);
+      for (const migName of transactionPartitionMigrationsToClear) {
+        try {
+          const deleted = await db("knex_migrations")
+            .where("name", migName)
+            .delete();
+          if (deleted > 0) {
+            console.log(`     Removed: ${migName}`);
           }
-        } else {
-          console.log(`     Skipping init migration: ${migration.name}`);
+        } catch (err: unknown) {
+          const error = err as NodeJS.ErrnoException;
+          console.warn(`     Could not remove ${migName}: ${error.message}`);
+        }
+      }
+    }
+    
+    const moduleMigrationsToClear: string[] = [];
+    const allModuleMigrationNames = [...moduleOnlyMigrationNames, ...ALTER_MIGRATIONS];
+    
+    for (const migName of allModuleMigrationNames) {
+      if (neededMigrations.has(migName)) {
+        for (const recordedName of allMigrationNames) {
+          if (recordedName.includes(migName)) {
+            const isInit = recordedName.includes("init_horoscope_layer_1_model");
+            if (!isInit) {
+              moduleMigrationsToClear.push(recordedName);
+            }
+          }
+        }
+      }
+    }
+    
+    if (moduleMigrationsToClear.length > 0) {
+      console.log(`  Removing ${moduleMigrationsToClear.length} module migration record(s) to force re-run...`);
+      for (const migName of moduleMigrationsToClear) {
+        try {
+          const deleted = await db("knex_migrations")
+            .where("name", migName)
+            .delete();
+          if (deleted > 0) {
+            console.log(`     Removed ${deleted} record(s): ${migName}`);
+          }
+        } catch (err: unknown) {
+          const error = err as NodeJS.ErrnoException;
+          console.warn(`     Could not remove ${migName}: ${error.message}`);
+        }
+      }
+    } else {
+      console.log(`  No module migrations found in database to clear`);
+    }
+    console.log(`  Checking for ALTER migrations that need to be cleared...`);
+    for (const alterMig of ALTER_MIGRATIONS) {
+      for (const recordedName of allMigrationNames) {
+        if (recordedName.includes(alterMig)) {
+          let shouldClear = false;
+          if (recordedName.includes("gfd_id") || recordedName.includes("document_history")) {
+            const tableExists = await checkTableExists(db, "governance_framework_document_history");
+            if (!tableExists) {
+              shouldClear = true;
+            }
+          } else if (recordedName.includes("permission") && !recordedName.includes("history")) {
+            const tableExists = await checkTableExists(db, "permissions");
+            if (!tableExists) {
+              shouldClear = true;
+            }
+          } else if (recordedName.includes("trust_registry") && !recordedName.includes("history")) {
+            const tableExists = await checkTableExists(db, "trust_registry");
+            if (!tableExists) {
+              shouldClear = true;
+            }
+          } else if (recordedName.includes("credential_schema") && !recordedName.includes("history")) {
+            const tableExists = await checkTableExists(db, "credential_schemas");
+            if (!tableExists) {
+              shouldClear = true;
+            }
+          }
+          
+          if (shouldClear) {
+            try {
+              const deleted = await db("knex_migrations")
+                .where("name", recordedName)
+                .delete();
+              if (deleted > 0) {
+                console.log(`     Cleared ALTER migration (table doesn't exist): ${recordedName}`);
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
         }
       }
     }
@@ -526,9 +643,26 @@ async function runMigrations(db: Knex): Promise<void> {
           }
           console.log(`     - ${migName}`);
         }
+      } else {
+        console.log(`   No pending migrations found in Knex list, but tables are missing.`);
+        console.log(`   This may indicate migration records exist but tables don't.`);
+        console.log(`   Will attempt to run migrations anyway...`);
       }
       await db.migrate.latest();
       console.log("   Migrations completed successfully");
+      const tablesAfterMigration = [];
+      for (const tableName of TABLES_TO_DROP) {
+        const exists = await checkTableExists(db, tableName);
+        if (!exists) {
+          tablesAfterMigration.push(tableName);
+        }
+      }
+      
+      if (tablesAfterMigration.length > 0) {
+        console.warn(`   Warning: ${tablesAfterMigration.length} tables still missing after migrate.latest(): ${tablesAfterMigration.join(", ")}`);
+        console.warn(`   This indicates migrations may not have run properly. Will try manual migration...`);
+        throw new Error(`Tables still missing after migrations: ${tablesAfterMigration.join(", ")}`);
+      }
       
       const hasParticipantsColumn = await db.schema.hasColumn("permissions", "participants");
       if (hasParticipantsColumn) {
@@ -556,12 +690,45 @@ async function runMigrations(db: Knex): Promise<void> {
           console.error("  Migration retry failed:", retryErr.message);
           throw retryError;
         }
-      } else if (err.message?.includes("corrupt") || err.message?.includes("missing")) {
-        console.log("    Migration validation error detected");
-        console.log("  This usually happens after reindexing. Trying to continue...");
+      } else if (err.message?.includes("corrupt") || err.message?.includes("missing") || err.message?.includes("Tables still missing")) {
+        console.log("    Migration validation error or missing tables detected");
+        console.log("  This usually happens after reindexing. Will force re-run migrations...");
+        console.log("  Clearing migration records for module tables to force re-creation...");
+        const moduleMigrationsToClear = completed.filter((m: Migration) => 
+          m && m.name && typeof m.name === 'string' && moduleOnlyMigrationNames.some(name => m.name.includes(name))
+        );
+        
+        for (const migration of moduleMigrationsToClear) {
+          try {
+            const deleted = await db("knex_migrations")
+              .where("name", migration.name)
+              .delete();
+            if (deleted > 0) {
+              console.log(`     Cleared migration record: ${migration.name}`);
+            }
+          } catch (clearErr: unknown) {
+            const clearError = clearErr as NodeJS.ErrnoException;
+            console.warn(`     Could not clear ${migration.name}: ${clearError.message}`);
+          }
+        }
+        
         try {
+          await recreateTransactionTables(db);
           await db.migrate.latest();
-          console.log("   Migrations completed successfully");
+          console.log("   Migrations completed successfully after clearing records");
+          const tablesAfterRetry = [];
+          for (const tableName of TABLES_TO_DROP) {
+            const exists = await checkTableExists(db, tableName);
+            if (!exists) {
+              tablesAfterRetry.push(tableName);
+            }
+          }
+          
+          if (tablesAfterRetry.length > 0) {
+            console.error(`   ❌ CRITICAL: ${tablesAfterRetry.length} tables still missing: ${tablesAfterRetry.join(", ")}`);
+            console.error("   This is a critical error - migrations did not create required tables!");
+            throw new Error(`Critical: Tables still missing after migration retry: ${tablesAfterRetry.join(", ")}`);
+          }
         } catch (retryError: unknown) {
           const retryErr = retryError as Error;
           console.error("  Migration retry failed:", retryErr.message);
@@ -582,10 +749,35 @@ async function runMigrations(db: Knex): Promise<void> {
     }
     
     if (finalMissingTables.length > 0) {
-      console.warn(`  Warning: ${finalMissingTables.length} tables still missing after migrations: ${finalMissingTables.join(", ")}`);
-      console.warn("  This may indicate missing migration files or migration errors");
+      console.error(`  ❌ CRITICAL ERROR: ${finalMissingTables.length} tables still missing after migrations: ${finalMissingTables.join(", ")}`);
+      console.error("  This indicates migrations did not run properly or migration files are missing!");
+      console.error("  The indexer will fail to start without these tables.");
+      console.error("  Attempting to force run migrations one more time...");
+      try {
+        await db.migrate.latest();
+        console.log("  Retry migrations completed");
+        const stillMissing: string[] = [];
+        for (const tableName of finalMissingTables) {
+          const exists = await checkTableExists(db, tableName);
+          if (!exists) {
+            stillMissing.push(tableName);
+          }
+        }
+        
+        if (stillMissing.length > 0) {
+          console.error(`  ❌ Still missing ${stillMissing.length} table(s): ${stillMissing.join(", ")}`);
+          console.error("  Please check migration files and try running: pnpm run migrate:dev");
+          throw new Error(`Critical: ${stillMissing.length} tables still missing after migration retry: ${stillMissing.join(", ")}`);
+        } else {
+          console.log("  ✓ All tables verified after retry");
+        }
+      } catch (retryError: unknown) {
+        const retryErr = retryError as Error;
+        console.error(`  ❌ Migration retry failed: ${retryErr.message}`);
+        throw new Error(`Critical: ${finalMissingTables.length} tables still missing after migrations: ${finalMissingTables.join(", ")}`);
+      }
     } else {
-      console.log("  All tables verified and recreated successfully");
+      console.log("  ✓ All tables verified and recreated successfully");
     }
     
     const permissionsTableExists = await checkTableExists(db, "permissions");

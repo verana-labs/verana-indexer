@@ -884,8 +884,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
           getNetworkSlashEvents: (item) => item.network_slash_events,
           getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-          defaultAttribute: "created",
-          defaultDirection: "asc",
+          defaultAttribute: "modified",
+          defaultDirection: "desc",
         }).slice(0, limit);
 
         return ApiResponder.success(ctx, { schemas: sortedItems }, 200);

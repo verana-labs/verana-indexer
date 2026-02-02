@@ -1104,7 +1104,7 @@ export default class PermAPIService extends BullableService {
           getNetworkSlashEvents: (item) => item.network_slash_events,
           getNetworkSlashedAmount: (item) => item.network_slashed_amount,
           defaultAttribute: "modified",
-          defaultDirection: "asc",
+          defaultDirection: "desc",
         }).slice(0, limit);
 
         return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);

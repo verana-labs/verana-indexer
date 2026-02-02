@@ -92,6 +92,7 @@ export class BullQueueProvider implements QueueProvider {
         // queue not exist create and cache it
         this._queues[name] = new Queue(name, {
           connection: getRedisConnection(),
+          prefix: 'bull',
         });
       }
     }
