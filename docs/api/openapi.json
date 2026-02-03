@@ -756,7 +756,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum number of active schemas (inclusive). When min_active_schemas equals max_active_schemas, performs exact match."
+            "description": "Maximum number of active schemas (exclusive)."
           },
           {
             "name": "min_participants",
@@ -776,7 +776,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum number of participants (inclusive). When min_participants equals max_participants, performs exact match."
+            "description": "Maximum number of participants (exclusive)."
           },
           {
             "name": "min_weight",
@@ -794,7 +794,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum weight (inclusive). When min_weight equals max_weight, performs exact match."
+            "description": "Maximum weight (exclusive). "
           },
           {
             "name": "min_issued",
@@ -812,7 +812,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of issued credentials (inclusive). When min_issued equals max_issued, performs exact match."
+            "description": "Maximum number of issued credentials (exclusive)."
           },
           {
             "name": "min_verified",
@@ -830,7 +830,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of verified credentials (inclusive). When min_verified equals max_verified, performs exact match."
+            "description": "Maximum number of verified credentials (exclusive)."
           },
           {
             "name": "min_ecosystem_slash_events",
@@ -850,7 +850,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum accepted number of ecosystem slash events (inclusive). When min_ecosystem_slash_events equals max_ecosystem_slash_events, performs exact match."
+            "description": "Maximum accepted number of ecosystem slash events (exclusive). "
           },
           {
             "name": "min_network_slash_events",
@@ -870,7 +870,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum accepted number of network slash events (inclusive). When min_network_slash_events equals max_network_slash_events, performs exact match."
+            "description": "Maximum accepted number of network slash events (exclusive). "
           },
           {
             "name": "sort",
@@ -1220,7 +1220,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum of participants (inclusive). When min_participants equals max_participants, performs exact match."
+            "description": "Maximum of participants (exclusive)."
           },
           {
             "name": "min_weight",
@@ -1238,7 +1238,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum weight (inclusive). When min_weight equals max_weight, performs exact match."
+            "description": "Maximum weight (exclusive). "
           },
           {
             "name": "min_issued",
@@ -1256,7 +1256,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of issued credentials (inclusive). When min_issued equals max_issued, performs exact match."
+            "description": "Maximum number of issued credentials (exclusive)."
           },
           {
             "name": "min_verified",
@@ -1274,7 +1274,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of verified credentials (inclusive). When min_verified equals max_verified, performs exact match."
+            "description": "Maximum number of verified credentials (exclusive)."
           },
           {
             "name": "min_ecosystem_slash_events",
@@ -1284,7 +1284,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Minimum accepted number of ecosystem slashs (inclusive)"
+            "description": "Minimum accepted number of ecosystem slash events (inclusive)"
           },
           {
             "name": "max_ecosystem_slash_events",
@@ -1294,7 +1294,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum accepted number of ecosystem slashs (inclusive). When min_ecosystem_slash_events equals max_ecosystem_slash_events, performs exact match."
+            "description": "Maximum accepted number of ecosystem slash events (exclusive). "
           },
           {
             "name": "min_network_slash_events",
@@ -1304,7 +1304,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Minimum accepted number of network slashs (inclusive)"
+            "description": "Minimum accepted number of network slash events (inclusive)"
           },
           {
             "name": "max_network_slash_events",
@@ -1314,7 +1314,7 @@
               "type": "integer",
               "minimum": 0
             },
-            "description": "Maximum accepted number of network slashs (inclusive). When min_network_slash_events equals max_network_slash_events, performs exact match."
+            "description": "Maximum accepted number of network slash events (exclusive). "
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1731,7 +1731,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: modified (ascending)"
+            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "min_participants",
@@ -1749,7 +1749,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Maximum number of participants (inclusive). When min_participants equals max_participants, performs exact match."
+            "description": "Maximum number of participants (exclusive)."
           },
           {
             "name": "min_weight",
@@ -1767,7 +1767,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum weight (inclusive). When min_weight equals max_weight, performs exact match."
+            "description": "Maximum weight (exclusive). "
           },
           {
             "name": "min_issued",
@@ -1785,7 +1785,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of issued credentials (inclusive). When min_issued equals max_issued, performs exact match."
+            "description": "Maximum number of issued credentials (exclusive)."
           },
           {
             "name": "min_verified",
@@ -1803,7 +1803,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Maximum number of verified credentials (inclusive). When min_verified equals max_verified, performs exact match."
+            "description": "Maximum number of verified credentials (exclusive)."
           },
           {
             "name": "min_ecosystem_slash_events",
@@ -1821,7 +1821,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Maximum accepted number of ecosystem slash events (inclusive). When min_ecosystem_slash_events equals max_ecosystem_slash_events, performs exact match."
+            "description": "Maximum accepted number of ecosystem slash events (exclusive). "
           },
           {
             "name": "min_network_slash_events",
@@ -1839,7 +1839,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Maximum accepted number of network slash events (inclusive). When min_network_slash_events equals max_network_slash_events, performs exact match."
+            "description": "Maximum accepted number of network slash events (exclusive). "
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"

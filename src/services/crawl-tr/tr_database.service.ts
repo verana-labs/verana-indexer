@@ -67,17 +67,42 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         .orderBy("height", "desc")
                         .orderBy("created_at", "desc");
 
-                    // Get unique documents (latest state for each document at block height)
-                    const docMap = new Map<string, any>();
+                    // Get unique documents (latest state for each document ID at block height)
+                    // IMPORTANT: Deduplicate by gfd_id, not by url+language, because multiple documents
+                    // can have the same URL and language but different IDs
+                    const docMap = new Map<number, any>();
                     for (const gfd of gfdHistory) {
-                        const key = `${gfd.url}-${gfd.language}`;
-                        if (!docMap.has(key)) {
-                            docMap.set(key, gfd);
+                        // Validate that gfd_id exists
+                        if (!gfd.gfd_id) {
+                            this.logger.error(`❌ CRITICAL: Document history record missing gfd_id! gfv_id=${gfd.gfv_id}, tr_id=${tr_id}, url=${gfd.url}, height=${blockHeight}`);
+                            console.error("FATAL ID MISMATCH: Document history record missing gfd_id!", {
+                                gfv_id: gfd.gfv_id,
+                                tr_id,
+                                url: gfd.url,
+                                height: blockHeight,
+                                record: gfd
+                            });
+                        }
+                        // Validate gfd_id doesn't equal gfv_id (which would indicate a bug)
+                        if (gfd.gfd_id === gfd.gfv_id) {
+                            this.logger.error(`❌ CRITICAL: Document ID equals GFV ID! gfd_id=${gfd.gfd_id}, gfv_id=${gfd.gfv_id}, tr_id=${tr_id}, url=${gfd.url}, height=${blockHeight}`);
+                            console.error("FATAL ID MISMATCH: Document ID equals GFV ID!", {
+                                gfd_id: gfd.gfd_id,
+                                gfv_id: gfd.gfv_id,
+                                tr_id,
+                                url: gfd.url,
+                                height: blockHeight,
+                                record: gfd
+                            });
+                        }
+                        // Keep the latest state of each document (by gfd_id)
+                        if (!docMap.has(gfd.gfd_id)) {
+                            docMap.set(gfd.gfd_id, gfd);
                         }
                     }
 
                     const documents = Array.from(docMap.values()).map((gfd: any) => ({
-                        id: gfd.id,
+                        id: gfd.gfd_id,
                         created: gfd.created,
                         language: gfd.language,
                         url: gfd.url,
@@ -159,8 +184,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
             if (activeGfOnly) {
                 versions = versions
                     .sort(
-                        (a, b) =>
-                            new Date(b.active_since).getTime() - new Date(a.active_since).getTime()
+                        (a, b) => {
+                            if (!a.active_since && !b.active_since) return 0;
+                            if (!a.active_since) return 1;
+                            if (!b.active_since) return -1;
+                            return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
+                        }
                     )
                     .slice(0, 1);
             }
@@ -305,7 +334,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     getCreated: (row) => row.created,
                     getModified: (row) => row.modified,
                     defaultAttribute: "modified",
-                    defaultDirection: "asc",
+                    defaultDirection: "desc",
                 }).slice(0, responseMaxSize);
 
                 if (sortedHistory.length === 0) {
@@ -338,16 +367,42 @@ export default class TrustRegistryDatabaseService extends BaseService {
                                     .orderBy("height", "desc")
                                     .orderBy("created_at", "desc");
 
-                                const docMap = new Map<string, any>();
+                                // Get unique documents (latest state for each document ID at block height)
+                                // IMPORTANT: Deduplicate by gfd_id, not by url+language, because multiple documents
+                                // can have the same URL and language but different IDs
+                                const docMap = new Map<number, any>();
                                 for (const gfd of gfdHistory) {
-                                    const key = `${gfd.url}-${gfd.language}`;
-                                    if (!docMap.has(key)) {
-                                        docMap.set(key, gfd);
+                                    // Validate that gfd_id exists
+                                    if (!gfd.gfd_id) {
+                                        this.logger.error(`❌ CRITICAL: Document history record missing gfd_id! gfv_id=${gfd.gfv_id}, tr_id=${trId}, url=${gfd.url}, height=${blockHeight}`);
+                                        console.error("FATAL ID MISMATCH: Document history record missing gfd_id!", {
+                                            gfv_id: gfd.gfv_id,
+                                            tr_id: trId,
+                                            url: gfd.url,
+                                            height: blockHeight,
+                                            record: gfd
+                                        });
+                                    }
+                                    // Validate gfd_id doesn't equal gfv_id (which would indicate a bug)
+                                    if (gfd.gfd_id === gfd.gfv_id) {
+                                        this.logger.error(`❌ CRITICAL: Document ID equals GFV ID! gfd_id=${gfd.gfd_id}, gfv_id=${gfd.gfv_id}, tr_id=${trId}, url=${gfd.url}, height=${blockHeight}`);
+                                        console.error("FATAL ID MISMATCH: Document ID equals GFV ID!", {
+                                            gfd_id: gfd.gfd_id,
+                                            gfv_id: gfd.gfv_id,
+                                            tr_id: trId,
+                                            url: gfd.url,
+                                            height: blockHeight,
+                                            record: gfd
+                                        });
+                                    }
+                                    // Keep the latest state of each document (by gfd_id)
+                                    if (!docMap.has(gfd.gfd_id)) {
+                                        docMap.set(gfd.gfd_id, gfd);
                                     }
                                 }
 
                                 const documents = Array.from(docMap.values()).map((gfd: any) => ({
-                                    id: gfd.id,
+                                    id: gfd.gfd_id,
                                     created: gfd.created,
                                     language: gfd.language,
                                     url: gfd.url,
@@ -541,7 +596,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                         if (activeGfOnly) {
                             versions = versions
-                                .sort((a, b) => new Date(b.active_since).getTime() - new Date(a.active_since).getTime())
+                                .sort((a, b) => {
+                                    if (!a.active_since && !b.active_since) return 0;
+                                    if (!a.active_since) return 1;
+                                    if (!b.active_since) return -1;
+                                    return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
+                                })
                                 .slice(0, 1);
                         }
 
@@ -609,7 +669,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                     if (activeGfOnly) {
                         versions = versions
-                            .sort((a, b) => new Date(b.active_since).getTime() - new Date(a.active_since).getTime())
+                            .sort((a, b) => {
+                                if (!a.active_since && !b.active_since) return 0;
+                                if (!a.active_since) return 1;
+                                if (!b.active_since) return -1;
+                                return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
+                            })
                             .slice(0, 1);
                     }
 

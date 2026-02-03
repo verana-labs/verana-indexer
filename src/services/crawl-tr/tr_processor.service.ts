@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import {
   Action,
   Service,
@@ -67,7 +69,9 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       const processedTR: any = { ...message, ...message.content };
 
-      if (message.content?.id) {
+      if (message.content?.trust_registry_id !== undefined && message.content?.trust_registry_id !== null) {
+        processedTR.trust_registry_id = message.content.trust_registry_id;
+      } else if (message.content?.id !== undefined && message.content?.id !== null) {
         processedTR.trust_registry_id = message.content.id;
       }
 
@@ -141,7 +145,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       failedMessages.forEach((failed, idx) => {
         this.logger.error(`  ${idx + 1}. Type: ${failed.message.type}, Error: ${failed.error}`);
       });
-      
+
       if (failedMessages.length > totalMessages * failThreshold) {
         const failureRate = ((failedMessages.length / totalMessages) * 100).toFixed(2);
         this.logger.error(`CRITICAL: ${failureRate}% of TR messages failed (${failedMessages.length}/${totalMessages})! This indicates a serious issue.`);
@@ -163,7 +167,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     if (oldData) {
       const computed = this.processorBase.computeChanges(oldData, newData);
       changes = Object.keys(computed).length > 0 ? computed : null;
-      
+
       if (!changes) {
         return;
       }
@@ -207,7 +211,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     if (oldData) {
       const computed = this.processorBase.computeChanges(oldData, newData);
       changes = Object.keys(computed).length > 0 ? computed : null;
-      
+
       if (!changes) {
         return;
       }
@@ -246,7 +250,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     if (oldData) {
       const computed = this.processorBase.computeChanges(oldData, newData);
       changes = Object.keys(computed).length > 0 ? computed : null;
-      
+
       if (!changes) {
         return;
       }
@@ -305,7 +309,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully archived TR: id=${tr.id}`);
-      
+
       try {
         const stats = await calculateTrustRegistryStats(tr.id);
         await knex("trust_registry")
@@ -369,7 +373,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully updated TR: id=${tr.id}`);
-      
+
       try {
         const stats = await calculateTrustRegistryStats(tr.id);
         await knex("trust_registry")
@@ -402,7 +406,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
   private async processCreateTR(message: any) {
     this.logger.info(" Processing CreateTR message:", JSON.stringify(message));
-    
+
     if (!message.did) {
       throw new Error("CreateTR message missing required field: did");
     }
@@ -430,15 +434,15 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       const timestamp = formatTimestamp(message.timestamp);
       const blockHeight = Number(message.height) || 0;
-      
+
       this.logger.info(` Creating TR with height: ${blockHeight}, did: ${message.did}`);
 
       const existingTR = await trx("trust_registry").where({ height: blockHeight }).first();
-      
+
       let tr;
       const controller = requireController(message, `TR ${message.did}`);
       const isReindexing = !!existingTR;
-      
+
       if (isReindexing) {
         this.logger.info(`TR with height ${blockHeight} already exists, updating for reindexing...`);
         [tr] = await trx("trust_registry")
@@ -516,48 +520,25 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         gfv
       );
 
-      const existingDoc = await trx("governance_framework_document")
+      const language = message.language;
+      const digestSri = message.doc_digest_sri;
+
+      let gfd = await trx("governance_framework_document")
         .where({
           gfv_id: gfv.id,
-          url: message.doc_url,
+          language,
+          digest_sri: digestSri,
         })
         .first();
 
-      let gfd;
-      if (existingDoc) {
-        if (isReindexing) {
-          await trx("governance_framework_document")
-            .where({ id: existingDoc.id })
-            .update({
-              created: timestamp,
-              language: message.language,
-              digest_sri: message.doc_digest_sri,
-            });
-          gfd = await trx("governance_framework_document")
-            .where({ id: existingDoc.id })
-            .first();
-        } else {
-          await trx("governance_framework_document")
-            .where({ id: existingDoc.id })
-            .delete();
-          [gfd] = await trx("governance_framework_document")
-            .insert({
-              gfv_id: gfv.id,
-              created: timestamp,
-              language: message.language,
-              url: message.doc_url,
-              digest_sri: message.doc_digest_sri,
-            })
-            .returning("*");
-        }
-      } else {
+      if (!gfd) {
         [gfd] = await trx("governance_framework_document")
           .insert({
             gfv_id: gfv.id,
             created: timestamp,
-            language: message.language,
+            language,
             url: message.doc_url,
-            digest_sri: message.doc_digest_sri,
+            digest_sri: digestSri,
           })
           .returning("*");
       }
@@ -575,7 +556,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully created/updated TR: did=${message.did}, id=${tr.id}`);
-      
+
       try {
         const stats = await calculateTrustRegistryStats(tr.id);
         await knex("trust_registry")
@@ -609,16 +590,31 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
   private async processAddGovFrameworkDoc(message: any) {
     const trx = await knex.transaction();
     try {
+      try {
+        const logsDir = path.resolve(process.cwd(), "logs");
+        if (!fs.existsSync(logsDir)) {
+          fs.mkdirSync(logsDir, { recursive: true });
+        }
+        const logPath = path.join(logsDir, "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] Incoming message: ${JSON.stringify(message)}\n`
+        );
+      } catch (fileErr) {
+        this.logger.warn("Failed to write debug log file:", fileErr);
+      }
       const tr = await trx("trust_registry")
         .where({ id: message.trust_registry_id })
         .first();
       if (!tr) {
         await trx.rollback();
-        this.logger.warn(`⚠️ AddGovFrameworkDoc: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
-        return;
+        throw new Error(
+          `AddGovFrameworkDoc: TR not found for id=${message.trust_registry_id}, height=${message.height}`
+        );
       }
 
       const timestamp = formatTimestamp(message.timestamp);
+      const blockHeight = Number(message.height) || 0;
 
       let gfv = await trx("governance_framework_version")
         .where({
@@ -628,80 +624,132 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         .first();
 
       if (!gfv) {
+        const maxVersionResult = await trx("governance_framework_version")
+          .where({ tr_id: tr.id })
+          .max("version as max_version")
+          .first();
+        const maxVersion = maxVersionResult?.max_version || 0;
+
+        if (message.version !== maxVersion + 1 || message.version <= tr.active_version) {
+          await trx.rollback();
+          const errMsg = `AddGovFrameworkDoc: Invalid version=${message.version} for tr_id=${tr.id}, maxVersion=${maxVersion}, active_version=${tr.active_version}`;
+          this.logger.error(errMsg);
+          this.logger.error("AddGovFrameworkDoc message payload:", JSON.stringify(message));
+          console.error("FATAL: Invalid AddGovFrameworkDoc version. Exiting for debug.");
+          throw new Error(errMsg);
+        }
+
         [gfv] = await trx("governance_framework_version")
           .insert({
             tr_id: tr.id,
             created: timestamp,
             version: message.version,
-            active_since: timestamp,
+            // active_since: null, // Omit to allow default null
           })
           .returning("*");
-      } else {
-        await trx("governance_framework_version")
-          .where({ id: gfv.id })
-          .update({
-            created: timestamp,
-            active_since: timestamp,
-          });
-        gfv = await trx("governance_framework_version")
-          .where({ id: gfv.id })
-          .first();
+
+        await this.recordGFVHistory(
+          trx,
+          gfv.id,
+          tr.id,
+          "AddGFV",
+          blockHeight,
+          null,
+          gfv
+        );
+        try {
+          const logPath = path.join(process.cwd(), "logs", "file.log");
+          fs.appendFileSync(
+            logPath,
+            `${new Date().toISOString()} [AddGovFrameworkDoc] Created GFV: ${JSON.stringify(gfv)}\n`
+          );
+        } catch (_) {}
       }
 
-      const blockHeight = Number(message.height) || 0;
-      await this.recordGFVHistory(
-        trx,
-        gfv.id,
-        tr.id,
-        "AddGFV",
-        blockHeight,
-        null,
-        gfv
-      );
+      const language = message.doc_language || message.language;
+      const digestSri = message.doc_digest_sri || message.digest_sri;
 
-      const existingDoc = await trx("governance_framework_document")
+      let gfd = await trx("governance_framework_document")
         .where({
           gfv_id: gfv.id,
-          url: message.doc_url,
+          digest_sri: digestSri,
         })
         .first();
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] GFD lookup result: ${JSON.stringify(gfd)}\n`
+        );
+      } catch (_) {}
 
-      let gfd;
-      if (existingDoc) {
-        gfd = existingDoc;
-      } else {
-        [gfd] = await trx("governance_framework_document")
-          .insert({
-            gfv_id: gfv.id,
-            created: timestamp,
-            language: message.doc_language || message.language,
-            url: message.doc_url,
-            digest_sri: message.doc_digest_sri || message.digest_sri,
-          })
-          .returning("*");
+      if (gfd) {
+        try {
+          const logPath = path.join(process.cwd(), "logs", "file.log");
+          fs.appendFileSync(
+            logPath,
+            `${new Date().toISOString()} [AddGovFrameworkDoc] Existing GFD found (will still INSERT new one): ${JSON.stringify(gfd)}\n`
+          );
+        } catch (_) {}
       }
+
+      const oldGfd = null;
+      [gfd] = await trx("governance_framework_document")
+        .insert({
+          gfv_id: gfv.id,
+          created: timestamp,
+          language,
+          url: message.doc_url,
+          digest_sri: digestSri,
+        })
+        .returning("*");
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] Inserted GFD: ${JSON.stringify(gfd)}\n`
+        );
+      } catch (_) {}
 
       await this.recordGFDHistory(
         trx,
         gfd.id,
         gfv.id,
         tr.id,
-        "AddGFD",
+        oldGfd ? "UpdateGFD" : "AddGFD",
         blockHeight,
-        null,
+        oldGfd,
         gfd
       );
 
       await trx.commit();
-      this.logger.info(`✅ Successfully added GFV/GFD: tr_id=${tr.id}, version=${message.version}`);
+      this.logger.info(
+        `✅ AddGovFrameworkDoc OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}`
+      );
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] COMMIT OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}\n`
+        );
+      } catch (_) {}
     } catch (err: any) {
       await trx.rollback();
-      const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process AddGovernanceFrameworkDocument for tr_id=${message.trust_registry_id}:`, errorMessage);
-      console.error("FATAL TR ADD GFD ERROR:", err);
+      this.logger.error(
+        `❌ AddGovFrameworkDoc failed for tr_id=${message.trust_registry_id}:`,
+        err?.message || err
+      );
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] ERROR: ${err?.message || String(err)} | message: ${JSON.stringify(message)}\n`
+        );
+      } catch (_) {}
       throw err;
     }
   }
+
 
   private async processIncreaseActiveGFV(message: any) {
     const trx = await knex.transaction();

@@ -227,11 +227,12 @@ export default class CrawlTxService extends BullableService {
         return;
       }
 
+      let processingPayloads: any = null;
       const [trustDepositResult, transactionResult] = await Promise.allSettled([
         this.processTrustDepositEventsForBlocks(startBlock, actualEndBlock),
         knex.transaction(async (trx) => {
           try {
-            await this.insertRelatedTx(listTxRaw, trx);
+            const payloads = await this.insertRelatedTx(listTxRaw, trx);
             if (blockCheckpoint) {
               blockCheckpoint.height = actualEndBlock;
               blockCheckpoint.updated_at = new Date();
@@ -246,15 +247,16 @@ export default class CrawlTxService extends BullableService {
                 .returning('id')
                 .timeout(10000)
                 .transacting(trx);
-              }
-            } catch (error) {
-              this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
-              throw error;
             }
-          })
+            return payloads;
+          } catch (error) {
+            this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
+            throw error;
+          }
+        })
       ]);
 
-      // Log TrustDeposit processing result
+    // Log TrustDeposit processing result
       if (trustDepositResult.status === 'rejected') {
         this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing TrustDeposit events:`, trustDepositResult.reason);
       } else {
@@ -266,6 +268,15 @@ export default class CrawlTxService extends BullableService {
         this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction processing failed:`, transactionResult.reason);
         throw transactionResult.reason;
       }
+    processingPayloads = transactionResult.status === 'fulfilled' ? (transactionResult.value as any) : null;
+    if (processingPayloads && !(config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction)) {
+      try {
+        await this.processPayloads(processingPayloads);
+      } catch (err: any) {
+        this.logger.error(` [HANDLE_TRANSACTION] Error processing message batches after commit:`, err);
+        throw err;
+      }
+    }
 
       this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${actualEndBlock}`);
 
@@ -683,7 +694,7 @@ export default class CrawlTxService extends BullableService {
       this.logger.info(`✅ [insertRelatedTx] Inserted ${listEventModel.length} events`);
     }
 
-    if (listMsgModel?.length) {
+      if (listMsgModel?.length) {
       const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
         ? config.handleTransaction.freshStart
         : config.handleTransaction;
@@ -701,15 +712,31 @@ export default class CrawlTxService extends BullableService {
           .transacting(transactionDB);
       }
       this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`);
-
-      await this.processMessageTypes(messagesForProcessing, listDecodedTx);
+      const payload = await this.processMessageTypes(messagesForProcessing, listDecodedTx);
+      if (config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction) {
+        try {
+          await this.processPayloads(payload);
+        } catch (err: any) {
+          this.logger.error(`[insertRelatedTx] Error processing payloads inside transaction:`, err);
+          throw err;
+        }
+      }
       listEventModel.length = 0;
       listMsgModel.length = 0;
       messagesForProcessing.length = 0;
+      return payload;
     }
+    return {
+      DIDfiltered: [],
+      trustRegistryList: [],
+      credentialSchemaMessages: [],
+      permissionMessages: [],
+      trustDepositList: [],
+      updateParamsList: [],
+    };
   }
 
-  private async processMessageTypes(resultInsertMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
+  private async processMessageTypes(resultInsertMsgs: any[], listDecodedTx: Transaction[]): Promise<any> {
     const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
       const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
       return parentTx?.code === 0;
@@ -733,21 +760,6 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    this.logger.info(`📋 [insertRelatedTx] DID messages: ${DIDfiltered.length}`);
-    if (DIDfiltered?.length) {
-      this.logger.info(`🚀 [insertRelatedTx] Sending ${DIDfiltered.length} DID messages to processor`);
-      try {
-        await this.broker.call(
-          `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
-          { messages: DIDfiltered },
-        );
-        this.logger.info(`✅ [insertRelatedTx] DID messages processed successfully`);
-      } catch (err) {
-        this.logger.error(`❌ [insertRelatedTx] Failed to process DID messages:`, err);
-        console.error("FATAL CRAWL_TX DID ERROR:", err);
-      }
-    }
-
     const trustRegistryList = successfulMsgs
       .filter((msg: any) => isTrustRegistryMessageType(msg.type))
       .map((msg: any) => {
@@ -761,21 +773,6 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    this.logger.info(`📋 [insertRelatedTx] TrustRegistry messages: ${trustRegistryList.length}`);
-    if (trustRegistryList?.length) {
-      this.logger.info(`🚀 [insertRelatedTx] Sending ${trustRegistryList.length} TR messages to processor`);
-      try {
-        await this.broker.call(
-          `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
-          { trustRegistryList },
-        );
-        this.logger.info(`✅ [insertRelatedTx] TR messages processed successfully`);
-      } catch (err) {
-        this.logger.error(`❌ [insertRelatedTx] Failed to process TR messages:`, err);
-        console.error("FATAL CRAWL_TX TR ERROR:", err);
-      }
-    }
-
     const credentialSchemaMessages = successfulMsgs
       .filter((msg: any) => isCredentialSchemaMessageType(msg.type))
       .map((msg: any) => {
@@ -787,22 +784,6 @@ export default class CrawlTxService extends BullableService {
           height: parentTx?.height ?? null,
         };
       });
-
-    this.logger.info(`📋 [insertRelatedTx] CredentialSchema messages: ${credentialSchemaMessages.length}`);
-
-    if (credentialSchemaMessages?.length) {
-      this.logger.info(`🚀 [insertRelatedTx] Sending ${credentialSchemaMessages.length} CS messages to processor`);
-      try {
-        await this.broker.call(
-          `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
-          { credentialSchemaMessages },
-        );
-        this.logger.info(`✅ [insertRelatedTx] CS messages processed successfully`);
-      } catch (err) {
-        this.logger.error(`❌ [insertRelatedTx] Failed to process CS messages:`, err);
-        console.error("FATAL CRAWL_TX CS ERROR:", err);
-      }
-    }
 
     const permissionMessages = successfulMsgs
       .filter((msg: any) => isPermissionMessageType(msg.type))
@@ -816,36 +797,6 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    this.logger.info(`📋 [insertRelatedTx] Permission messages: ${permissionMessages.length}`);
-    if (permissionMessages?.length) {
-      this.logger.info(` [insertRelatedTx] Waiting 1s for schema transactions to commit before processing permissions`);
-      const { delay } = await import('../../common/utils/db_query_helper');
-      await delay(1000);
-      const permissionBatchSize = 50;
-      for (let i = 0; i < permissionMessages.length; i += permissionBatchSize) {
-        const batch = permissionMessages.slice(i, i + permissionBatchSize);
-        this.logger.info(`🚀 [insertRelatedTx] Processing permission batch ${Math.floor(i / permissionBatchSize) + 1}/${Math.ceil(permissionMessages.length / permissionBatchSize)} (${batch.length} messages)`);
-
-        try {
-          await this.broker.call(
-            `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
-            { permissionMessages: batch },
-          );
-          this.logger.info(`✅ [insertRelatedTx] Permission batch processed successfully`);
-        } catch (err) {
-          this.logger.error(`❌ [insertRelatedTx] Failed to process permission batch:`, err);
-          console.error("FATAL CRAWL_TX PERMISSION ERROR:", err);
-        }
-
-        if (i + permissionBatchSize < permissionMessages.length) {
-          const { delay } = await import('../../common/utils/db_query_helper');
-          await delay(200);
-        }
-      }
-
-      this.logger.info(`✅ [insertRelatedTx] All permission batches processed`);
-    }
-
     const trustDepositList = resultInsertMsgs
       .filter((msg: any) => isTrustDepositMessageType(msg.type))
       .map((msg: any) => {
@@ -858,13 +809,6 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    if (trustDepositList?.length) {
-      await this.broker.call(
-        `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
-        { trustDepositList },
-      );
-    }
-
     const updateParamsList = successfulMsgs
       .filter((msg: any) => isUpdateParamsMessageType(msg.type))
       .map((msg: any) => {
@@ -876,23 +820,18 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    for (const updateMsg of updateParamsList) {
-      this.logger.info(`[insertRelatedTx] Processing UpdateParams message at height ${updateMsg.height}`);
-      try {
-        await this.broker.call(
-          `${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`,
-          updateMsg,
-        );
-        this.logger.info(`[insertRelatedTx] UpdateParams message processed successfully`);
-      } catch (err) {
-        this.logger.error(`[insertRelatedTx] Failed to process UpdateParams message:`, err);
-        console.error("FATAL CRAWL_TX UPDATE_PARAMS ERROR:", err);
-      }
-    }
-
     await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx);
 
-    this.logger.info(`[insertRelatedTx] Completed processing all messages`);
+    this.logger.info(`[insertRelatedTx] Completed processing all messages (payload prepared)`);
+
+    return {
+      DIDfiltered,
+      trustRegistryList,
+      credentialSchemaMessages,
+      permissionMessages,
+      trustDepositList,
+      updateParamsList,
+    };
   }
 
   private async validateAllMessagesProcessed(successfulMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
@@ -1113,7 +1052,7 @@ export default class CrawlTxService extends BullableService {
 
   public async _start() {
     try {
-      await this.waitForServices(SERVICE.V1.CrawlBlock.name);
+      await this.broker.waitForServices([SERVICE.V1.CrawlBlock.name]);
       const providerRegistry = await getProviderRegistry();
       this._registry = new ChainRegistry(this.logger, providerRegistry);
 
@@ -1315,4 +1254,63 @@ export default class CrawlTxService extends BullableService {
   public setRegistry(registry: ChainRegistry) {
     this._registry = registry;
   }
+  private async processPayloads(payload: any) {
+    if (!payload) return;
+    if (payload.DIDfiltered?.length) {
+      await this.broker.call(
+        `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
+        { messages: payload.DIDfiltered },
+      );
+    }
+    if (payload.trustRegistryList?.length) {
+      await this.broker.call(
+        `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
+        { trustRegistryList: payload.trustRegistryList },
+      );
+    }
+
+    if (payload.credentialSchemaMessages?.length) {
+      await this.broker.call(
+        `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
+        { credentialSchemaMessages: payload.credentialSchemaMessages },
+      );
+    }
+
+    if (payload.permissionMessages?.length) {
+      const permissionMessages = payload.permissionMessages;
+      const permissionBatchSize = 50;
+      for (let i = 0; i < permissionMessages.length; i += permissionBatchSize) {
+        const batch = permissionMessages.slice(i, i + permissionBatchSize);
+        await this.broker.call(
+          `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
+          { permissionMessages: batch },
+        );
+        if (i + permissionBatchSize < permissionMessages.length) {
+          const { delay } = await import('../../common/utils/db_query_helper');
+          await delay(200);
+        }
+      }
+    }
+
+    if (payload.trustDepositList?.length) {
+      await this.broker.call(
+        `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
+        { trustDepositList: payload.trustDepositList },
+      );
+    }
+
+    if (payload.updateParamsList?.length) {
+      for (const updateMsg of payload.updateParamsList) {
+        try {
+          await this.broker.call(
+            `${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`,
+            updateMsg,
+          );
+        } catch (err) {
+          this.logger.error(`[processPayloads] Failed to process UpdateParams message:`, err);
+        }
+      }
+    }
+  }
 }
+ 

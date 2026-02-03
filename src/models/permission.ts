@@ -108,7 +108,17 @@ export default class Permission extends BaseModel {
                 slashed_by: { type: 'string', maxLength: 255 },
                 repaid_by: { type: 'string', maxLength: 255 },
                 extended_by: { type: 'string', maxLength: 255 },
-                expire_soon: { type: ['boolean', 'null'] }
+                expire_soon: { type: ['boolean', 'null'] },
+                participants: { type: 'integer' },
+                weight: { type: 'string', maxLength: 50 },
+                issued: { type: 'integer' },
+                verified: { type: 'integer' },
+                ecosystem_slash_events: { type: 'integer' },
+                ecosystem_slashed_amount: { type: 'string', maxLength: 50 },
+                ecosystem_slashed_amount_repaid: { type: 'string', maxLength: 50 },
+                network_slash_events: { type: 'integer' },
+                network_slashed_amount: { type: 'string', maxLength: 50 },
+                network_slashed_amount_repaid: { type: 'string', maxLength: 50 }
             }
         };
     }

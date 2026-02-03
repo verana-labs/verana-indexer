@@ -8,7 +8,7 @@ export class GovernanceFrameworkVersion extends BaseModel {
   id!: number;
   tr_id!: number;
   created!: Date;
-  active_since!: Date;
+  active_since?: Date;
   version!: number;
 
   documents?: GovernanceFrameworkDocument[];
