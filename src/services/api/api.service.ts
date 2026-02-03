@@ -355,11 +355,15 @@ function createRoute(
       createRoute("/verana/perm/v1", {
         "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
         "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
+        "GET pending/flat": `${SERVICE.V1.PermAPIService.path}.pendingFlat`,
         "GET beneficiaries": `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
         "GET history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionHistory`,
         "GET permission-session/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSession`,
         "GET permission-sessions": `${SERVICE.V1.PermAPIService.path}.listPermissionSessions`,
         "GET permission-session-history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSessionHistory`,
+      }),
+      createRoute("/verana/metrics/v1", {
+        "GET all": `${SERVICE.V1.MetricsApiService.path}.getAll`,
       }),
       createRoute("/verana/td/v1", {
         "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
@@ -374,6 +378,7 @@ function createRoute(
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
+        "GET errors/download": `v1.LogsService.downloadErrors`,
       }), 
       {
         path: "/",
