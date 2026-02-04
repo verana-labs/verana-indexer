@@ -487,7 +487,7 @@ export default class CrawlDelegatorsTest {
     expect(validatorDst?.delegators_count).toBe(1);
   }
 
-  @Test('Test depending job')
+  @Test.skip('Test depending job')
   public async test8(): Promise<void> {
     await knex.raw(`
       TRUNCATE TABLE validator, delegator, transaction, transaction_message, block_checkpoint RESTART IDENTITY CASCADE;

@@ -72,12 +72,7 @@ function filterChangedValues(changes: any): any {
   
   const filtered: any = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (value && typeof value === "object" && ("old" in value || "new" in value)) {
-      const val = value as { old?: any; new?: any };
-      if (JSON.stringify(val.old) !== JSON.stringify(val.new)) {
-        filtered[key] = value;
-      }
-    } else if (value !== null && value !== undefined) {
+    if (value !== null && value !== undefined) {
       filtered[key] = value;
     }
   }
@@ -301,11 +296,53 @@ export async function buildActivityTimeline(
 
   const limitedRecords = sortedRecords.slice(0, responseMaxSize);
   
+  const gfvByKey: Map<string, any[]> = new Map();
+  const gfdByKey: Map<string, any[]> = new Map();
+
+  for (const r of limitedRecords) {
+    const atype = r.activity_entity_type;
+    const trId = r.tr_id ?? null;
+    const key = `${r.height ?? ""}::${trId ?? ""}`;
+
+    if (atype === "GovernanceFrameworkVersion") {
+      const entry = {
+        id: r.gfv_id ?? r.id,
+        version: r.version,
+        active_since: r.active_since ? (r.active_since instanceof Date ? r.active_since.toISOString() : new Date(r.active_since).toISOString()) : null,
+        created: r.created ? (r.created instanceof Date ? r.created.toISOString() : new Date(r.created).toISOString()) : null,
+        changes: typeof r.changes === "string" ? (() => { try { return JSON.parse(r.changes); } catch { return null; } })() : r.changes,
+        msg_type: r.msg_type,
+        sender: r.sender,
+      };
+      const arr = gfvByKey.get(key) || [];
+      arr.push(entry);
+      gfvByKey.set(key, arr);
+    }
+
+    if (atype === "GovernanceFrameworkDocument") {
+      const entry = {
+        id: r.gfd_id ?? r.id,
+        url: r.url,
+        digest_sri: r.digest_sri,
+        language: r.language,
+        created: r.created ? (r.created instanceof Date ? r.created.toISOString() : new Date(r.created).toISOString()) : null,
+        changes: typeof r.changes === "string" ? (() => { try { return JSON.parse(r.changes); } catch { return null; } })() : r.changes,
+        msg_type: r.msg_type,
+        sender: r.sender,
+      };
+      const arr = gfdByKey.get(key) || [];
+      arr.push(entry);
+      gfdByKey.set(key, arr);
+    }
+  }
+
   sortedRecords.length = 0;
   allRecords.length = 0;
 
   return limitedRecords.map((record: any) => {
     let changes = record.changes;
+    let wasComputedFromRecord = false;
+    
     if (typeof changes === "string") {
       try {
         changes = JSON.parse(changes);
@@ -313,7 +350,27 @@ export async function buildActivityTimeline(
         changes = null;
       }
     }
-    changes = filterChangedValues(changes);
+    
+    if (!changes || Object.keys(changes).length === 0) {
+      const computedChanges: Record<string, any> = {};
+      const excludeFields = ["id", "created_at", "event_type", "height", "changes", "msg_type", "sender", "timestamp", "activity_entity_type", "activity_entity_id"];
+      for (const [key, value] of Object.entries(record)) {
+        if (!excludeFields.includes(key)) {
+          computedChanges[key] = value;
+        }
+      }
+      changes = Object.keys(computedChanges).length > 0 ? computedChanges : null;
+      wasComputedFromRecord = true;
+    } else {
+      changes = filterChangedValues(changes);
+    }
+
+    if (changes && Object.prototype.hasOwnProperty.call(changes, "height")) {
+      delete changes.height;
+      if (!wasComputedFromRecord) {
+        changes = filterChangedValues(changes);
+      }
+    }
 
     const action = getActionFromMessageType(
       record.msg_type,
@@ -332,7 +389,46 @@ export async function buildActivityTimeline(
 
     const activityEntityType = record.activity_entity_type || entityType;
     const activityEntityIdStr = String(activityEntityId);
-    
+
+    if (activityEntityType === "TrustRegistry") {
+      const key = `${record.height ?? ""}::${record.tr_id ?? activityEntityIdStr ?? ""}`;
+      const relatedGfvs = gfvByKey.get(key) || [];
+      const relatedGfds = gfdByKey.get(key) || [];
+      if ((relatedGfvs && relatedGfvs.length > 0) || (relatedGfds && relatedGfds.length > 0)) {
+        changes = changes || {};
+        if (relatedGfvs && relatedGfvs.length > 0) {
+          changes.added_governance_framework_versions = relatedGfvs.map((g: any) => {
+            const item: any = {
+              id: String(g.id),
+              version: g.version,
+              active_since: g.active_since,
+              created: g.created,
+            };
+            if (g.msg_type) item.msg = getActionFromMessageType(g.msg_type);
+            if (g.sender) item.account = g.sender;
+            if (g.changes) item.changes = filterChangedValues(g.changes);
+            return item;
+          });
+        }
+        if (relatedGfds && relatedGfds.length > 0) {
+          changes.added_governance_framework_documents = relatedGfds.map((g: any) => {
+            const item: any = {
+              id: String(g.id),
+              url: g.url,
+              digest_sri: g.digest_sri,
+              language: g.language,
+              created: g.created,
+            };
+            if (g.msg_type) item.msg = getActionFromMessageType(g.msg_type);
+            if (g.sender) item.account = g.sender;
+            if (g.changes) item.changes = filterChangedValues(g.changes);
+            return item;
+          });
+        }
+        changes = filterChangedValues(changes);
+      }
+    }
+
     const activityItem: any = {
       timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : null,
       block_height: String(record.height || ""),

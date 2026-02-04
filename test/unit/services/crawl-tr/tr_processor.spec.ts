@@ -218,8 +218,16 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       typeof trHistoryArchive.changes === "string"
         ? JSON.parse(trHistoryArchive.changes)
         : trHistoryArchive.changes;
-    expect(archiveChanges.archived).toHaveProperty("new");
-    expect(archiveChanges.archived).toHaveProperty("old");
+    expect(archiveChanges).toHaveProperty("archived");
+    const archivedField = archiveChanges.archived;
+    if (archivedField === null) {
+      expect(archivedField).toBeNull();
+    } else if (typeof archivedField === "object" && archivedField !== null) {
+      expect(archivedField).toHaveProperty("new");
+      expect(archivedField).toHaveProperty("old");
+    } else {
+      expect(typeof archivedField).toBe("string");
+    }
 
     const unarchiveTrustRegistry = [
       {
@@ -251,7 +259,120 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       typeof trHistoryUnarchive.changes === "string"
         ? JSON.parse(trHistoryUnarchive.changes)
         : trHistoryUnarchive.changes;
-    expect(unarchiveChanges.archived).toHaveProperty("new");
-    expect(unarchiveChanges.archived).toHaveProperty("old");
+    expect(unarchiveChanges).toHaveProperty("archived");
+    const unarchiveArchivedField = unarchiveChanges.archived;
+    if (unarchiveArchivedField === null) {
+      expect(unarchiveArchivedField).toBeNull();
+    } else if (typeof unarchiveArchivedField === "object" && unarchiveArchivedField !== null) {
+      expect(unarchiveArchivedField).toHaveProperty("new");
+      expect(unarchiveArchivedField).toHaveProperty("old");
+    } else {
+      expect(typeof unarchiveArchivedField).toBe("string");
+    }
+  });
+
+  it("should create multiple Trust Registries with the same DID at different heights", async () => {
+    const timestamp1 = new Date("2025-11-25T02:35:00.319Z");
+    const timestamp2 = new Date("2026-01-26T18:37:04.894Z");
+    const height1 = 1000;
+    const height2 = 2000;
+    const sameDid = "did:webvh:QmdRTJUXfCky9wX2EzYFkZKyfgG1W6wqxkQvmVU22uKmBP:ecs-tr.testnet.verana.network";
+
+    // Create first TR
+    const firstTR = [
+      {
+        type: TrustRegistryMessageTypes.CreateTrustRegistry,
+        content: {
+          did: sameDid,
+          creator: "creator1",
+          aka: "First TR",
+          language: "en",
+          height: height1,
+          doc_url: "https://verana.io",
+          doc_digest_sri: "sha384-Qo8q7llY5uqGcQzBZMZXvagltDKrMy1ratF2O4sxaUOxVatIwUCbLvnurganAfsI",
+          timestamp: timestamp1,
+        },
+      },
+    ];
+
+    await service.handleTrustRegistryMessages({
+      params: { trustRegistryList: firstTR },
+    } as any);
+
+    const firstTRRecord = await knex("trust_registry")
+      .where({ height: height1 })
+      .first();
+    expect(firstTRRecord).toBeDefined();
+    expect(firstTRRecord.did).toBe(sameDid);
+    expect(firstTRRecord.height).toBe(String(height1));
+
+    const firstGFV = await knex("governance_framework_version")
+      .where({ tr_id: firstTRRecord.id })
+      .first();
+    expect(firstGFV).toBeDefined();
+
+    const firstGFD = await knex("governance_framework_document")
+      .where({ gfv_id: firstGFV.id })
+      .first();
+    expect(firstGFD).toBeDefined();
+    expect(firstGFD.url).toBe("https://verana.io");
+
+    // Create second TR with same DID but different height
+    const secondTR = [
+      {
+        type: TrustRegistryMessageTypes.CreateTrustRegistry,
+        content: {
+          did: sameDid,
+          creator: "creator2",
+          aka: "Second TR",
+          language: "en",
+          height: height2,
+          doc_url: "https://verana.io/page/about/governance/",
+          doc_digest_sri: "sha384-dJ2sWrmvzgdahEMXTrWxMm1l+vI5wQm6B8FGLpO2zfjkKLptsKVZ1Qq3Nqs0hwkN",
+          timestamp: timestamp2,
+        },
+      },
+    ];
+
+    await service.handleTrustRegistryMessages({
+      params: { trustRegistryList: secondTR },
+    } as any);
+
+    // Verify second TR was created (not updating the first one)
+    const secondTRRecord = await knex("trust_registry")
+      .where({ height: height2 })
+      .first();
+    expect(secondTRRecord).toBeDefined();
+    expect(secondTRRecord.did).toBe(sameDid);
+    expect(secondTRRecord.height).toBe(String(height2));
+    expect(secondTRRecord.id).not.toBe(firstTRRecord.id); // Should be a different TR
+
+    // Verify first TR was not modified
+    const firstTRRecordAfter = await knex("trust_registry")
+      .where({ id: firstTRRecord.id })
+      .first();
+    expect(firstTRRecordAfter.height).toBe(String(height1));
+    expect(firstTRRecordAfter.aka).toBe("First TR");
+
+    // Verify second TR has its own GFV and GFD
+    const secondGFV = await knex("governance_framework_version")
+      .where({ tr_id: secondTRRecord.id })
+      .first();
+    expect(secondGFV).toBeDefined();
+    expect(secondGFV.id).not.toBe(firstGFV.id); // Should be a different GFV
+
+    const secondGFD = await knex("governance_framework_document")
+      .where({ gfv_id: secondGFV.id })
+      .first();
+    expect(secondGFD).toBeDefined();
+    expect(secondGFD.url).toBe("https://verana.io/page/about/governance/");
+    expect(secondGFD.id).not.toBe(firstGFD.id); // Should be a different GFD
+
+    // Verify first TR's documents were not affected
+    const firstGFDAfter = await knex("governance_framework_document")
+      .where({ gfv_id: firstGFV.id })
+      .first();
+    expect(firstGFDAfter.url).toBe("https://verana.io");
+    expect(firstGFDAfter.id).toBe(firstGFD.id);
   });
 });

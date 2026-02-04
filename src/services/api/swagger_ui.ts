@@ -82,7 +82,7 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
         if (!spec) {
           res.statusCode = 404;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "OpenAPI spec not available" }));
+          res.end(JSON.stringify({ error: "OpenAPI spec not available", code: 404 }));
           return;
         }
 

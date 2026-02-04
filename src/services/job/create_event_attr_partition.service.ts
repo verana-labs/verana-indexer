@@ -28,6 +28,10 @@ export default class CreateEventAttrPartitionJob extends BullableService {
     );
     const tableName = `event_attribute_partition_${_payload.startBlock}_${_payload.endBlock}`;
     await knex.transaction(async (trx) => {
+      await knex
+        .raw(`DROP TABLE IF EXISTS ${tableName}`)
+        .transacting(trx);
+      
       // create table
       await knex
         .raw(

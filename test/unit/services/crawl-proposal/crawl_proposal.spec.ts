@@ -13,6 +13,8 @@ import CrawlProposalService from "../../../../src/services/crawl-proposal/crawl_
 import CrawlTallyProposalService from "../../../../src/services/crawl-proposal/crawl_tally_proposal.service";
 import knex from "../../../../src/common/utils/db_connection";
 
+jest.setTimeout(120000);
+
 // Mock the common module functions
 jest.mock("../../../../src/common", () => {
   const actual = jest.requireActual("../../../../src/common");

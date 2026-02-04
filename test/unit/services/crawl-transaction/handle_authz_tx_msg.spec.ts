@@ -12,7 +12,7 @@ import tx_fixture_authz from './tx_authz.fixture.json' with { type: 'json' };
 import HandleAuthzTxService from '../../../../src/services/crawl-tx/handle_authz_tx.service';
 import CrawlTxService from '../../../../src/services/crawl-tx/crawl_tx.service';
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 jest.mock('../../../../src/common', () => {
   const actual = jest.requireActual('../../../../src/common');

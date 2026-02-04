@@ -15,6 +15,18 @@ export class TrustRegistry extends BaseModel {
   aka?: string;
   language!: string; 
   active_version?: number;
+  participants?: number;
+  active_schemas?: number;
+  archived_schemas?: number;
+  weight?: string;
+  issued?: number;
+  verified?: number;
+  ecosystem_slash_events?: number;
+  ecosystem_slashed_amount?: string;
+  ecosystem_slashed_amount_repaid?: string;
+  network_slash_events?: number;
+  network_slashed_amount?: string;
+  network_slashed_amount_repaid?: string;
 
   governanceFrameworkVersions?: GovernanceFrameworkVersion[];
 

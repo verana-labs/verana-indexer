@@ -42,103 +42,117 @@ export default class PermProcessorService extends BullableService {
     }>
   ) {
     const { permissionMessages } = ctx.params;
-    this.logger.info(`Processing ${permissionMessages?.length || 0} Permission messages`);
+    const totalMessages = permissionMessages?.length || 0;
+    this.logger.info(` Processing ${totalMessages} Permission messages`);
     
     if (!permissionMessages || permissionMessages.length === 0) {
       return { success: true };
     }
 
-    const processMessage = async (msg: {
-      type: string;
-      content: any;
-      timestamp?: string;
-      height?: number;
-    }) => {
-      this.logger.info(`Processing Permission message: type=${msg.type}, height=${msg.height}`);
-      const payload = {
-        ...msg.content,
-        timestamp: msg.timestamp,
-        height: msg.height,
-      };
-      delete payload["@type"];
+    const failedMessages: Array<{ message: any; error: string }> = [];
 
-      switch (msg.type) {
-        case VeranaPermissionMessageTypes.CreateRootPermission:
-          await this.broker.call("permIngest.handleMsgCreateRootPermission", {
-            data: payload,
-          });
-          break;
-        case VeranaPermissionMessageTypes.CreatePermission:
-          await this.broker.call("permIngest.handleMsgCreatePermission", {
-            data: payload,
-          });
-          break;
-        case VeranaPermissionMessageTypes.ExtendPermission:
-          await this.broker.call("permIngest.handleMsgExtendPermission", {
-            data: payload,
-          });
-          break;
-        case VeranaPermissionMessageTypes.RevokePermission:
-          await this.broker.call("permIngest.handleMsgRevokePermission", {
-            data: payload,
-          });
-          break;
-        case VeranaPermissionMessageTypes.StartPermissionVP:
-          await this.broker.call("permIngest.handleMsgStartPermissionVP", {
-            data: payload,
-          });
-          break;
-        case VeranaPermissionMessageTypes.SetPermissionVPToValidated:
-          await this.broker.call(
-            "permIngest.handleMsgSetPermissionVPToValidated",
-            { data: payload }
-          );
-          break;
-        case VeranaPermissionMessageTypes.RenewPermissionVP:
-          await this.broker.call("permIngest.handleMsgRenewPermissionVP", {
-            data: payload,
-          });
-          break;
-        case VeranaPermissionMessageTypes.CancelPermissionVPLastRequest:
-          await this.broker.call(
-            "permIngest.handleMsgCancelPermissionVPLastRequest",
-            { data: payload }
-          );
-          break;
-        case VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession:
-          await this.broker.call(
-            "permIngest.handleMsgCreateOrUpdatePermissionSession",
-            { data: payload }
-          );
-          break;
-        case VeranaPermissionMessageTypes.SlashPermissionTrustDeposit:
-          await this.broker.call(
-            "permIngest.handleMsgSlashPermissionTrustDeposit",
-            { data: payload }
-          );
-          break;
-        case VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
-          await this.broker.call(
-            "permIngest.handleMsgRepayPermissionSlashedTrustDeposit",
-            { data: payload }
-          );
-          break;
-        default:
-          break;
+    const sortedMessages = [...permissionMessages].sort((a, b) => {
+      const heightDiff = (a.height || 0) - (b.height || 0);
+      if (heightDiff !== 0) return heightDiff;
+      return 0;
+    });
+
+    for (let i = 0; i < sortedMessages.length; i++) {
+      const msg = sortedMessages[i];
+      try {
+        this.logger.info(` Processing Permission message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`);
+        const payload = {
+          ...msg.content,
+          timestamp: msg.timestamp,
+          height: msg.height,
+        };
+        delete payload["@type"];
+
+        let result: any;
+        switch (msg.type) {
+          case VeranaPermissionMessageTypes.CreateRootPermission:
+            result = await this.broker.call("permIngest.handleMsgCreateRootPermission", {
+              data: payload,
+            });
+            break;
+          case VeranaPermissionMessageTypes.CreatePermission:
+            result = await this.broker.call("permIngest.handleMsgCreatePermission", {
+              data: payload,
+            });
+            break;
+          case VeranaPermissionMessageTypes.ExtendPermission:
+            result = await this.broker.call("permIngest.handleMsgExtendPermission", {
+              data: payload,
+            });
+            break;
+          case VeranaPermissionMessageTypes.RevokePermission:
+            result = await this.broker.call("permIngest.handleMsgRevokePermission", {
+              data: payload,
+            });
+            break;
+          case VeranaPermissionMessageTypes.StartPermissionVP:
+            result = await this.broker.call("permIngest.handleMsgStartPermissionVP", {
+              data: payload,
+            });
+            break;
+          case VeranaPermissionMessageTypes.SetPermissionVPToValidated:
+            result = await this.broker.call(
+              "permIngest.handleMsgSetPermissionVPToValidated",
+              { data: payload }
+            );
+            if (result && result.success === false) {
+              this.logger.warn(` SetPermissionVPToValidated failed for id=${payload.id}: ${result.reason}`);
+            }
+            break;
+          case VeranaPermissionMessageTypes.RenewPermissionVP:
+            result = await this.broker.call("permIngest.handleMsgRenewPermissionVP", {
+              data: payload,
+            });
+            break;
+          case VeranaPermissionMessageTypes.CancelPermissionVPLastRequest:
+            result = await this.broker.call(
+              "permIngest.handleMsgCancelPermissionVPLastRequest",
+              { data: payload }
+            );
+            break;
+          case VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession:
+            result = await this.broker.call(
+              "permIngest.handleMsgCreateOrUpdatePermissionSession",
+              { data: payload }
+            );
+            break;
+          case VeranaPermissionMessageTypes.SlashPermissionTrustDeposit:
+            result = await this.broker.call(
+              "permIngest.handleMsgSlashPermissionTrustDeposit",
+              { data: payload }
+            );
+            break;
+          case VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
+            result = await this.broker.call(
+              "permIngest.handleMsgRepayPermissionSlashedTrustDeposit",
+              { data: payload }
+            );
+            break;
+          default:
+            this.logger.warn(` Unknown permission message type: ${msg.type}`);
+            break;
+        }
+
+        if (result && result.success === false && result.reason) {
+          this.logger.warn(` Permission message processing returned failure: ${result.reason}`);
+        }
+      } catch (err: any) {
+        failedMessages.push({ message: msg, error: err.message || String(err) });
+        this.logger.error(`❌ Error processing Permission message ${i + 1}/${totalMessages}:`, err);
       }
-    };
+    }
 
-    await this.processorBase.processInBatches(
-      permissionMessages,
-      processMessage,
-      {
-        maxConcurrent: this._isFreshStart ? 3 : 8,
-        batchSize: this._isFreshStart ? 20 : 50,
-        delayBetweenBatches: this._isFreshStart ? 500 : 200,
-      }
-    );
+    if (failedMessages.length > 0) {
+      this.logger.warn(` ${failedMessages.length}/${totalMessages} Permission messages failed to process`);
+    }
 
-    return { success: true };
+    this.logger.info(` Permission processing complete: ${totalMessages - failedMessages.length}/${totalMessages} successful`);
+    return { success: true, failed: failedMessages.length };
   }
 
   @Action({ name: "getPermission" })
