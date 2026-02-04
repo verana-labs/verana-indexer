@@ -1,6 +1,8 @@
 import { BrokerOptions, Errors, MetricRegistry, ServiceBroker } from "moleculer";
 // import 'reflect-metadata';
 import { inspect } from "util";
+import fs from "fs";
+import path from "path";
 import * as os from "os";
 // import pick from 'lodash/pick';
 // import HotReloadMiddleware from './middlewares/HotReloadCHokidar';
@@ -49,22 +51,36 @@ const brokerConfig: BrokerOptions = {
 
   // Enable/disable logging or use custom logger. More info: https://moleculer.services/docs/0.14/logging.html
   // Available logger types: "Console", "File", "Pino", "Winston", "Bunyan", "debug", "Log4js", "Datadog"
-  logger: {
-    type: Config.LOGGERTYPE || "Console",
-    options: {
-      // Using colors on the output
-      colors: Config.LOGGERCOLORS || true,
-      // Print module names with different colors (like docker-compose for containers)
-      moduleColors: Config.LOGGERMODULECOLORS || false,
-      // Line formatter. It can be "json", "short", "simple", "full", a `Function` or a template string like "{timestamp} {level} {nodeID}/{mod}: {msg}"
-      formatter: Config.LOGGERFORMATTER || "full",
-      // Custom object printer. If not defined, it uses the `util.inspect` method.
-      objectPrinter: (o: never) =>
-        inspect(o, { depth: 4, colors: true, breakLength: 100 }),
-      // Auto-padding the module name in order to messages begin at the same column.
-      autoPadding: Config.LOGGERAUTOPADDING || false,
-    },
-  },
+  logger: (() => {
+    const loggers: any[] = [];
+
+    if (Config.LOG_TO_CONSOLE) {
+      loggers.push({
+        type: Config.LOGGERTYPE || "Console",
+        level: Config.LOGLEVEL,
+        options: {
+          // Using colors on the output
+          colors: Config.LOGGERCOLORS || true,
+          // Print module names with different colors (like docker-compose for containers)
+          moduleColors: Config.LOGGERMODULECOLORS || false,
+          // Line formatter. It can be "json", "short", "simple", "full", a `Function` or a template string like "{timestamp} {level} {nodeID}/{mod}: {msg}"
+          formatter: Config.LOGGERFORMATTER || "full",
+          // Custom object printer. If not defined, it uses the `util.inspect` method.
+          objectPrinter: (o: never) =>
+            inspect(o, { depth: 4, colors: true, breakLength: 100 }),
+          // Auto-padding the module name in order to messages begin at the same column.
+          autoPadding: Config.LOGGERAUTOPADDING || false,
+        },
+      });
+    }
+
+
+    if (loggers.length === 0) {
+      return false;
+    }
+
+    return loggers.length === 1 ? loggers[0] : loggers;
+  })(),
   // Default log level for built-in console logger. It can be overwritten in logger options above.
   // Available values: trace, debug, info, warn, error, fatal
   logLevel: Config.LOGLEVEL,
@@ -282,10 +298,16 @@ const brokerConfig: BrokerOptions = {
         broker.logger?.warn('Could not patch os.networkInterfaces, metrics may fail on Windows');
       }
     }
+    try {
+      (global as any).logger = broker.logger;
+    } catch (_) {}
   },
   
   started: async (broker: ServiceBroker): Promise<void> => {
     broker.logger?.info(' Broker started successfully. Services will retry LCD connections if needed.');
+    try {
+      (global as any).logger = broker.logger;
+    } catch (_) {}
     
     process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
       broker.logger?.error('Unhandled Promise Rejection:', reason);

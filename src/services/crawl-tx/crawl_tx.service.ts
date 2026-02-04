@@ -21,6 +21,7 @@ import {
 } from '../../common';
 import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
+import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { triggerGC } from '../../common/utils/health_check';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import {
@@ -123,7 +124,7 @@ export default class CrawlTxService extends BullableService {
             updated_at: blockCheckpoint.updated_at,
           })
           .returning('id')
-          .timeout(10000)
+          .timeout(getDbQueryTimeoutMs())
           .transacting(trx);
         }
       });
@@ -215,7 +216,7 @@ export default class CrawlTxService extends BullableService {
                   updated_at: blockCheckpoint.updated_at,
                 })
                 .returning('id')
-                .timeout(10000)
+                .timeout(getDbQueryTimeoutMs())
                 .transacting(trx);
 
             } catch (error) {
@@ -245,7 +246,7 @@ export default class CrawlTxService extends BullableService {
                   updated_at: blockCheckpoint.updated_at,
                 })
                 .returning('id')
-                .timeout(10000)
+                .timeout(getDbQueryTimeoutMs())
                 .transacting(trx);
             }
             return payloads;
@@ -334,6 +335,7 @@ export default class CrawlTxService extends BullableService {
               query: `tx.height=${height}`,
               page,
               per_page: perPage,
+              order_by: 'asc',
             })
           ),
           `tx_search-height-${height}-page-${page}`
@@ -355,14 +357,22 @@ export default class CrawlTxService extends BullableService {
       }
     };
 
+    const baseTxsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
+      ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
+      : config.handleTransaction.txsPerCall;
+    const rawTxsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart);
+    const maxPerPage = this.getTxSearchMaxPerPage();
+    const txsPerCall = Math.max(1, Math.min(rawTxsPerCall, maxPerPage));
+
+    if (rawTxsPerCall > maxPerPage) {
+      this.logger.warn(
+        `[crawl_tx] txsPerCall ${rawTxsPerCall} exceeds tx_search max ${maxPerPage}; clamping per_page to ${txsPerCall} to avoid missing transactions`
+      );
+    }
+
     blocks.forEach((block) => {
       if (block.tx_count > 0) {
         this.logger.info('crawl tx by height: ', block.height);
-        const baseTxsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
-          ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
-          : config.handleTransaction.txsPerCall;
-        const txsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart);
-
         const totalPages = Math.ceil(
           block.tx_count / txsPerCall
         );
@@ -372,7 +382,7 @@ export default class CrawlTxService extends BullableService {
           promises.push(
             getBlockInfo(
               block.height,
-              block.timestamp,
+              block.time,
               pageIndex,
               txsPerCall.toString()
             )
@@ -429,6 +439,14 @@ export default class CrawlTxService extends BullableService {
     return listRawTxs;
   }
 
+  private getTxSearchMaxPerPage(): number {
+    const envValue = Number(process.env.TX_SEARCH_MAX_PER_PAGE);
+    if (Number.isFinite(envValue) && envValue > 0) {
+      return Math.floor(envValue);
+    }
+    return 100;
+  }
+
   // decode list raw tx
   async decodeListRawTx(
     listRawTx: { listTx: any; height: number; timestamp: string }[]
@@ -444,7 +462,7 @@ export default class CrawlTxService extends BullableService {
           listHash = listTx.txs.map((tx: any) => tx.hash);
           const listTxExisted = await Transaction.query()
             .whereIn('hash', listHash)
-            .timeout(120000);
+            .timeout(getDbQueryTimeoutMs(120000));
           listTxExisted.forEach((tx) => {
             mapExistedTx.set(tx.hash, true);
           });
@@ -708,7 +726,7 @@ export default class CrawlTxService extends BullableService {
         const chunk = listMsgModel.slice(i, i + chunkSizeMsg);
         await TransactionMessage.query()
           .insert(chunk)
-          .timeout(60000)
+          .timeout(getDbQueryTimeoutMs(60000))
           .transacting(transactionDB);
       }
       this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`);

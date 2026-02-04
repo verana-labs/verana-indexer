@@ -1,62 +1,26 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { ServiceBroker } from "moleculer";
-import * as fs from "fs";
-import * as path from "path";
 import BullableService, { QueueHandler } from "../../base/bullable.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
-import Stats, { Granularity, EntityType } from "../../models/stats";
-import { BlockCheckpoint } from "../../models/block_checkpoint";
-import { Block } from "../../models/block";
 import knex from "../../common/utils/db_connection";
+import { Block } from "../../models/block";
+import { BlockCheckpoint } from "../../models/block_checkpoint";
+import Stats, { Granularity } from "../../models/stats";
 
 @Service({
   name: SERVICE.V1.StatsCalculationService.key,
   version: 1,
 })
 export default class StatsCalculationService extends BullableService {
-  private statsLogFile: string;
-  private statsLogStream: fs.WriteStream | null = null;
   private processingInterval: NodeJS.Timeout | null = null;
   private readonly PROCESS_INTERVAL_MS = 30000;
   private isProcessing: boolean = false;
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
-    
-    const logDir = path.join(process.cwd(), "logs");
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-    
-    this.statsLogFile = path.join(logDir, `stats-calculation-${new Date().toISOString().split("T")[0]}.log`);
-    
-    this.statsLogStream = fs.createWriteStream(this.statsLogFile, { flags: "a" });
-    this.writeToFile(`\n${"=".repeat(80)}\n`);
-    this.writeToFile(`Stats Calculation Log - ${new Date().toISOString()}\n`);
-    this.writeToFile(`${"=".repeat(80)}\n\n`);
   }
 
-  private writeToFile(message: string): void {
-    if (this.statsLogStream) {
-      const timestamp = new Date().toISOString();
-      this.statsLogStream.write(`[${timestamp}] ${message}\n`);
-    }
-  }
 
-  private logToFile(level: string, ...args: any[]): void {
-    const message = args.map(arg => {
-      if (typeof arg === "object") {
-        try {
-          return JSON.stringify(arg, null, 2);
-        } catch {
-          return String(arg);
-        }
-      }
-      return String(arg);
-    }).join(" ");
-    
-    this.writeToFile(`[${level}] ${message}`);
-  }
 
   @Action({
     name: "calculateStats",
@@ -77,13 +41,13 @@ export default class StatsCalculationService extends BullableService {
 
       this.logger.info(`[${granularity}] Calculating GLOBAL stats...`);
       await this.calculateGlobalStats(granularity, timestamp);
-      
+
       this.logger.info(`[${granularity}] Calculating TRUST_REGISTRY stats...`);
       await this.calculateTrustRegistryStats(granularity, timestamp);
-      
+
       this.logger.info(`[${granularity}] Calculating CREDENTIAL_SCHEMA stats...`);
       await this.calculateCredentialSchemaStats(granularity, timestamp);
-      
+
       this.logger.info(`[${granularity}] Calculating PERMISSION stats...`);
       await this.calculatePermissionStats(granularity, timestamp);
     } catch (error: any) {
@@ -112,47 +76,46 @@ export default class StatsCalculationService extends BullableService {
 
   private async calculateGlobalStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
-      this.logger.info(`[GLOBAL][${granularity}] Starting calculation for timestamp: ${timestamp.toISOString()}`);
-      
-      this.logger.info(`[GLOBAL][${granularity}] Checking existing stats in database...`);
+      this.logger.info(`GLOBAL [${granularity}] Starting calculation for timestamp: ${timestamp.toISOString()}`);
+
+      this.logger.info(`GLOBAL [${granularity}] Checking existing stats in database...`);
       const existing = await Stats.query()
         .where("granularity", granularity)
         .where("timestamp", timestamp.toISOString())
         .where("entity_type", "GLOBAL")
         .whereNull("entity_id")
         .first();
-      this.logger.info(`[GLOBAL][${granularity}] Existing stats check result: ${existing ? `Found existing entry (id: ${existing.id})` : "No existing entry"}`);
+      this.logger.info(`GLOBAL [${granularity}] Existing stats check result: ${existing ? `Found existing entry (id: ${existing.id})` : "No existing entry"}`);
 
-      this.logger.info(`[GLOBAL][${granularity}] Querying permissions table...`);
+      this.logger.info(`GLOBAL [${granularity}] Querying permissions table...`);
       const permCount = await knex("permissions")
         .where("created", "<=", timestamp)
         .count("* as count")
         .first();
-      this.logger.info(`[GLOBAL][${granularity}] Permissions query result:`, permCount);
+      this.logger.info(`GLOBAL [${granularity}] Permissions query result:`, permCount);
 
-      this.logger.info(`[GLOBAL][${granularity}] Querying credential_schemas table...`);
+      this.logger.info(`GLOBAL [${granularity}] Querying credential_schemas table...`);
       const schemaCount = await knex("credential_schemas")
         .where("created", "<=", timestamp)
         .count("* as count")
         .first();
-      this.logger.info(`[GLOBAL][${granularity}] Schemas query result:`, schemaCount);
+      this.logger.info(`GLOBAL [${granularity}] Schemas query result:`, schemaCount);
 
       const permCountNum = Number(permCount?.count || 0);
       const schemaCountNum = Number(schemaCount?.count || 0);
-      this.logger.info(`[GLOBAL][${granularity}] Found ${permCountNum} permissions and ${schemaCountNum} schemas`);
+      this.logger.info(`GLOBAL [${granularity}] Found ${permCountNum} permissions and ${schemaCountNum} schemas`);
 
       const hasEntities = permCountNum > 0 || schemaCountNum > 0;
 
       if (!hasEntities) {
-        const skipMsg = `[GLOBAL][${granularity}] SKIPPING - no entities exist (permissions: ${permCountNum}, schemas: ${schemaCountNum})`;
+        const skipMsg = `GLOBAL [${granularity}] SKIPPING - no entities exist (permissions: ${permCountNum}, schemas: ${schemaCountNum})`;
         this.logger.warn(skipMsg);
-        this.logToFile("WARN", skipMsg);
         return;
       }
 
-      this.logger.info(`[GLOBAL][${granularity}] Computing stats from database...`);
+      this.logger.info(`GLOBAL [${granularity}] Computing stats from database...`);
       const stats = await this.computeGlobalStats(timestamp);
-      this.logger.info(`[GLOBAL][${granularity}] Stats computed successfully:`, {
+      this.logger.info(`GLOBAL [${granularity}] Stats computed successfully:`, {
         cumulative_participants: stats.cumulative_participants,
         cumulative_active_schemas: stats.cumulative_active_schemas,
         cumulative_archived_schemas: stats.cumulative_archived_schemas,
@@ -162,40 +125,52 @@ export default class StatsCalculationService extends BullableService {
       });
 
       if (existing) {
-        this.logger.info(`[GLOBAL][${granularity}] Updating existing entry (id: ${existing.id})...`);
-        const updateResult = await Stats.query()
-          .findById(existing.id)
-          .patch(stats);
-        this.logger.info(`[GLOBAL][${granularity}] Update query executed. Result:`, updateResult);
-        this.logger.info(`[GLOBAL][${granularity}] ✅ Successfully updated stats for ${granularity} at ${timestamp.toISOString()}`);
-        this.logToFile("INFO", `[GLOBAL][${granularity}] ✅ Successfully updated stats for ${granularity} at ${timestamp.toISOString()}`);
+        this.logger.info(`GLOBAL [${granularity}] Updating existing entry (id: ${existing.id})...`);
+        if (!this.hasAnyDelta(stats)) {
+          const skipMsg = `GLOBAL [${granularity}] SKIPPING UPDATE - all delta fields are zero for timestamp ${timestamp.toISOString()}`;
+          this.logger.info(skipMsg);
+        } else if (this.isStatsEqual(existing, stats)) {
+          const skipMsg = `GLOBAL [${granularity}] SKIPPING UPDATE - computed stats identical to existing for id ${existing.id}`;
+          this.logger.info(skipMsg);
+        } else {
+          const updateResult = await Stats.query()
+            .findById(existing.id)
+            .patch(stats);
+          this.logger.info(`GLOBAL [${granularity}] Update query executed. Result:`, updateResult);
+          this.logger.info(`GLOBAL [${granularity}]  Successfully updated stats for ${granularity} at ${timestamp.toISOString()}`);
+        }
       } else {
-        this.logger.info(`[GLOBAL][${granularity}] Preparing to insert new entry with data:`, {
+        this.logger.info(`GLOBAL [${granularity}] Preparing to insert new entry with data:`, {
           granularity,
           timestamp: timestamp.toISOString(),
           entity_type: "GLOBAL",
           entity_id: null,
           ...stats,
         });
-        
-        try {
-          const inserted = await Stats.query().insert({
-            granularity,
-            timestamp: timestamp.toISOString(),
-            entity_type: "GLOBAL",
-            entity_id: null,
-            ...stats,
-          });
-          this.logger.info(`[GLOBAL][${granularity}] ✅ Successfully created stats for ${granularity} at ${timestamp.toISOString()} (id: ${inserted.id})`);
-        this.logToFile("INFO", `[GLOBAL][${granularity}] ✅ Successfully created stats for ${granularity} at ${timestamp.toISOString()} (id: ${inserted.id})`);
-        } catch (insertError: any) {
-          this.logger.error(`[GLOBAL][${granularity}] ❌ INSERT FAILED:`, {
-            error: insertError?.message,
-            stack: insertError?.stack,
-            code: insertError?.code,
-            detail: insertError?.detail,
-          });
-          throw insertError;
+
+        const hasAnyDelta = this.hasAnyDelta(stats);
+        if (!hasAnyDelta) {
+          const skipMsg = `GLOBAL [${granularity}] SKIPPING INSERT - all delta fields are zero for timestamp ${timestamp.toISOString()}`;
+          this.logger.info(skipMsg);
+        } else {
+          try {
+            const inserted = await Stats.query().insert({
+              granularity,
+              timestamp: timestamp.toISOString(),
+              entity_type: "GLOBAL",
+              entity_id: null,
+              ...stats,
+            });
+            this.logger.info(`GLOBAL [${granularity}]  Successfully created stats for ${granularity} at ${timestamp.toISOString()} (id: ${inserted.id})`);
+          } catch (insertError: any) {
+            this.logger.error(`GLOBAL [${granularity}]  INSERT FAILED:`, {
+              error: insertError?.message,
+              stack: insertError?.stack,
+              code: insertError?.code,
+              detail: insertError?.detail,
+            });
+            throw insertError;
+          }
         }
       }
     } catch (error: any) {
@@ -206,8 +181,7 @@ export default class StatsCalculationService extends BullableService {
         detail: error?.detail,
         name: error?.name,
       };
-      this.logger.error(`[GLOBAL][${granularity}] ❌ FATAL ERROR in calculateGlobalStats:`, fatalErrorDetails);
-      this.logToFile("ERROR", `[GLOBAL][${granularity}] ❌ FATAL ERROR in calculateGlobalStats:`, fatalErrorDetails);
+      this.logger.error(`GLOBAL [${granularity}]  FATAL ERROR in calculateGlobalStats:`, fatalErrorDetails);
       throw error;
     }
   }
@@ -233,32 +207,42 @@ export default class StatsCalculationService extends BullableService {
             continue;
           }
 
-      if (existing) {
-        this.logger.info(`[TRUST_REGISTRY][${granularity}] Updating existing entry for TR ${tr.id} (id: ${existing.id})`);
-        await Stats.query()
-          .findById(existing.id)
-          .patch(stats);
-        this.logger.info(`[TRUST_REGISTRY][${granularity}] ✅ Updated stats for TR ${tr.id}`);
-      } else {
-        this.logger.info(`[TRUST_REGISTRY][${granularity}] Inserting new entry for TR ${tr.id}`);
-        try {
-          const inserted = await Stats.query().insert({
-            granularity,
-            timestamp: timestamp.toISOString(),
-            entity_type: "TRUST_REGISTRY",
-            entity_id: String(tr.id),
-            ...stats,
-          });
-          this.logger.info(`[TRUST_REGISTRY][${granularity}] ✅ Created stats for TR ${tr.id} (id: ${inserted.id})`);
-        } catch (insertError: any) {
-          this.logger.error(`[TRUST_REGISTRY][${granularity}] ❌ INSERT FAILED for TR ${tr.id}:`, {
-            error: insertError?.message,
-            stack: insertError?.stack,
-            code: insertError?.code,
-          });
-          throw insertError;
-        }
-      }
+          if (existing) {
+            this.logger.info(`[TRUST_REGISTRY][${granularity}] Updating existing entry for TR ${tr.id} (id: ${existing.id})`);
+            if (!this.hasAnyDelta(stats)) {
+              this.logger.info(`[TRUST_REGISTRY][${granularity}] SKIPPING UPDATE for TR ${tr.id} - all delta fields are zero`);
+            } else if (this.isStatsEqual(existing, stats)) {
+              this.logger.info(`[TRUST_REGISTRY][${granularity}] SKIPPING UPDATE for TR ${tr.id} - no changes`);
+            } else {
+              await Stats.query()
+                .findById(existing.id)
+                .patch(stats);
+              this.logger.info(`[TRUST_REGISTRY][${granularity}]  Updated stats for TR ${tr.id}`);
+            }
+          } else {
+            this.logger.info(`[TRUST_REGISTRY][${granularity}] Inserting new entry for TR ${tr.id}`);
+            if (!this.hasAnyDelta(stats)) {
+              this.logger.info(`[TRUST_REGISTRY][${granularity}] SKIPPING INSERT for TR ${tr.id} - all delta fields are zero`);
+              continue;
+            }
+            try {
+              const inserted = await Stats.query().insert({
+                granularity,
+                timestamp: timestamp.toISOString(),
+                entity_type: "TRUST_REGISTRY",
+                entity_id: String(tr.id),
+                ...stats,
+              });
+              this.logger.info(`[TRUST_REGISTRY][${granularity}]  Created stats for TR ${tr.id} (id: ${inserted.id})`);
+            } catch (insertError: any) {
+              this.logger.error(`[TRUST_REGISTRY][${granularity}]  INSERT FAILED for TR ${tr.id}:`, {
+                error: insertError?.message,
+                stack: insertError?.stack,
+                code: insertError?.code,
+              });
+              throw insertError;
+            }
+          }
         } catch (error: any) {
           this.logger.error(`[TRUST_REGISTRY] Error processing TR ${tr.id}:`, error?.message || error, error?.stack);
         }
@@ -272,7 +256,7 @@ export default class StatsCalculationService extends BullableService {
   private async calculateCredentialSchemaStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
       const schemas = await knex("credential_schemas").select("id");
-      this.logger.info(`[CREDENTIAL_SCHEMA] Found ${schemas.length} schemas`);
+      this.logger.info(`CREDENTIAL_SCHEMA Found ${schemas.length} schemas`);
 
       let created = 0;
       let updated = 0;
@@ -295,14 +279,25 @@ export default class StatsCalculationService extends BullableService {
           }
 
           if (existing) {
-            this.logger.info(`[CREDENTIAL_SCHEMA][${granularity}] Updating existing entry for schema ${schema.id} (id: ${existing.id})`);
-            await Stats.query()
-              .findById(existing.id)
-              .patch(stats);
-            updated++;
-            this.logger.info(`[CREDENTIAL_SCHEMA][${granularity}] ✅ Updated stats for schema ${schema.id}`);
+            this.logger.info(`CREDENTIAL_SCHEMA[${granularity}] Updating existing entry for schema ${schema.id} (id: ${existing.id})`);
+            if (!this.hasAnyDelta(stats)) {
+              this.logger.info(`CREDENTIAL_SCHEMA[${granularity}] SKIPPING UPDATE for schema ${schema.id} - all delta fields are zero`);
+            } else if (this.isStatsEqual(existing, stats)) {
+              this.logger.info(`CREDENTIAL_SCHEMA[${granularity}] SKIPPING UPDATE for schema ${schema.id} - no changes`);
+            } else {
+              await Stats.query()
+                .findById(existing.id)
+                .patch(stats);
+              updated++;
+              this.logger.info(`CREDENTIAL_SCHEMA[${granularity}]  Updated stats for schema ${schema.id}`);
+            }
           } else {
-            this.logger.info(`[CREDENTIAL_SCHEMA][${granularity}] Inserting new entry for schema ${schema.id}`);
+            this.logger.info(`CREDENTIAL_SCHEMA[${granularity}] Inserting new entry for schema ${schema.id}`);
+            if (!this.hasAnyDelta(stats)) {
+              skipped++;
+              this.logger.debug(`CREDENTIAL_SCHEMA SKIPPING INSERT for schema ${schema.id} - all delta fields are zero`);
+              continue;
+            }
             try {
               const inserted = await Stats.query().insert({
                 granularity,
@@ -312,9 +307,9 @@ export default class StatsCalculationService extends BullableService {
                 ...stats,
               });
               created++;
-              this.logger.info(`[CREDENTIAL_SCHEMA][${granularity}] ✅ Created stats for schema ${schema.id} (id: ${inserted.id})`);
+              this.logger.info(`CREDENTIAL_SCHEMA[${granularity}]  Created stats for schema ${schema.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
-              this.logger.error(`[CREDENTIAL_SCHEMA][${granularity}] ❌ INSERT FAILED for schema ${schema.id}:`, {
+              this.logger.error(`CREDENTIAL_SCHEMA[${granularity}]  INSERT FAILED for schema ${schema.id}:`, {
                 error: insertError?.message,
                 stack: insertError?.stack,
                 code: insertError?.code,
@@ -323,13 +318,13 @@ export default class StatsCalculationService extends BullableService {
             }
           }
         } catch (error: any) {
-          this.logger.error(`[CREDENTIAL_SCHEMA] Error processing schema ${schema.id}:`, error?.message || error, error?.stack);
+          this.logger.error(`CREDENTIAL_SCHEMA Error processing schema ${schema.id}:`, error?.message || error, error?.stack);
         }
       }
 
-      this.logger.info(`[CREDENTIAL_SCHEMA] Completed: created=${created}, updated=${updated}, skipped=${skipped}`);
+      this.logger.info(`CREDENTIAL_SCHEMA Completed: created=${created}, updated=${updated}, skipped=${skipped}`);
     } catch (error: any) {
-      this.logger.error(`[CREDENTIAL_SCHEMA] Error in calculateCredentialSchemaStats:`, error?.message || error, error?.stack);
+      this.logger.error(`CREDENTIAL_SCHEMA Error in calculateCredentialSchemaStats:`, error?.message || error, error?.stack);
       throw error;
     }
   }
@@ -337,7 +332,7 @@ export default class StatsCalculationService extends BullableService {
   private async calculatePermissionStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
       const permissions = await knex("permissions").select("id", "schema_id");
-      this.logger.info(`[PERMISSION] Found ${permissions.length} permissions`);
+      this.logger.info(`PERMISSION Found ${permissions.length} permissions`);
 
       let created = 0;
       let updated = 0;
@@ -356,19 +351,30 @@ export default class StatsCalculationService extends BullableService {
 
           if (!stats) {
             skipped++;
-            this.logger.debug(`[PERMISSION] No stats for permission ${perm.id} - skipping`);
+            this.logger.debug(`PERMISSION No stats for permission ${perm.id} - skipping`);
             continue;
           }
 
           if (existing) {
-            this.logger.info(`[PERMISSION][${granularity}] Updating existing entry for permission ${perm.id} (id: ${existing.id})`);
-            await Stats.query()
-              .findById(existing.id)
-              .patch(stats);
-            updated++;
-            this.logger.info(`[PERMISSION][${granularity}] ✅ Updated stats for permission ${perm.id}`);
+            this.logger.info(`PERMISSION [${granularity}] Updating existing entry for permission ${perm.id} (id: ${existing.id})`);
+            if (!this.hasAnyDelta(stats)) {
+              this.logger.info(`PERMISSION [${granularity}] SKIPPING UPDATE for permission ${perm.id} - all delta fields are zero`);
+            } else if (this.isStatsEqual(existing, stats)) {
+              this.logger.info(`PERMISSION [${granularity}] SKIPPING UPDATE for permission ${perm.id} - no changes`);
+            } else {
+              await Stats.query()
+                .findById(existing.id)
+                .patch(stats);
+              updated++;
+              this.logger.info(`PERMISSION [${granularity}]  Updated stats for permission ${perm.id}`);
+            }
           } else {
-            this.logger.info(`[PERMISSION][${granularity}] Inserting new entry for permission ${perm.id}`);
+            this.logger.info(`PERMISSION [${granularity}] Inserting new entry for permission ${perm.id}`);
+            if (!this.hasAnyDelta(stats)) {
+              skipped++;
+              this.logger.debug(`PERMISSION SKIPPING INSERT for permission ${perm.id} - all delta fields are zero`);
+              continue;
+            }
             try {
               const inserted = await Stats.query().insert({
                 granularity,
@@ -378,9 +384,9 @@ export default class StatsCalculationService extends BullableService {
                 ...stats,
               });
               created++;
-              this.logger.info(`[PERMISSION][${granularity}] ✅ Created stats for permission ${perm.id} (id: ${inserted.id})`);
+              this.logger.info(`PERMISSION [${granularity}]  Created stats for permission ${perm.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
-              this.logger.error(`[PERMISSION][${granularity}] ❌ INSERT FAILED for permission ${perm.id}:`, {
+              this.logger.error(`PERMISSION [${granularity}]  INSERT FAILED for permission ${perm.id}:`, {
                 error: insertError?.message,
                 stack: insertError?.stack,
                 code: insertError?.code,
@@ -389,23 +395,23 @@ export default class StatsCalculationService extends BullableService {
             }
           }
         } catch (error: any) {
-          this.logger.error(`[PERMISSION] Error processing permission ${perm.id}:`, error?.message || error, error?.stack);
+          this.logger.error(`PERMISSION Error processing permission ${perm.id}:`, error?.message || error, error?.stack);
         }
       }
 
-      this.logger.info(`[PERMISSION] Completed: created=${created}, updated=${updated}, skipped=${skipped}`);
+      this.logger.info(`PERMISSION Completed: created=${created}, updated=${updated}, skipped=${skipped}`);
     } catch (error: any) {
-      this.logger.error(`[PERMISSION] Error in calculatePermissionStats:`, error?.message || error, error?.stack);
+      this.logger.error(`PERMISSION Error in calculatePermissionStats:`, error?.message || error, error?.stack);
       throw error;
     }
   }
 
   private async computeGlobalStats(timestamp: Date): Promise<any> {
-    this.logger.info(`[GLOBAL] Computing stats: Querying permissions table...`);
+    this.logger.info(`GLOBAL  Computing stats: Querying permissions table...`);
     const allPerms = await knex("permissions")
       .where("created", "<=", timestamp)
       .select("participants", "weight", "issued", "verified", "ecosystem_slash_events", "ecosystem_slashed_amount", "ecosystem_slashed_amount_repaid", "network_slash_events", "network_slashed_amount", "network_slashed_amount_repaid");
-    this.logger.info(`[GLOBAL] Found ${allPerms.length} permissions to process`);
+    this.logger.info(`GLOBAL  Found ${allPerms.length} permissions to process`);
 
     const cumulative = {
       participants: 0,
@@ -797,23 +803,97 @@ export default class StatsCalculationService extends BullableService {
     return true;
   }
 
+  private hasAnyDelta(stats: any): boolean {
+    if (!stats) return false;
+
+    const deltaFields = [
+      "delta_participants",
+      "delta_active_schemas",
+      "delta_archived_schemas",
+      "delta_weight",
+      "delta_issued",
+      "delta_verified",
+      "delta_ecosystem_slash_events",
+      "delta_ecosystem_slashed_amount",
+      "delta_ecosystem_slashed_amount_repaid",
+      "delta_network_slash_events",
+      "delta_network_slashed_amount",
+      "delta_network_slashed_amount_repaid",
+    ];
+
+    return deltaFields.some((f) => {
+      const val = stats[f];
+      if (val === undefined || val === null) return false;
+
+      if (typeof val === "string") {
+        const s = val.trim();
+        if (s.length === 0) return false;
+        if (/^-?\d+$/.test(s)) {
+          try {
+            return BigInt(s) !== BigInt(0);
+          } catch {
+            return Number(s) !== 0;
+          }
+        }
+        return Number.parseFloat(s) !== 0;
+      }
+
+      if (typeof val === "bigint") {
+        return val !== BigInt(0);
+      }
+
+      return Number(val) !== 0;
+    });
+  }
+
+  private isStatsEqual(existing: any, stats: any): boolean {
+    if (!existing || !stats) return false;
+    const fields = [
+      "cumulative_participants",
+      "cumulative_active_schemas",
+      "cumulative_archived_schemas",
+      "cumulative_weight",
+      "cumulative_issued",
+      "cumulative_verified",
+      "cumulative_ecosystem_slash_events",
+      "cumulative_ecosystem_slashed_amount",
+      "cumulative_ecosystem_slashed_amount_repaid",
+      "cumulative_network_slash_events",
+      "cumulative_network_slashed_amount",
+      "cumulative_network_slashed_amount_repaid",
+      "delta_participants",
+      "delta_active_schemas",
+      "delta_archived_schemas",
+      "delta_weight",
+      "delta_issued",
+      "delta_verified",
+      "delta_ecosystem_slash_events",
+      "delta_ecosystem_slashed_amount",
+      "delta_ecosystem_slashed_amount_repaid",
+      "delta_network_slash_events",
+      "delta_network_slashed_amount",
+      "delta_network_slashed_amount_repaid",
+    ];
+
+    return fields.every((f) => {
+      const a = existing[f];
+      const b = stats[f];
+      return String(a ?? "") === String(b ?? "");
+    });
+  }
+
   async _start(): Promise<void> {
     this.logger.info("🚀 StatsCalculationService._start() called");
-    this.logToFile("INFO", "🚀 StatsCalculationService._start() called");
-    this.logger.info(`📝 Stats calculation logs will be written to: ${this.statsLogFile}`);
-    
+
     try {
       await super._start();
-      this.logger.info("✅ Super._start() completed");
-      this.logToFile("INFO", "✅ Super._start() completed");
+      this.logger.info(" Super._start() completed");
     } catch (error: any) {
-      this.logger.error("❌ Error in super._start():", error?.message || error, error?.stack);
-      this.logToFile("ERROR", "❌ Error in super._start():", error?.message || error, error?.stack);
+      this.logger.error(" Error in super._start():", error?.message || error, error?.stack);
       throw error;
     }
 
     this.logger.info("📅 Scheduling recurring stats calculation job...");
-    this.logToFile("INFO", "📅 Scheduling recurring stats calculation job...");
 
     try {
       await this.createJob(
@@ -830,22 +910,19 @@ export default class StatsCalculationService extends BullableService {
           },
         }
       );
-      this.logger.info(`✅ Stats calculation job scheduled (interval: ${this.PROCESS_INTERVAL_MS}ms)`);
-      this.logToFile("INFO", `✅ Stats calculation job scheduled (interval: ${this.PROCESS_INTERVAL_MS}ms)`);
+      this.logger.info(` Stats calculation job scheduled (interval: ${this.PROCESS_INTERVAL_MS}ms)`);
     } catch (error: any) {
-      this.logger.error("❌ Error scheduling stats calculation job:", error?.message || error, error?.stack);
-      this.logToFile("ERROR", "❌ Error scheduling stats calculation job:", error?.message || error, error?.stack);
+      this.logger.error(" Error scheduling stats calculation job:", error?.message || error, error?.stack);
     }
 
-    this.logger.info(`⏰ Starting interval-based stats processing (every ${this.PROCESS_INTERVAL_MS}ms)...`);
-    this.logToFile("INFO", `⏰ Starting interval-based stats processing (every ${this.PROCESS_INTERVAL_MS}ms)...`);
-    
+    this.logger.info(` Starting interval-based stats processing (every ${this.PROCESS_INTERVAL_MS}ms)...`);
+
     this.processingInterval = setInterval(async () => {
       if (this.isProcessing) {
         this.logger.debug("⏭️ Stats calculation already in progress, skipping...");
         return;
       }
-      
+
       try {
         await this.processStatsFromCheckpoint();
       } catch (error: any) {
@@ -856,19 +933,16 @@ export default class StatsCalculationService extends BullableService {
           detail: error?.detail,
           name: error?.name,
         };
-        this.logger.error("❌ Error during interval stats calculation:", errorDetails);
-        this.logToFile("ERROR", "❌ Error during interval stats calculation:", errorDetails);
+        this.logger.error(" Error during interval stats calculation:", errorDetails);
         this.isProcessing = false;
       }
     }, this.PROCESS_INTERVAL_MS);
 
     setTimeout(async () => {
-      this.logger.info("🔄 Running initial stats calculation after service startup...");
-      this.logToFile("INFO", "🔄 Running initial stats calculation after service startup...");
+      this.logger.info(" Running initial stats calculation after service startup...");
       try {
         await this.processStatsFromCheckpoint();
-        this.logger.info("✅ Initial stats calculation completed successfully");
-        this.logToFile("INFO", "✅ Initial stats calculation completed successfully");
+        this.logger.info(" Initial stats calculation completed successfully");
       } catch (error: any) {
         const errorDetails = {
           message: error?.message,
@@ -877,28 +951,18 @@ export default class StatsCalculationService extends BullableService {
           detail: error?.detail,
           name: error?.name,
         };
-        this.logger.error("❌ Error during initial stats calculation:", errorDetails);
-        this.logToFile("ERROR", "❌ Error during initial stats calculation:", errorDetails);
+        this.logger.error(" Error during initial stats calculation:", errorDetails);
         this.isProcessing = false;
       }
     }, 2000);
-    
-    this.logger.info("✅ StatsCalculationService._start() completed");
-    this.logToFile("INFO", "✅ StatsCalculationService._start() completed");
+
+    this.logger.info(" StatsCalculationService._start() completed");
   }
 
   async stopped(): Promise<void> {
     if (this.processingInterval) {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
-    }
-    
-    if (this.statsLogStream) {
-      this.writeToFile(`\n${"=".repeat(80)}\n`);
-      this.writeToFile(`Service stopped - ${new Date().toISOString()}\n`);
-      this.writeToFile(`${"=".repeat(80)}\n`);
-      this.statsLogStream.end();
-      this.statsLogStream = null;
     }
     await super.stopped();
   }
@@ -916,26 +980,22 @@ export default class StatsCalculationService extends BullableService {
         .first();
 
       if (!handleTxCheckpoint) {
-        this.logger.debug("[CHECKPOINT] HANDLE_TRANSACTION checkpoint not found, waiting for transactions to be processed...");
-        this.logToFile("DEBUG", "[CHECKPOINT] HANDLE_TRANSACTION checkpoint not found, waiting for transactions to be processed...");
+        this.logger.debug("CHECKPOINT HANDLE_TRANSACTION checkpoint not found, waiting for transactions to be processed...");
         return;
       }
 
       const handleTxHeight = handleTxCheckpoint.height;
-      this.logger.info(`[CHECKPOINT] HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}`);
-      this.logToFile("INFO", `[CHECKPOINT] HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}`);
+      this.logger.info(`CHECKPOINT HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}`);
 
       const statsCheckpoint = await BlockCheckpoint.query()
         .where("job_name", BULL_JOB_NAME.CALCULATE_STATS)
         .first();
 
       const statsHeight = statsCheckpoint ? statsCheckpoint.height : 0;
-      this.logger.info(`[CHECKPOINT] Stats checkpoint height: ${statsHeight}`);
-      this.logToFile("INFO", `[CHECKPOINT] Stats checkpoint height: ${statsHeight}`);
+      this.logger.info(`CHECKPOINT Stats checkpoint height: ${statsHeight}`);
 
       if (statsHeight >= handleTxHeight) {
-        this.logger.debug(`[CHECKPOINT] Stats already up to date (${statsHeight} >= ${handleTxHeight}), no new transactions to process`);
-        this.logToFile("DEBUG", `[CHECKPOINT] Stats already up to date (${statsHeight} >= ${handleTxHeight}), no new transactions to process`);
+        this.logger.debug(`CHECKPOINT Stats already up to date (${statsHeight} >= ${handleTxHeight}), no new transactions to process`);
         return;
       }
 
@@ -944,18 +1004,16 @@ export default class StatsCalculationService extends BullableService {
         .first();
 
       if (!block) {
-        this.logger.warn(`[CHECKPOINT] Block at height ${handleTxHeight} not found, waiting...`);
-        this.logToFile("WARN", `[CHECKPOINT] Block at height ${handleTxHeight} not found, waiting...`);
+        this.logger.warn(`CHECKPOINT Block at height ${handleTxHeight} not found, waiting...`);
         return;
       }
 
       const blockTimestamp = new Date(block.time);
-      this.logger.info(`[CHECKPOINT] Processing stats for HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}, block timestamp: ${blockTimestamp.toISOString()}`);
-      this.logToFile("INFO", `[CHECKPOINT] Processing stats for HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}, block timestamp: ${blockTimestamp.toISOString()}`);
+      this.logger.info(`CHECKPOINT Processing stats for HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}, block timestamp: ${blockTimestamp.toISOString()}`);
 
       try {
         await this.calculateStatsForTimestamp(blockTimestamp);
-        
+
         if (statsCheckpoint) {
           statsCheckpoint.height = handleTxHeight;
           await BlockCheckpoint.query()
@@ -969,16 +1027,14 @@ export default class StatsCalculationService extends BullableService {
             height: handleTxHeight,
           });
         }
-        
-        this.logger.info(`[CHECKPOINT] Updated stats checkpoint to height ${handleTxHeight} (synced with HANDLE_TRANSACTION)`);
-        this.logToFile("INFO", `[CHECKPOINT] Updated stats checkpoint to height ${handleTxHeight} (synced with HANDLE_TRANSACTION)`);
+
+        this.logger.info(`CHECKPOINT Updated stats checkpoint to height ${handleTxHeight} (synced with HANDLE_TRANSACTION)`);
       } catch (calcError: any) {
-        this.logger.error(`[CHECKPOINT] Error calculating stats for height ${handleTxHeight}:`, {
+        this.logger.error(`CHECKPOINT Error calculating stats for height ${handleTxHeight}:`, {
           message: calcError?.message,
           stack: calcError?.stack,
           code: calcError?.code,
         });
-        this.logToFile("ERROR", `[CHECKPOINT] Error calculating stats for height ${handleTxHeight}:`, calcError?.message || calcError);
         throw calcError;
       }
     } catch (error: any) {
@@ -989,8 +1045,7 @@ export default class StatsCalculationService extends BullableService {
         detail: error?.detail,
         name: error?.name,
       };
-      this.logger.error("[CHECKPOINT] Error processing stats from checkpoint:", errorDetails);
-      this.logToFile("ERROR", "[CHECKPOINT] Error processing stats from checkpoint:", errorDetails);
+      this.logger.error("CHECKPOINT Error processing stats from checkpoint:", errorDetails);
       throw error;
     } finally {
       this.isProcessing = false;
@@ -998,34 +1053,21 @@ export default class StatsCalculationService extends BullableService {
   }
 
   private async calculateStatsForTimestamp(timestamp: Date): Promise<void> {
-    const logMessage = `═══════════════════════════════════════════════════════════\n📊 STARTING STATS CALCULATION\nTimestamp: ${timestamp.toISOString()}\n═══════════════════════════════════════════════════════════`;
-    this.logger.info(logMessage);
-    this.logToFile("INFO", logMessage);
 
     try {
-      this.logger.info("🔍 Testing database connection...");
-      this.logToFile("INFO", "🔍 Testing database connection...");
+      this.logger.info(" Testing database connection...");
       const dbTest = await knex.raw("SELECT 1 as connection_test");
-      this.logger.info("✅ Database connection OK");
-      this.logToFile("INFO", "✅ Database connection OK");
+      this.logger.info(" Database connection OK");
 
-      this.logger.info(`⏰ Processing timestamp: ${timestamp.toISOString()}`);
+      this.logger.info(` Processing timestamp: ${timestamp.toISOString()}`);
       const granularities: Granularity[] = ["HOUR", "DAY", "MONTH"];
-      this.logger.info(`📋 Processing granularities: ${granularities.join(", ")}`);
-      this.logToFile("INFO", `📋 Processing granularities: ${granularities.join(", ")}`);
+      this.logger.info(`Processing granularities: ${granularities.join(", ")}`);
 
       for (const granularity of granularities) {
-        const separator = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
-        this.logger.info(`\n${separator}`);
-        this.logger.info(`🔄 [${granularity}] Starting calculation...`);
-        this.logger.info(`${separator}`);
-        this.logToFile("INFO", `\n${separator}`);
-        this.logToFile("INFO", `🔄 [${granularity}] Starting calculation...`);
-        this.logToFile("INFO", `${separator}`);
+        this.logger.info(` [${granularity}] Starting calculation...`);
         try {
           await this.calculateForGranularity(granularity, timestamp);
-          this.logger.info(`✅ [${granularity}] Calculation completed successfully`);
-          this.logToFile("INFO", `✅ [${granularity}] Calculation completed successfully`);
+          this.logger.info(` [${granularity}] Calculation completed successfully`);
         } catch (error: any) {
           const errorDetails = {
             message: error?.message,
@@ -1033,37 +1075,29 @@ export default class StatsCalculationService extends BullableService {
             code: error?.code,
             detail: error?.detail,
           };
-          this.logger.error(`❌ [${granularity}] Error during calculation:`, errorDetails);
-          this.logToFile("ERROR", `❌ [${granularity}] Error during calculation:`, errorDetails);
+          this.logger.error(` [${granularity}] Error during calculation:`, errorDetails);
           throw error;
         }
       }
 
-      this.logger.info(`\n📊 Checking final stats count in database...`);
-      this.logToFile("INFO", `\n📊 Checking final stats count in database...`);
+      this.logger.info(`\n Checking final stats count in database...`);
       const statsCountResult = await knex("stats").count("* as count").first() as any;
       const count = Number(statsCountResult?.count || 0);
-      this.logger.info(`✅ Stats calculation completed. Total stats entries in database: ${count}`);
-      this.logToFile("INFO", `✅ Stats calculation completed. Total stats entries in database: ${count}`);
-      
+      this.logger.info(` Stats calculation completed. Total stats entries in database: ${count}`);
+
       if (count === 0) {
         const warnings = [
-          "⚠️  WARNING: No stats entries found in database after calculation!",
-          "⚠️  This might indicate:",
+          "  WARNING: No stats entries found in database after calculation!",
+          "  This might indicate:",
           "   1. No entities exist in permissions/credential_schemas tables",
           "   2. Database insert operations failed silently",
           "   3. Transaction rollback occurred"
         ];
         warnings.forEach(w => {
           this.logger.warn(w);
-          this.logToFile("WARN", w);
         });
       }
-      
-      const finishMessage = "═══════════════════════════════════════════════════════════\n📊 STATS CALCULATION FINISHED\n═══════════════════════════════════════════════════════════";
-      this.logger.info(finishMessage);
-      this.logToFile("INFO", finishMessage);
-      this.logger.info(`\n📝 Full log saved to: ${this.statsLogFile}\n`);
+
     } catch (error: any) {
       const errorDetails = {
         message: error?.message,
@@ -1072,13 +1106,7 @@ export default class StatsCalculationService extends BullableService {
         detail: error?.detail,
         name: error?.name,
       };
-      const errorMessage = "═══════════════════════════════════════════════════════════\n❌ FATAL ERROR during stats calculation:\n═══════════════════════════════════════════════════════════";
-      this.logger.error(errorMessage);
       this.logger.error(errorDetails);
-      this.logToFile("ERROR", errorMessage);
-      this.logToFile("ERROR", JSON.stringify(errorDetails, null, 2));
-      this.logger.error("═══════════════════════════════════════════════════════════\n");
-      this.logger.error(`📝 Error log saved to: ${this.statsLogFile}\n`);
       throw error;
     }
   }

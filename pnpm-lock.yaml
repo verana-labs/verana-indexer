@@ -58,7 +58,7 @@ importers:
         version: 0.10.0(debug@4.4.3)
       '@ourparentcenter/moleculer-decorators-extended':
         specifier: ^1.1.1
-        version: 1.1.1(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)
+        version: 1.1.1(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)
       '@shazow/whatsabi':
         specifier: ^0.11.0
         version: 0.11.0(@noble/hashes@1.8.0)
@@ -136,19 +136,19 @@ importers:
         version: 1.0.4
       moleculer:
         specifier: ^0.14.35
-        version: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)
+        version: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)
       moleculer-auto-openapi:
         specifier: ^1.1.6
         version: 1.1.6
       moleculer-bull:
         specifier: ^0.3.1
-        version: 0.3.1(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4))
+        version: 0.3.1(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4))
       moleculer-db:
         specifier: ^0.8.29
-        version: 0.8.29(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4))
+        version: 0.8.29(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4))
       moleculer-web:
         specifier: ^0.10.8
-        version: 0.10.8(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4))
+        version: 0.10.8(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4))
       mysql:
         specifier: ^2.18.1
         version: 2.18.1
@@ -167,6 +167,9 @@ importers:
       pg-hstore:
         specifier: ^2.3.4
         version: 2.3.4
+      pino:
+        specifier: 10.3.0
+        version: 10.3.0
       protobufjs:
         specifier: 7.5.4
         version: 7.5.4
@@ -176,6 +179,9 @@ importers:
       reflect-metadata:
         specifier: ^0.1.14
         version: 0.1.14
+      rotating-file-stream:
+        specifier: 3.2.8
+        version: 3.2.8
       semver:
         specifier: ^7.7.3
         version: 7.7.3
@@ -2151,6 +2157,9 @@ packages:
   '@ourparentcenter/moleculer-decorators-extended@1.1.1':
     resolution: {integrity: sha512-smTBwO1NYvre62hNsnTo0dQVeX+fCJ56trGgHsgiKWKVfW5v8La8NTWVqa+9TYEimri9iHeac9N5V6TzN0RFhg==}
 
+  '@pinojs/redact@0.4.0':
+    resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
+
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
@@ -2749,6 +2758,10 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  atomic-sleep@1.0.0:
+    resolution: {integrity: sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ==}
+    engines: {node: '>=8.0.0'}
 
   available-typed-arrays@1.0.7:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
@@ -5299,6 +5312,10 @@ packages:
     peerDependencies:
       knex: '>=1.0.1'
 
+  on-exit-leak-free@2.1.2:
+    resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
+    engines: {node: '>=14.0.0'}
+
   on-finished@2.4.1:
     resolution: {integrity: sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg==}
     engines: {node: '>= 0.8'}
@@ -5496,6 +5513,16 @@ packages:
     engines: {node: '>=0.10'}
     hasBin: true
 
+  pino-abstract-transport@3.0.0:
+    resolution: {integrity: sha512-wlfUczU+n7Hy/Ha5j9a/gZNy7We5+cXp8YL+X+PG8S0KXxw7n/JXA3c46Y0zQznIJ83URJiwy7Lh56WLokNuxg==}
+
+  pino-std-serializers@7.1.0:
+    resolution: {integrity: sha512-BndPH67/JxGExRgiX1dX0w1FvZck5Wa4aal9198SrRhZjH3GxKQUKIBnYJTdj2HDN3UQAS06HlfcSbQj2OHmaw==}
+
+  pino@10.3.0:
+    resolution: {integrity: sha512-0GNPNzHXBKw6U/InGe79A3Crzyk9bcSyObF9/Gfo9DLEf5qj5RF50RSjsu0W1rZ6ZqRGdzDFCRBQvi9/rSGPtA==}
+    hasBin: true
+
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
@@ -5559,6 +5586,9 @@ packages:
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
+  process-warning@5.0.0:
+    resolution: {integrity: sha512-a39t9ApHNx2L4+HBnQKqxxHNs1r7KF+Intd8Q/g1bUh6q0WIp9voPXJ/x0j+ZL45KF1pJd9+q2jLIRMfvEshkA==}
+
   process@0.11.10:
     resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
     engines: {node: '>= 0.6.0'}
@@ -5610,6 +5640,9 @@ packages:
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
 
+  quick-format-unescaped@4.0.4:
+    resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
+
   quick-lru@4.0.1:
     resolution: {integrity: sha512-ARhCpm70fzdcvNQfPoy49IaanKkTlRWF2JMzqhcJbhSFRZv7nPTvZJdcY7301IPmvW+/p0RgIWnQDLJxifsQ7g==}
     engines: {node: '>=8'}
@@ -5653,6 +5686,10 @@ packages:
 
   readonly-date@1.0.0:
     resolution: {integrity: sha512-tMKIV7hlk0h4mO3JTmmVuIlJVXjKk3Sep9Bf5OH0O+758ruuVkUy2J9SttDLm91IEX/WHlXPSpxMGjPj4beMIQ==}
+
+  real-require@0.2.0:
+    resolution: {integrity: sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==}
+    engines: {node: '>= 12.13.0'}
 
   rechoir@0.6.2:
     resolution: {integrity: sha512-HFM8rkZ+i3zrV+4LQjwQ0W+ez98pApMGM3HUrN04j3CqzPOzl9nmP15Y8YXNm8QHGv/eacOVEjqhmWpkRV0NAw==}
@@ -5787,6 +5824,10 @@ packages:
     resolution: {integrity: sha512-+GcJgQivhs6S9qvLogusiTcS9kQUfgR75whKuy5jIhuiOfQuJ8fjqxV6EGD5duH1Y/FawFUMtMhyeq3Fbnib8A==}
     engines: {node: '>=8'}
 
+  rotating-file-stream@3.2.8:
+    resolution: {integrity: sha512-b+5jU0GM4JJnk+++zYPNBb7Hq3qCj02LcuzTpDmHCbphoGl4rp/CLa7AwEQjVs4vWJVy3Cba8ar6ZlFip5fnDA==}
+    engines: {node: '>=14.0'}
+
   run-async@2.4.1:
     resolution: {integrity: sha512-tvVnVv01b8c1RrA6Ep7JkStj85Guv/YrMcwqYQnwjsAS2cTmmPGBBjAjpCW7RrSodNSoE2/qg9O4bceNvUuDgQ==}
     engines: {node: '>=0.12.0'}
@@ -5824,6 +5865,10 @@ packages:
   safe-regex-test@1.1.0:
     resolution: {integrity: sha512-x/+Cz4YrimQxQccJf5mKEbIa1NzeCRNI5Ecl/ekmlYaampdNLPalVyIcCZNNH3MvmqBugV5TMYZXv0ljslUlaw==}
     engines: {node: '>= 0.4'}
+
+  safe-stable-stringify@2.5.0:
+    resolution: {integrity: sha512-b3rppTKm9T+PsVCBEOUR46GWI7fdOs00VKZ1+9c1EWDaDMvjQc6tUwuFyIprgGgTcWoVHSKrU8H31ZHA2e0RHA==}
+    engines: {node: '>=10'}
 
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
@@ -5940,6 +5985,9 @@ packages:
   slice-ansi@5.0.0:
     resolution: {integrity: sha512-FC+lgizVPfie0kkhqUScwRu1O/lF6NOgJmlCgK+/LYxDCTk8sGelYaHDhFcDN+Sn3Cv+3VSa4Byeo+IMCzpMgQ==}
     engines: {node: '>=12'}
+
+  sonic-boom@4.2.0:
+    resolution: {integrity: sha512-INb7TM37/mAcsGmc9hyyI6+QR3rR1zVRu36B0NeGXKnOOLiZOfER5SA+N7X7k3yUYRzLWafduTDvJAfDswwEww==}
 
   source-map-support@0.5.13:
     resolution: {integrity: sha512-SHSKFHadjVA5oR4PPqhtAVdcBWwRYVd6g6cAXnIbRiIwc2EhPrTuKUBdSLvlEKyIP3GCf89fltvcZiP9MMFA1w==}
@@ -6154,6 +6202,10 @@ packages:
 
   thenify@3.3.1:
     resolution: {integrity: sha512-RVZSIV5IG10Hk3enotrhvz0T9em6cyHBLkH/YAZuKqd8hRkKhSfCGIcP2KUY0EPxndzANBmNllzWPwak+bheSw==}
+
+  thread-stream@4.0.0:
+    resolution: {integrity: sha512-4iMVL6HAINXWf1ZKZjIPcz5wYaOdPhtO8ATvZ+Xqp3BTdaqtAwQkNmKORqcIo5YkQqGXq5cwfswDwMqqQNrpJA==}
+    engines: {node: '>=20'}
 
   through2@4.0.2:
     resolution: {integrity: sha512-iOqSav00cVxEEICeD7TjLB1sueEL+81Wpzp2bY17uZjZN0pWZPuo4suZ/61VujxmqSGFfgOcNuTZ85QJwNZQpw==}
@@ -10609,9 +10661,9 @@ snapshots:
       - debug
       - utf-8-validate
 
-  '@ourparentcenter/moleculer-decorators-extended@1.1.1(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)':
+  '@ourparentcenter/moleculer-decorators-extended@1.1.1(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)':
     dependencies:
-      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)
+      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)
     transitivePeerDependencies:
       - amqplib
       - avsc
@@ -10636,6 +10688,8 @@ snapshots:
       - rhea-promise
       - thrift
       - winston
+
+  '@pinojs/redact@0.4.0': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
@@ -11234,6 +11288,8 @@ snapshots:
   async@3.2.6: {}
 
   asynckit@0.4.0: {}
+
+  atomic-sleep@1.0.0: {}
 
   available-typed-arrays@1.0.7:
     dependencies:
@@ -14358,19 +14414,19 @@ snapshots:
     dependencies:
       swagger-ui-dist: 4.19.1
 
-  moleculer-bull@0.3.1(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)):
+  moleculer-bull@0.3.1(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)):
     dependencies:
       bull: 4.16.5
       lodash: 4.17.21
-      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)
+      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)
     transitivePeerDependencies:
       - supports-color
 
-  moleculer-db@0.8.29(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)):
+  moleculer-db@0.8.29(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)):
     dependencies:
       '@seald-io/nedb': 3.1.0
       lodash: 4.17.21
-      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)
+      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)
 
   moleculer-repl@0.7.4:
     dependencies:
@@ -14386,7 +14442,7 @@ snapshots:
       tiny-human-time: 1.2.0
       yargs-parser: 21.1.1
 
-  moleculer-web@0.10.8(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)):
+  moleculer-web@0.10.8(moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)):
     dependencies:
       '@fastify/busboy': 1.2.1
       body-parser: 1.20.3
@@ -14396,14 +14452,14 @@ snapshots:
       isstream: 0.1.2
       kleur: 4.1.5
       lodash: 4.17.21
-      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4)
+      moleculer: 0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4)
       path-to-regexp: 3.3.0
       qs: 6.14.0
       serve-static: 1.16.2
     transitivePeerDependencies:
       - supports-color
 
-  moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(protobufjs@7.5.4):
+  moleculer@0.14.35(cbor-x@1.6.0)(debug@4.4.3)(ioredis@5.8.1)(pino@10.3.0)(protobufjs@7.5.4):
     dependencies:
       args: 5.0.3
       eventemitter2: 6.4.9
@@ -14419,6 +14475,7 @@ snapshots:
       cbor-x: 1.6.0
       debug: 4.4.3(supports-color@9.4.0)
       ioredis: 5.8.1
+      pino: 10.3.0
       protobufjs: 7.5.4
     transitivePeerDependencies:
       - encoding
@@ -14586,6 +14643,8 @@ snapshots:
       ajv-formats: 2.1.1(ajv@8.17.1)
       db-errors: 0.2.3
       knex: 2.5.1(mysql@2.18.1)(pg@8.16.3)
+
+  on-exit-leak-free@2.1.2: {}
 
   on-finished@2.4.1:
     dependencies:
@@ -14776,6 +14835,26 @@ snapshots:
 
   pidtree@0.6.0: {}
 
+  pino-abstract-transport@3.0.0:
+    dependencies:
+      split2: 4.2.0
+
+  pino-std-serializers@7.1.0: {}
+
+  pino@10.3.0:
+    dependencies:
+      '@pinojs/redact': 0.4.0
+      atomic-sleep: 1.0.0
+      on-exit-leak-free: 2.1.2
+      pino-abstract-transport: 3.0.0
+      pino-std-serializers: 7.1.0
+      process-warning: 5.0.0
+      quick-format-unescaped: 4.0.4
+      real-require: 0.2.0
+      safe-stable-stringify: 2.5.0
+      sonic-boom: 4.2.0
+      thread-stream: 4.0.0
+
   pirates@4.0.7: {}
 
   piscina@3.2.0:
@@ -14831,6 +14910,8 @@ snapshots:
       react-is: 18.3.1
 
   process-nextick-args@2.0.1: {}
+
+  process-warning@5.0.0: {}
 
   process@0.11.10: {}
 
@@ -14910,6 +14991,8 @@ snapshots:
 
   queue-microtask@1.2.3: {}
 
+  quick-format-unescaped@4.0.4: {}
+
   quick-lru@4.0.1: {}
 
   range-parser@1.2.1: {}
@@ -14975,6 +15058,8 @@ snapshots:
       readable-stream: 4.7.0
 
   readonly-date@1.0.0: {}
+
+  real-require@0.2.0: {}
 
   rechoir@0.6.2:
     dependencies:
@@ -15108,6 +15193,8 @@ snapshots:
 
   ripemd160-min@0.0.6: {}
 
+  rotating-file-stream@3.2.8: {}
+
   run-async@2.4.1: {}
 
   run-parallel@1.2.0:
@@ -15150,6 +15237,8 @@ snapshots:
       call-bound: 1.0.4
       es-errors: 1.3.0
       is-regex: 1.2.1
+
+  safe-stable-stringify@2.5.0: {}
 
   safer-buffer@2.1.2: {}
 
@@ -15287,6 +15376,10 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 4.0.0
+
+  sonic-boom@4.2.0:
+    dependencies:
+      atomic-sleep: 1.0.0
 
   source-map-support@0.5.13:
     dependencies:
@@ -15495,6 +15588,10 @@ snapshots:
   thenify@3.3.1:
     dependencies:
       any-promise: 1.3.0
+
+  thread-stream@4.0.0:
+    dependencies:
+      real-require: 0.2.0
 
   through2@4.0.2:
     dependencies:

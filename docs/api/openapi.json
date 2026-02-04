@@ -1865,6 +1865,146 @@
         }
       }
     },
+    "/verana/perm/v1/pending/flat": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Get pending tasks",
+        "description": "Return pending tasks for a given account grouped by Trust Registry and Credential Schema. Supports At-Block-Height header for historical state.",
+        "operationId": "pendingFlat",
+        "parameters": [
+          {
+            "name": "account",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Account address"
+          },
+          {
+            "name": "response_max_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Maximum number of trust registries to return"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of sort criteria. Default: -modified"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with pending tasks grouped by trust registry and credential schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingFlatResponse"
+                },
+                "example": {
+                  "trust_registries": [
+                    {
+                      "id": "2",
+                      "did": "did:example:186af95a000ef890a583f47a0274a800",
+                      "aka": "https://example.com",
+                      "pending_tasks": 5,
+                      "participants": 10,
+                      "credential_schemas": [
+                        {
+                          "id": "1234",
+                          "title": "ExampleCredential",
+                          "description": "Example Credential Json Schema",
+                          "pending_tasks": 2,
+                          "participants": 3,
+                          "permissions": [
+                            {
+                              "id": "1",
+                              "type": "ECOSYSTEM",
+                              "vp_state": "PENDING",
+                              "perm_state": "ACTIVE",
+                              "grantee": "verana12dyk...",
+                              "did": "did:example:123",
+                              "modified": "2025-10-03T11:59:38.834380988Z"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/metrics/v1/all": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Get Global Current Metrics",
+        "description": "Return global current metrics across all Trust Registries and Credential Schemas. Supports At-Block-Height header for historical state.",
+        "operationId": "getGlobalMetrics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Global metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalMetricsResponse"
+                },
+                "example": {
+                  "participants": 12345,
+                  "active_trust_registries": 12,
+                  "archived_trust_registries": 3,
+                  "active_schemas": 256,
+                  "archived_schemas": 42,
+                  "weight": "1234567890000000000",
+                  "issued": 987654,
+                  "verified": 543210,
+                  "ecosystem_slash_events": 5,
+                  "ecosystem_slashed_amount": "100000000000000",
+                  "ecosystem_slashed_amount_repaid": "50000000000000",
+                  "network_slash_events": 1,
+                  "network_slashed_amount": "250000000000000",
+                  "network_slashed_amount_repaid": "100000000000000"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/perm/v1/permission-sessions": {
       "get": {
         "tags": [
@@ -2214,7 +2354,7 @@
           "Statistics"
         ],
         "summary": "Get Statistics",
-        "description": "Retrieve statistics with buckets and/or totals for a time range. If granularity is not specified, the method returns the smallest number of buckets by combining granularities (MONTH, DAY, HOUR) in order to satisfy the time interval.",
+        "description": "Retrieve statistics with buckets and/or totals for a time range. If granularity is not specified, the method returns the smallest number of buckets by combining MONTH/DAY/HOUR buckets as needed. The response `granularity` will be the smallest granularity present in the returned buckets.",
         "operationId": "getStatsRange",
         "parameters": [
           {
@@ -2229,7 +2369,7 @@
                 "MONTH"
               ]
             },
-            "description": "Granularity of the statistics (HOUR, DAY, or MONTH). If not specified, automatically selects the most appropriate granularity."
+            "description": "HOUR, DAY, or MONTH. Optional."
           },
           {
             "name": "timestamp_from",
@@ -2239,7 +2379,7 @@
               "type": "string",
               "format": "date-time"
             },
-            "description": "ISO 8601 timestamp at Z (inclusive start time)"
+            "description": "ISO 8601 UTC timestamp (inclusive)."
           },
           {
             "name": "timestamp_until",
@@ -2249,7 +2389,7 @@
               "type": "string",
               "format": "date-time"
             },
-            "description": "ISO 8601 timestamp at Z (exclusive end time)"
+            "description": "ISO 8601 UTC timestamp (exclusive)."
           },
           {
             "name": "entity_type",
@@ -2264,16 +2404,16 @@
                 "PERMISSION"
               ]
             },
-            "description": "Type of entity (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
+            "description": "GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, or PERMISSION"
           },
           {
             "name": "entity_ids",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "Comma-separated list of entity IDs (e.g. 1,2,3). Must be empty for GLOBAL entity_type, required for others."
+            "description": "Comma-separated entity IDs (e.g. '1,2,3'). Must be empty for GLOBAL; required for other entity types."
           },
           {
             "name": "result_type",
@@ -2288,7 +2428,7 @@
               ],
               "default": "BUCKETS_AND_TOTAL"
             },
-            "description": "Type of result to return: BUCKETS (time buckets only), TOTAL (aggregated totals only), or BUCKETS_AND_TOTAL (both)"
+            "description": "BUCKETS, TOTAL, or BUCKETS_AND_TOTAL. Default: BUCKETS_AND_TOTAL."
           }
         ],
         "responses": {
@@ -3185,6 +3325,76 @@
                 "$ref": "#/components/schemas/Permission"
               }
             }
+          }
+        },
+        "PendingFlatResponse": {
+          "type": "object",
+          "properties": {
+            "trust_registries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TrustRegistryPending"
+              }
+            }
+          }
+        },
+        "TrustRegistryPending": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "did": { "type": "string", "nullable": true },
+            "aka": { "type": "string", "nullable": true },
+            "pending_tasks": { "type": "integer" },
+            "participants": { "type": "integer" },
+            "credential_schemas": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/CredentialSchemaPending" }
+            }
+          }
+        },
+        "CredentialSchemaPending": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "title": { "type": "string", "nullable": true },
+            "description": { "type": "string", "nullable": true },
+            "pending_tasks": { "type": "integer" },
+            "participants": { "type": "integer" },
+            "permissions": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/PermissionPending" }
+            }
+          }
+        },
+        "PermissionPending": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "type": { "type": "string" },
+            "vp_state": { "type": "string" },
+            "perm_state": { "type": "string" },
+            "grantee": { "type": "string" },
+            "did": { "type": "string", "nullable": true },
+            "modified": { "type": "string", "format": "date-time" }
+          }
+        },
+        "GlobalMetricsResponse": {
+          "type": "object",
+          "properties": {
+            "participants": { "type": "integer" },
+            "active_trust_registries": { "type": "integer" },
+            "archived_trust_registries": { "type": "integer" },
+            "active_schemas": { "type": "integer" },
+            "archived_schemas": { "type": "integer" },
+            "weight": { "type": "string" },
+            "issued": { "type": "integer" },
+            "verified": { "type": "integer" },
+            "ecosystem_slash_events": { "type": "integer" },
+            "ecosystem_slashed_amount": { "type": "string" },
+            "ecosystem_slashed_amount_repaid": { "type": "string" },
+            "network_slash_events": { "type": "integer" },
+            "network_slashed_amount": { "type": "string" },
+            "network_slashed_amount_repaid": { "type": "string" }
           }
         },
         "PermissionHistoryItem": {
@@ -5204,7 +5414,7 @@
             "description": "Account that performed the repayment"
           }
         }
-      },
+},
       "StatsEntry": {
         "type": "object",
         "properties": {
@@ -5496,10 +5706,8 @@
             ]
           },
           "entity_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string",
+            "description": "Comma-separated list of entity IDs (e.g. '1,2,3') or repeated query params. Must be empty for GLOBAL."
           },
           "result_type": {
             "type": "string",
@@ -5582,6 +5790,9 @@
     {
       "name": "Indexer",
       "description": "Indexer state and changes tracking operations"
+    },
+    {
+      "name": "Metrics"
     },
     {
       "name": "Statistics",

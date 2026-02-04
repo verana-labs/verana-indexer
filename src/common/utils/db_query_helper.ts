@@ -8,6 +8,17 @@ const DEFAULT_QUERY_TIMEOUT = 120000;
 const DEFAULT_RETRIES = 3;
 const DEFAULT_RETRY_DELAY = 2000;
 
+export function getDbQueryTimeoutMs(fallback: number = DEFAULT_QUERY_TIMEOUT): number {
+  const fromEnv = process.env.DB_QUERY_TIMEOUT_MS ||
+    process.env.POSTGRES_QUERY_TIMEOUT ||
+    process.env.POSTGRES_STATEMENT_TIMEOUT;
+  const parsed = parseInt(String(fromEnv ?? ''), 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
+}
+
 export function isStatementTimeoutError(error: any): boolean {
   const errorCode = error?.code;
   const errorMessage = error?.message || String(error);
@@ -144,4 +155,3 @@ export async function queryWithAutoRetry<T>(
 ): Promise<T> {
   return executeWithRetry(queryFn, options, logger);
 }
-

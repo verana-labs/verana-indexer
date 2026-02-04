@@ -38,7 +38,7 @@ export default class StatsAPIService extends BaseService {
       if (id) {
         const stat = await Stats.query().findById(id);
         if (!stat) {
-          return ApiResponder.error(ctx, "Stats not found", 404, "NOT_FOUND");
+          return ApiResponder.error(ctx, "Stats not found", 404);
         }
         return ApiResponder.success(ctx, stat, 200);
       }
@@ -47,22 +47,21 @@ export default class StatsAPIService extends BaseService {
         return ApiResponder.error(
           ctx,
           "Either 'id' or all of 'granularity', 'timestamp', 'entity_type' must be provided",
-          400,
-          "INVALID_PARAMS"
+          400
         );
       }
 
       if (entityType === "GLOBAL" && entityId) {
-        return ApiResponder.error(ctx, "entity_id must be null for GLOBAL entity_type", 400, "INVALID_PARAMS");
+        return ApiResponder.error(ctx, "entity_id must be null for GLOBAL entity_type", 400);
       }
 
       if (entityType !== "GLOBAL" && !entityId) {
-        return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400, "INVALID_PARAMS");
+        return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400);
       }
 
       const timestampDate = new Date(timestamp);
       if (Number.isNaN(timestampDate.getTime())) {
-        return ApiResponder.error(ctx, "Invalid timestamp format", 400, "INVALID_PARAMS");
+        return ApiResponder.error(ctx, "Invalid timestamp format", 400);
       }
 
       const stat = await Stats.query()
@@ -79,13 +78,13 @@ export default class StatsAPIService extends BaseService {
         .first();
 
       if (!stat) {
-        return ApiResponder.error(ctx, "Stats not found", 404, "NOT_FOUND");
+        return ApiResponder.error(ctx, "Stats not found", 404);
       }
 
       return ApiResponder.success(ctx, stat, 200);
     } catch (err: unknown) {
       this.logger.error("Error in get:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500, "INTERNAL_ERROR");
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
 
@@ -96,7 +95,7 @@ export default class StatsAPIService extends BaseService {
       timestamp_from: { type: "string", convert: true },
       timestamp_until: { type: "string", convert: true },
       entity_type: { type: "enum", values: ["GLOBAL", "TRUST_REGISTRY", "CREDENTIAL_SCHEMA", "PERMISSION"], convert: true },
-      entity_ids: { type: "string", optional: true },
+      entity_ids: { type: "any", optional: true },
       result_type: { type: "enum", values: ["BUCKETS", "TOTAL", "BUCKETS_AND_TOTAL"], optional: true, default: "BUCKETS_AND_TOTAL" },
     },
   })
@@ -105,7 +104,7 @@ export default class StatsAPIService extends BaseService {
     timestamp_from: string;
     timestamp_until: string;
     entity_type: EntityType;
-    entity_ids?: string;
+      entity_ids?: any;
     result_type?: "BUCKETS" | "TOTAL" | "BUCKETS_AND_TOTAL";
   }>): Promise<unknown> {
     try {
@@ -115,24 +114,35 @@ export default class StatsAPIService extends BaseService {
     const untilDate = new Date(timestampUntil);
 
     if (Number.isNaN(fromDate.getTime()) || Number.isNaN(untilDate.getTime())) {
-      return ApiResponder.error(ctx, "Invalid timestamp format", 400, "INVALID_PARAMS");
+      return ApiResponder.error(ctx, "Invalid timestamp format", 400);
     }
 
     if (fromDate >= untilDate) {
-      return ApiResponder.error(ctx, "timestamp_from must be before timestamp_until", 400, "INVALID_PARAMS");
+      return ApiResponder.error(ctx, "timestamp_from must be before timestamp_until", 400);
     }
 
-    const parsedEntityIds = (entityIds || "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0);
+    let parsedEntityIds: Array<string | number> = [];
+    if (Array.isArray(entityIds)) {
+      parsedEntityIds = entityIds
+        .map((id) => (id === null || id === undefined ? "" : String(id).trim()))
+        .filter((id) => id.length > 0)
+        .map((id) => (id.match(/^-?\d+$/) ? Number(id) : id));
+    } else if (typeof entityIds === "string" && entityIds.trim().length > 0) {
+      parsedEntityIds = entityIds
+        .split(",")
+        .map((id: string) => id.trim())
+        .filter((id: string) => id.length > 0)
+        .map((id: string) => (id.match(/^-?\d+$/) ? Number(id) : id));
+    } else {
+      parsedEntityIds = [];
+    }
 
     if (entityType === "GLOBAL" && parsedEntityIds.length > 0) {
-      return ApiResponder.error(ctx, "entity_ids must be empty for GLOBAL entity_type", 400, "INVALID_PARAMS");
+      return ApiResponder.error(ctx, "entity_ids must be empty for GLOBAL entity_type", 400);
     }
 
     if (entityType !== "GLOBAL" && parsedEntityIds.length === 0) {
-      return ApiResponder.error(ctx, `entity_ids array is required for entity_type ${entityType}`, 400, "INVALID_PARAMS");
+      return ApiResponder.error(ctx, `entity_ids array is required for entity_type ${entityType}`, 400);
     }
 
     let effectiveGranularity = granularity;
@@ -151,138 +161,57 @@ export default class StatsAPIService extends BaseService {
     }
 
     let buckets: Stats[] = [];
+    let granularitiesUsedArr: string[] = [];
 
     if (!granularity) {
-      const hoursDiff = (untilDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60);
-      const daysDiff = hoursDiff / 24;
-      const monthsDiff = daysDiff / 30;
+      const bucketsArr: any[] = [];
+      const granularitiesUsed = new Set<string>();
 
-      if (monthsDiff >= 1) {
-        const monthBuckets = await Stats.query()
-          .where("granularity", "MONTH")
-          .where("timestamp", ">=", fromDate)
-          .where("timestamp", "<", untilDate)
-          .where("entity_type", entityType)
-          .where((builder) => {
-            if (entityType === "GLOBAL") {
-              builder.whereNull("entity_id");
-            } else {
-              builder.whereIn("entity_id", parsedEntityIds);
-            }
-          })
-          .orderBy("timestamp", "asc");
+      const cloneUtc = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
 
-        if (monthBuckets.length > 0) {
-          buckets = monthBuckets;
-          effectiveGranularity = "MONTH";
-          } else if (daysDiff >= 1) {
-            const dayBuckets = await Stats.query()
-              .where("granularity", "DAY")
-              .where("timestamp", ">=", fromDate)
-              .where("timestamp", "<", untilDate)
-              .where("entity_type", entityType)
-              .where((builder) => {
-                if (entityType === "GLOBAL") {
-                  builder.whereNull("entity_id");
-                } else {
-                  builder.whereIn("entity_id", parsedEntityIds);
-                }
-              })
-              .orderBy("timestamp", "asc");
-
-            if (dayBuckets.length > 0) {
-              buckets = dayBuckets;
-              effectiveGranularity = "DAY";
-            } else {
-              const hourBuckets = await Stats.query()
-                .where("granularity", "HOUR")
-                .where("timestamp", ">=", fromDate)
-                .where("timestamp", "<", untilDate)
-                .where("entity_type", entityType)
-                .where((builder) => {
-                  if (entityType === "GLOBAL") {
-                    builder.whereNull("entity_id");
-                  } else {
-                    builder.whereIn("entity_id", parsedEntityIds);
-                  }
-                })
-                .orderBy("timestamp", "asc");
-
-              buckets = hourBuckets;
-              effectiveGranularity = "HOUR";
-            }
-          } else {
-            const hourBuckets = await Stats.query()
-              .where("granularity", "HOUR")
-              .where("timestamp", ">=", fromDate)
-              .where("timestamp", "<", untilDate)
-              .where("entity_type", entityType)
-              .where((builder) => {
-                if (entityType === "GLOBAL") {
-                  builder.whereNull("entity_id");
-                } else {
-                  builder.whereIn("entity_id", parsedEntityIds);
-                }
-              })
-              .orderBy("timestamp", "asc");
-
-            buckets = hourBuckets;
-            effectiveGranularity = "HOUR";
-          }
-      } else if (daysDiff >= 1) {
-        const dayBuckets = await Stats.query()
-          .where("granularity", "DAY")
-          .where("timestamp", ">=", fromDate)
-          .where("timestamp", "<", untilDate)
-          .where("entity_type", entityType)
-          .where((builder) => {
-            if (entityType === "GLOBAL") {
-              builder.whereNull("entity_id");
-            } else {
-              builder.whereIn("entity_id", parsedEntityIds);
-            }
-          })
-          .orderBy("timestamp", "asc");
-
-        if (dayBuckets.length > 0) {
-          buckets = dayBuckets;
-          effectiveGranularity = "DAY";
+      const addBucketIfExists = async (g: string, ts: Date) => {
+        const query = Stats.query()
+          .where("granularity", g)
+          .where("timestamp", ts)
+          .where("entity_type", entityType);
+        if (entityType === "GLOBAL") {
+          query.whereNull("entity_id");
         } else {
-          const hourBuckets = await Stats.query()
-            .where("granularity", "HOUR")
-            .where("timestamp", ">=", fromDate)
-            .where("timestamp", "<", untilDate)
-            .where("entity_type", entityType)
-            .where((builder) => {
-              if (entityType === "GLOBAL") {
-                builder.whereNull("entity_id");
-              } else {
-                builder.whereIn("entity_id", parsedEntityIds);
-              }
-            })
-            .orderBy("timestamp", "asc");
-
-          buckets = hourBuckets;
-          effectiveGranularity = "HOUR";
+          query.whereIn("entity_id", parsedEntityIds);
         }
-      } else {
-        const hourBuckets = await Stats.query()
-          .where("granularity", "HOUR")
-          .where("timestamp", ">=", fromDate)
-          .where("timestamp", "<", untilDate)
-          .where("entity_type", entityType)
-          .where((builder) => {
-            if (entityType === "GLOBAL") {
-              builder.whereNull("entity_id");
-            } else {
-              builder.whereIn("entity_id", parsedEntityIds);
-            }
-          })
-          .orderBy("timestamp", "asc");
+        const b = await query.first();
+        if (b) {
+          bucketsArr.push(b);
+          granularitiesUsed.add(g);
+        }
+      };
 
-        buckets = hourBuckets;
-        effectiveGranularity = "HOUR";
+      const floorToHour = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0));
+      let cur = floorToHour(cloneUtc(fromDate));
+      while (cur < untilDate) {
+        const startOfMonth = (d: Date) => d.getUTCDate() === 1 && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
+        const startOfDay = (d: Date) => d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
+
+        const nextMonth = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+        const nextDay = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + 1, 0, 0, 0, 0));
+        if (startOfMonth(cur) && nextMonth <= untilDate) {
+          await addBucketIfExists("MONTH", cur);
+          cur = nextMonth;
+        } else if (startOfDay(cur) && nextDay <= untilDate) {
+          await addBucketIfExists("DAY", cur);
+          cur = nextDay;
+        } else {
+          await addBucketIfExists("HOUR", cur);
+          cur = new Date(cur.getTime() + 60 * 60 * 1000);
+        }
       }
+
+      buckets = bucketsArr.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      if (granularitiesUsed.has("HOUR")) effectiveGranularity = "HOUR";
+      else if (granularitiesUsed.has("DAY")) effectiveGranularity = "DAY";
+      else if (granularitiesUsed.has("MONTH")) effectiveGranularity = "MONTH";
+      else effectiveGranularity = "HOUR";
+      granularitiesUsedArr = Array.from(granularitiesUsed);
     } else {
       const query = Stats.query()
         .where("granularity", effectiveGranularity)
@@ -310,6 +239,8 @@ export default class StatsAPIService extends BaseService {
 
       if (granularity) {
         totalQuery = totalQuery.where("granularity", effectiveGranularity);
+      } else if (granularitiesUsedArr.length > 0) {
+        totalQuery = totalQuery.whereIn("granularity", granularitiesUsedArr);
       }
 
       if (entityType === "GLOBAL") {
@@ -338,7 +269,7 @@ export default class StatsAPIService extends BaseService {
       total = await totalResult;
     }
 
-    const response: Record<string, unknown> = {
+      const response: Record<string, unknown> = {
       granularity: effectiveGranularity,
       timestamp_from: timestampFrom,
       timestamp_until: timestampUntil,
@@ -400,7 +331,7 @@ export default class StatsAPIService extends BaseService {
       return ApiResponder.success(ctx, response, 200);
     } catch (err: unknown) {
       this.logger.error("Error in stats:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500, "INTERNAL_ERROR");
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
 }
