@@ -9,6 +9,8 @@ export function extractController(
   const controller = 
     message.controller || 
     message.creator || 
+    message.authority ||
+    message.sender ||
     message.account ||
     message.grantee ||
     message.created_by;
@@ -47,4 +49,3 @@ export function normalizeController(
     controller,
   };
 }
-

@@ -10,7 +10,7 @@ import { detectStartMode } from '../../common/utils/start_mode_detector';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { CheckpointManager } from '../../common/utils/checkpoint_manager';
 import { BatchProcessor } from '../../common/utils/batch_processor';
-import { queryWithAutoRetry, delay, isStatementTimeoutError } from '../../common/utils/db_query_helper';
+import { queryWithAutoRetry, delay, isStatementTimeoutError, getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 
 interface TrustDepositAdjustPayload {
   account: string;
@@ -109,6 +109,7 @@ export default class CrawlTrustDepositService extends BullableService {
       do {
       let nextBlocks: Block[] = [];
       const currentLastHeight = lastHeight;
+      const queryTimeoutMs = getDbQueryTimeoutMs();
       try {
         nextBlocks = await queryWithAutoRetry(
           async () => {
@@ -116,10 +117,10 @@ export default class CrawlTrustDepositService extends BullableService {
               .where('height', '>', currentLastHeight)
               .orderBy('height', 'asc')
               .limit(maxBlockBatch)
-              .timeout(120000);
+              .timeout(queryTimeoutMs);
             return result;
           },
-          { timeout: 120000, retries: 3 },
+          { timeout: queryTimeoutMs, retries: 3 },
           this.logger
         );
       } catch (queryError: any) {

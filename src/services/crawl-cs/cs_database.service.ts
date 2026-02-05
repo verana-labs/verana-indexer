@@ -34,6 +34,8 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
     credential_schema_id: Number(row.id),
     tr_id: row.tr_id ?? null,
     json_schema: row.json_schema ?? null,
+    title: row.title ?? null,
+    description: row.description ?? null,
     deposit: row.deposit ?? "0",
     issuer_grantor_validation_validity_period: Number(row.issuer_grantor_validation_validity_period) || 0,
     verifier_grantor_validation_validity_period: Number(row.verifier_grantor_validation_validity_period) || 0,
@@ -117,6 +119,34 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               }
             }
           }
+        }
+        // After possible json_schema normalization, extract title/description and persist them
+        try {
+          let schemaObjForMeta: any = null;
+          if (finalRecord?.json_schema) {
+            if (typeof finalRecord.json_schema === "string") {
+              try {
+                schemaObjForMeta = JSON.parse(finalRecord.json_schema);
+              } catch {
+                schemaObjForMeta = null;
+              }
+            } else {
+              schemaObjForMeta = finalRecord.json_schema;
+            }
+          }
+          if (schemaObjForMeta && typeof schemaObjForMeta === "object") {
+            const title = typeof schemaObjForMeta.title === "string" ? schemaObjForMeta.title : null;
+            const description = typeof schemaObjForMeta.description === "string" ? schemaObjForMeta.description : null;
+            const updates: any = {};
+            if (title !== null) updates.title = title;
+            if (description !== null) updates.description = description;
+            if (Object.keys(updates).length > 0) {
+              const [updatedWithMeta] = await trx("credential_schemas").where({ id: finalRecord.id }).update(updates).returning("*");
+              if (updatedWithMeta) finalRecord = updatedWithMeta;
+            }
+          }
+        } catch (err: any) {
+          this.logger.warn(`Failed to persist title/description for CS ${inserted.id}: ${err?.message || err}`);
         }
 
         const creationChanges: Record<string, any> = {};
@@ -213,13 +243,44 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { height, ...updatesWithoutHeight } = updates;
       const blockHeight = Number(height) || 0;
 
-      const [updated] = await knex("credential_schemas")
+      let [updated] = await knex("credential_schemas")
         .where({ id: payload.id })
         .update(updatesWithoutHeight)
         .returning("*");
 
+      // After update, extract title/description from json_schema (if present) and persist them too
+      try {
+        let schemaObjForMeta: any = null;
+        if (updated?.json_schema) {
+          if (typeof updated.json_schema === "string") {
+            try {
+              schemaObjForMeta = JSON.parse(updated.json_schema);
+            } catch {
+              schemaObjForMeta = null;
+            }
+          } else {
+            schemaObjForMeta = updated.json_schema;
+          }
+        }
+        if (schemaObjForMeta && typeof schemaObjForMeta === "object") {
+          const title = typeof schemaObjForMeta.title === "string" ? schemaObjForMeta.title : null;
+          const description = typeof schemaObjForMeta.description === "string" ? schemaObjForMeta.description : null;
+          const metaUpdates: any = {};
+          if (title !== null && title !== updated.title) metaUpdates.title = title;
+          if (description !== null && description !== updated.description) metaUpdates.description = description;
+          if (Object.keys(metaUpdates).length > 0) {
+            const [updatedWithMeta] = await knex("credential_schemas").where({ id: payload.id }).update(metaUpdates).returning("*");
+            if (updatedWithMeta) updated = updatedWithMeta;
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to persist title/description for CS ${payload.id}: ${err?.message || err}`);
+      }
+
+      // Compute changes against existing after any meta persistence
       const changes: Record<string, any> = {};
-      for (const key of Object.keys(updatesWithoutHeight)) {
+      const keysToCheck = Object.keys({ ...updatesWithoutHeight, title: updated.title, description: updated.description });
+      for (const key of keysToCheck) {
         if (existing[key] !== updated[key] && key !== 'is_active') {
           changes[key] = updated[key];
         }
@@ -409,6 +470,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           json_schema: historyRecord.json_schema && typeof historyRecord.json_schema !== "string"
             ? JSON.stringify(historyRecord.json_schema)
             : historyRecord.json_schema,
+          title: historyRecord.title ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.title : undefined),
+          description: historyRecord.description ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.description : undefined),
           deposit: historyRecord.deposit,
           issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
           verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
@@ -489,6 +552,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, {
         schema: {
           ...schemaRecord,
+          title: schemaRecord.title ?? (schemaRecord.json_schema ? (() => {
+            try {
+              const js = typeof schemaRecord.json_schema === "string" ? JSON.parse(schemaRecord.json_schema) : schemaRecord.json_schema;
+              return js?.title;
+            } catch { return undefined; }
+          })() : undefined),
+          description: schemaRecord.description ?? (schemaRecord.json_schema ? (() => {
+            try {
+              const js = typeof schemaRecord.json_schema === "string" ? JSON.parse(schemaRecord.json_schema) : schemaRecord.json_schema;
+              return js?.description;
+            } catch { return undefined; }
+          })() : undefined),
           participants: stats.participants,
           weight: stats.weight,
           issued: stats.issued,
@@ -646,13 +721,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         let filteredItems = items
           .filter((item): item is NonNullable<typeof items[0]> => item !== null)
-          .map((historyRecord) => ({
+        .map((historyRecord) => ({
             id: historyRecord.credential_schema_id,
             tr_id: historyRecord.tr_id,
             json_schema:
               historyRecord.json_schema && typeof historyRecord.json_schema !== "string"
                 ? JSON.stringify(historyRecord.json_schema)
                 : historyRecord.json_schema,
+          title: historyRecord.title ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.title : undefined),
+          description: historyRecord.description ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.description : undefined),
             deposit: historyRecord.deposit,
             issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
             verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
@@ -789,7 +866,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         let filteredWithStats = schemasWithStats;
 
         if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-          filteredWithStats = filteredWithStats.filter((s) => s.participants === minParticipants);
+          // empty range when min === max for [min, max)
+          filteredWithStats = [];
         } else {
           if (minParticipants !== undefined) {
             filteredWithStats = filteredWithStats.filter((s) => s.participants >= minParticipants);
@@ -799,8 +877,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-          const exactWeightBigInt = BigInt(minWeight);
-          filteredWithStats = filteredWithStats.filter((s) => BigInt(s.weight) === exactWeightBigInt);
+          // empty range for weight when min === max
+          filteredWithStats = [];
         } else {
           if (minWeight !== undefined) {
             const minWeightBigInt = BigInt(minWeight);
@@ -812,8 +890,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-          const exactIssued = Number(minIssued);
-          filteredWithStats = filteredWithStats.filter((s) => s.issued === exactIssued);
+          // empty range for issued
+          filteredWithStats = [];
         } else {
           if (minIssued !== undefined) {
             const minIssuedNum = Number(minIssued);
@@ -825,8 +903,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-          const exactVerified = Number(minVerified);
-          filteredWithStats = filteredWithStats.filter((s) => s.verified === exactVerified);
+          // empty range for verified
+          filteredWithStats = [];
         } else {
           if (minVerified !== undefined) {
             const minVerifiedNum = Number(minVerified);
@@ -838,7 +916,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-          filteredWithStats = filteredWithStats.filter((s) => s.ecosystem_slash_events === minEcosystemSlashEvents);
+          // empty range for ecosystem slash events
+          filteredWithStats = [];
         } else {
           if (minEcosystemSlashEvents !== undefined) {
             filteredWithStats = filteredWithStats.filter((s) => s.ecosystem_slash_events >= minEcosystemSlashEvents);
@@ -848,7 +927,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-          filteredWithStats = filteredWithStats.filter((s) => s.network_slash_events === minNetworkSlashEvents);
+          // empty range for network slash events
+          filteredWithStats = [];
         } else {
           if (minNetworkSlashEvents !== undefined) {
             filteredWithStats = filteredWithStats.filter((s) => s.network_slash_events >= minNetworkSlashEvents);
@@ -950,6 +1030,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               item.json_schema && typeof item.json_schema !== "string"
                 ? JSON.stringify(item.json_schema)
                 : item.json_schema,
+            title: item.title ?? (item.json_schema ? (() => {
+              try {
+                const js = typeof item.json_schema === "string" ? JSON.parse(item.json_schema) : item.json_schema;
+                return js?.title;
+              } catch { return undefined; }
+            })() : undefined),
+            description: item.description ?? (item.json_schema ? (() => {
+              try {
+                const js = typeof item.json_schema === "string" ? JSON.parse(item.json_schema) : item.json_schema;
+                return js?.description;
+              } catch { return undefined; }
+            })() : undefined),
             participants: stats.participants,
             weight: stats.weight,
             issued: stats.issued,
@@ -969,7 +1061,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       let filteredItems = cleanItems;
 
       if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-        filteredItems = filteredItems.filter((s) => s.participants === minParticipants);
+        // empty range when min === max
+        filteredItems = [];
       } else {
         if (minParticipants !== undefined) {
           filteredItems = filteredItems.filter((s) => s.participants >= minParticipants);
@@ -979,8 +1072,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-        const exactWeightBigInt = BigInt(minWeight);
-        filteredItems = filteredItems.filter((s) => BigInt(s.weight) === exactWeightBigInt);
+        // empty range for weight
+        filteredItems = [];
       } else {
         if (minWeight !== undefined) {
           const minWeightBigInt = BigInt(minWeight);
@@ -992,8 +1085,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-        const exactIssued = Number(minIssued);
-        filteredItems = filteredItems.filter((s) => s.issued === exactIssued);
+        // empty range for issued
+        filteredItems = [];
       } else {
         if (minIssued !== undefined) {
           const minIssuedNum = Number(minIssued);
@@ -1005,8 +1098,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-        const exactVerified = Number(minVerified);
-        filteredItems = filteredItems.filter((s) => s.verified === exactVerified);
+        // empty range for verified
+        filteredItems = [];
       } else {
         if (minVerified !== undefined) {
           const minVerifiedNum = Number(minVerified);
@@ -1018,7 +1111,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-        filteredItems = filteredItems.filter((s) => s.ecosystem_slash_events === minEcosystemSlashEvents);
+        // empty range for ecosystem slash events
+        filteredItems = [];
       } else {
         if (minEcosystemSlashEvents !== undefined) {
           filteredItems = filteredItems.filter((s) => s.ecosystem_slash_events >= minEcosystemSlashEvents);
@@ -1028,7 +1122,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-        filteredItems = filteredItems.filter((s) => s.network_slash_events === minNetworkSlashEvents);
+        // empty range for network slash events
+        filteredItems = [];
       } else {
         if (minNetworkSlashEvents !== undefined) {
           filteredItems = filteredItems.filter((s) => s.network_slash_events >= minNetworkSlashEvents);

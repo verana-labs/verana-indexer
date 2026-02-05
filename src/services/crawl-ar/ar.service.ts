@@ -9,6 +9,7 @@ import { Block } from '../../models';
 import { Account } from '../../models/account';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 
@@ -143,7 +144,7 @@ export default class CrawlNewAccountsService extends BullableService {
                         .where('height', '>', lastHeight)
                         .orderBy('height', 'asc')
                         .limit(this.BATCH_SIZE)
-                        .timeout(120000);
+                        .timeout(getDbQueryTimeoutMs(120000));
                 } catch (queryError: any) {
                     const errorCode = queryError?.code;
                     const errorMessage = queryError?.message || String(queryError);

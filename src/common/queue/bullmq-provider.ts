@@ -9,6 +9,11 @@ class DefaultValue {
 
   static readonly DEFAULT_WORKER_OPTION: WorkerOptions = {
     concurrency: 1,
+    // Give long-running jobs enough time to finish without losing the lock
+    lockDuration:  300000,
+    lockRenewTime:  60000,
+    stalledInterval:  30000,
+    maxStalledCount:  1,
   };
 
   static readonly DEFAULT_JOB_OTION: JobOption = {

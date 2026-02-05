@@ -466,7 +466,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 let filteredRegistries = registriesWithStats.filter((r): r is NonNullable<typeof registriesWithStats[0]> => r !== null);
 
                 if (minActiveSchemas !== undefined && maxActiveSchemas !== undefined && minActiveSchemas === maxActiveSchemas) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.active_schemas === minActiveSchemas);
+                    // Range [min, max) is empty when min === max, return no results
+                    filteredRegistries = [];
                 } else {
                     if (minActiveSchemas !== undefined) {
                         filteredRegistries = filteredRegistries.filter((r) => r.active_schemas >= minActiveSchemas);
@@ -476,7 +477,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants === minParticipants);
+                    // empty range for participants
+                    filteredRegistries = [];
                 } else {
                     if (minParticipants !== undefined) {
                         filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
@@ -486,8 +488,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-                    const exactWeightBigInt = BigInt(minWeight);
-                    filteredRegistries = filteredRegistries.filter((r) => BigInt(r.weight) === exactWeightBigInt);
+                    // empty range for weight when using [min, max)
+                    filteredRegistries = [];
                 } else {
                     if (minWeight !== undefined) {
                         const minWeightBigInt = BigInt(minWeight);
@@ -499,8 +501,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-                    const exactIssued = Number(minIssued);
-                    filteredRegistries = filteredRegistries.filter((r) => r.issued === exactIssued);
+                    // empty range for issued
+                    filteredRegistries = [];
                 } else {
                     if (minIssued !== undefined) {
                         const minIssuedNum = Number(minIssued);
@@ -512,8 +514,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-                    const exactVerified = Number(minVerified);
-                    filteredRegistries = filteredRegistries.filter((r) => r.verified === exactVerified);
+                    // empty range for verified
+                    filteredRegistries = [];
                 } else {
                     if (minVerified !== undefined) {
                         const minVerifiedNum = Number(minVerified);
@@ -525,7 +527,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events === minEcosystemSlashEvents);
+                    // empty range for ecosystem slash events
+                    filteredRegistries = [];
                 } else {
                     if (minEcosystemSlashEvents !== undefined) {
                         filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events >= minEcosystemSlashEvents);
@@ -535,7 +538,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events === minNetworkSlashEvents);
+                    // empty range for network slash events
+                    filteredRegistries = [];
                 } else {
                     if (minNetworkSlashEvents !== undefined) {
                         filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events >= minNetworkSlashEvents);
@@ -725,7 +729,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
             let filteredRegistries = registriesWithStats;
 
             if (minActiveSchemas !== undefined && maxActiveSchemas !== undefined && minActiveSchemas === maxActiveSchemas) {
-                filteredRegistries = filteredRegistries.filter((r) => r.active_schemas === minActiveSchemas);
+                // empty range when min === max for [min, max)
+                filteredRegistries = [];
             } else {
                 if (minActiveSchemas !== undefined) {
                     filteredRegistries = filteredRegistries.filter((r) => r.active_schemas >= minActiveSchemas);
@@ -735,7 +740,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                filteredRegistries = filteredRegistries.filter((r) => r.participants === minParticipants);
+                // empty range for participants
+                filteredRegistries = [];
             } else {
                 if (minParticipants !== undefined) {
                     filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
@@ -745,8 +751,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-                const exactWeightBigInt = BigInt(minWeight);
-                filteredRegistries = filteredRegistries.filter((r) => BigInt(r.weight) === exactWeightBigInt);
+                // empty range for weight
+                filteredRegistries = [];
             } else {
                 if (minWeight !== undefined) {
                     const minWeightBigInt = BigInt(minWeight);
@@ -758,8 +764,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-                const exactIssued = Number(minIssued);
-                filteredRegistries = filteredRegistries.filter((r) => r.issued === exactIssued);
+                // empty range for issued
+                filteredRegistries = [];
             } else {
                 if (minIssued !== undefined) {
                     const minIssuedNum = Number(minIssued);
@@ -771,8 +777,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-                const exactVerified = Number(minVerified);
-                filteredRegistries = filteredRegistries.filter((r) => r.verified === exactVerified);
+                // empty range for verified
+                filteredRegistries = [];
             } else {
                 if (minVerified !== undefined) {
                     const minVerifiedNum = Number(minVerified);
@@ -784,7 +790,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-                filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events === minEcosystemSlashEvents);
+                // empty range for ecosystem slash events
+                filteredRegistries = [];
             } else {
                 if (minEcosystemSlashEvents !== undefined) {
                     filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events >= minEcosystemSlashEvents);
@@ -794,7 +801,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-                filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events === minNetworkSlashEvents);
+                // empty range for network slash events
+                filteredRegistries = [];
             } else {
                 if (minNetworkSlashEvents !== undefined) {
                     filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events >= minNetworkSlashEvents);

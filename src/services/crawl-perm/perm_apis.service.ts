@@ -17,6 +17,8 @@ import {
   type SchemaData,
   type PermState,
 } from "./perm_state_utils";
+import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
+import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 
 @Service({
   name: SERVICE.V1.PermAPIService.key,
@@ -72,8 +74,8 @@ export default class PermAPIService extends BullableService {
 
       const children = await knex
         .from(latestHistorySubquery)
-        .join("permission_history as ph", function () {
-          this.on("ranked.permission_id", "=", "ph.permission_id")
+        .join("permission_history as ph", (join) => {
+          join.on("ranked.permission_id", "=", "ph.permission_id")
             .andOn("ranked.rn", "=", knex.raw("1"));
         })
         .where("ph.validator_perm_id", permId)
@@ -504,8 +506,8 @@ export default class PermAPIService extends BullableService {
 
         const sessions = await knex
           .from(latestHistorySubquery)
-          .join("permission_session_history as psh", function () {
-            this.on("ranked.session_id", "=", "psh.session_id")
+          .join("permission_session_history as psh", (join) => {
+            join.on("ranked.session_id", "=", "psh.session_id")
               .andOn("ranked.rn", "=", knex.raw("1"));
           })
           .select("psh.authz");
@@ -593,8 +595,8 @@ export default class PermAPIService extends BullableService {
 
         const children = await knex
           .from(latestHistorySubquery)
-          .join("permission_history as ph", function () {
-            this.on("ranked.permission_id", "=", "ph.permission_id")
+          .join("permission_history as ph", (join) => {
+            join.on("ranked.permission_id", "=", "ph.permission_id")
               .andOn("ranked.rn", "=", knex.raw("1"));
           })
           .where("ph.validator_perm_id", permId)
@@ -1255,7 +1257,8 @@ export default class PermAPIService extends BullableService {
       }
 
       if (p.min_participants !== undefined && p.max_participants !== undefined && p.min_participants === p.max_participants) {
-        finalResults = finalResults.filter(perm => (perm.participants || 0) === p.min_participants);
+        // empty range when min === max for [min, max)
+        finalResults = [];
       } else {
         if (p.min_participants !== undefined) {
           finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
@@ -1265,8 +1268,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_weight !== undefined && p.max_weight !== undefined && p.min_weight === p.max_weight) {
-        const exactWeight = BigInt(p.min_weight);
-        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") === exactWeight);
+        // empty range for weight
+        finalResults = [];
       } else {
         if (p.min_weight !== undefined) {
           const minWeight = BigInt(p.min_weight);
@@ -1278,8 +1281,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_issued !== undefined && p.max_issued !== undefined && p.min_issued === p.max_issued) {
-        const exactIssued = Number(p.min_issued);
-        finalResults = finalResults.filter(perm => (perm.issued || 0) === exactIssued);
+        // empty range for issued
+        finalResults = [];
       } else {
         if (p.min_issued !== undefined) {
           const minIssued = Number(p.min_issued);
@@ -1291,8 +1294,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_verified !== undefined && p.max_verified !== undefined && p.min_verified === p.max_verified) {
-        const exactVerified = Number(p.min_verified);
-        finalResults = finalResults.filter(perm => (perm.verified || 0) === exactVerified);
+        // empty range for verified
+        finalResults = [];
       } else {
         if (p.min_verified !== undefined) {
           const minVerified = Number(p.min_verified);
@@ -1304,7 +1307,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_ecosystem_slash_events !== undefined && p.max_ecosystem_slash_events !== undefined && p.min_ecosystem_slash_events === p.max_ecosystem_slash_events) {
-        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) === p.min_ecosystem_slash_events);
+        // empty range for ecosystem slash events
+        finalResults = [];
       } else {
         if (p.min_ecosystem_slash_events !== undefined) {
           finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
@@ -1314,7 +1318,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_network_slash_events !== undefined && p.max_network_slash_events !== undefined && p.min_network_slash_events === p.max_network_slash_events) {
-        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) === p.min_network_slash_events);
+        // empty range for network slash events
+        finalResults = [];
       } else {
         if (p.min_network_slash_events !== undefined) {
           finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
@@ -1840,6 +1845,337 @@ export default class PermAPIService extends BullableService {
     } catch (err: any) {
       this.logger.error("Error in listPermissionSessions:", err);
       return ApiResponder.error(ctx, "Failed to list PermissionSessions", 500);
+    }
+  }
+
+  @Action({
+    rest: "GET pending/flat",
+    params: {
+      account: { type: "string" },
+      response_max_size: { type: "number", optional: true, default: 64 },
+      sort: { type: "string", optional: true },
+    },
+  })
+  async pendingFlat(ctx: Context<{ account: string; response_max_size?: number; sort?: string }>) {
+    try {
+      const p = ctx.params as any;
+      const account = p.account;
+      if (!account) return ApiResponder.error(ctx, "Missing required parameter: account", 400);
+
+      try {
+        validateSortParameter(p.sort);
+      } catch (err: any) {
+        return ApiResponder.error(ctx, err.message, 400);
+      }
+
+      const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
+      const now = new Date();
+
+      const blockHeight = getBlockHeight(ctx);
+      const useHistory = hasBlockHeight(ctx) && blockHeight !== undefined;
+
+      let parentIds: string[] = [];
+      const parentIdSet = new Set<string>();
+
+      if (useHistory) {
+        const latestParentSub = knex("permission_history")
+          .select("permission_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
+            )
+          )
+          .where("height", "<=", blockHeight)
+          .andWhere("grantee", account)
+          .as("ranked");
+
+        parentIds = await knex
+          .from(latestParentSub)
+          .select("permission_id")
+          .where("rn", 1)
+          .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
+        for (const id of parentIds) parentIdSet.add(id);
+      } else {
+        const parentRows = await knex("permissions").select("id").where("grantee", account).limit(Math.max(limit * 10, 500));
+        parentIds = Array.isArray(parentRows) ? parentRows.map((r: any) => String(r.id)) : [];
+        for (const id of parentIds) parentIdSet.add(id);
+      }
+
+      const baseColumns = [
+        "id",
+        "schema_id",
+        "type",
+        "did",
+        "grantee",
+        "created_by",
+        "created",
+        "modified",
+        "extended",
+        "extended_by",
+        "slashed",
+        "slashed_by",
+        "repaid",
+        "repaid_by",
+        "effective_from",
+        "effective_until",
+        "revoked",
+        "revoked_by",
+        "country",
+        "validation_fees",
+        "issuance_fees",
+        "verification_fees",
+        "deposit",
+        "slashed_deposit",
+        "repaid_deposit",
+        "validator_perm_id",
+        "vp_state",
+        "vp_last_state_change",
+        "vp_current_fees",
+        "vp_current_deposit",
+        "vp_summary_digest_sri",
+        "vp_exp",
+        "vp_validator_deposit",
+        "vp_term_requested",
+      ];
+
+      let permissionsAtHeight: any[] = [];
+      if (useHistory) {
+        const latestSub = knex("permission_history")
+          .select("permission_id")
+          .select(
+            knex.raw(
+              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
+            )
+          )
+          .where("height", "<=", blockHeight)
+          .as("ranked");
+
+        const permIdsAtHeight = await knex
+          .from(latestSub)
+        .join("permission_history as ph", (join) => {
+          join.on("ranked.permission_id", "=", "ph.permission_id")
+            .andOn("ranked.rn", "=", knex.raw("1"));
+        })
+          .modify((qb) => {
+            qb.where("ph.grantee", account);
+            if (parentIds.length > 0) qb.orWhereIn("ph.validator_perm_id", parentIds);
+          })
+          .select("ph.permission_id")
+          .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
+
+        if (permIdsAtHeight.length === 0) {
+          return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+        }
+
+        const joined = await knex
+          .from(latestSub)
+          .join("permission_history as ph", (join) => {
+            join
+              .on("ranked.permission_id", "=", "ph.permission_id")
+              .andOn("ranked.rn", "=", knex.raw("1"));
+          })
+          .modify((qb) => {
+            qb.where("ph.grantee", account);
+            if (parentIds.length > 0) qb.orWhereIn("ph.validator_perm_id", parentIds);
+          })
+          .select(
+            "ph.permission_id",
+            "ph.schema_id",
+            "ph.grantee",
+            "ph.did",
+            "ph.created_by",
+            "ph.validator_perm_id",
+            "ph.type",
+            "ph.country",
+            "ph.vp_state",
+            "ph.revoked",
+            "ph.revoked_by",
+            "ph.slashed",
+            "ph.slashed_by",
+            "ph.repaid",
+            "ph.repaid_by",
+            "ph.extended",
+            "ph.extended_by",
+            "ph.effective_from",
+            "ph.effective_until",
+            "ph.validation_fees",
+            "ph.issuance_fees",
+            "ph.verification_fees",
+            "ph.deposit",
+            "ph.slashed_deposit",
+            "ph.repaid_deposit",
+            "ph.vp_last_state_change",
+            "ph.vp_current_fees",
+            "ph.vp_current_deposit",
+            "ph.vp_summary_digest_sri",
+            "ph.vp_exp",
+            "ph.vp_validator_deposit",
+            "ph.vp_term_requested",
+            "ph.created",
+            "ph.modified"
+          )
+          .orderBy("ph.permission_id", "asc");
+
+        permissionsAtHeight = Array.isArray(joined)
+          ? joined.map((historyRecord: any) => ({
+              ...historyRecord,
+              id: String(historyRecord.permission_id),
+              schema_id: String(historyRecord.schema_id),
+              validator_perm_id: historyRecord.validator_perm_id ? String(historyRecord.validator_perm_id) : null,
+            }))
+          : [];
+      } else {
+        const rows = await knex("permissions")
+          .select(baseColumns)
+          .where((qb) => {
+            qb.where("grantee", account);
+            if (parentIds.length > 0) qb.orWhereIn("validator_perm_id", parentIds);
+          })
+          .limit(Math.max(limit * 10, 500));
+        permissionsAtHeight = Array.isArray(rows)
+          ? rows.map((perm: any) => ({
+              ...perm,
+              id: String(perm.id),
+              schema_id: String(perm.schema_id),
+              validator_perm_id: perm.validator_perm_id ? String(perm.validator_perm_id) : null,
+            }))
+          : [];
+      }
+
+      const enriched = await this.batchEnrichPermissions(permissionsAtHeight, useHistory ? blockHeight : undefined, now, 50);
+      const filtered = enriched.filter((perm: any) => {
+        if (perm.grantee === account) {
+          if (perm.vp_state === "PENDING") return true;
+          if (perm.perm_state === "SLASHED") return true;
+          if (perm.expire_soon === true) return true;
+        }
+        if (perm.validator_perm_id && parentIdSet.has(String(perm.validator_perm_id))) {
+          if (perm.vp_state === "PENDING") return true;
+          if (perm.perm_state === "SLASHED") return true;
+        }
+        return false;
+      });
+      filtered.sort((a: any, b: any) => {
+        const ta = new Date(a.modified).getTime();
+        const tb = new Date(b.modified).getTime();
+        return ta - tb;
+      });
+      const schemaIds = Array.from(new Set(filtered.map((r: any) => String(r.schema_id))));
+      const schemas = schemaIds.length > 0
+        ? await knex("credential_schemas").whereIn("id", schemaIds).select("id", "tr_id", "json_schema", "title", "description", "participants")
+        : [];
+      const schemaMap = new Map<string, any>();
+      for (const s of schemas) {
+        let title: string | undefined;
+        let description: string | undefined;
+        const js = s.json_schema;
+        let schemaObj: any = null;
+        if (js) {
+          if (typeof js === "string") {
+            try { schemaObj = JSON.parse(js); } catch { schemaObj = null; }
+          } else {
+            schemaObj = js;
+          }
+        }
+        if (schemaObj && typeof schemaObj === "object") {
+          if (schemaObj.title && typeof schemaObj.title === "string") title = schemaObj.title;
+          if (schemaObj.description && typeof schemaObj.description === "string") description = schemaObj.description;
+        }
+        schemaMap.set(String(s.id), { id: String(s.id), tr_id: s.tr_id !== null ? String(s.tr_id) : null, title, description, participants: s.participants ?? 0 });
+      }
+
+      if (useHistory && schemaMap.size > 0) {
+        for (const [schemaId, cs] of schemaMap.entries()) {
+          try {
+            const stats = await calculateCredentialSchemaStats(Number(schemaId), blockHeight);
+            cs.participants = stats.participants || 0;
+            cs.weight = stats.weight;
+          } catch (err: any) {
+            this.logger.warn(`Failed to calculate stats for CS ${schemaId} at height ${blockHeight}: ${err?.message || err}`);
+          }
+        }
+      }
+
+      const trIds = Array.from(new Set(Array.from(schemaMap.values()).map((s: any) => s.tr_id).filter((x: any) => x !== null)));
+      const trs = trIds.length > 0 ? await knex("trust_registry").whereIn("id", trIds).select("id", "did", "aka", "participants") : [];
+      const trMap = new Map<string, any>();
+      for (const tr of trs) {
+        trMap.set(String(tr.id), { id: String(tr.id), did: tr.did, aka: tr.aka, credential_schemas: [], pending_tasks: 0, participants: tr.participants ?? 0 });
+      }
+      const csMap = new Map<string, any>();
+      for (const perm of filtered) {
+        const schemaId = String(perm.schema_id);
+        const csInfo = schemaMap.get(schemaId) || { tr_id: null, title: undefined, description: undefined };
+        if (!csMap.has(schemaId)) {
+          csMap.set(schemaId, {
+            id: schemaId,
+            title: csInfo.title,
+            description: csInfo.description,
+            pending_tasks: 0,
+            permissions: [],
+          });
+        }
+        const entry = csMap.get(schemaId);
+        entry.permissions.push({
+          id: String(perm.id),
+          type: perm.type,
+          vp_state: perm.vp_state,
+          perm_state: perm.perm_state,
+          grantee: perm.grantee,
+          did: perm.did,
+          modified: perm.modified,
+        });
+        entry.pending_tasks++;
+      }
+      for (const [schemaId, csEntry] of csMap.entries()) {
+        const csInfo = schemaMap.get(schemaId) || { tr_id: null };
+        const trId = csInfo.tr_id ? String(csInfo.tr_id) : null;
+        if (trId && trMap.has(trId)) {
+          const trEntry = trMap.get(trId);
+          trEntry.credential_schemas.push(csEntry);
+          trEntry.pending_tasks += csEntry.pending_tasks;
+        } else {
+          const nullTrKey = "null";
+          if (!trMap.has(nullTrKey)) {
+            trMap.set(nullTrKey, { id: null, did: null, aka: null, credential_schemas: [], pending_tasks: 0 });
+          }
+          const trEntry = trMap.get(nullTrKey);
+          trEntry.credential_schemas.push(csEntry);
+          trEntry.pending_tasks += csEntry.pending_tasks;
+        }
+      }
+      if (useHistory && trMap.size > 0) {
+        for (const [trId, trEntry] of trMap.entries()) {
+          if (trId === "null") continue;
+          try {
+            const stats = await calculateTrustRegistryStats(Number(trId), blockHeight);
+            trEntry.participants = stats.participants || 0;
+          } catch (err: any) {
+            this.logger.warn(`Failed to calculate stats for TR ${trId} at height ${blockHeight}: ${err?.message || err}`);
+            trEntry.participants = trEntry.participants || 0;
+          }
+        }
+      }
+
+      for (const trEntry of trMap.values()) {
+        trEntry.credential_schemas.sort((a: any, b: any) => (b.participants || 0) - (a.participants || 0));
+      }
+
+      const trustRegistries = Array.from(trMap.values())
+        .map((tr: any) => ({
+          id: tr.id,
+          did: tr.did,
+          aka: tr.aka,
+          pending_tasks: tr.pending_tasks,
+          participants: tr.participants || 0,
+          credential_schemas: tr.credential_schemas,
+        }))
+        .sort((a: any, b: any) => (b.participants || 0) - (a.participants || 0));
+
+      return ApiResponder.success(ctx, { trust_registries: trustRegistries.slice(0, limit) }, 200);
+    } catch (err: any) {
+      this.logger.error("Error in pendingFlat:", err);
+      return ApiResponder.error(ctx, `Failed to get pending tasks: ${err?.message || String(err)}`, 500);
     }
   }
 }

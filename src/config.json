@@ -234,6 +234,9 @@
     "millisecondCrawl": 10000,
     "queryPageLimit": 100
   },
+  "metricsSnapshot": {
+    "millisecondCrawl": 60000
+  },
   "feegrant": {
     "updateFeegrant": {
       "millisecondRepeatJob": 2000,
