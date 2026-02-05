@@ -142,16 +142,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- verana-indexer:v${{ steps.semantic.outputs.release-major }}.${{ steps.semantic.outputs.release-minor }}-dev" >> $GITHUB_STEP_SUMMARY
           echo "- verana-indexer:v${{ steps.semantic.outputs.release-version }}" >> $GITHUB_STEP_SUMMARY
-
-      # This will be removed once we have a proper CI/CD setup
-      - name: Uninstall previous release
-        if: steps.semantic.outputs.new-release-published == 'true'
-        run: |
-          helm uninstall idx --namespace vna-testnet-1 || true
-
-      - name: Install fresh release
-        if: steps.semantic.outputs.new-release-published == 'true'
-        run: |
-          helm install -n vna-testnet-1 \
-            --set database.pwd="'${{ secrets.DB_PASSWORD }}'" \
-            idx ./charts
