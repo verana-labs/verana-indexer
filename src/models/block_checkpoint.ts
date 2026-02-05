@@ -46,10 +46,11 @@ export class BlockCheckpoint extends BaseModel {
       startHeight = jobCheckpoint.height;
       updateBlockCheckpoint = jobCheckpoint;
     } else {
-      startHeight = config.crawlBlock.startBlock;
+      const configuredStart = Number(config.crawlBlock.startBlock) || 0;
+      startHeight = Math.max(configuredStart - 1, 0);
       updateBlockCheckpoint = BlockCheckpoint.fromJson({
         job_name: jobName,
-        height: config.crawlBlock.startBlock,
+        height: startHeight,
       });
     }
 

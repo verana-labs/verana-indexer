@@ -16,6 +16,7 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Verana Indexer API Docs</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/swagger-ui.css" />
   </head>
   <body>
@@ -36,6 +37,16 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
 </html>`;
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.end(html);
+      },
+      "GET /favicon.svg": (req: IncomingMessage, res: ServerResponse) => {
+        const localPath = path.join(process.cwd(), "docs", "favicon.svg");
+        if (!fs.existsSync(localPath)) {
+          res.statusCode = 404;
+          res.end("Not Found");
+          return;
+        }
+        res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+        fs.createReadStream(localPath).pipe(res);
       },
 
       "GET :file": (req: IncomingMessage, res: ServerResponse) => {

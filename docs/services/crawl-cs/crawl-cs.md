@@ -65,6 +65,8 @@ sequenceDiagram
 | `tr_id`                                       | string         | Trust registry ID                  |
 | `json_schema`                                 | jsonb          | The JSON schema definition         |
 | `deposit`                                     | string         | Required deposit                   |
+| `title`                                       | string/null    | Extracted from json_schema.title   |
+| `description`                                 | text/null      | Extracted from json_schema.description |
 | `issuer_grantor_validation_validity_period`   | int            | Issuer → Grantor validity period   |
 | `verifier_grantor_validation_validity_period` | int            | Verifier → Grantor validity period |
 | `issuer_validation_validity_period`           | int            | Issuer validity period             |
@@ -89,6 +91,8 @@ Keeps **full history of changes** to schemas.
 | `tr_id`                | string         | Trust registry ID                          |
 | `json_schema`          | jsonb          | JSON schema snapshot                       |
 | `deposit`              | string         | Deposit at time of change                  |
+| `title`                | string/null    | Extracted title at time of change         |
+| `description`          | text/null      | Extracted description at time of change   |
 | `archived`             | timestamp/null | Archived state at time of change           |
 | `is_active`             | boolean        | Active state at time of change             |
 | `action`               | enum           | `create`, `update`, `archive`, `unarchive` |
