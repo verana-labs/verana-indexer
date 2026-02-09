@@ -60,12 +60,15 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
 
                 const versions = Array.from(versionMap.values()).map(async (gfv: any) => {
-                    // Get documents for this version at block height
-                    const gfdHistory = await knex("governance_framework_document_history")
-                        .where({ gfv_id: gfv.id, tr_id })
+                    const actualGfv = await knex("governance_framework_version")
+                        .where({ tr_id, version: gfv.version })
+                        .first();
+                    
+                    const gfdHistory = actualGfv ? await knex("governance_framework_document_history")
+                        .where({ gfv_id: actualGfv.id, tr_id })
                         .where("height", "<=", blockHeight)
                         .orderBy("height", "desc")
-                        .orderBy("created_at", "desc");
+                        .orderBy("created_at", "desc") : [];
 
                     // Get unique documents (latest state for each document ID at block height)
                     // IMPORTANT: Deduplicate by gfd_id, not by url+language, because multiple documents
@@ -103,6 +106,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                     const documents = Array.from(docMap.values()).map((gfd: any) => ({
                         id: gfd.gfd_id,
+                        gfv_id: gfd.gfv_id,
                         created: gfd.created,
                         language: gfd.language,
                         url: gfd.url,
@@ -110,7 +114,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }));
 
                     return {
-                        id: gfv.id,
+                        id: actualGfv ? actualGfv.id : gfv.id,
                         tr_id: gfv.tr_id,
                         created: gfv.created,
                         version: gfv.version,
@@ -231,6 +235,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
     @Action()
     public async listTrustRegistries(ctx: Context<{
         controller?: string;
+        participant?: string;
         modified_after?: string;
         only_active?: string | boolean;
         active_gf_only?: string | boolean;
@@ -255,6 +260,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         try {
             const {
                 controller,
+                participant,
                 modified_after: modifiedAfter,
                 preferred_language: preferredLanguage,
                 only_active: onlyActiveRaw,
@@ -275,6 +281,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 min_network_slash_events: minNetworkSlashEvents,
                 max_network_slash_events: maxNetworkSlashEvents,
             } = ctx.params;
+
+            const participantAccount =
+                typeof participant === "string" && participant.trim() !== "" && !/^\d+$/.test(participant.trim())
+                    ? participant.trim()
+                    : undefined;
 
             try {
                 validateSortParameter(sort);
@@ -298,12 +309,23 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             // If AtBlockHeight is provided, query historical state
             if (typeof blockHeight === "number") {
+                let participantTrIds: number[] | undefined;
+                if (participantAccount) {
+                    participantTrIds = await this.getTrustRegistryIdsForParticipantAtHeight(participantAccount, blockHeight);
+                    if (participantTrIds.length === 0) {
+                        return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                    }
+                }
+
                 let filteredSubquery = knex("trust_registry_history")
                     .select("*")
                     .where("height", "<=", blockHeight);
 
                 if (controller) {
                     filteredSubquery = filteredSubquery.where("controller", controller);
+                }
+                if (participantTrIds !== undefined) {
+                    filteredSubquery = filteredSubquery.whereIn("tr_id", participantTrIds);
                 }
                 if (modifiedAfter) {
                     const ts = new Date(modifiedAfter);
@@ -361,11 +383,15 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                         const versions = await Promise.all(
                             Array.from(versionMap.values()).map(async (gfv: any) => {
-                                const gfdHistory = await knex("governance_framework_document_history")
-                                    .where({ gfv_id: gfv.id, tr_id: trId })
+                                const actualGfv = await knex("governance_framework_version")
+                                    .where({ tr_id: trId, version: gfv.version })
+                                    .first();
+                                
+                                const gfdHistory = actualGfv ? await knex("governance_framework_document_history")
+                                    .where({ gfv_id: actualGfv.id, tr_id: trId })
                                     .where("height", "<=", blockHeight)
                                     .orderBy("height", "desc")
-                                    .orderBy("created_at", "desc");
+                                    .orderBy("created_at", "desc") : [];
 
                                 // Get unique documents (latest state for each document ID at block height)
                                 // IMPORTANT: Deduplicate by gfd_id, not by url+language, because multiple documents
@@ -403,6 +429,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                                 const documents = Array.from(docMap.values()).map((gfd: any) => ({
                                     id: gfd.gfd_id,
+                                    gfv_id: gfd.gfv_id,
                                     created: gfd.created,
                                     language: gfd.language,
                                     url: gfd.url,
@@ -410,7 +437,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                                 }));
 
                                 return {
-                                    id: gfv.id,
+                                    id: actualGfv ? actualGfv.id : gfv.id,
                                     tr_id: gfv.tr_id,
                                     created: gfv.created,
                                     version: gfv.version,
@@ -476,13 +503,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                 }
                 if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants === minParticipants);
+                    filteredRegistries = filteredRegistries.filter((r) => Number(r.participants) === minParticipants);
                 } else {
                     if (minParticipants !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
+                        filteredRegistries = filteredRegistries.filter((r) => Number(r.participants) >= minParticipants);
                     }
                     if (maxParticipants !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.participants < maxParticipants);
+                        filteredRegistries = filteredRegistries.filter((r) => Number(r.participants) < maxParticipants);
                     }
                 }
                 if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
@@ -565,10 +592,21 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
             }
 
-            let query = TrustRegistry.query().withGraphFetched("governanceFrameworkVersions.documents");
+            let query = TrustRegistry.query();
 
-            if (controller) {
+            if (participantAccount) {
+                const participantTrIds = await this.getTrustRegistryIdsForParticipant(participantAccount);
+                if (participantTrIds.length === 0) {
+                    return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                }
+                query = query.where("id", "in", participantTrIds) as any;
+            } else if (controller) {
                 query = query.where("controller", controller);
+            }
+
+            query = query.withGraphFetched("governanceFrameworkVersions.documents") as any;
+            if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
+                query = (query as any).where("participants", minParticipants);
             }
 
             if (modifiedAfter) {
@@ -735,13 +773,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
             if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                filteredRegistries = filteredRegistries.filter((r) => r.participants === minParticipants);
+                filteredRegistries = filteredRegistries.filter((r) => Number(r.participants) === minParticipants);
             } else {
                 if (minParticipants !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
+                    filteredRegistries = filteredRegistries.filter((r) => Number(r.participants) >= minParticipants);
                 }
                 if (maxParticipants !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants < maxParticipants);
+                    filteredRegistries = filteredRegistries.filter((r) => Number(r.participants) < maxParticipants);
                 }
             }
             if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
@@ -825,6 +863,62 @@ export default class TrustRegistryDatabaseService extends BaseService {
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
+    }
+
+ 
+    private async getTrustRegistryIdsForParticipant(account: string): Promise<number[]> {
+        const controllerRows = await knex("trust_registry")
+            .where("controller", account)
+            .select("id");
+        const controllerIds = controllerRows.map((r: { id: number }) => r.id);
+
+        const granteeSchemaIds = await knex("permissions")
+            .where("grantee", account)
+            .distinct("schema_id");
+        const schemaIds = granteeSchemaIds
+            .map((r: { schema_id: string }) => {
+                const id = r.schema_id ? Number(r.schema_id) : null;
+                return id !== null && !Number.isNaN(id) ? id : null;
+            })
+            .filter((id): id is number => id !== null);
+        if (schemaIds.length === 0) {
+            return [...new Set(controllerIds)];
+        }
+        const trIdRows = await knex("credential_schemas")
+            .whereIn("id", schemaIds)
+            .distinct("tr_id");
+        const granteeTrIds = trIdRows.map((r: { tr_id: number }) => r.tr_id);
+
+        return [...new Set([...controllerIds, ...granteeTrIds])];
+    }
+
+  
+    private async getTrustRegistryIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
+        const trHistoryRows = await knex("trust_registry_history")
+            .where("height", "<=", blockHeight)
+            .where("controller", account)
+            .select("tr_id");
+        const controllerTrIds = [...new Set(trHistoryRows.map((r: { tr_id: number }) => r.tr_id))];
+
+        const granteePermRows = await knex("permission_history")
+            .where("height", "<=", blockHeight)
+            .where("grantee", account)
+            .distinct("schema_id");
+        const schemaIds = granteePermRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
+        if (schemaIds.length === 0) {
+            return controllerTrIds;
+        }
+
+        const cshSub = knex("credential_schema_history")
+            .select("credential_schema_id", "tr_id")
+            .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"))
+            .where("height", "<=", blockHeight)
+            .whereIn("credential_schema_id", schemaIds)
+            .as("ranked");
+        const latestCsh = await knex.from(cshSub).where("rn", 1).select("tr_id");
+        const granteeTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
+
+        return [...new Set([...controllerTrIds, ...granteeTrIds])];
     }
 
     @Action()

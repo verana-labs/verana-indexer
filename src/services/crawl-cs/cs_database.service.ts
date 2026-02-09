@@ -511,6 +511,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     rest: "GET list",
     params: {
       tr_id: { type: "string", optional: true },
+      participant: { type: "any", optional: true },
       modified_after: { type: "string", optional: true },
       only_active: {
         type: "any",
@@ -537,6 +538,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   })
   async list(ctx: Context<{
     tr_id?: string;
+    participant?: string;
     modified_after?: string;
     only_active?: any;
     issuer_perm_management_mode?: string;
@@ -559,6 +561,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const {
         tr_id: trId,
+        participant,
         modified_after: modifiedAfter,
         only_active: onlyActive,
         issuer_perm_management_mode: issuerPerm,
@@ -579,6 +582,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         max_network_slash_events: maxNetworkSlashEvents,
       } = ctx.params;
 
+      const participantAccount =
+        typeof participant === "string" && participant.trim() !== "" && !/^\d+$/.test(participant.trim())
+          ? participant.trim()
+          : undefined;
+
       try {
         validateSortParameter(sort);
       } catch (err: any) {
@@ -589,36 +597,44 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
 
       if (typeof blockHeight === "number") {
-        const hasHeightColumn = await checkHeightColumnExists();
-        let subquery;
-
-        if (hasHeightColumn) {
-          subquery = knex("credential_schema_history")
-            .select("credential_schema_id")
-            .select(
-              knex.raw(
-                `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn`
-              )
-            )
-            .where("height", "<=", blockHeight)
-            .as("ranked");
+        let schemaIdsAtHeight: number[];
+        if (participantAccount) {
+          schemaIdsAtHeight = await this.getCredentialSchemaIdsForParticipantAtHeight(participantAccount, blockHeight);
+          if (schemaIdsAtHeight.length === 0) {
+            return ApiResponder.success(ctx, { schemas: [] }, 200);
+          }
         } else {
-          subquery = knex("credential_schema_history")
-            .select("credential_schema_id")
-            .select(
-              knex.raw(
-                `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY created_at DESC) as rn`
+          const hasHeightColumn = await checkHeightColumnExists();
+          let subquery;
+
+          if (hasHeightColumn) {
+            subquery = knex("credential_schema_history")
+              .select("credential_schema_id")
+              .select(
+                knex.raw(
+                  `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn`
+                )
               )
-            )
-            .as("ranked");
+              .where("height", "<=", blockHeight)
+              .as("ranked");
+          } else {
+            subquery = knex("credential_schema_history")
+              .select("credential_schema_id")
+              .select(
+                knex.raw(
+                  `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY created_at DESC) as rn`
+                )
+              )
+              .as("ranked");
+          }
+
+          const latestHistory = await knex
+            .from(subquery)
+            .select("credential_schema_id")
+            .where("rn", 1);
+
+          schemaIdsAtHeight = latestHistory.map((r: any) => r.credential_schema_id);
         }
-
-        const latestHistory = await knex
-          .from(subquery)
-          .select("credential_schema_id")
-          .where("rn", 1);
-
-        const schemaIdsAtHeight = latestHistory.map((r: any) => r.credential_schema_id);
 
         if (schemaIdsAtHeight.length === 0) {
           return ApiResponder.success(ctx, { schemas: [] }, 200);
@@ -789,13 +805,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         let filteredWithStats = schemasWithStats;
 
         if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-          filteredWithStats = filteredWithStats.filter((s) => s.participants === minParticipants);
+          filteredWithStats = filteredWithStats.filter((s) => Number(s.participants) === minParticipants);
         } else {
           if (minParticipants !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.participants >= minParticipants);
+            filteredWithStats = filteredWithStats.filter((s) => Number(s.participants) >= minParticipants);
           }
           if (maxParticipants !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.participants < maxParticipants);
+            filteredWithStats = filteredWithStats.filter((s) => Number(s.participants) < maxParticipants);
           }
         }
         if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
@@ -892,7 +908,17 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       const query = knex("credential_schemas");
+      if (participantAccount) {
+        const participantSchemaIds = await this.getCredentialSchemaIdsForParticipant(participantAccount);
+        if (participantSchemaIds.length === 0) {
+          return ApiResponder.success(ctx, { schemas: [] }, 200);
+        }
+        query.whereIn("id", participantSchemaIds);
+      }
       if (trId) query.where("tr_id", trId);
+      if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
+        query.where("participants", minParticipants);
+      }
 
       if (modifiedAfter) {
         const ts = new Date(modifiedAfter);
@@ -969,13 +995,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       let filteredItems = cleanItems;
 
       if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-        filteredItems = filteredItems.filter((s) => s.participants === minParticipants);
+        filteredItems = filteredItems.filter((s) => Number(s.participants) === minParticipants);
       } else {
         if (minParticipants !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.participants >= minParticipants);
+          filteredItems = filteredItems.filter((s) => Number(s.participants) >= minParticipants);
         }
         if (maxParticipants !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.participants < maxParticipants);
+          filteredItems = filteredItems.filter((s) => Number(s.participants) < maxParticipants);
         }
       }
       if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
@@ -1163,4 +1189,55 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     }
   }
 
+
+  private async getCredentialSchemaIdsForParticipant(account: string): Promise<number[]> {
+    const controllerTrRows = await knex("trust_registry")
+      .where("controller", account)
+      .select("id");
+    const controllerTrIds = controllerTrRows.map((r: { id: number }) => r.id);
+    const schemaIdsFromController =
+      controllerTrIds.length === 0
+        ? []
+        : (await knex("credential_schemas").whereIn("tr_id", controllerTrIds).select("id")).map((r: { id: number }) => r.id);
+
+    const granteeRows = await knex("permissions").where("grantee", account).distinct("schema_id");
+    const schemaIdsFromGrantee = granteeRows
+      .map((r: { schema_id: string }) => (r.schema_id != null ? Number(r.schema_id) : null))
+      .filter((id): id is number => id != null && !Number.isNaN(id));
+
+    return [...new Set([...schemaIdsFromController, ...schemaIdsFromGrantee])];
+  }
+
+  private async getCredentialSchemaIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
+    const trHistoryRows = await knex("trust_registry_history")
+      .where("height", "<=", blockHeight)
+      .where("controller", account)
+      .select("tr_id");
+    const controllerTrIds = [...new Set(trHistoryRows.map((r: { tr_id: number }) => r.tr_id))];
+
+    let schemaIdsFromController: number[] = [];
+    if (controllerTrIds.length > 0) {
+      const cshRanked = knex("credential_schema_history")
+        .select("credential_schema_id", "tr_id")
+        .select(
+          knex.raw(
+            "ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"
+          )
+        )
+        .where("height", "<=", blockHeight)
+        .as("ranked");
+      const latestCsh = await knex.from(cshRanked).where("rn", 1).whereIn("tr_id", controllerTrIds).select("credential_schema_id");
+      schemaIdsFromController = latestCsh.map((r: { credential_schema_id: number }) => r.credential_schema_id);
+    }
+
+    const granteePermRows = await knex("permission_history")
+      .where("height", "<=", blockHeight)
+      .where("grantee", account)
+      .distinct("schema_id");
+    const schemaIdsFromGrantee = granteePermRows
+      .map((r: { schema_id: number }) => r.schema_id)
+      .filter((id): id is number => id != null);
+
+    return [...new Set([...schemaIdsFromController, ...schemaIdsFromGrantee])];
+  }
 }
