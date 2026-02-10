@@ -334,6 +334,7 @@ export default class CrawlTxService extends BullableService {
               query: `tx.height=${height}`,
               page,
               per_page: perPage,
+              order_by: 'asc',
             })
           ),
           `tx_search-height-${height}-page-${page}`
@@ -355,14 +356,22 @@ export default class CrawlTxService extends BullableService {
       }
     };
 
+    const baseTxsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
+      ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
+      : config.handleTransaction.txsPerCall;
+    const rawTxsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart);
+    const maxPerPage = this.getTxSearchMaxPerPage();
+    const txsPerCall = Math.max(1, Math.min(rawTxsPerCall, maxPerPage));
+
+    if (rawTxsPerCall > maxPerPage) {
+      this.logger.warn(
+        `[crawl_tx] txsPerCall ${rawTxsPerCall} exceeds tx_search max ${maxPerPage}; clamping per_page to ${txsPerCall} to avoid missing transactions`
+      );
+    }
+
     blocks.forEach((block) => {
       if (block.tx_count > 0) {
         this.logger.info('crawl tx by height: ', block.height);
-        const baseTxsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
-          ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
-          : config.handleTransaction.txsPerCall;
-        const txsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart);
-
         const totalPages = Math.ceil(
           block.tx_count / txsPerCall
         );
@@ -372,7 +381,7 @@ export default class CrawlTxService extends BullableService {
           promises.push(
             getBlockInfo(
               block.height,
-              block.timestamp,
+              block.time,
               pageIndex,
               txsPerCall.toString()
             )
@@ -427,6 +436,14 @@ export default class CrawlTxService extends BullableService {
     blocks.length = 0;
 
     return listRawTxs;
+  }
+
+  private getTxSearchMaxPerPage(): number {
+    const envValue = Number(process.env.TX_SEARCH_MAX_PER_PAGE);
+    if (Number.isFinite(envValue) && envValue > 0) {
+      return Math.floor(envValue);
+    }
+    return 100;
   }
 
   // decode list raw tx

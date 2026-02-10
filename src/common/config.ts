@@ -85,6 +85,13 @@ export default class ConfigClass {
 
   public static LOGLEVEL = (process.env.LOGLEVEL || 'info') as LogLevels;
 
+  public static LOG_TO_CONSOLE = getValue(process.env.LOG_TO_CONSOLE, true) as boolean;
+
+  public static LOG_TO_FILE = isTrue(process.env.LOG_TO_FILE) as boolean;
+
+  public static LOG_FILE_PATH = process.env.LOG_FILE_PATH || 'logs/errors.log';
+  
+  
   public static TRACING_ENABLED = isTrue(process.env.TRACING_ENABLED || '1');
 
   public static TRACING_TYPE = process.env.TRACING_TYPE || 'Console';

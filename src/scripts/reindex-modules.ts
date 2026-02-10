@@ -3,15 +3,19 @@ import * as dotenv from "dotenv";
 import knex, { Knex } from "knex";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath, pathToFileURL } from "url";
 import { loadEnvFiles } from "../common/utils/loadEnv";
 import { getConfigForEnv } from "../knexfile";
 
 loadEnvFiles();
 dotenv.config();
 
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+
 const TABLES_TO_DROP = [
   "transaction_message",
   "transaction",
+  "global_metrics",
   "credential_schema_history",
   "credential_schemas",
   "governance_framework_document_history",
@@ -39,6 +43,7 @@ const TABLES_TO_DROP = [
 
 const SEQUENCES_TO_RESET = [
   "transaction_id_seq",
+  "global_metrics_id_seq",
   "credential_schema_history_id_seq",
   "credential_schemas_id_seq",
   "governance_framework_document_history_id_seq",
@@ -109,6 +114,38 @@ async function waitForDatabase(config: Knex.Config, maxRetries = 30, delayMs = 2
       await new Promise<void>((resolve) => {
         setTimeout(resolve, delayMs);
       });
+    }
+  }
+}
+
+async function importMigrationByName(migrationName: string): Promise<any | null> {
+  const candidates = [
+    path.join(SCRIPT_DIR, "..", "migrations", `${migrationName}.js`),
+    path.join(SCRIPT_DIR, "..", "migrations", `${migrationName}.ts`),
+    path.join(process.cwd(), "dist", "src", "migrations", `${migrationName}.js`),
+    path.join(process.cwd(), "src", "migrations", `${migrationName}.ts`)
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return import(pathToFileURL(candidate).href);
+    }
+  }
+
+  return null;
+}
+
+async function removeErrorsLog(): Promise<void> {
+  const logPath = path.join(process.cwd(), "logs", "errors.log");
+  try {
+    await fs.promises.unlink(logPath);
+    console.log(" Removed logs/errors.log");
+  } catch (err: unknown) {
+    const error = err as NodeJS.ErrnoException;
+    if (error?.code === "ENOENT") {
+      console.log(" logs/errors.log not found; nothing to remove");
+    } else {
+      console.warn(` Could not remove logs/errors.log: ${error?.message || String(error)}`);
     }
   }
 }
@@ -407,6 +444,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   "20251125000002_create_trust_deposit_history": ["trust_deposit_history"],
   "20251125000003_create_module_params_history": ["module_params_history"],
   "20260126000001_create_did_history": ["did_history"],
+  "20260202020000_create_global_metrics": ["global_metrics"],
   "partition-transaction-table": ["transaction"],
   "transaction_message_partition": ["transaction_message"]
 };
@@ -418,7 +456,9 @@ const ALTER_MIGRATIONS = [
   "20250115000000_add_permission_new_attributes",
   "20260126000000_add_trust_registry_statistics",
   "20260126000002_add_credential_schema_statistics",
-  "20260130000004_alter_gfv_combined"
+  "20260130000004_alter_gfv_combined",
+  "20260202000000_add_title_description_to_credential_schema",
+  "20260203000000_add_indexes_permissions_history"
 ];
 
 async function runMigrations(db: Knex): Promise<void> {
@@ -482,6 +522,7 @@ async function runMigrations(db: Knex): Promise<void> {
       "20251125000002_create_trust_deposit_history",
       "20251125000003_create_module_params_history",
       "20260126000001_create_did_history",
+      "20260202020000_create_global_metrics",
       "20251124120000_add_height_to_credential_schema_history",
       "20251125113000_add_height_indexes_to_history_tables",
       "20251210000000_add_permission_statistics",
@@ -629,6 +670,10 @@ async function runMigrations(db: Knex): Promise<void> {
     
     console.log(`  Running migrations using Knex migrate.latest()...`);
     try {
+      console.log("  Ensuring base transaction tables exist before running migrations...");
+      await recreateTransactionTables(db);
+      console.log("  Base transaction tables verified/created (if needed).");
+      
       const [, pendingBefore] = await db.migrate.list();
       if (pendingBefore && pendingBefore.length > 0) {
         console.log(`   Found ${pendingBefore.length} pending migration(s) to run`);
@@ -694,9 +739,22 @@ async function runMigrations(db: Knex): Promise<void> {
         console.log("    Migration validation error or missing tables detected");
         console.log("  This usually happens after reindexing. Will force re-run migrations...");
         console.log("  Clearing migration records for module tables to force re-creation...");
-        const moduleMigrationsToClear = completed.filter((m: Migration) => 
-          m && m.name && typeof m.name === 'string' && moduleOnlyMigrationNames.some(name => m.name.includes(name))
-        );
+        const moduleMigrationsToClear = completed.filter((m: Migration) => {
+          if (!m || !m.name || typeof m.name !== "string") {
+            return false;
+          }
+          const isModuleMigration = moduleOnlyMigrationNames.some(name => m.name.includes(name));
+          if (!isModuleMigration) {
+            return false;
+          }
+          const matchedEntry = Object.entries(MIGRATION_TO_TABLES)
+            .find(([migrationName]) => m.name.includes(migrationName));
+          if (!matchedEntry) {
+            return true;
+          }
+          const [, tables] = matchedEntry;
+          return tables.some(table => missingTables.includes(table));
+        });
         
         for (const migration of moduleMigrationsToClear) {
           try {
@@ -859,8 +917,11 @@ async function runMigrations(db: Knex): Promise<void> {
               continue;
             }
 
-            const migrationPath = `../migrations/${migration.name}.ts`;
-            const migrationFile = await import(migrationPath);
+            const migrationFile = await importMigrationByName(migration.name);
+            if (!migrationFile) {
+              console.warn(`     Migration file not found for ${migration.name}, skipping`);
+              continue;
+            }
             if (migrationFile.up) {
               await migrationFile.up(db);
               const maxBatch = await db("knex_migrations").max("batch as max").first();
@@ -1046,6 +1107,15 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
       console.log(`📌 Resuming from checkpoint. Completed steps: ${completedSteps.join(', ')}\n`);
     }
 
+    if (!isStepComplete("remove-errors-log")) {
+      console.log("Step 0: Removing errors.log...");
+      await removeErrorsLog();
+      markStepComplete("remove-errors-log");
+      console.log("");
+    } else {
+      console.log("Step 0: Removing errors.log... [SKIPPED - already completed]\n");
+    }
+
     const config = getConfigForEnv();
     const connInfo = config.connection as { database?: string; host?: string; port?: number };
     console.log(`Database: ${connInfo.database || 'unknown'} @ ${connInfo.host || 'unknown'}:${connInfo.port || 'unknown'}\n`);
@@ -1087,6 +1157,25 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
       markStepComplete('migrations');
     } else {
       console.log("Step: Run migrations... [SKIPPED - already completed]\n");
+    }
+    
+    if (!isStepComplete('indexes')) {
+      console.log("Step X: Applying index migration (if columns exist)...");
+      try {
+        const migrationFile = await importMigrationByName("20260203000000_add_indexes_permissions_history");
+        if (migrationFile && typeof migrationFile.up === "function") {
+          await migrationFile.up(db);
+          console.log("  Index migration applied (or skipped for missing columns).");
+        } else {
+          console.log("  Index migration file not found or invalid; skipping.");
+        }
+        markStepComplete('indexes');
+      } catch (err: any) {
+        console.error("  Failed to apply index migration:", err?.message || err);
+        throw err;
+      }
+    } else {
+      console.log("Step X: Applying index migration... [SKIPPED - already completed]\n");
     }
 
     if (!isStepComplete('reset-sequences')) {
