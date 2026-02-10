@@ -112,6 +112,7 @@ export const BULL_JOB_NAME = {
   JOB_UPDATE_ASSETS: "job:update-assets",
   JOB_CW721_UPDATE: "job:cw721-update",
   CHECKPOINT_UPDATE_DELEGATOR: "job:checkpoint_update_delegator",
+  SNAPSHOT_GLOBAL_METRICS: "job:snapshot-global-metrics",
 };
 
 export enum ModulesParamsNamesTypes {
@@ -229,6 +230,14 @@ export const SERVICE = {
     PermProcessorService: {
       key: "PermProcessorService",
       path: "v1.PermProcessorService",
+    },
+    MetricsApiService: {
+      key: "MetricsApiService",
+      path: "v1.MetricsApiService",
+    },
+    MetricsSnapshotService: {
+      key: "MetricsSnapshotService",
+      path: "v1.MetricsSnapshotService",
     },
     CrawlAccountService: {
       key: "CrawlAccountService",
