@@ -759,6 +759,15 @@
             "description": "Maximum number of active schemas (exclusive)."
           },
           {
+            "name": "participant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Account (e.g. verana8127329). Filter TRs where account is controller or grantee."
+          },
+          {
             "name": "min_participants",
             "in": "query",
             "required": false,
@@ -1201,6 +1210,15 @@
               "type": "string"
             },
             "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+          },
+          {
+            "name": "participant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Account (e.g. verana8127329). Filter schemas where account is controller (via TR) or grantee."
           },
           {
             "name": "min_participants",
