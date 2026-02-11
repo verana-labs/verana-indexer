@@ -12,7 +12,7 @@ export class TrustRegistryHistory extends BaseModel {
   created!: Date;
   modified!: Date;
   archived?: Date | null;
-  deposit!: string;
+  deposit!: number;
   aka?: string | null;
   language!: string;
   active_version?: number | null;

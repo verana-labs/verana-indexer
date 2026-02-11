@@ -23,7 +23,7 @@ export function formatTimestamp(rawTimestamp: any): string {
 }
 
 
-export function addYearsToDate(dateStr: string | undefined, years: string | number): any {
+export function addYearsToDate(dateStr: string | undefined, years: number | number): any {
     if (!dateStr) return null;
     const date = new Date(dateStr);
     const yearsToAdd = typeof years === 'string' ? parseInt(years, 10) : years;

@@ -24,13 +24,13 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should upsert (insert) a new credential schema", async () => {
     const payload = {
-      tr_id: "T123",
+      tr_id: 123,
       json_schema: JSON.stringify({
         $id: "/vpr/v1/cs/js/1",
         type: "object",
         properties: { foo: { type: "string" } },
       }),
-      deposit: "10000000",
+      deposit: 10000000,
       is_active: true,
       issuer_grantor_validation_validity_period: 365,
       verifier_grantor_validation_validity_period: 365,
@@ -48,18 +48,18 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     schema = res?.result || res;
 
     expect(res).toBeDefined();
-    expect(schema.tr_id).toBe("T123");
+    expect(schema.tr_id).toBe(123);
     expect(schema.id).toBeDefined();
   });
 
   it("should update an existing credential schema", async () => {
     const res = await broker.call(`${serviceKey}.update`, {
-      payload: { id: schema.id, deposit: "20000000" },
+      payload: { id: schema.id, deposit: 20000000 },
     });
 
     const updated = res?.updated || res.updated;
     expect(res?.success ?? res.success).toBe(true);
-    expect(updated.deposit).toBe("20000000");
+    expect(updated.deposit).toBe(20000000);
   });
 
   it("should archive the credential schema", async () => {
@@ -103,7 +103,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     const item = res?.schema || res;
 
     expect(item.id).toBe(schema.id);
-    expect(item.tr_id).toBe("T123");
+    expect(item.tr_id).toBe(123);
   });
 
   it("should list credential schemas", async () => {
@@ -113,7 +113,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     expect(Array.isArray(items)).toBe(true);
     const found = items.find((i: any) => i.id === schema.id);
     expect(found).toBeDefined();
-    expect(found.tr_id).toBe("T123");
+    expect(found.tr_id).toBe(123);
   });
 
   it("should fetch JsonSchema of the credential schema", async () => {
@@ -146,13 +146,13 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     
     expect(res).toBeDefined();
     expect(res.entity_type).toBe("CredentialSchema");
-    expect(res.entity_id).toBe(String(schema.id));
+    expect(Number(res.entity_id)).toBe(schema.id);
     expect(Array.isArray(res.activity)).toBe(true);
     expect(res.activity.length).toBeGreaterThan(0);
     expect(res.activity[0].timestamp).toBeDefined();
     expect(res.activity[0].block_height).toBeDefined();
     expect(res.activity[0].entity_type).toBe("CredentialSchema");
-    expect(res.activity[0].entity_id).toBe(String(schema.id));
+    expect(Number(res.activity[0].entity_id)).toBe(schema.id);
     expect(res.activity[0].msg).toBeDefined();
   });
 });

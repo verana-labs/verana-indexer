@@ -5,7 +5,6 @@ import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../co
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
-import ModuleParams from "../../models/modules_params";
 
 function isValidDid(did: string): boolean {
     const didRegex = /^did:[a-z0-9]+:[A-Za-z0-9.\-_%]+$/;
@@ -107,7 +106,7 @@ export default class DidDatabaseService extends BullableService {
                 const historicalDid = {
                     did: historyRecord.did,
                     controller: historyRecord.controller,
-                    deposit: historyRecord.deposit,
+                    deposit: historyRecord.deposit ?? 0,
                     exp: historyRecord.exp,
                     created: historyRecord.created,
                     modified: historyRecord.modified,
@@ -222,7 +221,7 @@ export default class DidDatabaseService extends BullableService {
                         return {
                             did: historyRecord.did,
                             controller: historyRecord.controller,
-                            deposit: historyRecord.deposit,
+                            deposit: historyRecord.deposit ?? 0,
                             exp: historyRecord.exp,
                             created: historyRecord.created,
                             modified: historyRecord.modified,

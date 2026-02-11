@@ -65,9 +65,9 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
     returning: jest.fn().mockResolvedValue([
       {
         account: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-        amount: "100",
-        share: "10",
-        claimable: "0",
+        amount: 100,
+        share: 10,
+        claimable: 0,
       },
     ]),
   }));
@@ -127,14 +127,14 @@ describe("🧪 TrustDepositDatabaseService", () => {
   it("✅ should update existing trust deposit", async () => {
     (TrustDeposit.query as any).mockReturnValue({
       findOne: jest.fn().mockResolvedValue({
-        id: "1",
+        id: 1,
         account: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-        amount: "100",
-        share: "10",
-        claimable: "0",
-        slashed_deposit: "0",
-        repaid_deposit: "0",
-        slash_count: "0",
+        amount: 100,
+        share: 10,
+        claimable: 0,
+        slashed_deposit: 0,
+        repaid_deposit: 0,
+        slash_count: 0,
       }),
       patchAndFetchById: jest.fn().mockResolvedValue({}),
     });

@@ -127,6 +127,7 @@
     "@types/lodash": "^4.17.20",
     "@types/mkdirp": "^1.0.2",
     "@types/node": "^18.19.130",
+    "@types/pg": "8.16.0",
     "@types/semver": "7.7.0",
     "@types/stream-chain": "^2.1.0",
     "@types/stream-json": "^1.7.8",

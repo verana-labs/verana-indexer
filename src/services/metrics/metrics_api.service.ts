@@ -122,15 +122,15 @@ export default class MetricsApiService extends BaseService {
             archived_trust_registries: Number(snap.archived_trust_registries || 0),
             active_schemas: Number(snap.active_schemas || 0),
             archived_schemas: Number(snap.archived_schemas || 0),
-            weight: String(snap.weight || "0"),
+            weight: Number(snap.weight || "0"),
             issued: Number(snap.issued || 0),
             verified: Number(snap.verified || 0),
             ecosystem_slash_events: Number(snap.ecosystem_slash_events || 0),
-            ecosystem_slashed_amount: String(snap.ecosystem_slashed_amount || "0"),
-            ecosystem_slashed_amount_repaid: String(snap.ecosystem_slashed_amount_repaid || "0"),
+            ecosystem_slashed_amount: Number(snap.ecosystem_slashed_amount || "0"),
+            ecosystem_slashed_amount_repaid: Number(snap.ecosystem_slashed_amount_repaid || "0"),
             network_slash_events: Number(snap.network_slash_events || 0),
-            network_slashed_amount: String(snap.network_slashed_amount || "0"),
-            network_slashed_amount_repaid: String(snap.network_slashed_amount_repaid || "0"),
+            network_slashed_amount: Number(snap.network_slashed_amount || "0"),
+            network_slashed_amount_repaid: Number(snap.network_slashed_amount_repaid || "0"),
           }, 200);
         }
       } else {
@@ -146,15 +146,15 @@ export default class MetricsApiService extends BaseService {
             archived_trust_registries: Number(snap.archived_trust_registries || 0),
             active_schemas: Number(snap.active_schemas || 0),
             archived_schemas: Number(snap.archived_schemas || 0),
-            weight: String(snap.weight || "0"),
+            weight: Number(snap.weight || "0"),
             issued: Number(snap.issued || 0),
             verified: Number(snap.verified || 0),
             ecosystem_slash_events: Number(snap.ecosystem_slash_events || 0),
-            ecosystem_slashed_amount: String(snap.ecosystem_slashed_amount || "0"),
-            ecosystem_slashed_amount_repaid: String(snap.ecosystem_slashed_amount_repaid || "0"),
+            ecosystem_slashed_amount: Number(snap.ecosystem_slashed_amount || "0"),
+            ecosystem_slashed_amount_repaid: Number(snap.ecosystem_slashed_amount_repaid || "0"),
             network_slash_events: Number(snap.network_slash_events || 0),
-            network_slashed_amount: String(snap.network_slashed_amount || "0"),
-            network_slashed_amount_repaid: String(snap.network_slashed_amount_repaid || "0"),
+            network_slashed_amount: Number(snap.network_slashed_amount || "0"),
+            network_slashed_amount_repaid: Number(snap.network_slashed_amount_repaid || "0"),
           }, 200);
         }
       }
@@ -294,15 +294,15 @@ export default class MetricsApiService extends BaseService {
         archived_trust_registries: archivedTrustRegistries || 0,
         active_schemas: activeSchemas || 0,
         archived_schemas: archivedSchemas || 0,
-        weight: totalWeight.toString(),
+        weight: Number(totalWeight),
         issued,
         verified,
         ecosystem_slash_events: ecosystemSlashEvents,
-        ecosystem_slashed_amount: ecosystemSlashedAmount.toString(),
-        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid.toString(),
+        ecosystem_slashed_amount: Number(ecosystemSlashedAmount),
+        ecosystem_slashed_amount_repaid: Number(ecosystemSlashedAmountRepaid),
         network_slash_events: networkSlashEvents,
-        network_slashed_amount: networkSlashedAmount.toString(),
-        network_slashed_amount_repaid: networkSlashedAmountRepaid.toString(),
+        network_slashed_amount: Number(networkSlashedAmount),
+        network_slashed_amount_repaid: Number(networkSlashedAmountRepaid),
       };
 
       return ApiResponder.success(ctx, result, 200);

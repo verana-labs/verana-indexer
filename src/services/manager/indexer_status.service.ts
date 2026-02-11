@@ -17,6 +17,7 @@ export default class IndexerStatusService extends BaseService {
 
   async started() {
     indexerStatusManager.setLogger(this.logger);
+    await indexerStatusManager.resumeIndexer();
   }
 
   @Action()

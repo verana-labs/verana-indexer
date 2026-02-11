@@ -8,25 +8,25 @@ export class TrustRegistry extends BaseModel {
   id!: number;
   did!: string;
   controller!: string;
-  created!: string;
-  modified!: string;
+  created!: Date;
+  modified!: Date;
   archived?: string | null;
-  deposit!: string;
+  deposit!: number;
   aka?: string;
   language!: string; 
   active_version?: number;
   participants?: number;
   active_schemas?: number;
   archived_schemas?: number;
-  weight?: string;
+  weight?: number;
   issued?: number;
   verified?: number;
   ecosystem_slash_events?: number;
-  ecosystem_slashed_amount?: string;
-  ecosystem_slashed_amount_repaid?: string;
+  ecosystem_slashed_amount?: number;
+  ecosystem_slashed_amount_repaid?: number;
   network_slash_events?: number;
-  network_slashed_amount?: string;
-  network_slashed_amount_repaid?: string;
+  network_slashed_amount?: number;
+  network_slashed_amount_repaid?: number;
 
   governanceFrameworkVersions?: GovernanceFrameworkVersion[];
 

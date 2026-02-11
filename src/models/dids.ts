@@ -10,9 +10,9 @@ export default class Did extends BaseModel {
   created!: Date;
   modified!: Date;
   exp!: Date;
-  deposit!: string;
+  deposit!: number;
   event_type?: string;
-  years?: string;
+  years?: number;
   is_deleted?: boolean;
   deleted_at?: Date;
 
@@ -30,9 +30,9 @@ export default class Did extends BaseModel {
         created: { type: 'string', format: 'date-time' },
         modified: { type: 'string', format: 'date-time' },
         exp: { type: 'string', format: 'date-time' },
-        deposit: { type: 'string' },
+        deposit: { type: 'integer' },
         event_type: { type: 'string', maxLength: 255 },
-        years: { type: 'string' },
+        years: { type: 'integer' },
         is_deleted: { type: 'boolean' },
         deleted_at: { type: 'string', format: 'date-time' }
       }

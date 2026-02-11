@@ -55,11 +55,11 @@ export default class TrustDepositApiService extends BullableService {
         const result = {
           trust_deposit: {
             account: historyRecord.account,
-            share: historyRecord.share?.toString() || "0",
-            amount: historyRecord.amount?.toString() || "0",
-            claimable: historyRecord.claimable?.toString() || "0",
-            slashed_deposit: historyRecord.slashed_deposit?.toString() || "0",
-            repaid_deposit: historyRecord.repaid_deposit?.toString() || "0",
+            share: Number(historyRecord.share ?? 0),
+            amount: Number(historyRecord.amount ?? 0),
+            claimable: Number(historyRecord.claimable ?? 0),
+            slashed_deposit: Number(historyRecord.slashed_deposit ?? 0),
+            repaid_deposit: Number(historyRecord.repaid_deposit ?? 0),
             last_slashed: historyRecord.last_slashed,
             last_repaid: historyRecord.last_repaid,
             slash_count: historyRecord.slash_count || 0,
@@ -84,14 +84,14 @@ export default class TrustDepositApiService extends BullableService {
       const result = {
         trust_deposit: {
           account: trustDeposit.account,
-          share: trustDeposit.share,
-          amount: trustDeposit.amount,
-          claimable: trustDeposit.claimable,
-          slashed_deposit: trustDeposit.slashed_deposit,
-          repaid_deposit: trustDeposit.repaid_deposit,
+          share: Number(trustDeposit.share ?? 0),
+          amount: Number(trustDeposit.amount ?? 0),
+          claimable: Number(trustDeposit.claimable ?? 0),
+          slashed_deposit: Number(trustDeposit.slashed_deposit ?? 0),
+          repaid_deposit: Number(trustDeposit.repaid_deposit ?? 0),
           last_slashed: trustDeposit.last_slashed,
           last_repaid: trustDeposit.last_repaid,
-          slash_count: trustDeposit.slash_count,
+          slash_count: Number(trustDeposit.slash_count ?? 0),
           last_repaid_by: trustDeposit.last_repaid_by,
         },
       }

@@ -56,8 +56,8 @@ export default class TrustRegistryHistoryService extends BaseService {
         }
 
         const documents = Array.from(docMap.values()).map((gfd: any) => ({
-          id: String(gfd.id),
-          gfv_id: String(gfv.id),
+          id: typeof gfd.id === 'number' ? gfd.id : Number(gfd.id),
+          gfv_id: typeof gfv.id === 'number' ? gfv.id : Number(gfv.id),
           created: gfd.created ? (gfd.created instanceof Date ? gfd.created.toISOString() : new Date(gfd.created).toISOString()) : null,
           language: gfd.language,
           url: gfd.url,
@@ -65,8 +65,8 @@ export default class TrustRegistryHistoryService extends BaseService {
         }));
 
         return {
-          id: String(gfv.id),
-          tr_id: String(trId),
+          id: typeof gfv.id === 'number' ? gfv.id : Number(gfv.id),
+          tr_id: typeof trId === 'number' ? trId : Number(trId),
           created: gfv.created ? (gfv.created instanceof Date ? gfv.created.toISOString() : new Date(gfv.created).toISOString()) : null,
           version: gfv.version,
           active_since: gfv.active_since ? (gfv.active_since instanceof Date ? gfv.active_since.toISOString() : new Date(gfv.active_since).toISOString()) : null,
@@ -159,8 +159,8 @@ export default class TrustRegistryHistoryService extends BaseService {
         }
 
         const documents = Array.from(docMap.values()).map((gfd: any) => ({
-          id: String(gfd.id),
-          gfv_id: String(gfvHistoryId),
+          id: typeof gfd.id === 'number' ? gfd.id : Number(gfd.id),
+          gfv_id: typeof gfvHistoryId === 'number' ? gfvHistoryId : Number(gfvHistoryId),
           created: gfd.created ? (gfd.created instanceof Date ? gfd.created.toISOString() : new Date(gfd.created).toISOString()) : null,
           language: gfd.language,
           url: gfd.url,
@@ -168,8 +168,8 @@ export default class TrustRegistryHistoryService extends BaseService {
         }));
 
         return {
-          id: String(gfvHistoryId),
-          tr_id: String(trId),
+          id: typeof gfvHistoryId === 'number' ? gfvHistoryId : Number(gfvHistoryId),
+          tr_id: typeof trId === 'number' ? trId : Number(trId),
           created: gfvHistory.created ? (gfvHistory.created instanceof Date ? gfvHistory.created.toISOString() : new Date(gfvHistory.created).toISOString()) : null,
           version: gfvHistory.version,
           active_since: gfvHistory.active_since ? (gfvHistory.active_since instanceof Date ? gfvHistory.active_since.toISOString() : new Date(gfvHistory.active_since).toISOString()) : null,
@@ -203,14 +203,14 @@ export default class TrustRegistryHistoryService extends BaseService {
               entityType: "GovernanceFrameworkVersion",
               historyTable: "governance_framework_version_history",
               idField: "tr_id",
-              entityIdField: "gfv_id",
+              entityIdField: "id",
               msgTypePrefixes: ["/verana.tr.v1", "/veranablockchain.trustregistry"],
             },
             {
               entityType: "GovernanceFrameworkDocument",
               historyTable: "governance_framework_document_history",
               idField: "tr_id",
-              entityIdField: "gfd_id",
+              entityIdField: "id",
               msgTypePrefixes: ["/verana.tr.v1", "/veranablockchain.trustregistry"],
             },
           ],

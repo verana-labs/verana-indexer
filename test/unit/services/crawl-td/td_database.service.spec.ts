@@ -31,11 +31,11 @@ describe("🧪 TrustDepositDatabaseService", () => {
       (TrustDeposit.query as any).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
           account: "verana1testaccountxyz",
-          share: "100000",
-          amount: "100000",
-          claimable: "0",
-          slashed_deposit: "1000",
-          repaid_deposit: "500",
+          share: 100000,
+          amount:100000,
+          claimable: 0,
+          slashed_deposit: 1000,
+          repaid_deposit: 500,
           last_slashed: "2025-10-09T10:00:00Z",
           last_repaid: "2025-10-09T12:00:00Z",
           slash_count: 1,
@@ -52,7 +52,7 @@ describe("🧪 TrustDepositDatabaseService", () => {
 
       expect(res.trust_deposit).toBeDefined();
       expect(res.trust_deposit.account).toBe("verana1testaccountxyz");
-      expect(res.trust_deposit.slashed_deposit).toBe("1000");
+      expect(res.trust_deposit.slashed_deposit).toBe(1000);
     });
 
     it("❌ should return 400 for invalid account", async () => {

@@ -22,7 +22,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
 
   it("should insert a credential schema", async () => {
     const payload = {
-      tr_id: "6",
+      tr_id: 6,
       json_schema: JSON.stringify({
         $id: "/vpr/v1/cs/js/1",
         type: "object",
@@ -41,7 +41,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
               "countryCode",
             ],
             properties: {
-              id: { type: "string", format: "uri" },
+              id: { type: "integer", format: "uri" },
               logo: {
                 type: "string",
                 contentEncoding: "base64",
@@ -60,7 +60,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
           },
         },
       }),
-      deposit: "10000000",
+      deposit: 10000000,
       is_active: false,
       issuer_grantor_validation_validity_period: 365,
       verifier_grantor_validation_validity_period: 365,
@@ -77,7 +77,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
     const upsertRes = await broker.call(`${serviceKey}.upsert`, { payload });
     schema = upsertRes.data?.result || upsertRes.result || upsertRes;
 
-    expect(schema.tr_id).toBe("6");
+    expect(schema.tr_id).toBe(6);
     expect(schema.id).toBeDefined();
   });
   it("should update a credential schema", async () => {
@@ -94,7 +94,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
 
     const upsertRes = await broker.call(`${serviceKey}.update`, { payload });
     schema = upsertRes.data?.updated || upsertRes.updated || upsertRes;
-    expect(schema.tr_id).toBe("6");
+    expect(schema.tr_id).toBe(6);
     expect(schema.id).toBeDefined();
   });
 
@@ -112,7 +112,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
   });
   it("should reflect the archive status in the database", async () => {
     const dbSchema = await knex("credential_schemas")
-      .where({ id: schema.id })
+      .where({ id: schema?.id })
       .first();
     const unarchiveSuccess = dbSchema ?? dbSchema;
 
@@ -121,7 +121,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
   it("should unarchive a credential schema", async () => {
     const unarchiveRes = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema.id,
+        id: schema?.id,
         archive: false,
         modified: new Date().toISOString(),
       },

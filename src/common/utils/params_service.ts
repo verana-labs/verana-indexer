@@ -107,12 +107,37 @@ export async function getModuleParamsAction(
 
 export function parseModuleParams(params: any): any {
   if (!params) return {};
-  
+
   try {
     const parsed =
       typeof params === "string" ? JSON.parse(params) : params;
-    
-    return parsed.params || parsed || {};
+
+    const raw = parsed.params || parsed || {};
+
+    const convertNumericStrings = (value: any): any => {
+      if (value === null || value === undefined) return value;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+          const num = Number(trimmed);
+          return Number.isNaN(num) ? value : num;
+        }
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return value.map(convertNumericStrings);
+      }
+      if (typeof value === "object") {
+        const result: any = {};
+        for (const [k, v] of Object.entries(value)) {
+          result[k] = convertNumericStrings(v);
+        }
+        return result;
+      }
+      return value;
+    };
+
+    return convertNumericStrings(raw);
   } catch (err) {
     console.error("Error parsing module params:", err);
     return {};

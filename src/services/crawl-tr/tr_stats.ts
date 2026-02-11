@@ -6,15 +6,15 @@ export interface TrustRegistryStats {
     participants: number;
     active_schemas: number;
     archived_schemas: number;
-    weight: string;
+    weight: number;
     issued: number;
     verified: number;
     ecosystem_slash_events: number;
-    ecosystem_slashed_amount: string;
-    ecosystem_slashed_amount_repaid: string;
+    ecosystem_slashed_amount: number;
+    ecosystem_slashed_amount_repaid: number;
     network_slash_events: number;
-    network_slashed_amount: string;
-    network_slashed_amount_repaid: string;
+    network_slashed_amount: number;
+    network_slashed_amount_repaid: number;
 }
 
 export async function getSchemasForTrustRegistry(trId: number, blockHeight?: number): Promise<any[]> {
@@ -56,7 +56,7 @@ export async function getTrustRegistryController(trId: number, blockHeight?: num
 export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
     if (typeof blockHeight === "number") {
         const permHistory = await knex("permission_history")
-            .where("schema_id", Number(schemaId))
+            .where("schema_id", schemaId)
             .where("height", "<=", blockHeight)
             .orderBy("permission_id", "asc")
             .orderBy("height", "desc")
@@ -71,17 +71,17 @@ export async function getPermissionsForSchema(schemaId: number, blockHeight?: nu
         return Array.from(permMap.values());
     }
     return await knex("permissions")
-        .where("schema_id", String(schemaId))
+        .where("schema_id", Number(schemaId))
         .select("*");
 }
 
 export async function calculateIssuedVerifiedForSchema(
     schemaId: number,
-    permissionIds: Set<string>,
+    permissionIds: Set<number>,
     blockHeight?: number
-): Promise<{ issued: bigint; verified: bigint }> {
-    let totalIssued = BigInt(0);
-    let totalVerified = BigInt(0);
+): Promise<{ issued: number; verified: number }> {
+    let totalIssued = 0;
+    let totalVerified = 0;
 
     if (typeof blockHeight === "number") {
         const latestSessionSubquery = knex("permission_session_history")
@@ -106,11 +106,11 @@ export async function calculateIssuedVerifiedForSchema(
             const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
             if (Array.isArray(authz)) {
                 for (const entry of authz) {
-                    if (entry.issuer_perm_id && permissionIds.has(String(entry.issuer_perm_id))) {
-                        totalIssued += BigInt(1);
+                    if (entry.issuer_perm_id && permissionIds.has(Number(entry.issuer_perm_id))) {
+                        totalIssued += 1;
                     }
-                    if (entry.verifier_perm_id && permissionIds.has(String(entry.verifier_perm_id))) {
-                        totalVerified += BigInt(1);
+                    if (entry.verifier_perm_id && permissionIds.has(Number(entry.verifier_perm_id))) {
+                        totalVerified += 1;
                     }
                 }
             }
@@ -123,11 +123,11 @@ export async function calculateIssuedVerifiedForSchema(
             const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
             if (Array.isArray(authz)) {
                 for (const entry of authz) {
-                    if (entry.issuer_perm_id && permissionIds.has(String(entry.issuer_perm_id))) {
-                        totalIssued += BigInt(1);
+                    if (entry.issuer_perm_id && permissionIds.has(Number(entry.issuer_perm_id))) {
+                        totalIssued += 1;
                     }
-                    if (entry.verifier_perm_id && permissionIds.has(String(entry.verifier_perm_id))) {
-                        totalVerified += BigInt(1);
+                    if (entry.verifier_perm_id && permissionIds.has(Number(entry.verifier_perm_id))) {
+                        totalVerified += 1;
                     }
                 }
             }
@@ -139,32 +139,32 @@ export async function calculateIssuedVerifiedForSchema(
 
 export async function calculateSlashStatsForSchema(
     schemaId: number,
-    permissionIds: Set<string>,
+    permissionIds: Set<number>,
     trController: string | null,
     blockHeight?: number
 ): Promise<{
     ecosystem_slash_events: number;
-    ecosystem_slashed_amount: bigint;
-    ecosystem_slashed_amount_repaid: bigint;
+    ecosystem_slashed_amount: number;
+    ecosystem_slashed_amount_repaid: number;
     network_slash_events: number;
-    network_slashed_amount: bigint;
-    network_slashed_amount_repaid: bigint;
+    network_slashed_amount: number;
+    network_slashed_amount_repaid: number;
 }> {
     let ecosystemSlashEvents = 0;
-    let ecosystemSlashedAmount = BigInt(0);
-    let ecosystemSlashedAmountRepaid = BigInt(0);
+    let ecosystemSlashedAmount = 0;
+    let ecosystemSlashedAmountRepaid = 0;
     let networkSlashEvents = 0;
-    let networkSlashedAmount = BigInt(0);
-    let networkSlashedAmountRepaid = BigInt(0);
+    let networkSlashedAmount = 0;
+    let networkSlashedAmountRepaid = 0;
 
     if (permissionIds.size === 0) {
         return {
             ecosystem_slash_events: 0,
-            ecosystem_slashed_amount: BigInt(0),
-            ecosystem_slashed_amount_repaid: BigInt(0),
+            ecosystem_slashed_amount: 0,
+            ecosystem_slashed_amount_repaid: 0,
             network_slash_events: 0,
-            network_slashed_amount: BigInt(0),
-            network_slashed_amount_repaid: BigInt(0),
+            network_slashed_amount: 0,
+            network_slashed_amount_repaid: 0,
         };
     }
 
@@ -174,7 +174,7 @@ export async function calculateSlashStatsForSchema(
     if (typeof blockHeight === "number") {
         slashEvents = await knex("permission_history")
             .whereIn("permission_id", permissionIdArray)
-            .whereRaw("schema_id = ?", [Number(schemaId)])
+            .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
             .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
@@ -184,7 +184,7 @@ export async function calculateSlashStatsForSchema(
     } else {
         slashEvents = await knex("permission_history")
             .whereIn("permission_id", permissionIdArray)
-            .whereRaw("schema_id = ?", [Number(schemaId)])
+            .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
@@ -192,18 +192,18 @@ export async function calculateSlashStatsForSchema(
             .orderBy("created_at", "asc");
     }
 
-    const prevSlashedDeposits = new Map<string, string>();
-    const prevRepaidDeposits = new Map<string, string>();
+    const prevSlashedDeposits = new Map<string, number>();
+    const prevRepaidDeposits = new Map<string, number>();
 
     for (const event of slashEvents) {
         const permIdStr = String(event.permission_id);
-        const prevSlashed = prevSlashedDeposits.get(permIdStr) || "0";
-        const currentSlashed = event.slashed_deposit || "0";
-        const incrementalSlashed = BigInt(currentSlashed) - BigInt(prevSlashed);
+        const prevSlashed = prevSlashedDeposits.get(permIdStr) || 0;
+        const currentSlashed = typeof event.slashed_deposit === 'number' ? event.slashed_deposit : Number(event.slashed_deposit);
+        const incrementalSlashed = currentSlashed - prevSlashed;
 
         if (incrementalSlashed <= 0) {
             prevSlashedDeposits.set(permIdStr, currentSlashed);
-            const currentRepaid = event.repaid_deposit || "0";
+            const currentRepaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
             prevRepaidDeposits.set(permIdStr, currentRepaid);
             continue;
         }
@@ -217,9 +217,9 @@ export async function calculateSlashStatsForSchema(
             networkSlashEvents++;
             networkSlashedAmount += incrementalSlashed;
 
-            const repaid = event.repaid_deposit || "0";
-            const prevRepaid = prevRepaidDeposits.get(permIdStr) || "0";
-            const incrementalRepaid = BigInt(repaid) - BigInt(prevRepaid);
+            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
+            const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
+            const incrementalRepaid = repaid - prevRepaid;
             if (incrementalRepaid > 0) {
                 networkSlashedAmountRepaid += incrementalRepaid;
             }
@@ -228,15 +228,15 @@ export async function calculateSlashStatsForSchema(
             ecosystemSlashEvents++;
             ecosystemSlashedAmount += incrementalSlashed;
 
-            const repaid = event.repaid_deposit || "0";
-            const prevRepaid = prevRepaidDeposits.get(permIdStr) || "0";
-            const incrementalRepaid = BigInt(repaid) - BigInt(prevRepaid);
+            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
+            const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
+            const incrementalRepaid = repaid - prevRepaid;
             if (incrementalRepaid > 0) {
                 ecosystemSlashedAmountRepaid += incrementalRepaid;
             }
             prevRepaidDeposits.set(permIdStr, repaid);
         } else {
-            const repaid = event.repaid_deposit || "0";
+            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
             prevRepaidDeposits.set(permIdStr, repaid);
         }
     }
@@ -261,16 +261,16 @@ export async function calculateTrustRegistryStats(
 
     let activeSchemas = 0;
     let archivedSchemas = 0;
-    let totalWeight = BigInt(0);
-    let totalIssued = BigInt(0);
-    let totalVerified = BigInt(0);
+    let totalWeight = 0;
+    let totalIssued = 0;
+    let totalVerified = 0;
     let ecosystemSlashEvents = 0;
-    let ecosystemSlashedAmount = BigInt(0);
-    let ecosystemSlashedAmountRepaid = BigInt(0);
+    let ecosystemSlashedAmount = 0;
+    let ecosystemSlashedAmountRepaid = 0;
     let networkSlashEvents = 0;
-    let networkSlashedAmount = BigInt(0);
-    let networkSlashedAmountRepaid = BigInt(0);
-    const activeParticipants = new Set<string>();
+    let networkSlashedAmount = 0;
+    let networkSlashedAmountRepaid = 0;
+    const activeParticipants = new Set<number>();
 
     for (const schema of schemas) {
         const schemaId = schema.credential_schema_id || schema.id;
@@ -283,10 +283,10 @@ export async function calculateTrustRegistryStats(
         }
 
         const permissions = await getPermissionsForSchema(schemaId, blockHeight);
-        const permissionIds = new Set<string>();
+        const permissionIds = new Set<number>();
 
         for (const perm of permissions) {
-            const permId = String(perm.permission_id || perm.id);
+            const permId = Number(perm.permission_id || perm.id);
             permissionIds.add(permId);
 
             const permState = calculatePermState(
@@ -308,10 +308,12 @@ export async function calculateTrustRegistryStats(
                 activeParticipants.add(permId);
             }
 
-            if (perm.weight) {
-                totalWeight += BigInt(perm.weight || "0");
-            } else if (perm.deposit) {
-                totalWeight += BigInt(perm.deposit || "0");
+            if (perm.weight != null) {
+                const weightValue = typeof perm.weight === 'number' ? perm.weight : Number(perm.weight);
+                totalWeight += weightValue;
+            } else if (perm.deposit != null) {
+                const depositValue = typeof perm.deposit === 'number' ? perm.deposit : Number(perm.deposit);
+                totalWeight += depositValue;
             }
         }
 
@@ -328,25 +330,18 @@ export async function calculateTrustRegistryStats(
         networkSlashedAmountRepaid += slashStats.network_slashed_amount_repaid;
     }
 
-    const issuedNumber = Number(totalIssued);
-    const verifiedNumber = Number(totalVerified);
-    
-    if (issuedNumber > Number.MAX_SAFE_INTEGER || verifiedNumber > Number.MAX_SAFE_INTEGER) {
-        console.warn(`Warning: issued (${totalIssued}) or verified (${totalVerified}) exceeds safe integer range for trust registry ${trId}`);
-    }
-
     return {
         participants: activeParticipants.size,
         active_schemas: activeSchemas,
         archived_schemas: archivedSchemas,
-        weight: totalWeight.toString(),
-        issued: issuedNumber,
-        verified: verifiedNumber,
+        weight: totalWeight,
+        issued: totalIssued,
+        verified: totalVerified,
         ecosystem_slash_events: ecosystemSlashEvents,
-        ecosystem_slashed_amount: ecosystemSlashedAmount.toString(),
-        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid.toString(),
+        ecosystem_slashed_amount: ecosystemSlashedAmount,
+        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid,
         network_slash_events: networkSlashEvents,
-        network_slashed_amount: networkSlashedAmount.toString(),
-        network_slashed_amount_repaid: networkSlashedAmountRepaid.toString(),
+        network_slashed_amount: networkSlashedAmount,
+        network_slashed_amount_repaid: networkSlashedAmountRepaid,
     };
 }

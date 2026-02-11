@@ -136,7 +136,7 @@ export default class MetricsSnapshotService extends BullableService {
         this.logger.debug("Global metrics snapshot skipped (min interval not reached)");
       }
     } catch (error: any) {
-      this.logger.warn(`Failed to snapshot global metrics: ${error?.message || String(error)}`);
+      this.logger.error(`Failed to snapshot global metrics: ${error?.message || String(error)}`);
     }
   }
 

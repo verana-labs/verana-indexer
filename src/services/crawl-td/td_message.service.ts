@@ -276,7 +276,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
       const newShare = toBigIntSafe(td.share) - claimableYield / shareValue;
 
       const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-        share: newShare.toString(),
+        share: Number(newShare),
       });
 
       await recordTrustDepositHistory(
@@ -352,9 +352,9 @@ export default class TrustDepositMessageProcessorService extends BullableService
       const newShare = toBigIntSafe(td.share) - claimed / shareValue;
 
       const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-        amount: newDeposit.toString(),
-        claimable: newClaimable.toString(),
-        share: newShare.toString(),
+        amount: Number(newDeposit),
+        claimable: Number(newClaimable),
+        share: Number(newShare),
       });
 
       await recordTrustDepositHistory(
@@ -409,10 +409,10 @@ export default class TrustDepositMessageProcessorService extends BullableService
       const newRepaid = repaid + amount;
 
       const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-        amount: newDeposit.toString(),
-        share: newShare.toString(),
-        repaid_deposit: newRepaid.toString(),
-        last_repaid: ts,
+        amount: Number(newDeposit),
+        share: Number(newShare),
+        repaid_deposit: Number(newRepaid),
+        last_repaid: ts ? new Date(ts) : null,
         last_repaid_by: extractController(content, "unknown"),
       });
 

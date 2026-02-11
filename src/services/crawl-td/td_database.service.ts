@@ -254,13 +254,13 @@ export default class TrustDepositDatabaseService extends BullableService {
         const newSlashCount = BigInt(td.slash_count || "0") + BigInt(1);
 
         const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-          amount: newAmount.toString(),
-          share: newShare.toString(),
-          slashed_deposit: newSlashed.toString(),
-          last_slashed: now,
+          amount: Number(newAmount),
+          share: Number(newShare),
+          slashed_deposit: Number(newSlashed),
+          last_slashed: now ? new Date(now) : null,
           slash_count: slashCount
-            ? BigInt(slashCount).toString()
-            : newSlashCount.toString(),
+            ? Number(slashCount)
+            : Number(newSlashCount),
         });
 
         await recordTrustDepositHistory(
@@ -343,11 +343,11 @@ export default class TrustDepositDatabaseService extends BullableService {
         const newSlashCount = BigInt(td.slash_count || "0") + BigInt(1);
 
         const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-          amount: newAmount.toString(),
-          share: newShare.toString(),
-          slashed_deposit: newSlashed.toString(),
-          last_slashed: ts ? formatTimestamp(ts) : formatTimestamp(Date.now()),
-          slash_count: newSlashCount.toString(),
+          amount: Number(newAmount),
+          share: Number(newShare),
+          slashed_deposit: Number(newSlashed),
+          last_slashed: ts ? new Date(formatTimestamp(ts)) : new Date(),
+          slash_count: Number(newSlashCount),
         });
 
         await recordTrustDepositHistory(

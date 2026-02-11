@@ -5,13 +5,13 @@ export async function up(knex: Knex): Promise<void> {
   if (!hasParticipantsColumn) {
     await knex.schema.alterTable("permissions", (table) => {
       table.bigInteger("participants").defaultTo(0).notNullable();
-      table.string("weight", 50).defaultTo("0").notNullable();
+      table.specificType("weight", "NUMERIC(38,0)").notNullable().defaultTo(0);
       table.bigInteger("ecosystem_slash_events").defaultTo(0).notNullable();
-      table.string("ecosystem_slashed_amount", 50).defaultTo("0").notNullable();
-      table.string("ecosystem_slashed_amount_repaid", 50).defaultTo("0").notNullable();
+      table.specificType("ecosystem_slashed_amount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("ecosystem_slashed_amount_repaid", "NUMERIC(38,0)").notNullable().defaultTo(0);
       table.bigInteger("network_slash_events").defaultTo(0).notNullable();
-      table.string("network_slashed_amount", 50).defaultTo("0").notNullable();
-      table.string("network_slashed_amount_repaid", 50).defaultTo("0").notNullable();
+      table.specificType("network_slashed_amount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("network_slashed_amount_repaid", "NUMERIC(38,0)").notNullable().defaultTo(0);
     });
   }
 
@@ -21,13 +21,13 @@ export async function up(knex: Knex): Promise<void> {
     if (!hasHistoryParticipantsColumn) {
       await knex.schema.alterTable("permission_history", (table) => {
         table.bigInteger("participants").defaultTo(0).notNullable();
-        table.string("weight", 50).defaultTo("0").notNullable();
+        table.specificType("weight", "NUMERIC(38,0)").notNullable().defaultTo(0);
         table.bigInteger("ecosystem_slash_events").defaultTo(0).notNullable();
-        table.string("ecosystem_slashed_amount", 50).defaultTo("0").notNullable();
-        table.string("ecosystem_slashed_amount_repaid", 50).defaultTo("0").notNullable();
+        table.specificType("ecosystem_slashed_amount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+        table.specificType("ecosystem_slashed_amount_repaid", "NUMERIC(38,0)").notNullable().defaultTo(0);
         table.bigInteger("network_slash_events").defaultTo(0).notNullable();
-        table.string("network_slashed_amount", 50).defaultTo("0").notNullable();
-        table.string("network_slashed_amount_repaid", 50).defaultTo("0").notNullable();
+        table.specificType("network_slashed_amount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+        table.specificType("network_slashed_amount_repaid", "NUMERIC(38,0)").notNullable().defaultTo(0);
       });
     }
   }

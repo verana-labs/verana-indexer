@@ -116,7 +116,7 @@ export default class CoinTransferSpec {
     for (let i = 0; i < coinTransfer.length; i += 1) {
       expect(coinTransfer[i].from).toEqual(sender);
       expect(coinTransfer[i].to).toEqual(receiver);
-      expect(coinTransfer[i].amount).toEqual(amounts[i]);
+      expect(coinTransfer[i].amount).toEqual(Number(amounts[i]));
     }
   }
 
@@ -185,7 +185,7 @@ export default class CoinTransferSpec {
     for (let i = 0; i < coinTransfers.length; i += 1) {
       expect(coinTransfers[i].from).toEqual(senders[i]);
       expect(coinTransfers[i].to).toEqual(receivers[i]);
-      expect(coinTransfers[i].amount).toEqual(amounts[i]);
+      expect(coinTransfers[i].amount).toEqual(Number(amounts[i]));
     }
   }
 
@@ -265,7 +265,7 @@ export default class CoinTransferSpec {
     for (let i = 0; i < coinTransfers.length; i += 1) {
       expect(coinTransfers[i].from).toEqual(senders[i]);
       expect(coinTransfers[i].to).toEqual(receivers[i]);
-      expect(coinTransfers[i].amount).toEqual(amounts[i]);
+      expect(coinTransfers[i].amount).toEqual(Number(amounts[i]));
     }
   }
 

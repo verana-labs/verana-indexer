@@ -262,9 +262,9 @@ export default class HandleStakeEventTest {
     const delegated = interesting.find(e => e.type === PowerEvent.TYPES.DELEGATE);
     const redelegated = interesting.find(e => e.type === PowerEvent.TYPES.REDELEGATE);
 
-    expect(delegated?.amount).toEqual('1000000');
+    expect(delegated?.amount).toEqual(1000000);
     expect(delegated?.height).toEqual(3967529);
-    expect(redelegated?.amount).toEqual('1000000');
+    expect(redelegated?.amount).toEqual(1000000);
     expect(redelegated?.height).toEqual(3967529);
 
     // Only compare validator ids if those columns exist in the table.

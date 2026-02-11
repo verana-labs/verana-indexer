@@ -171,7 +171,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const payload: Record<string, any> = {
         tr_id: trId,
         json_schema: baseSchema,
-        deposit: deposit?.toString() ?? "0",
+        deposit: deposit ?? 0,
         created: timestamp ?? null,
         modified: timestamp ?? null,
         archived: null,

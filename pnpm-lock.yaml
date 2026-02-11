@@ -249,6 +249,9 @@ importers:
       '@types/node':
         specifier: ^18.19.130
         version: 18.19.130
+      '@types/pg':
+        specifier: 8.16.0
+        version: 8.16.0
       '@types/semver':
         specifier: 7.7.0
         version: 7.7.0
@@ -2367,6 +2370,9 @@ packages:
 
   '@types/parse-uri@1.0.2':
     resolution: {integrity: sha512-kAIYHmluBxU4erbqE63Q/8QhVaRbcU1fIEbZ02RZkqaijZk0+CU6QEZRMdItDE/ASUCiaKEs8m76UDblkljoJA==}
+
+  '@types/pg@8.16.0':
+    resolution: {integrity: sha512-RmhMd/wD+CF8Dfo+cVIy3RR5cl8CyfXQ0tGgW6XBL8L4LM/UTEbNXYRbLwU6w+CgrKBNbrQWt4FUtTfaU5jSYQ==}
 
   '@types/prettier@2.7.3':
     resolution: {integrity: sha512-+68kP9yzs4LMp7VNh8gdzMSPZFL44MLGqiHWvttYJe+6qnuVr4Ek9wSBQoveqY/r+LwjCcU29kNVkidwim+kYA==}
@@ -10920,6 +10926,12 @@ snapshots:
   '@types/parse-package-name@0.1.0': {}
 
   '@types/parse-uri@1.0.2': {}
+
+  '@types/pg@8.16.0':
+    dependencies:
+      '@types/node': 18.19.130
+      pg-protocol: 1.10.3
+      pg-types: 2.2.0
 
   '@types/prettier@2.7.3': {}
 

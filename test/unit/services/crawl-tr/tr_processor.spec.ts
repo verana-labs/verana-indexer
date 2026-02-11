@@ -152,8 +152,8 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(updatedTR).toBeDefined();
     expect(updatedTR.aka).toBe("Updated TR");
     expect(updatedTR.language).toBe("fr");
-    expect(Number(updatedTR.deposit)).toBe(2000);
-    expect(Number(updatedTR.height)).toBe(501);
+    expect(updatedTR.deposit).toBe(2000);
+    expect(updatedTR.height).toBe(501);
 
     const trHistory = await knex("trust_registry_history")
       .where({ tr_id: trId.id })
@@ -304,7 +304,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       .first();
     expect(firstTRRecord).toBeDefined();
     expect(firstTRRecord.did).toBe(sameDid);
-    expect(firstTRRecord.height).toBe(String(height1));
+    expect(firstTRRecord.height).toBe(height1);
 
     const firstGFV = await knex("governance_framework_version")
       .where({ tr_id: firstTRRecord.id })
@@ -344,14 +344,14 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       .first();
     expect(secondTRRecord).toBeDefined();
     expect(secondTRRecord.did).toBe(sameDid);
-    expect(secondTRRecord.height).toBe(String(height2));
+    expect(secondTRRecord.height).toBe(height2);
     expect(secondTRRecord.id).not.toBe(firstTRRecord.id); // Should be a different TR
 
     // Verify first TR was not modified
     const firstTRRecordAfter = await knex("trust_registry")
       .where({ id: firstTRRecord.id })
       .first();
-    expect(firstTRRecordAfter.height).toBe(String(height1));
+    expect(firstTRRecordAfter.height).toBe(height1);
     expect(firstTRRecordAfter.aka).toBe("First TR");
 
     // Verify second TR has its own GFV and GFD

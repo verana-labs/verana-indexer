@@ -297,7 +297,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       };
 
       await trx("trust_registry").where({ id: tr.id }).update(newData);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
         tr.id,
@@ -361,7 +361,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       updateData.modified = formatTimestamp(message.timestamp);
 
       await trx("trust_registry").where({ id: tr.id }).update(updateData);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
         tr.id,
@@ -430,10 +430,10 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       const trustDepositDenom =
         parsedParams?.params?.trust_registry_trust_deposit || 0;
       const trustUnitPrice = parsedParams?.params?.trust_unit_price || 1;
-      const deposit = Number(trustDepositDenom) * Number(trustUnitPrice);
+      const deposit = (trustDepositDenom || 0) * (trustUnitPrice || 1);
 
       const timestamp = formatTimestamp(message.timestamp);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
 
       this.logger.info(` Creating TR with height: ${blockHeight}, did: ${message.did}`);
 
@@ -590,6 +590,19 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
   private async processAddGovFrameworkDoc(message: any) {
     const trx = await knex.transaction();
     try {
+      try {
+        const logsDir = path.resolve(process.cwd(), "logs");
+        if (!fs.existsSync(logsDir)) {
+          fs.mkdirSync(logsDir, { recursive: true });
+        }
+        const logPath = path.join(logsDir, "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] Incoming message: ${JSON.stringify(message)}\n`
+        );
+      } catch (fileErr) {
+        this.logger.warn("Failed to write debug log file:", fileErr);
+      }
       const tr = await trx("trust_registry")
         .where({ id: message.trust_registry_id })
         .first();
@@ -601,7 +614,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       }
 
       const timestamp = formatTimestamp(message.timestamp);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
 
       let gfv = await trx("governance_framework_version")
         .where({
@@ -644,6 +657,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           null,
           gfv
         );
+        try {
+          const logPath = path.join(process.cwd(), "logs", "file.log");
+          fs.appendFileSync(
+            logPath,
+            `${new Date().toISOString()} [AddGovFrameworkDoc] Created GFV: ${JSON.stringify(gfv)}\n`
+          );
+        } catch (_) {}
       }
 
       const language = message.doc_language || message.language;
@@ -655,8 +675,22 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           digest_sri: digestSri,
         })
         .first();
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] GFD lookup result: ${JSON.stringify(gfd)}\n`
+        );
+      } catch (_) {}
 
       if (gfd) {
+        try {
+          const logPath = path.join(process.cwd(), "logs", "file.log");
+          fs.appendFileSync(
+            logPath,
+            `${new Date().toISOString()} [AddGovFrameworkDoc] Existing GFD found (will still INSERT new one): ${JSON.stringify(gfd)}\n`
+          );
+        } catch (_) {}
       }
 
       const oldGfd = null;
@@ -669,6 +703,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           digest_sri: digestSri,
         })
         .returning("*");
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] Inserted GFD: ${JSON.stringify(gfd)}\n`
+        );
+      } catch (_) {}
 
       await this.recordGFDHistory(
         trx,
@@ -685,12 +726,26 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       this.logger.info(
         `✅ AddGovFrameworkDoc OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}`
       );
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] COMMIT OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}\n`
+        );
+      } catch (_) {}
     } catch (err: any) {
       await trx.rollback();
       this.logger.error(
         `❌ AddGovFrameworkDoc failed for tr_id=${message.trust_registry_id}:`,
         err?.message || err
       );
+      try {
+        const logPath = path.join(process.cwd(), "logs", "file.log");
+        fs.appendFileSync(
+          logPath,
+          `${new Date().toISOString()} [AddGovFrameworkDoc] ERROR: ${err?.message || String(err)} | message: ${JSON.stringify(message)}\n`
+        );
+      } catch (_) {}
       throw err;
     }
   }
@@ -723,7 +778,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       await trx("trust_registry")
         .where({ id: tr.id })
         .update({ active_version: nextVersion, modified: timestamp });
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
         tr.id,
