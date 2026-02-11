@@ -316,15 +316,15 @@ export default class StatsAPIService extends BaseService {
         delta_participants: Number(total?.delta_participants || 0),
         delta_active_schemas: Number(total?.delta_active_schemas || 0),
         delta_archived_schemas: Number(total?.delta_archived_schemas || 0),
-        delta_weight: total?.delta_weight || "0",
-        delta_issued: total?.delta_issued || "0",
-        delta_verified: total?.delta_verified || "0",
+        delta_weight: Number(total?.delta_weight || 0),
+        delta_issued: Number(total?.delta_issued || 0),
+        delta_verified: Number(total?.delta_verified || 0),
         delta_ecosystem_slash_events: Number(total?.delta_ecosystem_slash_events || 0),
-        delta_ecosystem_slashed_amount: total?.delta_ecosystem_slashed_amount || "0",
-        delta_ecosystem_slashed_amount_repaid: total?.delta_ecosystem_slashed_amount_repaid || "0",
+        delta_ecosystem_slashed_amount:Number( total?.delta_ecosystem_slashed_amount || 0),
+        delta_ecosystem_slashed_amount_repaid:Number( total?.delta_ecosystem_slashed_amount_repaid || 0),
         delta_network_slash_events: Number(total?.delta_network_slash_events || 0),
-        delta_network_slashed_amount: total?.delta_network_slashed_amount || "0",
-        delta_network_slashed_amount_repaid: total?.delta_network_slashed_amount_repaid || "0",
+        delta_network_slashed_amount: Number(total?.delta_network_slashed_amount || 0),
+        delta_network_slashed_amount_repaid: Number(total?.delta_network_slashed_amount_repaid || 0),
       };
     }
 

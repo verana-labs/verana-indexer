@@ -2327,7 +2327,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer"
             },
             "description": "ID of the entity (required for non-GLOBAL entity types)"
           }
@@ -5465,10 +5465,7 @@
             "description": "Type of entity"
           },
           "entity_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "integer",
             "description": "ID of the entity (null for GLOBAL)"
           },
           "cumulative_participants": {
@@ -5484,15 +5481,15 @@
             "description": "Cumulative archived schemas"
           },
           "cumulative_weight": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative weight"
           },
           "cumulative_issued": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative issued"
           },
           "cumulative_verified": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative verified"
           },
           "cumulative_ecosystem_slash_events": {
@@ -5500,11 +5497,11 @@
             "description": "Cumulative ecosystem slash events"
           },
           "cumulative_ecosystem_slashed_amount": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative ecosystem slashed amount"
           },
           "cumulative_ecosystem_slashed_amount_repaid": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative ecosystem slashed amount repaid"
           },
           "cumulative_network_slash_events": {
@@ -5512,11 +5509,11 @@
             "description": "Cumulative network slash events"
           },
           "cumulative_network_slashed_amount": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative network slashed amount"
           },
           "cumulative_network_slashed_amount_repaid": {
-            "type": "string",
+            "type": "integer",
             "description": "Cumulative network slashed amount repaid"
           },
           "delta_participants": {
@@ -5532,15 +5529,15 @@
             "description": "Delta archived schemas"
           },
           "delta_weight": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta weight"
           },
           "delta_issued": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta issued"
           },
           "delta_verified": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta verified"
           },
           "delta_ecosystem_slash_events": {
@@ -5548,11 +5545,11 @@
             "description": "Delta ecosystem slash events"
           },
           "delta_ecosystem_slashed_amount": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta ecosystem slashed amount"
           },
           "delta_ecosystem_slashed_amount_repaid": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta ecosystem slashed amount repaid"
           },
           "delta_network_slash_events": {
@@ -5560,11 +5557,11 @@
             "description": "Delta network slash events"
           },
           "delta_network_slashed_amount": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta network slashed amount"
           },
           "delta_network_slashed_amount_repaid": {
-            "type": "string",
+            "type": "integer",
             "description": "Delta network slashed amount repaid"
           }
         }
@@ -5587,31 +5584,31 @@
             "type": "integer"
           },
           "cumulative_weight": {
-            "type": "string"
+            "type": "integer"
           },
           "cumulative_issued": {
-            "type": "string"
+            "type": "integer"
           },
           "cumulative_verified": {
-            "type": "string"
+            "type": "integer"
           },
           "cumulative_ecosystem_slash_events": {
             "type": "integer"
           },
           "cumulative_ecosystem_slashed_amount": {
-            "type": "string"
+            "type": "integer"
           },
           "cumulative_ecosystem_slashed_amount_repaid": {
-            "type": "string"
+            "type": "integer"
           },
           "cumulative_network_slash_events": {
             "type": "integer"
           },
           "cumulative_network_slashed_amount": {
-            "type": "string"
+            "type": "integer"
           },
           "cumulative_network_slashed_amount_repaid": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_participants": {
             "type": "integer"
@@ -5623,31 +5620,31 @@
             "type": "integer"
           },
           "delta_weight": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_issued": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_verified": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_ecosystem_slash_events": {
             "type": "integer"
           },
           "delta_ecosystem_slashed_amount": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_ecosystem_slashed_amount_repaid": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_network_slash_events": {
             "type": "integer"
           },
           "delta_network_slashed_amount": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_network_slashed_amount_repaid": {
-            "type": "string"
+            "type": "integer"
           }
         }
       },
@@ -5664,31 +5661,31 @@
             "type": "integer"
           },
           "delta_weight": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_issued": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_verified": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_ecosystem_slash_events": {
             "type": "integer"
           },
           "delta_ecosystem_slashed_amount": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_ecosystem_slashed_amount_repaid": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_network_slash_events": {
             "type": "integer"
           },
           "delta_network_slashed_amount": {
-            "type": "string"
+            "type": "integer"
           },
           "delta_network_slashed_amount_repaid": {
-            "type": "string"
+            "type": "integer"
           }
         }
       },

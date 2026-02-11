@@ -10,35 +10,35 @@ export default class Stats extends BaseModel {
   granularity!: Granularity;
   timestamp!: Date;
   entity_type!: EntityType;
-  entity_id!: string | null;
+  entity_id!: number ;
 
   // Cumulative fields
   cumulative_participants!: number;
   cumulative_active_schemas!: number;
   cumulative_archived_schemas!: number;
-  cumulative_weight!: string;
-  cumulative_issued!: string;
-  cumulative_verified!: string;
+  cumulative_weight!: number;
+  cumulative_issued!: number;
+  cumulative_verified!: number;
   cumulative_ecosystem_slash_events!: number;
-  cumulative_ecosystem_slashed_amount!: string;
-  cumulative_ecosystem_slashed_amount_repaid!: string;
+  cumulative_ecosystem_slashed_amount!: number;
+  cumulative_ecosystem_slashed_amount_repaid!: number;
   cumulative_network_slash_events!: number;
-  cumulative_network_slashed_amount!: string;
-  cumulative_network_slashed_amount_repaid!: string;
+  cumulative_network_slashed_amount!: number;
+  cumulative_network_slashed_amount_repaid!: number;
 
   // Delta fields
   delta_participants!: number;
   delta_active_schemas!: number;
   delta_archived_schemas!: number;
-  delta_weight!: string;
-  delta_issued!: string;
-  delta_verified!: string;
+  delta_weight!: number;
+  delta_issued!: number;
+  delta_verified!: number;
   delta_ecosystem_slash_events!: number;
-  delta_ecosystem_slashed_amount!: string;
-  delta_ecosystem_slashed_amount_repaid!: string;
+  delta_ecosystem_slashed_amount!: number;
+  delta_ecosystem_slashed_amount_repaid!: number;
   delta_network_slash_events!: number;
-  delta_network_slashed_amount!: string;
-  delta_network_slashed_amount_repaid!: string;
+  delta_network_slashed_amount!: number;
+  delta_network_slashed_amount_repaid!: number;
 
   created_at!: Date;
   updated_at!: Date;
@@ -79,7 +79,7 @@ export default class Stats extends BaseModel {
         granularity: { type: "string", enum: ["HOUR", "DAY", "MONTH"] },
         timestamp: { type: "string", format: "date-time" },
         entity_type: { type: "string", enum: ["GLOBAL", "TRUST_REGISTRY", "CREDENTIAL_SCHEMA", "PERMISSION"] },
-        entity_id: { type: ["string", "null"] },
+        entity_id: { type: "number" },
       },
     };
   }

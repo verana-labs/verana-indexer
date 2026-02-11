@@ -1,9 +1,20 @@
 import Knex from "knex";
+import { types as pgTypes } from "pg";
 import { knexConfig } from "../../knexfile";
 import { Config } from "../index";
 
-const environment = process.env.NODE_ENV || 'development';
+const environment = process.env.NODE_ENV || "development";
 const cfg = knexConfig[environment];
+
+const parseSafeInteger = (value: string | null) => {
+  if (value === null) return null;
+  if (!/^\-?\d+$/.test(value)) return value;
+  const asNumber = Number(value);
+  return Number.isSafeInteger(asNumber) ? asNumber : value;
+};
+
+pgTypes.setTypeParser(20, (value) => parseSafeInteger(value));
+pgTypes.setTypeParser(1700, (value) => parseSafeInteger(value));
 
 if (!cfg) {
   throw new Error(`Knex configuration not found for environment: ${environment}`);
