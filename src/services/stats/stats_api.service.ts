@@ -15,6 +15,50 @@ export default class StatsAPIService extends BaseService {
     super(broker);
   }
 
+  private normalizeStatsRecord(record: any): any {
+    if (!record) return record;
+    
+    const normalized = { ...record };
+    const numericFields = [
+      "id",
+      "entity_id",
+      "cumulative_participants",
+      "cumulative_active_schemas",
+      "cumulative_archived_schemas",
+      "cumulative_weight",
+      "cumulative_issued",
+      "cumulative_verified",
+      "cumulative_ecosystem_slash_events",
+      "cumulative_ecosystem_slashed_amount",
+      "cumulative_ecosystem_slashed_amount_repaid",
+      "cumulative_network_slash_events",
+      "cumulative_network_slashed_amount",
+      "cumulative_network_slashed_amount_repaid",
+      "delta_participants",
+      "delta_active_schemas",
+      "delta_archived_schemas",
+      "delta_weight",
+      "delta_issued",
+      "delta_verified",
+      "delta_ecosystem_slash_events",
+      "delta_ecosystem_slashed_amount",
+      "delta_ecosystem_slashed_amount_repaid",
+      "delta_network_slash_events",
+      "delta_network_slashed_amount",
+      "delta_network_slashed_amount_repaid",
+    ];
+
+    for (const field of numericFields) {
+      const value = normalized[field];
+      if (typeof value === "string" && /^-?\d+$/.test(value)) {
+        const asNumber = Number(value);
+        normalized[field] = Number.isSafeInteger(asNumber) ? asNumber : value;
+      }
+    }
+
+    return normalized;
+  }
+
   @Action({
     name: "get",
     params: {
@@ -40,7 +84,7 @@ export default class StatsAPIService extends BaseService {
         if (!stat) {
           return ApiResponder.error(ctx, "Stats not found", 404);
         }
-        return ApiResponder.success(ctx, stat, 200);
+        return ApiResponder.success(ctx, this.normalizeStatsRecord(stat), 200);
       }
 
       if (!granularity || !timestamp || !entityType) {
@@ -81,7 +125,7 @@ export default class StatsAPIService extends BaseService {
         return ApiResponder.error(ctx, "Stats not found", 404);
       }
 
-      return ApiResponder.success(ctx, stat, 200);
+      return ApiResponder.success(ctx, this.normalizeStatsRecord(stat), 200);
     } catch (err: unknown) {
       this.logger.error("Error in get:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
@@ -281,7 +325,7 @@ export default class StatsAPIService extends BaseService {
     if (resultType === "BUCKETS" || resultType === "BUCKETS_AND_TOTAL") {
       response.buckets = buckets.map((bucket) => {
         const timestamp = new Date(bucket.timestamp);
-        return {
+        return this.normalizeStatsRecord({
           timestamp: timestamp.toISOString().replace(/\.\d{3}Z$/, "Z"),
           cumulative_participants: bucket.cumulative_participants,
           cumulative_active_schemas: bucket.cumulative_active_schemas,
@@ -307,7 +351,7 @@ export default class StatsAPIService extends BaseService {
           delta_network_slash_events: bucket.delta_network_slash_events,
           delta_network_slashed_amount: bucket.delta_network_slashed_amount,
           delta_network_slashed_amount_repaid: bucket.delta_network_slashed_amount_repaid,
-        };
+        });
       });
     }
 
