@@ -882,7 +882,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         let filteredWithStats = schemasWithStats;
 
         if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-          filteredWithStats = filteredWithStats.filter((s) => Number(s.participants) === minParticipants);
+          // empty range when min === max for [min, max)
+          filteredWithStats = [];
         } else {
           if (minParticipants !== undefined) {
             filteredWithStats = filteredWithStats.filter((s) => Number(s.participants) >= minParticipants);
@@ -892,8 +893,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-          const exactWeightBigInt = BigInt(minWeight);
-          filteredWithStats = filteredWithStats.filter((s) => BigInt(s.weight) === exactWeightBigInt);
+          // empty range for weight when min === max
+          filteredWithStats = [];
         } else {
           if (minWeight !== undefined) {
             const minWeightBigInt = BigInt(minWeight);
@@ -905,8 +906,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-          const exactIssued = Number(minIssued);
-          filteredWithStats = filteredWithStats.filter((s) => s.issued === exactIssued);
+          // empty range for issued
+          filteredWithStats = [];
         } else {
           if (minIssued !== undefined) {
             const minIssuedNum = Number(minIssued);
@@ -918,8 +919,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-          const exactVerified = Number(minVerified);
-          filteredWithStats = filteredWithStats.filter((s) => s.verified === exactVerified);
+          // empty range for verified
+          filteredWithStats = [];
         } else {
           if (minVerified !== undefined) {
             const minVerifiedNum = Number(minVerified);
@@ -931,7 +932,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-          filteredWithStats = filteredWithStats.filter((s) => s.ecosystem_slash_events === minEcosystemSlashEvents);
+          // empty range for ecosystem slash events
+          filteredWithStats = [];
         } else {
           if (minEcosystemSlashEvents !== undefined) {
             filteredWithStats = filteredWithStats.filter((s) => s.ecosystem_slash_events >= minEcosystemSlashEvents);
@@ -941,7 +943,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-          filteredWithStats = filteredWithStats.filter((s) => s.network_slash_events === minNetworkSlashEvents);
+          // empty range for network slash events
+          filteredWithStats = [];
         } else {
           if (minNetworkSlashEvents !== undefined) {
             filteredWithStats = filteredWithStats.filter((s) => s.network_slash_events >= minNetworkSlashEvents);
@@ -1084,7 +1087,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       let filteredItems = cleanItems;
 
       if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-        filteredItems = filteredItems.filter((s) => Number(s.participants) === minParticipants);
+        // empty range when min === max
+        filteredItems = [];
       } else {
         if (minParticipants !== undefined) {
           filteredItems = filteredItems.filter((s) => Number(s.participants) >= minParticipants);
@@ -1094,8 +1098,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-        const exactWeightBigInt = BigInt(minWeight);
-        filteredItems = filteredItems.filter((s) => BigInt(s.weight) === exactWeightBigInt);
+        // empty range for weight
+        filteredItems = [];
       } else {
         if (minWeight !== undefined) {
           const minWeightBigInt = BigInt(minWeight);
@@ -1107,8 +1111,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-        const exactIssued = Number(minIssued);
-        filteredItems = filteredItems.filter((s) => s.issued === exactIssued);
+        // empty range for issued
+        filteredItems = [];
       } else {
         if (minIssued !== undefined) {
           const minIssuedNum = Number(minIssued);
@@ -1120,8 +1124,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-        const exactVerified = Number(minVerified);
-        filteredItems = filteredItems.filter((s) => s.verified === exactVerified);
+        // empty range for verified
+        filteredItems = [];
       } else {
         if (minVerified !== undefined) {
           const minVerifiedNum = Number(minVerified);
@@ -1133,7 +1137,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-        filteredItems = filteredItems.filter((s) => s.ecosystem_slash_events === minEcosystemSlashEvents);
+        // empty range for ecosystem slash events
+        filteredItems = [];
       } else {
         if (minEcosystemSlashEvents !== undefined) {
           filteredItems = filteredItems.filter((s) => s.ecosystem_slash_events >= minEcosystemSlashEvents);
@@ -1143,7 +1148,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
       if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-        filteredItems = filteredItems.filter((s) => s.network_slash_events === minNetworkSlashEvents);
+        // empty range for network slash events
+        filteredItems = [];
       } else {
         if (minNetworkSlashEvents !== undefined) {
           filteredItems = filteredItems.filter((s) => s.network_slash_events >= minNetworkSlashEvents);

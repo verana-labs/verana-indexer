@@ -1257,7 +1257,8 @@ export default class PermAPIService extends BullableService {
       }
 
       if (p.min_participants !== undefined && p.max_participants !== undefined && p.min_participants === p.max_participants) {
-        finalResults = finalResults.filter(perm => (perm.participants || 0) === p.min_participants);
+        // empty range when min === max for [min, max)
+        finalResults = [];
       } else {
         if (p.min_participants !== undefined) {
           finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
@@ -1267,8 +1268,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_weight !== undefined && p.max_weight !== undefined && p.min_weight === p.max_weight) {
-        const exactWeight = BigInt(p.min_weight);
-        finalResults = finalResults.filter(perm => BigInt(perm.weight || "0") === exactWeight);
+        // empty range for weight
+        finalResults = [];
       } else {
         if (p.min_weight !== undefined) {
           const minWeight = BigInt(p.min_weight);
@@ -1280,8 +1281,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_issued !== undefined && p.max_issued !== undefined && p.min_issued === p.max_issued) {
-        const exactIssued = Number(p.min_issued);
-        finalResults = finalResults.filter(perm => (perm.issued || 0) === exactIssued);
+        // empty range for issued
+        finalResults = [];
       } else {
         if (p.min_issued !== undefined) {
           const minIssued = Number(p.min_issued);
@@ -1293,8 +1294,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_verified !== undefined && p.max_verified !== undefined && p.min_verified === p.max_verified) {
-        const exactVerified = Number(p.min_verified);
-        finalResults = finalResults.filter(perm => (perm.verified || 0) === exactVerified);
+        // empty range for verified
+        finalResults = [];
       } else {
         if (p.min_verified !== undefined) {
           const minVerified = Number(p.min_verified);
@@ -1306,7 +1307,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_ecosystem_slash_events !== undefined && p.max_ecosystem_slash_events !== undefined && p.min_ecosystem_slash_events === p.max_ecosystem_slash_events) {
-        finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) === p.min_ecosystem_slash_events);
+        // empty range for ecosystem slash events
+        finalResults = [];
       } else {
         if (p.min_ecosystem_slash_events !== undefined) {
           finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
@@ -1316,7 +1318,8 @@ export default class PermAPIService extends BullableService {
         }
       }
       if (p.min_network_slash_events !== undefined && p.max_network_slash_events !== undefined && p.min_network_slash_events === p.max_network_slash_events) {
-        finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) === p.min_network_slash_events);
+        // empty range for network slash events
+        finalResults = [];
       } else {
         if (p.min_network_slash_events !== undefined) {
           finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);

@@ -2264,6 +2264,211 @@
         }
       }
     },
+    "/verana/stats/v1/get": {
+      "get": {
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Get Statistics Entry",
+        "description": "Retrieve a specific statistics entry by ID or by granularity, timestamp, entity_type, and entity_id",
+        "operationId": "getStats",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "ID of the statistics entry"
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "HOUR",
+                "DAY",
+                "MONTH"
+              ]
+            },
+            "description": "Granularity of the statistics (HOUR, DAY, or MONTH)"
+          },
+          {
+            "name": "timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 timestamp at Z"
+          },
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GLOBAL",
+                "TRUST_REGISTRY",
+                "CREDENTIAL_SCHEMA",
+                "PERMISSION"
+              ]
+            },
+            "description": "Type of entity (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the entity (required for non-GLOBAL entity types)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with statistics entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "Statistics entry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Stats not found",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/stats/v1/stats": {
+      "get": {
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Get Statistics",
+        "description": "Retrieve statistics with buckets and/or totals for a time range. If granularity is not specified, the method returns the smallest number of buckets by combining MONTH/DAY/HOUR buckets as needed. The response `granularity` will be the smallest granularity present in the returned buckets.",
+        "operationId": "getStatsRange",
+        "parameters": [
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "HOUR",
+                "DAY",
+                "MONTH"
+              ]
+            },
+            "description": "HOUR, DAY, or MONTH. Optional."
+          },
+          {
+            "name": "timestamp_from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 UTC timestamp (inclusive)."
+          },
+          {
+            "name": "timestamp_until",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO 8601 UTC timestamp (exclusive)."
+          },
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GLOBAL",
+                "TRUST_REGISTRY",
+                "CREDENTIAL_SCHEMA",
+                "PERMISSION"
+              ]
+            },
+            "description": "GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, or PERMISSION"
+          },
+          {
+            "name": "entity_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated entity IDs (e.g. '1,2,3'). Must be empty for GLOBAL; required for other entity types."
+          },
+          {
+            "name": "result_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BUCKETS",
+                "TOTAL",
+                "BUCKETS_AND_TOTAL"
+              ],
+              "default": "BUCKETS_AND_TOTAL"
+            },
+            "description": "BUCKETS, TOTAL, or BUCKETS_AND_TOTAL. Default: BUCKETS_AND_TOTAL."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/td/v1/get/{account}": {
       "get": {
         "tags": [
@@ -5227,6 +5432,318 @@
             "description": "Account that performed the repayment"
           }
         }
+},
+      "StatsEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "ID of the statistics entry"
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "HOUR",
+              "DAY",
+              "MONTH"
+            ],
+            "description": "Granularity of the statistics"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp at Z"
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "GLOBAL",
+              "TRUST_REGISTRY",
+              "CREDENTIAL_SCHEMA",
+              "PERMISSION"
+            ],
+            "description": "Type of entity"
+          },
+          "entity_id": {
+            "type": "integer",
+            "description": "ID of the entity (null for GLOBAL)"
+          },
+          "cumulative_participants": {
+            "type": "integer",
+            "description": "Cumulative participants (subtree for PERMISSION)"
+          },
+          "cumulative_active_schemas": {
+            "type": "integer",
+            "description": "Cumulative active schemas"
+          },
+          "cumulative_archived_schemas": {
+            "type": "integer",
+            "description": "Cumulative archived schemas"
+          },
+          "cumulative_weight": {
+            "type": "integer",
+            "description": "Cumulative weight"
+          },
+          "cumulative_issued": {
+            "type": "integer",
+            "description": "Cumulative issued"
+          },
+          "cumulative_verified": {
+            "type": "integer",
+            "description": "Cumulative verified"
+          },
+          "cumulative_ecosystem_slash_events": {
+            "type": "integer",
+            "description": "Cumulative ecosystem slash events"
+          },
+          "cumulative_ecosystem_slashed_amount": {
+            "type": "integer",
+            "description": "Cumulative ecosystem slashed amount"
+          },
+          "cumulative_ecosystem_slashed_amount_repaid": {
+            "type": "integer",
+            "description": "Cumulative ecosystem slashed amount repaid"
+          },
+          "cumulative_network_slash_events": {
+            "type": "integer",
+            "description": "Cumulative network slash events"
+          },
+          "cumulative_network_slashed_amount": {
+            "type": "integer",
+            "description": "Cumulative network slashed amount"
+          },
+          "cumulative_network_slashed_amount_repaid": {
+            "type": "integer",
+            "description": "Cumulative network slashed amount repaid"
+          },
+          "delta_participants": {
+            "type": "integer",
+            "description": "Delta participants (change since previous measurement)"
+          },
+          "delta_active_schemas": {
+            "type": "integer",
+            "description": "Delta active schemas"
+          },
+          "delta_archived_schemas": {
+            "type": "integer",
+            "description": "Delta archived schemas"
+          },
+          "delta_weight": {
+            "type": "integer",
+            "description": "Delta weight"
+          },
+          "delta_issued": {
+            "type": "integer",
+            "description": "Delta issued"
+          },
+          "delta_verified": {
+            "type": "integer",
+            "description": "Delta verified"
+          },
+          "delta_ecosystem_slash_events": {
+            "type": "integer",
+            "description": "Delta ecosystem slash events"
+          },
+          "delta_ecosystem_slashed_amount": {
+            "type": "integer",
+            "description": "Delta ecosystem slashed amount"
+          },
+          "delta_ecosystem_slashed_amount_repaid": {
+            "type": "integer",
+            "description": "Delta ecosystem slashed amount repaid"
+          },
+          "delta_network_slash_events": {
+            "type": "integer",
+            "description": "Delta network slash events"
+          },
+          "delta_network_slashed_amount": {
+            "type": "integer",
+            "description": "Delta network slashed amount"
+          },
+          "delta_network_slashed_amount_repaid": {
+            "type": "integer",
+            "description": "Delta network slashed amount repaid"
+          }
+        }
+      },
+      "StatsBucket": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp at Z"
+          },
+          "cumulative_participants": {
+            "type": "integer"
+          },
+          "cumulative_active_schemas": {
+            "type": "integer"
+          },
+          "cumulative_archived_schemas": {
+            "type": "integer"
+          },
+          "cumulative_weight": {
+            "type": "integer"
+          },
+          "cumulative_issued": {
+            "type": "integer"
+          },
+          "cumulative_verified": {
+            "type": "integer"
+          },
+          "cumulative_ecosystem_slash_events": {
+            "type": "integer"
+          },
+          "cumulative_ecosystem_slashed_amount": {
+            "type": "integer"
+          },
+          "cumulative_ecosystem_slashed_amount_repaid": {
+            "type": "integer"
+          },
+          "cumulative_network_slash_events": {
+            "type": "integer"
+          },
+          "cumulative_network_slashed_amount": {
+            "type": "integer"
+          },
+          "cumulative_network_slashed_amount_repaid": {
+            "type": "integer"
+          },
+          "delta_participants": {
+            "type": "integer"
+          },
+          "delta_active_schemas": {
+            "type": "integer"
+          },
+          "delta_archived_schemas": {
+            "type": "integer"
+          },
+          "delta_weight": {
+            "type": "integer"
+          },
+          "delta_issued": {
+            "type": "integer"
+          },
+          "delta_verified": {
+            "type": "integer"
+          },
+          "delta_ecosystem_slash_events": {
+            "type": "integer"
+          },
+          "delta_ecosystem_slashed_amount": {
+            "type": "integer"
+          },
+          "delta_ecosystem_slashed_amount_repaid": {
+            "type": "integer"
+          },
+          "delta_network_slash_events": {
+            "type": "integer"
+          },
+          "delta_network_slashed_amount": {
+            "type": "integer"
+          },
+          "delta_network_slashed_amount_repaid": {
+            "type": "integer"
+          }
+        }
+      },
+      "StatsTotal": {
+        "type": "object",
+        "properties": {
+          "delta_participants": {
+            "type": "integer"
+          },
+          "delta_active_schemas": {
+            "type": "integer"
+          },
+          "delta_archived_schemas": {
+            "type": "integer"
+          },
+          "delta_weight": {
+            "type": "integer"
+          },
+          "delta_issued": {
+            "type": "integer"
+          },
+          "delta_verified": {
+            "type": "integer"
+          },
+          "delta_ecosystem_slash_events": {
+            "type": "integer"
+          },
+          "delta_ecosystem_slashed_amount": {
+            "type": "integer"
+          },
+          "delta_ecosystem_slashed_amount_repaid": {
+            "type": "integer"
+          },
+          "delta_network_slash_events": {
+            "type": "integer"
+          },
+          "delta_network_slashed_amount": {
+            "type": "integer"
+          },
+          "delta_network_slashed_amount_repaid": {
+            "type": "integer"
+          }
+        }
+      },
+      "StatsResponse": {
+        "type": "object",
+        "properties": {
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "HOUR",
+              "DAY",
+              "MONTH"
+            ],
+            "description": "Effective granularity used for the response"
+          },
+          "timestamp_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp at Z (inclusive start)"
+          },
+          "timestamp_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp at Z (exclusive end)"
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "GLOBAL",
+              "TRUST_REGISTRY",
+              "CREDENTIAL_SCHEMA",
+              "PERMISSION"
+            ]
+          },
+          "entity_ids": {
+            "type": "string",
+            "description": "Comma-separated list of entity IDs (e.g. '1,2,3') or repeated query params. Must be empty for GLOBAL."
+          },
+          "result_type": {
+            "type": "string",
+            "enum": [
+              "BUCKETS",
+              "TOTAL",
+              "BUCKETS_AND_TOTAL"
+            ]
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsBucket"
+            },
+            "description": "Time buckets (present if result_type is BUCKETS or BUCKETS_AND_TOTAL)"
+          },
+          "total": {
+            "$ref": "#/components/schemas/StatsTotal",
+            "description": "Aggregated totals (present if result_type is TOTAL or BUCKETS_AND_TOTAL)"
+          }
+        }
       }
     },
     "responses": {
@@ -5291,6 +5808,10 @@
     },
     {
       "name": "Metrics"
+    },
+    {
+      "name": "Statistics",
+      "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
     },
     {
       "name": "Activity",

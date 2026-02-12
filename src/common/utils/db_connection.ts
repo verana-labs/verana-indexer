@@ -2,7 +2,7 @@ import Knex from "knex";
 import { knexConfig } from "../../knexfile";
 import { Config } from "../index";
 
-const environment = process.env.NODE_ENV || 'development';
+const environment = process.env.NODE_ENV || "development";
 const cfg = knexConfig[environment];
 
 if (!cfg) {
