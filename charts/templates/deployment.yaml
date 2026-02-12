@@ -65,10 +65,10 @@ metadata:
 spec:
   accessModes:
     - "ReadWriteOnce"
-  storageClassName: csi-cinder-classic
+  storageClassName: {{ .Values.database.storage.storageClassName | default "csi-cinder-classic" }}
   resources:
     requests:
-      storage: 10Gi
+      storage: {{ .Values.database.storage.size | default "10Gi" }}
 {{- end }}
 ---
 # PersistentVolumeClaim for the Redis database
