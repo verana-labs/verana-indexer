@@ -45,7 +45,7 @@ database:
       memory: 512Mi
   storage:
     size: 10Gi
-    storageClassName: ccsi-cinder-classic
+    storageClassName: csi-cinder-classic
 
 redis: 
   enabled: true
