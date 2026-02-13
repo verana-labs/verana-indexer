@@ -495,6 +495,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 let filteredRegistries = registriesWithStats.filter((r): r is NonNullable<typeof registriesWithStats[0]> => r !== null);
 
                 if (minActiveSchemas !== undefined && maxActiveSchemas !== undefined && minActiveSchemas === maxActiveSchemas) {
+                    // Range [min, max) is empty when min === max, return no results
                     filteredRegistries = [];
                 } else {
                     if (minActiveSchemas !== undefined) {

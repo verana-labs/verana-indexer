@@ -13,6 +13,11 @@ export interface QueueOptions {
     type: string
     delay: number,
   },
+
+  lockDuration?: number;
+  lockRenewTime?: number;
+  stalledInterval?: number;
+  maxStalledCount?: number;
 }
 
 export type JobOption = JobsOptions;

@@ -21,6 +21,7 @@ import {
 } from '../../common';
 import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
+import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { triggerGC } from '../../common/utils/health_check';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import {
@@ -123,7 +124,7 @@ export default class CrawlTxService extends BullableService {
             updated_at: blockCheckpoint.updated_at,
           })
           .returning('id')
-          .timeout(10000)
+          .timeout(getDbQueryTimeoutMs())
           .transacting(trx);
         }
       });
@@ -215,7 +216,7 @@ export default class CrawlTxService extends BullableService {
                   updated_at: blockCheckpoint.updated_at,
                 })
                 .returning('id')
-                .timeout(10000)
+                .timeout(getDbQueryTimeoutMs())
                 .transacting(trx);
 
             } catch (error) {
@@ -245,7 +246,7 @@ export default class CrawlTxService extends BullableService {
                   updated_at: blockCheckpoint.updated_at,
                 })
                 .returning('id')
-                .timeout(10000)
+                .timeout(getDbQueryTimeoutMs())
                 .transacting(trx);
             }
             return payloads;
@@ -461,7 +462,7 @@ export default class CrawlTxService extends BullableService {
           listHash = listTx.txs.map((tx: any) => tx.hash);
           const listTxExisted = await Transaction.query()
             .whereIn('hash', listHash)
-            .timeout(120000);
+            .timeout(getDbQueryTimeoutMs(120000));
           listTxExisted.forEach((tx) => {
             mapExistedTx.set(tx.hash, true);
           });
@@ -725,7 +726,7 @@ export default class CrawlTxService extends BullableService {
         const chunk = listMsgModel.slice(i, i + chunkSizeMsg);
         await TransactionMessage.query()
           .insert(chunk)
-          .timeout(60000)
+          .timeout(getDbQueryTimeoutMs(60000))
           .transacting(transactionDB);
       }
       this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`);

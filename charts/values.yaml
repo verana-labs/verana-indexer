@@ -43,6 +43,9 @@ database:
     limits:
       cpu: 500m
       memory: 512Mi
+  storage:
+    size: 10Gi
+    storageClassName: csi-cinder-classic
 
 redis: 
   enabled: true

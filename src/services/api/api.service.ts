@@ -379,6 +379,10 @@ function createRoute(
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
         "GET errors/download": `v1.LogsService.downloadErrors`,
+      }),
+      createRoute("/verana/stats/v1", {
+        "GET get": `${SERVICE.V1.StatsAPIService.path}.get`,
+        "GET stats": `${SERVICE.V1.StatsAPIService.path}.stats`,
       }), 
       {
         path: "/",

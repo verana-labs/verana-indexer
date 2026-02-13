@@ -32,6 +32,7 @@ import { Network } from '../../network';
 import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus, triggerGC, shouldPauseForMemory, getMemoryRecoveryPauseMs } from '../../common/utils/health_check';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
+import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 
 @Service({
   name: SERVICE.V1.CrawlBlock.key,
@@ -163,7 +164,7 @@ export default class CrawlBlockService extends BullableService {
       .findOne({
         job_name: BULL_JOB_NAME.CRAWL_BLOCK,
       })
-      .timeout(10000);
+      .timeout(getDbQueryTimeoutMs());
 
     if (!blockHeightCrawled) {
       blockHeightCrawled = await BlockCheckpoint.query()
@@ -171,7 +172,7 @@ export default class CrawlBlockService extends BullableService {
           job_name: BULL_JOB_NAME.CRAWL_BLOCK,
           height: config.crawlBlock.startBlock,
         })
-        .timeout(10000);
+        .timeout(getDbQueryTimeoutMs());
     }
 
     this._currentBlock = blockHeightCrawled ? blockHeightCrawled.height : 0;
@@ -539,7 +540,7 @@ export default class CrawlBlockService extends BullableService {
           .where({
             job_name: BULL_JOB_NAME.CRAWL_BLOCK,
           })
-          .timeout(10000);
+          .timeout(getDbQueryTimeoutMs());
         this._currentBlock = highestSavedBlock;
         
         if (highestSavedBlock < endBlock) {
@@ -754,7 +755,7 @@ export default class CrawlBlockService extends BullableService {
         .findOne({
           job_name: BULL_JOB_NAME.CRAWL_BLOCK,
         })
-        .timeout(10000);
+        .timeout(getDbQueryTimeoutMs());
 
       if (!blockHeightCrawled) {
         try {
@@ -763,7 +764,7 @@ export default class CrawlBlockService extends BullableService {
               job_name: BULL_JOB_NAME.CRAWL_BLOCK,
               height: config.crawlBlock.startBlock,
             })
-            .timeout(10000);
+            .timeout(getDbQueryTimeoutMs());
           this.logger.info(`Created crawl block checkpoint at height ${config.crawlBlock.startBlock}`);
         } catch (insertError: any) {
           if (insertError?.code === '23505' || insertError?.constraint === 'block_checkpoint_job_name_unique') {
@@ -771,7 +772,7 @@ export default class CrawlBlockService extends BullableService {
               .findOne({
                 job_name: BULL_JOB_NAME.CRAWL_BLOCK,
               })
-              .timeout(10000);
+              .timeout(getDbQueryTimeoutMs());
             this.logger.info(`Checkpoint already exists (created by another service) at height ${blockHeightCrawled?.height || 0}`);
           } else {
             throw insertError;
@@ -1037,7 +1038,7 @@ export default class CrawlBlockService extends BullableService {
       if (listBlockHeight.length) {
         const listExistedBlock = await Block.query()
           .whereIn('height', listBlockHeight)
-          .timeout(30000);
+          .timeout(getDbQueryTimeoutMs(30000));
         listExistedBlock?.forEach((block) => {
           if (block?.height != null) {
             mapExistedBlock.set(block.height, true);
@@ -1124,7 +1125,7 @@ export default class CrawlBlockService extends BullableService {
         await knex.transaction(async (trx) => {
           await Block.query()
             .insertGraph(listBlockModel)
-            .timeout(60000)
+            .timeout(getDbQueryTimeoutMs(60000))
             .transacting(trx);
           await this.broker.call(
             SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path
