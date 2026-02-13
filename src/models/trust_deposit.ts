@@ -10,8 +10,8 @@ export default class TrustDeposit extends BaseModel {
   claimable!: number;
   slashed_deposit!: number;
   repaid_deposit!: number;
-  last_slashed!: Date | null;
-  last_repaid!: Date | null;
+  last_slashed!: string | null;
+  last_repaid!: string | null;
   slash_count!: number;
   last_repaid_by!: string;
 

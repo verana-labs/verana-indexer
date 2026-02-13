@@ -5,6 +5,7 @@ import { SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import Stats, { Granularity, EntityType } from "../../models/stats";
 import knex from "../../common/utils/db_connection";
+import { isValidISO8601UTC } from "../../common/utils/date_utils";
 
 @Service({
   name: SERVICE.V1.StatsAPIService.key,
@@ -79,7 +80,29 @@ export default class StatsAPIService extends BaseService {
     try {
       const { id, granularity, timestamp, entity_type: entityType, entity_id: entityId } = ctx.params;
 
+      if (timestamp && !isValidISO8601UTC(timestamp)) {
+        return ApiResponder.error(
+          ctx,
+          "Invalid timestamp format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+          400
+        );
+      }
+
+      if (timestamp) {
+        const timestampDate = new Date(timestamp);
+        if (Number.isNaN(timestampDate.getTime())) {
+          return ApiResponder.error(ctx, "Invalid timestamp format", 400);
+        }
+      }
+
       if (id) {
+        if (granularity || entityType || entityId) {
+          return ApiResponder.error(
+            ctx,
+            "When 'id' is provided, 'granularity', 'timestamp', 'entity_type', and 'entity_id' parameters should not be provided",
+            400
+          );
+        }
         const stat = await Stats.query().findById(id);
         if (!stat) {
           return ApiResponder.error(ctx, "Stats not found", 404);
@@ -101,6 +124,14 @@ export default class StatsAPIService extends BaseService {
 
       if (entityType !== "GLOBAL" && !entityId) {
         return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400);
+      }
+
+      if (!isValidISO8601UTC(timestamp)) {
+        return ApiResponder.error(
+          ctx,
+          "Invalid timestamp format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+          400
+        );
       }
 
       const timestampDate = new Date(timestamp);
@@ -154,16 +185,32 @@ export default class StatsAPIService extends BaseService {
     try {
       const { granularity, timestamp_from: timestampFrom, timestamp_until: timestampUntil, entity_type: entityType, entity_ids: entityIds, result_type: resultType = "BUCKETS_AND_TOTAL" } = ctx.params;
 
-    const fromDate = new Date(timestampFrom);
-    const untilDate = new Date(timestampUntil);
+      if (!isValidISO8601UTC(timestampFrom)) {
+        return ApiResponder.error(
+          ctx,
+          "Invalid timestamp_from format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+          400
+        );
+      }
 
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(untilDate.getTime())) {
-      return ApiResponder.error(ctx, "Invalid timestamp format", 400);
-    }
+      if (!isValidISO8601UTC(timestampUntil)) {
+        return ApiResponder.error(
+          ctx,
+          "Invalid timestamp_until format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+          400
+        );
+      }
 
-    if (fromDate >= untilDate) {
-      return ApiResponder.error(ctx, "timestamp_from must be before timestamp_until", 400);
-    }
+      const fromDate = new Date(timestampFrom);
+      const untilDate = new Date(timestampUntil);
+
+      if (Number.isNaN(fromDate.getTime()) || Number.isNaN(untilDate.getTime())) {
+        return ApiResponder.error(ctx, "Invalid timestamp format", 400);
+      }
+
+      if (fromDate >= untilDate) {
+        return ApiResponder.error(ctx, "timestamp_from must be before timestamp_until", 400);
+      }
 
     let parsedEntityIds: Array<string | number> = [];
     if (Array.isArray(entityIds)) {
@@ -298,15 +345,15 @@ export default class StatsAPIService extends BaseService {
           knex.raw("COALESCE(SUM(delta_participants), 0) as delta_participants"),
           knex.raw("COALESCE(SUM(delta_active_schemas), 0) as delta_active_schemas"),
           knex.raw("COALESCE(SUM(delta_archived_schemas), 0) as delta_archived_schemas"),
-          knex.raw("COALESCE(SUM(CAST(delta_weight AS NUMERIC)), 0)::text as delta_weight"),
-          knex.raw("COALESCE(SUM(CAST(delta_issued AS NUMERIC)), 0)::text as delta_issued"),
-          knex.raw("COALESCE(SUM(CAST(delta_verified AS NUMERIC)), 0)::text as delta_verified"),
+          knex.raw("COALESCE(SUM(CAST(delta_weight AS NUMERIC)), 0) as delta_weight"),
+          knex.raw("COALESCE(SUM(CAST(delta_issued AS NUMERIC)), 0) as delta_issued"),
+          knex.raw("COALESCE(SUM(CAST(delta_verified AS NUMERIC)), 0) as delta_verified"),
           knex.raw("COALESCE(SUM(delta_ecosystem_slash_events), 0) as delta_ecosystem_slash_events"),
-          knex.raw("COALESCE(SUM(CAST(delta_ecosystem_slashed_amount AS NUMERIC)), 0)::text as delta_ecosystem_slashed_amount"),
-          knex.raw("COALESCE(SUM(CAST(delta_ecosystem_slashed_amount_repaid AS NUMERIC)), 0)::text as delta_ecosystem_slashed_amount_repaid"),
+          knex.raw("COALESCE(SUM(CAST(delta_ecosystem_slashed_amount AS NUMERIC)), 0) as delta_ecosystem_slashed_amount"),
+          knex.raw("COALESCE(SUM(CAST(delta_ecosystem_slashed_amount_repaid AS NUMERIC)), 0) as delta_ecosystem_slashed_amount_repaid"),
           knex.raw("COALESCE(SUM(delta_network_slash_events), 0) as delta_network_slash_events"),
-          knex.raw("COALESCE(SUM(CAST(delta_network_slashed_amount AS NUMERIC)), 0)::text as delta_network_slashed_amount"),
-          knex.raw("COALESCE(SUM(CAST(delta_network_slashed_amount_repaid AS NUMERIC)), 0)::text as delta_network_slashed_amount_repaid")
+          knex.raw("COALESCE(SUM(CAST(delta_network_slashed_amount AS NUMERIC)), 0) as delta_network_slashed_amount"),
+          knex.raw("COALESCE(SUM(CAST(delta_network_slashed_amount_repaid AS NUMERIC)), 0) as delta_network_slashed_amount_repaid")
         )
         .first();
 

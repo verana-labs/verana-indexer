@@ -104,10 +104,12 @@ export default class CrawlDelegatorsTest {
     desiredTxId: number,
     desiredHeight: number
   ): Promise<void> {
+    await Transaction.query().delete().where('id', desiredTxId);
+    
     const newTx = new Transaction();
     newTx.id = desiredTxId;
     newTx.height = desiredHeight;
-    newTx.hash = String(Date.now());
+    newTx.hash = `${desiredTxId}_${desiredHeight}_${Date.now()}`;
     newTx.codespace = 'test';
     newTx.code = 0;
     newTx.gas_used = '1';
@@ -133,11 +135,14 @@ export default class CrawlDelegatorsTest {
     msgType: string,
     sender: string,
     amount: string,
-    validator: string
+    validator: string,
+    txId: number = 1,
+    index: number = 0
   ): Promise<TransactionMessage> {
+    await knex(TransactionMessage.tableName).where({ tx_id: txId, index }).delete();
     const txMsg = TransactionMessage.fromJson({
-      tx_id: 1,
-      index: 0,
+      tx_id: txId,
+      index,
       type: msgType,
       sender,
       content: {
@@ -155,22 +160,27 @@ export default class CrawlDelegatorsTest {
   public async testCrawlValidatorDelegators_offline() {
     // Reset state for this test
     await knex.raw(`
-      TRUNCATE TABLE delegator, transaction, transaction_message, block_checkpoint RESTART IDENTITY CASCADE;
+      TRUNCATE TABLE validator, delegator, transaction, transaction_message, block_checkpoint RESTART IDENTITY CASCADE;
     `);
+    await Validator.query().insert(this.validator);
     await this.insertCrawlDelegatorDependingJob(100, 100);
+    await this.insertCrawlDelegatorDependingJob(101, 100);
 
-    // Two delegators delegate to our validator (no network involved)
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       'delegator_addr_1',
       '2000000',
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       'delegator_addr_2',
       '2000000',
-      this.validator.operator_address
+      this.validator.operator_address,
+      101,
+      0
     );
 
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
@@ -206,7 +216,9 @@ export default class CrawlDelegatorsTest {
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();
@@ -231,18 +243,23 @@ export default class CrawlDelegatorsTest {
     `);
     const mockDelegateAmount = '100000000';
     await this.insertCrawlDelegatorDependingJob(100, 100);
+    await this.insertCrawlDelegatorDependingJob(101, 100);
     await Validator.query().insert(this.validator);
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      101,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();
@@ -267,24 +284,32 @@ export default class CrawlDelegatorsTest {
     `);
     const mockDelegateAmount = '100000000';
     await this.insertCrawlDelegatorDependingJob(100, 100);
+    await this.insertCrawlDelegatorDependingJob(101, 100);
+    await this.insertCrawlDelegatorDependingJob(102, 100);
     await Validator.query().insert(this.validator);
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      101,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_UNDELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      102,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();
@@ -309,18 +334,23 @@ export default class CrawlDelegatorsTest {
     `);
     const mockDelegateAmount = '100000000';
     await this.insertCrawlDelegatorDependingJob(100, 100);
+    await this.insertCrawlDelegatorDependingJob(101, 100);
     await Validator.query().insert(this.validator);
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_UNDELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      101,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();
@@ -345,24 +375,32 @@ export default class CrawlDelegatorsTest {
     `);
     const mockDelegateAmount = '100000000';
     await this.insertCrawlDelegatorDependingJob(100, 100);
+    await this.insertCrawlDelegatorDependingJob(101, 100);
+    await this.insertCrawlDelegatorDependingJob(102, 100);
     await Validator.query().insert(this.validator);
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_UNDELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      101,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_CANCEL_UNDELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      102,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();
@@ -387,18 +425,23 @@ export default class CrawlDelegatorsTest {
     `);
     const mockDelegateAmount = '100000000';
     await this.insertCrawlDelegatorDependingJob(100, 100);
+    await this.insertCrawlDelegatorDependingJob(101, 100);
     await Validator.query().insert(this.validator);
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       `${this.mockDelegatorAddress}_1`,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       `${this.mockDelegatorAddress}_2`,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      101,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();
@@ -437,15 +480,19 @@ export default class CrawlDelegatorsTest {
     newValidator.consensus_hex_address = `${newValidator.consensus_hex_address}_2`;
     await Validator.query().insert(newValidator);
 
+    await this.insertCrawlDelegatorDependingJob(101, 100);
     await this.insertFakeTxMsg(
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      100,
+      0
     );
 
+    await knex(TransactionMessage.tableName).where({ tx_id: 101, index: 0 }).delete();
     const txMsg = TransactionMessage.fromJson({
-      tx_id: 1,
+      tx_id: 101,
       index: 0,
       type: MSG_TYPE.MSG_REDELEGATE,
       sender: this.mockDelegatorAddress,
@@ -502,7 +549,9 @@ export default class CrawlDelegatorsTest {
       MSG_TYPE.MSG_DELEGATE,
       this.mockDelegatorAddress,
       mockDelegateAmount,
-      this.validator.operator_address
+      this.validator.operator_address,
+      mockCrawlValidatorTxId,
+      0
     );
     await this.crawlDelegatorsService.getCheckpointUpdateDelegator();
     await this.crawlDelegatorsService.handleJob();

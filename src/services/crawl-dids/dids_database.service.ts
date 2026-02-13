@@ -164,6 +164,21 @@ export default class DidDatabaseService extends BullableService {
                 sort
             } = ctx.params;
 
+            if (modified) {
+                const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+                if (!isValidISO8601UTC(modified)) {
+                    return ApiResponder.error(
+                        ctx,
+                        "Invalid modified format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+                        400
+                    );
+                }
+                const modifiedDate = new Date(modified);
+                if (Number.isNaN(modifiedDate.getTime())) {
+                    return ApiResponder.error(ctx, "Invalid modified format", 400);
+                }
+            }
+
             try {
                 validateSortParameter(sort);
             } catch (err: any) {
@@ -235,7 +250,9 @@ export default class DidDatabaseService extends BullableService {
                 if (account) filteredItems = filteredItems.filter(item => item.controller === account);
                 if (modified) {
                     const modifiedDate = new Date(modified);
-                    filteredItems = filteredItems.filter(item => new Date(item.modified) > modifiedDate);
+                    if (!Number.isNaN(modifiedDate.getTime())) {
+                        filteredItems = filteredItems.filter(item => new Date(item.modified) > modifiedDate);
+                    }
                 }
                 if (expired !== undefined) {
                     filteredItems = expired
@@ -288,7 +305,12 @@ export default class DidDatabaseService extends BullableService {
             );
 
             if (account) query = query.andWhere("controller", account);
-            if (modified) query = query.andWhere("modified", ">", modified);
+            if (modified) {
+                const modifiedDate = new Date(modified);
+                if (!Number.isNaN(modifiedDate.getTime())) {
+                    query = query.andWhere("modified", ">", modifiedDate.toISOString());
+                }
+            }
 
             if (expired !== undefined) {
                 query = expired

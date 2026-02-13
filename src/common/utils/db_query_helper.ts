@@ -21,7 +21,7 @@ export function getDbQueryTimeoutMs(fallback: number = DEFAULT_QUERY_TIMEOUT): n
 
 export function isStatementTimeoutError(error: any): boolean {
   const errorCode = error?.code;
-  const errorMessage = error?.message || String(error);
+  const errorMessage = (error?.message || String(error) || '').toLowerCase();
   
   return errorCode === '57014' ||
     errorMessage.includes('statement timeout') ||
@@ -39,6 +39,13 @@ export function isPoolExhaustionError(error: any): boolean {
     errorMessage.includes('connection pool exhausted') ||
     errorMessage.includes('Query read timeout') ||
     errorMessage.includes('KnexTimeoutError');
+}
+
+export function isConnectionTerminatedError(error: any): boolean {
+  const errorMessage = error?.message || String(error);
+  return errorMessage.includes('Connection terminated unexpectedly') ||
+    errorMessage.includes('connection closed') ||
+    errorMessage.includes('server closed the connection');
 }
 
 export function delay(ms: number): Promise<void> {
@@ -93,6 +100,19 @@ export async function executeWithRetry<T>(
           const backoffDelay = Math.min(retryDelay * (2 ** (attempt - 1)), 10000);
           if (logger) {
             logger.info(`Waiting for pool availability, retrying after ${backoffDelay}ms...`);
+          }
+          await delay(backoffDelay);
+          continue;
+        }
+      } else if (isConnectionTerminatedError(error)) {
+        if (logger) {
+          logger.warn(`Database connection terminated (attempt ${attempt}/${maxRetries}): ${error?.message || error}`);
+        }
+        
+        if (attempt < maxRetries) {
+          const backoffDelay = Math.min(retryDelay * (2 ** (attempt - 1)), 5000);
+          if (logger) {
+            logger.info(`Reconnecting to database, retrying after ${backoffDelay}ms...`);
           }
           await delay(backoffDelay);
           continue;

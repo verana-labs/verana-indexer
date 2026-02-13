@@ -476,7 +476,6 @@ export default class PermIngestService extends Service {
         issuance_fees: Number((msg as any).issuance_fees ?? 0),
         verification_fees: Number((msg as any).verification_fees ?? 0),
         deposit: 0,
-
         modified: timestamp,
         created: timestamp,
       };
@@ -601,12 +600,10 @@ export default class PermIngestService extends Service {
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         country: msg.country ?? null,
-        verification_fees: String(
-          (msg as any).verification_fees ?? (msg as any).verification_fees ?? 0
-        ),
-        validation_fees: "0",
-        issuance_fees: "0",
-        deposit: "0",
+        verification_fees: Number((msg as any).verification_fees ?? 0),
+        validation_fees: 0,
+        issuance_fees: 0,
+        deposit: 0,
         validator_perm_id: ecosystemPerm?.id ?? null,
         modified: timestamp,
         created: timestamp,
@@ -1019,20 +1016,20 @@ export default class PermIngestService extends Service {
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         country: msg.country ?? null,
-        verification_fees: String((msg as any).verification_fees ?? "0"),
-        validation_fees: "0",
-        issuance_fees: "0",
-        deposit: String(validationTDDenom),
-        vp_current_deposit: String(validationTDDenom),
-        vp_current_fees: String(validationFeesDenom),
+        verification_fees: Number((msg as any).verification_fees ?? 0),
+        validation_fees: 0, 
+        issuance_fees: 0, 
+        deposit: Number(validationTDDenom),
+        vp_current_deposit: Number(validationTDDenom),
+        vp_current_fees: Number(validationFeesDenom), 
         validator_perm_id: msg.validator_perm_id,
         vp_state: "PENDING",
         vp_last_state_change: now,
-        vp_validator_deposit: "0",
+        vp_validator_deposit: 0, 
         vp_summary_digest_sri: null,
         vp_term_requested: null,
         modified: now,
-        created: now,
+        created: now, 
       };
 
       if (hasExpireSoonColumn) {
@@ -1146,17 +1143,10 @@ export default class PermIngestService extends Service {
         return null;
     }
 
-    if (validityPeriodField === null || validityPeriodField === undefined) {
-      this.logger.warn(
-        `CredentialSchema ${perm.schema_id} exists but validity period field '${validityPeriodFieldName}' is null/undefined ` +
-        `for permission ${perm.id} (type: ${perm.type}). Schema data: ${JSON.stringify({
-          id: cs.id,
-          issuer_grantor_validation_validity_period: cs.issuer_grantor_validation_validity_period,
-          verifier_grantor_validation_validity_period: cs.verifier_grantor_validation_validity_period,
-          issuer_validation_validity_period: cs.issuer_validation_validity_period,
-          verifier_validation_validity_period: cs.verifier_validation_validity_period,
-          holder_validation_validity_period: cs.holder_validation_validity_period,
-        })}`
+    if (validityPeriodField === null || validityPeriodField === undefined || validityPeriodField === 0) {
+      this.logger.info(
+        `CredentialSchema ${perm.schema_id} validity period field '${validityPeriodFieldName}' is null/undefined/zero ` +
+        `for permission ${perm.id} (type: ${perm.type}) - returning null vp_exp per spec`
       );
       return null;
     }
@@ -1197,7 +1187,7 @@ export default class PermIngestService extends Service {
       const perm = await knex("permissions").where({ id: msg.id }).first();
       if (!perm) {
         this.logger.error(`[SetVPToValidated] Permission ${msg.id} not found in database`);
-        throw new Error(`Permission ${msg.id} not found`);
+        return { success: false, reason: `Permission ${msg.id} not found` };
       }
 
       if (perm.vp_state !== "PENDING") {
@@ -1239,20 +1229,30 @@ export default class PermIngestService extends Service {
               perm.type === "ISSUER" ? "issuer_validation_validity_period" :
                 perm.type === "VERIFIER" ? "verifier_validation_validity_period" :
                   perm.type === "HOLDER" ? "holder_validation_validity_period" : "unknown";
-        await this.queuePermissionForRetry(msg, "VALIDITY_PERIOD_MISSING");
-        this.logger.error(
-          `Permission ${msg.id} queued for retry - CredentialSchema ${perm.schema_id} exists but ` +
-          `validity period field '${validityPeriodFieldName}' is missing/null for permission type '${perm.type}'. ` +
-          `This indicates a data integrity issue. Schema data: ${JSON.stringify({
-            id: schemaExists.id,
-            issuer_grantor_validation_validity_period: schemaExists.issuer_grantor_validation_validity_period,
-            verifier_grantor_validation_validity_period: schemaExists.verifier_grantor_validation_validity_period,
-            issuer_validation_validity_period: schemaExists.issuer_validation_validity_period,
-            verifier_validation_validity_period: schemaExists.verifier_validation_validity_period,
-            holder_validation_validity_period: schemaExists.holder_validation_validity_period,
-          })}`
-        );
-        return { success: true, message: "Permission queued for retry - validity period missing" };
+        
+        const validityPeriodValue = schemaExists[validityPeriodFieldName];
+        if (validityPeriodValue !== undefined && validityPeriodValue !== null) {
+          this.logger.info(
+            `Permission ${msg.id}: CredentialSchema ${perm.schema_id} has validity period field ` +
+            `'${validityPeriodFieldName}' = ${validityPeriodValue} (0 means no expiration per spec). ` +
+            `Proceeding with vp_exp = null.`
+          );
+        } else {
+          await this.queuePermissionForRetry(msg, "VALIDITY_PERIOD_MISSING");
+          this.logger.error(
+            `Permission ${msg.id} queued for retry - CredentialSchema ${perm.schema_id} exists but ` +
+            `validity period field '${validityPeriodFieldName}' is missing/null for permission type '${perm.type}'. ` +
+            `This indicates a data integrity issue. Schema data: ${JSON.stringify({
+              id: schemaExists.id,
+              issuer_grantor_validation_validity_period: schemaExists.issuer_grantor_validation_validity_period,
+              verifier_grantor_validation_validity_period: schemaExists.verifier_grantor_validation_validity_period,
+              issuer_validation_validity_period: schemaExists.issuer_validation_validity_period,
+              verifier_validation_validity_period: schemaExists.verifier_validation_validity_period,
+              holder_validation_validity_period: schemaExists.holder_validation_validity_period,
+            })}`
+          );
+          return { success: true, message: "Permission queued for retry - validity period missing" };
+        }
       }
 
       const effectiveUntil =
@@ -1269,9 +1269,9 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "effective_until exceeds vp_exp" };
       }
 
-      const vpValidatorDeposit = isFirstValidation
-        ? perm.vp_current_deposit
-        : perm.vp_validator_deposit;
+      const currentVpValidatorDeposit = Number(perm.vp_validator_deposit || 0);
+      const vpCurrentDeposit = Number(perm.vp_current_deposit || 0);
+      const newVpValidatorDeposit = currentVpValidatorDeposit + vpCurrentDeposit;
 
       const updatedPermData = {
         ...perm,
@@ -1285,9 +1285,9 @@ export default class PermIngestService extends Service {
       const entry: any = {
         vp_state: "VALIDATED",
         vp_last_state_change: now,
-        vp_current_fees: "0",
-        vp_current_deposit: "0",
-        vp_validator_deposit: vpValidatorDeposit,
+        vp_current_fees: 0,
+        vp_current_deposit: 0,
+        vp_validator_deposit: Number(newVpValidatorDeposit),
         vp_summary_digest_sri:
           msg.vp_summary_digest_sri ?? perm.vp_summary_digest_sri ?? null,
         vp_exp: vpExp,
@@ -1300,14 +1300,14 @@ export default class PermIngestService extends Service {
       }
 
       if (isFirstValidation) {
-        entry.validation_fees = msg.validation_fees ?? "0";
-        entry.issuance_fees = msg.issuance_fees ?? "0";
-        entry.verification_fees = msg.verification_fees ?? "0";
+        entry.validation_fees = Number(msg.validation_fees ?? 0);
+        entry.issuance_fees = Number(msg.issuance_fees ?? 0);
+        entry.verification_fees = Number(msg.verification_fees ?? 0);
         entry.country = msg.country ?? null;
         entry.effective_from = now;
 
         this.logger.info(
-          `Setting initial vp_validator_deposit: ${vpValidatorDeposit} for permission ${msg.id}`
+          `[SetVPToValidated] First validation: adding vp_current_deposit ${vpCurrentDeposit} to vp_validator_deposit (was ${currentVpValidatorDeposit}, now ${newVpValidatorDeposit}) for permission ${msg.id}`
         );
       } else {
         const feesChanged =
@@ -1328,7 +1328,7 @@ export default class PermIngestService extends Service {
         }
 
         this.logger.info(
-          `Preserving existing vp_validator_deposit: ${vpValidatorDeposit} for permission ${msg.id} renewal`
+          `[SetVPToValidated] Renewal: adding vp_current_deposit ${vpCurrentDeposit} to vp_validator_deposit (was ${currentVpValidatorDeposit}, now ${newVpValidatorDeposit}) for permission ${msg.id}`
         );
       }
 
@@ -1448,12 +1448,10 @@ export default class PermIngestService extends Service {
         const updateData: any = {
           vp_state: "PENDING",
           vp_last_state_change: now,
-          vp_current_fees: validationFeesInDenom.toString(),
-          vp_current_deposit: validationTrustDepositInDenom.toString(),
-          deposit: (
-            Number(applicantPerm.deposit) + validationTrustDepositInDenom
-          ).toString(),
-          modified: now,
+          vp_current_fees: Number(validationFeesInDenom),
+          vp_current_deposit: Number(validationTrustDepositInDenom),
+          deposit: Number(applicantPerm.deposit || 0) + Number(validationTrustDepositInDenom),
+          modified: now, 
         };
 
         if (hasExpireSoonColumn) {
@@ -1549,9 +1547,9 @@ export default class PermIngestService extends Service {
       const updateData: any = {
         vp_state: newVpState,
         vp_last_state_change: now,
-        vp_current_fees: "0",
-        vp_current_deposit: "0",
-        vp_validator_deposit: vpValidatorDeposit,
+        vp_current_fees: 0,
+        vp_current_deposit: 0,
+        vp_validator_deposit: Number(vpValidatorDeposit),
         modified: now,
       };
 

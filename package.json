@@ -28,6 +28,7 @@
     "test-ci": "jest --verbose --runInBand --forceExit --passWithNoTests",
     "test-watch": "pnpm run jest --watch",
     "test-coverage": "pnpm run jest --coverage",
+    "test-api-integration": "jest --testPathPattern=integration/api-endpoints --verbose --runInBand --forceExit",
     "lint": "eslint \"src/**/*.{ts,tsx,js}\" --cache --cache-location .eslintcache --no-error-on-unmatched-pattern --quiet && node -e \"console.log('✅ Lint check passed - no errors found')\""
   },
   "nodemonConfig": {
@@ -65,7 +66,7 @@
     "@tendermint/amino-js": "^0.6.2",
     "@types/parse-uri": "^1.0.2",
     "@types/swagger-ui-dist": "3.30.6",
-    "@verana-labs/verana-types": "0.9.1",
+    "@verana-labs/verana-types": "0.9.4",
     "ajv-formats": "^2.1.1",
     "axios": "^1.12.2",
     "bignumber.js": "^9.3.1",

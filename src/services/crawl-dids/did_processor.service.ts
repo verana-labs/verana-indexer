@@ -23,7 +23,7 @@ interface DidMessageTypes {
     deleted_at?: string | null;
     height?: number;
     is_deleted?: boolean;
-    exp?: string;
+    exp?: string | null;
     deposit?: number;
     years?: number;
     id?: number;
@@ -91,13 +91,18 @@ export default class DidMessageProcessorService extends BullableService {
                     this.logger.warn(`Missing controller/creator for DID ${message.did}, message keys: ${Object.keys(message).join(', ')}`);
                 }
                 
-                const years = message.years ? (typeof message.years === 'string' ? parseInt(message.years, 10) : parseFloat(String(message.years))) : 1;
+                const years = message.years ? (typeof message.years === 'string' ? parseInt(message.years, 10) : Number(message.years)) : 1;
                 let depositAmount = 0;
                 try {
                     depositAmount = await calculateDidDeposit(years);
                 } catch (depositErr) {
                     this.logger.error(`Failed to calculate DID deposit:`, depositErr);
                 }
+                
+                const createdTimestamp = formatTimestamp(message?.timestamp);
+                const exp = createdTimestamp && !Number.isNaN(new Date(createdTimestamp).getTime()) 
+                    ? addYearsToDate(createdTimestamp, years) 
+                    : null;
                 
                 processedDID = {
                     event_type: message.type,
@@ -106,12 +111,9 @@ export default class DidMessageProcessorService extends BullableService {
                     height: message.height ?? 0,
                     years: years,
                     deposit: depositAmount ?? 0,
-                    created: formatTimestamp(message?.timestamp),
-                    modified: formatTimestamp(message?.timestamp),
-                    exp:
-                        message.timestamp && message.years
-                            ? addYearsToDate(message.timestamp, message.years)
-                            : undefined,
+                    created: createdTimestamp,
+                    modified: createdTimestamp,
+                    exp: exp,
                     is_deleted: false,
                     deleted_at: null,
                 };
@@ -131,7 +133,7 @@ export default class DidMessageProcessorService extends BullableService {
                 (message.type === VeranaDidMessageTypes.RenewDid || message.type === VeranaDidMessageTypes.RenewDidLegacy)
                 && message.did) {
                 const yearsToAdd = message.years 
-                    ? (typeof message.years === 'string' ? parseInt(message.years, 10) : parseFloat(String(message.years)))
+                    ? (typeof message.years === 'string' ? parseInt(message.years, 10) : Number(message.years))
                     : 1;
                 let renewDeposit = 0;
                 try {
@@ -147,13 +149,20 @@ export default class DidMessageProcessorService extends BullableService {
 
                 if (existingDid) {
                     const newDeposit = renewDeposit;
+                    
+                    let exp: string | null = null;
+                    if (existingDid.exp) {
+                        exp = addYearsToDate(existingDid.exp, yearsToAdd);
+                    } else if (existingDid.created) {
+                        exp = addYearsToDate(existingDid.created, yearsToAdd);
+                    }
 
                     const updatedDid: DidMessageTypes = {
                         ...existingDid,
                         modified: formatTimestamp(message?.timestamp),
                         height: message?.height ?? existingDid.height,
                         event_type: message.type,
-                        exp: addYearsToDate(existingDid.exp, yearsToAdd),
+                        exp: exp,
                         deposit:(existingDid.deposit || 0) +
                             newDeposit,
                         years: (existingDid.years || 0) + yearsToAdd                        

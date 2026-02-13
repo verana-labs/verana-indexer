@@ -96,14 +96,14 @@ async function recordTrustDepositHistory(
     await trx("trust_deposit_history")
       .where({ id: existingHistory.id })
       .update({
-        share: td.share?.toString() ?? "0",
-        amount: td.amount?.toString() ?? "0",
-        claimable: td.claimable?.toString() ?? "0",
-        slashed_deposit: td.slashed_deposit?.toString() ?? "0",
-        repaid_deposit: td.repaid_deposit?.toString() ?? "0",
+        share: td.share ?? 0,
+        amount: td.amount ?? 0,
+        claimable: td.claimable ?? 0,
+        slashed_deposit: td.slashed_deposit ?? 0,
+        repaid_deposit: td.repaid_deposit ?? 0,
         last_slashed: td.last_slashed ?? null,
         last_repaid: td.last_repaid ?? null,
-        slash_count: td.slash_count?.toString() ?? "0",
+        slash_count: td.slash_count ?? 0,
         last_repaid_by: td.last_repaid_by ?? "",
         event_type: eventType,
         changes: changes ? JSON.stringify(changes) : null,
@@ -113,15 +113,15 @@ async function recordTrustDepositHistory(
   
   await trx("trust_deposit_history").insert({
     account: td.account,
-    share: td.share?.toString() ?? "0",
-    amount: td.amount?.toString() ?? "0",
-    claimable: td.claimable?.toString() ?? "0",
-    slashed_deposit: td.slashed_deposit?.toString() ?? "0",
-    repaid_deposit: td.repaid_deposit?.toString() ?? "0",
+    share: td.share ?? 0,
+    amount: td.amount ?? 0,
+    claimable: td.claimable ?? 0,
+    slashed_deposit: td.slashed_deposit ?? 0,
+    repaid_deposit: td.repaid_deposit ?? 0,
     last_slashed: td.last_slashed ?? null,
     last_repaid: td.last_repaid ?? null,
-    slash_count: td.slash_count?.toString() ?? "0",
-    last_repaid_by: td.last_repaid_by ?? "",
+    slash_count: td.slash_count ?? 0,
+    last_repaid_by: td.last_repaid_by ?? null,
     event_type: eventType,
     height,
     changes: changes ? JSON.stringify(changes) : null,
@@ -264,8 +264,10 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
       if (shareValue === BigInt(0)) {
-        this.logger.error(`[TrustDeposit] ❌ Division by zero: trust_deposit_share_value is 0`);
-        throw new Error("trust_deposit_share_value cannot be zero");
+        this.logger.error(
+          `[TrustDeposit]  Division by zero prevented: trust_deposit_share_value is 0, skipping reclaim for account ${account}`
+        );
+        return;
       }
       
       const claimableYield =
@@ -328,8 +330,10 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
       if (shareValue === BigInt(0)) {
-        this.logger.error(`[TrustDeposit] ❌ Division by zero: trust_deposit_share_value is 0`);
-        throw new Error("trust_deposit_share_value cannot be zero");
+        this.logger.error(
+          `[TrustDeposit] ❌ Division by zero prevented: trust_deposit_share_value is 0, skipping reclaim for account ${account}`
+        );
+        return; 
       }
       
       const requiredMinimum = toBigIntSafe(td.share) * shareValue;
@@ -400,8 +404,10 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
       if (shareValue === BigInt(0)) {
-        this.logger.error(`[TrustDeposit] ❌ Division by zero: trust_deposit_share_value is 0`);
-        throw new Error("trust_deposit_share_value cannot be zero");
+        this.logger.error(
+          `[TrustDeposit] ❌ Division by zero prevented: trust_deposit_share_value is 0, skipping repay for account ${account}`
+        );
+        return; 
       }
       
       const newDeposit = toBigIntSafe(td.amount) + amount;
@@ -412,7 +418,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
         amount: Number(newDeposit),
         share: Number(newShare),
         repaid_deposit: Number(newRepaid),
-        last_repaid: ts ? new Date(ts) : null,
+        last_repaid: ts ? new Date(ts).toISOString() : null,
         last_repaid_by: extractController(content, "unknown"),
       });
 

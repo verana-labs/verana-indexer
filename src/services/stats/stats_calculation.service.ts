@@ -163,13 +163,44 @@ export default class StatsCalculationService extends BullableService {
             });
             this.logger.info(`GLOBAL [${granularity}]  Successfully created stats for ${granularity} at ${timestamp.toISOString()} (id: ${inserted.id})`);
           } catch (insertError: any) {
-            this.logger.error(`GLOBAL [${granularity}]  INSERT FAILED:`, {
-              error: insertError?.message,
-              stack: insertError?.stack,
-              code: insertError?.code,
-              detail: insertError?.detail,
-            });
-            throw insertError;
+            const isUniqueViolation = insertError?.nativeError?.code === '23505' 
+              || insertError?.code === '23505'
+              || insertError?.message?.includes('duplicate key')
+              || insertError?.message?.includes('UNIQUE constraint')
+              || insertError?.message?.includes('stats_unique_key');
+            
+            if (isUniqueViolation) {
+              this.logger.warn(`GLOBAL [${granularity}]  Duplicate key detected (race condition), fetching existing record and updating...`);
+              const existingRecord = await Stats.query()
+                .where("granularity", granularity)
+                .where("timestamp", timestamp.toISOString())
+                .where("entity_type", "GLOBAL")
+                .whereNull("entity_id")
+                .first();
+              
+              if (existingRecord) {
+                if (!this.hasAnyDelta(stats)) {
+                  this.logger.info(`GLOBAL [${granularity}]  SKIPPING UPDATE - all delta fields are zero`);
+                } else if (this.isStatsEqual(existingRecord, stats)) {
+                  this.logger.info(`GLOBAL [${granularity}]  SKIPPING UPDATE - computed stats identical to existing`);
+                } else {
+                  await Stats.query()
+                    .findById(existingRecord.id)
+                    .patch(stats);
+                  this.logger.info(`GLOBAL [${granularity}]  Updated existing stats record (id: ${existingRecord.id}) after duplicate key detection`);
+                }
+              } else {
+                this.logger.warn(`GLOBAL [${granularity}]  Duplicate key detected but record not found (likely race condition - non-critical)`);
+              }
+            } else {
+              this.logger.error(`GLOBAL [${granularity}]  INSERT FAILED:`, {
+                error: insertError?.message,
+                stack: insertError?.stack,
+                code: insertError?.code,
+                detail: insertError?.detail,
+              });
+              throw insertError;
+            }
           }
         }
       }
@@ -235,12 +266,45 @@ export default class StatsCalculationService extends BullableService {
               });
               this.logger.info(`[TRUST_REGISTRY][${granularity}]  Created stats for TR ${tr.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
-              this.logger.error(`[TRUST_REGISTRY][${granularity}]  INSERT FAILED for TR ${tr.id}:`, {
-                error: insertError?.message,
-                stack: insertError?.stack,
-                code: insertError?.code,
-              });
-              throw insertError;
+              const isUniqueViolation = insertError?.nativeError?.code === '23505' 
+                || insertError?.code === '23505'
+                || insertError?.message?.includes('duplicate key')
+                || insertError?.message?.includes('UNIQUE constraint')
+                || insertError?.message?.includes('stats_unique_key');
+              
+              if (isUniqueViolation) {
+                this.logger.warn(`[TRUST_REGISTRY][${granularity}]  Duplicate key detected for TR ${tr.id} (race condition), fetching existing record and updating...`);
+                const existingRecord = await Stats.query()
+                  .where("granularity", granularity)
+                  .where("timestamp", timestamp.toISOString())
+                  .where("entity_type", "TRUST_REGISTRY")
+                  .where("entity_id", String(tr.id))
+                  .first();
+                
+                if (existingRecord) {
+                  if (!this.hasAnyDelta(stats)) {
+                    this.logger.info(`[TRUST_REGISTRY][${granularity}]  SKIPPING UPDATE for TR ${tr.id} - all delta fields are zero`);
+                  } else if (this.isStatsEqual(existingRecord, stats)) {
+                    this.logger.info(`[TRUST_REGISTRY][${granularity}]  SKIPPING UPDATE for TR ${tr.id} - no changes`);
+                  } else {
+                    await Stats.query()
+                      .findById(existingRecord.id)
+                      .patch(stats);
+                    this.logger.info(`[TRUST_REGISTRY][${granularity}]  Updated existing stats for TR ${tr.id} (id: ${existingRecord.id}) after duplicate key detection`);
+                  }
+                } else {
+                  // Race condition: Another process inserted and possibly deleted the record, or there's a timing issue
+                  // This is not critical - the duplicate key violation prevented the duplicate insert, which is the desired behavior
+                  this.logger.debug(`[TRUST_REGISTRY][${granularity}]  Duplicate key detected for TR ${tr.id} but record not found (likely race condition - non-critical)`);
+                }
+              } else {
+                this.logger.error(`[TRUST_REGISTRY][${granularity}]  INSERT FAILED for TR ${tr.id}:`, {
+                  error: insertError?.message,
+                  stack: insertError?.stack,
+                  code: insertError?.code,
+                });
+                throw insertError;
+              }
             }
           }
         } catch (error: any) {
@@ -309,12 +373,47 @@ export default class StatsCalculationService extends BullableService {
               created++;
               this.logger.info(`CREDENTIAL_SCHEMA[${granularity}]  Created stats for schema ${schema.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
-              this.logger.error(`CREDENTIAL_SCHEMA[${granularity}]  INSERT FAILED for schema ${schema.id}:`, {
-                error: insertError?.message,
-                stack: insertError?.stack,
-                code: insertError?.code,
-              });
-              throw insertError;
+              // Handle race condition: if another process inserted the same record, update it instead
+              const isUniqueViolation = insertError?.nativeError?.code === '23505' 
+                || insertError?.code === '23505'
+                || insertError?.message?.includes('duplicate key')
+                || insertError?.message?.includes('UNIQUE constraint')
+                || insertError?.message?.includes('stats_unique_key');
+              
+              if (isUniqueViolation) {
+                this.logger.warn(`CREDENTIAL_SCHEMA[${granularity}]  Duplicate key detected for schema ${schema.id} (race condition), fetching existing record and updating...`);
+                const existingRecord = await Stats.query()
+                  .where("granularity", granularity)
+                  .where("timestamp", timestamp.toISOString())
+                  .where("entity_type", "CREDENTIAL_SCHEMA")
+                  .where("entity_id", String(schema.id))
+                  .first();
+                
+                if (existingRecord) {
+                  if (!this.hasAnyDelta(stats)) {
+                    this.logger.info(`CREDENTIAL_SCHEMA[${granularity}]  SKIPPING UPDATE for schema ${schema.id} - all delta fields are zero`);
+                  } else if (this.isStatsEqual(existingRecord, stats)) {
+                    this.logger.info(`CREDENTIAL_SCHEMA[${granularity}]  SKIPPING UPDATE for schema ${schema.id} - no changes`);
+                  } else {
+                    await Stats.query()
+                      .findById(existingRecord.id)
+                      .patch(stats);
+                    updated++;
+                    this.logger.info(`CREDENTIAL_SCHEMA[${granularity}]  Updated existing stats for schema ${schema.id} (id: ${existingRecord.id}) after duplicate key detection`);
+                  }
+                } else {
+                  // Race condition: Another process inserted and possibly deleted the record, or there's a timing issue
+                  // This is not critical - the duplicate key violation prevented the duplicate insert, which is the desired behavior
+                  this.logger.debug(`CREDENTIAL_SCHEMA[${granularity}]  Duplicate key detected for schema ${schema.id} but record not found (likely race condition - non-critical)`);
+                }
+              } else {
+                this.logger.error(`CREDENTIAL_SCHEMA[${granularity}]  INSERT FAILED for schema ${schema.id}:`, {
+                  error: insertError?.message,
+                  stack: insertError?.stack,
+                  code: insertError?.code,
+                });
+                throw insertError;
+              }
             }
           }
         } catch (error: any) {
@@ -386,12 +485,46 @@ export default class StatsCalculationService extends BullableService {
               created++;
               this.logger.info(`PERMISSION [${granularity}]  Created stats for permission ${perm.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
-              this.logger.error(`PERMISSION [${granularity}]  INSERT FAILED for permission ${perm.id}:`, {
-                error: insertError?.message,
-                stack: insertError?.stack,
-                code: insertError?.code,
-              });
-              throw insertError;
+              const isUniqueViolation = insertError?.nativeError?.code === '23505' 
+                || insertError?.code === '23505'
+                || insertError?.message?.includes('duplicate key')
+                || insertError?.message?.includes('UNIQUE constraint')
+                || insertError?.message?.includes('stats_unique_key');
+              
+              if (isUniqueViolation) {
+                this.logger.warn(`PERMISSION [${granularity}]  Duplicate key detected for permission ${perm.id} (race condition), fetching existing record and updating...`);
+                const existingRecord = await Stats.query()
+                  .where("granularity", granularity)
+                  .where("timestamp", timestamp.toISOString())
+                  .where("entity_type", "PERMISSION")
+                  .where("entity_id", String(perm.id))
+                  .first();
+                
+                if (existingRecord) {
+                  if (!this.hasAnyDelta(stats)) {
+                    this.logger.info(`PERMISSION [${granularity}]  SKIPPING UPDATE for permission ${perm.id} - all delta fields are zero`);
+                  } else if (this.isStatsEqual(existingRecord, stats)) {
+                    this.logger.info(`PERMISSION [${granularity}]  SKIPPING UPDATE for permission ${perm.id} - no changes`);
+                  } else {
+                    await Stats.query()
+                      .findById(existingRecord.id)
+                      .patch(stats);
+                    updated++;
+                    this.logger.info(`PERMISSION [${granularity}]  Updated existing stats for permission ${perm.id} (id: ${existingRecord.id}) after duplicate key detection`);
+                  }
+                } else {
+                  // Race condition: Another process inserted and possibly deleted the record, or there's a timing issue
+                  // This is not critical - the duplicate key violation prevented the duplicate insert, which is the desired behavior
+                  this.logger.debug(`PERMISSION [${granularity}]  Duplicate key detected for permission ${perm.id} but record not found (likely race condition - non-critical)`);
+                }
+              } else {
+                this.logger.error(`PERMISSION [${granularity}]  INSERT FAILED for permission ${perm.id}:`, {
+                  error: insertError?.message,
+                  stack: insertError?.stack,
+                  code: insertError?.code,
+                });
+                throw insertError;
+              }
             }
           }
         } catch (error: any) {
@@ -482,27 +615,27 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants: cumulative.participants,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
-      cumulative_weight: cumulative.weight.toString(),
-      cumulative_issued: cumulative.issued.toString(),
-      cumulative_verified: cumulative.verified.toString(),
+      cumulative_weight: Number(cumulative.weight),
+      cumulative_issued: Number(cumulative.issued),
+      cumulative_verified: Number(cumulative.verified),
       cumulative_ecosystem_slash_events: cumulative.ecosystem_slash_events,
-      cumulative_ecosystem_slashed_amount: cumulative.ecosystem_slashed_amount.toString(),
-      cumulative_ecosystem_slashed_amount_repaid: cumulative.ecosystem_slashed_amount_repaid.toString(),
+      cumulative_ecosystem_slashed_amount: Number(cumulative.ecosystem_slashed_amount),
+      cumulative_ecosystem_slashed_amount_repaid: Number(cumulative.ecosystem_slashed_amount_repaid),
       cumulative_network_slash_events: cumulative.network_slash_events,
-      cumulative_network_slashed_amount: cumulative.network_slashed_amount.toString(),
-      cumulative_network_slashed_amount_repaid: cumulative.network_slashed_amount_repaid.toString(),
+      cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
+      cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
-      delta_weight: delta.weight.toString(),
-      delta_issued: delta.issued.toString(),
-      delta_verified: delta.verified.toString(),
+      delta_weight: Number(delta.weight),
+      delta_issued: Number(delta.issued),
+      delta_verified: Number(delta.verified),
       delta_ecosystem_slash_events: delta.ecosystem_slash_events,
-      delta_ecosystem_slashed_amount: delta.ecosystem_slashed_amount.toString(),
-      delta_ecosystem_slashed_amount_repaid: delta.ecosystem_slashed_amount_repaid.toString(),
+      delta_ecosystem_slashed_amount: Number(delta.ecosystem_slashed_amount),
+      delta_ecosystem_slashed_amount_repaid: Number(delta.ecosystem_slashed_amount_repaid),
       delta_network_slash_events: delta.network_slash_events,
-      delta_network_slashed_amount: delta.network_slashed_amount.toString(),
-      delta_network_slashed_amount_repaid: delta.network_slashed_amount_repaid.toString(),
+      delta_network_slashed_amount: Number(delta.network_slashed_amount),
+      delta_network_slashed_amount_repaid: Number(delta.network_slashed_amount_repaid),
     };
   }
 
@@ -594,27 +727,27 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants: cumulative.participants,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
-      cumulative_weight: cumulative.weight.toString(),
-      cumulative_issued: cumulative.issued.toString(),
-      cumulative_verified: cumulative.verified.toString(),
+      cumulative_weight: Number(cumulative.weight),
+      cumulative_issued: Number(cumulative.issued),
+      cumulative_verified: Number(cumulative.verified),
       cumulative_ecosystem_slash_events: cumulative.ecosystem_slash_events,
-      cumulative_ecosystem_slashed_amount: cumulative.ecosystem_slashed_amount.toString(),
-      cumulative_ecosystem_slashed_amount_repaid: cumulative.ecosystem_slashed_amount_repaid.toString(),
+      cumulative_ecosystem_slashed_amount: Number(cumulative.ecosystem_slashed_amount),
+      cumulative_ecosystem_slashed_amount_repaid: Number(cumulative.ecosystem_slashed_amount_repaid),
       cumulative_network_slash_events: cumulative.network_slash_events,
-      cumulative_network_slashed_amount: cumulative.network_slashed_amount.toString(),
-      cumulative_network_slashed_amount_repaid: cumulative.network_slashed_amount_repaid.toString(),
+      cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
+      cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
-      delta_weight: delta.weight.toString(),
-      delta_issued: delta.issued.toString(),
-      delta_verified: delta.verified.toString(),
+      delta_weight: Number(delta.weight),
+      delta_issued: Number(delta.issued),
+      delta_verified: Number(delta.verified),
       delta_ecosystem_slash_events: delta.ecosystem_slash_events,
-      delta_ecosystem_slashed_amount: delta.ecosystem_slashed_amount.toString(),
-      delta_ecosystem_slashed_amount_repaid: delta.ecosystem_slashed_amount_repaid.toString(),
+      delta_ecosystem_slashed_amount: Number(delta.ecosystem_slashed_amount),
+      delta_ecosystem_slashed_amount_repaid: Number(delta.ecosystem_slashed_amount_repaid),
       delta_network_slash_events: delta.network_slash_events,
-      delta_network_slashed_amount: delta.network_slashed_amount.toString(),
-      delta_network_slashed_amount_repaid: delta.network_slashed_amount_repaid.toString(),
+      delta_network_slashed_amount: Number(delta.network_slashed_amount),
+      delta_network_slashed_amount_repaid: Number(delta.network_slashed_amount_repaid),
     };
   }
 
@@ -689,27 +822,27 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants: cumulative.participants,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
-      cumulative_weight: cumulative.weight.toString(),
-      cumulative_issued: cumulative.issued.toString(),
-      cumulative_verified: cumulative.verified.toString(),
+      cumulative_weight: Number(cumulative.weight),
+      cumulative_issued: Number(cumulative.issued),
+      cumulative_verified: Number(cumulative.verified),
       cumulative_ecosystem_slash_events: cumulative.ecosystem_slash_events,
-      cumulative_ecosystem_slashed_amount: cumulative.ecosystem_slashed_amount.toString(),
-      cumulative_ecosystem_slashed_amount_repaid: cumulative.ecosystem_slashed_amount_repaid.toString(),
+      cumulative_ecosystem_slashed_amount: Number(cumulative.ecosystem_slashed_amount),
+      cumulative_ecosystem_slashed_amount_repaid: Number(cumulative.ecosystem_slashed_amount_repaid),
       cumulative_network_slash_events: cumulative.network_slash_events,
-      cumulative_network_slashed_amount: cumulative.network_slashed_amount.toString(),
-      cumulative_network_slashed_amount_repaid: cumulative.network_slashed_amount_repaid.toString(),
+      cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
+      cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
-      delta_weight: delta.weight.toString(),
-      delta_issued: delta.issued.toString(),
-      delta_verified: delta.verified.toString(),
+      delta_weight: Number(delta.weight),
+      delta_issued: Number(delta.issued),
+      delta_verified: Number(delta.verified),
       delta_ecosystem_slash_events: delta.ecosystem_slash_events,
-      delta_ecosystem_slashed_amount: delta.ecosystem_slashed_amount.toString(),
-      delta_ecosystem_slashed_amount_repaid: delta.ecosystem_slashed_amount_repaid.toString(),
+      delta_ecosystem_slashed_amount: Number(delta.ecosystem_slashed_amount),
+      delta_ecosystem_slashed_amount_repaid: Number(delta.ecosystem_slashed_amount_repaid),
       delta_network_slash_events: delta.network_slash_events,
-      delta_network_slashed_amount: delta.network_slashed_amount.toString(),
-      delta_network_slashed_amount_repaid: delta.network_slashed_amount_repaid.toString(),
+      delta_network_slashed_amount: Number(delta.network_slashed_amount),
+      delta_network_slashed_amount_repaid: Number(delta.network_slashed_amount_repaid),
     };
   }
 
@@ -771,27 +904,27 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants: cumulative.participants,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
-      cumulative_weight: cumulative.weight.toString(),
-      cumulative_issued: cumulative.issued.toString(),
-      cumulative_verified: cumulative.verified.toString(),
+      cumulative_weight: Number(cumulative.weight),
+      cumulative_issued: Number(cumulative.issued),
+      cumulative_verified: Number(cumulative.verified),
       cumulative_ecosystem_slash_events: cumulative.ecosystem_slash_events,
-      cumulative_ecosystem_slashed_amount: cumulative.ecosystem_slashed_amount.toString(),
-      cumulative_ecosystem_slashed_amount_repaid: cumulative.ecosystem_slashed_amount_repaid.toString(),
+      cumulative_ecosystem_slashed_amount: Number(cumulative.ecosystem_slashed_amount),
+      cumulative_ecosystem_slashed_amount_repaid: Number(cumulative.ecosystem_slashed_amount_repaid),
       cumulative_network_slash_events: cumulative.network_slash_events,
-      cumulative_network_slashed_amount: cumulative.network_slashed_amount.toString(),
-      cumulative_network_slashed_amount_repaid: cumulative.network_slashed_amount_repaid.toString(),
+      cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
+      cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
-      delta_weight: delta.weight.toString(),
-      delta_issued: delta.issued.toString(),
-      delta_verified: delta.verified.toString(),
+      delta_weight: Number(delta.weight),
+      delta_issued: Number(delta.issued),
+      delta_verified: Number(delta.verified),
       delta_ecosystem_slash_events: delta.ecosystem_slash_events,
-      delta_ecosystem_slashed_amount: delta.ecosystem_slashed_amount.toString(),
-      delta_ecosystem_slashed_amount_repaid: delta.ecosystem_slashed_amount_repaid.toString(),
+      delta_ecosystem_slashed_amount: Number(delta.ecosystem_slashed_amount),
+      delta_ecosystem_slashed_amount_repaid: Number(delta.ecosystem_slashed_amount_repaid),
       delta_network_slash_events: delta.network_slash_events,
-      delta_network_slashed_amount: delta.network_slashed_amount.toString(),
-      delta_network_slashed_amount_repaid: delta.network_slashed_amount_repaid.toString(),
+      delta_network_slashed_amount: Number(delta.network_slashed_amount),
+      delta_network_slashed_amount_repaid: Number(delta.network_slashed_amount_repaid),
     };
   }
 

@@ -2894,6 +2894,7 @@
             },
             "deposit": {
               "type": "integer",
+              "format": "int64",
               "description": "Deposit amount"
             },
             "exp": {
@@ -2980,7 +2981,9 @@
                 "type": "string"
               },
               "deposit": {
-                "type": "integer"
+                "type": "integer",
+                "format": "int64",
+                "description": "Deposit amount"
               },
               "issuer_grantor_validation_validity_period": {
                 "type": "integer"
@@ -3306,22 +3309,23 @@
                 "nullable": true
               },
               "validation_fees": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Total validation fees associated with this permission"
               },
               "issuance_fees": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Total issuance fees associated with this permission"
               },
               "verification_fees": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Total verification fees associated with this permission"
               },
               "deposit": {
                 "type": "integer",
+                "format": "int64",
                 "description": "Current trust deposit value for this permission"
               },
               "slashed_deposit": {
@@ -3351,13 +3355,13 @@
                 "nullable": true
               },
               "vp_current_fees": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Current validation fees accumulated in the validator pool"
               },
               "vp_current_deposit": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Current validator pool deposit"
               },
               "vp_summary_digest_sri": {
@@ -3370,8 +3374,8 @@
                 "nullable": true
               },
               "vp_validator_deposit": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Validator-specific trust deposit backing this permission"
               },
               "vp_term_requested": {
@@ -3467,7 +3471,7 @@
               "ecosystem_slashed_amount_repaid": { "type": "integer", "format": "int64" },
               "network_slash_events": { "type": "integer" },
               "network_slashed_amount": { "type": "integer", "format": "int64" },
-              "network_slashed_amount_repaid": { "type": "number", "format": "decimal" }
+              "network_slashed_amount_repaid": { "type": "integer", "format": "int64" }
             }
           },
           "PermissionHistoryItem": {
@@ -3643,28 +3647,28 @@
                 "description": "Account address"
               },
               "share": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Current share amount"
               },
               "amount": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Total deposit amount"
               },
               "claimable": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Claimable rewards amount"
               },
               "slashed_deposit": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Total slashed deposit amount"
               },
               "repaid_deposit": {
-                "type": "number",
-                "format": "decimal",
+                "type": "integer",
+                "format": "int64",
                 "description": "Total repaid deposit amount"
               },
               "last_slashed": {
@@ -4239,7 +4243,9 @@
               "nullable": true
             },
             "deposit": {
-              "type": "integer"
+              "type": "integer",
+              "format": "int64",
+              "description": "Trust registry deposit"
             },
             "aka": {
               "type": "string",
@@ -4265,10 +4271,12 @@
             },
             "weight": {
               "type": "integer",
+              "format": "int64",
               "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
             },
             "issued": {
               "type": "integer",
+              "format": "int64",
               "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
             },
             "verified": {
@@ -4407,7 +4415,9 @@
                   "nullable": true
                 },
                 "deposit": {
-                  "type": "integer"
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Trust registry deposit"
                 },
                 "aka": {
                   "type": "string",
@@ -4433,14 +4443,17 @@
                 },
                 "weight": {
                   "type": "integer",
+                  "format": "int64",
                   "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
                 },
                 "issued": {
                   "type": "integer",
+                  "format": "int64",
                   "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
                 },
                 "verified": {
                   "type": "integer",
+                  "format": "int64",
                   "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Trust Registry since it was created"
                 },
                 "ecosystem_slash_events": {
@@ -5249,6 +5262,7 @@
             },
             "deposit": {
               "type": "integer",
+              "format": "int64",
               "description": "Total deposited amount across all trust registries and schemas"
             },
             "slashed": {
@@ -5365,6 +5379,7 @@
             },
             "deposit": {
               "type": "integer",
+              "format": "int64",
               "description": "Deposit amount for this schema"
             },
             "slashed": {
@@ -5825,7 +5840,7 @@
                 "$ref": "#/components/schemas/Error"
               },
               "example": {
-                "error": "Invalid parameter: response_max_size must be between 1 and 100",
+                "error": "Invalid parameter: response_max_size must be between 1 and 1024",
                 "code": 400
               }
             }
@@ -5882,10 +5897,6 @@
       {
         "name": "Statistics",
         "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
-      },
-      {
-        "name": "Activity",
-        "description": "Activity timeline operations for tracking entity changes"
       },
       {
         "description": "## Real-Time Event (WebSocket)\n\n**Endpoint URLs:**\n- Local: `ws://localhost:3001/verana/indexer/v1/events`\n- Devnet: `wss://idx.devnet.verana.network/verana/indexer/v1/events`\n- Testnet: `wss://idx.testnet.verana.network/verana/indexer/v1/events`\n\n**Message Format:**\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**Event Type:** `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height (ISO 8601 format with 'Z' designator).\n\n**Example:**\n```javascript\nconst ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  if (data.type === 'block-processed') {\n    console.log(`Block ${data.height} processed`);\n    // Now safe to query indexer API for updated data\n  }\n};\n```"

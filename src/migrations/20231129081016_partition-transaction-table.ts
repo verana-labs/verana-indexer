@@ -59,6 +59,30 @@ export async function up(knex: Knex): Promise<void> {
         .raw('ALTER TABLE transaction_partition RENAME TO transaction;')
         .transacting(trx);
       
+      try {
+        await knex.raw(`
+          ALTER TABLE transaction_partition_0_100000000
+          ALTER COLUMN hash TYPE TEXT USING hash::TEXT;
+        `).transacting(trx);
+        console.log('Fixed hash column type from VARCHAR to TEXT');
+      } catch (err: any) {
+        if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+          console.warn(`Warning fixing hash column: ${err.message}`);
+        }
+      }
+
+      try {
+        await knex.raw(`
+          ALTER TABLE transaction_partition_0_100000000
+          ALTER COLUMN codespace TYPE TEXT USING codespace::TEXT;
+        `).transacting(trx);
+        console.log('Fixed codespace column type from VARCHAR to TEXT');
+      } catch (err: any) {
+        if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+          console.warn(`Warning fixing codespace column: ${err.message}`);
+        }
+      }
+      
       const oldSeqTransaction = await knex.raw(
         `SELECT last_value FROM transaction_id_seq;`
       ).transacting(trx);
@@ -113,8 +137,8 @@ export async function up(knex: Knex): Promise<void> {
         (
           id SERIAL PRIMARY KEY,
           height INTEGER NOT NULL,
-          hash VARCHAR(255) NOT NULL,
-          codespace  VARCHAR(255) NOT NULL,
+          hash TEXT NOT NULL,
+          codespace  TEXT NOT NULL,
           code INTEGER NOT NULL,
           gas_used BIGINT NOT NULL,
           gas_wanted BIGINT NOT NULL,
@@ -145,6 +169,31 @@ export async function up(knex: Knex): Promise<void> {
       `
       )
       .transacting(trx);
+    
+    try {
+      await knex.raw(`
+        ALTER TABLE transaction_partition_0_100000000
+        ALTER COLUMN hash TYPE TEXT USING hash::TEXT;
+      `).transacting(trx);
+      console.log('Fixed hash column type from VARCHAR to TEXT');
+    } catch (err: any) {
+      if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+        console.warn(`Warning fixing hash column: ${err.message}`);
+      }
+    }
+
+    try {
+      await knex.raw(`
+        ALTER TABLE transaction_partition_0_100000000
+        ALTER COLUMN codespace TYPE TEXT USING codespace::TEXT;
+      `).transacting(trx);
+      console.log('Fixed codespace column type from VARCHAR to TEXT');
+    } catch (err: any) {
+      if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+        console.warn(`Warning fixing codespace column: ${err.message}`);
+      }
+    }
+    
     await knex
       .raw('ALTER TABLE transaction_partition RENAME TO transaction;')
       .transacting(trx);

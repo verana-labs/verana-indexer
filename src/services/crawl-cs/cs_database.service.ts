@@ -585,7 +585,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action({
     rest: "GET list",
     params: {
-      tr_id: { type: "string", optional: true },
+      tr_id: { type: "number", optional: true },
       participant: { type: "any", optional: true },
       modified_after: { type: "string", optional: true },
       only_active: {
@@ -599,12 +599,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       sort: { type: "string", optional: true },
       min_participants: { type: "number", optional: true },
       max_participants: { type: "number", optional: true },
-      min_weight: { type: "string", optional: true },
-      max_weight: { type: "string", optional: true },
-      min_issued: { type: "string", optional: true },
-      max_issued: { type: "string", optional: true },
-      min_verified: { type: "string", optional: true },
-      max_verified: { type: "string", optional: true },
+      min_weight: { type: "number", optional: true },
+      max_weight: { type: "number", optional: true },
+      min_issued: { type: "number", optional: true },
+      max_issued: { type: "number", optional: true },
+      min_verified: { type: "number", optional: true },
+      max_verified: { type: "number", optional: true },
       min_ecosystem_slash_events: { type: "number", optional: true },
       max_ecosystem_slash_events: { type: "number", optional: true },
       min_network_slash_events: { type: "number", optional: true },
@@ -612,7 +612,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     },
   })
   async list(ctx: Context<{
-    tr_id?: string;
+    tr_id?: number;
     participant?: string;
     modified_after?: string;
     only_active?: any;
@@ -622,12 +622,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     sort?: string;
     min_participants?: number;
     max_participants?: number;
-    min_weight?: string;
-    max_weight?: string;
-    min_issued?: string;
-    max_issued?: string;
-    min_verified?: string;
-    max_verified?: string;
+    min_weight?: number;
+    max_weight?: number;
+    min_issued?: number;
+    max_issued?: number;
+    min_verified?: number;
+    max_verified?: number;
     min_ecosystem_slash_events?: number;
     max_ecosystem_slash_events?: number;
     min_network_slash_events?: number;
@@ -913,11 +913,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           filteredWithStats = [];
         } else {
           if (minIssued !== undefined) {
-            const minIssuedNum = parseFloat(minIssued);
+            const minIssuedNum = Number(minIssued);
             filteredWithStats = filteredWithStats.filter((s) => s.issued >= minIssuedNum);
           }
           if (maxIssued !== undefined) {
-            const maxIssuedNum = parseFloat(maxIssued);
+            const maxIssuedNum = Number(maxIssued);
             filteredWithStats = filteredWithStats.filter((s) => s.issued < maxIssuedNum);
           }
         }
@@ -925,11 +925,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           filteredWithStats = [];
         } else {
           if (minVerified !== undefined) {
-            const minVerifiedNum = parseFloat(minVerified);
+            const minVerifiedNum = Number(minVerified);
             filteredWithStats = filteredWithStats.filter((s) => s.verified >= minVerifiedNum);
           }
           if (maxVerified !== undefined) {
-            const maxVerifiedNum = parseFloat(maxVerified);
+            const maxVerifiedNum = Number(maxVerified);
             filteredWithStats = filteredWithStats.filter((s) => s.verified < maxVerifiedNum);
           }
         }
@@ -1001,9 +1001,17 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       if (modifiedAfter) {
+        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+        if (!isValidISO8601UTC(modifiedAfter)) {
+          return ApiResponder.error(
+            ctx,
+            "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+            400
+          );
+        }
         const ts = new Date(modifiedAfter);
         if (Number.isNaN(ts.getTime())) {
-          return ApiResponder.error(ctx, "Invalid modified_after timestamp", 400);
+          return ApiResponder.error(ctx, "Invalid modified_after format", 400);
         }
         query.where("modified", ">", ts.toISOString());
       }
@@ -1116,11 +1124,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         filteredItems = [];
       } else {
         if (minIssued !== undefined) {
-          const minIssuedNum = parseFloat(minIssued);
+          const minIssuedNum = Number(minIssued);
           filteredItems = filteredItems.filter((s) => s.issued >= minIssuedNum);
         }
         if (maxIssued !== undefined) {
-          const maxIssuedNum = parseFloat(maxIssued);
+          const maxIssuedNum = Number(maxIssued);
           filteredItems = filteredItems.filter((s) => s.issued < maxIssuedNum);
         }
       }
@@ -1128,11 +1136,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         filteredItems = [];
       } else {
         if (minVerified !== undefined) {
-          const minVerifiedNum = parseFloat(minVerified);
+          const minVerifiedNum = Number(minVerified);
           filteredItems = filteredItems.filter((s) => s.verified >= minVerifiedNum);
         }
         if (maxVerified !== undefined) {
-          const maxVerifiedNum = parseFloat(maxVerified);
+          const maxVerifiedNum = Number(maxVerified);
           filteredItems = filteredItems.filter((s) => s.verified < maxVerifiedNum);
         }
       }
@@ -1246,6 +1254,22 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async getHistory(ctx: Context<{ id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
       const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      
+      if (transactionTimestampOlderThan) {
+        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
+          return ApiResponder.error(
+            ctx,
+            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+            400
+          );
+        }
+        const timestampDate = new Date(transactionTimestampOlderThan);
+        if (Number.isNaN(timestampDate.getTime())) {
+          return ApiResponder.error(ctx, "Invalid transaction_timestamp_older_than format", 400);
+        }
+      }
+      
       const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
 
       const schemaExists = await knex("credential_schemas").where({ id }).first();

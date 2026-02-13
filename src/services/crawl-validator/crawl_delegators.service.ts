@@ -282,28 +282,30 @@ export default class CrawlDelegatorsService extends BullableService {
     reDelegateTxMsg: TransactionMessage,
     trx: Knex.Transaction
   ): Promise<void> {
-    const validatorSrc = await Validator.query().findOne(
-      'operator_address',
-      reDelegateTxMsg.content.validator_src_address
-    );
-    const validatorDst = await Validator.query().findOne(
-      'operator_address',
-      reDelegateTxMsg.content.validator_dst_address
-    );
+    const validatorSrc = await Validator.query()
+      .findOne('operator_address', reDelegateTxMsg.content.validator_src_address)
+      .transacting(trx);
+    const validatorDst = await Validator.query()
+      .findOne('operator_address', reDelegateTxMsg.content.validator_dst_address)
+      .transacting(trx);
 
     if (!validatorSrc || !validatorDst) {
       this.logger.info('No validator found!');
       return;
     }
 
-    const delegatorSrc = await Delegator.query().findOne({
-      delegator_address: reDelegateTxMsg.content.delegator_address,
-      validator_id: validatorSrc.id,
-    });
-    const delegatorDst = await Delegator.query().findOne({
-      delegator_address: reDelegateTxMsg.content.delegator_address,
-      validator_id: validatorDst.id,
-    });
+    const delegatorSrc = await Delegator.query()
+      .findOne({
+        delegator_address: reDelegateTxMsg.content.delegator_address,
+        validator_id: validatorSrc.id,
+      })
+      .transacting(trx);
+    const delegatorDst = await Delegator.query()
+      .findOne({
+        delegator_address: reDelegateTxMsg.content.delegator_address,
+        validator_id: validatorDst.id,
+      })
+      .transacting(trx);
 
     if (delegatorSrc) {
       const remainDelegateSrcAmount = BigNumber(delegatorSrc.amount).minus(
@@ -363,20 +365,21 @@ export default class CrawlDelegatorsService extends BullableService {
     unDelegateTxMsg: TransactionMessage,
     trx: Knex.Transaction
   ): Promise<void> {
-    const validator = await Validator.query().findOne(
-      'operator_address',
-      unDelegateTxMsg.content.validator_address
-    );
+    const validator = await Validator.query()
+      .findOne('operator_address', unDelegateTxMsg.content.validator_address)
+      .transacting(trx);
 
     if (!validator) {
       this.logger.info('No validator found!');
       return;
     }
 
-    const delegator = await Delegator.query().findOne({
-      delegator_address: unDelegateTxMsg.content.delegator_address,
-      validator_id: validator.id,
-    });
+    const delegator = await Delegator.query()
+      .findOne({
+        delegator_address: unDelegateTxMsg.content.delegator_address,
+        validator_id: validator.id,
+      })
+      .transacting(trx);
 
     if (!delegator) return;
 
@@ -417,23 +420,20 @@ export default class CrawlDelegatorsService extends BullableService {
       BULL_JOB_NAME.CRAWL_VALIDATOR
     );
     if (!latestBlockCrawlValidator) return;
-    const oldestTransactionByHeight = await Transaction.query()
-      .where('height', '=', latestBlockCrawlValidator.height)
-      .orderBy('id', 'ASC')
-      .limit(1);
-    if (oldestTransactionByHeight.length === 0) return;
 
     const checkpointDelegator = await this.getCheckpointUpdateDelegator();
     const txMsg = await TransactionMessage.query()
-      .where('id', '>', checkpointDelegator.height)
-      .andWhere('tx_id', '<', oldestTransactionByHeight[0].id)
-      .whereIn('type', [
+      .join('transaction', 'transaction_message.tx_id', '=', 'transaction.id')
+      .where('transaction_message.id', '>', checkpointDelegator.height)
+      .andWhere('transaction.height', '<=', latestBlockCrawlValidator.height)
+      .whereIn('transaction_message.type', [
         MSG_TYPE.MSG_DELEGATE,
         MSG_TYPE.MSG_REDELEGATE,
         MSG_TYPE.MSG_UNDELEGATE,
         MSG_TYPE.MSG_CANCEL_UNDELEGATE,
       ])
-      .orderBy('id', 'ASC')
+      .select('transaction_message.*')
+      .orderBy('transaction_message.id', 'ASC')
       .limit(config.crawlDelegators.txMsgPageLimit);
 
     if (!txMsg || txMsg.length === 0) {

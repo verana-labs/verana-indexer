@@ -36,3 +36,26 @@ export function addYearsToDate(dateStr: string | undefined, years: number | numb
     return date.toISOString();
 }
 
+
+export function isValidISO8601UTC(timestamp: string): boolean {
+    if (typeof timestamp !== 'string' || timestamp.trim().length === 0) {
+        return false;
+    }
+
+    const iso8601Pattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+
+    if (!iso8601Pattern.test(timestamp)) {
+        return false;
+    }
+
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+        return false;
+    }
+
+    const reconstructed = date.toISOString();
+    const normalizedInput = timestamp.replace(/\.\d{3}Z$/, 'Z');
+    const normalizedReconstructed = reconstructed.replace(/\.\d{3}Z$/, 'Z');
+    return normalizedInput === normalizedReconstructed;
+}
+

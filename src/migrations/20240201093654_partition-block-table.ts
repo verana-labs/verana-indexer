@@ -8,9 +8,9 @@ export async function up(knex: Knex): Promise<void> {
       CREATE TABLE block_partition
       (
           height INTEGER NOT NULL PRIMARY KEY,
-          hash VARCHAR(255) NOT NULL,
+          hash TEXT NOT NULL,
           time TIMESTAMP WITH TIME ZONE NOT NULL,
-          proposer_address VARCHAR(255) NOT NULL,
+          proposer_address TEXT NOT NULL,
           data jsonb NOT NULL,
           tx_count integer,
           CONSTRAINT block_partition_hash_unique UNIQUE (height, hash)
@@ -30,6 +30,30 @@ export async function up(knex: Knex): Promise<void> {
     await knex
       .raw('ALTER TABLE block_partition RENAME TO block;')
       .transacting(trx);
+
+    try {
+      await knex.raw(`
+        ALTER TABLE block_partition_0_100000000
+        ALTER COLUMN hash TYPE TEXT USING hash::TEXT;
+      `).transacting(trx);
+      console.log('Fixed hash column from VARCHAR to TEXT in block_partition_0_100000000');
+    } catch (err: any) {
+      if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+        console.warn(`Warning fixing hash column: ${err.message}`);
+      }
+    }
+
+    try {
+      await knex.raw(`
+        ALTER TABLE block_partition_0_100000000
+        ALTER COLUMN proposer_address TYPE TEXT USING proposer_address::TEXT;
+      `).transacting(trx);
+      console.log('Fixed proposer_address column from VARCHAR to TEXT in block_partition_0_100000000');
+    } catch (err: any) {
+      if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+        console.warn(`Warning fixing proposer_address column: ${err.message}`);
+      }
+    }
 
     // Drop fk on old table and create again fk point to new block partitioned table
     await knex

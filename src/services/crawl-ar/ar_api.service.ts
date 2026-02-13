@@ -63,9 +63,9 @@ export default class AccountReputationService extends BullableService {
         .orderBy("created_at", "desc")
         .first();
       td = tdHistory ? {
-        amount: tdHistory.amount?.toString() || "0",
-        slashed_deposit: tdHistory.slashed_deposit?.toString() || "0",
-        repaid_deposit: tdHistory.repaid_deposit?.toString() || "0",
+        amount: tdHistory.amount != null ? Number(tdHistory.amount) : 0,
+        slashed_deposit: tdHistory.slashed_deposit != null ? Number(tdHistory.slashed_deposit) : 0,
+        repaid_deposit: tdHistory.repaid_deposit != null ? Number(tdHistory.repaid_deposit) : 0,
         slash_count: tdHistory.slash_count || 0,
         last_slashed: tdHistory.last_slashed,
         last_repaid: tdHistory.last_repaid,
@@ -237,7 +237,7 @@ export default class AccountReputationService extends BullableService {
     };
 
     type Registry = {
-      tr_id?: string | number;
+      tr_id?: number;
       tr_did?: string;
       credential_schemas: Record<string, SchemaStats>;
     };

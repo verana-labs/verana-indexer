@@ -83,10 +83,21 @@ export default class ChainRegistry {
       if (!msgType) {
         const formattedValue =
           typedMsg.value instanceof Uint8Array ? toBase64(typedMsg.value) : typedMsg.value;
-        this._logger.info("formattedValue",formattedValue);
         result.value = formattedValue;
-        this._logger.error('This typeUrl is not supported');
-        this._logger.error(typedMsg.typeUrl);
+        
+        const isVeranaMessage = typedMsg.typeUrl.startsWith('/verana.');
+        const isCosmosSystemMessage = typedMsg.typeUrl.includes('.upgrade.') || 
+                                      typedMsg.typeUrl.includes('.gov.') ||
+                                      typedMsg.typeUrl.includes('.consensus.');
+        
+        if (isVeranaMessage) {
+          this._logger.error('Unsupported Verana message type:', typedMsg.typeUrl);
+          this._logger.error('This may indicate a protocol change requiring indexer updates');
+        } else if (isCosmosSystemMessage) {
+          this._logger.debug('Cosmos SDK system message (not processed):', typedMsg.typeUrl);
+        } else {
+          this._logger.warn('Unknown message type (not Verana):', typedMsg.typeUrl);
+        }
       } else {
         const msgValue = typedMsg.value;
         let decodedValue: Uint8Array;

@@ -9,9 +9,9 @@ export async function up(knex: Knex): Promise<void> {
         id bigserial NOT NULL CONSTRAINT event_partition_pvk PRIMARY KEY,
         tx_id INTEGER CONSTRAINT event_partition_transaction_foreign REFERENCES TRANSACTION,
         tx_msg_index INTEGER,
-        type VARCHAR(255) NOT NULL,
+        type TEXT NOT NULL,
         block_height INTEGER CONSTRAINT event_partition_block_foreign REFERENCES block,
-        source VARCHAR(255)
+        source TEXT
       ) PARTITION BY RANGE(id);
 
       CREATE INDEX event_partition_type_idx

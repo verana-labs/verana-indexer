@@ -80,7 +80,6 @@ export interface MsgRepayPermissionSlashedTrustDeposit {
 export interface MsgRenewPermissionVP {
   creator: string;
   timestamp: Date | string;
-
   id: number;
 }
 export interface MsgExtendPermission {
