@@ -5,12 +5,12 @@ const TIMEOUT = 30000;
 const MAX_RETRIES = 2;
 
 const SAMPLE_DID = 'did:verana:test123';
-const SAMPLE_ID = '1';
+const SAMPLE_ID = 1;
 const SAMPLE_ACCOUNT = 'verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st';
-const SAMPLE_TR_ID = '1';
-const SAMPLE_BLOCK_HEIGHT = '1000';
-const SAMPLE_PERM_ID = '1';
-const SAMPLE_SCHEMA_ID = '1';
+const SAMPLE_TR_ID = 1;
+const SAMPLE_BLOCK_HEIGHT = 1000;
+const SAMPLE_PERM_ID = 1;
+const SAMPLE_SCHEMA_ID = 1;
 
 function getTimestamps() {
   const now = new Date();
@@ -56,12 +56,14 @@ async function testEndpoint(
   method: string,
   path: string,
   params: any = {},
-  headers: Record<string, string> = {}
+  headers: Record<string, string | number> = {}
 ): Promise<AxiosResponse> {
   const url = `${BASE_URL}${path}`;
   
   const config: any = {
-    headers,
+    headers: Object.fromEntries(
+      Object.entries(headers).map(([key, value]) => [key, String(value)])
+    ),
   };
 
   if (method === 'GET') {
@@ -160,7 +162,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should get single DID - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', `/verana/dd/v1/get/${SAMPLE_DID}`, {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -293,7 +295,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should list DIDs - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', '/verana/dd/v1/list', {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': String(SAMPLE_BLOCK_HEIGHT),
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -309,7 +311,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should get DID params - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', '/verana/dd/v1/params', {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -368,7 +370,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should get DID history - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': String(SAMPLE_BLOCK_HEIGHT),
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -394,7 +396,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should get trust registry - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', `/verana/tr/v1/get/${SAMPLE_TR_ID}`, {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -621,7 +623,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should get credential schema - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', `/verana/cs/v1/get/${SAMPLE_ID}`, {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': String(SAMPLE_BLOCK_HEIGHT),
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -1246,7 +1248,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
     it('should get all metrics - with At-Block-Height header', async () => {
       if (skipIfServerUnavailable()) return;
       const response = await testEndpoint('GET', '/verana/metrics/v1/all', {}, {
-        'At-Block-Height': '1000',
+        'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
       });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
     });
@@ -1263,7 +1265,7 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should get trust deposit - with At-Block-Height header', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', `/verana/td/v1/get/${SAMPLE_ACCOUNT}`, {}, {
-          'At-Block-Height': '1000',
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
