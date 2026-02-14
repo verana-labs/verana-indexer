@@ -7,6 +7,10 @@
     },
     "servers": [
       {
+        "url": "/",
+        "description": "Current host"
+      },
+      {
         "url": "https://idx.devnet.verana.network",
         "description": "Devnet API server"
       },
