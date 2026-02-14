@@ -30,7 +30,7 @@ export default class CrawlTransactionTest {
     this.crawlTxService?.getQueueManager().stopAll();
     await Promise.all([
       knex.raw(
-        'TRUNCATE TABLE block, block_signature, transaction, event, event_attribute RESTART IDENTITY CASCADE'
+        'TRUNCATE TABLE block, block_signature, transaction, transaction_message, event, event_attribute RESTART IDENTITY CASCADE'
       ),
       knex.raw('TRUNCATE TABLE block_checkpoint RESTART IDENTITY CASCADE'),
     ]);

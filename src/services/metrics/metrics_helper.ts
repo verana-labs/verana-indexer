@@ -39,15 +39,15 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       .select(
         knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_schemas"),
         knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_schemas"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(weight,'') AS numeric)), 0) as total_weight"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(issued,'0') AS numeric)), 0) as issued_sum"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(verified,'0') AS numeric)), 0) as verified_sum"),
+        knex.raw("COALESCE(SUM(weight), 0) as total_weight"),
+        knex.raw("COALESCE(SUM(issued), 0) as issued_sum"),
+        knex.raw("COALESCE(SUM(verified), 0) as verified_sum"),
         knex.raw("COALESCE(SUM(COALESCE(ecosystem_slash_events,0)), 0) as ecosystem_slash_events_sum"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(ecosystem_slashed_amount,'') AS numeric)), 0) as ecosystem_slashed_amount_sum"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(ecosystem_slashed_amount_repaid,'') AS numeric)), 0) as ecosystem_slashed_amount_repaid_sum"),
+        knex.raw("COALESCE(SUM(ecosystem_slashed_amount), 0) as ecosystem_slashed_amount_sum"),
+        knex.raw("COALESCE(SUM(ecosystem_slashed_amount_repaid), 0) as ecosystem_slashed_amount_repaid_sum"),
         knex.raw("COALESCE(SUM(COALESCE(network_slash_events,0)), 0) as network_slash_events_sum"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(network_slashed_amount,'') AS numeric)), 0) as network_slashed_amount_sum"),
-        knex.raw("COALESCE(SUM(CAST(NULLIF(network_slashed_amount_repaid,'') AS numeric)), 0) as network_slashed_amount_repaid_sum")
+        knex.raw("COALESCE(SUM(network_slashed_amount), 0) as network_slashed_amount_sum"),
+        knex.raw("COALESCE(SUM(network_slashed_amount_repaid), 0) as network_slashed_amount_repaid_sum")
       )
       .first();
 
@@ -77,15 +77,15 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       archived_trust_registries: archivedTrustRegistries,
       active_schemas: Number(csAgg.active_schemas || 0),
       archived_schemas: Number(csAgg.archived_schemas || 0),
-      weight: (csAgg.total_weight || 0).toString(),
+      weight: Number(csAgg.total_weight || 0),
       issued: Number(csAgg.issued_sum || 0),
       verified: Number(csAgg.verified_sum || 0),
       ecosystem_slash_events: Number(csAgg.ecosystem_slash_events_sum || 0),
-      ecosystem_slashed_amount: (csAgg.ecosystem_slashed_amount_sum || 0).toString(),
-      ecosystem_slashed_amount_repaid: (csAgg.ecosystem_slashed_amount_repaid_sum || 0).toString(),
+      ecosystem_slashed_amount: Number(csAgg.ecosystem_slashed_amount_sum || 0),
+      ecosystem_slashed_amount_repaid: Number(csAgg.ecosystem_slashed_amount_repaid_sum || 0),
       network_slash_events: Number(csAgg.network_slash_events_sum || 0),
-      network_slashed_amount: (csAgg.network_slashed_amount_sum || 0).toString(),
-      network_slashed_amount_repaid: (csAgg.network_slashed_amount_repaid_sum || 0).toString(),
+      network_slashed_amount: Number(csAgg.network_slashed_amount_sum || 0),
+      network_slashed_amount_repaid: Number(csAgg.network_slashed_amount_repaid_sum || 0),
     };
   }
 
@@ -212,14 +212,14 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     archived_trust_registries: archivedTrustRegistries,
     active_schemas: activeSchemas,
     archived_schemas: archivedSchemas,
-    weight: totalWeight.toString(),
+    weight: Number(totalWeight),
     issued,
     verified,
     ecosystem_slash_events: ecosystemSlashEvents,
-    ecosystem_slashed_amount: ecosystemSlashedAmount.toString(),
-    ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid.toString(),
+    ecosystem_slashed_amount: Number(ecosystemSlashedAmount),
+    ecosystem_slashed_amount_repaid: Number(ecosystemSlashedAmountRepaid),
     network_slash_events: networkSlashEvents,
-    network_slashed_amount: networkSlashedAmount.toString(),
-    network_slashed_amount_repaid: networkSlashedAmountRepaid.toString(),
+    network_slashed_amount: Number(networkSlashedAmount),
+    network_slashed_amount_repaid: Number(networkSlashedAmountRepaid),
   };
 }

@@ -5,9 +5,9 @@ export interface DidHistoryRecord {
   did: string;
   event_type: string;
   height?: number;
-  years?: string;
+  years?: number;
   controller?: string;
-  deposit?: string;
+  deposit?: number;
   exp?: string;
   created?: string;
   deleted_at?: string | null;

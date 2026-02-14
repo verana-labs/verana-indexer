@@ -63,6 +63,8 @@ export default class CrawlTxService extends BullableService {
 
   private _isFreshStart: boolean = false;
 
+  private _hasUniqueConstraintCache: boolean | null = null;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
     this._httpBatchClient = getHttpBatchClient();
@@ -157,6 +159,28 @@ export default class CrawlTxService extends BullableService {
     this._processingLock = true;
 
     try {
+      // Check if unique constraint exists ONCE before processing (cache the result)
+      if (this._hasUniqueConstraintCache === null) {
+        try {
+          const constraintCheck = await knex.raw(`
+            SELECT 1 FROM pg_indexes 
+            WHERE schemaname = 'public' 
+              AND tablename LIKE 'transaction_message%'
+              AND indexdef LIKE '%UNIQUE%'
+              AND indexdef LIKE '%tx_id%'
+              AND indexdef LIKE '%index%'
+            LIMIT 1
+          `);
+          this._hasUniqueConstraintCache = constraintCheck.rows.length > 0;
+          this.logger.info(` [HANDLE_TRANSACTION] Unique constraint check: ${this._hasUniqueConstraintCache ? 'EXISTS' : 'DOES NOT EXIST'}`);
+        } catch (error) {
+          // If check fails, assume constraint doesn't exist
+          this._hasUniqueConstraintCache = false;
+          this.logger.warn(` [HANDLE_TRANSACTION] Constraint check failed, assuming no constraint exists:`, error);
+        }
+      }
+
+      // Get checkpoint - use height for compatibility but track by transaction ID
       const [startBlock, endBlock, blockCheckpoint] =
         await BlockCheckpoint.getCheckpoint(
           BULL_JOB_NAME.HANDLE_TRANSACTION,
@@ -164,139 +188,142 @@ export default class CrawlTxService extends BullableService {
           config.handleTransaction.key
         );
 
+      // Get last processed transaction ID from checkpoint height
+      // Checkpoint now stores actual block height, so we need to find the last transaction ID at that height
+      let lastProcessedTxId = 0;
+      if (blockCheckpoint && blockCheckpoint.height > 0) {
+        // Find the last transaction ID at or before the checkpoint height
+        const txAtHeight = await Transaction.query()
+          .where('height', '<=', blockCheckpoint.height)
+          .orderBy('id', 'desc')
+          .first();
+        lastProcessedTxId = txAtHeight?.id || 0;
+      }
+
+      // Get max transaction ID from crawl:transaction checkpoint
+      const crawlTxCheckpoint = await BlockCheckpoint.query()
+        .select('height')
+        .where('job_name', BULL_JOB_NAME.CRAWL_TRANSACTION)
+        .first();
+      
+      const maxTxId = await Transaction.query()
+        .where('height', '<=', crawlTxCheckpoint?.height || endBlock)
+        .max('id as max_id')
+        .first() as any;
+      
+      const maxAvailableTxId = maxTxId?.max_id || 0;
+
+      if (lastProcessedTxId >= maxAvailableTxId) {
+        this.logger.debug(` [HANDLE_TRANSACTION] No new transactions to process (${lastProcessedTxId} >= ${maxAvailableTxId})`);
+        return;
+      }
+
       this.logger.info(
-        ` [HANDLE_TRANSACTION] Handle transaction from block ${startBlock} to ${endBlock}`
+        ` [HANDLE_TRANSACTION] Processing transactions from ID ${lastProcessedTxId + 1} to ${maxAvailableTxId}`
       );
 
-      if (startBlock >= endBlock) {
-        this.logger.debug(` [HANDLE_TRANSACTION] No new blocks to process (${startBlock} >= ${endBlock})`);
-        return;
-      }
+      // Process transactions sequentially by ID
+      const maxTxsPerCall = this._isFreshStart && config.handleTransaction.freshStart
+        ? applySpeedToBatchSize(
+            config.handleTransaction.freshStart.txsPerCall || 100,
+            false
+          )
+        : applySpeedToBatchSize(
+            config.handleTransaction.txsPerCall || 100,
+            true
+          );
 
-      let actualEndBlock = endBlock;
-      if (this._isFreshStart && config.handleTransaction.freshStart) {
-        const baseMaxBlocks = config.handleTransaction.freshStart.blocksPerCall || config.handleTransaction.blocksPerCall;
-        const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false);
-        actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
-      } else if (!this._isFreshStart) {
-        const baseMaxBlocks = config.handleTransaction.blocksPerCall || 500;
-        const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true);
-        actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
-      }
+      let currentTxId = lastProcessedTxId;
+      let txsProcessed = 0;
+      let lastProcessedHeight = startBlock;
 
-      const listTxRaw = await Transaction.query()
-        .where('height', '>', startBlock)
-        .andWhere('height', '<=', actualEndBlock)
-        .orderBy('height', 'asc')
-        .orderBy('index', 'asc');
+      while (currentTxId < maxAvailableTxId && txsProcessed < maxTxsPerCall) {
+        // Fetch transactions in batches by ID (much faster than by height)
+        const batchSize = Math.min(50, maxTxsPerCall - txsProcessed);
+        const transactions = await Transaction.query()
+          .where('id', '>', currentTxId)
+          .orderBy('id', 'asc')
+          .limit(batchSize);
 
-      this.logger.info(` [HANDLE_TRANSACTION] Found ${listTxRaw.length} transactions to process`);
-
-      if (listTxRaw.length === 0) {
-        const crawlTxCheckpoint = await BlockCheckpoint.query()
-          .select('height')
-          .where('job_name', BULL_JOB_NAME.CRAWL_TRANSACTION)
-          .first();
-        const crawlTxHeight = crawlTxCheckpoint?.height ?? 0;
-        if (crawlTxHeight < actualEndBlock) {
-          this.logger.info(`[HANDLE_TRANSACTION] No transactions found, crawl:transaction at ${crawlTxHeight}, waiting`);
-          return;
+        if (transactions.length === 0) {
+          break;
         }
-        if (blockCheckpoint) {
-          await knex.transaction(async (trx) => {
-            try {
-              blockCheckpoint.height = actualEndBlock;
-              blockCheckpoint.updated_at = new Date();
 
-              await BlockCheckpoint.query()
-                .insert(blockCheckpoint)
-                .onConflict('job_name')
-                .merge({
-                  height: actualEndBlock,
-                  updated_at: blockCheckpoint.updated_at,
-                })
-                .returning('id')
-                .timeout(getDbQueryTimeoutMs())
-                .transacting(trx);
-
-            } catch (error) {
-              this.logger.error(`❌ [HANDLE_TRANSACTION] Error updating checkpoint:`, error);
-              throw error;
-            }
-          });
+        // Group transactions by block height for batch processing
+        const transactionsByBlock = new Map<number, Transaction[]>();
+        for (const tx of transactions) {
+          if (!transactionsByBlock.has(tx.height)) {
+            transactionsByBlock.set(tx.height, []);
+          }
+          transactionsByBlock.get(tx.height)!.push(tx);
         }
-        return;
-      }
 
-      let processingPayloads: any = null;
-      const [trustDepositResult, transactionResult] = await Promise.allSettled([
-        this.processTrustDepositEventsForBlocks(startBlock, actualEndBlock),
-        knex.transaction(async (trx) => {
+        // Process each block's transactions
+        for (const [blockHeight, blockTxs] of transactionsByBlock.entries()) {
           try {
-            const payloads = await this.insertRelatedTx(listTxRaw, trx);
-            if (blockCheckpoint) {
-              blockCheckpoint.height = actualEndBlock;
-              blockCheckpoint.updated_at = new Date();
+            // Process all transactions for this block
+            const processingPayloads = await this.processTransactionsForBlock(blockTxs, blockCheckpoint);
 
-              await BlockCheckpoint.query()
-                .insert(blockCheckpoint)
-                .onConflict('job_name')
-                .merge({
-                  height: actualEndBlock,
-                  updated_at: blockCheckpoint.updated_at,
-                })
-                .returning('id')
-                .timeout(getDbQueryTimeoutMs())
-                .transacting(trx);
+            // Process payloads after successful commit
+            if (processingPayloads && !(config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction)) {
+              try {
+                await this.processPayloads(processingPayloads);
+              } catch (err: any) {
+                this.logger.error(` [HANDLE_TRANSACTION] Error processing message batches:`, err);
+                throw err;
+              }
             }
-            return payloads;
+
+            // Update tracking
+            lastProcessedHeight = blockHeight;
+            currentTxId = Math.max(...blockTxs.map(tx => tx.id));
+            txsProcessed += blockTxs.length;
+
+            if (blockCheckpoint) {
+              await knex.transaction(async (trx) => {
+                blockCheckpoint.height = blockHeight; 
+                blockCheckpoint.updated_at = new Date();
+                await BlockCheckpoint.query()
+                  .insert(blockCheckpoint)
+                  .onConflict('job_name')
+                  .merge({
+                    height: blockHeight,
+                    updated_at: blockCheckpoint.updated_at,
+                  })
+                  .transacting(trx);
+              });
+            }
+
+            // Broadcast websocket event for processed block
+            try {
+              await this.broker.call(
+                `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
+                {
+                  height: blockHeight,
+                  timestamp: new Date().toISOString(),
+                }
+              );
+              this.logger.debug(
+                ` [HANDLE_TRANSACTION] Emitted block-processed event for height ${blockHeight}`
+              );
+            } catch (error) {
+              this.logger.warn(
+                `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed event for height ${blockHeight}:`,
+                error
+              );
+            }
+
+            this.logger.info(`✅ [HANDLE_TRANSACTION] Successfully processed block ${blockHeight} with ${blockTxs.length} transaction(s)`);
           } catch (error) {
-            this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed, rolling back:`, error);
+            this.logger.error(`❌ [HANDLE_TRANSACTION] Failed to process block ${blockHeight}:`, error);
             throw error;
           }
-        })
-      ]);
-
-    // Log TrustDeposit processing result
-      if (trustDepositResult.status === 'rejected') {
-        this.logger.error(`❌ [HANDLE_TRANSACTION] Error processing TrustDeposit events:`, trustDepositResult.reason);
-      } else {
-        this.logger.info(`✅ [HANDLE_TRANSACTION] TrustDeposit events processed successfully`);
+        }
       }
 
-      // Transaction processing must succeed - throw if it failed
-      if (transactionResult.status === 'rejected') {
-        this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction processing failed:`, transactionResult.reason);
-        throw transactionResult.reason;
-      }
-    processingPayloads = transactionResult.status === 'fulfilled' ? (transactionResult.value as any) : null;
-    if (processingPayloads && !(config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction)) {
-      try {
-        await this.processPayloads(processingPayloads);
-      } catch (err: any) {
-        this.logger.error(` [HANDLE_TRANSACTION] Error processing message batches after commit:`, err);
-        throw err;
-      }
-    }
-
-      this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing up to block ${actualEndBlock}`);
-
-      try {
-        await this.broker.call(
-          `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
-          {
-            height: actualEndBlock,
-            timestamp: new Date().toISOString(),
-          }
-        );
-        this.logger.info(
-          ` [HANDLE_TRANSACTION] Emitted block-processed event for height ${actualEndBlock}`
-        );
-      } catch (error) {
-        this.logger.warn(
-          `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed event for height ${endBlock}:`,
-          error
-        );
+      // Checkpoint is updated per block above, just log summary
+      if (txsProcessed > 0) {
+        this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing ${txsProcessed} transaction(s), checkpoint at height ${lastProcessedHeight}, last tx ID ${currentTxId}`);
       }
     } catch (error) {
       await handleErrorGracefully(
@@ -306,6 +333,259 @@ export default class CrawlTxService extends BullableService {
       );
     } finally {
       this._processingLock = false;
+    }
+  }
+
+  /**
+   * Process transactions for a block sequentially.
+   * Processes transactions one by one in a single DB transaction.
+   */
+  private async processTransactionsForBlock(
+    blockTransactions: Transaction[],
+    blockCheckpoint: BlockCheckpoint | null
+  ): Promise<any> {
+    if (blockTransactions.length === 0) {
+      return null;
+    }
+
+    const blockHeight = blockTransactions[0].height;
+    this.logger.info(` [HANDLE_TRANSACTION] Processing ${blockTransactions.length} transaction(s) for block ${blockHeight}`);
+
+    // Sort transactions by index to maintain order
+    blockTransactions.sort((a, b) => a.index - b.index);
+
+    // Wrap entire block processing in a single DB transaction
+    return await knex.transaction(async (trx) => {
+      try {
+        const allPayloads: any = {
+          DIDfiltered: [],
+          trustRegistryList: [],
+          credentialSchemaMessages: [],
+          permissionMessages: [],
+          trustDepositList: [],
+          updateParamsList: [],
+        };
+
+        // Process transactions sequentially using a for loop
+        for (let i = 0; i < blockTransactions.length; i++) {
+          const tx = blockTransactions[i];
+          this.logger.debug(` [HANDLE_TRANSACTION] Processing transaction ${i + 1}/${blockTransactions.length} (id: ${tx.id}, hash: ${tx.hash}) for block ${blockHeight}`);
+
+          const txPayloads = await this.processSingleTransaction(tx, trx);
+          
+          // Merge payloads
+          if (txPayloads) {
+            if (txPayloads.DIDfiltered?.length) {
+              allPayloads.DIDfiltered.push(...txPayloads.DIDfiltered);
+            }
+            if (txPayloads.trustRegistryList?.length) {
+              allPayloads.trustRegistryList.push(...txPayloads.trustRegistryList);
+            }
+            if (txPayloads.credentialSchemaMessages?.length) {
+              allPayloads.credentialSchemaMessages.push(...txPayloads.credentialSchemaMessages);
+            }
+            if (txPayloads.permissionMessages?.length) {
+              allPayloads.permissionMessages.push(...txPayloads.permissionMessages);
+            }
+            if (txPayloads.trustDepositList?.length) {
+              allPayloads.trustDepositList.push(...txPayloads.trustDepositList);
+            }
+            if (txPayloads.updateParamsList?.length) {
+              allPayloads.updateParamsList.push(...txPayloads.updateParamsList);
+            }
+          }
+        }
+
+        this.logger.info(`✅ [HANDLE_TRANSACTION] Successfully committed block ${blockHeight} with ${blockTransactions.length} transaction(s)`);
+        return allPayloads;
+      } catch (error) {
+        this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed for block ${blockHeight}, rolling back:`, error);
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Process a single transaction sequentially.
+   * Inserts events and messages with idempotent operations.
+   */
+  private async processSingleTransaction(
+    tx: Transaction,
+    trx: Knex.Transaction
+  ): Promise<any> {
+    const rawLogTx = tx.data;
+
+    if (!rawLogTx || !rawLogTx.tx_response) {
+      this.logger.warn(` [HANDLE_TRANSACTION] Transaction ${tx.hash} has no raw log data, skipping`);
+      return null;
+    }
+
+    // Extract sender
+    let sender = '';
+    try {
+      if (this._registry.decodeAttribute && this._registry.encodeAttribute) {
+        sender = this._registry.decodeAttribute(
+          this._findAttribute(
+            rawLogTx.tx_response.events,
+            'message',
+            this._registry.encodeAttribute('sender')
+          )
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        ` [HANDLE_TRANSACTION] Transaction ${tx.hash} has no sender event`
+      );
+    }
+
+    // Create events with message index
+    const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx);
+
+    // Prepare events for insertion (idempotent)
+    const eventInsert =
+      listEventWithMsgIndex?.map((event: any) => ({
+        tx_id: tx.id,
+        tx_msg_index: event.msg_index ?? undefined,
+        type: event.type,
+        attributes: event.attributes?.map(
+          (attribute: any, index: number) => ({
+            tx_id: tx.id,
+            block_height: tx.height,
+            index,
+            composite_key: attribute?.key && this._registry.decodeAttribute
+              ? `${event.type}.${this._registry.decodeAttribute(
+                attribute?.key
+              )}`
+              : null,
+            key: attribute?.key && this._registry.decodeAttribute
+              ? this._registry.decodeAttribute(attribute?.key)
+              : null,
+            value: attribute?.value && this._registry.decodeAttribute
+              ? this._registry.decodeAttribute(attribute?.value)
+              : null,
+          })
+        ),
+        block_height: tx.height,
+        source: Event.SOURCE.TX_EVENT,
+      })) ?? [];
+
+    // Prepare messages for insertion (idempotent)
+    const msgInsert =
+      rawLogTx.tx.body.messages.map((message: any, index: any) => ({
+        tx_id: tx.id,
+        sender,
+        index,
+        type: message['@type'],
+        content: message,
+      })) ?? [];
+
+    // Insert events idempotently (chunked for performance)
+    // Note: insertGraph doesn't support onConflict directly, so we use try-catch for idempotency
+    if (eventInsert.length > 0) {
+      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
+        ? config.handleTransaction.freshStart
+        : config.handleTransaction;
+      const baseChunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
+
+      for (let i = 0; i < eventInsert.length; i += chunkSize) {
+        const chunk = eventInsert.slice(i, i + chunkSize);
+        try {
+          await Event.query()
+            .insertGraph(chunk, { allowRefs: true })
+            .transacting(trx);
+        } catch (error: any) {
+          // If unique constraint violation, ignore (idempotent replay)
+          // PostgreSQL: 23505 = unique_violation, SQLite: SQLITE_CONSTRAINT
+          const isConflictError = error?.nativeError?.code === '23505' 
+            || error?.code === 'SQLITE_CONSTRAINT'
+            || error?.message?.includes('duplicate key')
+            || error?.message?.includes('UNIQUE constraint');
+          
+          if (isConflictError) {
+            this.logger.debug(` [HANDLE_TRANSACTION] Event already exists (idempotent replay), skipping`);
+          } else {
+            throw error;
+          }
+        }
+      }
+    }
+
+    // Insert messages idempotently (chunked for performance)
+    // Check if unique constraint exists first to avoid transaction abort
+    if (msgInsert.length > 0) {
+      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
+        ? config.handleTransaction.freshStart
+        : config.handleTransaction;
+      const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
+      const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart);
+
+      // Always use regular insert with duplicate handling to avoid transaction abort issues
+      // ON CONFLICT can abort the transaction if constraint doesn't exist, so we avoid it
+      for (let i = 0; i < msgInsert.length; i += chunkSizeMsg) {
+        const chunk = msgInsert.slice(i, i + chunkSizeMsg);
+        
+        try {
+          await TransactionMessage.query()
+            .insert(chunk)
+            .timeout(60000)
+            .transacting(trx);
+        } catch (insertError: any) {
+          // If unique constraint violation, ignore (idempotent replay)
+          const isConflictError = insertError?.nativeError?.code === '23505' 
+            || insertError?.code === 'SQLITE_CONSTRAINT'
+            || insertError?.message?.includes('duplicate key')
+            || insertError?.message?.includes('UNIQUE constraint');
+          
+          if (isConflictError) {
+            this.logger.debug(` [HANDLE_TRANSACTION] Message already exists (idempotent replay), skipping`);
+          } else {
+            throw insertError;
+          }
+        }
+      }
+
+      // Process message types for payload generation
+      const payload = await this.processMessageTypes(msgInsert, [tx]);
+      
+      // Process payloads inside transaction if configured
+      if (config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction) {
+        try {
+          await this.processPayloads(payload);
+        } catch (err: any) {
+          this.logger.error(`[processSingleTransaction] Error processing payloads inside transaction:`, err);
+          throw err;
+        }
+      }
+
+      return payload;
+    }
+
+    return null;
+  }
+
+  /**
+   * Process TrustDeposit events for a single block sequentially.
+   */
+  private async processTrustDepositEventsForSingleBlock(blockHeight: number): Promise<void> {
+    const block = await Block.query()
+      .where('height', '=', blockHeight)
+      .first();
+
+    if (!block) {
+      this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for TrustDeposit processing`);
+      return;
+    }
+
+    try {
+      await this.broker.call(
+        `${SERVICE.V1.CrawlTrustDepositService.path}.processBlockEvents`,
+        { block },
+        { timeout: 30000 }
+      );
+    } catch (err: any) {
+      this.logger.warn(`[HANDLE_TRANSACTION] Failed to process TrustDeposit events for block ${blockHeight}:`, err?.message || err);
+      throw err;
     }
   }
 

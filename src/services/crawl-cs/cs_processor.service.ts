@@ -49,7 +49,7 @@ interface CredentialSchemaMessage {
   type: string;
   content?: Record<string, unknown>;
   json_schema: string;
-  deposit?: string;
+  deposit?: number;
   issuer_grantor_validation_validity_period: number;
   verifier_grantor_validation_validity_period: number;
   issuer_validation_validity_period: number;
@@ -171,7 +171,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const payload: Record<string, any> = {
         tr_id: trId,
         json_schema: baseSchema,
-        deposit: deposit?.toString() ?? "0",
+        deposit: deposit ?? 0,
         created: timestamp ?? null,
         modified: timestamp ?? null,
         archived: null,
@@ -229,7 +229,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const content = schemaMessage.content ?? {};
       const payload: Record<string, any> = {
         id: schemaMessage.id ?? content.id,
-        deposit: deposit.toString(),
+        deposit: Number(deposit),
         modified: formatTimestamp(schemaMessage.timestamp),
         height: schemaMessage.height ?? 0,
         issuer_grantor_validation_validity_period:

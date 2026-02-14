@@ -14,8 +14,8 @@ export async function up(knex: Knex): Promise<void> {
         id SERIAL PRIMARY KEY,
         tx_id INTEGER NOT NULL,
         index INTEGER NOT NULL,
-        type VARCHAR(255) NOT NULL,
-        sender VARCHAR(255) NOT NULL,
+        type TEXT NOT NULL,
+        sender TEXT NOT NULL,
         content JSONB,
         parent_id INTEGER
       ) PARTITION BY RANGE (id);
@@ -32,6 +32,31 @@ export async function up(knex: Knex): Promise<void> {
       'transaction_message_partition',
       'transaction_message'
     );
+    
+    try {
+      await knex.raw(`
+        ALTER TABLE transaction_message_partition_0_100000000
+        ALTER COLUMN type TYPE TEXT USING type::TEXT;
+      `).transacting(trx);
+      console.log('Fixed type column from VARCHAR to TEXT in transaction_message_partition_0_100000000');
+    } catch (err: any) {
+      if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+        console.warn(`Warning fixing type column: ${err.message}`);
+      }
+    }
+
+    try {
+      await knex.raw(`
+        ALTER TABLE transaction_message_partition_0_100000000
+        ALTER COLUMN sender TYPE TEXT USING sender::TEXT;
+      `).transacting(trx);
+      console.log('Fixed sender column from VARCHAR to TEXT in transaction_message_partition_0_100000000');
+    } catch (err: any) {
+      if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
+        console.warn(`Warning fixing sender column: ${err.message}`);
+      }
+    }
+    
     const oldSeqTransactionMessage = await knex.raw(
       `SELECT last_value FROM transaction_message_id_seq;`
     );

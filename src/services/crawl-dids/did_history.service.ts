@@ -49,6 +49,21 @@ export default class DidHistoryService extends BullableService {
   async getByDid(ctx: Context<{ did: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
       const { did, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      
+      if (transactionTimestampOlderThan) {
+        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
+          return ApiResponder.error(
+            ctx,
+            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+            400
+          );
+        }
+        const timestampDate = new Date(transactionTimestampOlderThan);
+        if (Number.isNaN(timestampDate.getTime())) {
+          return ApiResponder.error(ctx, "Invalid transaction_timestamp_older_than format", 400);
+        }
+      }
       const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
 
       const didExists = await knex("dids").where({ did }).first();

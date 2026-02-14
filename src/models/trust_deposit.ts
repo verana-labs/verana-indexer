@@ -5,15 +5,14 @@ export default class TrustDeposit extends BaseModel {
 
   id!: number;
   account!: string;
-  share!: string;
-  amount!: string;
-  augend!: string;
-  claimable!: string;
-  slashed_deposit!: string;
-  repaid_deposit!: string;
+  share!: number;
+  amount!: number;
+  claimable!: number;
+  slashed_deposit!: number;
+  repaid_deposit!: number;
   last_slashed!: string | null;
   last_repaid!: string | null;
-  slash_count!: string;
+  slash_count!: number;
   last_repaid_by!: string;
 
   static get jsonSchema() {
@@ -23,23 +22,23 @@ export default class TrustDeposit extends BaseModel {
       properties: {
         id: { type: "integer" },
         account: { type: "string", maxLength: 255 },
-        share: { type: "string" },
-        amount: { type: "string" },
-        claimable: { type: "string" },
-        slashed_deposit: { type: "string" },
-        repaid_deposit: { type: "string" },
+        share: { type: "number" },
+        amount: { type: "number" },
+        claimable: { type: "number" },
+        slashed_deposit: { type: "number" },
+        repaid_deposit: { type: "number" },
         last_slashed: { type: ["string", "null"] },
         last_repaid: { type: ["string", "null"] },
-        slash_count: { type: "string" },
+        slash_count: { type: "integer" },
         last_repaid_by: { type: "string" },
       },
     };
   }
 
-  getAvailableAmount(): string {
-    const total = BigInt(this.amount);
-    const slashed = BigInt(this.slashed_deposit || "0");
-    const repaid = BigInt(this.repaid_deposit || "0");
-    return (total - slashed + repaid).toString();
+  getAvailableAmount(): number {
+    const total = this.amount ?? 0;
+    const slashed = this.slashed_deposit ?? 0;
+    const repaid = this.repaid_deposit ?? 0;
+    return total - slashed + repaid;
   }
 }

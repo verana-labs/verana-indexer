@@ -9,9 +9,9 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('created').defaultTo(knex.fn.now());
     table.timestamp('modified').defaultTo(knex.fn.now());
     table.timestamp('exp');
-    table.string('deposit');
+    table.integer('deposit');
     table.string('event_type', 255);
-    table.string('years');
+    table.integer('years');
     table.boolean('is_deleted').defaultTo(false);
     table.timestamp('deleted_at');
   });

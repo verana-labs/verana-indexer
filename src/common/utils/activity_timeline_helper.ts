@@ -306,8 +306,8 @@ export async function buildActivityTimeline(
 
     if (atype === "GovernanceFrameworkVersion") {
       const entry = {
-        id: r.gfv_id ?? r.id,
-        version: r.version,
+        id: typeof r.activity_entity_id === 'number' ? r.activity_entity_id : (typeof r.id === 'number' ? r.id : Number(r.id || r.activity_entity_id || 0)),
+        version: typeof r.version === 'number' ? r.version : Number(r.version || 0),
         active_since: r.active_since ? (r.active_since instanceof Date ? r.active_since.toISOString() : new Date(r.active_since).toISOString()) : null,
         created: r.created ? (r.created instanceof Date ? r.created.toISOString() : new Date(r.created).toISOString()) : null,
         changes: typeof r.changes === "string" ? (() => { try { return JSON.parse(r.changes); } catch { return null; } })() : r.changes,
@@ -321,7 +321,7 @@ export async function buildActivityTimeline(
 
     if (atype === "GovernanceFrameworkDocument") {
       const entry = {
-        id: r.gfd_id ?? r.id,
+        id: typeof r.activity_entity_id === 'number' ? r.activity_entity_id : (typeof r.id === 'number' ? r.id : Number(r.id || r.activity_entity_id || 0)),
         url: r.url,
         digest_sri: r.digest_sri,
         language: r.language,
@@ -390,6 +390,63 @@ export async function buildActivityTimeline(
     const activityEntityType = record.activity_entity_type || entityType;
     const activityEntityIdStr = String(activityEntityId);
 
+    if (changes) {
+      if (activityEntityType === "TrustDeposit") {
+        const numericFields = [
+          "share",
+          "amount",
+          "claimable",
+          "slashed_deposit",
+          "repaid_deposit",
+          "slash_count",
+        ];
+        for (const field of numericFields) {
+          if (Object.prototype.hasOwnProperty.call(changes, field) && changes[field] != null) {
+            const n = Number(changes[field]);
+            if (!Number.isNaN(n)) {
+              changes[field] = n;
+            }
+          }
+        }
+      } else if (activityEntityType === "DID") {
+        const numericFields = ["deposit", "years", "height"];
+        for (const field of numericFields) {
+          if (Object.prototype.hasOwnProperty.call(changes, field) && changes[field] != null) {
+            const n = Number(changes[field]);
+            if (!Number.isNaN(n)) {
+              changes[field] = n;
+            }
+          }
+        }
+      } else if (activityEntityType === "TrustRegistry") {
+        const numericFields = [
+          "id",
+          "deposit",
+          "active_version",
+          "participants",
+          "active_schemas",
+          "archived_schemas",
+          "weight",
+          "issued",
+          "verified",
+          "ecosystem_slash_events",
+          "ecosystem_slashed_amount",
+          "ecosystem_slashed_amount_repaid",
+          "network_slash_events",
+          "network_slashed_amount",
+          "network_slashed_amount_repaid",
+        ];
+        for (const field of numericFields) {
+          if (Object.prototype.hasOwnProperty.call(changes, field) && changes[field] != null) {
+            const n = Number(changes[field]);
+            if (!Number.isNaN(n)) {
+              changes[field] = n;
+            }
+          }
+        }
+      }
+    }
+
     if (activityEntityType === "TrustRegistry") {
       const key = `${record.height ?? ""}::${record.tr_id ?? activityEntityIdStr ?? ""}`;
       const relatedGfvs = gfvByKey.get(key) || [];
@@ -399,8 +456,8 @@ export async function buildActivityTimeline(
         if (relatedGfvs && relatedGfvs.length > 0) {
           changes.added_governance_framework_versions = relatedGfvs.map((g: any) => {
             const item: any = {
-              id: String(g.id),
-              version: g.version,
+              id: typeof g.id === 'number' ? g.id : Number(g.id),
+              version: typeof g.version === 'number' ? g.version : Number(g.version),
               active_since: g.active_since,
               created: g.created,
             };
@@ -413,7 +470,7 @@ export async function buildActivityTimeline(
         if (relatedGfds && relatedGfds.length > 0) {
           changes.added_governance_framework_documents = relatedGfds.map((g: any) => {
             const item: any = {
-              id: String(g.id),
+              id: typeof g.id === 'number' ? g.id : Number(g.id),
               url: g.url,
               digest_sri: g.digest_sri,
               language: g.language,
@@ -431,7 +488,7 @@ export async function buildActivityTimeline(
 
     const activityItem: any = {
       timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : null,
-      block_height: String(record.height || ""),
+      block_height: record.height != null ? Number(record.height) : null,
       entity_type: activityEntityType,
       entity_id: activityEntityIdStr,
       msg: action,

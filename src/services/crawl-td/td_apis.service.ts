@@ -55,11 +55,11 @@ export default class TrustDepositApiService extends BullableService {
         const result = {
           trust_deposit: {
             account: historyRecord.account,
-            share: historyRecord.share?.toString() || "0",
-            amount: historyRecord.amount?.toString() || "0",
-            claimable: historyRecord.claimable?.toString() || "0",
-            slashed_deposit: historyRecord.slashed_deposit?.toString() || "0",
-            repaid_deposit: historyRecord.repaid_deposit?.toString() || "0",
+            share: Number(historyRecord.share ?? 0),
+            amount: Number(historyRecord.amount ?? 0),
+            claimable: Number(historyRecord.claimable ?? 0),
+            slashed_deposit: Number(historyRecord.slashed_deposit ?? 0),
+            repaid_deposit: Number(historyRecord.repaid_deposit ?? 0),
             last_slashed: historyRecord.last_slashed,
             last_repaid: historyRecord.last_repaid,
             slash_count: historyRecord.slash_count || 0,
@@ -84,14 +84,14 @@ export default class TrustDepositApiService extends BullableService {
       const result = {
         trust_deposit: {
           account: trustDeposit.account,
-          share: trustDeposit.share,
-          amount: trustDeposit.amount,
-          claimable: trustDeposit.claimable,
-          slashed_deposit: trustDeposit.slashed_deposit,
-          repaid_deposit: trustDeposit.repaid_deposit,
+          share: Number(trustDeposit.share ?? 0),
+          amount: Number(trustDeposit.amount ?? 0),
+          claimable: Number(trustDeposit.claimable ?? 0),
+          slashed_deposit: Number(trustDeposit.slashed_deposit ?? 0),
+          repaid_deposit: Number(trustDeposit.repaid_deposit ?? 0),
           last_slashed: trustDeposit.last_slashed,
           last_repaid: trustDeposit.last_repaid,
-          slash_count: trustDeposit.slash_count,
+          slash_count: Number(trustDeposit.slash_count ?? 0),
           last_repaid_by: trustDeposit.last_repaid_by,
         },
       }
@@ -125,6 +125,22 @@ export default class TrustDepositApiService extends BullableService {
   public async getTrustDepositHistory(ctx: Context<{ account: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
       const { account, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      
+      if (transactionTimestampOlderThan) {
+        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
+          return ApiResponder.error(
+            ctx,
+            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+            400
+          );
+        }
+        const timestampDate = new Date(transactionTimestampOlderThan);
+        if (Number.isNaN(timestampDate.getTime())) {
+          return ApiResponder.error(ctx, "Invalid transaction_timestamp_older_than format", 400);
+        }
+      }
+      
       const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
 
       if (!this.isValidAccount(account)) {

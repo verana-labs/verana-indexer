@@ -54,7 +54,32 @@ export default class PermProcessorService extends BullableService {
     const sortedMessages = [...permissionMessages].sort((a, b) => {
       const heightDiff = (a.height || 0) - (b.height || 0);
       if (heightDiff !== 0) return heightDiff;
-      return 0;
+
+      const priority = (type: string | undefined) => {
+        switch (type) {
+          case VeranaPermissionMessageTypes.CreateRootPermission:
+          case VeranaPermissionMessageTypes.CreatePermission:
+            return 1;
+          case VeranaPermissionMessageTypes.ExtendPermission:
+          case VeranaPermissionMessageTypes.RevokePermission:
+            return 2;
+          case VeranaPermissionMessageTypes.StartPermissionVP:
+            return 3;
+          case VeranaPermissionMessageTypes.RenewPermissionVP:
+          case VeranaPermissionMessageTypes.CancelPermissionVPLastRequest:
+            return 4;
+          case VeranaPermissionMessageTypes.SetPermissionVPToValidated:
+            return 5;
+          case VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession:
+          case VeranaPermissionMessageTypes.SlashPermissionTrustDeposit:
+          case VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
+            return 6;
+          default:
+            return 99;
+        }
+      };
+
+      return priority(a.type) - priority(b.type);
     });
 
     for (let i = 0; i < sortedMessages.length; i++) {

@@ -8,9 +8,9 @@ export async function up(knex: Knex): Promise<void> {
       table.string("did").notNullable();
       table.string("event_type").notNullable();
       table.integer("height").nullable();
-      table.string("years").nullable();
+      table.integer("years").nullable();
       table.string("controller").nullable();
-      table.string("deposit").nullable();
+      table.specificType("deposit", "NUMERIC(38,0)").nullable();
       table.string("exp").nullable();
       table.timestamp("created").nullable();
       table.timestamp("deleted_at").nullable();

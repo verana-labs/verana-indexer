@@ -10,13 +10,13 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
 
   createConstaintTxMsgJob?: CreateConstraintInTransactionMessagePartitionJob;
 
-  private async insertFakeTxMsgWithInputId(desiredId: number): Promise<void> {
+  private async insertFakeTxMsgWithInputId(desiredId: number, txId: number = 1, index: number = 0): Promise<void> {
     const newTxMsg = new TransactionMessage();
     newTxMsg.id = desiredId;
-    newTxMsg.tx_id = 1;
+    newTxMsg.tx_id = txId;
     newTxMsg.type = 'transfer';
     newTxMsg.sender = '1';
-    newTxMsg.index = 0;
+    newTxMsg.index = index;
     newTxMsg.content = {};
     await TransactionMessage.query().insert(newTxMsg);
   }
@@ -78,7 +78,7 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
     );
 
     // After insert one tx, partition is still inserting, so we expect constraint created with "inserting" status
-    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].fromId) + 1);
+    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].fromId) + 1, 1, 0);
     const constraintUpdated =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
         partitions2[0]
@@ -98,7 +98,7 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
     expect(isInsertingConstraintExist).toEqual(true);
 
     // After insert next tx, because id now not reach to max id of partition, and we already have constraint created before, so now status will be still inserting or done
-    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].fromId) + 10);
+    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].fromId) + 10, 2, 0);
     const stillInsertingOrDont =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
         partitions2[0]
@@ -109,7 +109,7 @@ export default class CreateTransactionMessageConstraintPartitionSpec {
     );
 
     // After insert tx with id reach to max id of partition, now partition is ready for create full constraint, constraint now will be updated
-    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].toId) - 1);
+    await this.insertFakeTxMsgWithInputId(Number(partitions2[0].toId) - 1, 3, 0);
     const constraintCreatedDone =
       await this.createConstaintTxMsgJob?.createTransactionMessageConstraint(
         partitions2[0]

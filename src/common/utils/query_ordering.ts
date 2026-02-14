@@ -111,13 +111,13 @@ export function sortByStandardAttributes<T>(
     getModified?: (item: T) => string | Date | undefined | null;
     getParticipants?: (item: T) => number | undefined | null;
     getActiveSchemas?: (item: T) => number | undefined | null;
-    getWeight?: (item: T) => string | undefined | null;
+    getWeight?: (item: T) => number | undefined | null;
     getIssued?: (item: T) => number | undefined | null;
     getVerified?: (item: T) => number | undefined | null;
     getEcosystemSlashEvents?: (item: T) => number | undefined | null;
-    getEcosystemSlashedAmount?: (item: T) => string | undefined | null;
+    getEcosystemSlashedAmount?: (item: T) => number | undefined | null;
     getNetworkSlashEvents?: (item: T) => number | undefined | null;
-    getNetworkSlashedAmount?: (item: T) => string | undefined | null;
+    getNetworkSlashedAmount?: (item: T) => number | undefined | null;
     defaultAttribute?: SortAttribute;
     defaultDirection?: "asc" | "desc";
   }

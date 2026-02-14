@@ -3,9 +3,9 @@ import BaseModel from "./base";
 import Permission from "./permission";
 
 export interface AuthzEntry {
-  issuer_perm_id?: string | null;
-  verifier_perm_id?: string | null;
-  wallet_agent_perm_id: string;
+  issuer_perm_id?: number | null;
+  verifier_perm_id?: number | null;
+  wallet_agent_perm_id: number;
 }
 
 export default class PermissionSession extends BaseModel {
@@ -13,8 +13,8 @@ export default class PermissionSession extends BaseModel {
 
   id!: string;
   controller!: string;
-  agent_perm_id!: string;
-  wallet_agent_perm_id!: string;
+  agent_perm_id!: number;
+  wallet_agent_perm_id!: number;
   authz!: AuthzEntry[];
   created!: string;
   modified!: string;
@@ -32,16 +32,16 @@ export default class PermissionSession extends BaseModel {
       properties: {
         id: { type: "string" },
         controller: { type: "string", maxLength: 255 },
-        agent_perm_id: { type: "string" },
-        wallet_agent_perm_id: { type: "string" },
+        agent_perm_id: { type: "integer" },
+        wallet_agent_perm_id: { type: "integer" },
         authz: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              issuer_perm_id: { type: ["string", "null"] },
-              verifier_perm_id: { type: ["string", "null"] },
-              wallet_agent_perm_id: { type: "string" },
+              issuer_perm_id: { type: ["integer", "null"] },
+              verifier_perm_id: { type: ["integer", "null"] },
+              wallet_agent_perm_id: { type: "integer" },
             },
             required: ["wallet_agent_perm_id"],
           },
@@ -84,11 +84,11 @@ export default class PermissionSession extends BaseModel {
     this.authz.push(entry);
   }
 
-  hasAuthzFor(issuerPermId?: string, verifierPermId?: string): boolean {
+  hasAuthzFor(issuerPermId?: number, verifierPermId?: number): boolean {
     return this.authz.some(
       (entry) =>
-        (!issuerPermId || entry.issuer_perm_id === issuerPermId) &&
-        (!verifierPermId || entry.verifier_perm_id === verifierPermId)
+        (!issuerPermId || entry.issuer_perm_id === Number(issuerPermId)) &&
+        (!verifierPermId || entry.verifier_perm_id === Number(verifierPermId))
     );
   }
 }

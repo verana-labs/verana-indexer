@@ -42,7 +42,7 @@ export default class CrawlTrustDepositService extends BullableService {
       this._isFreshStart = startMode.isFreshStart;
 
       const checkpoint = await this.ensureCheckpoint();
-      
+
       const baseCrawlInterval = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
         ? (config.crawlTrustDeposit.freshStart.millisecondCrawl || config.crawlTrustDeposit.millisecondCrawl)
         : config.crawlTrustDeposit.millisecondCrawl;
@@ -100,80 +100,80 @@ export default class CrawlTrustDepositService extends BullableService {
       const jobName = (BULL_JOB_NAME as any).HANDLE_TRUST_DEPOSIT;
       const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, []);
       let lastHeight = startBlock || 0;
-      
+
       const baseMaxBlockBatch = (this._isFreshStart && config.crawlTrustDeposit.freshStart)
         ? (config.crawlTrustDeposit.freshStart.chunkSize || config.crawlTrustDeposit.chunkSize || 100)
         : (config.crawlTrustDeposit.chunkSize || 100);
       const maxBlockBatch = applySpeedToBatchSize(baseMaxBlockBatch, !this._isFreshStart);
 
       do {
-      let nextBlocks: Block[] = [];
-      const currentLastHeight = lastHeight;
-      const queryTimeoutMs = getDbQueryTimeoutMs();
-      try {
-        nextBlocks = await queryWithAutoRetry(
-          async () => {
-            const result = await Block.query()
-              .where('height', '>', currentLastHeight)
-              .orderBy('height', 'asc')
-              .limit(maxBlockBatch)
-              .timeout(queryTimeoutMs);
-            return result;
-          },
-          { timeout: queryTimeoutMs, retries: 3 },
-          this.logger
-        );
-      } catch (queryError: any) {
-        if (isStatementTimeoutError(queryError)) {
-          this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
-          await delay(5000);
-          continue;
-        }
-        this.logger.error(`[CrawlTrustDepositService] Error fetching blocks:`, queryError);
-        break;
-      }
-      
-      if (!nextBlocks.length) break;
-
-      const baseProcessDelay = this._isFreshStart ? 2000 : 500;
-      const processDelay = applySpeedToDelay(baseProcessDelay, !this._isFreshStart);
-      
-      try {
-        for (const block of nextBlocks) {
-          await this.processBlockEventsInternal(block);
-          
-          if (this._isFreshStart) {
-          await delay(processDelay);
+        let nextBlocks: Block[] = [];
+        const currentLastHeight = lastHeight;
+        const queryTimeoutMs = getDbQueryTimeoutMs();
+        try {
+          nextBlocks = await queryWithAutoRetry(
+            async () => {
+              const result = await Block.query()
+                .where('height', '>', currentLastHeight)
+                .orderBy('height', 'asc')
+                .limit(maxBlockBatch)
+                .timeout(queryTimeoutMs);
+              return result;
+            },
+            { timeout: queryTimeoutMs, retries: 3 },
+            this.logger
+          );
+        } catch (queryError: any) {
+          if (isStatementTimeoutError(queryError)) {
+            this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
+            await delay(5000);
+            continue;
           }
+          this.logger.error(`[CrawlTrustDepositService] Error fetching blocks:`, queryError);
+          break;
         }
 
-        const newHeight = nextBlocks[nextBlocks.length - 1].height;
-        if (newHeight > lastHeight) {
-          await this.updateCheckpoint(jobName, newHeight, blockCheckpointRow);
-          lastHeight = newHeight;
-          this.logger.info(`[CrawlTrustDepositService] Processed blocks up to height ${newHeight}, checkpoint updated`);
-        }
+        if (!nextBlocks.length) break;
 
-        if (nextBlocks.length < maxBlockBatch) break;
-        
-        if (!this._isFreshStart) {
-          const baseDelay = 100;
-          const adjustedDelay = applySpeedToDelay(baseDelay, true);
-          await delay(adjustedDelay);
-        }
-      } catch (err: any) {
-        if (isStatementTimeoutError(err)) {
-          this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
+        const baseProcessDelay = this._isFreshStart ? 2000 : 500;
+        const processDelay = applySpeedToDelay(baseProcessDelay, !this._isFreshStart);
+
+        try {
+          for (const block of nextBlocks) {
+            await this.processBlockEventsInternal(block);
+
+            if (this._isFreshStart) {
+              await delay(processDelay);
+            }
+          }
+
+          const newHeight = nextBlocks[nextBlocks.length - 1].height;
+          if (newHeight > lastHeight) {
+            await this.updateCheckpoint(jobName, newHeight, blockCheckpointRow);
+            lastHeight = newHeight;
+            this.logger.info(`[CrawlTrustDepositService] Processed blocks up to height ${newHeight}, checkpoint updated`);
+          }
+
+          if (nextBlocks.length < maxBlockBatch) break;
+
+          if (!this._isFreshStart) {
+            const baseDelay = 100;
+            const adjustedDelay = applySpeedToDelay(baseDelay, true);
+            await delay(adjustedDelay);
+          }
+        } catch (err: any) {
+          if (isStatementTimeoutError(err)) {
+            this.logger.warn(`[CrawlTrustDepositService] Query timeout, waiting before retry...`);
+            await delay(5000);
+            continue;
+          }
+
+          this.logger.error(`[CrawlTrustDepositService] Error processing blocks:`, err);
           await delay(5000);
-          continue;
+          break;
         }
-        
-        this.logger.error(`[CrawlTrustDepositService] Error processing blocks:`, err);
-        await delay(5000);
-        break;
-      }
       } while (runInfiniteLoop);
-      
+
       this.isProcessing = false;
     } catch (error) {
       this.isProcessing = false;
@@ -206,38 +206,40 @@ export default class CrawlTrustDepositService extends BullableService {
 
     if (adjustEvents.length) {
       this.logger.info(`[CrawlTrustDepositService] Found ${adjustEvents.length} adjust events`);
-      
-      await this.batchProcessor.processInBatches(
-        adjustEvents,
-        async (event: any) => {
-          await this.handleAdjustTrustDepositEvent(block.height, event);
-        },
-        {
-          maxConcurrent: this._isFreshStart ? 2 : 3,
-          batchSize: applySpeedToBatchSize(this._isFreshStart ? 3 : 5, !this._isFreshStart),
-          delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
-          logger: this.logger
-        }
-      );
+      try {
+        await this.batchProcessor.processInBatches(
+          adjustEvents,
+          async (event: any) => {
+            await this.handleAdjustTrustDepositEvent(block.height, event);
+          },
+          {
+            maxConcurrent: this._isFreshStart ? 2 : 3,
+            batchSize: applySpeedToBatchSize(this._isFreshStart ? 3 : 5, !this._isFreshStart),
+            delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
+            logger: this.logger
+          }
+        );
+      } catch (err) {
+        this.logger.error('[CrawlTrustDepositService] Error processing adjust events:', err);
+      }
     }
+      if (slashEvents.length) {
+        this.logger.info(`[CrawlTrustDepositService] Found ${slashEvents.length} slash events`);
 
-    if (slashEvents.length) {
-      this.logger.info(`[CrawlTrustDepositService] Found ${slashEvents.length} slash events`);
-      
-      await this.batchProcessor.processInBatches(
-        slashEvents,
-        async (event: any) => {
-          await this.handleSlashTrustDepositEvent(block.height, event);
-        },
-        {
-          maxConcurrent: this._isFreshStart ? 1 : 2,
-          batchSize: applySpeedToBatchSize(this._isFreshStart ? 2 : 3, !this._isFreshStart),
-          delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
-          logger: this.logger
-        }
-      );
+        await this.batchProcessor.processInBatches(
+          slashEvents,
+          async (event: any) => {
+            await this.handleSlashTrustDepositEvent(block.height, event);
+          },
+          {
+            maxConcurrent: this._isFreshStart ? 1 : 2,
+            batchSize: applySpeedToBatchSize(this._isFreshStart ? 2 : 3, !this._isFreshStart),
+            delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
+            logger: this.logger
+          }
+        );
+      }
     }
-  }
 
   private async handleAdjustTrustDepositEvent(height: number, event: any) {
     try {

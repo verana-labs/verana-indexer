@@ -7,7 +7,7 @@ export default class CredentialSchemaHistory extends BaseModel {
   credential_schema_id!: number;
 
 
-  tr_id!: string;
+  tr_id!: number;
   json_schema!: object;
   issuer_grantor_validation_validity_period!: number;
   verifier_grantor_validation_validity_period!: number;
@@ -17,7 +17,7 @@ export default class CredentialSchemaHistory extends BaseModel {
 
   issuer_perm_management_mode!: string;
   verifier_perm_management_mode!: string;
-  deposit!: string;
+  deposit!: number;
   height!: number;
 
   archived!: Date | null;
@@ -31,7 +31,7 @@ export default class CredentialSchemaHistory extends BaseModel {
   created_at!: Date;
 
   static useTimestamps = false;
-
+  
   static get jsonSchema() {
     return {
       type: "object",
@@ -40,8 +40,8 @@ export default class CredentialSchemaHistory extends BaseModel {
         id: { type: "integer" },
         credential_schema_id: { type: "integer" },
 
-        tr_id: { type: "string" },
-        deposit: { type: "string" },
+        tr_id: { type: "integer" },
+        deposit: { type: "integer" },
         json_schema: { type: "object" },
 
         issuer_grantor_validation_validity_period: { type: "integer" },
@@ -66,3 +66,4 @@ export default class CredentialSchemaHistory extends BaseModel {
     };
   }
 }
+

@@ -59,9 +59,9 @@ describe("🧪 PermIngestService Unit Tests", () => {
           type: "ECOSYSTEM",
           did: "did:test:123",
           grantee: "grantee1",
-          validation_fees: "10",
-          issuance_fees: "5",
-          verification_fees: "2",
+          validation_fees: 10,
+          issuance_fees: 5,
+          verification_fees: 2,
           country: "PK",
         })
       );
@@ -153,7 +153,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       (knex.first as jest.Mock).mockResolvedValueOnce({
         id: 99,
         schema_id: 99,
-        validation_fees: "0",
+        validation_fees: 0,
       });
 
       const msg = {

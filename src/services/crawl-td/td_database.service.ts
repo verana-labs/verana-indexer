@@ -68,14 +68,14 @@ async function recordTrustDepositHistory(
     await trxOrKnex("trust_deposit_history")
       .where({ id: existingHistory.id })
       .update({
-        share: td.share?.toString() ?? "0",
-        amount: td.amount?.toString() ?? "0",
-        claimable: td.claimable?.toString() ?? "0",
-        slashed_deposit: td.slashed_deposit?.toString() ?? "0",
-        repaid_deposit: td.repaid_deposit?.toString() ?? "0",
+        share: td.share != null ? Number(td.share) : 0,
+        amount: td.amount != null ? Number(td.amount) : 0,
+        claimable: td.claimable != null ? Number(td.claimable) : 0,
+        slashed_deposit: td.slashed_deposit != null ? Number(td.slashed_deposit) : 0,
+        repaid_deposit: td.repaid_deposit != null ? Number(td.repaid_deposit) : 0,
         last_slashed: td.last_slashed ?? null,
         last_repaid: td.last_repaid ?? null,
-        slash_count: td.slash_count?.toString() ?? "0",
+        slash_count: td.slash_count != null ? Number(td.slash_count) : 0,
         last_repaid_by: td.last_repaid_by ?? "",
         event_type: eventType,
         changes: changes ? JSON.stringify(changes) : null,
@@ -85,14 +85,14 @@ async function recordTrustDepositHistory(
   
   await trxOrKnex("trust_deposit_history").insert({
     account: td.account,
-    share: td.share?.toString() ?? "0",
-    amount: td.amount?.toString() ?? "0",
-    claimable: td.claimable?.toString() ?? "0",
-    slashed_deposit: td.slashed_deposit?.toString() ?? "0",
-    repaid_deposit: td.repaid_deposit?.toString() ?? "0",
+    share: td.share != null ? Number(td.share) : 0,
+    amount: td.amount != null ? Number(td.amount) : 0,
+    claimable: td.claimable != null ? Number(td.claimable) : 0,
+    slashed_deposit: td.slashed_deposit != null ? Number(td.slashed_deposit) : 0,
+    repaid_deposit: td.repaid_deposit != null ? Number(td.repaid_deposit) : 0,
     last_slashed: td.last_slashed ?? null,
     last_repaid: td.last_repaid ?? null,
-    slash_count: td.slash_count?.toString() ?? "0",
+    slash_count: td.slash_count != null ? Number(td.slash_count) : 0,
     last_repaid_by: td.last_repaid_by ?? "",
     event_type: eventType,
     height,
@@ -145,9 +145,9 @@ export default class TrustDepositDatabaseService extends BullableService {
           const [inserted] = await trx("trust_deposits")
             .insert({
               account,
-              amount: (newAmount ?? BigInt(0)).toString(),
-              share: (newShare ?? BigInt(0)).toString(),
-              claimable: (newClaimable ?? BigInt(0)).toString(),
+              amount: Number(newAmount ?? BigInt(0)),
+              share: Number(newShare ?? BigInt(0)),
+              claimable: Number(newClaimable ?? BigInt(0)),
             })
             .returning("*");
 
@@ -167,11 +167,9 @@ export default class TrustDepositDatabaseService extends BullableService {
 
         const previousRecord = { ...existing };
         const updated = await TrustDeposit.query(trx).patchAndFetchById(existing.id, {
-          amount: (newAmount ?? BigInt(existing.amount)).toString(),
-          share: (newShare ?? BigInt(existing.share)).toString(),
-          claimable: (
-            newClaimable ?? BigInt(existing.claimable || "0")
-          ).toString(),
+          amount: Number(newAmount ?? BigInt(existing.amount)),
+          share: Number(newShare ?? BigInt(existing.share)),
+          claimable: Number(newClaimable ?? BigInt(existing.claimable || "0")),
         });
 
         // Record history for update
@@ -254,13 +252,13 @@ export default class TrustDepositDatabaseService extends BullableService {
         const newSlashCount = BigInt(td.slash_count || "0") + BigInt(1);
 
         const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-          amount: newAmount.toString(),
-          share: newShare.toString(),
-          slashed_deposit: newSlashed.toString(),
-          last_slashed: now,
+          amount: Number(newAmount),
+          share: Number(newShare),
+          slashed_deposit: Number(newSlashed),
+          last_slashed: now ? new Date(now).toISOString() : null,
           slash_count: slashCount
-            ? BigInt(slashCount).toString()
-            : newSlashCount.toString(),
+            ? Number(slashCount)
+            : Number(newSlashCount),
         });
 
         await recordTrustDepositHistory(
@@ -343,11 +341,11 @@ export default class TrustDepositDatabaseService extends BullableService {
         const newSlashCount = BigInt(td.slash_count || "0") + BigInt(1);
 
         const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-          amount: newAmount.toString(),
-          share: newShare.toString(),
-          slashed_deposit: newSlashed.toString(),
-          last_slashed: ts ? formatTimestamp(ts) : formatTimestamp(Date.now()),
-          slash_count: newSlashCount.toString(),
+          amount: Number(newAmount),
+          share: Number(newShare),
+          slashed_deposit: Number(newSlashed),
+          last_slashed: ts ? new Date(formatTimestamp(ts)).toISOString() : new Date().toISOString(),
+          slash_count: Number(newSlashCount),
         });
 
         await recordTrustDepositHistory(

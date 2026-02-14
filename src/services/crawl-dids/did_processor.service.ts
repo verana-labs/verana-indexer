@@ -9,8 +9,6 @@ import { extractController } from "../../common/utils/extract_controller";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 
-
-
 interface DidMessageType {
     type: string;
     did?: string;
@@ -25,10 +23,11 @@ interface DidMessageTypes {
     deleted_at?: string | null;
     height?: number;
     is_deleted?: boolean;
-    exp?: string;
-    deposit?: string;
-    years?: string;
-    id?: string;
+    exp?: string | null;
+    deposit?: number;
+    years?: number;
+    id?: number;
+    controller?: string;
     changes?: any;
     [key: string]: any;
 }
@@ -100,19 +99,21 @@ export default class DidMessageProcessorService extends BullableService {
                     this.logger.error(`Failed to calculate DID deposit:`, depositErr);
                 }
                 
+                const createdTimestamp = formatTimestamp(message?.timestamp);
+                const exp = createdTimestamp && !Number.isNaN(new Date(createdTimestamp).getTime()) 
+                    ? addYearsToDate(createdTimestamp, years) 
+                    : null;
+                
                 processedDID = {
                     event_type: message.type,
                     did: message.did,
-                    controller: controller || null,
+                    controller: controller || null|| undefined,
                     height: message.height ?? 0,
-                    years: String(years),
-                    deposit: String(depositAmount) ?? "0",
-                    created: formatTimestamp(message?.timestamp),
-                    modified: formatTimestamp(message?.timestamp),
-                    exp:
-                        message.timestamp && message.years
-                            ? addYearsToDate(message.timestamp, message.years)
-                            : undefined,
+                    years: years,
+                    deposit: depositAmount ?? 0,
+                    created: createdTimestamp,
+                    modified: createdTimestamp,
+                    exp: exp,
                     is_deleted: false,
                     deleted_at: null,
                 };
@@ -121,7 +122,7 @@ export default class DidMessageProcessorService extends BullableService {
                     processedDID
                 );
                 const blockHeight = message.height ?? 0;
-                const creationChanges: Record<string, any> = {};
+                const creationChanges: Record<any, any> = {};
                 for (const [key, value] of Object.entries(processedDID)) {
                     if (value !== null && value !== undefined && key !== 'id') {
                         creationChanges[key] = value;
@@ -147,21 +148,24 @@ export default class DidMessageProcessorService extends BullableService {
                     );
 
                 if (existingDid) {
-                    const newDeposit = String(renewDeposit);
+                    const newDeposit = renewDeposit;
+                    
+                    let exp: string | null = null;
+                    if (existingDid.exp) {
+                        exp = addYearsToDate(existingDid.exp, yearsToAdd);
+                    } else if (existingDid.created) {
+                        exp = addYearsToDate(existingDid.created, yearsToAdd);
+                    }
 
                     const updatedDid: DidMessageTypes = {
                         ...existingDid,
                         modified: formatTimestamp(message?.timestamp),
                         height: message?.height ?? existingDid.height,
                         event_type: message.type,
-                        exp: addYearsToDate(existingDid.exp, yearsToAdd),
-                        deposit: (
-                            parseInt(existingDid.deposit || "0") +
-                            parseInt(newDeposit)
-                        ).toString(),
-                        years: (
-                            parseInt(existingDid.years || "0") + yearsToAdd
-                        ).toString(),
+                        exp: exp,
+                        deposit:(existingDid.deposit || 0) +
+                            newDeposit,
+                        years: (existingDid.years || 0) + yearsToAdd                        
                     };
 
                     const changes = this.processorBase.computeChanges(

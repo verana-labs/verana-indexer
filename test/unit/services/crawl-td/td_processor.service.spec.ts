@@ -33,7 +33,7 @@ describe("🧪 TrustDepositMessageProcessorService", () => {
   beforeAll(async () => {
     await broker.start();
     processorService["trustDepositParams"] = {
-      params: { trust_deposit_share_value: "100" },
+      params: { trust_deposit_share_value: 100 },
     };
   });
   afterAll(() => broker.stop());
@@ -73,12 +73,12 @@ describe("🧪 TrustDepositMessageProcessorService", () => {
   it("✅ should slash trust deposit successfully", async () => {
     (TrustDeposit.query as any).mockReturnValue({
       findOne: jest.fn().mockResolvedValue({
-        id: "1",
+        id: 1,
         account: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-        amount: "1000",
-        share: "10",
-        slashed_deposit: "0",
-        slash_count: "0",
+        amount: 1000,
+        share: 10,
+        slashed_deposit: 0,
+        slash_count: 0,
       }),
       patchAndFetchById: jest.fn().mockResolvedValue({}),
     });

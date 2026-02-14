@@ -10,9 +10,9 @@ export async function up(knex: Knex): Promise<void> {
       .inTable("credential_schemas")
       .onDelete("CASCADE");
 
-    table.string("tr_id").notNullable();
+    table.integer("tr_id").notNullable();
     table.jsonb("json_schema").notNullable();
-    table.string("deposit").notNullable();
+    table.specificType("deposit", "NUMERIC(38,0)").notNullable();
 
     table.integer("issuer_grantor_validation_validity_period").notNullable();
     table.integer("verifier_grantor_validation_validity_period").notNullable();

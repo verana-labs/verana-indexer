@@ -4,32 +4,30 @@ export default class CredentialSchema extends BaseModel {
   static tableName = "credential_schemas";
 
   id!: number;
-  tr_id!: string;
+  tr_id!: number;
   json_schema!: object;
   issuer_grantor_validation_validity_period!: number;
   verifier_grantor_validation_validity_period!: number;
   issuer_validation_validity_period!: number;
   verifier_validation_validity_period!: number;
   holder_validation_validity_period!: number;
-
   issuer_perm_management_mode!: string;
-  deposit!: string;
+  deposit!: number;
   verifier_perm_management_mode!: string;
-
   archived!: Date | null;
   created!: Date;
   modified!: Date;
   is_active!: boolean;
   participants?: number;
-  weight?: string;
+  weight?: number;
   issued?: number;
   verified?: number;
   ecosystem_slash_events?: number;
-  ecosystem_slashed_amount?: string;
-  ecosystem_slashed_amount_repaid?: string;
+  ecosystem_slashed_amount?: number;
+  ecosystem_slashed_amount_repaid?: number;
   network_slash_events?: number;
-  network_slashed_amount?: string;
-  network_slashed_amount_repaid?: string;
+  network_slashed_amount?: number;
+  network_slashed_amount_repaid?: number;
 
   static useTimestamps = false;
 
@@ -50,8 +48,8 @@ export default class CredentialSchema extends BaseModel {
       ],
       properties: {
         id: { type: "integer" },
-        tr_id: { type: "string" },
-        deposit: { type: "string" },
+        tr_id: { type: "integer" },
+        deposit: { type: "integer" },
         json_schema: { type: "object" },
 
         issuer_grantor_validation_validity_period: { type: "integer" },
@@ -68,15 +66,15 @@ export default class CredentialSchema extends BaseModel {
         created: { type: "string", format: "date-time" },
         modified: { type: "string", format: "date-time" },
         participants: { type: "integer" },
-        weight: { type: "string", maxLength: 50 },
+        weight: { type: "integer" },
         issued: { type: "integer" },
         verified: { type: "integer" },
         ecosystem_slash_events: { type: "integer" },
-        ecosystem_slashed_amount: { type: "string", maxLength: 50 },
-        ecosystem_slashed_amount_repaid: { type: "string", maxLength: 50 },
+        ecosystem_slashed_amount: { type: "integer" },
+        ecosystem_slashed_amount_repaid: { type: "integer" },
         network_slash_events: { type: "integer" },
-        network_slashed_amount: { type: "string", maxLength: 50 },
-        network_slashed_amount_repaid: { type: "string", maxLength: 50 },
+        network_slashed_amount: { type: "integer" },
+        network_slashed_amount_repaid: { type: "integer" },
       },
     };
   }

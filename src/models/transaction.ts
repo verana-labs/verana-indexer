@@ -5,6 +5,8 @@ import { Event } from './event';
 import { TransactionMessage } from './transaction_message';
 
 export class Transaction extends BaseModel {
+  static softDelete = false;
+
   [relation: string]: any;
 
   id!: number;

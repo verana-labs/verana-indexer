@@ -55,12 +55,12 @@ describe('UpdateParams Message Processing', () => {
       const validMessage = {
         type: UpdateParamsMessageTypes.CREDENTIAL_SCHEMA,
         authority: 'cosmos1authority',
-        params: { credential_schema_trust_deposit: '1000000' }
+        params: { credential_schema_trust_deposit: 1000000 }
       };
 
       expect(validMessage.type).toBeDefined();
       expect(validMessage.params).toBeDefined();
-      expect(validMessage.params.credential_schema_trust_deposit).toBe('1000000');
+      expect(validMessage.params.credential_schema_trust_deposit).toBe(1000000);
     });
 
     it('should identify invalid messages without type', () => {
@@ -92,50 +92,50 @@ describe('UpdateParams Message Processing', () => {
   describe('Module Parameter Structure Validation', () => {
     it('should validate Credential Schema parameters structure', () => {
       const csParams = {
-        credential_schema_trust_deposit: '1000000',
-        credential_schema_schema_max_size: '16384',
-        credential_schema_issuer_grantor_validation_validity_period_max_days: '365',
-        credential_schema_verifier_grantor_validation_validity_period_max_days: '365',
-        credential_schema_issuer_validation_validity_period_max_days: '365',
-        credential_schema_verifier_validation_validity_period_max_days: '365',
-        credential_schema_holder_validation_validity_period_max_days: '365'
+        credential_schema_trust_deposit: 1000000,
+        credential_schema_schema_max_size: 16384,
+        credential_schema_issuer_grantor_validation_validity_period_max_days: 365,
+        credential_schema_verifier_grantor_validation_validity_period_max_days: 365,
+        credential_schema_issuer_validation_validity_period_max_days: 365,
+        credential_schema_verifier_validation_validity_period_max_days: 365,
+        credential_schema_holder_validation_validity_period_max_days: 365
       };
 
       expect(csParams).toHaveProperty('credential_schema_trust_deposit');
       expect(csParams).toHaveProperty('credential_schema_schema_max_size');
-      expect(typeof csParams.credential_schema_trust_deposit).toBe('string');
-      expect(typeof csParams.credential_schema_schema_max_size).toBe('string');
+      expect(typeof csParams.credential_schema_trust_deposit).toBe('number');
+      expect(typeof csParams.credential_schema_schema_max_size).toBe('number');
     });
 
     it('should validate DID Directory parameters structure', () => {
       const ddParams = {
-        did_directory_trust_deposit: '500000',
-        did_directory_grace_period: '30'
+        did_directory_trust_deposit: 500000,
+        did_directory_grace_period: 30
       };
 
       expect(ddParams).toHaveProperty('did_directory_trust_deposit');
       expect(ddParams).toHaveProperty('did_directory_grace_period');
-      expect(typeof ddParams.did_directory_trust_deposit).toBe('string');
-      expect(typeof ddParams.did_directory_grace_period).toBe('string');
+      expect(typeof ddParams.did_directory_trust_deposit).toBe('number');
+      expect(typeof ddParams.did_directory_grace_period).toBe('number');
     });
 
     it('should validate Permission parameters structure', () => {
       const permParams = {
-        validation_term_requested_timeout_days: '7'
+        validation_term_requested_timeout_days: 7
       };
 
       expect(permParams).toHaveProperty('validation_term_requested_timeout_days');
-      expect(typeof permParams.validation_term_requested_timeout_days).toBe('string');
+      expect(typeof permParams.validation_term_requested_timeout_days).toBe('number');
     });
 
     it('should validate Trust Deposit parameters structure with v0.9.2 fields', () => {
       const tdParams = {
-        trust_deposit_reclaim_burn_rate: '0.60',
-        trust_deposit_share_value: '1.0',
-        trust_deposit_rate: '0.20',
-        wallet_user_agent_reward_rate: '0.10',
-        user_agent_reward_rate: '0.10',
-        trust_deposit_max_yield_rate: '0.25',
+        trust_deposit_reclaim_burn_rate: 0.60,
+        trust_deposit_share_value: 1.0,
+        trust_deposit_rate: 0.20,
+        wallet_user_agent_reward_rate: 0.10,
+        user_agent_reward_rate: 0.10,
+        trust_deposit_max_yield_rate: 0.25,
         yield_intermediate_pool: 'cosmos1yieldpool123'
       };
 
@@ -143,7 +143,7 @@ describe('UpdateParams Message Processing', () => {
       expect(tdParams).toHaveProperty('trust_deposit_share_value');
       expect(tdParams).toHaveProperty('trust_deposit_max_yield_rate');
       expect(tdParams).toHaveProperty('yield_intermediate_pool');
-      expect(typeof tdParams.trust_deposit_max_yield_rate).toBe('string');
+      expect(typeof tdParams.trust_deposit_max_yield_rate).toBe('number');
       expect(typeof tdParams.yield_intermediate_pool).toBe('string');
     });
 
@@ -163,7 +163,7 @@ describe('UpdateParams Message Processing', () => {
   describe('Future-Proof Parameter Handling', () => {
     it('should handle unknown future parameters for Credential Schema', () => {
       const csParamsWithUnknown = {
-        credential_schema_trust_deposit: '1000000',
+        credential_schema_trust_deposit: 1000000,
         credential_schema_new_future_param: 'new_value',
         credential_schema_another_unknown: '123',
         unknown_attribute_xyz: 'test'
@@ -184,8 +184,8 @@ describe('UpdateParams Message Processing', () => {
 
     it('should handle unknown future parameters for Trust Deposit', () => {
       const tdParamsWithUnknown = {
-        trust_deposit_rate: '0.20',
-        trust_deposit_max_yield_rate: '0.25',
+        trust_deposit_rate: 0.20,
+        trust_deposit_max_yield_rate: 0.25,
         yield_intermediate_pool: 'cosmos1yieldpool123',
         trust_deposit_future_param_1: 'future_value_1',
         trust_deposit_future_param_2: 'future_value_2',
@@ -208,19 +208,19 @@ describe('UpdateParams Message Processing', () => {
 
     it('should handle mixed known and unknown parameters for all modules', () => {
       const mixedParams = {
-        credential_schema_trust_deposit: '1000000',
+        credential_schema_trust_deposit: 1000000,
         cs_unknown_param: 'unknown_cs',
 
-        did_directory_trust_deposit: '500000',
+        did_directory_trust_deposit: 500000,
         dd_future_param: 'future_dd',
 
-        validation_term_requested_timeout_days: '7',
+        validation_term_requested_timeout_days: 7,
         perm_new_attribute: 'new_perm',
 
-        trust_deposit_rate: '0.20',
+        trust_deposit_rate: 0.20,
         td_unknown_field: 'unknown_td',
 
-        trust_unit_price: '1000',
+        trust_unit_price: 1000,
         tr_future_attribute: 'future_tr'
       };
 

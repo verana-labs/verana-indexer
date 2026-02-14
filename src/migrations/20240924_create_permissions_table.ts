@@ -30,7 +30,7 @@ export async function up(knex: Knex): Promise<void> {
   if (!hasPermissions) {
     await knex.schema.createTable("permissions", (table) => {
       table.bigIncrements("id").primary();
-      table.string("schema_id", 50).notNullable();
+      table.integer("schema_id").notNullable();
       table.specificType("type", "permission_type").notNullable();
       table.string("did", 255);
       table.string("grantee", 255).notNullable();
@@ -48,20 +48,20 @@ export async function up(knex: Knex): Promise<void> {
       table.timestamp("revoked").nullable();
       table.string("revoked_by", 255).nullable();
       table.string("country", 2).nullable();
-      table.string("validation_fees", 50).defaultTo("0");
-      table.string("issuance_fees", 50).defaultTo("0");
-      table.string("verification_fees", 50).defaultTo("0");
-      table.string("deposit", 50).defaultTo("0");
-      table.string("slashed_deposit", 50).defaultTo("0");
-      table.string("repaid_deposit", 50).defaultTo("0");
-      table.string("validator_perm_id", 50).nullable();
+      table.specificType("validation_fees", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("issuance_fees", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("verification_fees", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("deposit", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("slashed_deposit", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("repaid_deposit", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.integer("validator_perm_id").nullable();
       table.specificType("vp_state", "validation_state").nullable();
       table.timestamp("vp_last_state_change").nullable();
-      table.string("vp_current_fees", 50).defaultTo("0");
-      table.string("vp_current_deposit", 50).defaultTo("0");
+      table.specificType("vp_current_fees", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("vp_current_deposit", "NUMERIC(38,0)").notNullable().defaultTo(0);
       table.string("vp_summary_digest_sri", 512).nullable();
       table.timestamp("vp_exp").nullable();
-      table.string("vp_validator_deposit", 50).defaultTo("0");
+      table.specificType("vp_validator_deposit", "NUMERIC(38,0)").notNullable().defaultTo(0);
       table.timestamp("vp_term_requested").nullable();
       table.index(["schema_id"]);
       table.index(["grantee"]);
@@ -77,8 +77,8 @@ export async function up(knex: Knex): Promise<void> {
     await knex.schema.createTable("permission_sessions", (table) => {
       table.string("id", 255).primary();
       table.string("controller", 255).notNullable();
-      table.string("agent_perm_id", 50).notNullable();
-      table.string("wallet_agent_perm_id", 50).notNullable();
+      table.integer("agent_perm_id").notNullable();
+      table.integer("wallet_agent_perm_id").notNullable();
       table.jsonb("authz").notNullable().defaultTo("[]");
       table.timestamp("created").defaultTo(knex.fn.now());
       table.timestamp("modified").defaultTo(knex.fn.now());

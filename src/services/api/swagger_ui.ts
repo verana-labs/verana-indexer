@@ -71,34 +71,120 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
         fs.createReadStream(filePath).pipe(res);
       },
 
-      "GET openapi.json": async function (_req: IncomingMessage, res: ServerResponse) {
+      "GET openapi.json": async function (req: IncomingMessage, res: ServerResponse) {
         const localPath = path.join(process.cwd(), openApiRelativePath);
 
+        const getServerUrl = (): string => {
+          if (process.env.API_URL) {
+            return process.env.API_URL;
+          }
+          if (process.env.SERVER_URL) {
+            return process.env.SERVER_URL;
+          }
+          
+          const host = req.headers.host || `localhost:${process.env.PORT || 3001}`;
+          
+          const isSecure = req.headers['x-forwarded-proto'] === 'https' || 
+                          req.headers['x-forwarded-ssl'] === 'on' ||
+                          (req.connection as any)?.encrypted === true;
+          const protocol = isSecure ? 'https' : 'http';
+          
+          return `${protocol}://${host}`;
+        };
+
+        const getServers = (): Array<{ url: string; description: string }> => {
+          const currentUrl = getServerUrl();
+          const servers: Array<{ url: string; description: string }> = [];
+          const addedUrls = new Set<string>();
+          
+          const env = process.env.NODE_ENV || 'development';
+          let envDescription = 'Local development server';
+          
+          if (env === 'production') {
+            envDescription = 'Production API server';
+          } else if (env === 'test' || currentUrl.includes('testnet')) {
+            envDescription = 'Testnet API server';
+          } else if (currentUrl.includes('devnet')) {
+            envDescription = 'Devnet API server';
+          }
+          
+          servers.push({
+            url: currentUrl,
+            description: envDescription
+          });
+          addedUrls.add(currentUrl);
+          
+          if (process.env.DEVNET_API_URL && !addedUrls.has(process.env.DEVNET_API_URL)) {
+            servers.push({
+              url: process.env.DEVNET_API_URL,
+              description: 'Devnet API server'
+            });
+            addedUrls.add(process.env.DEVNET_API_URL);
+          }
+          
+          if (process.env.TESTNET_API_URL && !addedUrls.has(process.env.TESTNET_API_URL)) {
+            servers.push({
+              url: process.env.TESTNET_API_URL,
+              description: 'Testnet API server'
+            });
+            addedUrls.add(process.env.TESTNET_API_URL);
+          }
+          
+          if (env !== 'production') {
+            const defaultDevnet = 'https://idx.devnet.verana.network';
+            const defaultTestnet = 'https://idx.testnet.verana.network';
+            
+            if (!addedUrls.has(defaultDevnet) && 
+                !currentUrl.includes('devnet.verana.network')) {
+              servers.push({
+                url: defaultDevnet,
+                description: 'Devnet API server'
+              });
+              addedUrls.add(defaultDevnet);
+            }
+            
+            if (!addedUrls.has(defaultTestnet) && 
+                !currentUrl.includes('testnet.verana.network')) {
+              servers.push({
+                url: defaultTestnet,
+                description: 'Testnet API server'
+              });
+              addedUrls.add(defaultTestnet);
+            }
+          }
+          
+          return servers;
+        };
+
         try {
+          let spec: any = null;
+          
           if (fs.existsSync(localPath)) {
             const data = await fs.promises.readFile(localPath, "utf8");
-            res.setHeader("Content-Type", "application/json; charset=utf-8");
-            res.end(data);
+            spec = JSON.parse(data);
+          } else {
+            // Fallback to service-generated spec
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const svc: any = this as any;
+            spec = svc?.settings?.openapi ?? svc?.schema?.openapi ?? null;
+          }
+
+          if (!spec) {
+            res.statusCode = 404;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "OpenAPI spec not available", code: 404 }));
             return;
           }
-        } catch {
 
-        }
+          spec.servers = getServers();
 
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const svc: any = this as any;
-        const spec = svc?.settings?.openapi ?? svc?.schema?.openapi ?? null;
-
-        if (!spec) {
-          res.statusCode = 404;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify(spec));
+        } catch (err: any) {
+          res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "OpenAPI spec not available", code: 404 }));
-          return;
+          res.end(JSON.stringify({ error: `Failed to load OpenAPI spec: ${err.message}`, code: 500 }));
         }
-
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(JSON.stringify(spec));
       },
     },
 

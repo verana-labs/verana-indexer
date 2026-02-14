@@ -297,7 +297,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       };
 
       await trx("trust_registry").where({ id: tr.id }).update(newData);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
         tr.id,
@@ -361,7 +361,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       updateData.modified = formatTimestamp(message.timestamp);
 
       await trx("trust_registry").where({ id: tr.id }).update(updateData);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
         tr.id,
@@ -430,10 +430,10 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       const trustDepositDenom =
         parsedParams?.params?.trust_registry_trust_deposit || 0;
       const trustUnitPrice = parsedParams?.params?.trust_unit_price || 1;
-      const deposit = Number(trustDepositDenom) * Number(trustUnitPrice);
+      const deposit = (trustDepositDenom || 0) * (trustUnitPrice || 1);
 
       const timestamp = formatTimestamp(message.timestamp);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
 
       this.logger.info(` Creating TR with height: ${blockHeight}, did: ${message.did}`);
 
@@ -601,7 +601,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       }
 
       const timestamp = formatTimestamp(message.timestamp);
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
 
       let gfv = await trx("governance_framework_version")
         .where({
@@ -723,7 +723,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       await trx("trust_registry")
         .where({ id: tr.id })
         .update({ active_version: nextVersion, modified: timestamp });
-      const blockHeight = Number(message.height) || 0;
+      const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
         tr.id,

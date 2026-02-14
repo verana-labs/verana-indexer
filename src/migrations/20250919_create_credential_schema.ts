@@ -3,9 +3,9 @@ import { Knex } from "knex";
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("credential_schemas", (table) => {
     table.increments("id").primary();
-    table.string("tr_id").notNullable();
+    table.integer("tr_id").notNullable();
     table.jsonb("json_schema").notNullable();
-    table.string("deposit").notNullable();
+    table.specificType("deposit", "NUMERIC(38,0)").notNullable();
     table.boolean("is_active").notNullable().defaultTo(false);
 
     table.integer("issuer_grantor_validation_validity_period").notNullable();

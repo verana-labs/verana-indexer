@@ -32,6 +32,7 @@ export function analyzeError(error: any): ErrorInfo {
     'EHOSTUNREACH',
     'EPIPE',
     'ECANCELED',
+    'EBUSY',
   ];
 
   const httpErrorCodes = [
@@ -50,6 +51,7 @@ export function analyzeError(error: any): ErrorInfo {
     'statement timeout',
     'query timeout',
     'canceling statement',
+    'Connection terminated unexpectedly',
   ];
   
   const postgresTimeoutCodes = ['57014'];

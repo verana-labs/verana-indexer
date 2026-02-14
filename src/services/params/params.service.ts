@@ -229,7 +229,31 @@ export default class GenesisParamsService extends BullableService {
     }
 
     try {
-      let raw = fs.readFileSync(this.genesisPath, "utf-8").trim();
+      let raw: string | undefined;
+      const maxRetries = 5;
+      const retryDelay = 100;
+      
+      for (let retryCount = 0; retryCount < maxRetries; retryCount++) {
+        try {
+          raw = fs.readFileSync(this.genesisPath, "utf-8").trim();
+          break;
+        } catch (err: any) {
+          if (err.code === 'EBUSY' && retryCount < maxRetries - 1) {
+            const delay = retryDelay * (retryCount + 1);
+            await new Promise<void>((resolve) => {
+              setTimeout(() => {
+                resolve();
+              }, delay);
+            });
+            continue;
+          }
+          throw err;
+        }
+      }
+      
+      if (!raw) {
+        throw new Error('Failed to read genesis.json after retries');
+      }
 
       if (!raw.startsWith("[")) {
         // eslint-disable-next-line prefer-template
