@@ -214,7 +214,24 @@ export default class CrawlTxService extends BullableService {
       const maxAvailableTxId = maxTxId?.max_id || 0;
 
       if (lastProcessedTxId >= maxAvailableTxId) {
-        this.logger.debug(` [HANDLE_TRANSACTION] No new transactions to process (${lastProcessedTxId} >= ${maxAvailableTxId})`);
+        // No new transactions, but still advance checkpoint to CRAWL_TRANSACTION height
+        // so downstream services (e.g. stats) know all blocks have been checked
+        const crawlTxHeight = crawlTxCheckpoint?.height || 0;
+        if (blockCheckpoint && crawlTxHeight > blockCheckpoint.height) {
+          const previousHeight = blockCheckpoint.height;
+          blockCheckpoint.height = crawlTxHeight;
+          blockCheckpoint.updated_at = new Date();
+          await BlockCheckpoint.query()
+            .insert(blockCheckpoint)
+            .onConflict('job_name')
+            .merge({
+              height: crawlTxHeight,
+              updated_at: blockCheckpoint.updated_at,
+            });
+          this.logger.info(` [HANDLE_TRANSACTION] No new transactions, advanced checkpoint from ${previousHeight} to ${crawlTxHeight}`);
+        } else {
+          this.logger.debug(` [HANDLE_TRANSACTION] No new transactions to process (${lastProcessedTxId} >= ${maxAvailableTxId})`);
+        }
         return;
       }
 
