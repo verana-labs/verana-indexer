@@ -118,14 +118,11 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should fetch JsonSchema of the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.JsonSchema`, { id: schema.id });
-    const jsonSchemaStr = res?.schema || res;
-
-    expect(typeof jsonSchemaStr).toBe("string");
-
-    const jsonSchema = JSON.parse(jsonSchemaStr);
-    expect(jsonSchema.type).toBe("object");
-    expect(jsonSchema.properties).toHaveProperty("foo");
-
+    // Response is the JSON schema object itself (not wrapped in { schema: string })
+    expect(typeof res).toBe("object");
+    expect(res).not.toBeNull();
+    expect(res.type).toBe("object");
+    expect(res.properties).toHaveProperty("foo");
   });
 
   it("should fetch module params for credentialschema", async () => {

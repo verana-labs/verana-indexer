@@ -1114,11 +1114,12 @@
           ],
           "responses": {
             "200": {
-              "description": "Successful response with JSON Schema",
+              "description": "Successful response. The response body is the JSON Schema document itself (not wrapped in an object).",
               "content": {
                 "application/json": {
                   "schema": {
-                    "$ref": "#/components/schemas/JsonSchemaResponse"
+                    "type": "object",
+                    "description": "The raw JSON Schema document (e.g. draft 2020-12). Contains $id, $schema, title, description, type, properties, etc."
                   }
                 }
               }
@@ -3087,14 +3088,6 @@
               }
             }
           },
-          "JsonSchemaResponse": {
-            "type": "object",
-            "properties": {
-              "schema": {
-                "type": "string"
-              }
-            }
-          },
           "CredentialSchemaListResponse": {
             "type": "object",
             "properties": {
@@ -4603,14 +4596,6 @@
               }
             }
           },
-        "JsonSchemaResponse": {
-          "type": "object",
-          "properties": {
-            "schema": {
-              "type": "string"
-            }
-          }
-        },
         "CredentialSchemaListResponse": {
           "type": "object",
           "properties": {

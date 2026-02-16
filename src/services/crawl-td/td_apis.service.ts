@@ -5,6 +5,7 @@ import {
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
+import { validateRequiredAccountParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import TrustDeposit from "../../models/trust_deposit";
@@ -26,7 +27,11 @@ export default class TrustDepositApiService extends BullableService {
   })
   public async getTrustDeposit(ctx: Context<{ account: string }>) {
     try {
-      const { account } = ctx.params;
+      const accountValidation = validateRequiredAccountParam(ctx.params.account, "account");
+      if (!accountValidation.valid) {
+        return ApiResponder.error(ctx, accountValidation.error, 400);
+      }
+      const account = accountValidation.value;
       const blockHeight = (ctx.meta as any)?.blockHeight;
 
       if (!this.isValidAccount(account)) {
@@ -124,8 +129,13 @@ export default class TrustDepositApiService extends BullableService {
   })
   public async getTrustDepositHistory(ctx: Context<{ account: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
-      const { account, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
-      
+      const accountValidation = validateRequiredAccountParam(ctx.params.account, "account");
+      if (!accountValidation.valid) {
+        return ApiResponder.error(ctx, accountValidation.error, 400);
+      }
+      const account = accountValidation.value;
+      const { response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+
       if (transactionTimestampOlderThan) {
         const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {

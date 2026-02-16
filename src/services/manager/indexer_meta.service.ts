@@ -9,6 +9,7 @@ import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
 import { indexerStatusManager } from "./indexer_status.manager";
+import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import {
   VeranaTrustRegistryMessageTypes,
   VeranaCredentialSchemaMessageTypes,
@@ -46,7 +47,7 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
 
 function normalizeEventType(eventType: string): string {
   let normalized = eventType.replace(/^.*\./, "");
-  
+
   if (normalized.includes("_")) {
     normalized = normalized
       .split("_")
@@ -58,7 +59,7 @@ function normalizeEventType(eventType: string): string {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join("");
   }
-  
+
   return normalized;
 }
 
@@ -79,7 +80,7 @@ function filterChangedValues(changes: any): any {
   if (!changes || typeof changes !== "object") {
     return changes;
   }
-  
+
   const filtered: any = {};
   for (const [key, value] of Object.entries(changes)) {
     if (value !== null && value !== undefined) {
@@ -263,7 +264,7 @@ export default class IndexerMetaService extends BaseService {
       );
     }
 
-      const queryHistoryWithTx = async (
+    const queryHistoryWithTx = async (
       tableName: string,
       height: number,
       entityType: string,
@@ -274,11 +275,11 @@ export default class IndexerMetaService extends BaseService {
       try {
         const quotedTable = `"${tableName}"`;
         const prefixes = msgTypePrefixes || [];
-        const msgTypeCondition = prefixes.length > 0 
+        const msgTypeCondition = prefixes.length > 0
           ? `AND (${prefixes.map((p, idx) => {
-              const escapedPrefix = p.replace(/'/g, "''");
-              return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
-            }).join(' ')})`
+            const escapedPrefix = p.replace(/'/g, "''");
+            return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
+          }).join(' ')})`
           : '';
 
         return await knex(tableName)
@@ -355,7 +356,7 @@ export default class IndexerMetaService extends BaseService {
           changes = null;
         }
       }
-      
+
       if (!changes || Object.keys(changes).length === 0) {
         const computedChanges: Record<string, any> = {};
         const excludeFields = ["id", "created_at", "event_type", "height", "changes", "msg_type", "sender", "timestamp"];
@@ -366,7 +367,7 @@ export default class IndexerMetaService extends BaseService {
         }
         changes = Object.keys(computedChanges).length > 0 ? computedChanges : null;
       }
-      
+
       changes = filterChangedValues(changes);
 
       const action = getActionFromMessageType(
@@ -446,6 +447,104 @@ export default class IndexerMetaService extends BaseService {
       },
       200
     );
+  }
+  // Used only for TR weight calculation. Will be removed in the future.
+  @Action({
+    rest: "POST backfill/trust-registry-stats",
+  })
+  public async backfillTrustRegistryStats(ctx: Context) {
+    try {
+      this.logger.info("Starting Trust Registry stats backfill via API...");
+
+      const trustRegistries = await knex("trust_registry")
+        .select("id", "did", "controller")
+        .orderBy("id", "asc");
+
+      const total = trustRegistries.length;
+      if (total === 0) {
+        return ApiResponder.success(ctx, {
+          message: "No Trust Registries found",
+          total: 0,
+          updated: 0,
+          errors: 0,
+        }, 200);
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      let schemaIdsFixed = 0;
+      const errors: Array<{ id: number; error: string }> = [];
+      const { normalizeSchemaId, needsIdNormalization } = await import('../../common/utils/schema_id_normalizer');
+
+      for (let i = 0; i < trustRegistries.length; i++) {
+        const tr = trustRegistries[i];
+        const trId = Number(tr.id);
+
+        try {
+          const stats = await calculateTrustRegistryStats(trId);
+
+          await knex("trust_registry")
+            .where("id", trId)
+            .update({
+              participants: stats.participants,
+              active_schemas: stats.active_schemas,
+              archived_schemas: stats.archived_schemas,
+              weight: stats.weight,
+              issued: stats.issued,
+              verified: stats.verified,
+              ecosystem_slash_events: stats.ecosystem_slash_events,
+              ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+              ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+              network_slash_events: stats.network_slash_events,
+              network_slashed_amount: stats.network_slashed_amount,
+              network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+            });
+
+          const schemas = await knex("credential_schemas")
+            .where("tr_id", trId)
+            .select("id", "json_schema");
+
+          for (const schema of schemas) {
+            if (needsIdNormalization(schema.json_schema, schema.id)) {
+              const normalizedSchema = normalizeSchemaId(schema.json_schema, schema.id);
+              await knex("credential_schemas")
+                .where({ id: schema.id })
+                .update({ json_schema: normalizedSchema });
+              schemaIdsFixed++;
+            }
+          }
+
+          successCount++;
+        } catch (err: any) {
+          errorCount++;
+          const errorMsg = err?.message || String(err);
+          errors.push({ id: trId, error: errorMsg });
+          this.logger.warn(`Failed to update TR ${trId}: ${errorMsg}`);
+        }
+
+        if (i < trustRegistries.length - 1) {
+          await new Promise<void>((resolve) => {
+            setTimeout(() => {
+              resolve();
+            }, 50);
+          });
+        }
+      }
+
+      this.logger.info(`Backfill completed: ${successCount}/${total} updated, ${errorCount} errors, ${schemaIdsFixed} schema IDs fixed`);
+
+      return ApiResponder.success(ctx, {
+        message: "Trust Registry stats backfill completed",
+        total,
+        updated: successCount,
+        errors: errorCount,
+        schema_ids_fixed: schemaIdsFixed,
+        error_details: errors.length > 0 ? errors : undefined,
+      }, 200);
+    } catch (err: any) {
+      this.logger.error(" Fatal error during backfill:", err);
+      return ApiResponder.error(ctx, `Backfill failed: ${err?.message || err}`, 500);
+    }
   }
 }
 

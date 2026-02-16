@@ -5,6 +5,7 @@ import {
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { SERVICE, ModulesParamsNamesTypes } from "../../common";
+import { validateParticipantParam, validateRequiredAccountParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
@@ -899,6 +900,12 @@ export default class PermAPIService extends BullableService {
   async listPermissions(ctx: Context<any>) {
     try {
       const p = ctx.params;
+      const granteeValidation = validateParticipantParam(p.grantee, "grantee");
+      if (!granteeValidation.valid) {
+        return ApiResponder.error(ctx, granteeValidation.error, 400);
+      }
+      const granteeFilter = granteeValidation.value;
+
       const blockHeight = getBlockHeight(ctx);
       const now = new Date().toISOString();
       const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
@@ -1083,7 +1090,7 @@ export default class PermAPIService extends BullableService {
         this.logger.info(`[listPermissions] After enrichment: ${filteredPermissions.length} permissions`);
 
         if (p.schema_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.schema_id === Number(p.schema_id));
-        if (p.grantee) filteredPermissions = filteredPermissions.filter(perm => perm.grantee === p.grantee);
+        if (granteeFilter) filteredPermissions = filteredPermissions.filter(perm => perm.grantee === granteeFilter);
         if (p.did) filteredPermissions = filteredPermissions.filter(perm => perm.did === p.did);
         if (p.perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id === Number(p.perm_id));
         if (p.validator_perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id ? perm.validator_perm_id === Number(p.validator_perm_id) : false);
@@ -1319,7 +1326,7 @@ export default class PermAPIService extends BullableService {
       const query = knex("permissions").select(selectColumns);
 
       if (p.schema_id !== undefined) query.where("schema_id", p.schema_id);
-      if (p.grantee) query.where("grantee", p.grantee);
+      if (granteeFilter) query.where("grantee", granteeFilter);
       if (p.did) query.where("did", p.did);
       if (p.perm_id !== undefined) query.where("validator_perm_id", p.perm_id);
       if (p.validator_perm_id !== undefined) {
@@ -2142,11 +2149,15 @@ export default class PermAPIService extends BullableService {
   async pendingFlat(ctx: Context<{ account: string; response_max_size?: number; sort?: string }>) {
     try {
       const p = ctx.params as any;
-      const account = p.account;
-      if (!account) return ApiResponder.error(ctx, "Missing required parameter: account", 400);
+      const accountValidation = validateRequiredAccountParam(p.account, "account");
+      if (!accountValidation.valid) {
+        return ApiResponder.error(ctx, accountValidation.error, 400);
+      }
+      const account = accountValidation.value;
 
+      const sortParam = p.sort ?? "-modified";
       try {
-        validateSortParameter(p.sort);
+        validateSortParameter(sortParam);
       } catch (err: any) {
         return ApiResponder.error(ctx, err.message, 400);
       }
@@ -2330,7 +2341,7 @@ export default class PermAPIService extends BullableService {
         if (perm.grantee === account) {
           if (perm.vp_state === "PENDING") return true;
           if (perm.perm_state === "SLASHED") return true;
-          if (perm.expire_soon === true) return true;
+          if (perm.perm_state === "ACTIVE" && perm.expire_soon === true) return true;
         }
         if (perm.validator_perm_id && parentIdSet.has(Number(perm.validator_perm_id))) {
           if (perm.vp_state === "PENDING") return true;
@@ -2349,8 +2360,6 @@ export default class PermAPIService extends BullableService {
         : [];
       const schemaMap = new Map<number, any>();
       for (const s of schemas) {
-        let title: string | undefined;
-        let description: string | undefined;
         const js = s.json_schema;
         let schemaObj: any = null;
         if (js) {
@@ -2360,10 +2369,8 @@ export default class PermAPIService extends BullableService {
             schemaObj = js;
           }
         }
-        if (schemaObj && typeof schemaObj === "object") {
-          if (schemaObj.title && typeof schemaObj.title === "string") title = schemaObj.title;
-          if (schemaObj.description && typeof schemaObj.description === "string") description = schemaObj.description;
-        }
+        const title = (schemaObj && typeof schemaObj === "object" && typeof schemaObj.title === "string" ? schemaObj.title : null) ?? s.title ?? undefined;
+        const description = (schemaObj && typeof schemaObj === "object" && typeof schemaObj.description === "string" ? schemaObj.description : null) ?? s.description ?? undefined;
         schemaMap.set(s.id, { id: s.id, tr_id: s.tr_id || null, title, description, participants: s.participants ?? 0 });
       }
 
@@ -2395,32 +2402,32 @@ export default class PermAPIService extends BullableService {
             title: csInfo.title,
             description: csInfo.description,
             pending_tasks: 0,
+            participants: csInfo.participants ?? 0,
             permissions: [],
           });
         }
         const entry = csMap.get(schemaId);
-        entry.permissions.push({
-          id: perm.id,
-          type: perm.type,
-          vp_state: perm.vp_state,
-          perm_state: perm.perm_state,
-          grantee: perm.grantee,
-          did: perm.did,
-          modified: perm.modified,
-        });
+        entry.permissions.push({ ...perm });
         entry.pending_tasks++;
+      }
+      for (const csEntry of csMap.values()) {
+        csEntry.permissions.sort((a: any, b: any) => {
+          const ta = new Date(a.modified || 0).getTime();
+          const tb = new Date(b.modified || 0).getTime();
+          return ta - tb;
+        });
       }
       for (const [schemaId, csEntry] of csMap.entries()) {
         const csInfo = schemaMap.get(schemaId) || { tr_id: null };
-        const trId = csInfo.tr_id || null;
-        if (trId && trMap.has(trId)) {
+        const trId = csInfo.tr_id != null ? Number(csInfo.tr_id) : null;
+        if (trId !== null && trMap.has(trId)) {
           const trEntry = trMap.get(trId);
           trEntry.credential_schemas.push(csEntry);
           trEntry.pending_tasks += csEntry.pending_tasks;
         } else {
           const nullTrKey = "null";
           if (!trMap.has(nullTrKey)) {
-            trMap.set(nullTrKey, { id: null, did: null, aka: null, credential_schemas: [], pending_tasks: 0 });
+            trMap.set(nullTrKey, { id: null, did: null, aka: null, credential_schemas: [], pending_tasks: 0, participants: 0 });
           }
           const trEntry = trMap.get(nullTrKey);
           trEntry.credential_schemas.push(csEntry);
