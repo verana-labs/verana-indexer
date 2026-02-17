@@ -1307,7 +1307,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
         }
         (ctx.meta as Record<string, unknown>).$responseType = "application/json; charset=utf-8";
-        return ApiResponder.success(ctx, normalizedJsonSchemaString(historySchemaObj), 200);
+        return ApiResponder.success(ctx, historySchemaObj, 200);
       }
 
       const schemaRecord = await knex("credential_schemas")
@@ -1324,7 +1324,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
       }
       (ctx.meta as Record<string, unknown>).$responseType = "application/json; charset=utf-8";
-      return ApiResponder.success(ctx, normalizedJsonSchemaString(schemaObj), 200);
+      // Return object directly - HTTP layer will serialize, broker.call() gets object
+      return ApiResponder.success(ctx, schemaObj, 200);
     } catch (err: any) {
       this.logger.error("Error in renderJsonSchema:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
