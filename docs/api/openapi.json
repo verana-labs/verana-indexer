@@ -286,75 +286,81 @@
           }
         }
       },
-      "/verana/indexer/v1/changes/{block_height}": {
-        "get": {
-          "tags": [
-            "Indexer"
-          ],
-          "summary": "List entity changes at a block height",
-          "description": "Return all indexed entity changes for the requested block height.",
-          "operationId": "listChanges",
-          "parameters": [
-            {
-              "name": "block_height",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "description": "The block height to query changes for. Must be a positive integer not exceeding the current indexed block height."
-            }
-          ],
-          "responses": {
-            "200": {
-              "description": "Entity changes recorded at the requested block height",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "object",
-                    "properties": {
-                      "block_height": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "activity": {
-                        "type": "array",
-                        "description": "List of activity items at this block height (same format as history endpoints)",
-                        "items": {
-                          "$ref": "#/components/schemas/ActivityItem"
-                        }
+       "/verana/indexer/v1/changes/{block_height}": {
+      "get": {
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "List entity changes at a block height",
+        "description": "Return all indexed entity changes for the requested block height.",
+        "operationId": "listChanges",
+        "parameters": [
+          {
+            "name": "block_height",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "The block height to query changes for. Must be a positive integer not exceeding the current indexed block height."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity changes recorded at the requested block height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "block_height": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "activity": {
+                      "type": "array",
+                      "description": "List of activity items at this block height (same format as history endpoints)",
+                      "items": {
+                        "$ref": "#/components/schemas/ActivityItem"
                       }
                     }
-                  },
-                  "example": {
-                    "block_height": 123450,
-                    "activity": [
-                      {
-                        "timestamp": "2025-11-24T07:00:00.000Z",
-                        "block_height": "123450",
-                        "entity_type": "DID",
-                        "entity_id": "did:verana:abc123",
-                        "account": "verana1abcd...",
-                        "msg": "AddDID",
-                        "changes": {
-                          "created": {
-                            "old": null,
-                            "new": "2025-11-24T07:00:00.000Z"
-                          }
-                        }
-                      }
-                    ]
                   }
+                },
+                "example": {
+                  "entity_type": "DID",
+                  "entity_id": "did:Test:123",
+                  "activity": [
+                    {
+                      "timestamp": "2025-10-06T08:46:20.686Z",
+                      "block_height": 63120,
+                      "entity_type": "DID",
+                      "entity_id": "did:Test:123",
+                      "msg": "AddDID",
+                      "changes": {
+                        "did": "did:Test:123",
+                        "exp": "2026-10-06T08:46:20.686Z",
+                        "years": 1,
+                        "created": "2025-10-06T08:46:20.686Z",
+                        "deposit": 5000000,
+                        "modified": "2025-10-06T08:46:20.686Z",
+                        "controller": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+                        "event_type": "/verana.dd.v1.MsgAddDID",
+                        "is_deleted": false
+                      },
+                      "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                    }
+                  ]
                 }
               }
-            },
-            "400": {
-              "$ref": "#/components/responses/BadRequest"
-            },
-            "500": {
-              "$ref": "#/components/responses/ServerError"
+              }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
           }
         }
       },
@@ -584,6 +590,46 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/ActivityTimelineResponse"
+                  },
+                  "example": {
+                    "entity_type": "DID",
+                    "entity_id": "did:Test:123",
+                    "activity": [
+                      {
+                        "timestamp": "2025-10-21T12:12:49.306Z",
+                        "block_height": 324079,
+                        "entity_type": "DID",
+                        "entity_id": "did:Test:123",
+                        "msg": "RenewDID",
+                        "changes": {
+                          "exp": "2027-10-06T08:46:20.686Z",
+                          "years": 2,
+                          "deposit": 10000000,
+                          "modified": "2025-10-21T12:12:49.306Z",
+                          "event_type": "/verana.dd.v1.MsgRenewDID"
+                        },
+                        "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                      },
+                      {
+                        "timestamp": "2025-10-06T08:46:20.686Z",
+                        "block_height": 63120,
+                        "entity_type": "DID",
+                        "entity_id": "did:Test:123",
+                        "msg": "AddDID",
+                        "changes": {
+                          "did": "did:Test:123",
+                          "exp": "2026-10-06T08:46:20.686Z",
+                          "years": 1,
+                          "created": "2025-10-06T08:46:20.686Z",
+                          "deposit": 5000000,
+                          "modified": "2025-10-06T08:46:20.686Z",
+                          "controller": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+                          "event_type": "/verana.dd.v1.MsgAddDID",
+                          "is_deleted": false
+                        },
+                        "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                      }
+                    ]
                   }
                 }
               }
@@ -1011,6 +1057,139 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/ActivityTimelineResponse"
+                  },
+                  "example": {
+                    "entity_type": "TrustRegistry",
+                    "entity_id": "1",
+                    "activity": [
+                      {
+                        "timestamp": "2025-10-08T07:51:50.513Z",
+                        "block_height": 96930,
+                        "entity_type": "TrustRegistry",
+                        "entity_id": "1",
+                        "msg": "UpdateTrustRegistry",
+                        "changes": {
+                          "modified": "2025-10-08T07:51:50.513Z"
+                        },
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0"
+                      },
+                      {
+                        "timestamp": "2025-10-02T17:20:55.107Z",
+                        "block_height": 343,
+                        "entity_type": "TrustRegistry",
+                        "entity_id": "1",
+                        "msg": "CreateTrustRegistry",
+                        "changes": {
+                          "aka": "http://example.com",
+                          "did": "did:example:123456789abcdefghi",
+                          "issued": 0,
+                          "weight": 0,
+                          "created": "2025-10-02T17:20:55.107Z",
+                          "deposit": 10000000,
+                          "language": "en",
+                          "modified": "2025-10-02T17:20:55.107Z",
+                          "verified": 0,
+                          "controller": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                          "participants": 0,
+                          "active_schemas": 0,
+                          "active_version": 1,
+                          "archived_schemas": 0,
+                          "network_slash_events": 0,
+                          "ecosystem_slash_events": 0,
+                          "network_slashed_amount": 0,
+                          "ecosystem_slashed_amount": 0,
+                          "network_slashed_amount_repaid": 0,
+                          "ecosystem_slashed_amount_repaid": 0,
+                          "versions": [
+                            {
+                              "id": 1,
+                              "tr_id": 1,
+                              "created": "2025-10-02T17:20:55.107Z",
+                              "version": 1,
+                              "active_since": "2025-10-02T17:20:55.107Z",
+                              "documents": [
+                                {
+                                  "id": 1,
+                                  "gfv_id": 1,
+                                  "created": "2025-10-02T17:20:55.107Z",
+                                  "language": "en",
+                                  "url": "https://example.com/doc001-01",
+                                  "digest_sri": "sha384-MzNNbQTWCSUSi0bbz7dbua+RcENv7C6FvlmYJ1Y+I727HsPOHdzwELMYO9Mz68001"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0"
+                      },
+                      {
+                        "timestamp": "2025-10-02T17:20:55.107Z",
+                        "block_height": 343,
+                        "entity_type": "GovernanceFrameworkVersion",
+                        "entity_id": "1",
+                        "msg": "CreateTrustRegistry",
+                        "changes": {
+                          "tr_id": 1,
+                          "created": "2025-10-02T17:20:55.107Z",
+                          "version": 1,
+                          "active_since": "2025-10-02T17:20:55.107Z",
+                          "versions": [
+                            {
+                              "id": 1,
+                              "tr_id": 1,
+                              "created": "2025-10-02T17:20:55.107Z",
+                              "version": 1,
+                              "active_since": "2025-10-02T17:20:55.107Z",
+                              "documents": [
+                                {
+                                  "id": 1,
+                                  "gfv_id": 1,
+                                  "created": "2025-10-02T17:20:55.107Z",
+                                  "language": "en",
+                                  "url": "https://example.com/doc001-01",
+                                  "digest_sri": "sha384-MzNNbQTWCSUSi0bbz7dbua+RcENv7C6FvlmYJ1Y+I727HsPOHdzwELMYO9Mz68001"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0"
+                      },
+                      {
+                        "timestamp": "2025-10-02T17:20:55.107Z",
+                        "block_height": 343,
+                        "entity_type": "GovernanceFrameworkDocument",
+                        "entity_id": "1",
+                        "msg": "CreateTrustRegistry",
+                        "changes": {
+                          "url": "https://example.com/doc001-01",
+                          "gfv_id": 1,
+                          "created": "2025-10-02T17:20:55.107Z",
+                          "language": "en",
+                          "digest_sri": "sha384-MzNNbQTWCSUSi0bbz7dbua+RcENv7C6FvlmYJ1Y+I727HsPOHdzwELMYO9Mz68001",
+                          "versions": [
+                            {
+                              "id": 1,
+                              "tr_id": 1,
+                              "created": "2025-10-02T17:20:55.107Z",
+                              "version": 1,
+                              "active_since": "2025-10-02T17:20:55.107Z",
+                              "documents": [
+                                {
+                                  "id": 1,
+                                  "gfv_id": 1,
+                                  "created": "2025-10-02T17:20:55.107Z",
+                                  "language": "en",
+                                  "url": "https://example.com/doc001-01",
+                                  "digest_sri": "sha384-MzNNbQTWCSUSi0bbz7dbua+RcENv7C6FvlmYJ1Y+I727HsPOHdzwELMYO9Mz68001"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0"
+                      }
+                    ]
                   }
                 }
               }
@@ -1119,7 +1298,29 @@
                 "application/json": {
                   "schema": {
                     "type": "object",
-                    "description": "The raw JSON Schema document (e.g. draft 2020-12). Contains $id, $schema, title, description, type, properties, etc."
+                    "description": "The raw JSON Schema document (e.g. draft 2020-12). Contains $id, $schema, title, description, type, properties, etc.",
+                    "additionalProperties": true
+                  },
+                  "example": {
+                    "$defs": {},
+                    "$id": "vpr:verana:vna-testnet-1/cs/v1/js/1",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "additionalProperties": false,
+                    "description": "ExampleCredential using JsonSchema",
+                    "properties": {
+                      "email": {
+                        "format": "email",
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "title": "ExampleCredential",
+                    "type": "object"
                   }
                 }
               }
@@ -1461,11 +1662,82 @@
           ],
           "responses": {
             "200": {
-              "description": "Successful response with Credential Schema history",
+              "description": "Successful response with Credential Schema activity timeline",
               "content": {
                 "application/json": {
                   "schema": {
-                    "$ref": "#/components/schemas/CredentialSchemaHistoryResponse"
+                    "$ref": "#/components/schemas/ActivityTimelineResponse"
+                  },
+                  "example": {
+                    "entity_type": "CredentialSchema",
+                    "entity_id": "1",
+                    "activity": [
+                      {
+                        "timestamp": "2025-10-08T07:52:40.647Z",
+                        "block_height": 96940,
+                        "entity_type": "CredentialSchema",
+                        "entity_id": "1",
+                        "msg": "UpdateCredentialSchema",
+                        "changes": {
+                          "modified": "2025-10-08T07:52:40.647Z"
+                        },
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0"
+                      },
+                      {
+                        "timestamp": "2025-10-02T17:23:55.515Z",
+                        "block_height": 379,
+                        "entity_type": "CredentialSchema",
+                        "entity_id": "1",
+                        "msg": "CreateCredentialSchema",
+                        "changes": {
+                          "title": "ExampleCredential",
+                          "tr_id": 1,
+                          "issued": 0,
+                          "weight": 0,
+                          "created": "2025-10-02T17:23:55.515Z",
+                          "deposit": 10000000,
+                          "modified": "2025-10-02T17:23:55.515Z",
+                          "verified": 0,
+                          "description": "ExampleCredential using JsonSchema",
+                          "json_schema": {
+                            "$id": "vpr:verana:vna-testnet-1/cs/v1/js/1",
+                            "type": "object",
+                            "$defs": {},
+                            "title": "ExampleCredential",
+                            "$schema": "https://json-schema.org/draft/2020-12/schema",
+                            "required": [
+                              "name"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string",
+                                "format": "email"
+                              }
+                            },
+                            "description": "ExampleCredential using JsonSchema",
+                            "additionalProperties": false
+                          },
+                          "participants": 0,
+                          "network_slash_events": 0,
+                          "ecosystem_slash_events": 0,
+                          "network_slashed_amount": 0,
+                          "ecosystem_slashed_amount": 0,
+                          "issuer_perm_management_mode": "OPEN",
+                          "network_slashed_amount_repaid": 0,
+                          "verifier_perm_management_mode": "OPEN",
+                          "ecosystem_slashed_amount_repaid": 0,
+                          "holder_validation_validity_period": 0,
+                          "issuer_validation_validity_period": 0,
+                          "verifier_validation_validity_period": 0,
+                          "issuer_grantor_validation_validity_period": 0,
+                          "verifier_grantor_validation_validity_period": 0
+                        },
+                        "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0"
+                      }
+                    ]
                   }
                 }
               }
@@ -1973,25 +2245,69 @@
                       {
                         "id": 2,
                         "did": "did:example:186af95a000ef890a583f47a0274a800",
-                        "aka": "https://example.com",
-                        "pending_tasks": 5,
-                        "participants": 10,
+                        "aka": "http://example-aka.com",
+                        "pending_tasks": 3,
+                        "participants": 3,
                         "credential_schemas": [
                           {
-                            "id": 1234,
+                            "id": 2,
                             "title": "ExampleCredential",
-                            "description": "Example Credential Json Schema",
-                            "pending_tasks": 2,
-                            "participants": 3,
+                            "description": "ExampleCredential using JsonSchema",
+                            "pending_tasks": 3,
+                            "participants": 0,
                             "permissions": [
                               {
-                                "id": 1,
-                                "type": "ECOSYSTEM",
+                                "id": 2,
+                                "schema_id": 2,
+                                "type": "VERIFIER",
+                                "did": null,
+                                "grantee": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                                "created_by": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                                "created": "2025-10-03T12:30:43.431Z",
+                                "modified": "2025-10-03T12:30:43.431Z",
+                                "extended": null,
+                                "extended_by": null,
+                                "slashed": null,
+                                "slashed_by": null,
+                                "repaid": null,
+                                "repaid_by": null,
+                                "effective_from": null,
+                                "effective_until": null,
+                                "revoked": null,
+                                "revoked_by": null,
+                                "country": "GB",
+                                "validation_fees": 0,
+                                "issuance_fees": 0,
+                                "verification_fees": 0,
+                                "deposit": 1000000,
+                                "slashed_deposit": 0,
+                                "repaid_deposit": 0,
+                                "validator_perm_id": 1,
                                 "vp_state": "PENDING",
-                                "perm_state": "ACTIVE",
-                                "grantee": "verana12dyk...",
-                                "did": "did:example:123",
-                                "modified": "2025-10-03T11:59:38.834380988Z"
+                                "vp_last_state_change": "2025-10-03T12:30:43.431Z",
+                                "vp_current_fees": 5000000,
+                                "vp_current_deposit": 1000000,
+                                "vp_summary_digest_sri": null,
+                                "vp_exp": null,
+                                "vp_validator_deposit": 0,
+                                "vp_term_requested": null,
+                                "perm_state": "INACTIVE",
+                                "grantee_available_actions": [
+                                  "PERM_EXTEND",
+                                  "PERM_REVOKE"
+                                ],
+                                "validator_available_actions": [],
+                                "weight": 1000000,
+                                "issued": 0,
+                                "verified": 0,
+                                "participants": 0,
+                                "ecosystem_slash_events": 0,
+                                "ecosystem_slashed_amount": 0,
+                                "ecosystem_slashed_amount_repaid": 0,
+                                "network_slash_events": 0,
+                                "network_slashed_amount": 0,
+                                "network_slashed_amount_repaid": 0,
+                                "expire_soon": null
                               }
                             ]
                           }
@@ -2229,6 +2545,42 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/ActivityTimelineResponse"
+                  },
+                  "example": {
+                    "entity_type": "Permission",
+                    "entity_id": 1,
+                    "activity": [
+                      {
+                        "timestamp": "2025-10-03T11:59:38.834Z",
+                        "block_height": 13735,
+                        "entity_type": "Permission",
+                        "entity_id": "1",
+                        "msg": "CreateRootPermission",
+                        "changes": {
+                          "did": "did:example:186af95a000ef890a583f47a0274a800",
+                          "type": "ECOSYSTEM",
+                          "issued": 0,
+                          "created": "2025-10-03T11:59:38.834Z",
+                          "deposit": 0,
+                          "grantee": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                          "modified": "2025-10-03T11:59:38.834Z",
+                          "verified": 0,
+                          "vp_state": "VALIDATION_STATE_UNSPECIFIED",
+                          "schema_id": 2,
+                          "created_by": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                          "issuance_fees": 5,
+                          "effective_from": "2025-10-03T11:59:49.805Z",
+                          "repaid_deposit": 0,
+                          "effective_until": "2026-09-28T11:59:49.805Z",
+                          "slashed_deposit": 0,
+                          "validation_fees": 5,
+                          "vp_current_fees": 0,
+                          "verification_fees": 5,
+                          "vp_current_deposit": 0,
+                          "vp_validator_deposit": 0
+                        }
+                      }
+                    ]
                   }
                 }
               }
@@ -2239,6 +2591,10 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/Error"
+                  },
+                  "example": {
+                    "error": "Permission history not found for 1",
+                    "code": 404
                   }
                 }
               }
@@ -2274,21 +2630,53 @@
           ],
           "responses": {
             "200": {
-              "description": "History entries for the given Permission Session",
+              "description": "Successful response with Permission Session activity timeline",
               "content": {
                 "application/json": {
                   "schema": {
-                    "$ref": "#/components/schemas/PermissionSessionHistoryResponse"
+                    "$ref": "#/components/schemas/ActivityTimelineResponse"
+                  },
+                  "example": {
+                    "entity_type": "PERMISSION_SESSION",
+                    "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
+                    "activity": [
+                      {
+                        "timestamp": "2025-10-27T16:55:04.593Z",
+                        "block_height": 425339,
+                        "entity_type": "PERMISSION_SESSION",
+                        "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
+                        "msg": "CreateOrUpdatePermissionSession",
+                        "changes": {
+                          "authz": [
+                            {
+                              "issuer_perm_id": 25,
+                              "verifier_perm_id": null,
+                              "wallet_agent_perm_id": 25
+                            }
+                          ],
+                          "created": "2025-10-27T16:55:04.593Z",
+                          "modified": "2025-10-27T16:55:04.593Z",
+                          "controller": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
+                          "agent_perm_id": 25,
+                          "wallet_agent_perm_id": 25
+                        },
+                        "account": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l"
+                      }
+                    ]
                   }
                 }
               }
             },
             "404": {
-              "description": "No history entries found",
+              "description": "Permission Session not found",
               "content": {
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/Error"
+                  },
+                  "example": {
+                    "error": "PermissionSession 575ad8eb-3f0a-46bc-a51e-03cce903b865 not found",
+                    "code": 404
                   }
                 }
               }
@@ -2661,6 +3049,50 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/ActivityTimelineResponse"
+                  },
+                  "example": {
+                    "entity_type": "TrustDeposit",
+                    "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                    "activity": [
+                      {
+                        "timestamp": "2025-10-27T16:55:04.593Z",
+                        "block_height": 425339,
+                        "entity_type": "TrustDeposit",
+                        "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "msg": "AdjustTrustDeposit",
+                        "changes": {
+                          "share": 81000000,
+                          "amount": 81000000
+                        }
+                      },
+                      {
+                        "timestamp": "2025-10-27T16:54:37.920Z",
+                        "block_height": 425334,
+                        "entity_type": "TrustDeposit",
+                        "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "msg": "AdjustTrustDeposit",
+                        "changes": {
+                          "share": 80000000,
+                          "amount": 80000000
+                        }
+                      },
+                      {
+                        "timestamp": "2025-10-03T11:59:28.807Z",
+                        "block_height": 13733,
+                        "entity_type": "TrustDeposit",
+                        "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "msg": "CreateTrustDeposit",
+                        "changes": {
+                          "share": 10000000,
+                          "amount": 10000000,
+                          "claimable": 0,
+                          "slash_count": 0,
+                          "last_repaid_by": "",
+                          "repaid_deposit": 0,
+                          "slashed_deposit": 0
+                        }
+                      }
+                    ]
                   }
                 }
               }
@@ -2878,11 +3310,6 @@
             "code": {
               "type": "integer",
               "description": "HTTP status code"
-            },
-            "details": {
-              "type": "string",
-              "description": "Additional error details",
-              "nullable": true
             }
           }
         },
@@ -2983,7 +3410,7 @@
                 "type": "integer"
               },
               "json_schema": {
-                "type": "string"
+                "type": "object"
               },
               "deposit": {
                 "type": "integer",
@@ -3415,7 +3842,7 @@
           "TrustRegistryPending": {
             "type": "object",
             "properties": {
-              "id": { "type": "string" },
+              "id": { "type": "integer" },
               "did": { "type": "string", "nullable": true },
               "aka": { "type": "string", "nullable": true },
               "pending_tasks": { "type": "integer" },
@@ -3436,7 +3863,7 @@
               "participants": { "type": "integer" },
               "permissions": {
                 "type": "array",
-                "items": { "$ref": "#/components/schemas/PermissionPending" }
+                "items": { "$ref": "#/components/schemas/Permission" }
               }
             }
           },
@@ -3689,92 +4116,6 @@
                 "description": "Account that last performed repayment"
               }
             }
-          },
-          "ActivityTimelineResponse": {
-            "type": "object",
-            "properties": {
-              "entity_type": {
-                "type": "string",
-                "description": "The entity type (VPR spec name)",
-                "enum": [
-                  "TrustRegistry",
-                  "CredentialSchema",
-                  "GovernanceFrameworkDocument",
-                  "GovernanceFrameworkVersion",
-                  "DID",
-                  "Permission",
-                  "TrustDeposit"
-                ]
-              },
-              "entity_id": {
-                "type": "string",
-                "description": "The entity ID"
-              },
-              "activity": {
-                "type": "array",
-                "description": "List of activity items ordered by timestamp descending",
-                "items": {
-                  "$ref": "#/components/schemas/ActivityItem"
-                }
-              }
-            },
-            "required": [
-              "entity_type",
-              "entity_id",
-              "activity"
-            ]
-          },
-          "ActivityItem": {
-            "type": "object",
-            "properties": {
-              "timestamp": {
-                "type": "string",
-                "format": "date-time",
-                "description": "Transaction timestamp (ISO 8601)",
-                "nullable": true
-              },
-              "block_height": {
-                "type": "string",
-                "description": "Block height when the change occurred"
-              },
-              "entity_type": {
-                "type": "string",
-                "description": "Entity type (VPR spec name). Only included when different from the top-level entity_type (e.g., for related entities in TrustRegistry history)."
-              },
-              "entity_id": {
-                "type": "string",
-                "description": "Entity ID. Only included when different from the top-level entity_id (e.g., for related entities in TrustRegistry history)."
-              },
-              "account": {
-                "type": "string",
-                "description": "Account address that made the change. Only included when available (omitted for system-generated events)."
-              },
-              "msg": {
-                "type": "string",
-                "description": "Message/action type (e.g., CreateTrustRegistry, AddGovernanceFrameworkDocument)"
-              },
-              "changes": {
-                "type": "object",
-                "description": "Only changed values (fields that actually changed). Null if no changes or for create actions.",
-                "nullable": true,
-                "additionalProperties": {
-                  "type": "object",
-                  "properties": {
-                    "old": {
-                      "description": "Previous value"
-                    },
-                    "new": {
-                      "description": "New value"
-                    }
-                  }
-                }
-              }
-            },
-            "required": [
-              "timestamp",
-              "block_height",
-              "msg"
-            ]
           },
           "TrustDepositResponse": {
             "type": "object",
@@ -4497,7 +4838,7 @@
               "type": "integer"
             },
             "json_schema": {
-              "type": "string"
+              "type": "object"
             },
             "deposit": {
               "type": "integer"
@@ -4885,6 +5226,73 @@
             }
           }
         },
+       "PendingFlatResponse": {
+          "type": "object",
+          "properties": {
+            "trust_registries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TrustRegistryPending"
+              }
+            }
+          }
+        },
+        "TrustRegistryPending": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "did": {
+              "type": "string",
+              "nullable": true
+            },
+            "aka": {
+              "type": "string",
+              "nullable": true
+            },
+            "pending_tasks": {
+              "type": "integer"
+            },
+            "participants": {
+              "type": "integer"
+            },
+            "credential_schemas": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CredentialSchemaPending"
+              }
+            }
+          }
+        },
+        "CredentialSchemaPending": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "title": {
+              "type": "string",
+              "nullable": true
+            },
+            "description": {
+              "type": "string",
+              "nullable": true
+            },
+            "pending_tasks": {
+              "type": "integer"
+            },
+            "participants": {
+              "type": "integer"
+            },
+            "permissions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Permission"
+              }
+            }
+          }
+        },
         "PermissionHistoryItem": {
           "type": "object",
           "properties": {
@@ -5098,6 +5506,84 @@
               "description": "Account that last performed repayment"
             }
           }
+        },
+        "ActivityItem": {
+          "type": "object",
+          "properties": {
+            "timestamp": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Transaction timestamp (ISO 8601)"
+            },
+            "block_height": {
+              "type": "integer",
+              "description": "Block height when the change occurred"
+            },
+            "entity_type": {
+              "type": "string",
+              "description": "Entity type (VPR spec name)"
+            },
+            "entity_id": {
+              "type": "string",
+              "description": "Entity ID"
+            },
+            "account": {
+              "type": "string",
+              "description": "Account address that made the change"
+            },
+            "msg": {
+              "type": "string",
+              "description": "Message/action type (e.g., RenewDID, AddDID, CreateTrustRegistry, AddGovernanceFrameworkDocument, CreateRootPermission, CreateOrUpdatePermissionSession, AdjustTrustDeposit, CreateTrustDeposit)"
+            },
+            "changes": {
+              "type": "object",
+              "description": "Object containing the changed fields and their values. The structure varies by message type.",
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "timestamp",
+            "block_height",
+            "entity_type",
+            "entity_id",
+            "msg",
+            "changes"
+          ]
+        },
+        "ActivityTimelineResponse": {
+          "type": "object",
+          "properties": {
+            "entity_type": {
+              "type": "string",
+              "description": "The entity type (VPR spec name)",
+              "enum": [
+                "TrustRegistry",
+                "CredentialSchema",
+                "GovernanceFrameworkDocument",
+                "GovernanceFrameworkVersion",
+                "DID",
+                "Permission",
+                "TrustDeposit",
+                "PERMISSION_SESSION"
+              ]
+            },
+            "entity_id": {
+              "type": "string",
+              "description": "The entity ID"
+            },
+            "activity": {
+              "type": "array",
+              "description": "List of activity items ordered by timestamp descending",
+              "items": {
+                "$ref": "#/components/schemas/ActivityItem"
+              }
+            }
+          },
+          "required": [
+            "entity_type",
+            "entity_id",
+            "activity"
+          ]
         },
         "TrustDepositResponse": {
           "type": "object",

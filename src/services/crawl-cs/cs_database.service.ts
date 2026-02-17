@@ -25,19 +25,38 @@ async function checkHeightColumnExists(): Promise<boolean> {
   }
 }
 
-/** Normalize json_schema to a plain object for API responses (no stringified JSON). */
+const JSON_SCHEMA_INDENT = 2;
+
+function sortObjectKeys(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sortObjectKeys);
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(obj).sort()) {
+    out[key] = sortObjectKeys(obj[key]);
+  }
+  return out;
+}
+
 function normalizeJsonSchema(js: unknown): object | null {
   if (js == null) return null;
-  if (typeof js === "object") return js as object;
-  if (typeof js === "string") {
+  let obj: object | null = null;
+  if (typeof js === "object") obj = js as object;
+  else if (typeof js === "string") {
     try {
       const parsed = JSON.parse(js);
-      return typeof parsed === "object" && parsed !== null ? parsed : null;
+      obj = typeof parsed === "object" && parsed !== null ? parsed : null;
     } catch {
       return null;
     }
   }
-  return null;
+  if (!obj) return null;
+  return sortObjectKeys(obj) as object;
+}
+
+function normalizedJsonSchemaString(js: unknown): string {
+  const obj = normalizeJsonSchema(js);
+  return obj == null ? "{}" : JSON.stringify(obj, null, JSON_SCHEMA_INDENT);
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -91,7 +110,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { payload } = ctx.params;
 
       const result = await knex.transaction(async (trx) => {
-        const { height, blockchain_schema_id: blockchainSchemaId, ...schemaPayload } = payload;
+        const {
+          height,
+          blockchain_schema_id: blockchainSchemaIdSnake,
+          blockchainSchemaId: blockchainSchemaIdCamel,
+          ...schemaPayload
+        } = payload;
+        const blockchainSchemaId = blockchainSchemaIdSnake ?? blockchainSchemaIdCamel ?? null;
         const blockHeight = Number(height) || 0;
         
         let existingSchema = null;
@@ -1281,7 +1306,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (!historySchemaObj) {
           return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
         }
-        return ApiResponder.success(ctx, historySchemaObj, 200);
+        (ctx.meta as Record<string, unknown>).$responseType = "application/json; charset=utf-8";
+        return ApiResponder.success(ctx, normalizedJsonSchemaString(historySchemaObj), 200);
       }
 
       const schemaRecord = await knex("credential_schemas")
@@ -1297,7 +1323,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (!schemaObj) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
       }
-      return ApiResponder.success(ctx, schemaObj, 200);
+      (ctx.meta as Record<string, unknown>).$responseType = "application/json; charset=utf-8";
+      return ApiResponder.success(ctx, normalizedJsonSchemaString(schemaObj), 200);
     } catch (err: any) {
       this.logger.error("Error in renderJsonSchema:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
