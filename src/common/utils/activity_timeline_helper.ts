@@ -356,7 +356,11 @@ export async function buildActivityTimeline(
       const excludeFields = ["id", "created_at", "event_type", "height", "changes", "msg_type", "sender", "timestamp", "activity_entity_type", "activity_entity_id"];
       for (const [key, value] of Object.entries(record)) {
         if (!excludeFields.includes(key)) {
-          computedChanges[key] = value;
+          if (key === "json_schema" && (entityType === "CredentialSchema" || record.activity_entity_type === "CredentialSchema")) {
+            computedChanges[key] = typeof value === "string" ? value : (value != null ? JSON.stringify(value) : null);
+          } else {
+            computedChanges[key] = value;
+          }
         }
       }
       changes = Object.keys(computedChanges).length > 0 ? computedChanges : null;
@@ -442,6 +446,13 @@ export async function buildActivityTimeline(
             if (!Number.isNaN(n)) {
               changes[field] = n;
             }
+          }
+        }
+      } else if (activityEntityType === "CredentialSchema") {
+        if (Object.prototype.hasOwnProperty.call(changes, "json_schema") && changes.json_schema != null) {
+          if (typeof changes.json_schema === "string") {
+          } else if (typeof changes.json_schema === "object") {
+            changes.json_schema = JSON.stringify(changes.json_schema);
           }
         }
       }

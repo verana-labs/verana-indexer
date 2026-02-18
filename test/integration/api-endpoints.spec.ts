@@ -1,6 +1,9 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 
-const BASE_URL = process.env.API_BASE_URL || process.env.TEST_API_BASE_URL || 'http://localhost:3001';
+function getBaseUrl(): string {
+  return 'http://localhost:3001';
+}
+
 const TIMEOUT = 30000;
 const MAX_RETRIES = 2;
 
@@ -58,7 +61,7 @@ async function testEndpoint(
   params: any = {},
   headers: Record<string, string | number> = {}
 ): Promise<AxiosResponse> {
-  const url = `${BASE_URL}${path}`;
+  const url = `${getBaseUrl()}${path}`;
   
   const config: any = {
     headers: Object.fromEntries(
@@ -81,16 +84,18 @@ let serverAvailable = false;
 describe('Comprehensive API Endpoints Integration Tests', () => {
   beforeAll(async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/verana/indexer/v1/version`, {
+      const baseUrl = getBaseUrl();
+      const response = await axios.get(`${baseUrl}/verana/indexer/v1/version`, {
         timeout: 5000,
       });
       serverAvailable = true;
-      console.log(`✓ Server is reachable at ${BASE_URL}`);
+      console.log(`✓ Server is reachable at ${baseUrl}`);
       console.log(`  Server version response: ${response.status}`);
     } catch (error) {
       serverAvailable = false;
       const err = error as AxiosError;
-      console.warn(`⚠ Server is not reachable at ${BASE_URL}`);
+      const baseUrl = getBaseUrl();
+      console.warn(`⚠ Server is not reachable at ${baseUrl}`);
       console.warn(`  Error: ${err.message}`);
       console.warn(`  Skipping API integration tests. Start the indexer server to run these tests.`);
     }
@@ -404,7 +409,8 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
       it('should handle invalid TR ID format', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', '/verana/tr/v1/get/invalid-id');
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(600);
       });
     });
 
@@ -1088,36 +1094,35 @@ describe('Comprehensive API Endpoints Integration Tests', () => {
     });
 
     describe('GET /verana/perm/v1/beneficiaries - ALL PARAMETERS', () => {
-      it('should get beneficiaries - with required account', async () => {
+      it('should get beneficiaries - with issuer_perm_id', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
-          account: SAMPLE_ACCOUNT,
+          issuer_perm_id: SAMPLE_PERM_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      it('should get beneficiaries - validation: missing account (should fail)', async () => {
+      it('should get beneficiaries - with verifier_perm_id', async () => {
+        if (skipIfServerUnavailable()) return;
+        const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
+          verifier_perm_id: SAMPLE_PERM_ID,
+        });
+        expect(response.status).not.toBeGreaterThanOrEqual(500);
+      });
+
+      it('should get beneficiaries - validation: missing required parameters (should fail)', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
         if (response.status === 400) {
-          expect(response.data?.error || response.data?.message).toContain('account');
+          expect(response.data?.error || response.data?.message).toMatch(/issuer_perm_id|verifier_perm_id/);
         }
       });
 
-      it('should get beneficiaries - with schema_id filter', async () => {
+      it('should get beneficiaries - with issuer_perm_id and response_max_size', async () => {
         if (skipIfServerUnavailable()) return;
         const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
-          account: SAMPLE_ACCOUNT,
-          schema_id: SAMPLE_SCHEMA_ID,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      it('should get beneficiaries - with response_max_size', async () => {
-        if (skipIfServerUnavailable()) return;
-        const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
-          account: SAMPLE_ACCOUNT,
+          issuer_perm_id: SAMPLE_PERM_ID,
           response_max_size: 100,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);

@@ -8,6 +8,7 @@ import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 import { calculateCredentialSchemaStats } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
+import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
 
 let heightColumnExistsCache: boolean | null = null;
 
@@ -25,17 +26,18 @@ async function checkHeightColumnExists(): Promise<boolean> {
   }
 }
 
-const JSON_SCHEMA_INDENT = 2;
+function ensureSchemaString(js: unknown): string {
+  if (js == null) return "";
+  if (typeof js === "string") return js;
+  if (typeof js === "object") return JSON.stringify(js);
+  return String(js);
+}
 
-function sortObjectKeys(value: unknown): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(sortObjectKeys);
-  const obj = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(obj).sort()) {
-    out[key] = sortObjectKeys(obj[key]);
-  }
-  return out;
+function getStoredSchemaString(js: unknown): string {
+  if (js == null) return "";
+  if (typeof js === "string") return js;
+  if (typeof js === "object") return JSON.stringify(js);
+  return String(js);
 }
 
 function normalizeJsonSchema(js: unknown): object | null {
@@ -51,12 +53,7 @@ function normalizeJsonSchema(js: unknown): object | null {
     }
   }
   if (!obj) return null;
-  return sortObjectKeys(obj) as object;
-}
-
-function normalizedJsonSchemaString(js: unknown): string {
-  const obj = normalizeJsonSchema(js);
-  return obj == null ? "{}" : JSON.stringify(obj, null, JSON_SCHEMA_INDENT);
+  return obj;
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -120,39 +117,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const blockHeight = Number(height) || 0;
         
         let existingSchema = null;
-        if (blockchainSchemaId != null) {
-          const { normalizeSchemaId, extractSchemaIdFromNormalizedId } = await import('../../common/utils/schema_id_normalizer');
-          
-          const normalizedSchema = normalizeSchemaId(schemaPayload.json_schema, blockchainSchemaId);
-          let normalizedId: string | null = null;
-          
-          if (normalizedSchema) {
-            let schemaObj: any;
-            if (typeof normalizedSchema === 'string') {
-              try {
-                schemaObj = JSON.parse(normalizedSchema);
-              } catch {
-                schemaObj = null;
-              }
-            } else {
-              schemaObj = normalizedSchema;
-            }
-            
-            if (schemaObj && typeof schemaObj === 'object' && schemaObj.$id) {
-              normalizedId = schemaObj.$id;
-            }
-          }
-          
-          if (normalizedId) {
-            const existingSchemas = await trx("credential_schemas")
-              .select("*")
-              .whereRaw("json_schema->>'$id' = ?", [normalizedId])
-              .limit(1);
-            
-            if (existingSchemas.length > 0) {
-              existingSchema = existingSchemas[0];
-              this.logger.info(`Found existing schema with blockchain_id=${blockchainSchemaId} (normalized $id=${normalizedId}), database_id=${existingSchema.id}. Updating instead of inserting.`);
-            }
+        const numericBlockchainId = blockchainSchemaId != null ? Number(blockchainSchemaId) : NaN;
+        if (Number.isInteger(numericBlockchainId) && numericBlockchainId > 0) {
+          const existingSchemas = await trx("credential_schemas")
+            .select("*")
+            .where({ id: numericBlockchainId })
+            .limit(1);
+          if (existingSchemas.length > 0) {
+            existingSchema = existingSchemas[0];
+            this.logger.info(`Found existing schema with blockchain_id=${blockchainSchemaId} (database_id=${existingSchema.id}). Updating instead of inserting.`);
           }
         }
         
@@ -163,12 +136,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             ...schemaPayload,
             modified: schemaPayload.modified || new Date(),
           };
-          
-          if (updates.json_schema && blockchainSchemaId != null) {
-            const { normalizeSchemaId } = await import('../../common/utils/schema_id_normalizer');
-            updates.json_schema = normalizeSchemaId(updates.json_schema, blockchainSchemaId);
+          if (updates.json_schema != null) {
+            const rawString = ensureSchemaString(updates.json_schema);
+            updates.json_schema = overrideSchemaIdInString(rawString, existingSchema.id);
           }
-          
           const [updated] = await trx("credential_schemas")
             .where({ id: existingSchema.id })
             .update(updates)
@@ -180,43 +151,34 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           
           finalRecord = updated;
         } else {
+          const insertPayload = { ...schemaPayload };
+          const rawSchemaString = insertPayload.json_schema != null ? ensureSchemaString(insertPayload.json_schema) : "";
+          insertPayload.json_schema = rawSchemaString || "{}";
           const [inserted] = await trx("credential_schemas")
-            .insert(schemaPayload)
+            .insert(insertPayload)
             .returning("*");
-
           finalRecord = inserted;
-
-          const jsonSchema = inserted.json_schema;
-          if (jsonSchema) {
-            const schemaIdForNormalization = blockchainSchemaId ?? inserted.id;
-            const { normalizeSchemaId } = await import('../../common/utils/schema_id_normalizer');
-            const normalizedSchema = normalizeSchemaId(jsonSchema, schemaIdForNormalization);
-            
-            if (normalizedSchema !== jsonSchema) {
-              const [updated] = await trx("credential_schemas")
-                .where({ id: inserted.id })
-                .update({ json_schema: normalizedSchema })
-                .returning("*");
-
-              if (updated && updated.id && updated.id === inserted.id) {
-                finalRecord = updated;
-              } else {
-                throw new Error(`Failed to update json_schema for schema id=${inserted.id}. Updated record is invalid or ID mismatch.`);
-              }
-            }
+          if (rawSchemaString && inserted.id != null) {
+            const withOverriddenId = overrideSchemaIdInString(rawSchemaString, inserted.id);
+            const [updated] = await trx("credential_schemas")
+              .where({ id: inserted.id })
+              .update({ json_schema: withOverriddenId })
+              .returning("*");
+            if (updated) finalRecord = updated;
           }
         }
         try {
           let schemaObjForMeta: any = null;
           if (finalRecord?.json_schema) {
-            if (typeof finalRecord.json_schema === "string") {
+            const raw = finalRecord.json_schema;
+            if (typeof raw === "string") {
               try {
-                schemaObjForMeta = JSON.parse(finalRecord.json_schema);
+                schemaObjForMeta = JSON.parse(raw);
               } catch {
                 schemaObjForMeta = null;
               }
             } else {
-              schemaObjForMeta = finalRecord.json_schema;
+              schemaObjForMeta = raw;
             }
           }
           if (schemaObjForMeta && typeof schemaObjForMeta === "object") {
@@ -310,22 +272,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, "Missing required field: id", 400);
       }
 
-      let existing = await knex("credential_schemas").where({ id: payload.id }).first();
-      
-      if (!existing && payload.id) {
-        const { normalizeSchemaId } = await import('../../common/utils/schema_id_normalizer');
-        const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
-        const expectedNormalizedId = `vpr:verana:${chainId}/cs/v1/js/${payload.id}`;
-        
-        const existingByBlockchainId = await knex("credential_schemas")
-          .whereRaw("json_schema->>'$id' = ?", [expectedNormalizedId])
-          .first();
-        
-        if (existingByBlockchainId) {
-          existing = existingByBlockchainId;
-          this.logger.info(`Found schema by blockchain_id=${payload.id} (database_id=${existing.id}) for update`);
-        }
-      }
+      const existing = await knex("credential_schemas").where({ id: payload.id }).first();
       
       if (!existing) {
         return ApiResponder.error(ctx, `Credential schema with id=${payload.id} not found`, 404);
@@ -345,9 +292,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { height, ...updatesWithoutHeight } = updates;
       const blockHeight = Number(height) || 0;
 
-      if (updatesWithoutHeight.json_schema && payload.id) {
-        const { normalizeSchemaId } = await import('../../common/utils/schema_id_normalizer');
-        updatesWithoutHeight.json_schema = normalizeSchemaId(updatesWithoutHeight.json_schema, payload.id);
+      if (updatesWithoutHeight.json_schema != null) {
+        const rawString = ensureSchemaString(updatesWithoutHeight.json_schema);
+        updatesWithoutHeight.json_schema = overrideSchemaIdInString(rawString, existing.id);
       }
 
       let [updated] = await knex("credential_schemas")
@@ -571,13 +518,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
         }
 
-        const historyJsonSchemaObj = normalizeJsonSchema(historyRecord.json_schema);
+        const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
         const historicalSchema = {
           id: historyRecord.credential_schema_id,
           tr_id: historyRecord.tr_id,
-          json_schema: historyJsonSchemaObj ?? undefined,
-          title: historyRecord.title ?? (historyJsonSchemaObj && "title" in historyJsonSchemaObj ? (historyJsonSchemaObj as any).title : undefined),
-          description: historyRecord.description ?? (historyJsonSchemaObj && "description" in historyJsonSchemaObj ? (historyJsonSchemaObj as any).description : undefined),
+          json_schema: storedSchemaString,
+          title: historyRecord.title ?? undefined,
+          description: historyRecord.description ?? undefined,
           deposit: historyRecord.deposit,
           issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
           verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
@@ -631,8 +578,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (!schemaRecord) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
-      const jsonSchemaObj = normalizeJsonSchema(schemaRecord.json_schema);
       delete schemaRecord?.is_active;
+      const storedSchemaString = getStoredSchemaString(schemaRecord.json_schema);
 
       let stats;
       try {
@@ -656,9 +603,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, {
         schema: {
           ...schemaRecord,
-          json_schema: jsonSchemaObj ?? undefined,
-          title: schemaRecord.title ?? (jsonSchemaObj && "title" in jsonSchemaObj ? (jsonSchemaObj as any).title : undefined),
-          description: schemaRecord.description ?? (jsonSchemaObj && "description" in jsonSchemaObj ? (jsonSchemaObj as any).description : undefined),
+          json_schema: storedSchemaString,
+          title: schemaRecord.title ?? undefined,
+          description: schemaRecord.description ?? undefined,
           participants: stats.participants,
           weight: stats.weight,
           issued: stats.issued,
@@ -834,13 +781,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         let filteredItems = items
           .filter((item): item is NonNullable<typeof items[0]> => item !== null)
           .map((historyRecord) => {
-            const jsObj = normalizeJsonSchema(historyRecord.json_schema);
+            const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
             return {
               id: historyRecord.credential_schema_id,
               tr_id: historyRecord.tr_id,
-              json_schema: jsObj ?? undefined,
-              title: historyRecord.title ?? (jsObj && "title" in jsObj ? (jsObj as any).title : undefined),
-              description: historyRecord.description ?? (jsObj && "description" in jsObj ? (jsObj as any).description : undefined),
+              json_schema: storedSchemaString,
+              title: historyRecord.title ?? undefined,
+              description: historyRecord.description ?? undefined,
             deposit: historyRecord.deposit,
             issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
             verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
@@ -1152,12 +1099,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               network_slashed_amount_repaid: 0,
             };
           }
-          const listJsonSchemaObj = normalizeJsonSchema(item.json_schema);
+          const storedSchemaString = getStoredSchemaString(item.json_schema);
           return {
             ...item,
-            json_schema: listJsonSchemaObj ?? undefined,
-            title: item.title ?? (listJsonSchemaObj && "title" in listJsonSchemaObj ? (listJsonSchemaObj as any).title : undefined),
-            description: item.description ?? (listJsonSchemaObj && "description" in listJsonSchemaObj ? (listJsonSchemaObj as any).description : undefined),
+            json_schema: storedSchemaString,
+            title: item.title ?? undefined,
+            description: item.description ?? undefined,
             participants: stats.participants,
             weight: stats.weight,
             issued: stats.issued,
@@ -1302,12 +1249,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
         }
 
-        const historySchemaObj = normalizeJsonSchema(historyRecord.json_schema);
-        if (!historySchemaObj) {
+        const stored = getStoredSchemaString(historyRecord.json_schema);
+        if (!stored) {
           return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
         }
-        (ctx.meta as Record<string, unknown>).$responseType = "application/json; charset=utf-8";
-        return ApiResponder.success(ctx, historySchemaObj, 200);
+        return ApiResponder.success(ctx, stored, 200);
       }
 
       const schemaRecord = await knex("credential_schemas")
@@ -1319,13 +1265,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
 
-      const schemaObj = normalizeJsonSchema(schemaRecord.json_schema);
-      if (!schemaObj) {
+      const stored = getStoredSchemaString(schemaRecord.json_schema);
+      if (!stored) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
       }
-      (ctx.meta as Record<string, unknown>).$responseType = "application/json; charset=utf-8";
-      // Return object directly - HTTP layer will serialize, broker.call() gets object
-      return ApiResponder.success(ctx, schemaObj, 200);
+      return ApiResponder.success(ctx, stored, 200);
     } catch (err: any) {
       this.logger.error("Error in renderJsonSchema:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);

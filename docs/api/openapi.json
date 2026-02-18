@@ -1293,35 +1293,14 @@
           ],
           "responses": {
             "200": {
-              "description": "Successful response. The response body is the JSON Schema document itself (not wrapped in an object).",
+              "description": "Successful response. Credential schema exactly as stored on blockchain (with $id overridden by indexer). Preserves formatting for SRI digest verification. The response body is the raw JSON Schema document string itself, not wrapped in an object.",
               "content": {
                 "application/json": {
                   "schema": {
-                    "type": "object",
-                    "description": "The raw JSON Schema document (e.g. draft 2020-12). Contains $id, $schema, title, description, type, properties, etc.",
-                    "additionalProperties": true
+                    "type": "string",
+                    "description": "Credential schema exactly as stored on blockchain (with $id overridden by indexer). Returned verbatim; do not parse or re-serialize."
                   },
-                  "example": {
-                    "$defs": {},
-                    "$id": "vpr:verana:vna-testnet-1/cs/v1/js/1",
-                    "$schema": "https://json-schema.org/draft/2020-12/schema",
-                    "additionalProperties": false,
-                    "description": "ExampleCredential using JsonSchema",
-                    "properties": {
-                      "email": {
-                        "format": "email",
-                        "type": "string"
-                      },
-                      "name": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "title": "ExampleCredential",
-                    "type": "object"
-                  }
+                  "example": "{\"$id\":\"vpr:verana:vna-testnet-1/cs/v1/js/1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}"
                 }
               }
             },
@@ -1699,27 +1678,7 @@
                           "modified": "2025-10-02T17:23:55.515Z",
                           "verified": 0,
                           "description": "ExampleCredential using JsonSchema",
-                          "json_schema": {
-                            "$id": "vpr:verana:vna-testnet-1/cs/v1/js/1",
-                            "type": "object",
-                            "$defs": {},
-                            "title": "ExampleCredential",
-                            "$schema": "https://json-schema.org/draft/2020-12/schema",
-                            "required": [
-                              "name"
-                            ],
-                            "properties": {
-                              "name": {
-                                "type": "string"
-                              },
-                              "email": {
-                                "type": "string",
-                                "format": "email"
-                              }
-                            },
-                            "description": "ExampleCredential using JsonSchema",
-                            "additionalProperties": false
-                          },
+                          "json_schema": "{\"$id\":\"vpr:verana:vna-testnet-1/cs/v1/js/1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}",
                           "participants": 0,
                           "network_slash_events": 0,
                           "ecosystem_slash_events": 0,
@@ -3410,7 +3369,8 @@
                 "type": "integer"
               },
               "json_schema": {
-                "type": "object"
+                "type": "string",
+                "description": "The exact JSON Schema document as stored from the blockchain (preserves formatting for SRI digest verification). Returned as-is; do not parse or re-serialize."
               },
               "deposit": {
                 "type": "integer",
@@ -4838,7 +4798,8 @@
               "type": "integer"
             },
             "json_schema": {
-              "type": "object"
+              "type": "string",
+              "description": "The exact JSON Schema document as stored from the blockchain (preserves formatting for SRI digest verification). Returned as-is; do not parse or re-serialize."
             },
             "deposit": {
               "type": "integer"
@@ -5222,17 +5183,6 @@
               "type": "array",
               "items": {
                 "$ref": "#/components/schemas/Permission"
-              }
-            }
-          }
-        },
-       "PendingFlatResponse": {
-          "type": "object",
-          "properties": {
-            "trust_registries": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/TrustRegistryPending"
               }
             }
           }

@@ -164,15 +164,13 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
       const blockchainSchemaId = schemaMessage.id ?? content.id ?? null;
 
-      const jsonSchema = content.json_schema ?? content.jsonSchema ?? "";
-      const baseSchema =
-        typeof jsonSchema === "string"
-          ? JSON.parse(jsonSchema)
-          : jsonSchema ?? {};
+      const jsonSchema = content.json_schema ?? content.jsonSchema ?? "{}";
+      const jsonSchemaForDb =
+        typeof jsonSchema === "string" ? jsonSchema : JSON.stringify(jsonSchema ?? {});
 
       const payload: Record<string, any> = {
         tr_id: trId,
-        json_schema: baseSchema,
+        json_schema: jsonSchemaForDb,
         deposit: deposit ?? 0,
         created: timestamp ?? null,
         modified: timestamp ?? null,

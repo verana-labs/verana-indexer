@@ -474,7 +474,7 @@ export default class IndexerMetaService extends BaseService {
       let errorCount = 0;
       let schemaIdsFixed = 0;
       const errors: Array<{ id: number; error: string }> = [];
-      const { normalizeSchemaId, needsIdNormalization } = await import('../../common/utils/schema_id_normalizer');
+      const { overrideSchemaIdInString } = await import('../../common/utils/schema_id_normalizer');
 
       for (let i = 0; i < trustRegistries.length; i++) {
         const tr = trustRegistries[i];
@@ -505,11 +505,14 @@ export default class IndexerMetaService extends BaseService {
             .select("id", "json_schema");
 
           for (const schema of schemas) {
-            if (needsIdNormalization(schema.json_schema, schema.id)) {
-              const normalizedSchema = normalizeSchemaId(schema.json_schema, schema.id);
+            const currentStr = typeof schema.json_schema === "string"
+              ? schema.json_schema
+              : JSON.stringify(schema.json_schema);
+            const normalizedStr = overrideSchemaIdInString(currentStr, schema.id);
+            if (currentStr !== normalizedStr) {
               await knex("credential_schemas")
                 .where({ id: schema.id })
-                .update({ json_schema: normalizedSchema });
+                .update({ json_schema: normalizedStr });
               schemaIdsFixed++;
             }
           }
