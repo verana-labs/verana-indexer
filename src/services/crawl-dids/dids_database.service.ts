@@ -2,6 +2,7 @@ import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended"
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
+import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
@@ -164,6 +165,12 @@ export default class DidDatabaseService extends BullableService {
                 sort
             } = ctx.params;
 
+            const accountValidation = validateParticipantParam(account, "account");
+            if (!accountValidation.valid) {
+                return ApiResponder.error(ctx, accountValidation.error, 400);
+            }
+            const accountFilter = accountValidation.value;
+
             if (modified) {
                 const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
                 if (!isValidISO8601UTC(modified)) {
@@ -247,7 +254,7 @@ export default class DidDatabaseService extends BullableService {
                 // Filter out nulls and apply filters
                 let filteredItems = items.filter((item): item is NonNullable<typeof items[0]> => item !== null);
 
-                if (account) filteredItems = filteredItems.filter(item => item.controller === account);
+                if (accountFilter) filteredItems = filteredItems.filter(item => item.controller === accountFilter);
                 if (modified) {
                     const modifiedDate = new Date(modified);
                     if (!Number.isNaN(modifiedDate.getTime())) {
@@ -304,7 +311,7 @@ export default class DidDatabaseService extends BullableService {
                 "modified",
             );
 
-            if (account) query = query.andWhere("controller", account);
+            if (accountFilter) query = query.andWhere("controller", accountFilter);
             if (modified) {
                 const modifiedDate = new Date(modified);
                 if (!Number.isNaN(modifiedDate.getTime())) {

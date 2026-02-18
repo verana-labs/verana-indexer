@@ -118,14 +118,14 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should fetch JsonSchema of the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.JsonSchema`, { id: schema.id });
-    const jsonSchemaStr = res?.schema || res;
-
-    expect(typeof jsonSchemaStr).toBe("string");
-
-    const jsonSchema = JSON.parse(jsonSchemaStr);
-    expect(jsonSchema.type).toBe("object");
-    expect(jsonSchema.properties).toHaveProperty("foo");
-
+    expect(res).toBeDefined();
+    expect(typeof res).toBe("string");
+    const stored = res as string;
+    expect(stored).toContain("vpr:verana:vna-testnet-1/cs/v1/js/" + schema.id);
+    expect(stored).toContain("foo");
+    const parsed = JSON.parse(stored);
+    expect(parsed.$id).toBe("vpr:verana:vna-testnet-1/cs/v1/js/" + schema.id);
+    expect(parsed.properties).toHaveProperty("foo");
   });
 
   it("should fetch module params for credentialschema", async () => {

@@ -427,6 +427,32 @@ export default class PermIngestService extends Service {
     });
   }
 
+  private async refreshTrustRegistryStatsBySchemaId(schemaId: number | null | undefined): Promise<void> {
+    if (schemaId == null) return;
+    try {
+      const cs = await knex("credential_schemas").where({ id: schemaId }).select("tr_id").first();
+      const trId = cs?.tr_id != null ? Number(cs.tr_id) : null;
+      if (trId == null) return;
+      const stats = await calculateTrustRegistryStats(trId);
+      await knex("trust_registry").where("id", trId).update({
+        participants: stats.participants,
+        active_schemas: stats.active_schemas,
+        archived_schemas: stats.archived_schemas,
+        weight: stats.weight,
+        issued: stats.issued,
+        verified: stats.verified,
+        ecosystem_slash_events: stats.ecosystem_slash_events,
+        ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+        ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+        network_slash_events: stats.network_slash_events,
+        network_slashed_amount: stats.network_slashed_amount,
+        network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to refresh trust_registry stats for schema_id=${schemaId}: ${err?.message || err}`);
+    }
+  }
+
   private async handleCreateRootPermission(msg: MsgCreateRootPermission & { height?: number }) {
     let permission: any = null;
     try {
@@ -537,6 +563,8 @@ export default class PermIngestService extends Service {
       } catch (participantsErr: any) {
         this.logger.warn(`Failed to update participants for root permission ${permission.id}:`, participantsErr?.message || participantsErr);
       }
+
+      await this.refreshTrustRegistryStatsBySchemaId(schemaId);
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleCreateRootPermission:", err);
       console.error("FATAL PERM CREATE ROOT ERROR:", err);
@@ -666,6 +694,8 @@ export default class PermIngestService extends Service {
       } catch (participantsErr: any) {
         this.logger.warn(`Failed to update participants for permission ${permission.id}:`, participantsErr?.message || participantsErr);
       }
+
+      await this.refreshTrustRegistryStatsBySchemaId(permission.schema_id);
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleCreatePermission:", err);
       console.error("FATAL PERM CREATE ERROR:", err);
@@ -811,6 +841,8 @@ export default class PermIngestService extends Service {
         }
       });
 
+      await this.refreshTrustRegistryStatsBySchemaId(applicantPerm?.schema_id);
+
       this.logger.info(
         `✅ Permission ${msg.id
         } extended until ${newEffectiveUntil.toISOString()} by ${caller}`
@@ -932,6 +964,8 @@ export default class PermIngestService extends Service {
           this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
         }
       });
+
+      await this.refreshTrustRegistryStatsBySchemaId(applicantPerm?.schema_id);
 
       this.logger.info(
         `Permission ${msg.id} successfully revoked by ${caller}`
@@ -1089,6 +1123,8 @@ export default class PermIngestService extends Service {
       } catch (updateErr: any) {
         this.logger.warn(`Failed to update weight/participants for new permission ${newPermission.id}:`, updateErr?.message || updateErr);
       }
+
+      await this.refreshTrustRegistryStatsBySchemaId(newPermission.schema_id);
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleStartPermissionVP:", err);
       console.error("FATAL PERM START VP ERROR:", err);
@@ -1369,6 +1405,8 @@ export default class PermIngestService extends Service {
       } catch (participantsErr: any) {
         this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
       }
+
+      await this.refreshTrustRegistryStatsBySchemaId(perm.schema_id);
 
       this.logger.info(`Permission ${msg.id} successfully validated`);
       return { success: true };
@@ -1842,47 +1880,22 @@ export default class PermIngestService extends Service {
         const slashedPerm = await knex("permissions").where({ id: msg.id }).first();
         if (slashedPerm?.schema_id) {
           const schemaId = Number(slashedPerm.schema_id);
-          const schema = await knex("credential_schemas")
+          const csStats = await calculateCredentialSchemaStats(schemaId);
+          await knex("credential_schemas")
             .where("id", schemaId)
-            .first();
-
-          if (schema) {
-            const csStats = await calculateCredentialSchemaStats(schemaId);
-            await knex("credential_schemas")
-              .where("id", schemaId)
-              .update({
-                participants: csStats.participants,
-                weight: csStats.weight,
-                issued: csStats.issued,
-                verified: csStats.verified,
-                ecosystem_slash_events: csStats.ecosystem_slash_events,
-                ecosystem_slashed_amount: csStats.ecosystem_slashed_amount,
-                ecosystem_slashed_amount_repaid: csStats.ecosystem_slashed_amount_repaid,
-                network_slash_events: csStats.network_slash_events,
-                network_slashed_amount: csStats.network_slashed_amount,
-                network_slashed_amount_repaid: csStats.network_slashed_amount_repaid,
-              });
-
-            if (schema.tr_id) {
-              const trStats = await calculateTrustRegistryStats(Number(schema.tr_id));
-              await knex("trust_registry")
-                .where("id", schema.tr_id)
-                .update({
-                  participants: trStats.participants,
-                  active_schemas: trStats.active_schemas,
-                  archived_schemas: trStats.archived_schemas,
-                  weight: trStats.weight,
-                  issued: trStats.issued,
-                  verified: trStats.verified,
-                  ecosystem_slash_events: trStats.ecosystem_slash_events,
-                  ecosystem_slashed_amount: trStats.ecosystem_slashed_amount,
-                  ecosystem_slashed_amount_repaid: trStats.ecosystem_slashed_amount_repaid,
-                  network_slash_events: trStats.network_slash_events,
-                  network_slashed_amount: trStats.network_slashed_amount,
-                  network_slashed_amount_repaid: trStats.network_slashed_amount_repaid,
-                });
-            }
-          }
+            .update({
+              participants: csStats.participants,
+              weight: csStats.weight,
+              issued: csStats.issued,
+              verified: csStats.verified,
+              ecosystem_slash_events: csStats.ecosystem_slash_events,
+              ecosystem_slashed_amount: csStats.ecosystem_slashed_amount,
+              ecosystem_slashed_amount_repaid: csStats.ecosystem_slashed_amount_repaid,
+              network_slash_events: csStats.network_slash_events,
+              network_slashed_amount: csStats.network_slashed_amount,
+              network_slashed_amount_repaid: csStats.network_slashed_amount_repaid,
+            });
+          await this.refreshTrustRegistryStatsBySchemaId(schemaId);
         }
       } catch (statsErr: any) {
         this.logger.warn(` Failed to update CS/TR statistics after slash: ${statsErr?.message || String(statsErr)}`);
@@ -2070,47 +2083,22 @@ export default class PermIngestService extends Service {
         const repaidPerm = await knex("permissions").where({ id: msg.id }).first();
         if (repaidPerm?.schema_id) {
           const schemaId = Number(repaidPerm.schema_id);
-          const schema = await knex("credential_schemas")
+          const csStats = await calculateCredentialSchemaStats(schemaId);
+          await knex("credential_schemas")
             .where("id", schemaId)
-            .first();
-
-          if (schema) {
-            const csStats = await calculateCredentialSchemaStats(schemaId);
-            await knex("credential_schemas")
-              .where("id", schemaId)
-              .update({
-                participants: csStats.participants,
-                weight: csStats.weight,
-                issued: csStats.issued,
-                verified: csStats.verified,
-                ecosystem_slash_events: csStats.ecosystem_slash_events,
-                ecosystem_slashed_amount: csStats.ecosystem_slashed_amount,
-                ecosystem_slashed_amount_repaid: csStats.ecosystem_slashed_amount_repaid,
-                network_slash_events: csStats.network_slash_events,
-                network_slashed_amount: csStats.network_slashed_amount,
-                network_slashed_amount_repaid: csStats.network_slashed_amount_repaid,
-              });
-
-            if (schema.tr_id) {
-              const trStats = await calculateTrustRegistryStats(Number(schema.tr_id));
-              await knex("trust_registry")
-                .where("id", schema.tr_id)
-                .update({
-                  participants: trStats.participants,
-                  active_schemas: trStats.active_schemas,
-                  archived_schemas: trStats.archived_schemas,
-                  weight: trStats.weight,
-                  issued: trStats.issued,
-                  verified: trStats.verified,
-                  ecosystem_slash_events: trStats.ecosystem_slash_events,
-                  ecosystem_slashed_amount: trStats.ecosystem_slashed_amount,
-                  ecosystem_slashed_amount_repaid: trStats.ecosystem_slashed_amount_repaid,
-                  network_slash_events: trStats.network_slash_events,
-                  network_slashed_amount: trStats.network_slashed_amount,
-                  network_slashed_amount_repaid: trStats.network_slashed_amount_repaid,
-                });
-            }
-          }
+            .update({
+              participants: csStats.participants,
+              weight: csStats.weight,
+              issued: csStats.issued,
+              verified: csStats.verified,
+              ecosystem_slash_events: csStats.ecosystem_slash_events,
+              ecosystem_slashed_amount: csStats.ecosystem_slashed_amount,
+              ecosystem_slashed_amount_repaid: csStats.ecosystem_slashed_amount_repaid,
+              network_slash_events: csStats.network_slash_events,
+              network_slashed_amount: csStats.network_slashed_amount,
+              network_slashed_amount_repaid: csStats.network_slashed_amount_repaid,
+            });
+          await this.refreshTrustRegistryStatsBySchemaId(schemaId);
         }
       } catch (statsErr: any) {
         this.logger.warn(` Failed to update CS/TR statistics after repay: ${statsErr?.message || String(statsErr)}`);

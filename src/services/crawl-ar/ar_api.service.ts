@@ -2,6 +2,7 @@ import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended"
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { SERVICE } from "../../common";
+import { validateRequiredAccountParam } from "../../common/utils/accountValidation";
 import knex from "../../common/utils/db_connection";
 import ApiResponder from "../../common/utils/apiResponse";
 
@@ -34,7 +35,12 @@ export default class AccountReputationService extends BullableService {
     schema_id?: number;
     include_slash_details?: boolean | string;
   }>) {
-    const { account, tr_id: trId, schema_id: schemaId, include_slash_details: includeSlashDetails } = ctx.params;
+    const accountValidation = validateRequiredAccountParam(ctx.params.account, "account");
+    if (!accountValidation.valid) {
+      return ApiResponder.error(ctx, accountValidation.error, 400);
+    }
+    const account = accountValidation.value;
+    const { tr_id: trId, schema_id: schemaId, include_slash_details: includeSlashDetails } = ctx.params;
     const blockHeight = (ctx.meta as any)?.blockHeight;
 
     if (!this.isValidAccount(account)) {

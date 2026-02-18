@@ -306,6 +306,27 @@ function createOnAfterCall() {
     data: any
   ) {
     await attachHeaders(_ctx, res);
+      if ((_ctx.meta as any).$rawJsonResponse) {
+      let rawData: string;
+      if (typeof data === "string") {
+        if (data.startsWith('"') && data.endsWith('"') && data.length > 1) {
+          rawData = JSON.parse(data);
+        } else {
+          rawData = data;
+        }
+      } else {
+        rawData = JSON.stringify(data);
+      }
+      
+      const statusCode = (_ctx.meta as any).$statusCode || 200;
+      if (!res.headersSent) {
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+      } else {
+        res.setHeader("Content-Type", "application/json");
+      }
+      res.end(rawData);
+      return undefined; 
+    }
     return data;
   };
 }
@@ -379,6 +400,9 @@ function createRoute(
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
         "GET errors/download": `v1.LogsService.downloadErrors`,
+       // Used only for TR weight calculation. Will be removed in the future.
+       // curl -X POST http://localhost:3000/verana/indexer/v1/backfill/trust-registry-stats
+       "POST backfill/trust-registry-stats": `${SERVICE.V1.IndexerMetaService.path}.backfillTrustRegistryStats`,
       }),
       createRoute("/verana/stats/v1", {
         "GET get": `${SERVICE.V1.StatsAPIService.path}.get`,

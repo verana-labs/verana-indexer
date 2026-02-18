@@ -2,11 +2,13 @@ import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended"
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
+import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 import { calculateCredentialSchemaStats } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
+import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
 
 let heightColumnExistsCache: boolean | null = null;
 
@@ -22,6 +24,36 @@ async function checkHeightColumnExists(): Promise<boolean> {
     heightColumnExistsCache = false;
     return false;
   }
+}
+
+function ensureSchemaString(js: unknown): string {
+  if (js == null) return "";
+  if (typeof js === "string") return js;
+  if (typeof js === "object") return JSON.stringify(js);
+  return String(js);
+}
+
+function getStoredSchemaString(js: unknown): string {
+  if (js == null) return "";
+  if (typeof js === "string") return js;
+  if (typeof js === "object") return JSON.stringify(js);
+  return String(js);
+}
+
+function normalizeJsonSchema(js: unknown): object | null {
+  if (js == null) return null;
+  let obj: object | null = null;
+  if (typeof js === "object") obj = js as object;
+  else if (typeof js === "string") {
+    try {
+      const parsed = JSON.parse(js);
+      obj = typeof parsed === "object" && parsed !== null ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  if (!obj) return null;
+  return obj;
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -75,63 +107,78 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { payload } = ctx.params;
 
       const result = await knex.transaction(async (trx) => {
-        const { height, ...schemaPayload } = payload;
+        const {
+          height,
+          blockchain_schema_id: blockchainSchemaIdSnake,
+          blockchainSchemaId: blockchainSchemaIdCamel,
+          ...schemaPayload
+        } = payload;
+        const blockchainSchemaId = blockchainSchemaIdSnake ?? blockchainSchemaIdCamel ?? null;
         const blockHeight = Number(height) || 0;
-        const [inserted] = await trx("credential_schemas")
-          .insert(schemaPayload)
-          .returning("*");
-
-        let finalRecord = inserted;
-
-        const jsonSchema = inserted.json_schema;
-        if (jsonSchema) {
-          let schemaObj: any;
-          if (typeof jsonSchema === 'string') {
-            try {
-              schemaObj = JSON.parse(jsonSchema);
-            } catch {
-              schemaObj = null;
-            }
-          } else {
-            schemaObj = jsonSchema;
-          }
-
-          if (schemaObj && typeof schemaObj === 'object' && schemaObj.$id) {
-            const chainId = process.env.CHAIN_ID || "UNKNOWN_CHAIN";
-            const placeholderPattern = /VPR_CHAIN_ID|VPR_CREDENTIAL_SCHEMA_ID/;
-
-            if (typeof schemaObj.$id === 'string' && placeholderPattern.test(schemaObj.$id)) {
-              const canonicalId = `vpr:verana:${chainId}/cs/v1/js/${inserted.id}`;
-              const updatedSchema = {
-                ...schemaObj,
-                $id: canonicalId,
-              };
-
-              const [updated] = await trx("credential_schemas")
-                .where({ id: inserted.id })
-                .update({ json_schema: updatedSchema })
-                .returning("*");
-
-              if (updated && updated.id && updated.id === inserted.id) {
-                finalRecord = updated;
-              } else {
-                throw new Error(`Failed to update json_schema for schema id=${inserted.id}. Updated record is invalid or ID mismatch.`);
-              }
-            }
+        
+        let existingSchema = null;
+        const numericBlockchainId = blockchainSchemaId != null ? Number(blockchainSchemaId) : NaN;
+        if (Number.isInteger(numericBlockchainId) && numericBlockchainId > 0) {
+          const existingSchemas = await trx("credential_schemas")
+            .select("*")
+            .where({ id: numericBlockchainId })
+            .limit(1);
+          if (existingSchemas.length > 0) {
+            existingSchema = existingSchemas[0];
+            this.logger.info(`Found existing schema with blockchain_id=${blockchainSchemaId} (database_id=${existingSchema.id}). Updating instead of inserting.`);
           }
         }
-        // After possible json_schema normalization, extract title/description and persist them
+        
+        let finalRecord: any;
+        
+        if (existingSchema) {
+          const updates: Record<string, any> = {
+            ...schemaPayload,
+            modified: schemaPayload.modified || new Date(),
+          };
+          if (updates.json_schema != null) {
+            const rawString = ensureSchemaString(updates.json_schema);
+            updates.json_schema = overrideSchemaIdInString(rawString, existingSchema.id);
+          }
+          const [updated] = await trx("credential_schemas")
+            .where({ id: existingSchema.id })
+            .update(updates)
+            .returning("*");
+          
+          if (!updated || updated.id !== existingSchema.id) {
+            throw new Error(`Failed to update existing schema id=${existingSchema.id}`);
+          }
+          
+          finalRecord = updated;
+        } else {
+          const insertPayload = { ...schemaPayload };
+          const rawSchemaString = insertPayload.json_schema != null ? ensureSchemaString(insertPayload.json_schema) : "";
+          insertPayload.json_schema = rawSchemaString || "{}";
+          const [inserted] = await trx("credential_schemas")
+            .insert(insertPayload)
+            .returning("*");
+          finalRecord = inserted;
+          if (rawSchemaString && inserted.id != null) {
+            const withOverriddenId = overrideSchemaIdInString(rawSchemaString, inserted.id);
+            const [updated] = await trx("credential_schemas")
+              .where({ id: inserted.id })
+              .update({ json_schema: withOverriddenId })
+              .returning("*");
+            if (updated) finalRecord = updated;
+          }
+        }
         try {
           let schemaObjForMeta: any = null;
           if (finalRecord?.json_schema) {
-            if (typeof finalRecord.json_schema === "string") {
+            const raw = finalRecord.json_schema;
+            if (typeof raw === "string") {
               try {
-                schemaObjForMeta = JSON.parse(finalRecord.json_schema);
+                schemaObjForMeta = JSON.parse(raw);
               } catch {
                 schemaObjForMeta = null;
               }
             } else {
-              schemaObjForMeta = finalRecord.json_schema;
+              schemaObjForMeta = raw;
             }
           }
           if (schemaObjForMeta && typeof schemaObjForMeta === "object") {
@@ -146,7 +193,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             }
           }
         } catch (err: any) {
-          this.logger.warn(`Failed to persist title/description for CS ${inserted.id}: ${err?.message || err}`);
+          this.logger.warn(`Failed to persist title/description for CS ${finalRecord.id}: ${err?.message || err}`);
         }
 
         const creationChanges: Record<string, any> = {};
@@ -157,9 +204,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         const hasHeightColumn = await checkHeightColumnExists();
+        const historyAction = existingSchema ? "update" : "create";
         const historyRow = mapToHistoryRow(finalRecord, {
           changes: Object.keys(creationChanges).length > 0 ? JSON.stringify(creationChanges) : null,
-          action: "create",
+          action: historyAction,
           height: blockHeight,
         }, hasHeightColumn);
         await trx("credential_schema_history").insert(historyRow);
@@ -225,6 +273,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       const existing = await knex("credential_schemas").where({ id: payload.id }).first();
+      
       if (!existing) {
         return ApiResponder.error(ctx, `Credential schema with id=${payload.id} not found`, 404);
       }
@@ -243,8 +292,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { height, ...updatesWithoutHeight } = updates;
       const blockHeight = Number(height) || 0;
 
+      if (updatesWithoutHeight.json_schema != null) {
+        const rawString = ensureSchemaString(updatesWithoutHeight.json_schema);
+        updatesWithoutHeight.json_schema = overrideSchemaIdInString(rawString, existing.id);
+      }
+
       let [updated] = await knex("credential_schemas")
-        .where({ id: payload.id })
+        .where({ id: existing.id })
         .update(updatesWithoutHeight)
         .returning("*");
 
@@ -269,12 +323,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           if (title !== null && title !== updated.title) metaUpdates.title = title;
           if (description !== null && description !== updated.description) metaUpdates.description = description;
           if (Object.keys(metaUpdates).length > 0) {
-            const [updatedWithMeta] = await knex("credential_schemas").where({ id: payload.id }).update(metaUpdates).returning("*");
+            const [updatedWithMeta] = await knex("credential_schemas").where({ id: existing.id }).update(metaUpdates).returning("*");
             if (updatedWithMeta) updated = updatedWithMeta;
           }
         }
       } catch (err: any) {
-        this.logger.warn(`Failed to persist title/description for CS ${payload.id}: ${err?.message || err}`);
+        this.logger.warn(`Failed to persist title/description for CS ${existing.id}: ${err?.message || err}`);
       }
 
       // Compute changes against existing after any meta persistence
@@ -297,9 +351,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       try {
-        const stats = await calculateCredentialSchemaStats(payload.id, blockHeight);
+        const stats = await calculateCredentialSchemaStats(existing.id, blockHeight);
         await knex("credential_schemas")
-          .where("id", payload.id)
+          .where("id", existing.id)
           .update({
             participants: stats.participants,
             weight: Number(stats.weight ?? 0),
@@ -333,7 +387,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             });
         }
       } catch (statsError: any) {
-        this.logger.warn(` Failed to update statistics for CS ${payload.id}: ${statsError?.message || String(statsError)}`);
+        this.logger.warn(` Failed to update statistics for CS ${existing.id}: ${statsError?.message || String(statsError)}`);
       }
 
       return ApiResponder.success(ctx, { success: true, updated }, 200);
@@ -464,14 +518,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
         }
 
+        const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
         const historicalSchema = {
           id: historyRecord.credential_schema_id,
           tr_id: historyRecord.tr_id,
-          json_schema: historyRecord.json_schema && typeof historyRecord.json_schema !== "string"
-            ? JSON.stringify(historyRecord.json_schema)
-            : historyRecord.json_schema,
-          title: historyRecord.title ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.title : undefined),
-          description: historyRecord.description ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.description : undefined),
+          json_schema: storedSchemaString,
+          title: historyRecord.title ?? undefined,
+          description: historyRecord.description ?? undefined,
           deposit: historyRecord.deposit,
           issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
           verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
@@ -525,10 +578,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (!schemaRecord) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
-      if (schemaRecord?.json_schema && typeof schemaRecord.json_schema !== "string") {
-        schemaRecord.json_schema = JSON.stringify(schemaRecord.json_schema);
-      }
       delete schemaRecord?.is_active;
+      const storedSchemaString = getStoredSchemaString(schemaRecord.json_schema);
 
       let stats;
       try {
@@ -552,18 +603,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, {
         schema: {
           ...schemaRecord,
-          title: schemaRecord.title ?? (schemaRecord.json_schema ? (() => {
-            try {
-              const js = typeof schemaRecord.json_schema === "string" ? JSON.parse(schemaRecord.json_schema) : schemaRecord.json_schema;
-              return js?.title;
-            } catch { return undefined; }
-          })() : undefined),
-          description: schemaRecord.description ?? (schemaRecord.json_schema ? (() => {
-            try {
-              const js = typeof schemaRecord.json_schema === "string" ? JSON.parse(schemaRecord.json_schema) : schemaRecord.json_schema;
-              return js?.description;
-            } catch { return undefined; }
-          })() : undefined),
+          json_schema: storedSchemaString,
+          title: schemaRecord.title ?? undefined,
+          description: schemaRecord.description ?? undefined,
           participants: stats.participants,
           weight: stats.weight,
           issued: stats.issued,
@@ -657,10 +699,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         max_network_slash_events: maxNetworkSlashEvents,
       } = ctx.params;
 
-      const participantAccount =
-        typeof participant === "string" && participant.trim() !== "" && !/^\d+$/.test(participant.trim())
-          ? participant.trim()
-          : undefined;
+      const participantValidation = validateParticipantParam(participant, "participant");
+      if (!participantValidation.valid) {
+        return ApiResponder.error(ctx, participantValidation.error, 400);
+      }
+      const participantAccount = participantValidation.value;
 
       try {
         validateSortParameter(sort);
@@ -737,27 +780,27 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         let filteredItems = items
           .filter((item): item is NonNullable<typeof items[0]> => item !== null)
-          .map((historyRecord) => ({
-            id: historyRecord.credential_schema_id,
-            tr_id: historyRecord.tr_id,
-            json_schema:
-              historyRecord.json_schema && typeof historyRecord.json_schema !== "string"
-                ? JSON.stringify(historyRecord.json_schema)
-                : historyRecord.json_schema,
-            title: historyRecord.title ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.title : undefined),
-            description: historyRecord.description ?? (historyRecord.json_schema && typeof historyRecord.json_schema === "object" ? historyRecord.json_schema.description : undefined),
+          .map((historyRecord) => {
+            const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
+            return {
+              id: historyRecord.credential_schema_id,
+              tr_id: historyRecord.tr_id,
+              json_schema: storedSchemaString,
+              title: historyRecord.title ?? undefined,
+              description: historyRecord.description ?? undefined,
             deposit: historyRecord.deposit,
             issuer_grantor_validation_validity_period: historyRecord.issuer_grantor_validation_validity_period,
             verifier_grantor_validation_validity_period: historyRecord.verifier_grantor_validation_validity_period,
             issuer_validation_validity_period: historyRecord.issuer_validation_validity_period,
             verifier_validation_validity_period: historyRecord.verifier_validation_validity_period,
             holder_validation_validity_period: historyRecord.holder_validation_validity_period,
-            issuer_perm_management_mode: historyRecord.issuer_perm_management_mode,
-            verifier_perm_management_mode: historyRecord.verifier_perm_management_mode,
-            archived: historyRecord.archived,
-            created: historyRecord.created,
-            modified: historyRecord.modified,
-          }));
+              issuer_perm_management_mode: historyRecord.issuer_perm_management_mode,
+              verifier_perm_management_mode: historyRecord.verifier_perm_management_mode,
+              archived: historyRecord.archived,
+              created: historyRecord.created,
+              modified: historyRecord.modified,
+            };
+          });
 
         if (trId) filteredItems = filteredItems.filter(item => String(item.tr_id) === String(trId));
         if (modifiedAfter) {
@@ -1056,24 +1099,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               network_slashed_amount_repaid: 0,
             };
           }
+          const storedSchemaString = getStoredSchemaString(item.json_schema);
           return {
             ...item,
-            json_schema:
-              item.json_schema && typeof item.json_schema !== "string"
-                ? JSON.stringify(item.json_schema)
-                : item.json_schema,
-            title: item.title ?? (item.json_schema ? (() => {
-              try {
-                const js = typeof item.json_schema === "string" ? JSON.parse(item.json_schema) : item.json_schema;
-                return js?.title;
-              } catch { return undefined; }
-            })() : undefined),
-            description: item.description ?? (item.json_schema ? (() => {
-              try {
-                const js = typeof item.json_schema === "string" ? JSON.parse(item.json_schema) : item.json_schema;
-                return js?.description;
-              } catch { return undefined; }
-            })() : undefined),
+            json_schema: storedSchemaString,
+            title: item.title ?? undefined,
+            description: item.description ?? undefined,
             participants: stats.participants,
             weight: stats.weight,
             issued: stats.issued,
@@ -1218,7 +1249,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
         }
 
-        return ApiResponder.success(ctx, { schema: JSON.stringify(historyRecord.json_schema) }, 200);
+        const stored = getStoredSchemaString(historyRecord.json_schema);
+        if (!stored) {
+          return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
+        }
+        (ctx.meta as any).$rawJsonResponse = true;
+        return stored;
       }
 
       const schemaRecord = await knex("credential_schemas")
@@ -1230,7 +1266,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
 
-      return ApiResponder.success(ctx, { schema: JSON.stringify(schemaRecord.json_schema) }, 200);
+      const stored = getStoredSchemaString(schemaRecord.json_schema);
+      if (!stored) {
+        return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
+      }
+      (ctx.meta as any).$rawJsonResponse = true;
+      return stored;
     } catch (err: any) {
       this.logger.error("Error in renderJsonSchema:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);

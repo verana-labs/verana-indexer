@@ -4,6 +4,7 @@ import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended"
 import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
+import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
@@ -284,10 +285,17 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 max_network_slash_events: maxNetworkSlashEvents,
             } = ctx.params;
 
-            const participantAccount =
-                typeof participant === "string" && participant.trim() !== "" && !/^\d+$/.test(participant.trim())
-                    ? participant.trim()
-                    : undefined;
+            const participantValidation = validateParticipantParam(participant, "participant");
+            if (!participantValidation.valid) {
+                return ApiResponder.error(ctx, participantValidation.error, 400);
+            }
+            const participantAccount = participantValidation.value;
+
+            const controllerValidation = validateParticipantParam(controller, "controller");
+            if (!controllerValidation.valid) {
+                return ApiResponder.error(ctx, controllerValidation.error, 400);
+            }
+            const controllerAccount = controllerValidation.value;
 
             try {
                 validateSortParameter(sort);
@@ -323,8 +331,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     .select("*")
                     .where("height", "<=", blockHeight);
 
-                if (controller) {
-                    filteredSubquery = filteredSubquery.where("controller", controller);
+                if (controllerAccount) {
+                    filteredSubquery = filteredSubquery.where("controller", controllerAccount);
                 }
                 if (participantTrIds !== undefined) {
                     filteredSubquery = filteredSubquery.whereIn("tr_id", participantTrIds);
@@ -605,8 +613,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
                 query = query.where("id", "in", participantTrIds) as any;
-            } else if (controller) {
-                query = query.where("controller", controller);
+            } else if (controllerAccount) {
+                query = query.where("controller", controllerAccount);
             }
 
             query = query.withGraphFetched("governanceFrameworkVersions.documents") as any;
@@ -679,90 +687,53 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     })
                 );
             } else {
-                const trIds = registries.map((tr) => tr.id);
-                const trStatsMap = new Map<number, any>();
+                // Use calculated stats (same as GET by id) so list matches get and participant-filtered TRs show correct values (#168)
+                registriesWithStats = await Promise.all(
+                    registries.map(async (tr) => {
+                        const plain = tr.toJSON();
+                        let versions = plain.governanceFrameworkVersions ?? [];
 
-                if (trIds.length > 0) {
-                    const trStats = await knex("trust_registry")
-                        .whereIn("id", trIds)
-                        .select(
-                            "id",
-                            "participants",
-                            "active_schemas",
-                            "archived_schemas",
-                            "weight",
-                            "issued",
-                            "verified",
-                            "ecosystem_slash_events",
-                            "ecosystem_slashed_amount",
-                            "ecosystem_slashed_amount_repaid",
-                            "network_slash_events",
-                            "network_slashed_amount",
-                            "network_slashed_amount_repaid"
-                        );
-
-                    for (const stat of trStats) {
-                        trStatsMap.set(stat.id, stat);
-                    }
-                }
-
-                registriesWithStats = registries.map((tr) => {
-                    const plain = tr.toJSON();
-                    let versions = plain.governanceFrameworkVersions ?? [];
-
-                    if (activeGfOnly) {
-                        versions = versions
-                            .sort((a, b) => {
-                                if (!a.active_since && !b.active_since) return 0;
-                                if (!a.active_since) return 1;
-                                if (!b.active_since) return -1;
-                                return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
-                            })
-                            .slice(0, 1);
-                    }
-
-                    if (preferredLanguage) {
-                        for (const v of versions) {
-                            v.documents =
-                                v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
+                        if (activeGfOnly) {
+                            versions = versions
+                                .sort((a, b) => {
+                                    if (!a.active_since && !b.active_since) return 0;
+                                    if (!a.active_since) return 1;
+                                    if (!b.active_since) return -1;
+                                    return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
+                                })
+                                .slice(0, 1);
                         }
-                    }
 
-                    delete plain.governanceFrameworkVersions;
-                    delete (plain as any).height;
+                        if (preferredLanguage) {
+                            for (const v of versions) {
+                                v.documents =
+                                    v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
+                            }
+                        }
 
-                    const stats = trStatsMap.get(plain.id) || {
-                        participants: 0,
-                        active_schemas: 0,
-                        archived_schemas: 0,
-                        weight: 0,
-                        issued: 0,
-                        verified: 0,
-                        ecosystem_slash_events: 0,
-                        ecosystem_slashed_amount: 0,
-                        ecosystem_slashed_amount_repaid: 0,
-                        network_slash_events: 0,
-                        network_slashed_amount: 0,
-                        network_slashed_amount_repaid: 0,
-                    };
+                        delete plain.governanceFrameworkVersions;
+                        delete (plain as any).height;
 
-                    return {
-                        ...plain,
-                        versions,
-                        participants: stats.participants || 0,
-                        active_schemas: stats.active_schemas || 0,
-                        archived_schemas: stats.archived_schemas || 0,
-                        weight: stats.weight || 0,
-                        issued: stats.issued || 0,
-                        verified: stats.verified || 0,
-                        ecosystem_slash_events: stats.ecosystem_slash_events || 0,
-                        ecosystem_slashed_amount: stats.ecosystem_slashed_amount || 0,
-                        ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid || 0,
-                        network_slash_events: stats.network_slash_events || 0,
-                        network_slashed_amount: stats.network_slashed_amount || 0,
-                        network_slashed_amount_repaid: stats.network_slashed_amount_repaid || 0,
-                    };
-                });
+                        const stats = await calculateTrustRegistryStats(plain.id);
+
+                        return {
+                            ...plain,
+                            versions,
+                            participants: stats.participants,
+                            active_schemas: stats.active_schemas,
+                            archived_schemas: stats.archived_schemas,
+                            weight: stats.weight,
+                            issued: stats.issued,
+                            verified: stats.verified,
+                            ecosystem_slash_events: stats.ecosystem_slash_events,
+                            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+                            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+                            network_slash_events: stats.network_slash_events,
+                            network_slashed_amount: stats.network_slashed_amount,
+                            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+                        };
+                    })
+                );
             }
 
             let filteredRegistries = registriesWithStats;

@@ -162,15 +162,15 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const content = schemaMessage?.content ?? {};
       const trId = content.tr_id ?? content.trId ?? "";
 
-      const jsonSchema = content.json_schema ?? content.jsonSchema ?? "";
-      const baseSchema =
-        typeof jsonSchema === "string"
-          ? JSON.parse(jsonSchema)
-          : jsonSchema ?? {};
+      const blockchainSchemaId = schemaMessage.id ?? content.id ?? null;
+
+      const jsonSchema = content.json_schema ?? content.jsonSchema ?? "{}";
+      const jsonSchemaForDb =
+        typeof jsonSchema === "string" ? jsonSchema : JSON.stringify(jsonSchema ?? {});
 
       const payload: Record<string, any> = {
         tr_id: trId,
-        json_schema: baseSchema,
+        json_schema: jsonSchemaForDb,
         deposit: deposit ?? 0,
         created: timestamp ?? null,
         modified: timestamp ?? null,
@@ -193,6 +193,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
           Number(content.verifier_perm_management_mode ?? content.verifierPermManagementMode ?? 0)
         ),
         height: schemaMessage.height ?? 0,
+        blockchainSchemaId: blockchainSchemaId, 
       };
 
       const insertResult = await ctx.call(
@@ -210,7 +211,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       }
 
       this.logger.info(
-        `✅ Stored credential schema tr_id=${trId} with final ID=${generatedId}`
+        `✅ Stored credential schema tr_id=${trId} with blockchain_id=${blockchainSchemaId} and database ID=${generatedId}`
       );
     } catch (err) {
       this.logger.error("❌ Error storing credential schema:", err);
