@@ -1293,14 +1293,57 @@
           ],
           "responses": {
             "200": {
-              "description": "Successful response. Credential schema exactly as stored on blockchain (with $id overridden by indexer). Preserves formatting for SRI digest verification. The response body is the raw JSON Schema document string itself, not wrapped in an object.",
+              "description": "Successful response. Returns the JSON Schema definition as a JSON object.",
               "content": {
                 "application/json": {
                   "schema": {
-                    "type": "string",
-                    "description": "Credential schema exactly as stored on blockchain (with $id overridden by indexer). Returned verbatim; do not parse or re-serialize."
+                    "type": "object",
+                    "description": "Credential schema JSON Schema definition (with $id overridden by indexer)."
                   },
-                  "example": "{\"$id\":\"vpr:verana:vna-testnet-1/cs/v1/js/1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}"
+                  "example": {
+                    "$id": "vpr:verana:vna-testnet-1/cs/v1/js/16",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "title": "ExampleCredential",
+                    "description": "ExampleCredential using JsonSchema",
+                    "type": "object",
+                    "properties": {
+                      "credentialSubject": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "firstName": {
+                            "type": "string",
+                            "minLength": 0,
+                            "maxLength": 256
+                          },
+                          "lastName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "expirationDate": {
+                            "type": "string",
+                            "format": "date"
+                          },
+                          "countryOfResidence": {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 2
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "lastName",
+                          "birthDate",
+                          "expirationDate",
+                          "countryOfResidence"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             },

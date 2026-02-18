@@ -306,6 +306,27 @@ function createOnAfterCall() {
     data: any
   ) {
     await attachHeaders(_ctx, res);
+      if ((_ctx.meta as any).$rawJsonResponse) {
+      let rawData: string;
+      if (typeof data === "string") {
+        if (data.startsWith('"') && data.endsWith('"') && data.length > 1) {
+          rawData = JSON.parse(data);
+        } else {
+          rawData = data;
+        }
+      } else {
+        rawData = JSON.stringify(data);
+      }
+      
+      const statusCode = (_ctx.meta as any).$statusCode || 200;
+      if (!res.headersSent) {
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+      } else {
+        res.setHeader("Content-Type", "application/json");
+      }
+      res.end(rawData);
+      return undefined; 
+    }
     return data;
   };
 }

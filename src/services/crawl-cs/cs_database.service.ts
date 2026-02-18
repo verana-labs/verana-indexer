@@ -1253,7 +1253,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (!stored) {
           return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
         }
-        return ApiResponder.success(ctx, stored, 200);
+        (ctx.meta as any).$rawJsonResponse = true;
+        return stored;
       }
 
       const schemaRecord = await knex("credential_schemas")
@@ -1269,7 +1270,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (!stored) {
         return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404);
       }
-      return ApiResponder.success(ctx, stored, 200);
+      (ctx.meta as any).$rawJsonResponse = true;
+      return stored;
     } catch (err: any) {
       this.logger.error("Error in renderJsonSchema:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
