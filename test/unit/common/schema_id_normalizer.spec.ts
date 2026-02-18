@@ -43,16 +43,34 @@ describe("overrideSchemaIdInString", () => {
     expect(out.split("\n").length).toBe(input.split("\n").length);
   });
 
-  it("does not inject $id when it does not exist", () => {
+  it("inserts $id when it does not exist (compact format)", () => {
     const input = `{"type":"object","title":"NoId"}`;
     const out = overrideSchemaIdInString(input, actualId);
-    expect(out).toBe(input);
-    expect(out).not.toContain("$id");
+    expect(out).toContain(`"$id": "${expectedId}"`);
+    expect(out).toContain('"type":"object"');
+    expect(out).toContain('"title":"NoId"');
+    const parsed = JSON.parse(out);
+    expect(parsed.$id).toBe(expectedId);
   });
 
-  it("returns unchanged string when $id is absent", () => {
+  it("inserts $id when it is absent (minimal object)", () => {
     const input = '{"type":"object"}';
     const out = overrideSchemaIdInString(input, actualId);
-    expect(out).toBe(input);
+    expect(out).toContain(`"$id": "${expectedId}"`);
+    expect(out).toContain('"type":"object"');
+    const parsed = JSON.parse(out);
+    expect(parsed.$id).toBe(expectedId);
+  });
+
+  it("inserts $id with proper formatting when schema has newlines", () => {
+    const input = `{\n  "type": "object",\n  "title": "Test"\n}`;
+    const out = overrideSchemaIdInString(input, actualId);
+    expect(out).toContain(`"$id": "${expectedId}"`);
+    expect(out).toContain('"type": "object"');
+    expect(out).toContain('"title": "Test"');
+    // Should preserve the newline structure
+    expect(out.split("\n").length).toBeGreaterThanOrEqual(input.split("\n").length);
+    const parsed = JSON.parse(out);
+    expect(parsed.$id).toBe(expectedId);
   });
 });
