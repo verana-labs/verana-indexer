@@ -272,12 +272,10 @@ export default class CrawlBlockService extends BullableService {
         config.crawlBlock.heightCheckOptimization &&
         this._isCaughtUp
       ) {
-        let latestHeight = this.getCachedLatestBlockHeight();
+        const latestHeight = await this.getLatestBlockHeight();
+        
         if (latestHeight === 0) {
-          latestHeight = await this.getLatestBlockHeight();
-        }
-        if (latestHeight === 0) {
-          this.logger.debug('No cached latest block height, skipping height-check optimization');
+          this.logger.warn('Failed to get latest block height, skipping height-check optimization');
         } else if (latestHeight <= this._currentBlock && latestHeight === this._lastCheckedHeight) {
           this.logger.debug(`No new blocks (latest: ${latestHeight}, current: ${this._currentBlock}), skipping fetch`);
           await this.adjustPollingInterval(latestHeight);
@@ -601,33 +599,26 @@ export default class CrawlBlockService extends BullableService {
     }
   }
 
-  private getCachedLatestBlockHeight(): number {
-    const fromWs = config.crawlBlock.enableWebSocketSubscription && this._websocketConnected && this._lastWebSocketBlockHeight > 0
-      ? this._lastWebSocketBlockHeight
-      : 0;
-    const fromRpc = this._lastLatestBlockHeight > 0 ? this._lastLatestBlockHeight : 0;
-    return Math.max(fromWs, fromRpc);
-  }
-
   private async getLatestBlockHeight(): Promise<number> {
-    const cached = this.getCachedLatestBlockHeight();
     try {
       const responseGetLatestBlock: GetLatestBlockResponseSDKType = await this.retryRpcCall(
         () => this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getLatestBlock(),
         'getLatestBlockHeight'
       );
-      const height = parseInt(
+      return parseInt(
         responseGetLatestBlock?.block?.header?.height
           ? responseGetLatestBlock.block.header.height.toString()
           : '0',
         10
       );
-      if (height > 0) {
-        this._lastLatestBlockHeight = height;
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') {
+        this.logger.error(`❌ Failed to get latest block height due to network error (${err.code}): ${err.message}`);
+      } else {
+        this.logger.error(`❌ Failed to get latest block height after retries: ${error}`);
       }
-      return height > 0 ? height : cached;
-    } catch {
-      return cached;
+      return 0;
     }
   }
 
