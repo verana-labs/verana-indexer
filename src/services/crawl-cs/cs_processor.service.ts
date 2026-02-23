@@ -14,6 +14,7 @@ import knex from "../../common/utils/db_connection";
 import { getModeString } from "./cs_types";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
+import { enrichSchemaMessageWithEvent } from "./cs-payload.helper";
 
 function extractOptionalUInt32(value: unknown): number {
   if (value === undefined || value === null) {
@@ -36,10 +37,10 @@ function extractOptionalUInt32(value: unknown): number {
 function getValidityPeriod(fieldName: string, content: Record<string, unknown> | undefined, schemaMessage: CredentialSchemaMessage | Record<string, unknown> | undefined): number {
   const snakeCase = fieldName;
   const camelCase = fieldName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-  
-  const value = content?.[snakeCase] ?? content?.[camelCase] ?? 
-              schemaMessage?.[snakeCase] ?? schemaMessage?.[camelCase];
-  
+
+  const value = content?.[snakeCase] ?? content?.[camelCase] ??
+    schemaMessage?.[snakeCase] ?? schemaMessage?.[camelCase];
+
   return extractOptionalUInt32(value);
 }
 
@@ -127,7 +128,11 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
     const deposit = await calculateDeposit();
 
-    const processMessage = async (schemaMessage: CredentialSchemaMessage) => {
+    const processMessage = async (schemaMessageParams: CredentialSchemaMessage) => {
+      const schemaMessage = enrichSchemaMessageWithEvent(
+      schemaMessageParams,
+      schemaMessageParams.txResponse
+    );
       if (
         schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
         schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
@@ -193,7 +198,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
           Number(content.verifier_perm_management_mode ?? content.verifierPermManagementMode ?? 0)
         ),
         height: schemaMessage.height ?? 0,
-        blockchainSchemaId: blockchainSchemaId, 
+        blockchainSchemaId: blockchainSchemaId,
       };
 
       const insertResult = await ctx.call(

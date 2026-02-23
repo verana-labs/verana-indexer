@@ -1111,11 +1111,13 @@ export default class CrawlTxService extends BullableService {
       .filter((msg: any) => isCredentialSchemaMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+
         return {
           type: msg.type,
           content: msg.content ?? null,
-          timestamp: parentTx?.timestamp ?? null,
-          height: parentTx?.height ?? null,
+          timestamp: parentTx?.data?.tx_response?.timestamp ?? parentTx?.timestamp ?? null,
+          height: Number(parentTx?.data?.tx_response?.height ?? parentTx?.height ?? 0),
+          txResponse: parentTx?.data?.tx_response ?? null, 
         };
       });
 

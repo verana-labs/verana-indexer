@@ -473,8 +473,10 @@ export default class IndexerMetaService extends BaseService {
       let successCount = 0;
       let errorCount = 0;
       let schemaIdsFixed = 0;
+      let csSyncedFromLedger = 0;
       const errors: Array<{ id: number; error: string }> = [];
       const { overrideSchemaIdInString } = await import('../../common/utils/schema_id_normalizer');
+      const { getCredentialSchema } = await import('../../modules/cs-height-sync/ledger_client');
 
       for (let i = 0; i < trustRegistries.length; i++) {
         const tr = trustRegistries[i];
@@ -515,6 +517,26 @@ export default class IndexerMetaService extends BaseService {
                 .update({ json_schema: normalizedStr });
               schemaIdsFixed++;
             }
+            const ledgerResponse = await getCredentialSchema(schema.id);
+            if (!ledgerResponse?.schema) {
+              this.logger.warn(`Backfill: ledger API returned no schema for CS id=${schema.id}; check LCD_ENDPOINT and path /verana/cs/v1/get/${schema.id}`);
+              continue;
+            }
+            try {
+              const result = await this.broker.call(
+                `${SERVICE.V1.CredentialSchemaDatabaseService.path}.syncFromLedger`,
+                {
+                  ledgerResponse: { schema: ledgerResponse.schema },
+                  blockHeight: 0,
+                }
+              ) as { success?: boolean; data?: { success?: boolean } };
+              const ok = result?.success === true || result?.data?.success === true;
+              if (ok) csSyncedFromLedger++;
+              else this.logger.warn(`Backfill: syncFromLedger did not report success for CS id=${schema.id}`);
+            } catch (err: any) {
+              this.logger.warn(`Backfill: syncFromLedger failed for CS id=${schema.id}: ${err?.message ?? err}`);
+            }
+            await new Promise<void>((r) => setTimeout(r, 30));
           }
 
           successCount++;
@@ -534,16 +556,22 @@ export default class IndexerMetaService extends BaseService {
         }
       }
 
-      this.logger.info(`Backfill completed: ${successCount}/${total} updated, ${errorCount} errors, ${schemaIdsFixed} schema IDs fixed`);
+      this.logger.info(`Backfill completed: ${successCount}/${total} updated, ${errorCount} errors, ${schemaIdsFixed} schema IDs fixed, ${csSyncedFromLedger} CS synced from ledger`);
 
-      return ApiResponder.success(ctx, {
+      const totalSchemas = await knex("credential_schemas").count("* as c").first().then((r: any) => Number(r?.c ?? 0));
+      const payload: Record<string, unknown> = {
         message: "Trust Registry stats backfill completed",
         total,
         updated: successCount,
         errors: errorCount,
         schema_ids_fixed: schemaIdsFixed,
+        cs_synced_from_ledger: csSyncedFromLedger,
         error_details: errors.length > 0 ? errors : undefined,
-      }, 200);
+      };
+      if (csSyncedFromLedger === 0 && totalSchemas > 0) {
+        payload.hint = "No CS records synced from ledger. Set LEDGER_LCD_URL to the chain LCD (e.g. https://api.testnet.verana.network) if LCD_ENDPOINT points to the indexer. Check logs for ledger API or syncFromLedger failures.";
+      }
+      return ApiResponder.success(ctx, payload, 200);
     } catch (err: any) {
       this.logger.error(" Fatal error during backfill:", err);
       return ApiResponder.error(ctx, `Backfill failed: ${err?.message || err}`, 500);
