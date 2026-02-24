@@ -9,6 +9,7 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "
 import { calculateCredentialSchemaStats } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
+import { extractTitleDescriptionFromJsonSchema } from "../../common/credential_schema_meta";
 
 let heightColumnExistsCache: boolean | null = null;
 
