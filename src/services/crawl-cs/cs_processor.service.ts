@@ -14,6 +14,8 @@ import knex from "../../common/utils/db_connection";
 import { getModeString } from "./cs_types";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
+import { enrichSchemaMessageWithEvent } from "./cs-payload.helper";
+import { parseCredentialSchemaEvent } from "./cs-event.mapper";
 
 function extractOptionalUInt32(value: unknown): number {
   if (value === undefined || value === null) {
@@ -36,10 +38,10 @@ function extractOptionalUInt32(value: unknown): number {
 function getValidityPeriod(fieldName: string, content: Record<string, unknown> | undefined, schemaMessage: CredentialSchemaMessage | Record<string, unknown> | undefined): number {
   const snakeCase = fieldName;
   const camelCase = fieldName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-  
-  const value = content?.[snakeCase] ?? content?.[camelCase] ?? 
-              schemaMessage?.[snakeCase] ?? schemaMessage?.[camelCase];
-  
+
+  const value = content?.[snakeCase] ?? content?.[camelCase] ??
+    schemaMessage?.[snakeCase] ?? schemaMessage?.[camelCase];
+
   return extractOptionalUInt32(value);
 }
 
@@ -127,7 +129,11 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
     const deposit = await calculateDeposit();
 
-    const processMessage = async (schemaMessage: CredentialSchemaMessage) => {
+    const processMessage = async (schemaMessageParams: CredentialSchemaMessage) => {
+      const schemaMessage = enrichSchemaMessageWithEvent(
+      schemaMessageParams,
+      schemaMessageParams.txResponse
+    );
       if (
         schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
         schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
@@ -193,7 +199,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
           Number(content.verifier_perm_management_mode ?? content.verifierPermManagementMode ?? 0)
         ),
         height: schemaMessage.height ?? 0,
-        blockchainSchemaId: blockchainSchemaId, 
+        blockchainSchemaId: blockchainSchemaId,
       };
 
       const insertResult = await ctx.call(
@@ -268,30 +274,34 @@ export default class ProcessCredentialSchemaService extends BullableService {
     schemaMessage: CredentialSchemaMessage
   ) {
     try {
-      const payload: Record<string, any> = {
-        ...schemaMessage,
-        ...schemaMessage.content,
-        modified: formatTimestamp(schemaMessage.timestamp),
-        height: schemaMessage.height ?? 0,
-      };
-
-      delete payload.content;
-      delete payload.timestamp;
-      delete payload.type;
-      delete payload.creator;
-      delete payload["@type"];
+      const eventData = parseCredentialSchemaEvent((schemaMessage as any).txResponse ?? null);
+      const id = schemaMessage.id ?? (schemaMessage.content as any)?.id ?? eventData?.id;
+      if (id == null) {
+        this.logger.error("Archive: missing credential schema id");
+        return;
+      }
+      const archive = eventData
+        ? eventData.archived != null
+        : (schemaMessage.content as any)?.archive === true;
+      const modified = eventData?.modified
+        ?? formatTimestamp(schemaMessage.timestamp)
+        ?? new Date();
+      const height = schemaMessage.height ?? 0;
 
       await ctx.call(
         `${SERVICE.V1.CredentialSchemaDatabaseService.path}.archive`,
-        { payload }
-      );
-
-      this.logger.info(
-        `📦 Archive action executed for credential schema id=${payload.id}, archive=${payload.archive}`
+        {
+          payload: {
+            id: Number(id),
+            archive,
+            modified: modified instanceof Date ? modified : new Date(modified as string),
+            height,
+          },
+        }
       );
     } catch (err) {
       this.logger.error(
-        `❌ Error archiving credential schema id=${schemaMessage.id}:`,
+        `❌ Error archiving credential schema id=${schemaMessage?.id}:`,
         err
       );
     }

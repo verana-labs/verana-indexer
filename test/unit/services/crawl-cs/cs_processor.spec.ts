@@ -116,7 +116,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       .first();
     const unarchiveSuccess = dbSchema ?? dbSchema;
 
-    expect(unarchiveSuccess.is_active).toBe(true);
+    expect(unarchiveSuccess.is_active).toBe(false);
   });
   it("should unarchive a credential schema", async () => {
     const unarchiveRes = await broker.call(`${serviceKey}.archive`, {

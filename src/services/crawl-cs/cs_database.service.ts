@@ -9,6 +9,7 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "
 import { calculateCredentialSchemaStats } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
+import { extractTitleDescriptionFromJsonSchema } from "../../common/credential_schema_meta";
 
 let heightColumnExistsCache: boolean | null = null;
 
@@ -420,7 +421,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       const updates: Record<string, any> = {
         archived: archive ? modified : null,
-        is_active: archive ? true : false, // eslint-disable-line no-unneeded-ternary
+        is_active: !archive,
         modified,
       };
 
@@ -486,6 +487,117 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema archive:", err);
       console.error("FATAL CS ARCHIVE ERROR:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
+    }
+  }
+
+  @Action({ name: "syncFromLedger" })
+  async syncFromLedger(
+    ctx: Context<{ ledgerResponse: { schema?: Record<string, unknown> }; blockHeight: number }>
+  ) {
+    try {
+      const { ledgerResponse, blockHeight } = ctx.params;
+      const schema = ledgerResponse?.schema;
+      if (!schema || typeof schema !== "object") {
+        return ApiResponder.error(ctx, "Missing or invalid ledger schema", 400);
+      }
+      const id = Number(schema.id ?? schema.credential_schema_id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return ApiResponder.error(ctx, "Invalid schema id from ledger", 400);
+      }
+      const blockHeightNum = Number(blockHeight) || 0;
+      const jsonSchemaRaw = schema.json_schema ?? schema.jsonSchema;
+      const jsonSchemaStr = ensureSchemaString(jsonSchemaRaw ?? "{}");
+      const payload: Record<string, unknown> = {
+        id,
+        tr_id: schema.tr_id ?? schema.trId ?? null,
+        json_schema: jsonSchemaStr,
+        deposit: Number(schema.deposit ?? 0),
+        issuer_grantor_validation_validity_period: Number(schema.issuer_grantor_validation_validity_period ?? 0),
+        verifier_grantor_validation_validity_period: Number(schema.verifier_grantor_validation_validity_period ?? 0),
+        issuer_validation_validity_period: Number(schema.issuer_validation_validity_period ?? 0),
+        verifier_validation_validity_period: Number(schema.verifier_validation_validity_period ?? 0),
+        holder_validation_validity_period: Number(schema.holder_validation_validity_period ?? 0),
+        issuer_perm_management_mode: String(schema.issuer_perm_management_mode ?? schema.issuerPermManagementMode ?? "MODE_UNSPECIFIED"),
+        verifier_perm_management_mode: String(schema.verifier_perm_management_mode ?? schema.verifierPermManagementMode ?? "MODE_UNSPECIFIED"),
+        archived: schema.archived != null ? schema.archived : null,
+        created: schema.created ?? null,
+        modified: schema.modified ?? null,
+        is_active: schema.archived == null,
+        title: schema.title ?? null,
+        description: schema.description ?? null,
+      };
+      const existing = await knex("credential_schemas").where({ id }).first();
+      const updates: Record<string, unknown> = { ...payload };
+      delete (updates as Record<string, unknown>).id;
+      if (updates.json_schema != null) {
+        (updates as Record<string, unknown>).json_schema = overrideSchemaIdInString(
+          String(updates.json_schema),
+          id
+        );
+      }
+      let finalRecord: Record<string, unknown>;
+      if (existing) {
+        const [updated] = await knex("credential_schemas")
+          .where({ id })
+          .update(updates)
+          .returning("*");
+        if (!updated) {
+          return ApiResponder.error(ctx, "Update failed", 500);
+        }
+        finalRecord = updated as Record<string, unknown>;
+      } else {
+        const insertPayload = { ...payload };
+        (insertPayload as Record<string, unknown>).json_schema = (insertPayload as Record<string, unknown>).json_schema ?? "{}";
+        const [inserted] = await knex("credential_schemas")
+          .insert(insertPayload)
+          .returning("*");
+        if (!inserted) {
+          return ApiResponder.error(ctx, "Insert failed", 500);
+        }
+        finalRecord = inserted as Record<string, unknown>;
+        const rawStr = String(finalRecord.json_schema ?? "{}");
+        if (rawStr && finalRecord.id != null) {
+          const withOverride = overrideSchemaIdInString(rawStr, Number(finalRecord.id));
+          const [updated] = await knex("credential_schemas")
+            .where({ id: finalRecord.id })
+            .update({ json_schema: withOverride })
+            .returning("*");
+          if (updated) finalRecord = updated as Record<string, unknown>;
+        }
+      }
+      try {
+        const { title: titleFromSchema, description: descriptionFromSchema } = extractTitleDescriptionFromJsonSchema(finalRecord.json_schema);
+        const metaUpdates: Record<string, string> = {};
+        if (titleFromSchema !== null) metaUpdates.title = titleFromSchema;
+        if (descriptionFromSchema !== null) metaUpdates.description = descriptionFromSchema;
+        if (Object.keys(metaUpdates).length > 0) {
+          const [updatedWithMeta] = await knex("credential_schemas")
+            .where({ id: finalRecord.id })
+            .update(metaUpdates)
+            .returning("*");
+          if (updatedWithMeta) finalRecord = updatedWithMeta as Record<string, unknown>;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to persist title/description for CS ${finalRecord.id} in syncFromLedger: ${err?.message || err}`);
+      }
+      const hasHeightColumn = await checkHeightColumnExists();
+      const historyAction = existing ? "update" : "create";
+      const creationChanges: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(finalRecord)) {
+        if (value !== null && value !== undefined && key !== "id" && key !== "is_active") {
+          creationChanges[key] = value;
+        }
+      }
+      const historyRow = mapToHistoryRow(finalRecord as any, {
+        changes: Object.keys(creationChanges).length > 0 ? JSON.stringify(creationChanges) : null,
+        action: historyAction,
+        height: blockHeightNum,
+      }, hasHeightColumn);
+      await knex("credential_schema_history").insert(historyRow);
+      return ApiResponder.success(ctx, { success: true, result: finalRecord }, 200);
+    } catch (err: any) {
+      this.logger.error("Error in CredentialSchema syncFromLedger:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
