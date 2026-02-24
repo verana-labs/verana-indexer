@@ -1628,7 +1628,6 @@ export default class CrawlTxService extends BullableService {
       }
     }
 
-    
     if (payload.trustDepositList?.length) {
       await this.broker.call(
         `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,

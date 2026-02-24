@@ -39,8 +39,10 @@ function normalizeLedgerResponse(data: unknown): LedgerCredentialSchemaResponse 
 }
 
 export function getLedgerBaseUrl(): string {
-  const envLedger = typeof process !== "undefined" && process.env?.LEDGER_LCD_URL;
-  const base = (envLedger && String(envLedger).trim()) || Network?.LCD || "";
+  const envLedger =
+    (typeof process !== "undefined" && process.env?.LCD_ENDPOINT?.trim()) ||
+    "";
+  const base = envLedger || Network?.LCD || "";
   return base.replace(/\/$/, "");
 }
 

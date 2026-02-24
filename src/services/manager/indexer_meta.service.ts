@@ -536,7 +536,11 @@ export default class IndexerMetaService extends BaseService {
             } catch (err: any) {
               this.logger.warn(`Backfill: syncFromLedger failed for CS id=${schema.id}: ${err?.message ?? err}`);
             }
-            await new Promise<void>((r) => setTimeout(r, 30));
+            await new Promise<void>((resolve) => {
+              setTimeout(() => {
+                resolve();
+              }, 30);
+            });
           }
 
           successCount++;
@@ -569,7 +573,7 @@ export default class IndexerMetaService extends BaseService {
         error_details: errors.length > 0 ? errors : undefined,
       };
       if (csSyncedFromLedger === 0 && totalSchemas > 0) {
-        payload.hint = "No CS records synced from ledger. Set LEDGER_LCD_URL to the chain LCD (e.g. https://api.testnet.verana.network) if LCD_ENDPOINT points to the indexer. Check logs for ledger API or syncFromLedger failures.";
+        payload.hint = "No CS records were synced from the ledger. If you expect CS data to come from the chain, set LEDGER_LCD_URL to the chain LCD (e.g. https://api.testnet.verana.network) and ensure the chain exposes GET /verana/cs/v1/get/{id}. Check logs for ledger API or syncFromLedger failures.";
       }
       return ApiResponder.success(ctx, payload, 200);
     } catch (err: any) {

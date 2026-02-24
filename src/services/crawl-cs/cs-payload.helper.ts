@@ -47,20 +47,28 @@ export function enrichSchemaMessageWithEvent(
     eventData.holder_validation_validity_period
   );
   ensure(
+    "deposit",
+    eventData.deposit
+  );
+  ensure(
     "archived",
     eventData.archived ? eventData.archived.toISOString() : null
   );
+  ensure(
+    "verifier_perm_management_mode",
+    eventData.verifier_perm_management_mode
+  );
+  ensure(
+    "issuer_perm_management_mode",
+    eventData.issuer_perm_management_mode
+  );
 
-  if (!schemaMessage.id) {
-    schemaMessage.id = eventData.id;
-  }
-
-  if (!updatedContent.tr_id) {
-    updatedContent.tr_id = eventData.tr_id;
-  }
+  const id = schemaMessage.id ?? eventData.id;
+  ensure("tr_id", eventData.tr_id);
 
   return {
     ...schemaMessage,
+    id,
     content: updatedContent,
   };
 }

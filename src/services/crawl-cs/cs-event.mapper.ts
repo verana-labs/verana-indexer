@@ -49,6 +49,8 @@ export interface CredentialSchemaEventData {
   issuer_validation_validity_period: number;
   verifier_validation_validity_period: number;
   holder_validation_validity_period: number;
+  verifier_perm_management_mode: string;
+  issuer_perm_management_mode: string;
   archived: Date | null;
   modified: Date;
 }
@@ -91,8 +93,9 @@ export function parseCredentialSchemaEvent(
     archive_credential_schema: "archive",
   };
   const timestamp = getAttr(attributeMap, "timestamp");
-  const archiveStatus = getAttr(attributeMap, "archive_status");
+  const archiveStatusRaw = getAttr(attributeMap, "archive_status");
   const modified = toDate(timestamp) ?? new Date(0);
+  const isArchived = String(archiveStatusRaw).toLowerCase() === "archived";
   return {
     type: typeMap[event.type] ?? "update",
     id: num(getAttr(attributeMap, "credential_schema_id")),
@@ -103,7 +106,9 @@ export function parseCredentialSchemaEvent(
     issuer_validation_validity_period: num(getAttr(attributeMap, "issuer_validation_validity_period")),
     verifier_validation_validity_period: num(getAttr(attributeMap, "verifier_validation_validity_period")),
     holder_validation_validity_period: num(getAttr(attributeMap, "holder_validation_validity_period")),
-    archived: archiveStatus ? modified : null,
+    verifier_perm_management_mode: getAttr(attributeMap, "verifier_perm_management_mode"),
+    issuer_perm_management_mode: getAttr(attributeMap, "issuer_perm_management_mode"),
+    archived: isArchived ? modified : null,
     modified,
   };
 }
