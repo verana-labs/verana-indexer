@@ -89,12 +89,77 @@ export default class QueueManager {
     opts?: JobsOptions,
     payload?: object
   ): Promise<void> {
+    const sanitizedOpts = this.sanitizeJobOptions(opts, queueName, jobName);
     // prepare some input settings if not specified by user
     // jobName = jobName ?? DEFAULT_JOB_NAME;
     // const jobOptions = _.defaults(opts, DEFAULT_JOB_OTION);
 
     // call to the middleware to submit job
-    this._queueProvider.submitJob(queueName, jobName, opts, payload);
+    this._queueProvider.submitJob(queueName, jobName, sanitizedOpts, payload);
+  }
+
+  private sanitizeJobOptions(
+    opts?: JobsOptions,
+    queueName?: string,
+    jobName?: string
+  ): JobsOptions | undefined {
+    if (!opts) return opts;
+
+    const normalized: JobsOptions = { ...opts };
+    const repeat = (normalized as any).repeat;
+    if (!repeat || typeof repeat !== 'object') {
+      return normalized;
+    }
+
+    const repeatNormalized: any = { ...repeat };
+
+    if (typeof repeatNormalized.every === 'string') {
+      const trimmed = repeatNormalized.every.trim();
+      if (/^\d+$/.test(trimmed)) {
+        repeatNormalized.every = Number(trimmed);
+      } else if (trimmed === '' || /^(undefined|null|nan)$/i.test(trimmed)) {
+        delete repeatNormalized.every;
+      }
+    }
+    if (
+      repeatNormalized.every !== undefined &&
+      (!Number.isFinite(repeatNormalized.every) || repeatNormalized.every <= 0)
+    ) {
+      delete repeatNormalized.every;
+    }
+
+    const sanitizeCronLikeField = (field: 'pattern' | 'cron') => {
+      const value = repeatNormalized[field];
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (
+        trimmed.length === 0 ||
+        /^(undefined|null|nan)$/i.test(trimmed) ||
+        /\bundefined\b/i.test(trimmed)
+      ) {
+        delete repeatNormalized[field];
+      } else {
+        repeatNormalized[field] = trimmed;
+      }
+    };
+
+    sanitizeCronLikeField('pattern');
+    sanitizeCronLikeField('cron');
+
+    if (
+      repeatNormalized.every === undefined &&
+      repeatNormalized.pattern === undefined &&
+      repeatNormalized.cron === undefined
+    ) {
+      delete (normalized as any).repeat;
+      console.warn(
+        `[QueueManager] Dropped invalid repeat config for queue="${queueName || ''}" job="${jobName || ''}" (no valid every/pattern/cron after sanitization).`
+      );
+      return normalized;
+    }
+
+    (normalized as any).repeat = repeatNormalized;
+    return normalized;
   }
 
   public stopAll(): void {
