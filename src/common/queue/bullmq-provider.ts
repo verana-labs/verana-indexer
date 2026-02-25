@@ -37,7 +37,9 @@ export class BullQueueProvider implements QueueProvider {
     payload?: object
   ): void {
     const q = this.getQueue(queueName);
-    q.add(jobName, payload, opts);
+    void q.add(jobName, payload, opts).catch((err: unknown) => {
+      console.error(`Failed to add BullMQ job "${jobName}" to queue "${queueName}"`, err);
+    });
   }
 
  public registerQueueHandler(

@@ -1,134 +1,41 @@
-/* eslint-disable max-classes-per-file */
-import { Job, Queue, Worker, WorkerOptions } from 'bullmq';
-import _ from 'underscore';
-import { JobOption, QueueOptions, QueueProvider } from './queue-manager-types';
-import { getRedisConnection } from './redis-connector';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { JobsOptions } from 'bullmq';
+import {
+  QueueHandlerFunc,
+  QueueOptions,
+  QueueProvider,
+} from './queue-manager-types';
 
-class DefaultValue {
-  static readonly DEFAULT_JOB_NAME = '_default_bull_job';
+// TODO: remove this harded code
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const _redisCnn = {
+  connection: {
+    host: 'localhost',
+    port: 6379,
+  },
+};
 
-  static readonly DEFAULT_WORKER_OPTION: WorkerOptions = {
-    concurrency: 1,
-    // Give long-running jobs enough time to finish without losing the lock
-    lockDuration:  300000,
-    lockRenewTime:  60000,
-    stalledInterval:  30000,
-    maxStalledCount:  1,
-  };
+// TODO: Just placeholder, not implemented for BullJS yet
+export class BullJsProvider implements QueueProvider {
+  stopAll(): void {
+    throw new Error('Method not implemented.');
+  }
 
-  static readonly DEFAULT_JOB_OTION: JobOption = {
-    // removeOnComplete: true,
-    removeOnFail: {
-      count: 4,
-    },
-    removeOnComplete: 3,
-  };
-}
-
-export class BullQueueProvider implements QueueProvider {
-  private _queues: Record<string, Queue> = {};
-
-  private _workers: Worker[] = [];
-
-  public submitJob(
+  submitJob(
     queueName: string,
     jobName: string,
-    opts?: JobOption,
-    payload?: object
+    opts?: JobsOptions | undefined,
+    payload?: object | undefined
   ): void {
-    const q = this.getQueue(queueName);
-    void q.add(jobName, payload, opts).catch((err: unknown) => {
-      console.error(`Failed to add BullMQ job "${jobName}" to queue "${queueName}"`, err);
-    });
+    throw new Error('Method not implemented.');
   }
 
- public registerQueueHandler(
-  opt: QueueOptions,
-  fn: (payload: object) => Promise<void>
-): void {
-  // create a new worker to handle the job
-  const processor = async (job: Job) => {
-    try {
-      await fn(job.data);
-    } catch (e) {
-      console.error(`job ${job.name} failed`);
-      console.error(e);
-      throw e;
-    }
-  };
-
-  // 🔹 ADD THE CHECK HERE
-  if (process.env.NODE_ENV === 'test') {
-    return;
+  registerQueueHandler(opt: QueueOptions, fn: QueueHandlerFunc): void {
+    throw new Error('Method not implemented.');
   }
 
-  const wo: WorkerOptions = _.defaults(
-    opt,
-    DefaultValue.DEFAULT_WORKER_OPTION
-  );
-
-  console.log(`worker option: ${JSON.stringify(wo)}`);
-  wo.connection = getRedisConnection();
-  const worker = new Worker(opt.queueName, processor, wo);
-
-  worker.on('error', (err: Error) => {
-    const msg = err?.message ?? String(err);
-    if (typeof msg === 'string' && msg.includes('Missing key for job')) {
-      const logger = (global as any).logger;
-      if (logger?.warn) logger.warn('BullMQ job key already removed (repeat/delayed):', msg);
-      else console.warn('[BullMQ]', msg);
-    } else {
-      console.error(`worker ${opt.queueName} error:`, err);
-    }
-  });
-
-  this._workers.push(worker);
-}
-
-
-  public async stopAll(): Promise<void> {
-    await Promise.all(this._workers.map((w) => w.close()));
-    this._workers = []; // let the rest to the GC
-  }
-
-  /**
-   * Create / return a queue with name
-   * @param name - Name of the queue
-   * @returns
-   */
-  public getQueue(name: string): Queue {
-    if (!this._queues[name]) {
-      if (process.env.NODE_ENV === 'test') {
-        this._queues[name] = {
-          add: async () => ({ id: 'mock-job-id' }),
-          getRepeatableJobs: async () => [],
-          removeRepeatableByKey: async () => true,
-          isPaused: async () => false,
-          resume: async () => {},
-          pause: async () => {},
-          close: async () => {},
-        } as any;
-      } else {
-        // queue not exist create and cache it
-        this._queues[name] = new Queue(name, {
-          connection: getRedisConnection(),
-          prefix: 'bull',
-        });
-      }
-    }
-
-    return this._queues[name];
+  getQueue(queueName: string) {
+    throw new Error('Method not implemented.');
   }
 }
-// function getRedisConnection(): import('bullmq').ConnectionOptions {
-//   const redisCnn = {
-//       host: 'localhost',
-//       port: 6379,
-//       // port: 6379,
-//   };
-//   // const redisCnn = {
-//   //   path: "127.0.0.1:6379"
-//   // };
-//   // return redisCnn;
-//   let redis = !!path? new IORedis(path): new IORedis();
-// }
