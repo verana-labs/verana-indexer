@@ -213,6 +213,124 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 
 Refer to the [Moleculer configuration reference](https://moleculer.services/docs/0.14/configuration.html) if you need to drill into any of these settings.
 
+### Crawl Performance Optimization
+
+Recent crawler tuning introduced a **bounded, multiplier-based speed scaling layer** to improve reindex throughput without changing crawler architecture or removing memory protections.
+
+This refactor was required because static crawl timings and conservative batch/concurrency defaults made reindexing slower than necessary on healthy systems, while fully unbounded scaling would create instability (DB pressure, RPC saturation, heap spikes).
+
+#### Design Goals
+
+- Make **reindex mode** materially faster than the previous defaults
+- Keep **fresh mode** conservative and stable
+- Preserve memory safety for a **4GB Node.js heap**
+- Prevent runaway scaling (no unbounded multipliers, no infinite math)
+- Keep behavior predictable under load by using hard caps
+
+#### Multiplier-Based Scaling (Bounded)
+
+Crawler speed helpers now scale three dimensions using a mode-aware multiplier:
+
+- **Delay** (`applySpeedToDelay`) -> lower delay as multiplier increases
+- **Batch size** (`applySpeedToBatchSize`) -> larger batches as multiplier increases
+- **Concurrency** (`getRecommendedConcurrency`) -> more parallel workers/chunks where supported
+
+Scaling is intentionally **bounded**:
+
+- Inputs are sanitized (invalid/non-finite values fall back to safe defaults)
+- Results are clamped with mode-specific caps
+- Delay is reduced using bounded math and clamped to a non-negative value
+
+This keeps tuning aggressive enough for reindexing while avoiding unstable configurations such as accidental `1000x` amplification.
+
+#### Fresh vs Reindex Modes
+
+**Fresh mode (initial/live-safe mode)**
+- Prioritizes stability and predictable load
+- Uses a lower cap than reindex mode (currently `40x` effective cap)
+- Keeps existing service behavior and pacing intentionally conservative
+
+**Reindex mode (historical catch-up/rebuild mode)**
+- Uses a more aggressive multiplier path
+- Applies higher caps for delay reduction, batch size, and concurrency
+- Still respects memory guards and health-based throttling when the system is degraded/critical
+
+#### Effective Caps (Current Defaults)
+
+**Fresh mode caps**
+- Effective multiplier cap: `40`
+- Max batch size: `2000`
+- Max concurrency: `120`
+- Minimum delay: `0ms` (non-negative clamp)
+
+**Reindex mode caps**
+- Effective multiplier cap: `300`
+- Max batch size: `5000`
+- Max concurrency: `300`
+- Minimum delay: `0ms` (non-negative clamp)
+
+These are **hard caps** in the helper layer and are used to prevent runaway scheduling and memory pressure.
+
+#### Delay Reduction Logic
+
+Delay is reduced using bounded division:
+
+- `adjustedDelay = floor(baseDelay / (effectiveMultiplier * factor))`
+- Then clamped to a non-negative value (`>= 0`)
+
+This ensures delay reduction is meaningful in reindex mode while avoiding negative or non-finite timing values. Depending on base delay and multiplier, the current implementation can produce `0ms` and should be used with monitoring in production.
+
+#### Memory Safety (4GB Heap Considerations)
+
+The optimization is designed to remain **bounded** and work with existing safety controls, but practical throughput on a **4GB-class heap** depends on workload shape (block density, tx complexity, DB/RPC latency):
+
+- Hard caps for concurrency and batch size
+- Existing heap/memory guards in crawler loops
+- Health-based throttling when system health is `degraded` or `critical`
+- No architectural changes such as `worker_threads`
+- No full-dataset `Promise.all(...)` introduced by the refactor
+
+In practice, reindex speed is increased when the system is healthy, but the crawler can still slow itself down when memory or DB pressure rises. Production operators should validate settings with heap/DB monitoring before increasing multipliers.
+
+#### Why Bounded Scaling (Instead of Unbounded “Fast Mode”)
+
+Unbounded scaling is unsafe in production because crawler throughput is limited by more than CPU:
+
+- RPC provider latency and rate limits
+- PostgreSQL connection pool and statement timeouts
+- Heap growth during decode/insert pipelines
+- Queue scheduling overhead
+
+A bounded scaling model gives a predictable tuning envelope and reduces the risk of oscillation, OOM conditions, and cascading retries.
+
+#### Environment Variable Configuration
+
+The multiplier layer is controlled with environment variables:
+
+- `CRAWL_SPEED_MULTIPLIER`
+  - Base multiplier for **fresh mode**
+  - Parsed as a positive number and capped in parsing (current parser max: `100`)
+  - Effective result is still capped by fresh-mode limits
+
+- `CRAWL_SPEED_MULTIPLIER_REINDEX`
+  - Base multiplier for **reindex mode**
+  - Used to scale reindex delay/batch/concurrency more aggressively
+  - Parsed as a positive number and capped in parsing (current parser max: `100`)
+  - Effective result is still capped by reindex-mode limits
+
+**Recommended configuration approach (production):**
+
+1. Start with defaults (no env override)
+2. Increase `CRAWL_SPEED_MULTIPLIER_REINDEX` gradually
+3. Monitor heap usage, DB connection usage, and statement timeouts
+4. Keep `CRAWL_SPEED_MULTIPLIER` conservative for fresh mode
+
+**Important notes**
+- These variables influence helper-based scaling, but some services may also apply health-aware throttling.
+- Setting very large values does not produce proportional speedups due to hard caps and safety guards.
+- Avoid setting values to non-numeric strings.
+- Current helper defaults are intentionally aggressive; review heap/DB/RPC telemetry after changes.
+
 ### Chain Configuration (`config.json`)
 
 The `src/config.json` file contains chain-specific and job-specific configuration:

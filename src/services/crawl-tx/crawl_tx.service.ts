@@ -25,6 +25,7 @@ import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { triggerGC } from '../../common/utils/health_check';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier, getRecommendedConcurrency } from '../../common/utils/crawl_speed_config';
 import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
+import { runWithCrawlLock, CrawlSkipError } from '../../common/utils/db_pool_guard';
 import {
   isVeranaMessageType,
   shouldSkipUnknownMessages,
@@ -83,7 +84,6 @@ export default class CrawlTxService extends BullableService {
       return;
     }
 
-    const { runWithCrawlLock, CrawlSkipError } = await import('../../common/utils/db_pool_guard');
     try {
       await runWithCrawlLock(async () => {
         const [startBlock, endBlock, blockCheckpoint] =
@@ -173,7 +173,6 @@ export default class CrawlTxService extends BullableService {
     this._processingLock = true;
 
     try {
-      const { runWithCrawlLock, CrawlSkipError } = await import('../../common/utils/db_pool_guard');
       try {
         await runWithCrawlLock(async () => {
           await this.jobHandlerCrawlTxBody();

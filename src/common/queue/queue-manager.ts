@@ -123,9 +123,12 @@ export default class QueueManager {
     }
     if (
       repeatNormalized.every !== undefined &&
-      (!Number.isFinite(repeatNormalized.every) || repeatNormalized.every <= 0)
+      !Number.isFinite(repeatNormalized.every)
     ) {
       delete repeatNormalized.every;
+    }
+    if (repeatNormalized.every !== undefined) {
+      repeatNormalized.every = Math.max(1, Math.floor(Number(repeatNormalized.every)));
     }
 
     const sanitizeCronLikeField = (field: 'pattern' | 'cron') => {
