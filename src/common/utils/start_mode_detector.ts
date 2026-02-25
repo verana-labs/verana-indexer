@@ -12,6 +12,14 @@ export interface StartModeResult {
 
 let reindexCacheCleared = false;
 
+function publishStartMode(mode: StartModeResult, jobName?: string): void {
+  (global as any).__indexerStartMode = {
+    ...mode,
+    jobName: jobName || BULL_JOB_NAME.CRAWL_BLOCK,
+    detectedAt: new Date().toISOString(),
+  };
+}
+
 export async function detectStartMode(jobName?: string, logger?: any): Promise<StartModeResult> {
   try {
     const blockCountResult = await knex('block').count('* as count').first();
@@ -35,18 +43,22 @@ export async function detectStartMode(jobName?: string, logger?: any): Promise<S
       reindexCacheCleared = true;
     }
     
-    return {
+    const result = {
       isFreshStart,
       totalBlocks,
       currentBlock,
       cacheCleared,
     };
+    publishStartMode(result, checkpointJobName);
+    return result;
   } catch (error) {
-    return {
+    const result = {
       isFreshStart: false,
       totalBlocks: 0,
       currentBlock: 0,
     };
+    publishStartMode(result, jobName);
+    return result;
   }
 }
 
@@ -58,4 +70,3 @@ export async function clearCacheForReindex(logger?: any): Promise<boolean> {
   reindexCacheCleared = result.success;
   return result.success;
 }
-

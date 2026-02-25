@@ -7,10 +7,11 @@ import { Block } from '../../models';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { formatTimestamp } from '../../common/utils/date_utils';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
-import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier, getRecommendedConcurrency } from '../../common/utils/crawl_speed_config';
 import { CheckpointManager } from '../../common/utils/checkpoint_manager';
 import { BatchProcessor } from '../../common/utils/batch_processor';
 import { queryWithAutoRetry, delay, isStatementTimeoutError, getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
+import { indexerStatusManager } from '../manager/indexer_status.manager';
 
 interface TrustDepositAdjustPayload {
   account: string;
@@ -54,6 +55,10 @@ export default class CrawlTrustDepositService extends BullableService {
 
       this.timer = setInterval(
         () => {
+          if (!indexerStatusManager.isCrawlingActive()) {
+            this.logger.debug('[CrawlTrustDepositService] Crawling paused, skipping scheduled cycle');
+            return;
+          }
           if (!this.isProcessing) {
             this.processBlocks(checkpoint, false).catch((err) => {
               this.logger.error('[CrawlTrustDepositService] Error in scheduled processBlocks:', err);
@@ -62,7 +67,7 @@ export default class CrawlTrustDepositService extends BullableService {
         },
         crawlInterval,
       );
-      const speedMultiplier = getCrawlSpeedMultiplier();
+      const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
       this.logger.info(
         `[CrawlTrustDepositService] Service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms | Speed Multiplier: ${speedMultiplier}x`
       );
@@ -94,6 +99,10 @@ export default class CrawlTrustDepositService extends BullableService {
       this.logger.debug('[CrawlTrustDepositService] Already processing, skipping...');
       return;
     }
+    if (!indexerStatusManager.isCrawlingActive()) {
+      this.logger.debug('[CrawlTrustDepositService] Crawling paused, skipping processBlocks');
+      return;
+    }
 
     this.isProcessing = true;
     try {
@@ -107,6 +116,10 @@ export default class CrawlTrustDepositService extends BullableService {
       const maxBlockBatch = applySpeedToBatchSize(baseMaxBlockBatch, !this._isFreshStart);
 
       do {
+        if (!indexerStatusManager.isCrawlingActive()) {
+          this.logger.warn('[CrawlTrustDepositService] Crawling paused during processing loop, exiting cycle');
+          break;
+        }
         let nextBlocks: Block[] = [];
         const currentLastHeight = lastHeight;
         const queryTimeoutMs = getDbQueryTimeoutMs();
@@ -140,11 +153,19 @@ export default class CrawlTrustDepositService extends BullableService {
 
         try {
           for (const block of nextBlocks) {
+            if (!indexerStatusManager.isCrawlingActive()) {
+              this.logger.warn('[CrawlTrustDepositService] Crawling paused mid-batch, exiting cycle');
+              break;
+            }
             await this.processBlockEventsInternal(block);
 
             if (this._isFreshStart) {
               await delay(processDelay);
             }
+          }
+
+          if (!indexerStatusManager.isCrawlingActive()) {
+            break;
           }
 
           const newHeight = nextBlocks[nextBlocks.length - 1].height;
@@ -213,7 +234,7 @@ export default class CrawlTrustDepositService extends BullableService {
             await this.handleAdjustTrustDepositEvent(block.height, event);
           },
           {
-            maxConcurrent: this._isFreshStart ? 2 : 3,
+            maxConcurrent: this._isFreshStart ? 2 : getRecommendedConcurrency(2, true),
             batchSize: applySpeedToBatchSize(this._isFreshStart ? 3 : 5, !this._isFreshStart),
             delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
             logger: this.logger
@@ -232,7 +253,7 @@ export default class CrawlTrustDepositService extends BullableService {
             await this.handleSlashTrustDepositEvent(block.height, event);
           },
           {
-            maxConcurrent: this._isFreshStart ? 1 : 2,
+            maxConcurrent: this._isFreshStart ? 1 : getRecommendedConcurrency(1, true),
             batchSize: applySpeedToBatchSize(this._isFreshStart ? 2 : 3, !this._isFreshStart),
             delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
             logger: this.logger

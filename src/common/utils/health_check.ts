@@ -8,6 +8,12 @@ export interface HealthStatus {
     activeConnections?: number;
     maxConnections?: number;
     connectionUsagePercent?: number;
+    poolUsed?: number;
+    poolFree?: number;
+    poolPending?: number;
+    poolMax?: number;
+    poolUsagePercent?: number;
+    poolPendingPercent?: number;
   };
   server: {
     healthy: boolean;
@@ -175,11 +181,44 @@ async function performHealthCheck(): Promise<HealthStatus> {
     const maxConnections = safeParseInt(dbStats.rows[0]?.max, 100);
     const connectionUsagePercent = safePercentage(activeConnections, maxConnections);
 
+    let poolUsed = 0;
+    let poolFree = 0;
+    let poolPending = 0;
+    let poolMax = 0;
+    let poolUsagePercent = 0;
+    let poolPendingPercent = 0;
+
+    try {
+      const client: any = (knex as any).client;
+      const pool = client?.pool;
+      if (pool) {
+        poolUsed = Array.isArray(pool.used) ? pool.used.length : (pool.usedSize || 0);
+        poolFree = Array.isArray(pool.free) ? pool.free.length : (pool.freeSize || 0);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const pendingAcquires = (pool as any).pendingAcquires;
+        poolPending = Array.isArray(pendingAcquires) ? pendingAcquires.length : (pendingAcquires?.length || 0);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        poolMax = pool.max || pool.maxSize || 0;
+        if (poolMax > 0) {
+          poolUsagePercent = safePercentage(poolUsed, poolMax);
+          poolPendingPercent = safePercentage(poolPending, poolMax);
+        }
+      }
+    } catch {
+      // Ignore pool inspection errors, fall back to activeConnections only
+    }
+
     health.database = {
       healthy: connectionUsagePercent < 80,
       activeConnections,
       maxConnections,
-      connectionUsagePercent
+      connectionUsagePercent,
+      poolUsed,
+      poolFree,
+      poolPending,
+      poolMax,
+      poolUsagePercent,
+      poolPendingPercent,
     };
   } catch (error) {
     // Log error for debugging but don't fail the health check entirely
@@ -233,16 +272,22 @@ async function performHealthCheck(): Promise<HealthStatus> {
   const memoryPercent = health.server.memoryUsagePercent || 100;
   const heapPercent = health.server.heapUsagePercent || 100;
   const dbUsagePercent = health.database.connectionUsagePercent || 100;
+  const poolUsagePercent = health.database.poolUsagePercent ?? dbUsagePercent;
+  const poolPendingPercent = health.database.poolPendingPercent ?? 0;
 
   // Critical if ANY of these conditions are met (more aggressive)
   const isCritical = memoryPercent >= MEMORY_CRITICAL_THRESHOLD ||
                      heapPercent >= HEAP_CRITICAL_THRESHOLD ||
-                     dbUsagePercent >= 95;
+                     dbUsagePercent >= 95 ||
+                     poolUsagePercent >= 95 ||
+                     poolPendingPercent >= 120;
 
   // Degraded if approaching limits
   const isDegraded = memoryPercent >= MEMORY_HEALTHY_THRESHOLD ||
                      heapPercent >= HEAP_HEALTHY_THRESHOLD ||
-                     dbUsagePercent >= 80;
+                     dbUsagePercent >= 80 ||
+                     poolUsagePercent >= 80 ||
+                     poolPendingPercent >= 60;
 
   if (isCritical) {
     health.overall = 'critical';
@@ -287,8 +332,11 @@ export function getOptimalBlocksPerCall(
   if (health.overall === 'degraded') {
     return Math.max(50, Math.floor(baseBlocksPerCall * 0.25));  // 25% of base (was 70%)
   }
-  // Even when healthy, cap the blocks per call to prevent memory spikes
-  return Math.min(baseBlocksPerCall, 500);
+  let result = Math.min(baseBlocksPerCall, 500);
+  const heapMb = health.server.heapUsedMB ?? 0;
+  if (heapMb > 2000) result = Math.min(result, 80);
+  else if (heapMb > 1600) result = Math.min(result, 150);
+  return result;
 }
 
 export function getOptimalDelay(

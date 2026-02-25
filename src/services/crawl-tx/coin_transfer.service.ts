@@ -258,7 +258,7 @@ export default class CoinTransferService extends BullableService {
       : config.handleCoinTransfer.millisecondCrawl;
     const crawlInterval = applySpeedToDelay(baseCrawlInterval, !this._isFreshStart);
 
-    const speedMultiplier = getCrawlSpeedMultiplier();
+    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
     this.logger.info(`CoinTransfer Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms | Speed Multiplier: ${speedMultiplier}x`);
 
     this.createJob(

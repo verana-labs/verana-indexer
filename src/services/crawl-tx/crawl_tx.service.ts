@@ -23,7 +23,8 @@ import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
 import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { triggerGC } from '../../common/utils/health_check';
-import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
+import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier, getRecommendedConcurrency } from '../../common/utils/crawl_speed_config';
+import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
 import {
   isVeranaMessageType,
   shouldSkipUnknownMessages,
@@ -82,61 +83,74 @@ export default class CrawlTxService extends BullableService {
       return;
     }
 
-    const [startBlock, endBlock, blockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.CRAWL_TRANSACTION,
-        [BULL_JOB_NAME.CRAWL_BLOCK],
-        config.crawlTransaction.key
-      );
+    const { runWithCrawlLock, CrawlSkipError } = await import('../../common/utils/db_pool_guard');
+    try {
+      await runWithCrawlLock(async () => {
+        const [startBlock, endBlock, blockCheckpoint] =
+          await BlockCheckpoint.getCheckpoint(
+            BULL_JOB_NAME.CRAWL_TRANSACTION,
+            [BULL_JOB_NAME.CRAWL_BLOCK],
+            config.crawlTransaction.key
+          );
 
-    this.logger.info(
-      `Crawl transaction from block ${startBlock} to ${endBlock}`
-    );
-    if (startBlock >= endBlock) {
-      return;
-    }
-
-    let actualEndBlock = endBlock;
-    if (this._isFreshStart && config.crawlTransaction.freshStart) {
-      const baseMaxBlocks = config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall;
-      const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false);
-      actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
-    } else if (!this._isFreshStart) {
-      const baseMaxBlocks = config.crawlTransaction.blocksPerCall || 200;
-      const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true);
-      actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
-    }
-
-    const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock);
-    const listdecodedTx = await this.decodeListRawTx(listTxRaw);
-
-    listTxRaw.length = 0;
-
-    await knex.transaction(async (trx) => {
-      await this.insertTxDecoded(listdecodedTx, trx);
-      if (blockCheckpoint) {
-        blockCheckpoint.height = actualEndBlock;
-        blockCheckpoint.updated_at = new Date();
-
-        await BlockCheckpoint.query()
-          .insert(blockCheckpoint)
-          .onConflict('job_name')
-          .merge({
-            height: actualEndBlock,
-            updated_at: blockCheckpoint.updated_at,
-          })
-          .returning('id')
-          .timeout(getDbQueryTimeoutMs())
-          .transacting(trx);
+        this.logger.info(
+          `Crawl transaction from block ${startBlock} to ${endBlock}`
+        );
+        if (startBlock >= endBlock) {
+          return;
         }
-      });
 
-    const txCount = listdecodedTx.length;
-    if (txCount > 25) {
-      triggerGC();
+        let actualEndBlock = endBlock;
+        if (this._isFreshStart && config.crawlTransaction.freshStart) {
+          const baseMaxBlocks = config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall;
+          const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false);
+          actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+        } else if (!this._isFreshStart) {
+          const baseMaxBlocks = config.crawlTransaction.blocksPerCall || 200;
+          const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true);
+          actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+        }
+
+        const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock);
+        await throwIfHeapCriticalDuringCrawl('crawl-tx:after-getListRawTx', this.logger);
+        const listdecodedTx = await this.decodeListRawTx(listTxRaw);
+        await throwIfHeapCriticalDuringCrawl('crawl-tx:after-decodeListRawTx', this.logger);
+
+        listTxRaw.length = 0;
+
+        await knex.transaction(async (trx) => {
+          await this.insertTxDecoded(listdecodedTx, trx);
+          if (blockCheckpoint) {
+            blockCheckpoint.height = actualEndBlock;
+            blockCheckpoint.updated_at = new Date();
+
+            await BlockCheckpoint.query()
+              .insert(blockCheckpoint)
+              .onConflict('job_name')
+              .merge({
+                height: actualEndBlock,
+                updated_at: blockCheckpoint.updated_at,
+              })
+              .returning('id')
+              .timeout(getDbQueryTimeoutMs())
+              .transacting(trx);
+            }
+          });
+
+        const txCount = listdecodedTx.length;
+        if (txCount > 25) {
+          triggerGC();
+        }
+
+        listdecodedTx.length = 0;
+      }, this.logger);
+    } catch (e: any) {
+      if (e?.name === 'CrawlSkipError') {
+        this.logger.warn(`[CRAWL_TX] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`);
+        return;
+      }
+      throw e;
     }
-
-    listdecodedTx.length = 0;
   }
 
   @QueueHandler({
@@ -159,7 +173,31 @@ export default class CrawlTxService extends BullableService {
     this._processingLock = true;
 
     try {
-      // Check if unique constraint exists ONCE before processing (cache the result)
+      const { runWithCrawlLock, CrawlSkipError } = await import('../../common/utils/db_pool_guard');
+      try {
+        await runWithCrawlLock(async () => {
+          await this.jobHandlerCrawlTxBody();
+        }, this.logger);
+      } catch (e: any) {
+        if (e?.name === 'CrawlSkipError') {
+          this.logger.warn(`[HANDLE_TRANSACTION] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`);
+          return;
+        }
+        throw e;
+      }
+    } catch (error) {
+      await handleErrorGracefully(
+        error,
+        SERVICE.V1.CrawlTransaction.key,
+        '[HANDLE_TRANSACTION] Error processing transactions'
+      );
+    } finally {
+      this._processingLock = false;
+    }
+  }
+
+  private async jobHandlerCrawlTxBody(): Promise<void> {
+    // Check if unique constraint exists ONCE before processing (cache the result)
       if (this._hasUniqueConstraintCache === null) {
         try {
           const constraintCheck = await knex.raw(`
@@ -274,6 +312,7 @@ export default class CrawlTxService extends BullableService {
       let lastProcessedHeight = startBlock;
 
       while (currentTxId < maxAvailableTxId && txsProcessed < maxTxsPerCall) {
+        await throwIfHeapCriticalDuringCrawl('handle-transaction:while-loop', this.logger);
         // Fetch transactions in batches by ID (much faster than by height)
         const batchSize = Math.min(50, maxTxsPerCall - txsProcessed);
         const transactions = await Transaction.query()
@@ -296,6 +335,7 @@ export default class CrawlTxService extends BullableService {
 
         // Process each block's transactions
         for (const [blockHeight, blockTxs] of transactionsByBlock.entries()) {
+          await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}`, this.logger);
           try {
             // Process all transactions for this block
             const processingPayloads = await this.processTransactionsForBlock(blockTxs, blockCheckpoint);
@@ -361,15 +401,6 @@ export default class CrawlTxService extends BullableService {
       if (txsProcessed > 0) {
         this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing ${txsProcessed} transaction(s), checkpoint at height ${lastProcessedHeight}, last tx ID ${currentTxId}`);
       }
-    } catch (error) {
-      await handleErrorGracefully(
-        error,
-        SERVICE.V1.CrawlTransaction.key,
-        '[HANDLE_TRANSACTION] Error processing transactions'
-      );
-    } finally {
-      this._processingLock = false;
-    }
   }
 
   /**
@@ -404,6 +435,9 @@ export default class CrawlTxService extends BullableService {
 
         // Process transactions sequentially using a for loop
         for (let i = 0; i < blockTransactions.length; i++) {
+          if (i > 0 && i % 10 === 0) {
+            await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}-tx-loop`, this.logger);
+          }
           const tx = blockTransactions[i];
           this.logger.debug(` [HANDLE_TRANSACTION] Processing transaction ${i + 1}/${blockTransactions.length} (id: ${tx.id}, hash: ${tx.hash}) for block ${blockHeight}`);
 
@@ -525,6 +559,7 @@ export default class CrawlTxService extends BullableService {
       const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
 
       for (let i = 0; i < eventInsert.length; i += chunkSize) {
+        await throwIfHeapCriticalDuringCrawl('handle-transaction:event-insert', this.logger);
         const chunk = eventInsert.slice(i, i + chunkSize);
         try {
           await Event.query()
@@ -559,6 +594,7 @@ export default class CrawlTxService extends BullableService {
       // Always use regular insert with duplicate handling to avoid transaction abort issues
       // ON CONFLICT can abort the transaction if constraint doesn't exist, so we avoid it
       for (let i = 0; i < msgInsert.length; i += chunkSizeMsg) {
+        await throwIfHeapCriticalDuringCrawl('handle-transaction:message-insert', this.logger);
         const chunk = msgInsert.slice(i, i + chunkSizeMsg);
         
         try {
@@ -767,121 +803,128 @@ export default class CrawlTxService extends BullableService {
   async decodeListRawTx(
     listRawTx: { listTx: any; height: number; timestamp: string }[]
   ): Promise<{ listTx: any; height: number; timestamp: string }[]> {
-    const listDecodedTx = await Promise.all(
-      listRawTx.map(async (payloadBlock) => {
-        const { listTx, timestamp, height } = payloadBlock;
-        const listHandleTx: any[] = [];
-        const mapExistedTx: Map<string, boolean> = new Map();
-        let listHash: string[] = [];
-        try {
-          // check if tx existed
-          listHash = listTx.txs.map((tx: any) => tx.hash);
-          const listTxExisted = await Transaction.query()
-            .whereIn('hash', listHash)
-            .timeout(getDbQueryTimeoutMs(120000));
-          listTxExisted.forEach((tx) => {
-            mapExistedTx.set(tx.hash, true);
-          });
-          listTxExisted.length = 0;
+    const concurrency = this._isFreshStart
+      ? 8
+      : getRecommendedConcurrency(1, true);
+    const listDecodedTx: { listTx: any; height: number; timestamp: string }[] = [];
 
-          // parse tx to format LCD return
-          listTx.txs.forEach((tx: any) => {
-            this.logger.warn(`Handle txhash ${tx.hash}`);
-            if (mapExistedTx.get(tx.hash)) {
-              return;
-            }
-            // decode tx to readable
-            const decodedTx = decodeTxRaw(fromBase64(tx.tx));
+    const decodeOne = async (payloadBlock: { listTx: any; height: number; timestamp: string }) => {
+      const { listTx, timestamp, height } = payloadBlock;
+      const listHandleTx: any[] = [];
+      const mapExistedTx: Map<string, boolean> = new Map();
+      let listHash: string[] = [];
+      try {
+        listHash = listTx.txs.map((tx: any) => tx.hash);
+        const listTxExisted = await Transaction.query()
+          .whereIn('hash', listHash)
+          .timeout(getDbQueryTimeoutMs(120000));
+        listTxExisted.forEach((tx) => {
+          mapExistedTx.set(tx.hash, true);
+        });
+        listTxExisted.length = 0;
 
-            const parsedTx: any = {};
-            parsedTx.tx = decodedTx;
-            parsedTx.tx.signatures = decodedTx.signatures.map(
-              (signature: Uint8Array) => toBase64(signature)
+        listTx.txs.forEach((tx: any) => {
+          this.logger.warn(`Handle txhash ${tx.hash}`);
+          if (mapExistedTx.get(tx.hash)) {
+            return;
+          }
+          const decodedTx = decodeTxRaw(fromBase64(tx.tx));
+
+          const parsedTx: any = {};
+          parsedTx.tx = decodedTx;
+          parsedTx.tx.signatures = decodedTx.signatures.map(
+            (signature: Uint8Array) => toBase64(signature)
+          );
+
+          const decodedMsgs = decodedTx.body.messages.map((msg) => {
+            const decodedMsg = Utils.camelizeKeys(
+              this._registry.decodeMsg(msg)
             );
+            decodedMsg['@type'] = msg.typeUrl;
+            return decodedMsg;
+          });
 
-            const decodedMsgs = decodedTx.body.messages.map((msg) => {
-              const decodedMsg = Utils.camelizeKeys(
-                this._registry.decodeMsg(msg)
-              );
-              decodedMsg['@type'] = msg.typeUrl;
-              return decodedMsg;
-            });
-
-            parsedTx.tx = {
-              body: {
-                messages: decodedMsgs,
-                memo: decodedTx.body?.memo,
-                timeout_height: decodedTx.body?.timeoutHeight,
-                extension_options: decodedTx.body?.extensionOptions,
-                non_critical_extension_options:
-                  decodedTx.body?.nonCriticalExtensionOptions,
+          parsedTx.tx = {
+            body: {
+              messages: decodedMsgs,
+              memo: decodedTx.body?.memo,
+              timeout_height: decodedTx.body?.timeoutHeight,
+              extension_options: decodedTx.body?.extensionOptions,
+              non_critical_extension_options:
+                decodedTx.body?.nonCriticalExtensionOptions,
+            },
+            auth_info: {
+              fee: {
+                amount: decodedTx.authInfo.fee?.amount,
+                gas_limit: decodedTx.authInfo.fee?.gasLimit,
+                granter: decodedTx.authInfo.fee?.granter,
+                payer: decodedTx.authInfo.fee?.payer,
               },
-              auth_info: {
-                fee: {
-                  amount: decodedTx.authInfo.fee?.amount,
-                  gas_limit: decodedTx.authInfo.fee?.gasLimit,
-                  granter: decodedTx.authInfo.fee?.granter,
-                  payer: decodedTx.authInfo.fee?.payer,
-                },
-                signer_infos: decodedTx.authInfo.signerInfos.map(
-                  (signerInfo) => {
-                    const pubkey = signerInfo.publicKey?.value;
+              signer_infos: decodedTx.authInfo.signerInfos.map(
+                (signerInfo) => {
+                  const pubkey = signerInfo.publicKey?.value;
 
-                    if (pubkey instanceof Uint8Array) {
-                      return {
-                        mode_info: signerInfo.modeInfo,
-                        public_key: {
-                          '@type': signerInfo.publicKey?.typeUrl,
-                          key: toBase64(pubkey.slice(2)),
-                        },
-                        sequence: signerInfo.sequence.toString(),
-                      };
-                    }
+                  if (pubkey instanceof Uint8Array) {
                     return {
                       mode_info: signerInfo.modeInfo,
+                      public_key: {
+                        '@type': signerInfo.publicKey?.typeUrl,
+                        key: toBase64(pubkey.slice(2)),
+                      },
                       sequence: signerInfo.sequence.toString(),
                     };
                   }
-                ),
-              },
-              signatures: decodedTx.signatures,
-            };
+                  return {
+                    mode_info: signerInfo.modeInfo,
+                    sequence: signerInfo.sequence.toString(),
+                  };
+                }
+              ),
+            },
+            signatures: decodedTx.signatures,
+          };
 
-            parsedTx.tx_response = {
-              height: tx.height,
-              txhash: tx.hash,
-              codespace: tx.tx_result.codespace,
-              code: tx.tx_result.code,
-              data: tx.tx_result.data,
-              raw_log: tx.tx_result.log,
-              info: tx.tx_result.info,
-              gas_wanted: tx.tx_result.gas_wanted,
-              gas_used: tx.tx_result.gas_used,
-              tx: tx.tx,
-              index: tx.index,
-              events: tx.tx_result.events,
-              timestamp,
-            };
-            try {
-              parsedTx.tx_response.logs = JSON.parse(tx.tx_result.log);
-            } catch (error) {
-              this.logger.warn('tx fail');
-            }
-            listHandleTx.push(parsedTx);
-          });
+          parsedTx.tx_response = {
+            height: tx.height,
+            txhash: tx.hash,
+            codespace: tx.tx_result.codespace,
+            code: tx.tx_result.code,
+            data: tx.tx_result.data,
+            raw_log: tx.tx_result.log,
+            info: tx.tx_result.info,
+            gas_wanted: tx.tx_result.gas_wanted,
+            gas_used: tx.tx_result.gas_used,
+            tx: tx.tx,
+            index: tx.index,
+            events: tx.tx_result.events,
+            timestamp,
+          };
+          try {
+            parsedTx.tx_response.logs = JSON.parse(tx.tx_result.log);
+          } catch (error) {
+            this.logger.warn('tx fail');
+          }
+          listHandleTx.push(parsedTx);
+        });
 
-          mapExistedTx.clear();
-          listHash.length = 0;
+        mapExistedTx.clear();
+        listHash.length = 0;
 
-          return { listTx: listHandleTx, timestamp, height };
-        } catch (error) {
-          this.logger.error(error);
-          mapExistedTx.clear();
-          listHash.length = 0;
-          throw error;
-        }
-      })
-    );
+        return { listTx: listHandleTx, timestamp, height };
+      } catch (error) {
+        this.logger.error(error);
+        mapExistedTx.clear();
+        listHash.length = 0;
+        throw error;
+      }
+    };
+
+    for (let i = 0; i < listRawTx.length; i += concurrency) {
+      await throwIfHeapCriticalDuringCrawl('crawl-tx:decodeListRawTx-chunk', this.logger);
+      const chunk = listRawTx.slice(i, i + concurrency);
+      const decodedChunk = await Promise.all(chunk.map(decodeOne));
+      listDecodedTx.push(...decodedChunk);
+    }
     return listDecodedTx;
   }
 
@@ -926,6 +969,7 @@ export default class CrawlTxService extends BullableService {
     });
 
     if (listTxModel.length) {
+      await throwIfHeapCriticalDuringCrawl('crawl-tx:before-batchInsert-transactions', this.logger);
       const effectiveConfig = this._isFreshStart && config.crawlTransaction.freshStart
         ? config.crawlTransaction.freshStart
         : config.crawlTransaction;
@@ -1472,7 +1516,7 @@ export default class CrawlTxService extends BullableService {
       : config.handleTransaction.millisecondCrawl;
     const handleTxInterval = applySpeedToDelay(baseHandleTxInterval, !this._isFreshStart);
 
-    const speedMultiplier = getCrawlSpeedMultiplier();
+    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
     this.logger.info(
       `🚀 CrawlTx Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
       `CrawlTx Interval: ${crawlTxInterval}ms | HandleTx Interval: ${handleTxInterval}ms | ` +

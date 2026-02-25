@@ -12,6 +12,8 @@ import { detectStartMode } from '../../common/utils/start_mode_detector';
 import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { tableExists, isTableMissingError } from '../../common/utils/db_health';
+import { indexerStatusManager } from '../manager/indexer_status.manager';
+import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
 
 interface Balance {
     denom: string;
@@ -35,6 +37,7 @@ interface AccountInsertData {
 })
 export default class CrawlNewAccountsService extends BullableService {
     private timer: NodeJS.Timeout | null = null;
+    private isProcessingBlocks = false;
     private readonly JOB_NAME = BULL_JOB_NAME.JOB_HANDLE_ACCOUNTS;
     private BATCH_SIZE = config?.crawlAccounts?.freshStart?.chunkSize || 100;
     private CRAWL_INTERVAL = config?.crawlAccounts?.freshStart?.millisecondCrawl || 10000;
@@ -81,7 +84,7 @@ export default class CrawlNewAccountsService extends BullableService {
                 this.CRAWL_INTERVAL = applySpeedToDelay(baseInterval, true);
             }
 
-            const speedMultiplier = getCrawlSpeedMultiplier();
+            const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
             this.logger.info(`[CrawlNewAccountsService] Config - Batch: ${this.BATCH_SIZE}, Interval: ${this.CRAWL_INTERVAL}ms, Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Speed Multiplier: ${speedMultiplier}x`);
 
 
@@ -129,7 +132,16 @@ export default class CrawlNewAccountsService extends BullableService {
 
     @Action({ name: 'processBlocks' })
     async processBlocks() {
+        if (this.isProcessingBlocks) {
+            this.logger.debug('[CrawlNewAccountsService] processBlocks skipped (previous run still in progress)');
+            return;
+        }
+        this.isProcessingBlocks = true;
         try {
+            if (!indexerStatusManager.isCrawlingActive()) {
+                this.logger.debug('[CrawlNewAccountsService] Crawling is stopped, skipping account processing cycle');
+                return;
+            }
 
             const checkpoint = await BlockCheckpoint.query(knex).findOne({ job_name: this.JOB_NAME });
             let lastHeight = checkpoint ? checkpoint.height : 0;
@@ -138,6 +150,11 @@ export default class CrawlNewAccountsService extends BullableService {
             this.logger.info(`[CrawlNewAccountsService] Processing blocks starting from height: ${lastHeight}`);
 
             while (true) {
+                if (!indexerStatusManager.isCrawlingActive()) {
+                    this.logger.warn('[CrawlNewAccountsService] Crawling stopped while processing. Exiting current cycle.');
+                    break;
+                }
+                await throwIfHeapCriticalDuringCrawl('crawl-new-accounts:loop', this.logger);
                 let nextBlocks: Block[];
                 try {
                     nextBlocks = await Block.query()
@@ -172,22 +189,33 @@ export default class CrawlNewAccountsService extends BullableService {
                     const changedAddresses = new Set<string>();
                     let batchTransfers = 0;
                     let batchSuccess = true;
+                    let stoppedMidBatch = false;
 
                     const batchStartHeight = nextBlocks[0].height;
                     const batchEndHeight = nextBlocks[nextBlocks.length - 1].height;
 
                     for (const block of nextBlocks) {
+                        if (!indexerStatusManager.isCrawlingActive()) {
+                            this.logger.warn('[CrawlNewAccountsService] Crawling stopped mid-batch. Exiting current cycle.');
+                            batchSuccess = false;
+                            stoppedMidBatch = true;
+                            break;
+                        }
                         const result = await this.processBlockTransactions(block, changedAddresses);
                         batchSuccess = batchSuccess && result.success;
                         batchTransfers += result.transfersProcessed;
                         if (!result.success) {
-                            this.logger.error(`[CrawlNewAccountsService] Failed processing block ${block.height}`);
+                            this.logger.error(`[CrawlNewAccountsService] Failed processing block ${block.height}${result.errorMessage ? `: ${result.errorMessage}` : ''}`);
                             break;
                         }
                     }
 
                     if (!batchSuccess) {
-                        this.logger.error(`[CrawlNewAccountsService] Batch processing failed at height ${batchEndHeight}`);
+                        if (stoppedMidBatch) {
+                            this.logger.warn(`[CrawlNewAccountsService] Batch interrupted because crawling is paused (up to height ${batchEndHeight})`);
+                        } else {
+                            this.logger.error(`[CrawlNewAccountsService] Batch processing failed at height ${batchEndHeight}`);
+                        }
                         break;
                     }
 
@@ -226,6 +254,10 @@ export default class CrawlNewAccountsService extends BullableService {
                         await delay(processDelay);
                     }
                 } catch (err: any) {
+                    if (err?.name === 'CrawlSkipError') {
+                        this.logger.warn(`[CrawlNewAccountsService] Skipping cycle: ${err?.message || 'memory pressure or crawler paused'}`);
+                        break;
+                    }
                     if (err?.code === '57014' || err?.message?.includes('statement timeout') || err?.message?.includes('canceling statement')) {
                         this.logger.warn(`[CrawlNewAccountsService] Statement timeout in batch processing at height ${lastHeight + 1}, waiting before retry...`);
                         const { delay } = await import('../../common/utils/db_query_helper');
@@ -241,7 +273,13 @@ export default class CrawlNewAccountsService extends BullableService {
                 this.logger.debug(`[CrawlNewAccountsService] No new blocks to process (current checkpoint: ${lastHeight})`);
             }
         } catch (err) {
+            if ((err as any)?.name === 'CrawlSkipError') {
+                this.logger.warn(`[CrawlNewAccountsService] Skipping cycle: ${(err as any)?.message || 'memory pressure or crawler paused'}`);
+                return;
+            }
             this.logger.error(`[CrawlNewAccountsService] Error in processBlocks:`, err);
+        } finally {
+            this.isProcessingBlocks = false;
         }
     }
 
@@ -262,7 +300,7 @@ export default class CrawlNewAccountsService extends BullableService {
         return results;
     }
 
-    private async processBlockTransactions(block: Block, changedAddresses: Set<string>): Promise<{ success: boolean; transfersProcessed: number }> {
+    private async processBlockTransactions(block: Block, changedAddresses: Set<string>): Promise<{ success: boolean; transfersProcessed: number; errorMessage?: string }> {
         try {
             const blockData = typeof block.data === 'string' ? JSON.parse(block.data) : block.data;
             const blockResult = blockData?.block_result;
@@ -322,14 +360,16 @@ export default class CrawlNewAccountsService extends BullableService {
                         processed++;
                     }
                 } catch (err) {
-                    this.logger.error(`[TRANSFER] Failed:`, err);
+                    const errorMsg = (err as any)?.message || String(err);
+                    this.logger.error(`[TRANSFER] Failed: ${errorMsg}`);
                 }
             }
 
             return { success: true, transfersProcessed: processed };
-        } catch (err) {
-            this.logger.error(`[PROCESS] Error block ${block.height}:`, err);
-            return { success: false, transfersProcessed: 0 };
+        } catch (err: any) {
+            const errorMsg = err?.message || String(err);
+            this.logger.error(`[PROCESS] Error block ${block.height}: ${errorMsg}`);
+            return { success: false, transfersProcessed: 0, errorMessage: err?.message || String(err) };
         }
     }
 

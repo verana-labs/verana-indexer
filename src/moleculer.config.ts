@@ -310,9 +310,15 @@ const brokerConfig: BrokerOptions = {
     } catch (_) {}
     
     process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-      broker.logger?.error('Unhandled Promise Rejection:', reason);
-      broker.logger?.error('Promise:', promise);
-      console.error('Unhandled Promise Rejection:', reason);
+      const msg = reason?.message ?? String(reason);
+      const isMissingKeyJob = typeof msg === 'string' && msg.includes('Missing key for job');
+      if (isMissingKeyJob) {
+        broker.logger?.warn('BullMQ job key already removed (repeat/delayed):', msg);
+      } else {
+        broker.logger?.error('Unhandled Promise Rejection:', reason);
+        broker.logger?.error('Promise:', promise);
+        console.error('Unhandled Promise Rejection:', reason);
+      }
     });
     
     process.on('uncaughtException', (error: Error) => {

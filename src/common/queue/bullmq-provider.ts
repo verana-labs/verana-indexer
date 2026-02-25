@@ -67,7 +67,20 @@ export class BullQueueProvider implements QueueProvider {
 
   console.log(`worker option: ${JSON.stringify(wo)}`);
   wo.connection = getRedisConnection();
-  this._workers.push(new Worker(opt.queueName, processor, wo));
+  const worker = new Worker(opt.queueName, processor, wo);
+
+  worker.on('error', (err: Error) => {
+    const msg = err?.message ?? String(err);
+    if (typeof msg === 'string' && msg.includes('Missing key for job')) {
+      const logger = (global as any).logger;
+      if (logger?.warn) logger.warn('BullMQ job key already removed (repeat/delayed):', msg);
+      else console.warn('[BullMQ]', msg);
+    } else {
+      console.error(`worker ${opt.queueName} error:`, err);
+    }
+  });
+
+  this._workers.push(worker);
 }
 
 
