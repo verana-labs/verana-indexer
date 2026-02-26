@@ -11,6 +11,7 @@ services:
       QUEUE_JOB_REDIS: redis://redis:6379
       NODE_ENV: production
       NAMESPACE: verana
+      USE_HEIGHT_SYNC_CS: ${USE_HEIGHT_SYNC_CS:-true}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_HOST: psql

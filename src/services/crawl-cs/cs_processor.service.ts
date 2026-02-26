@@ -14,8 +14,8 @@ import knex from "../../common/utils/db_connection";
 import { getModeString } from "./cs_types";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
-import { enrichSchemaMessageWithEvent } from "./cs-payload.helper";
-import { parseCredentialSchemaEvent } from "./cs-event.mapper";
+import { enrichSchemaMessageWithEvent } from "./cs_payload_helper";
+import { parseCredentialSchemaEvent } from "./cs_event_mapper";
 
 function extractOptionalUInt32(value: unknown): number {
   if (value === undefined || value === null) {
@@ -181,7 +181,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
         created: timestamp ?? null,
         modified: timestamp ?? null,
         archived: null,
-        is_active: content.is_active ?? content.isActive ?? false,
+        is_active: true,
         issuer_grantor_validation_validity_period:
           getValidityPeriod('issuer_grantor_validation_validity_period', content, schemaMessage),
         verifier_grantor_validation_validity_period:
@@ -223,7 +223,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
       this.logger.error("❌ Error storing credential schema:", err);
     }
   }
-
 
 
 

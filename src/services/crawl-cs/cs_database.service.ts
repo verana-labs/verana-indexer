@@ -8,8 +8,8 @@ import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
 import { calculateCredentialSchemaStats } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
+import { extractTitleDescriptionFromJsonSchema } from "../../modules/cs-height-sync/cs_height_sync_helpers";
 import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
-import { extractTitleDescriptionFromJsonSchema } from "../../common/credential_schema_meta";
 
 let heightColumnExistsCache: boolean | null = null;
 
@@ -41,20 +41,72 @@ function getStoredSchemaString(js: unknown): string {
   return String(js);
 }
 
-function normalizeJsonSchema(js: unknown): object | null {
-  if (js == null) return null;
-  let obj: object | null = null;
-  if (typeof js === "object") obj = js as object;
-  else if (typeof js === "string") {
-    try {
-      const parsed = JSON.parse(js);
-      obj = typeof parsed === "object" && parsed !== null ? parsed : null;
-    } catch {
+function normalizeArchivedValue(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const lowered = trimmed.toLowerCase();
+    if (
+      lowered === "null" ||
+      lowered === "undefined" ||
+      lowered === "none" ||
+      lowered === "false" ||
+      lowered === "0"
+    ) {
       return null;
     }
+    if (trimmed.startsWith("0001-01-01T00:00:00")) {
+      return null;
+    }
+    const parsed = new Date(trimmed);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
   }
-  if (!obj) return null;
-  return obj;
+  return null;
+}
+
+function deriveIsActiveFromArchived(value: unknown): boolean {
+  return normalizeArchivedValue(value) == null;
+}
+
+function normalizeValueForDiff(key: string, value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (key === "json_schema") return ensureSchemaString(value);
+  if (key === "archived") return normalizeArchivedValue(value);
+  if (key === "created" || key === "modified") {
+    if (value instanceof Date) {
+      return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const parsed = new Date(trimmed);
+      return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : trimmed;
+    }
+    return String(value);
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  return value;
+}
+
+function buildChangedFields(
+  existing: Record<string, unknown>,
+  nextValues: Record<string, unknown>
+): Record<string, unknown> {
+  const changes: Record<string, unknown> = {};
+  for (const [key, nextValue] of Object.entries(nextValues)) {
+    if (key === "id") continue;
+    const prevNorm = normalizeValueForDiff(key, existing[key]);
+    const nextNorm = normalizeValueForDiff(key, nextValue);
+    if (prevNorm !== nextNorm) {
+      changes[key] = nextValue;
+    }
+  }
+  return changes;
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -137,6 +189,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             ...schemaPayload,
             modified: schemaPayload.modified || new Date(),
           };
+          if ("archived" in updates) {
+            updates.archived = normalizeArchivedValue(updates.archived);
+            updates.is_active = deriveIsActiveFromArchived(updates.archived);
+          } else if ("is_active" in updates && !("archived" in updates)) {
+            updates.is_active = deriveIsActiveFromArchived(existingSchema.archived);
+          }
           if (updates.json_schema != null) {
             const rawString = ensureSchemaString(updates.json_schema);
             updates.json_schema = overrideSchemaIdInString(rawString, existingSchema.id);
@@ -153,6 +211,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           finalRecord = updated;
         } else {
           const insertPayload = { ...schemaPayload };
+          if ("archived" in insertPayload) {
+            insertPayload.archived = normalizeArchivedValue(insertPayload.archived);
+          } else {
+            insertPayload.archived = null;
+          }
+          insertPayload.is_active = deriveIsActiveFromArchived(insertPayload.archived);
           const rawSchemaString = insertPayload.json_schema != null ? ensureSchemaString(insertPayload.json_schema) : "";
           insertPayload.json_schema = rawSchemaString || "{}";
           const [inserted] = await trx("credential_schemas")
@@ -169,29 +233,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           }
         }
         try {
-          let schemaObjForMeta: any = null;
-          if (finalRecord?.json_schema) {
-            const raw = finalRecord.json_schema;
-            if (typeof raw === "string") {
-              try {
-                schemaObjForMeta = JSON.parse(raw);
-              } catch {
-                schemaObjForMeta = null;
-              }
-            } else {
-              schemaObjForMeta = raw;
-            }
-          }
-          if (schemaObjForMeta && typeof schemaObjForMeta === "object") {
-            const title = typeof schemaObjForMeta.title === "string" ? schemaObjForMeta.title : null;
-            const description = typeof schemaObjForMeta.description === "string" ? schemaObjForMeta.description : null;
-            const updates: any = {};
-            if (title !== null) updates.title = title;
-            if (description !== null) updates.description = description;
-            if (Object.keys(updates).length > 0) {
-              const [updatedWithMeta] = await trx("credential_schemas").where({ id: finalRecord.id }).update(updates).returning("*");
-              if (updatedWithMeta) finalRecord = updatedWithMeta;
-            }
+          const { title: titleFromSchema, description: descriptionFromSchema } = extractTitleDescriptionFromJsonSchema(finalRecord?.json_schema);
+          const metaUpdates: Record<string, string> = {};
+          if (titleFromSchema !== null) metaUpdates.title = titleFromSchema;
+          if (descriptionFromSchema !== null) metaUpdates.description = descriptionFromSchema;
+          if (Object.keys(metaUpdates).length > 0) {
+            const [updatedWithMeta] = await trx("credential_schemas").where({ id: finalRecord.id }).update(metaUpdates).returning("*");
+            if (updatedWithMeta) finalRecord = updatedWithMeta;
           }
         } catch (err: any) {
           this.logger.warn(`Failed to persist title/description for CS ${finalRecord.id}: ${err?.message || err}`);
@@ -259,7 +307,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, { success: true, result }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema upsert:", err);
-      console.error("FATAL CS UPSERT ERROR:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
@@ -293,6 +340,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { height, ...updatesWithoutHeight } = updates;
       const blockHeight = Number(height) || 0;
 
+      if ("archived" in updatesWithoutHeight) {
+        updatesWithoutHeight.archived = normalizeArchivedValue(updatesWithoutHeight.archived);
+        updatesWithoutHeight.is_active = deriveIsActiveFromArchived(updatesWithoutHeight.archived);
+      } else if ("is_active" in updatesWithoutHeight) {
+        updatesWithoutHeight.is_active = deriveIsActiveFromArchived(existing.archived);
+      }
+
       if (updatesWithoutHeight.json_schema != null) {
         const rawString = ensureSchemaString(updatesWithoutHeight.json_schema);
         updatesWithoutHeight.json_schema = overrideSchemaIdInString(rawString, existing.id);
@@ -303,30 +357,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .update(updatesWithoutHeight)
         .returning("*");
 
-      // After update, extract title/description from json_schema (if present) and persist them too
       try {
-        let schemaObjForMeta: any = null;
-        if (updated?.json_schema) {
-          if (typeof updated.json_schema === "string") {
-            try {
-              schemaObjForMeta = JSON.parse(updated.json_schema);
-            } catch {
-              schemaObjForMeta = null;
-            }
-          } else {
-            schemaObjForMeta = updated.json_schema;
-          }
-        }
-        if (schemaObjForMeta && typeof schemaObjForMeta === "object") {
-          const title = typeof schemaObjForMeta.title === "string" ? schemaObjForMeta.title : null;
-          const description = typeof schemaObjForMeta.description === "string" ? schemaObjForMeta.description : null;
-          const metaUpdates: any = {};
-          if (title !== null && title !== updated.title) metaUpdates.title = title;
-          if (description !== null && description !== updated.description) metaUpdates.description = description;
-          if (Object.keys(metaUpdates).length > 0) {
-            const [updatedWithMeta] = await knex("credential_schemas").where({ id: existing.id }).update(metaUpdates).returning("*");
-            if (updatedWithMeta) updated = updatedWithMeta;
-          }
+        const { title: titleFromSchema, description: descriptionFromSchema } = extractTitleDescriptionFromJsonSchema(updated?.json_schema);
+        const metaUpdates: Record<string, string> = {};
+        if (titleFromSchema !== null && titleFromSchema !== updated.title) metaUpdates.title = titleFromSchema;
+        if (descriptionFromSchema !== null && descriptionFromSchema !== updated.description) metaUpdates.description = descriptionFromSchema;
+        if (Object.keys(metaUpdates).length > 0) {
+          const [updatedWithMeta] = await knex("credential_schemas").where({ id: existing.id }).update(metaUpdates).returning("*");
+          if (updatedWithMeta) updated = updatedWithMeta;
         }
       } catch (err: any) {
         this.logger.warn(`Failed to persist title/description for CS ${existing.id}: ${err?.message || err}`);
@@ -394,7 +432,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, { success: true, updated }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema update:", err);
-      console.error("FATAL CS UPDATE ERROR:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
@@ -402,9 +439,20 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action({ name: "archive" })
   async archive(ctx: Context<{ payload: any }>) {
     try {
-      const { id, archive, modified } = ctx.params.payload;
-      if (!id || archive === undefined) {
+      const { id, archive: archiveRaw, modified } = ctx.params.payload;
+      if (!id || archiveRaw === undefined) {
         return ApiResponder.error(ctx, "Missing required parameters: id and archive", 400);
+      }
+      let archiveFlag: boolean;
+      if (typeof archiveRaw === "boolean") {
+        archiveFlag = archiveRaw;
+      } else if (typeof archiveRaw === "string") {
+        const normalizedArchive = archiveRaw.trim().toLowerCase();
+        if (normalizedArchive === "true") archiveFlag = true;
+        else if (normalizedArchive === "false") archiveFlag = false;
+        else return ApiResponder.error(ctx, "Invalid archive value: expected boolean", 400);
+      } else {
+        return ApiResponder.error(ctx, "Invalid archive value: expected boolean", 400);
       }
 
       const schemaRecord = await knex("credential_schemas").where({ id }).first();
@@ -412,16 +460,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
 
-      if (archive && schemaRecord.archived !== null) {
+      if (archiveFlag && schemaRecord.archived !== null) {
         return ApiResponder.error(ctx, `Credential schema id=${id} is already archived`, 400);
       }
-      if (!archive && schemaRecord.archived === null) {
+      if (!archiveFlag && schemaRecord.archived === null) {
         return ApiResponder.error(ctx, `Credential schema id=${id} is already unarchived`, 400);
       }
 
       const updates: Record<string, any> = {
-        archived: archive ? modified : null,
-        is_active: !archive,
+        archived: archiveFlag ? modified : null,
+        is_active: archiveFlag === false,
         modified,
       };
 
@@ -433,12 +481,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         .update(updates)
         .returning("*");
 
+      this.logger.info(
+        `[CS] ${archiveFlag ? "Archived" : "Unarchived"} schema id=${id} at height=${blockHeight} (is_active=${updated?.is_active}, archived=${updated?.archived ?? "null"})`
+      );
+
       const hasHeightColumn = await checkHeightColumnExists();
       const historyRow = mapToHistoryRow(updated, {
         changes: JSON.stringify({
           archived: updated.archived,
         }),
-        action: archive ? "archive" : "unarchive",
+        action: archiveFlag ? "archive" : "unarchive",
         height: blockHeight,
       }, hasHeightColumn);
       await knex("credential_schema_history").insert(historyRow);
@@ -486,10 +538,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(ctx, { success: true, updated }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema archive:", err);
-      console.error("FATAL CS ARCHIVE ERROR:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }
+
 
   @Action({ name: "syncFromLedger" })
   async syncFromLedger(
@@ -508,6 +560,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const blockHeightNum = Number(blockHeight) || 0;
       const jsonSchemaRaw = schema.json_schema ?? schema.jsonSchema;
       const jsonSchemaStr = ensureSchemaString(jsonSchemaRaw ?? "{}");
+      const normalizedArchived = normalizeArchivedValue(schema.archived);
+      const derivedIsActive = deriveIsActiveFromArchived(normalizedArchived);
+
       const payload: Record<string, unknown> = {
         id,
         tr_id: schema.tr_id ?? schema.trId ?? null,
@@ -520,10 +575,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         holder_validation_validity_period: Number(schema.holder_validation_validity_period ?? 0),
         issuer_perm_management_mode: String(schema.issuer_perm_management_mode ?? schema.issuerPermManagementMode ?? "MODE_UNSPECIFIED"),
         verifier_perm_management_mode: String(schema.verifier_perm_management_mode ?? schema.verifierPermManagementMode ?? "MODE_UNSPECIFIED"),
-        archived: schema.archived != null ? schema.archived : null,
+        archived: normalizedArchived,
         created: schema.created ?? null,
         modified: schema.modified ?? null,
-        is_active: schema.archived == null,
+        is_active: derivedIsActive,
         title: schema.title ?? null,
         description: schema.description ?? null,
       };
@@ -537,15 +592,29 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         );
       }
       let finalRecord: Record<string, unknown>;
+      let historyChangesForUpdate: Record<string, unknown> = {};
       if (existing) {
+        const previousIsActive = Boolean((existing as Record<string, unknown>).is_active);
+        const changedUpdates = buildChangedFields(existing as Record<string, unknown>, updates);
+        historyChangesForUpdate = { ...changedUpdates };
+        if (Object.keys(changedUpdates).length === 0) {
+          finalRecord = existing as Record<string, unknown>;
+        } else {
         const [updated] = await knex("credential_schemas")
           .where({ id })
-          .update(updates)
+          .update(changedUpdates)
           .returning("*");
         if (!updated) {
           return ApiResponder.error(ctx, "Update failed", 500);
         }
         finalRecord = updated as Record<string, unknown>;
+        const nextIsActive = Boolean(finalRecord.is_active);
+        if (previousIsActive !== nextIsActive) {
+          this.logger.info(
+            `[CS] syncFromLedger activation transition schema id=${id} at height=${blockHeightNum}: ${previousIsActive} -> ${nextIsActive} (archived=${String(finalRecord.archived ?? "null")})`
+          );
+        }
+        }
       } else {
         const insertPayload = { ...payload };
         (insertPayload as Record<string, unknown>).json_schema = (insertPayload as Record<string, unknown>).json_schema ?? "{}";
@@ -572,29 +641,37 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (titleFromSchema !== null) metaUpdates.title = titleFromSchema;
         if (descriptionFromSchema !== null) metaUpdates.description = descriptionFromSchema;
         if (Object.keys(metaUpdates).length > 0) {
+          const metaDiffs = buildChangedFields(finalRecord, metaUpdates);
+          if (existing) Object.assign(historyChangesForUpdate, metaDiffs);
+          if (Object.keys(metaDiffs).length === 0) {
+          } else {
           const [updatedWithMeta] = await knex("credential_schemas")
             .where({ id: finalRecord.id })
-            .update(metaUpdates)
+            .update(metaDiffs)
             .returning("*");
           if (updatedWithMeta) finalRecord = updatedWithMeta as Record<string, unknown>;
+          }
         }
       } catch (err: any) {
         this.logger.warn(`Failed to persist title/description for CS ${finalRecord.id} in syncFromLedger: ${err?.message || err}`);
       }
       const hasHeightColumn = await checkHeightColumnExists();
       const historyAction = existing ? "update" : "create";
-      const creationChanges: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(finalRecord)) {
-        if (value !== null && value !== undefined && key !== "id" && key !== "is_active") {
-          creationChanges[key] = value;
+      if (!existing || Object.keys(historyChangesForUpdate).length > 0) {
+        const creationChanges: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(finalRecord)) {
+          if (value !== null && value !== undefined && key !== "id" && key !== "is_active") {
+            creationChanges[key] = value;
+          }
         }
+        const changesForHistory = existing ? historyChangesForUpdate : creationChanges;
+        const historyRow = mapToHistoryRow(finalRecord as any, {
+          changes: Object.keys(changesForHistory).length > 0 ? JSON.stringify(changesForHistory) : null,
+          action: historyAction,
+          height: blockHeightNum,
+        }, hasHeightColumn);
+        await knex("credential_schema_history").insert(historyRow);
       }
-      const historyRow = mapToHistoryRow(finalRecord as any, {
-        changes: Object.keys(creationChanges).length > 0 ? JSON.stringify(creationChanges) : null,
-        action: historyAction,
-        height: blockHeightNum,
-      }, hasHeightColumn);
-      await knex("credential_schema_history").insert(historyRow);
       return ApiResponder.success(ctx, { success: true, result: finalRecord }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema syncFromLedger:", err);
@@ -931,7 +1008,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         if (onlyActiveBool === true) {
-          filteredItems = filteredItems.filter(item => !item.archived);
+          filteredItems = filteredItems.filter(item => item.archived == null);
         }
 
         if (issuerPerm !== undefined) {

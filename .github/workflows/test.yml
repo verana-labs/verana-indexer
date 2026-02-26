@@ -98,4 +98,5 @@ jobs:
           POSTGRES_PASSWORD: phamphong9981
           POSTGRES_USER: phamphong
           POSTGRES_DB_TEST: test
+          USE_HEIGHT_SYNC_CS: true
         run: pnpm run test-ci
