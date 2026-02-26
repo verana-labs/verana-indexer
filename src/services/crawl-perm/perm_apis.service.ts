@@ -26,8 +26,172 @@ import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
   version: 1,
 })
 export default class PermAPIService extends BullableService {
+  private static readonly LOOKUP_CACHE_TTL_MS = 30000;
+  private static readonly VALIDATION_LIST_CACHE_TTL_MS = 5000;
+  private static readonly VALIDATION_LIST_CACHE_MAX_ENTRIES = 5000;
+  private static readonly LIST_PERMISSIONS_SLOW_MS = 200;
+
+  private readonly optionalPermissionColumnCache = new Map<string, Promise<{
+    hasIssuedColumn: boolean;
+    hasVerifiedColumn: boolean;
+    hasParticipantsColumn: boolean;
+    hasWeightColumn: boolean;
+    hasEcosystemSlashEventsColumn: boolean;
+  }>>();
+
+  private readonly schemaModeCache = new Map<number, { expiresAt: number; value: SchemaData }>();
+
+  private permModuleParamsCache?: { expiresAt: number; value: any };
+
+  private readonly validationListResponseCache = new Map<string, { expiresAt: number; value: { permissions: any[] } }>();
+
   constructor(broker: ServiceBroker) {
     super(broker);
+  }
+
+  private getOptionalPermissionColumns(tableName: "permissions" | "permission_history") {
+    const cached = this.optionalPermissionColumnCache.get(tableName);
+    if (cached) return cached;
+
+    const loader = (async () => ({
+      hasIssuedColumn: await knex.schema.hasColumn(tableName, "issued"),
+      hasVerifiedColumn: await knex.schema.hasColumn(tableName, "verified"),
+      hasParticipantsColumn: await knex.schema.hasColumn(tableName, "participants"),
+      hasWeightColumn: await knex.schema.hasColumn(tableName, "weight"),
+      hasEcosystemSlashEventsColumn: await knex.schema.hasColumn(tableName, "ecosystem_slash_events"),
+    }))();
+
+    this.optionalPermissionColumnCache.set(tableName, loader);
+    loader.catch(() => {
+      // Avoid keeping a rejected Promise forever if schema introspection fails transiently.
+      this.optionalPermissionColumnCache.delete(tableName);
+    });
+    return loader;
+  }
+
+  private async getSchemaModes(schemaId: number, blockHeight?: number): Promise<SchemaData> {
+    if (typeof blockHeight === "number") {
+      try {
+        const schemaHistory = await knex("credential_schema_history")
+          .where({ credential_schema_id: schemaId })
+          .where("height", "<=", blockHeight)
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc")
+          .first();
+
+        if (schemaHistory) {
+          return {
+            issuer_perm_management_mode: schemaHistory.issuer_perm_management_mode || null,
+            verifier_perm_management_mode: schemaHistory.verifier_perm_management_mode || null,
+          };
+        }
+      } catch (error: any) {
+        this.logger.warn(`credential_schema_history table doesn't have height column, using main table. Error: ${error?.message || error}`);
+      }
+    } else {
+      const cached = this.schemaModeCache.get(schemaId);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.value;
+      }
+    }
+
+    const schemaMain = await knex("credential_schemas")
+      .where({ id: schemaId })
+      .first();
+
+    const schema: SchemaData = {
+      issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
+      verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
+    };
+
+    if (typeof blockHeight !== "number") {
+      this.schemaModeCache.set(schemaId, {
+        value: schema,
+        expiresAt: Date.now() + PermAPIService.LOOKUP_CACHE_TTL_MS,
+      });
+    }
+
+    return schema;
+  }
+
+  private async getPermissionModuleParamsCached(blockHeight?: number): Promise<any> {
+    // Cache only live lookups; historical "at height" values should remain precise.
+    if (typeof blockHeight === "number") {
+      return getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
+    }
+
+    if (this.permModuleParamsCache && this.permModuleParamsCache.expiresAt > Date.now()) {
+      return this.permModuleParamsCache.value;
+    }
+
+    const value = await getModuleParams(ModulesParamsNamesTypes.PERM, undefined);
+    this.permModuleParamsCache = {
+      value,
+      expiresAt: Date.now() + PermAPIService.LOOKUP_CACHE_TTL_MS,
+    };
+    return value;
+  }
+
+  private isValidationListCacheEligible(
+    params: any,
+    blockHeight: number | undefined,
+    limit: number
+  ): boolean {
+    if (blockHeight !== undefined) return false;
+    if (limit !== 1) return false;
+    if (!params.did || !params.type || params.schema_id === undefined) return false;
+
+    // Keep cache for the exact validation-style query shape only.
+    const extraKeys = [
+      "grantee", "perm_id", "validator_perm_id", "perm_state", "only_valid", "only_slashed", "only_repaid",
+      "modified_after", "country", "vp_state", "when", "sort",
+      "min_participants", "max_participants", "min_weight", "max_weight",
+      "min_issued", "max_issued", "min_verified", "max_verified",
+      "min_ecosystem_slash_events", "max_ecosystem_slash_events",
+      "min_network_slash_events", "max_network_slash_events",
+    ];
+    return extraKeys.every((k) => params[k] === undefined);
+  }
+
+  private getValidationListCacheKey(params: any): string {
+    return JSON.stringify({
+      did: params.did,
+      type: params.type,
+      schema_id: Number(params.schema_id),
+      response_max_size: 1,
+    });
+  }
+
+  private readValidationListCache(key: string): { permissions: any[] } | null {
+    const cached = this.validationListResponseCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+      this.validationListResponseCache.delete(key);
+      return null;
+    }
+    // defensive clone to avoid accidental mutation across requests
+    return JSON.parse(JSON.stringify(cached.value));
+  }
+
+  private writeValidationListCache(key: string, value: { permissions: any[] }): void {
+    const now = Date.now();
+    // Opportunistic cleanup to prevent unbounded growth on high-cardinality DID traffic.
+    for (const [cacheKey, entry] of this.validationListResponseCache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.validationListResponseCache.delete(cacheKey);
+      }
+    }
+
+    while (this.validationListResponseCache.size >= PermAPIService.VALIDATION_LIST_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.validationListResponseCache.keys().next().value;
+      if (!oldestKey) break;
+      this.validationListResponseCache.delete(oldestKey);
+    }
+
+    this.validationListResponseCache.set(key, {
+      value: JSON.parse(JSON.stringify(value)),
+      expiresAt: now + PermAPIService.VALIDATION_LIST_CACHE_TTL_MS,
+    });
   }
 
   private async batchEnrichPermissions(
@@ -163,7 +327,7 @@ export default class PermAPIService extends BullableService {
     }
     let nDaysBefore = 0;
     try {
-      const moduleParams = await getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
+      const moduleParams = await this.getPermissionModuleParamsCached(blockHeight);
       if (moduleParams?.params) {
         nDaysBefore = moduleParams.params.PERMISSION_SET_EXPIRE_SOON_N_DAYS_BEFORE || 0;
       }
@@ -193,51 +357,8 @@ export default class PermAPIService extends BullableService {
     blockHeight?: number,
     now: Date = new Date()
   ): Promise<any> {
-    let schema: SchemaData;
     const schemaId = Number(perm.schema_id);
-
-    if (typeof blockHeight === "number") {
-      try {
-        const schemaHistory = await knex("credential_schema_history")
-          .where({ credential_schema_id: schemaId })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-
-        if (schemaHistory) {
-          schema = {
-            issuer_perm_management_mode: schemaHistory.issuer_perm_management_mode || null,
-            verifier_perm_management_mode: schemaHistory.verifier_perm_management_mode || null,
-          };
-        } else {
-          const schemaMain = await knex("credential_schemas")
-            .where({ id: schemaId })
-            .first();
-          schema = {
-            issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
-            verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
-          };
-        }
-      } catch (error: any) {
-        this.logger.warn(`credential_schema_history table doesn't have height column, using main table. Error: ${error?.message || error}`);
-        const schemaMain = await knex("credential_schemas")
-          .where({ id: schemaId })
-          .first();
-        schema = {
-          issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
-          verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
-        };
-      }
-    } else {
-      const schemaMain = await knex("credential_schemas")
-        .where({ id: schemaId })
-        .first();
-      schema = {
-        issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
-        verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
-      };
-    }
+    const schema = await this.getSchemaModes(schemaId, blockHeight);
 
     let validatorPermState: PermState | null = null;
     if (perm.validator_perm_id) {
@@ -898,6 +1019,10 @@ export default class PermAPIService extends BullableService {
     },
   })
   async listPermissions(ctx: Context<any>) {
+    const requestStartedMs = Date.now();
+    const perfMarks: Record<string, number> = {};
+    let perfMeta: Record<string, any> = {};
+
     try {
       const p = ctx.params;
       const granteeValidation = validateParticipantParam(p.grantee, "grantee");
@@ -909,6 +1034,26 @@ export default class PermAPIService extends BullableService {
       const blockHeight = getBlockHeight(ctx);
       const now = new Date().toISOString();
       const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
+      const useValidationCache = this.isValidationListCacheEligible(p, blockHeight, limit);
+      const validationCacheKey = useValidationCache ? this.getValidationListCacheKey(p) : null;
+
+      perfMeta = {
+        did: p.did ? "[set]" : undefined,
+        type: p.type,
+        schema_id: p.schema_id,
+        limit,
+        blockHeight,
+        cacheEligible: useValidationCache,
+      };
+
+      if (validationCacheKey) {
+        const cached = this.readValidationListCache(validationCacheKey);
+        if (cached) {
+          perfMeta.cacheHit = true;
+          return ApiResponder.success(ctx, cached, 200);
+        }
+      }
+      perfMeta.cacheHit = false;
 
       try {
         validateSortParameter(p.sort);
@@ -958,11 +1103,13 @@ export default class PermAPIService extends BullableService {
 
         this.logger.info(`[listPermissions] Found ${permIdsAtHeight.length} permission IDs at height ${blockHeight}: ${permIdsAtHeight.join(', ')}`);
         
-        const hasIssuedColumn = await knex.schema.hasColumn("permission_history", "issued");
-        const hasVerifiedColumn = await knex.schema.hasColumn("permission_history", "verified");
-        const hasParticipantsColumn = await knex.schema.hasColumn("permission_history", "participants");
-        const hasWeightColumn = await knex.schema.hasColumn("permission_history", "weight");
-        const hasEcosystemSlashEventsColumn = await knex.schema.hasColumn("permission_history", "ecosystem_slash_events");
+        const {
+          hasIssuedColumn,
+          hasVerifiedColumn,
+          hasParticipantsColumn,
+          hasWeightColumn,
+          hasEcosystemSlashEventsColumn,
+        } = await this.getOptionalPermissionColumns("permission_history");
         
         const permissions = await Promise.all(
           permIdsAtHeight.map(async (permId: number) => {
@@ -1292,11 +1439,13 @@ export default class PermAPIService extends BullableService {
         "vp_term_requested",
       ];
 
-      const hasIssuedColumn = await knex.schema.hasColumn("permissions", "issued");
-      const hasVerifiedColumn = await knex.schema.hasColumn("permissions", "verified");
-      const hasParticipantsColumn = await knex.schema.hasColumn("permissions", "participants");
-      const hasWeightColumn = await knex.schema.hasColumn("permissions", "weight");
-      const hasEcosystemSlashEventsColumn = await knex.schema.hasColumn("permissions", "ecosystem_slash_events");
+      const {
+        hasIssuedColumn,
+        hasVerifiedColumn,
+        hasParticipantsColumn,
+        hasWeightColumn,
+        hasEcosystemSlashEventsColumn,
+      } = await this.getOptionalPermissionColumns("permissions");
 
       const selectColumns: any[] = [...baseColumns];
 
@@ -1393,7 +1542,9 @@ export default class PermAPIService extends BullableService {
       }
 
       const orderedQuery = applyOrdering(query, p.sort);
+      perfMarks.dbQueryStart = Date.now();
       const results = await orderedQuery.limit(limit);
+      perfMarks.dbQueryEnd = Date.now();
       const normalizedResults = results.map(perm => {
         const normalized: any = {
           ...perm,
@@ -1435,12 +1586,14 @@ export default class PermAPIService extends BullableService {
         return normalized;
       });
 
+      perfMarks.enrichStart = Date.now();
       const enrichedResults = await this.batchEnrichPermissions(
         normalizedResults,
         blockHeight,
         new Date(now),
         10
       );
+      perfMarks.enrichEnd = Date.now();
 
       let finalResults = enrichedResults;
       if (p.perm_state) {
@@ -1536,8 +1689,11 @@ export default class PermAPIService extends BullableService {
         defaultAttribute: "modified",
         defaultDirection: "asc",
       }).slice(0, limit);
-
-      return ApiResponder.success(ctx, { permissions: finalResults }, 200);
+      const responsePayload = { permissions: finalResults };
+      if (validationCacheKey) {
+        this.writeValidationListCache(validationCacheKey, responsePayload);
+      }
+      return ApiResponder.success(ctx, responsePayload, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissions:", err);
       this.logger.error("Error details:", {
@@ -1546,6 +1702,22 @@ export default class PermAPIService extends BullableService {
         code: err?.code,
       });
       return ApiResponder.error(ctx, `Failed to list permissions: ${err?.message || String(err)}`, 500);
+    } finally {
+      const totalMs = Date.now() - requestStartedMs;
+      const dbMs = perfMarks.dbQueryStart && perfMarks.dbQueryEnd
+        ? perfMarks.dbQueryEnd - perfMarks.dbQueryStart
+        : undefined;
+      const enrichMs = perfMarks.enrichStart && perfMarks.enrichEnd
+        ? perfMarks.enrichEnd - perfMarks.enrichStart
+        : undefined;
+
+      const msg = `[listPermissions] duration=${totalMs}ms${dbMs !== undefined ? ` db=${dbMs}ms` : ""}${enrichMs !== undefined ? ` enrich=${enrichMs}ms` : ""} limit=${perfMeta.limit ?? "?"} schema_id=${perfMeta.schema_id ?? "-"} type=${perfMeta.type ?? "-"} did=${perfMeta.did ? "yes" : "no"} at_height=${perfMeta.blockHeight ?? "live"} cache=${perfMeta.cacheEligible ? (perfMeta.cacheHit ? "hit" : "miss") : "off"}`;
+
+      if (totalMs >= PermAPIService.LIST_PERMISSIONS_SLOW_MS) {
+        this.logger.warn(msg);
+      } else {
+        this.logger.debug(msg);
+      }
     }
   }
 
