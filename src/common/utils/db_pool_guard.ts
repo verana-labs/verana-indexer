@@ -45,6 +45,11 @@ export async function runWithCrawlLock<T>(
   fn: () => Promise<T>,
   logger?: any
 ): Promise<T> {
+  if (isReindexMode()) {
+    await throttleDbPoolIfNeeded(logger);
+    return fn();
+  }
+
   if (!(await throttleDbPoolIfNeeded(logger))) {
     throw new CrawlSkipError();
   }
@@ -78,11 +83,38 @@ function getPoolSnapshot(): DbPoolSnapshot | null {
   }
 }
 
-const USAGE_OK_RATIO = 0.7;
-const PENDING_OK_ABS = 5;
-const PENDING_OK_RATIO = 0.08;
-const MAX_WAIT_MS = 45000;
-const STEP_MS = 500;
+function isReindexMode(): boolean {
+  try {
+    const mode = (global as any).__indexerStartMode as { isFreshStart?: boolean } | undefined;
+    return mode?.isFreshStart === false;
+  } catch {
+    return false;
+  }
+}
+
+function getPoolGuardSettings() {
+  if (isReindexMode()) {
+    return {
+      usageOkRatio: 10.0,
+      pendingOkAbs: 100000,
+      pendingOkRatio: 100.0,
+      maxWaitMs: 0,
+      stepMs: 25,
+      warnEverySteps: 20,
+      skipOnTimeout: false,
+    };
+  }
+
+  return {
+    usageOkRatio: 0.7,
+    pendingOkAbs: 5,
+    pendingOkRatio: 0.08,
+    maxWaitMs: 45000,
+    stepMs: 500,
+    warnEverySteps: 6,
+    skipOnTimeout: true,
+  };
+}
 
 export async function throttleDbPoolIfNeeded(logger?: any): Promise<boolean> {
   const snapshot = getPoolSnapshot();
@@ -90,51 +122,58 @@ export async function throttleDbPoolIfNeeded(logger?: any): Promise<boolean> {
     return true;
   }
 
+  const settings = getPoolGuardSettings();
   const { used, pending, max } = snapshot;
-  const usageOk = used / max < USAGE_OK_RATIO;
-  const pendingOk = pending <= PENDING_OK_ABS || pending / max <= PENDING_OK_RATIO;
+  const usageOk = used / max < settings.usageOkRatio;
+  const pendingOk = pending <= settings.pendingOkAbs || pending / max <= settings.pendingOkRatio;
 
   if (usageOk && pendingOk) {
     return true;
   }
 
   let waited = 0;
-  while (waited < MAX_WAIT_MS) {
+  while (waited < settings.maxWaitMs) {
     const current = getPoolSnapshot();
     if (!current || !current.max || current.max <= 0) {
       return true;
     }
 
-    const curUsageOk = current.used / current.max < USAGE_OK_RATIO;
-    const curPendingOk = current.pending <= PENDING_OK_ABS || current.pending / current.max <= PENDING_OK_RATIO;
+    const curUsageOk = current.used / current.max < settings.usageOkRatio;
+    const curPendingOk = current.pending <= settings.pendingOkAbs || current.pending / current.max <= settings.pendingOkRatio;
     if (curUsageOk && curPendingOk) {
       return true;
     }
 
-    if (logger?.warn && waited % (STEP_MS * 6) === 0 && waited > 0) {
+    if (
+      logger?.warn &&
+      waited > 0 &&
+      waited % (settings.stepMs * settings.warnEverySteps) === 0
+    ) {
       logger.warn(
         `[DB Pool Guard] Waiting for pool (used=${current.used}/${current.max}, pending=${current.pending})…`
       );
     }
 
-    await delay(STEP_MS);
-    waited += STEP_MS;
+    await delay(settings.stepMs);
+    waited += settings.stepMs;
   }
 
   const final = getPoolSnapshot();
   if (logger?.warn && final) {
     logger.warn(
-      `[DB Pool Guard] Pool still saturated after ${MAX_WAIT_MS}ms (used=${final.used}/${final.max}, pending=${final.pending}). Skipping this cycle.`
+      `[DB Pool Guard] Pool still saturated after ${settings.maxWaitMs}ms (used=${final.used}/${final.max}, pending=${final.pending}). ${
+        settings.skipOnTimeout ? 'Skipping this cycle.' : 'Continuing in reindex soft-guard mode.'
+      }`
     );
   }
-  return false;
+  return !settings.skipOnTimeout;
 }
 
 export function isPoolRecovered(): boolean {
   const s = getPoolSnapshot();
   if (!s || !s.max || s.max <= 0) return true;
-  const usageOk = s.used / s.max < USAGE_OK_RATIO;
-  const pendingOk = s.pending <= PENDING_OK_ABS || s.pending / s.max <= PENDING_OK_RATIO;
+  const settings = getPoolGuardSettings();
+  const usageOk = s.used / s.max < settings.usageOkRatio;
+  const pendingOk = s.pending <= settings.pendingOkAbs || s.pending / s.max <= settings.pendingOkRatio;
   return usageOk && pendingOk;
 }
-

@@ -4,6 +4,13 @@ import _ from 'underscore';
 import { JobOption, QueueOptions, QueueProvider } from './queue-manager-types';
 import { getRedisConnection } from './redis-connector';
 
+type LoggerLike = {
+  info?: (...args: unknown[]) => void;
+  warn?: (...args: unknown[]) => void;
+  error?: (...args: unknown[]) => void;
+  debug?: (...args: unknown[]) => void;
+};
+
 class DefaultValue {
   static readonly DEFAULT_JOB_NAME = '_default_bull_job';
 
@@ -26,9 +33,23 @@ class DefaultValue {
 }
 
 export class BullQueueProvider implements QueueProvider {
+  public constructor(private readonly logger?: LoggerLike) {}
+
   private _queues: Record<string, Queue> = {};
 
   private _workers: Worker[] = [];
+
+  private getLogger(): LoggerLike | undefined {
+    return this.logger ?? ((global as any).logger as LoggerLike | undefined);
+  }
+
+  private log(level: keyof LoggerLike, ...args: unknown[]): void {
+    const logger = this.getLogger();
+    const fn = logger?.[level];
+    if (typeof fn === 'function') {
+      fn(...args);
+    }
+  }
 
   public submitJob(
     queueName: string,
@@ -38,7 +59,11 @@ export class BullQueueProvider implements QueueProvider {
   ): void {
     const q = this.getQueue(queueName);
     q.add(jobName, payload, opts).catch((err: unknown) => {
-      console.error(`Failed to add BullMQ job "${jobName}" to queue "${queueName}"`, err);
+      this.log(
+        'error',
+        `Failed to add BullMQ job "${jobName}" to queue "${queueName}"`,
+        err
+      );
     });
   }
 
@@ -51,8 +76,8 @@ export class BullQueueProvider implements QueueProvider {
     try {
       await fn(job.data);
     } catch (e) {
-      console.error(`job ${job.name} failed`);
-      console.error(e);
+      this.log('error', `job ${job.name} failed`);
+      this.log('error', e);
       throw e;
     }
   };
@@ -67,18 +92,16 @@ export class BullQueueProvider implements QueueProvider {
     DefaultValue.DEFAULT_WORKER_OPTION
   );
 
-  console.log(`worker option: ${JSON.stringify(wo)}`);
+  this.log('info', `worker option: ${JSON.stringify(wo)}`);
   wo.connection = getRedisConnection();
   const worker = new Worker(opt.queueName, processor, wo);
 
   worker.on('error', (err: Error) => {
     const msg = err?.message ?? String(err);
     if (typeof msg === 'string' && msg.includes('Missing key for job')) {
-      const logger = (global as any).logger;
-      if (logger?.warn) logger.warn('BullMQ job key already removed (repeat/delayed):', msg);
-      else console.warn('[BullMQ]', msg);
+      this.log('warn', 'BullMQ job key already removed (repeat/delayed):', msg);
     } else {
-      console.error(`worker ${opt.queueName} error:`, err);
+      this.log('error', `worker ${opt.queueName} error:`, err);
     }
   });
 

@@ -16,13 +16,15 @@ import {
 
 export default class QueueManager {
   private _queueProvider: QueueProvider;
+  private _logger?: any;
 
   // prefix?: string = 'bull';
   private _handlerOwner?: any;
 
-  constructor(provider: QueueProvider) {
+  constructor(provider: QueueProvider, logger?: any) {
     // this._name = name;
     this._queueProvider = provider;
+    this._logger = logger;
   }
 
   /**
@@ -30,12 +32,12 @@ export default class QueueManager {
    * @param type - type of provider, default is bullmq
    * @returns
    */
-  public static getInstance(type?: QueueProviderType) {
+  public static getInstance(type?: QueueProviderType, logger?: any) {
     let provider: QueueProvider;
 
     switch (type) {
       case QueueProviderType.bullMq:
-        provider = new BullQueueProvider();
+        provider = new BullQueueProvider(logger);
         break;
       case QueueProviderType.bullJs:
         provider = new BullJsProvider();
@@ -44,10 +46,10 @@ export default class QueueManager {
         provider = new BeeQueueProvider();
         break;
       default:
-        provider = new BullQueueProvider();
+        provider = new BullQueueProvider(logger);
     }
 
-    return new QueueManager(provider);
+    return new QueueManager(provider, logger);
   }
 
   /**
@@ -73,6 +75,9 @@ export default class QueueManager {
    */
   public bindQueueOwner(_thisObject: any) {
     this._handlerOwner = _thisObject;
+    if (!this._logger && _thisObject?.logger) {
+      this._logger = _thisObject.logger;
+    }
   }
 
   /**
@@ -155,7 +160,7 @@ export default class QueueManager {
       repeatNormalized.cron === undefined
     ) {
       delete (normalized as any).repeat;
-      console.warn(
+      this._logger?.warn?.(
         `[QueueManager] Dropped invalid repeat config for queue="${queueName || ''}" job="${jobName || ''}" (no valid every/pattern/cron after sanitization).`
       );
       return normalized;

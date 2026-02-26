@@ -90,7 +90,7 @@ export default class CoinTransferService extends BullableService {
       );
 
     if (fromBlock >= toBlock) {
-      this.logger.info('Waiting for new transaction crawled');
+      this.logger.debug('Waiting for new transaction crawled');
       return;
     }
 
