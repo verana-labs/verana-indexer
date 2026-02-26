@@ -43,7 +43,7 @@ export default class BullableService extends BaseService {
 
   getQueueManager(): QueueManager {
     if (!this.qm) {
-      this.qm = QueueManager.getInstance();
+      this.qm = QueueManager.getInstance(undefined, this.logger);
     }
     return this.qm;
   }

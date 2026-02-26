@@ -33,6 +33,7 @@ import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus, tr
 import { detectStartMode } from '../../common/utils/start_mode_detector';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
+import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
 
 @Service({
   name: SERVICE.V1.CrawlBlock.key,
@@ -236,6 +237,9 @@ export default class CrawlBlockService extends BullableService {
     this._processingLock = true;
 
     try {
+      const { runWithCrawlLock, CrawlSkipError } = await import('../../common/utils/db_pool_guard');
+      try {
+        await runWithCrawlLock(async () => {
       // Memory pressure check - pause if memory is critically high
       let preCheckHealth;
       try {
@@ -448,7 +452,9 @@ export default class CrawlBlockService extends BullableService {
 
       }
 
+      await throwIfHeapCriticalDuringCrawl('crawl-block:before-rpc-batch', this.logger);
       const blockResponsesResults = await Promise.allSettled(blockQueries);
+      await throwIfHeapCriticalDuringCrawl('crawl-block:after-rpc-batch', this.logger);
       
       const blockResponses: JsonRpcSuccessResponse[] = [];
       let failedBlocks = 0;
@@ -495,6 +501,9 @@ export default class CrawlBlockService extends BullableService {
       const mergeBlockResponses: MergedBlockResponse[] = [];
 
       for (let i = 0; i < blockResponses?.length; i += 2) {
+        if (i > 0 && i % 100 === 0) {
+          await throwIfHeapCriticalDuringCrawl('crawl-block:merge-responses', this.logger);
+        }
         const blockData = blockResponses[i]?.result as MergedBlockResponse | undefined;
         const blockResultData = blockResponses[i + 1]?.result;
         
@@ -518,6 +527,7 @@ export default class CrawlBlockService extends BullableService {
         return;
       }
 
+      await throwIfHeapCriticalDuringCrawl('crawl-block:before-handleListBlock', this.logger);
       await this.handleListBlock(mergeBlockResponses);
 
       // Calculate highest block BEFORE clearing arrays
@@ -576,6 +586,14 @@ export default class CrawlBlockService extends BullableService {
       // Trigger garbage collection after batch processing to free memory (aggressive threshold for low memory usage)
       if (this._blocksProcessedThisCycle > 10) {
         triggerGC();
+      }
+        }, this.logger);
+      } catch (e: any) {
+        if (e?.name === 'CrawlSkipError') {
+          this.logger.warn(`[CRAWL_BLOCK] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`);
+          return;
+        }
+        throw e;
       }
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
@@ -1121,6 +1139,12 @@ export default class CrawlBlockService extends BullableService {
 
 
       if (listBlockModel.length) {
+        const { throttleDbPoolIfNeeded } = await import('../../common/utils/db_pool_guard');
+        if (!(await throttleDbPoolIfNeeded(this.logger))) {
+          this.logger.warn('[CRAWL_BLOCK] Skipping block insert this cycle due to pool pressure; will retry next run.');
+          return;
+        }
+
         await this.ensurePartitionsExist(listBlockModel);
         await knex.transaction(async (trx) => {
           await Block.query()
@@ -1287,7 +1311,7 @@ export default class CrawlBlockService extends BullableService {
     
     await this.ensureInitialPartitionExists();
 
-    const speedMultiplier = getCrawlSpeedMultiplier();
+    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
     this.logger.info(
       `CrawlBlock Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
       `WebSocket Subscription: ${config.crawlBlock.enableWebSocketSubscription ? 'ENABLED' : 'DISABLED'} | ` +

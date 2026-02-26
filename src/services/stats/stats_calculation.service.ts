@@ -1118,14 +1118,14 @@ export default class StatsCalculationService extends BullableService {
       }
 
       const handleTxHeight = handleTxCheckpoint.height;
-      this.logger.info(`CHECKPOINT HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}`);
+      this.logger.debug(`CHECKPOINT HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}`);
 
       const statsCheckpoint = await BlockCheckpoint.query()
         .where("job_name", BULL_JOB_NAME.CALCULATE_STATS)
         .first();
 
       const statsHeight = statsCheckpoint ? statsCheckpoint.height : 0;
-      this.logger.info(`CHECKPOINT Stats checkpoint height: ${statsHeight}`);
+      this.logger.debug(`CHECKPOINT Stats checkpoint height: ${statsHeight}`);
 
       if (statsHeight >= handleTxHeight) {
         this.logger.debug(`CHECKPOINT Stats already up to date (${statsHeight} >= ${handleTxHeight}), no new transactions to process`);
@@ -1142,7 +1142,7 @@ export default class StatsCalculationService extends BullableService {
       }
 
       const blockTimestamp = new Date(block.time);
-      this.logger.info(`CHECKPOINT Processing stats for HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}, block timestamp: ${blockTimestamp.toISOString()}`);
+      this.logger.debug(`CHECKPOINT Processing stats for HANDLE_TRANSACTION checkpoint height: ${handleTxHeight}, block timestamp: ${blockTimestamp.toISOString()}`);
 
       try {
         await this.calculateStatsForTimestamp(blockTimestamp);
@@ -1161,7 +1161,7 @@ export default class StatsCalculationService extends BullableService {
           });
         }
 
-        this.logger.info(`CHECKPOINT Updated stats checkpoint to height ${handleTxHeight} (synced with HANDLE_TRANSACTION)`);
+        this.logger.debug(`CHECKPOINT Updated stats checkpoint to height ${handleTxHeight} (synced with HANDLE_TRANSACTION)`);
       } catch (calcError: any) {
         this.logger.error(`CHECKPOINT Error calculating stats for height ${handleTxHeight}:`, {
           message: calcError?.message,
@@ -1188,19 +1188,19 @@ export default class StatsCalculationService extends BullableService {
   private async calculateStatsForTimestamp(timestamp: Date): Promise<void> {
 
     try {
-      this.logger.info(" Testing database connection...");
+      this.logger.debug(" Testing database connection...");
       const dbTest = await knex.raw("SELECT 1 as connection_test");
-      this.logger.info(" Database connection OK");
+      this.logger.debug(" Database connection OK");
 
-      this.logger.info(` Processing timestamp: ${timestamp.toISOString()}`);
+      this.logger.debug(` Processing timestamp: ${timestamp.toISOString()}`);
       const granularities: Granularity[] = ["HOUR", "DAY", "MONTH"];
-      this.logger.info(`Processing granularities: ${granularities.join(", ")}`);
+      this.logger.debug(`Processing granularities: ${granularities.join(", ")}`);
 
       for (const granularity of granularities) {
-        this.logger.info(` [${granularity}] Starting calculation...`);
+        this.logger.debug(` [${granularity}] Starting calculation...`);
         try {
           await this.calculateForGranularity(granularity, timestamp);
-          this.logger.info(` [${granularity}] Calculation completed successfully`);
+          this.logger.debug(` [${granularity}] Calculation completed successfully`);
         } catch (error: any) {
           const errorDetails = {
             message: error?.message,
@@ -1213,7 +1213,7 @@ export default class StatsCalculationService extends BullableService {
         }
       }
 
-      this.logger.info(`\n Checking final stats count in database...`);
+      this.logger.debug(`\n Checking final stats count in database...`);
       const statsCountResult = await knex("stats").count("* as count").first() as any;
       const count = Number(statsCountResult?.count || 0);
       this.logger.info(` Stats calculation completed. Total stats entries in database: ${count}`);

@@ -186,7 +186,9 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 **Database tuning**
 - `POSTGRES_POOL_MAX` – Upper bound for knex pool size. Increase for higher concurrency, decrease to protect light instances.
 - `POSTGRES_STATEMENT_TIMEOUT` – Milliseconds before PostgreSQL cancels long-running statements.
+- `POSTGRES_QUERY_TIMEOUT` / `DB_QUERY_TIMEOUT_MS` – Query timeout controls used by knex/helpers (`DB_QUERY_TIMEOUT_MS` takes precedence in helper logic).
 - `POSTGRES_CONNECTION_TIMEOUT` – Overrides the connection wait timeout (defaults to 60s unless `MIGRATION_MODE=lightweight` bumps it to 120s).
+- `POSTGRES_POOL_ACQUIRE_TIMEOUT`, `POSTGRES_POOL_CREATE_TIMEOUT`, `POSTGRES_POOL_DESTROY_TIMEOUT` – Knex/tarn pool timeout tuning.
 - `POSTGRES_DB_TEST` – Separate database name used when `NODE_ENV=test`.
 
 **Moleculer runtime**
@@ -205,13 +207,129 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 - `METRICS_ENABLED`, `METRICS_TYPE`, `METRICS_PORT`, `METRICS_PATH` – Control Prometheus/Console metrics exposure.
 - `TRACING_ENABLED`, `TRACING_TYPE`, `TRACING_ZIPKIN_URL`, `TRACING_COLORS`, `TRACING_WIDTH`, `TRACING_GUAGEWIDTH` – Trace exporters (Console/Zipkin) and formatting.
 
-**Content gateways**
-- `IPFS_GATEWAY`, `REQUEST_IPFS_TIMEOUT`, `MAX_CONTENT_LENGTH_BYTE`, `MAX_BODY_LENGTH_BYTE`, `S3_GATEWAY` – Timeouts and size caps used when fetching off-chain artifacts from IPFS/S3 during DID or credential syncing.
-
 **Miscellaneous**
 - `ADD_INTER_NAMESPACE_MIDDLEWARE`, `VALIDATOR_ENABLED` – Feature flags for cross-namespace middleware and validator logic.
+- `DB_STORAGE_MAX_MB`, `NODE_MEMORY_CRITICAL_MB`, `NODE_MEMORY_RESUME_MB` – Health guard thresholds for DB growth and crawler memory pressure.
 
 Refer to the [Moleculer configuration reference](https://moleculer.services/docs/0.14/configuration.html) if you need to drill into any of these settings.
+
+### Crawl Performance Optimization
+
+Recent crawler tuning introduced a **bounded, multiplier-based speed scaling layer** to improve reindex throughput without changing crawler architecture or removing memory protections.
+
+This refactor was required because static crawl timings and conservative batch/concurrency defaults made reindexing slower than necessary on healthy systems, while fully unbounded scaling would create instability (DB pressure, RPC saturation, heap spikes).
+
+#### Design Goals
+
+- Make **reindex mode** materially faster than the previous defaults
+- Keep **fresh mode** conservative and stable
+- Preserve memory safety for a **4GB Node.js heap**
+- Prevent runaway scaling (no unbounded multipliers, no infinite math)
+- Keep behavior predictable under load by using hard caps
+
+#### Multiplier-Based Scaling (Bounded)
+
+Crawler speed helpers now scale three dimensions using a mode-aware multiplier:
+
+- **Delay** (`applySpeedToDelay`) -> lower delay as multiplier increases
+- **Batch size** (`applySpeedToBatchSize`) -> larger batches as multiplier increases
+- **Concurrency** (`getRecommendedConcurrency`) -> more parallel workers/chunks where supported
+
+Scaling is intentionally **bounded**:
+
+- Inputs are sanitized (invalid/non-finite values fall back to safe defaults)
+- Results are clamped with mode-specific caps
+- Reindex uses a direct scaling path (`base / multiplier`, `base * multiplier`) with bounded limits
+
+This keeps tuning aggressive enough for reindexing while avoiding unstable configurations such as accidental `1000x` amplification.
+
+#### Fresh vs Reindex Modes
+
+**Fresh mode (initial/live-safe mode)**
+- Prioritizes stability and predictable load
+- Uses a conservative effective multiplier cap (currently `10x`)
+- Keeps existing service behavior and pacing intentionally conservative
+
+**Reindex mode (historical catch-up/rebuild mode)**
+- Uses a more aggressive direct-scaling multiplier path
+- Applies higher caps for delay reduction, batch size, and concurrency
+- Still respects memory guards and health-based throttling when the system is degraded/critical
+
+#### Effective Caps (Current Defaults)
+
+**Fresh mode caps**
+- Effective multiplier cap: `10`
+- Max batch size: `600`
+- Max concurrency: `40`
+- Minimum delay: `5ms`
+
+**Reindex mode caps**
+- Effective multiplier cap: `80`
+- Max batch size: `1000`
+- Max concurrency: `60`
+- Minimum delay: `1ms`
+
+These are **hard caps** in the helper layer and are used to prevent runaway scheduling and memory pressure.
+
+#### Delay Reduction Logic
+
+Delay is reduced using bounded division:
+
+- `adjustedDelay = floor(baseDelay / effectiveMultiplier)`
+- Then clamped to a mode-specific minimum (`5ms` fresh, `1ms` reindex`)
+
+This keeps reindex behavior close to a simple aggressive model while preventing zero/negative scheduling intervals.
+
+#### Memory Safety (4GB Heap Safe)
+
+The optimization is designed to remain **bounded** and work with existing safety controls for a **4GB-class heap**:
+
+- Hard caps for concurrency and batch size
+- Existing heap/memory guards in crawler loops
+- Health-based throttling when system health is `degraded` or `critical`
+- No architectural changes such as `worker_threads`
+- No full-dataset `Promise.all(...)` introduced by the refactor
+
+In practice, reindex speed is increased when the system is healthy, but the crawler can still slow itself down when memory or DB pressure rises.
+
+#### Why Bounded Scaling (Instead of Unbounded “Fast Mode”)
+
+Unbounded scaling is unsafe in production because crawler throughput is limited by more than CPU:
+
+- RPC provider latency and rate limits
+- PostgreSQL connection pool and statement timeouts
+- Heap growth during decode/insert pipelines
+- Queue scheduling overhead
+
+A bounded scaling model gives a predictable tuning envelope and reduces the risk of oscillation, OOM conditions, and cascading retries.
+
+#### Environment Variable Configuration
+
+The multiplier layer is controlled with environment variables:
+
+- `CRAWL_SPEED_MULTIPLIER`
+  - Base multiplier for **fresh mode**
+  - Parsed as a positive number and capped in parsing (current parser max for fresh path input: `20`)
+  - Effective result is still capped by fresh-mode limits
+
+- `CRAWL_SPEED_MULTIPLIER_REINDEX`
+  - Base multiplier for **reindex mode**
+  - Used to scale reindex delay/batch/concurrency more aggressively
+  - Parsed as a positive number and capped in parsing (current parser max: `100`)
+  - Effective result is still capped by reindex-mode limits
+
+**Recommended configuration approach (production):**
+
+1. Start with defaults (no env override)
+2. Increase `CRAWL_SPEED_MULTIPLIER_REINDEX` gradually
+3. Monitor heap usage, DB connection usage, and statement timeouts
+4. Keep `CRAWL_SPEED_MULTIPLIER` conservative for fresh mode
+
+**Important notes**
+- These variables influence helper-based scaling, but some services may also apply health-aware throttling.
+- Setting very large values does not produce proportional speedups due to hard caps and safety guards.
+- Avoid setting values to non-numeric strings.
+- Reindex uses direct multiplier scaling with bounded caps; monitor heap/DB/RPC telemetry after changes.
 
 ### Chain Configuration (`config.json`)
 
