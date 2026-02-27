@@ -21,6 +21,9 @@ const HISTORY_INDEX_NAME = "idx_permission_history_did_schema_type_height_modifi
 const HISTORY_RANKING_INDEX_NAME = "idx_permission_history_permission_height_created_id_desc";
 const LIST_FILTERS_SORT_INDEX = "idx_permissions_schema_type_vp_validator_modified_id";
 const LIST_FILTERS_SORT_ACTIVE_INDEX = "idx_permissions_active_schema_type_vp_validator_modified_id";
+const HISTORY_LATEST_DID_SCHEMA_TYPE_IDX = "idx_permission_history_did_schema_type_permission_height_desc";
+const HISTORY_LATEST_ACTIVE_DID_SCHEMA_TYPE_IDX = "idx_permission_history_did_schema_type_active_permission_height_desc";
+const LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX = "idx_permissions_did_schema_type_active_modified_id";
 
 export async function up(knex: Knex): Promise<void> {
   const pg = isPostgres(knex);
@@ -30,14 +33,20 @@ export async function up(knex: Knex): Promise<void> {
   const activeListFiltersColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id", "slashed", "repaid"];
   const historyColumns = ["did", "schema_id", "type", "height", "modified", "created_at", "id"];
   const historyRankingColumns = ["permission_id", "height", "created_at", "id"];
+  const historyLatestColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id"];
+  const historyLatestActiveColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id", "slashed", "repaid"];
+  const liveActiveDidColumns = ["did", "schema_id", "type", "modified", "id", "slashed", "repaid"];
 
-  const [hasLiveColumns, hasLiveGranteeQueryColumns, hasListFiltersSortColumns, hasActiveListFiltersColumns, hasHistoryColumns, hasHistoryRankingColumns] = await Promise.all([
+  const [hasLiveColumns, hasLiveGranteeQueryColumns, hasListFiltersSortColumns, hasActiveListFiltersColumns, hasHistoryColumns, hasHistoryRankingColumns, hasHistoryLatestColumns, hasHistoryLatestActiveColumns, hasLiveActiveDidColumns] = await Promise.all([
     hasColumns(knex, "permissions", liveColumns),
     hasColumns(knex, "permissions", liveGranteeQueryColumns),
     hasColumns(knex, "permissions", listFiltersSortColumns),
     hasColumns(knex, "permissions", activeListFiltersColumns),
     hasColumns(knex, "permission_history", historyColumns),
     hasColumns(knex, "permission_history", historyRankingColumns),
+    hasColumns(knex, "permission_history", historyLatestColumns),
+    hasColumns(knex, "permission_history", historyLatestActiveColumns),
+    hasColumns(knex, "permissions", liveActiveDidColumns),
   ]);
 
   if (pg) {
@@ -83,6 +92,26 @@ export async function up(knex: Knex): Promise<void> {
         ON permission_history (permission_id, height DESC, created_at DESC, id DESC)
       `);
     }
+    if (hasHistoryLatestColumns) {
+      await knex.raw(`
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${HISTORY_LATEST_DID_SCHEMA_TYPE_IDX}
+        ON permission_history (did, schema_id, type, permission_id, height DESC, created_at DESC, id DESC)
+      `);
+    }
+    if (hasHistoryLatestActiveColumns) {
+      await knex.raw(`
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${HISTORY_LATEST_ACTIVE_DID_SCHEMA_TYPE_IDX}
+        ON permission_history (did, schema_id, type, permission_id, height DESC, created_at DESC, id DESC)
+        WHERE slashed IS NULL AND repaid IS NULL
+      `);
+    }
+    if (hasLiveActiveDidColumns) {
+      await knex.raw(`
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX}
+        ON permissions (did, schema_id, type, modified ASC, id DESC)
+        WHERE slashed IS NULL AND repaid IS NULL
+      `);
+    }
     return;
   }
 
@@ -112,6 +141,16 @@ export async function up(knex: Knex): Promise<void> {
       table.index(historyRankingColumns, HISTORY_RANKING_INDEX_NAME);
     });
   }
+  if (hasHistoryLatestColumns) {
+    await knex.schema.table("permission_history", (table) => {
+      table.index(historyLatestColumns, HISTORY_LATEST_DID_SCHEMA_TYPE_IDX);
+    });
+  }
+  if (hasLiveActiveDidColumns) {
+    await knex.schema.table("permissions", (table) => {
+      table.index(["did", "schema_id", "type", "modified", "id"], LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX);
+    });
+  }
 }
 
 export async function down(knex: Knex): Promise<void> {
@@ -121,6 +160,8 @@ export async function down(knex: Knex): Promise<void> {
   const listFiltersSortColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const historyColumns = ["did", "schema_id", "type", "height", "modified", "created_at", "id"];
   const historyRankingColumns = ["permission_id", "height", "created_at", "id"];
+  const historyLatestColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id"];
+  const liveActiveDidDropColumns = ["did", "schema_id", "type", "modified", "id"];
 
   if (pg) {
     for (const indexName of [
@@ -128,6 +169,9 @@ export async function down(knex: Knex): Promise<void> {
       LIVE_GRANTEE_QUERY_INDEX_NAME,
       LIST_FILTERS_SORT_INDEX,
       LIST_FILTERS_SORT_ACTIVE_INDEX,
+      HISTORY_LATEST_DID_SCHEMA_TYPE_IDX,
+      HISTORY_LATEST_ACTIVE_DID_SCHEMA_TYPE_IDX,
+      LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX,
       ...LEGACY_LIVE_INDEX_NAMES,
       HISTORY_INDEX_NAME,
       HISTORY_RANKING_INDEX_NAME,
@@ -137,12 +181,14 @@ export async function down(knex: Knex): Promise<void> {
     return;
   }
 
-  const [hasLiveColumns, hasLiveGranteeQueryColumns, hasListFiltersSortColumns, hasHistoryColumns, hasHistoryRankingColumns] = await Promise.all([
+  const [hasLiveColumns, hasLiveGranteeQueryColumns, hasListFiltersSortColumns, hasHistoryColumns, hasHistoryRankingColumns, hasHistoryLatestColumns, hasLiveActiveDidColumns] = await Promise.all([
     hasColumns(knex, "permissions", liveColumns),
     hasColumns(knex, "permissions", liveGranteeQueryColumns),
     hasColumns(knex, "permissions", listFiltersSortColumns),
     hasColumns(knex, "permission_history", historyColumns),
     hasColumns(knex, "permission_history", historyRankingColumns),
+    hasColumns(knex, "permission_history", historyLatestColumns),
+    hasColumns(knex, "permissions", liveActiveDidDropColumns),
   ]);
 
   if (hasLiveColumns) {
@@ -170,6 +216,16 @@ export async function down(knex: Knex): Promise<void> {
   if (hasHistoryRankingColumns) {
     await knex.schema.table("permission_history", (table) => {
       table.dropIndex(historyRankingColumns, HISTORY_RANKING_INDEX_NAME);
+    });
+  }
+  if (hasHistoryLatestColumns) {
+    await knex.schema.table("permission_history", (table) => {
+      table.dropIndex(historyLatestColumns, HISTORY_LATEST_DID_SCHEMA_TYPE_IDX);
+    });
+  }
+  if (hasLiveActiveDidColumns) {
+    await knex.schema.table("permissions", (table) => {
+      table.dropIndex(liveActiveDidDropColumns, LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX);
     });
   }
 }

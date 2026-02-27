@@ -21,6 +21,8 @@ import {
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 
+const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
+
 @Service({
   name: SERVICE.V1.PermAPIService.key,
   version: 1,
@@ -676,108 +678,6 @@ export default class PermAPIService extends BullableService {
     return stateMap;
   }
 
-  private async calculatePermissionWeight(
-    permId: number,
-    schemaId: number,
-    blockHeight?: number,
-    visited: Set<number> = new Set()
-  ): Promise<number> {
-    if (visited.has(permId)) {
-      return 0;
-    }
-    visited.add(permId);
-
-    const ownDeposit = permId ? await this.getPermissionDeposit(permId, schemaId, blockHeight) : 0;
-    let ownDepositValue = typeof ownDeposit === 'number' ? ownDeposit : Number(ownDeposit || 0);
-
-    if (typeof blockHeight === "number") {
-      const latestHistorySubquery = knex("permission_history")
-        .select("permission_id")
-        .select(
-          knex.raw(
-            `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC) as rn`
-          )
-        )
-        .where("schema_id", Number(schemaId))
-        .where("height", "<=", blockHeight)
-        .as("ranked");
-
-      const children = await knex
-        .from(latestHistorySubquery)
-        .join("permission_history as ph", (join) => {
-          join.on("ranked.permission_id", "=", "ph.permission_id")
-            .andOn("ranked.rn", "=", knex.raw("1"));
-        })
-        .where("ph.validator_perm_id", permId)
-        .select("ph.permission_id", "ph.deposit");
-
-      const childWeights = await Promise.all(
-        children.map(child =>
-          this.calculatePermissionWeight(
-            child.permission_id,
-            schemaId,
-            blockHeight,
-            visited
-          )
-        )
-      );
-
-      for (const childWeight of childWeights) {
-        ownDepositValue += childWeight;
-      }
-    } else {
-      const children = await knex("permissions")
-        .where("schema_id", Number(schemaId))
-        .where("validator_perm_id", permId)
-        .select("id", "deposit");
-
-      const childWeights = await Promise.all(
-        children.map(child =>
-          this.calculatePermissionWeight(
-            child.id,
-            schemaId,
-            blockHeight,
-            visited
-          )
-        )
-      );
-
-      for (const childWeight of childWeights) {
-        ownDepositValue += childWeight;
-      }
-    }
-
-    return ownDepositValue;
-  }
-
-  private async getPermissionDeposit(
-    permId: number,
-    schemaId: number,
-    blockHeight?: number
-  ): Promise<number> {
-    if (typeof blockHeight === "number") {
-      const historyRecord = await knex("permission_history")
-        .where("permission_id", permId)
-        .where("schema_id", Number(schemaId))
-        .where("height", "<=", blockHeight)
-        .orderBy("height", "desc")
-        .orderBy("created_at", "desc")
-        .first()
-        .select("deposit");
-
-      const deposit = historyRecord?.deposit;
-      return typeof deposit === 'number' ? deposit : (deposit ? Number(deposit) : 0);
-    }
-    const permission = await knex("permissions")
-      .where("id", permId)
-      .where("schema_id", schemaId)
-      .first()
-      .select("deposit");
-
-    const deposit = permission?.deposit;
-    return typeof deposit === 'number' ? deposit : (deposit ? Number(deposit) : 0);
-  }
-
   private async calculateExpireSoon(
     perm: any,
     now: Date,
@@ -888,150 +788,20 @@ export default class PermAPIService extends BullableService {
       now
     );
 
-    const useLightweightDerivedStats = !!options?.lightweightDerivedStats;
-
-    if (blockHeight === undefined) {
-      const [weight, statistics, participants, slashStats] = await Promise.all([
-        useLightweightDerivedStats
-          ? Promise.resolve(typeof perm.weight === "number" ? perm.weight : Number(perm.weight || 0))
-          : perm.weight !== undefined && perm.weight !== null
-          ? Promise.resolve(typeof perm.weight === 'number' ? perm.weight : Number(perm.weight || 0))
-          : this.calculatePermissionWeight(Number(perm.id), Number(perm.schema_id), blockHeight).catch((err: any) => {
-            this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
-            return 0;
-          }),
-        useLightweightDerivedStats
-          ? Promise.resolve({
-            issued: typeof perm.issued === "number" ? perm.issued : Number(perm.issued || 0),
-            verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
-          })
-          : perm.issued !== undefined && perm.issued !== null && perm.verified !== undefined && perm.verified !== null
-          ? Promise.resolve({
-            issued: typeof perm.issued === 'number' ? perm.issued : Number(perm.issued || 0),
-            verified: typeof perm.verified === 'number' ? perm.verified : Number(perm.verified || 0)
-          })
-          : this.calculatePermissionStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-            this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
-            return { issued: 0, verified: 0 };
-          }),
-        useLightweightDerivedStats
-          ? Promise.resolve(typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0))
-          : perm.participants !== undefined && perm.participants !== null
-          ? Promise.resolve(typeof perm.participants === 'number' ? perm.participants : Number(perm.participants || 0))
-          : this.calculateParticipants(Number(perm.id), Number(perm.schema_id), permState, blockHeight, now).catch((err: any) => {
-            this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
-            return 0;
-          }),
-        useLightweightDerivedStats
-          ? Promise.resolve({
-            ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
-            ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
-            ecosystem_slashed_amount_repaid: typeof perm.ecosystem_slashed_amount_repaid === "number" ? perm.ecosystem_slashed_amount_repaid : Number(perm.ecosystem_slashed_amount_repaid || 0),
-            network_slash_events: typeof perm.network_slash_events === "number" ? perm.network_slash_events : Number(perm.network_slash_events || 0),
-            network_slashed_amount: typeof perm.network_slashed_amount === "number" ? perm.network_slashed_amount : Number(perm.network_slashed_amount || 0),
-            network_slashed_amount_repaid: typeof perm.network_slashed_amount_repaid === "number" ? perm.network_slashed_amount_repaid : Number(perm.network_slashed_amount_repaid || 0),
-          })
-          : perm.ecosystem_slash_events !== undefined && perm.ecosystem_slash_events !== null
-          ? Promise.resolve({
-            ecosystem_slash_events: typeof perm.ecosystem_slash_events === 'number' ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
-            ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === 'number' ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
-            ecosystem_slashed_amount_repaid: typeof perm.ecosystem_slashed_amount_repaid === 'number' ? perm.ecosystem_slashed_amount_repaid : Number(perm.ecosystem_slashed_amount_repaid || 0),
-            network_slash_events: typeof perm.network_slash_events === 'number' ? perm.network_slash_events : Number(perm.network_slash_events || 0),
-            network_slashed_amount: typeof perm.network_slashed_amount === 'number' ? perm.network_slashed_amount : Number(perm.network_slashed_amount || 0),
-            network_slashed_amount_repaid: typeof perm.network_slashed_amount_repaid === 'number' ? perm.network_slashed_amount_repaid : Number(perm.network_slashed_amount_repaid || 0),
-          })
-          : this.calculateSlashStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-            this.logger.warn(`Failed to calculate slash statistics for permission ${perm.id}:`, err?.message || err);
-            return {
-              ecosystem_slash_events: 0,
-              ecosystem_slashed_amount: 0,
-              ecosystem_slashed_amount_repaid: 0,
-              network_slash_events: 0,
-              network_slashed_amount: 0,
-              network_slashed_amount_repaid: 0,
-            };
-          }),
-      ]);
-
-      const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight, options?.moduleParams).catch((err: any) => {
-        this.logger.warn(`Failed to calculate expire_soon for permission ${perm.id}:`, err?.message || err);
-        return null;
-      });
-
-      return {
-        ...perm,
-        perm_state: permState,
-        grantee_available_actions: granteeActions,
-        validator_available_actions: validatorActions,
-        id: Number(perm.id),
-        schema_id: Number(perm.schema_id),
-        validator_perm_id: perm.validator_perm_id ? Number(perm.validator_perm_id) : null,
-        validation_fees: perm.validation_fees != null ? Number(perm.validation_fees) : 0,
-        issuance_fees: perm.issuance_fees != null ? Number(perm.issuance_fees) : 0,
-        verification_fees: perm.verification_fees != null ? Number(perm.verification_fees) : 0,
-        deposit: perm.deposit != null ? Number(perm.deposit) : 0,
-        slashed_deposit: perm.slashed_deposit != null ? Number(perm.slashed_deposit) : 0,
-        repaid_deposit: perm.repaid_deposit != null ? Number(perm.repaid_deposit) : 0,
-        vp_current_fees: perm.vp_current_fees != null ? Number(perm.vp_current_fees) : 0,
-        vp_current_deposit: perm.vp_current_deposit != null ? Number(perm.vp_current_deposit) : 0,
-        vp_validator_deposit: perm.vp_validator_deposit != null ? Number(perm.vp_validator_deposit) : 0,
-        weight: weight,
-        issued: statistics.issued,
-        verified: statistics.verified,
-        participants: participants,
-        ecosystem_slash_events: slashStats.ecosystem_slash_events,
-        ecosystem_slashed_amount: slashStats.ecosystem_slashed_amount,
-        ecosystem_slashed_amount_repaid: slashStats.ecosystem_slashed_amount_repaid,
-        network_slash_events: slashStats.network_slash_events,
-        network_slashed_amount: slashStats.network_slashed_amount,
-        network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
-        expire_soon: expireSoon,
-      };
-    }
-
-    const [weight, statistics, participants, slashStats] = await Promise.all([
-      useLightweightDerivedStats
-        ? Promise.resolve(typeof perm.weight === "number" ? perm.weight : Number(perm.weight || 0))
-        : this.calculatePermissionWeight(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-          this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
-          return 0;
-        }),
-      useLightweightDerivedStats
-        ? Promise.resolve({
-          issued: typeof perm.issued === "number" ? perm.issued : Number(perm.issued || 0),
-          verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
-        })
-        : this.calculatePermissionStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-          this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
-          return { issued: 0, verified: 0 };
-        }),
-      useLightweightDerivedStats
-        ? Promise.resolve(typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0))
-        : this.calculateParticipants(perm.id, perm.schema_id, permState, blockHeight, now).catch((err: any) => {
-          this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
-          return 0;
-        }),
-      useLightweightDerivedStats
-        ? Promise.resolve({
-          ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
-          ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
-          ecosystem_slashed_amount_repaid: typeof perm.ecosystem_slashed_amount_repaid === "number" ? perm.ecosystem_slashed_amount_repaid : Number(perm.ecosystem_slashed_amount_repaid || 0),
-          network_slash_events: typeof perm.network_slash_events === "number" ? perm.network_slash_events : Number(perm.network_slash_events || 0),
-          network_slashed_amount: typeof perm.network_slashed_amount === "number" ? perm.network_slashed_amount : Number(perm.network_slashed_amount || 0),
-          network_slashed_amount_repaid: typeof perm.network_slashed_amount_repaid === "number" ? perm.network_slashed_amount_repaid : Number(perm.network_slashed_amount_repaid || 0),
-        })
-        : this.calculateSlashStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-          this.logger.warn(`Failed to calculate slash statistics for permission ${perm.id}:`, err?.message || err);
-          return {
-            ecosystem_slash_events: 0,
-            ecosystem_slashed_amount: 0,
-            ecosystem_slashed_amount_repaid: 0,
-            network_slash_events: 0,
-            network_slashed_amount: 0,
-            network_slashed_amount_repaid: 0,
-          };
-        }),
-    ]);
+    const weight = typeof perm.weight === "number" ? perm.weight : Number(perm.weight || 0);
+    const statistics = {
+      issued: typeof perm.issued === "number" ? perm.issued : Number(perm.issued || 0),
+      verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
+    };
+    const participants = typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0);
+    const slashStats = {
+      ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
+      ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
+      ecosystem_slashed_amount_repaid: typeof perm.ecosystem_slashed_amount_repaid === "number" ? perm.ecosystem_slashed_amount_repaid : Number(perm.ecosystem_slashed_amount_repaid || 0),
+      network_slash_events: typeof perm.network_slash_events === "number" ? perm.network_slash_events : Number(perm.network_slash_events || 0),
+      network_slashed_amount: typeof perm.network_slashed_amount === "number" ? perm.network_slashed_amount : Number(perm.network_slashed_amount || 0),
+      network_slashed_amount_repaid: typeof perm.network_slashed_amount_repaid === "number" ? perm.network_slashed_amount_repaid : Number(perm.network_slashed_amount_repaid || 0),
+    };
 
     const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight, options?.moduleParams).catch((err: any) => {
       this.logger.warn(`Failed to calculate expire_soon for permission ${perm.id}:`, err?.message || err);
@@ -1067,387 +837,6 @@ export default class PermAPIService extends BullableService {
       network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
       expire_soon: expireSoon,
     };
-  }
-
-  private async calculatePermissionStatistics(
-    permId: number,
-    schemaId: number,
-    blockHeight?: number
-  ): Promise<{ issued: number; verified: number }> {
-    try {
-      const permissionIds = new Set<number>();
-      let currentPermId: number | null = permId;
-
-      if (blockHeight !== undefined) {
-        while (currentPermId) {
-          permissionIds.add(currentPermId);
-          const permHistory: { validator_perm_id: number | null } | undefined = await knex("permission_history")
-            .where("permission_id", currentPermId)
-            .where("schema_id", schemaId)
-            .where("height", "<=", blockHeight)
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc")
-            .first()
-            .select("validator_perm_id");
-
-          currentPermId = permHistory?.validator_perm_id || null;
-        }
-      } else {
-        while (currentPermId) {
-          permissionIds.add(currentPermId);
-          const perm: { validator_perm_id: number | null } | undefined = await knex("permissions")
-            .where("id", currentPermId)
-            .where("schema_id", Number(schemaId))
-            .first()
-            .select("validator_perm_id");
-
-          currentPermId = perm?.validator_perm_id || null;
-        }
-      }
-
-      if (permissionIds.size === 0) {
-        return { issued: 0, verified: 0 };
-      }
-
-      let issuedCount: bigint = BigInt(0);
-      let verifiedCount = 0;
-
-      if (blockHeight !== undefined) {
-        const latestHistorySubquery = knex("permission_session_history")
-          .select("session_id")
-          .select(
-            knex.raw(
-              `ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY height DESC, created_at DESC) as rn`
-            )
-          )
-          .where("height", "<=", blockHeight)
-          .as("ranked");
-
-        const sessions = await knex
-          .from(latestHistorySubquery)
-          .join("permission_session_history as psh", (join) => {
-            join.on("ranked.session_id", "=", "psh.session_id")
-              .andOn("ranked.rn", "=", knex.raw("1"));
-          })
-          .select("psh.authz");
-
-        for (const session of sessions) {
-          const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
-          if (Array.isArray(authz)) {
-            for (const entry of authz) {
-              if (entry.issuer_perm_id && permissionIds.has(entry.issuer_perm_id)) {
-                issuedCount += BigInt(1);
-              }
-              if (entry.verifier_perm_id && permissionIds.has(entry.verifier_perm_id)) {
-                verifiedCount += 1;
-              }
-            }
-          }
-        }
-      } else {
-        const sessions = await knex("permission_sessions")
-          .select("authz");
-
-        for (const session of sessions) {
-          const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
-          if (Array.isArray(authz)) {
-            for (const entry of authz) {
-              if (entry.issuer_perm_id && permissionIds.has(entry.issuer_perm_id)) {
-                issuedCount += BigInt(1);
-              }
-              if (entry.verifier_perm_id && permissionIds.has(entry.verifier_perm_id)) {
-                verifiedCount += 1;
-              }
-            }
-          }
-        }
-      }
-
-      // Convert BigInt to number for issued and verified (counts, not amounts)
-      const issuedNumber = Number(issuedCount);
-      const verifiedNumber = Number(verifiedCount);
-
-      if (issuedNumber > Number.MAX_SAFE_INTEGER || verifiedNumber > Number.MAX_SAFE_INTEGER) {
-        this.logger.warn(`Warning: issued (${issuedCount}) or verified (${verifiedCount}) exceeds safe integer range for permission ${permId}`);
-      }
-
-      return {
-        issued: issuedNumber,
-        verified: verifiedNumber,
-      };
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
-      if (errorMsg.includes("column") && (errorMsg.includes("does not exist") || errorMsg.includes("doesn't exist"))) {
-        this.logger.warn(`Columns 'issued' or 'verified' do not exist yet. Migration may not have been run. Returning 0 for statistics.`);
-        return { issued: 0, verified: 0 };
-      }
-      throw err;
-    }
-  }
-
-
-  private async calculateParticipants(
-    permId: number,
-    schemaId: number,
-    permState: PermState,
-    blockHeight?: number,
-    now: Date = new Date()
-  ): Promise<number> {
-    try {
-      let count = 0;
-
-      if (permState === "ACTIVE") {
-        count = 1;
-      }
-
-      if (blockHeight !== undefined) {
-        const latestHistorySubquery = knex("permission_history")
-          .select("permission_id")
-          .select(
-            knex.raw(
-              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
-            )
-          )
-          .where("schema_id", Number(schemaId))
-          .where("height", "<=", blockHeight)
-          .as("ranked");
-
-        const children = await knex
-          .from(latestHistorySubquery)
-          .join("permission_history as ph", (join) => {
-            join.on("ranked.permission_id", "=", "ph.permission_id")
-              .andOn("ranked.rn", "=", knex.raw("1"));
-          })
-          .where("ph.validator_perm_id", permId)
-          .select("ph.permission_id", "ph.repaid", "ph.slashed", "ph.revoked", "ph.effective_from", "ph.effective_until", "ph.type", "ph.vp_state", "ph.vp_exp", "ph.validator_perm_id");
-
-        for (const child of children) {
-          const childState = calculatePermState(
-            {
-              repaid: child.repaid,
-              slashed: child.slashed,
-              revoked: child.revoked,
-              effective_from: child.effective_from,
-              effective_until: child.effective_until,
-              type: child.type,
-              vp_state: child.vp_state,
-              vp_exp: child.vp_exp,
-              validator_perm_id: child.validator_perm_id,
-            },
-            now
-          );
-
-          if (childState === "ACTIVE") {
-            count++;
-          }
-
-          const childCount = await this.calculateParticipants(
-            child.permission_id,
-            schemaId,
-            childState,
-            blockHeight,
-            now
-          );
-          count += childCount;
-        }
-      } else {
-        const children = await knex("permissions")
-          .where("validator_perm_id", permId)
-          .where("schema_id", schemaId)
-          .select("id", "repaid", "slashed", "revoked", "effective_from", "effective_until", "type", "vp_state", "vp_exp", "validator_perm_id");
-
-        for (const child of children) {
-          const childState = calculatePermState(
-            {
-              repaid: child.repaid,
-              slashed: child.slashed,
-              revoked: child.revoked,
-              effective_from: child.effective_from,
-              effective_until: child.effective_until,
-              type: child.type,
-              vp_state: child.vp_state,
-              vp_exp: child.vp_exp,
-              validator_perm_id: child.validator_perm_id,
-            },
-            now
-          );
-
-          if (childState === "ACTIVE") {
-            count++;
-          }
-
-          const childCount = await this.calculateParticipants(
-            child.permission_id,
-            schemaId,
-            childState,
-            blockHeight,
-            now
-          );
-          count += childCount;
-        }
-      }
-
-      return count;
-    } catch (err: any) {
-      this.logger.warn(`Failed to calculate participants for permission ${permId}:`, err?.message || err);
-      return 0;
-    }
-  }
-
-
-  private async calculateSlashStatistics(
-    permId: number,
-    schemaId: number,
-    blockHeight?: number
-  ): Promise<{
-    ecosystem_slash_events: number;
-    ecosystem_slashed_amount: number;
-    ecosystem_slashed_amount_repaid: number;
-    network_slash_events: number;
-    network_slashed_amount: number;
-    network_slashed_amount_repaid: number;
-  }> {
-    try {
-      const schema = await knex("credential_schemas")
-        .where("id", Number(schemaId))
-        .first();
-
-      let trController: string | null = null;
-      if (schema?.tr_id) {
-        const tr = await knex("trust_registry")
-          .where("id", schema.tr_id)
-          .first();
-        trController = tr?.controller || null;
-      }
-
-      const permissionIds = new Set<number>();
-      let currentPermId: number | null = permId;
-
-      if (blockHeight !== undefined) {
-        while (currentPermId) {
-          permissionIds.add(currentPermId);
-          const permHistory: { validator_perm_id: number | null; type: string } | undefined = await knex("permission_history")
-            .where("permission_id", currentPermId)
-            .where("schema_id", schemaId)
-            .where("height", "<=", blockHeight)
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc")
-            .first()
-            .select("validator_perm_id", "type");
-
-          currentPermId = permHistory?.validator_perm_id || null;
-        }
-      } else {
-        while (currentPermId) {
-          permissionIds.add(currentPermId);
-          const perm: { validator_perm_id: number | null; type: string } | undefined = await knex("permissions")
-            .where("id", currentPermId)
-            .where("schema_id", schemaId)
-            .first()
-            .select("validator_perm_id", "type");
-
-          currentPermId = perm?.validator_perm_id || null;
-        }
-      }
-
-      let slashEvents: any[] = [];
-
-      if (blockHeight !== undefined) {
-        slashEvents = await knex("permission_history")
-          .whereIn("permission_id", Array.from(permissionIds))
-          .where("schema_id", Number(schemaId))
-          .where("height", "<=", blockHeight)
-          .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-          .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
-          .orderBy("permission_id", "asc")
-          .orderBy("height", "asc")
-          .orderBy("created_at", "asc");
-      } else {
-        slashEvents = await knex("permission_history")
-          .whereIn("permission_id", Array.from(permissionIds))
-          .where("schema_id", Number(schemaId))
-          .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-          .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
-          .orderBy("permission_id", "asc")
-          .orderBy("height", "asc")
-          .orderBy("created_at", "asc");
-      }
-
-      let ecosystemSlashEvents = 0;
-      let ecosystemSlashedAmount = 0;
-      let ecosystemSlashedAmountRepaid = 0;
-      let networkSlashEvents = 0;
-      let networkSlashedAmount = 0;
-      let networkSlashedAmountRepaid = 0;
-
-      const prevSlashedDeposits = new Map<number, number>();
-      const prevRepaidDeposits = new Map<number, number>();
-
-      for (const event of slashEvents) {
-        const permId = event.permission_id;
-        const prevSlashed = prevSlashedDeposits.get(permId) || 0;
-        const currentSlashed = typeof event.slashed_deposit === 'number' ? event.slashed_deposit : Number(event.slashed_deposit);
-        const incrementalSlashed = currentSlashed - prevSlashed;
-
-        if (incrementalSlashed <= 0) {
-          prevSlashedDeposits.set(permId, currentSlashed);
-          const currentRepaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-          prevRepaidDeposits.set(permId, currentRepaid);
-          continue;
-        }
-
-        prevSlashedDeposits.set(permId, currentSlashed);
-
-        const isEcosystemPermission = event.type === "ECOSYSTEM";
-        const isSlashedByEcosystemGov = trController && event.slashed_by === trController;
-
-        if (isEcosystemPermission) {
-          networkSlashEvents++;
-          networkSlashedAmount += incrementalSlashed;
-
-          const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-          const prevRepaid = prevRepaidDeposits.get(permId) || 0;
-          const incrementalRepaid = repaid - prevRepaid;
-          if (incrementalRepaid > 0) {
-            networkSlashedAmountRepaid += incrementalRepaid;
-          }
-          prevRepaidDeposits.set(permId, typeof repaid === 'number' ? repaid : Number(repaid));
-        } else if (isSlashedByEcosystemGov) {
-          ecosystemSlashEvents++;
-          ecosystemSlashedAmount += incrementalSlashed;
-
-          const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-          const prevRepaid = prevRepaidDeposits.get(permId) || 0;
-          const incrementalRepaid = repaid - prevRepaid;
-          if (incrementalRepaid > 0) {
-            ecosystemSlashedAmountRepaid += incrementalRepaid;
-          }
-          prevRepaidDeposits.set(permId, typeof repaid === 'number' ? repaid : Number(repaid));
-        } else {
-          const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-          prevRepaidDeposits.set(permId, typeof repaid === 'number' ? repaid : Number(repaid));
-        }
-      }
-
-      return {
-        ecosystem_slash_events: ecosystemSlashEvents,
-        ecosystem_slashed_amount: ecosystemSlashedAmount,
-        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid,
-        network_slash_events: networkSlashEvents,
-        network_slashed_amount: networkSlashedAmount,
-        network_slashed_amount_repaid: networkSlashedAmountRepaid,
-      };
-    } catch (err: any) {
-      this.logger.warn(`Failed to calculate slash statistics for permission ${permId}:`, err?.message || err);
-      return {
-        ecosystem_slash_events: 0,
-        ecosystem_slashed_amount: 0,
-        ecosystem_slashed_amount_repaid: 0,
-        network_slash_events: 0,
-        network_slashed_amount: 0,
-        network_slashed_amount_repaid: 0,
-      };
-    }
   }
 
   /**
@@ -1614,9 +1003,6 @@ export default class PermAPIService extends BullableService {
           "ph.vp_term_requested",
           "ph.created",
           "ph.modified",
-          knex.raw(
-            `ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn`
-          ),
         ];
         if (hasIssuedColumn) historyColumns.push(knex.raw("COALESCE(ph.issued, 0) as issued"));
         if (hasVerifiedColumn) historyColumns.push(knex.raw("COALESCE(ph.verified, 0) as verified"));
@@ -1633,42 +1019,6 @@ export default class PermAPIService extends BullableService {
           );
         }
 
-        const rankedHistory = knex("permission_history as ph")
-          .select(historyColumns)
-          .where("ph.height", "<=", blockHeight)
-          .modify((qb) => {
-            this.applyBaseListFiltersToQuery(
-              qb,
-              normalizedParams,
-              granteeFilter,
-              modifiedAfterIso,
-              whenIso,
-              onlyValid,
-              onlySlashed,
-              onlyRepaid,
-              now,
-              "ph",
-              "permission_id"
-            );
-            const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
-              participants: hasParticipantsColumn,
-              weight: hasWeightColumn,
-              issued: hasIssuedColumn,
-              verified: hasVerifiedColumn,
-              slashStats: hasEcosystemSlashEventsColumn,
-              tablePrefix: "ph",
-            });
-            historyRequiresMetricPostFilter = metricPushdown.requiresPostFilter;
-            const permStatePushdown = this.applyPermStateFilterToQuery(
-              qb,
-              normalizedParams.perm_state,
-              now,
-              "ph"
-            );
-            historyPermStatePushedDown = permStatePushdown.pushedDown;
-          })
-          .as("ranked");
-
         const needsPostEnrichFiltering = (!historyPermStatePushedDown && !!normalizedParams.perm_state)
           || historyRequiresMetricPostFilter
           || derivedSortRequested;
@@ -1679,10 +1029,95 @@ export default class PermAPIService extends BullableService {
         perfMarks.dbQueryStart = Date.now();
         const historySortParamForDb =
           derivedSortRequested && historyRequiresMetricPostFilter ? undefined : normalizedParams.sort;
-        const historyQuery = knex
-          .from(rankedHistory)
-          .select("*")
-          .where("rn", 1);
+        let historyQuery: any;
+        if (IS_PG_CLIENT) {
+          const latestHistory = knex("permission_history as ph")
+            .distinctOn("ph.permission_id")
+            .select(historyColumns)
+            .where("ph.height", "<=", blockHeight)
+            .modify((qb) => {
+              this.applyBaseListFiltersToQuery(
+                qb,
+                normalizedParams,
+                granteeFilter,
+                modifiedAfterIso,
+                whenIso,
+                onlyValid,
+                onlySlashed,
+                onlyRepaid,
+                now,
+                "ph",
+                "permission_id"
+              );
+              const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
+                participants: hasParticipantsColumn,
+                weight: hasWeightColumn,
+                issued: hasIssuedColumn,
+                verified: hasVerifiedColumn,
+                slashStats: hasEcosystemSlashEventsColumn,
+                tablePrefix: "ph",
+              });
+              historyRequiresMetricPostFilter = metricPushdown.requiresPostFilter;
+              const permStatePushdown = this.applyPermStateFilterToQuery(
+                qb,
+                normalizedParams.perm_state,
+                now,
+                "ph"
+              );
+              historyPermStatePushedDown = permStatePushdown.pushedDown;
+            })
+            .orderBy("ph.permission_id", "asc")
+            .orderBy("ph.height", "desc")
+            .orderBy("ph.created_at", "desc")
+            .orderBy("ph.id", "desc")
+            .as("latest");
+          historyQuery = knex.from(latestHistory).select("*");
+        } else {
+          const rankedHistory = knex("permission_history as ph")
+            .select([
+              ...historyColumns,
+              knex.raw(
+                `ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn`
+              ),
+            ])
+            .where("ph.height", "<=", blockHeight)
+            .modify((qb) => {
+              this.applyBaseListFiltersToQuery(
+                qb,
+                normalizedParams,
+                granteeFilter,
+                modifiedAfterIso,
+                whenIso,
+                onlyValid,
+                onlySlashed,
+                onlyRepaid,
+                now,
+                "ph",
+                "permission_id"
+              );
+              const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
+                participants: hasParticipantsColumn,
+                weight: hasWeightColumn,
+                issued: hasIssuedColumn,
+                verified: hasVerifiedColumn,
+                slashStats: hasEcosystemSlashEventsColumn,
+                tablePrefix: "ph",
+              });
+              historyRequiresMetricPostFilter = metricPushdown.requiresPostFilter;
+              const permStatePushdown = this.applyPermStateFilterToQuery(
+                qb,
+                normalizedParams.perm_state,
+                now,
+                "ph"
+              );
+              historyPermStatePushedDown = permStatePushdown.pushedDown;
+            })
+            .as("ranked");
+          historyQuery = knex
+            .from(rankedHistory)
+            .select("*")
+            .where("rn", 1);
+        }
         const orderedHistoryQuery = applyOrdering(historyQuery, historySortParamForDb);
         const historyRows = await orderedHistoryQuery.limit(historyFetchLimit);
         perfMarks.dbQueryEnd = Date.now();
@@ -2031,9 +1466,10 @@ export default class PermAPIService extends BullableService {
     try {
       const id = ctx.params.id;
       const blockHeight = getBlockHeight(ctx);
+      const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
 
       // If AtBlockHeight is provided, query historical state
-      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
+      if (useHistoryQuery && blockHeight !== undefined) {
         const {
           hasIssuedColumn,
           hasVerifiedColumn,
@@ -2041,6 +1477,11 @@ export default class PermAPIService extends BullableService {
           hasWeightColumn,
           hasEcosystemSlashEventsColumn,
         } = await this.getMetricColumnAvailability("permission_history");
+        const historyHasAllDerivedColumns = hasIssuedColumn
+          && hasVerifiedColumn
+          && hasParticipantsColumn
+          && hasWeightColumn
+          && hasEcosystemSlashEventsColumn;
 
         const selectColumns: any[] = [
           "permission_id", "schema_id", "grantee", "did", "created_by", "validator_perm_id",
@@ -2138,7 +1579,8 @@ export default class PermAPIService extends BullableService {
         const enrichedPermission = await this.enrichPermissionWithStateAndActions(
           historicalPermission,
           blockHeight,
-          new Date()
+          new Date(),
+          { lightweightDerivedStats: historyHasAllDerivedColumns }
         );
 
         return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
@@ -2163,11 +1605,37 @@ export default class PermAPIService extends BullableService {
         vp_current_deposit: permission.vp_current_deposit != null ? Number(permission.vp_current_deposit) : 0,
         vp_validator_deposit: permission.vp_validator_deposit != null ? Number(permission.vp_validator_deposit) : 0,
       };
+      if (permission.weight !== undefined) {
+        (normalizedPermission as any).weight = permission.weight != null ? Number(permission.weight) : 0;
+      }
+      if (permission.issued !== undefined) {
+        (normalizedPermission as any).issued = permission.issued != null ? Number(permission.issued) : 0;
+      }
+      if (permission.verified !== undefined) {
+        (normalizedPermission as any).verified = permission.verified != null ? Number(permission.verified) : 0;
+      }
+      if (permission.participants !== undefined) {
+        (normalizedPermission as any).participants = permission.participants != null ? Number(permission.participants) : 0;
+      }
+      if (permission.ecosystem_slash_events !== undefined) {
+        (normalizedPermission as any).ecosystem_slash_events = permission.ecosystem_slash_events != null ? Number(permission.ecosystem_slash_events) : 0;
+        (normalizedPermission as any).ecosystem_slashed_amount = permission.ecosystem_slashed_amount != null ? Number(permission.ecosystem_slashed_amount) : 0;
+        (normalizedPermission as any).ecosystem_slashed_amount_repaid = permission.ecosystem_slashed_amount_repaid != null ? Number(permission.ecosystem_slashed_amount_repaid) : 0;
+        (normalizedPermission as any).network_slash_events = permission.network_slash_events != null ? Number(permission.network_slash_events) : 0;
+        (normalizedPermission as any).network_slashed_amount = permission.network_slashed_amount != null ? Number(permission.network_slashed_amount) : 0;
+        (normalizedPermission as any).network_slashed_amount_repaid = permission.network_slashed_amount_repaid != null ? Number(permission.network_slashed_amount_repaid) : 0;
+      }
+      const liveHasAllDerivedColumns = permission.issued !== undefined
+        && permission.verified !== undefined
+        && permission.participants !== undefined
+        && permission.weight !== undefined
+        && permission.ecosystem_slash_events !== undefined;
 
       const enrichedPermission = await this.enrichPermissionWithStateAndActions(
         normalizedPermission,
         blockHeight,
-        new Date()
+        new Date(),
+        { lightweightDerivedStats: liveHasAllDerivedColumns }
       );
 
       return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
@@ -2243,6 +1711,7 @@ export default class PermAPIService extends BullableService {
     const { issuer_perm_id: issuerPermId, verifier_perm_id: verifierPermId } =
       ctx.params;
     const blockHeight = getBlockHeight(ctx);
+    const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
 
     if (!issuerPermId && !verifierPermId) {
       return ApiResponder.error(
@@ -2256,7 +1725,7 @@ export default class PermAPIService extends BullableService {
 
     const loadPerm = async (permId: number | string) => {
       const permIdStr = typeof permId === 'string' ? Number(permId) : permId;
-      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
+      if (useHistoryQuery && blockHeight !== undefined) {
         const historyRecord = await knex("permission_history")
           .where({ permission_id: permIdStr })
           .where("height", "<=", blockHeight)
@@ -2363,9 +1832,10 @@ export default class PermAPIService extends BullableService {
     try {
       const { id } = ctx.params;
       const blockHeight = getBlockHeight(ctx);
+      const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
 
       // If AtBlockHeight is provided, query historical state
-      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
+      if (useHistoryQuery && blockHeight !== undefined) {
         const historyRecord = await knex("permission_session_history")
           .where({ session_id: id })
           .where("height", "<=", blockHeight)
@@ -2515,10 +1985,11 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.error(ctx, err.message, 400);
       }
       const blockHeight = getBlockHeight(ctx);
+      const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
       const limit = Math.min(Math.max(responseMaxSize || 64, 1), 1024);
 
       // If AtBlockHeight is provided, query historical state
-      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
+      if (useHistoryQuery && blockHeight !== undefined) {
         // Get all unique session IDs that existed at or before the block height
         const latestHistorySubquery = knex("permission_session_history")
           .select("session_id")
@@ -2630,7 +2101,7 @@ export default class PermAPIService extends BullableService {
       const now = new Date();
 
       const blockHeight = getBlockHeight(ctx);
-      const useHistory = hasBlockHeight(ctx) && blockHeight !== undefined;
+      const useHistory = this.shouldUseHistoryQuery(ctx, blockHeight);
 
       let parentIds: number[] = [];
       const parentIdSet = new Set<number>();
