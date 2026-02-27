@@ -79,7 +79,7 @@ export default class PermAPIService extends BullableService {
       try {
         const schemaHistory = await knex("credential_schema_history")
           .where({ credential_schema_id: schemaId })
-          .where("height", "<=", blockHeight)
+          .whereRaw("height <= ?", [Number(blockHeight)])
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
           .first();
@@ -1509,7 +1509,7 @@ export default class PermAPIService extends BullableService {
         const historyRecord = await knex("permission_history")
           .select(selectColumns)
           .where({ permission_id: Number(id) })
-          .where("height", "<=", blockHeight)
+          .whereRaw("height <= ?", [Number(blockHeight)])
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
           .first();
@@ -1728,7 +1728,7 @@ export default class PermAPIService extends BullableService {
       if (useHistoryQuery && blockHeight !== undefined) {
         const historyRecord = await knex("permission_history")
           .where({ permission_id: permIdStr })
-          .where("height", "<=", blockHeight)
+          .whereRaw("height <= ?", [Number(blockHeight)])
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
           .first();
@@ -1838,7 +1838,7 @@ export default class PermAPIService extends BullableService {
       if (useHistoryQuery && blockHeight !== undefined) {
         const historyRecord = await knex("permission_session_history")
           .where({ session_id: id })
-          .where("height", "<=", blockHeight)
+          .whereRaw("height <= ?", [Number(blockHeight)])
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
           .first();
@@ -2114,7 +2114,7 @@ export default class PermAPIService extends BullableService {
               `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
             )
           )
-          .where("height", "<=", blockHeight)
+          .whereRaw("height <= ?", [Number(blockHeight)])
           .andWhere("grantee", account)
           .as("ranked");
 
@@ -2176,7 +2176,7 @@ export default class PermAPIService extends BullableService {
               `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
             )
           )
-          .where("height", "<=", blockHeight)
+          .whereRaw("height <= ?", [Number(blockHeight)])
           .as("ranked");
 
         const permIdsAtHeight = await knex
