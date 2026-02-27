@@ -26,47 +26,50 @@ import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
   version: 1,
 })
 export default class PermAPIService extends BullableService {
-  private static readonly LOOKUP_CACHE_TTL_MS = 30000;
-  private static readonly VALIDATION_LIST_CACHE_TTL_MS = 5000;
-  private static readonly VALIDATION_LIST_CACHE_MAX_ENTRIES = 5000;
   private static readonly LIST_PERMISSIONS_SLOW_MS = 200;
-
-  private readonly optionalPermissionColumnCache = new Map<string, Promise<{
-    hasIssuedColumn: boolean;
-    hasVerifiedColumn: boolean;
-    hasParticipantsColumn: boolean;
-    hasWeightColumn: boolean;
-    hasEcosystemSlashEventsColumn: boolean;
-  }>>();
-
-  private readonly schemaModeCache = new Map<number, { expiresAt: number; value: SchemaData }>();
-
-  private permModuleParamsCache?: { expiresAt: number; value: any };
-
-  private readonly validationListResponseCache = new Map<string, { expiresAt: number; value: { permissions: any[] } }>();
+  private static readonly VALID_PERMISSION_TYPES = new Set([
+    "ECOSYSTEM",
+    "ISSUER_GRANTOR",
+    "VERIFIER_GRANTOR",
+    "ISSUER",
+    "VERIFIER",
+    "HOLDER",
+  ]);
+  private static readonly VALID_VP_STATES = new Set([
+    "VALIDATION_STATE_UNSPECIFIED",
+    "PENDING",
+    "VALIDATED",
+    "TERMINATED",
+  ]);
 
   constructor(broker: ServiceBroker) {
     super(broker);
   }
 
-  private getOptionalPermissionColumns(tableName: "permissions" | "permission_history") {
-    const cached = this.optionalPermissionColumnCache.get(tableName);
-    if (cached) return cached;
+  private async getMetricColumnAvailability(tableName: "permissions" | "permission_history"): Promise<{
+    hasIssuedColumn: boolean;
+    hasVerifiedColumn: boolean;
+    hasParticipantsColumn: boolean;
+    hasWeightColumn: boolean;
+    hasEcosystemSlashEventsColumn: boolean;
+  }> {
+    const columnInfo = await knex(tableName).columnInfo();
+    return {
+      hasIssuedColumn: !!columnInfo.issued,
+      hasVerifiedColumn: !!columnInfo.verified,
+      hasParticipantsColumn: !!columnInfo.participants,
+      hasWeightColumn: !!columnInfo.weight,
+      hasEcosystemSlashEventsColumn: !!columnInfo.ecosystem_slash_events,
+    };
+  }
 
-    const loader = (async () => ({
-      hasIssuedColumn: await knex.schema.hasColumn(tableName, "issued"),
-      hasVerifiedColumn: await knex.schema.hasColumn(tableName, "verified"),
-      hasParticipantsColumn: await knex.schema.hasColumn(tableName, "participants"),
-      hasWeightColumn: await knex.schema.hasColumn(tableName, "weight"),
-      hasEcosystemSlashEventsColumn: await knex.schema.hasColumn(tableName, "ecosystem_slash_events"),
-    }))();
-
-    this.optionalPermissionColumnCache.set(tableName, loader);
-    loader.catch(() => {
-      // Avoid keeping a rejected Promise forever if schema introspection fails transiently.
-      this.optionalPermissionColumnCache.delete(tableName);
-    });
-    return loader;
+  private shouldUseHistoryQuery(ctx: Context<any>, blockHeight: number | undefined): boolean {
+    if (!hasBlockHeight(ctx) || blockHeight === undefined) return false;
+    const latestCheckpointHeight = Number((ctx.meta as any)?.latestCheckpoint?.height);
+    if (Number.isFinite(latestCheckpointHeight) && latestCheckpointHeight > 0) {
+      return blockHeight < latestCheckpointHeight;
+    }
+    return true;
   }
 
   private async getSchemaModes(schemaId: number, blockHeight?: number): Promise<SchemaData> {
@@ -88,11 +91,6 @@ export default class PermAPIService extends BullableService {
       } catch (error: any) {
         this.logger.warn(`credential_schema_history table doesn't have height column, using main table. Error: ${error?.message || error}`);
       }
-    } else {
-      const cached = this.schemaModeCache.get(schemaId);
-      if (cached && cached.expiresAt > Date.now()) {
-        return cached.value;
-      }
     }
 
     const schemaMain = await knex("credential_schemas")
@@ -104,111 +102,578 @@ export default class PermAPIService extends BullableService {
       verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
     };
 
-    if (typeof blockHeight !== "number") {
-      this.schemaModeCache.set(schemaId, {
-        value: schema,
-        expiresAt: Date.now() + PermAPIService.LOOKUP_CACHE_TTL_MS,
-      });
-    }
-
     return schema;
   }
 
-  private async getPermissionModuleParamsCached(blockHeight?: number): Promise<any> {
-    // Cache only live lookups; historical "at height" values should remain precise.
-    if (typeof blockHeight === "number") {
-      return getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
-    }
-
-    if (this.permModuleParamsCache && this.permModuleParamsCache.expiresAt > Date.now()) {
-      return this.permModuleParamsCache.value;
-    }
-
-    const value = await getModuleParams(ModulesParamsNamesTypes.PERM, undefined);
-    this.permModuleParamsCache = {
-      value,
-      expiresAt: Date.now() + PermAPIService.LOOKUP_CACHE_TTL_MS,
-    };
-    return value;
+  private async getPermissionModuleParams(blockHeight?: number): Promise<any> {
+    return getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
   }
 
-  private isValidationListCacheEligible(
+  private isTrustResolutionListQuery(
     params: any,
-    blockHeight: number | undefined,
-    limit: number
+    _blockHeight: number | undefined
   ): boolean {
-    if (blockHeight !== undefined) return false;
-    if (limit !== 1) return false;
-    if (!params.did || !params.type || params.schema_id === undefined) return false;
+    if (!params?.did) return false;
+    if (params?.schema_id === undefined || params?.schema_id === null) return false;
 
-    // Keep cache for the exact validation-style query shape only.
-    const extraKeys = [
-      "grantee", "perm_id", "validator_perm_id", "perm_state", "only_valid", "only_slashed", "only_repaid",
-      "modified_after", "country", "vp_state", "when", "sort",
-      "min_participants", "max_participants", "min_weight", "max_weight",
-      "min_issued", "max_issued", "min_verified", "max_verified",
-      "min_ecosystem_slash_events", "max_ecosystem_slash_events",
-      "min_network_slash_events", "max_network_slash_events",
+    const expensiveMetricFilters = [
+      "min_participants",
+      "max_participants",
+      "min_weight",
+      "max_weight",
+      "min_issued",
+      "max_issued",
+      "min_verified",
+      "max_verified",
+      "min_ecosystem_slash_events",
+      "max_ecosystem_slash_events",
+      "min_network_slash_events",
+      "max_network_slash_events",
     ];
-    return extraKeys.every((k) => params[k] === undefined);
-  }
+    const hasExpensiveMetricFilter = expensiveMetricFilters.some((k) => params[k] !== undefined);
+    if (hasExpensiveMetricFilter) return false;
 
-  private getValidationListCacheKey(params: any): string {
-    return JSON.stringify({
-      did: params.did,
-      type: params.type,
-      schema_id: Number(params.schema_id),
-      response_max_size: 1,
-    });
-  }
-
-  private readValidationListCache(key: string): { permissions: any[] } | null {
-    const cached = this.validationListResponseCache.get(key);
-    if (!cached) return null;
-    if (cached.expiresAt <= Date.now()) {
-      this.validationListResponseCache.delete(key);
-      return null;
-    }
-    // defensive clone to avoid accidental mutation across requests
-    return JSON.parse(JSON.stringify(cached.value));
-  }
-
-  private writeValidationListCache(key: string, value: { permissions: any[] }): void {
-    const now = Date.now();
-    // Opportunistic cleanup to prevent unbounded growth on high-cardinality DID traffic.
-    for (const [cacheKey, entry] of this.validationListResponseCache.entries()) {
-      if (entry.expiresAt <= now) {
-        this.validationListResponseCache.delete(cacheKey);
+    if (typeof params?.sort === "string") {
+      const sortRaw = params.sort.toLowerCase();
+      const expensiveSortKeys = [
+        "participants",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "network_slash_events",
+        "network_slashed_amount",
+      ];
+      if (expensiveSortKeys.some((key) => sortRaw.includes(key))) {
+        return false;
       }
     }
 
-    while (this.validationListResponseCache.size >= PermAPIService.VALIDATION_LIST_CACHE_MAX_ENTRIES) {
-      const oldestKey = this.validationListResponseCache.keys().next().value;
-      if (!oldestKey) break;
-      this.validationListResponseCache.delete(oldestKey);
+    return true;
+  }
+
+  private usesDerivedMetricSort(sort: any): boolean {
+    if (typeof sort !== "string") return false;
+    const sortRaw = sort.toLowerCase();
+    const derivedSortKeys = [
+      "participants",
+      "weight",
+      "issued",
+      "verified",
+      "ecosystem_slash_events",
+      "ecosystem_slashed_amount",
+      "network_slash_events",
+      "network_slashed_amount",
+    ];
+    return derivedSortKeys.some((key) => sortRaw.includes(key));
+  }
+
+  private shouldUseStrictTrustResolutionLightweightMode(params: any, limit: number): boolean {
+    if (!params?.did) return false;
+    if (params?.schema_id === undefined || params?.schema_id === null) return false;
+    if (limit > 32) return false;
+
+    const disallowedKeys = [
+      "grantee",
+      "perm_id",
+      "validator_perm_id",
+      "perm_state",
+      "type",
+      "only_valid",
+      "only_slashed",
+      "only_repaid",
+      "modified_after",
+      "country",
+      "vp_state",
+      "when",
+      "min_participants",
+      "max_participants",
+      "min_weight",
+      "max_weight",
+      "min_issued",
+      "max_issued",
+      "min_verified",
+      "max_verified",
+      "min_ecosystem_slash_events",
+      "max_ecosystem_slash_events",
+      "min_network_slash_events",
+      "max_network_slash_events",
+    ];
+    return disallowedKeys.every((key) => params[key] === undefined);
+  }
+
+  private normalizeAndValidateTypeAndVpState(params: any): {
+    ok: boolean;
+    message?: string;
+    type?: string;
+    vp_state?: string;
+  } {
+    const normalizedType = typeof params?.type === "string" ? params.type.toUpperCase() : undefined;
+    const normalizedVpState = typeof params?.vp_state === "string" ? params.vp_state.toUpperCase() : undefined;
+    let finalType = normalizedType;
+    let finalVpState = normalizedVpState;
+
+    if (normalizedType && !normalizedVpState
+      && !PermAPIService.VALID_PERMISSION_TYPES.has(normalizedType)
+      && PermAPIService.VALID_VP_STATES.has(normalizedType)) {
+      finalVpState = normalizedType;
+      finalType = undefined;
     }
 
-    this.validationListResponseCache.set(key, {
-      value: JSON.parse(JSON.stringify(value)),
-      expiresAt: now + PermAPIService.VALIDATION_LIST_CACHE_TTL_MS,
-    });
+    if (finalType !== undefined && !PermAPIService.VALID_PERMISSION_TYPES.has(finalType)) {
+      return {
+        ok: false,
+        message: `Invalid type '${finalType}'. Allowed values: ${Array.from(PermAPIService.VALID_PERMISSION_TYPES).join(", ")}`,
+      };
+    }
+
+    if (finalVpState !== undefined && !PermAPIService.VALID_VP_STATES.has(finalVpState)) {
+      return {
+        ok: false,
+        message: `Invalid vp_state '${finalVpState}'. Allowed values: ${Array.from(PermAPIService.VALID_VP_STATES).join(", ")}`,
+      };
+    }
+
+    return {
+      ok: true,
+      type: finalType,
+      vp_state: finalVpState,
+    };
+  }
+
+  private applyBaseListFiltersToQuery(
+    query: any,
+    params: any,
+    granteeFilter: string | undefined,
+    modifiedAfterIso: string | undefined,
+    whenIso: string | undefined,
+    onlyValid: boolean,
+    onlySlashed: boolean,
+    onlyRepaid: boolean,
+    nowIso: string,
+    tablePrefix?: string,
+    permissionIdColumn: string = "id"
+  ): void {
+    const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name);
+
+    if (params.schema_id !== undefined) query.where(col("schema_id"), Number(params.schema_id));
+    if (granteeFilter) query.where(col("grantee"), granteeFilter);
+    if (params.did) query.where(col("did"), params.did);
+    if (params.perm_id !== undefined) query.where(col(permissionIdColumn), Number(params.perm_id));
+    if (params.validator_perm_id !== undefined) {
+      if (params.validator_perm_id === null || params.validator_perm_id === "null") {
+        query.whereNull(col("validator_perm_id"));
+      } else {
+        query.where(col("validator_perm_id"), Number(params.validator_perm_id));
+      }
+    }
+    if (params.type) query.where(col("type"), params.type);
+    if (params.country) query.where(col("country"), params.country);
+    if (params.vp_state) query.where(col("vp_state"), params.vp_state);
+    if (modifiedAfterIso) query.where(col("modified"), ">", modifiedAfterIso);
+    if (whenIso) query.where(col("modified"), "<=", whenIso);
+
+    if (onlyValid) {
+      query.where((qb: any) => {
+        qb.whereNull(col("revoked"))
+          .andWhere((q: any) => q.whereNull(col("slashed")).orWhereNotNull(col("repaid")))
+          .andWhere((q: any) => q.whereNull(col("effective_until")).orWhere(col("effective_until"), ">", nowIso))
+          .andWhere((q: any) => q.whereNull(col("effective_from")).orWhere(col("effective_from"), "<=", nowIso));
+      });
+    }
+
+    if (params.only_slashed !== undefined) {
+      if (onlySlashed) query.whereNotNull(col("slashed"));
+      else query.whereNull(col("slashed"));
+    }
+
+    if (params.only_repaid !== undefined) {
+      if (onlyRepaid) query.whereNotNull(col("repaid"));
+      else query.whereNull(col("repaid"));
+    }
+  }
+
+  private applyMetricFiltersToSql(
+    query: any,
+    params: any,
+    options: {
+      participants: boolean;
+      weight: boolean;
+      issued: boolean;
+      verified: boolean;
+      slashStats: boolean;
+      tablePrefix?: string;
+    }
+  ): { requiresPostFilter: boolean; impossibleRange: boolean } {
+    const col = (name: string) => (options.tablePrefix ? `${options.tablePrefix}.${name}` : name);
+    const metricSpecs = [
+      { min: "min_participants", max: "max_participants", db: "participants", enabled: options.participants },
+      { min: "min_weight", max: "max_weight", db: "weight", enabled: options.weight },
+      { min: "min_issued", max: "max_issued", db: "issued", enabled: options.issued },
+      { min: "min_verified", max: "max_verified", db: "verified", enabled: options.verified },
+      { min: "min_ecosystem_slash_events", max: "max_ecosystem_slash_events", db: "ecosystem_slash_events", enabled: options.slashStats },
+      { min: "min_network_slash_events", max: "max_network_slash_events", db: "network_slash_events", enabled: options.slashStats },
+    ];
+
+    let requiresPostFilter = false;
+    let impossibleRange = false;
+
+    for (const spec of metricSpecs) {
+      const minRaw = params[spec.min];
+      const maxRaw = params[spec.max];
+      if (minRaw === undefined && maxRaw === undefined) continue;
+
+      if (!spec.enabled) {
+        requiresPostFilter = true;
+        continue;
+      }
+
+      const minValue = minRaw !== undefined ? Number(minRaw) : undefined;
+      const maxValue = maxRaw !== undefined ? Number(maxRaw) : undefined;
+      if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+        query.whereRaw("1 = 0");
+        impossibleRange = true;
+        continue;
+      }
+      if (minValue !== undefined) query.where(col(spec.db), ">=", minValue);
+      if (maxValue !== undefined) query.where(col(spec.db), "<", maxValue);
+    }
+
+    return { requiresPostFilter, impossibleRange };
+  }
+
+  private applyMetricFiltersInMemory(permissions: any[], params: any): any[] {
+    const specs = [
+      { min: "min_participants", max: "max_participants", field: "participants" },
+      { min: "min_weight", max: "max_weight", field: "weight" },
+      { min: "min_issued", max: "max_issued", field: "issued" },
+      { min: "min_verified", max: "max_verified", field: "verified" },
+      { min: "min_ecosystem_slash_events", max: "max_ecosystem_slash_events", field: "ecosystem_slash_events" },
+      { min: "min_network_slash_events", max: "max_network_slash_events", field: "network_slash_events" },
+    ];
+
+    let results = permissions;
+    for (const spec of specs) {
+      const minRaw = params[spec.min];
+      const maxRaw = params[spec.max];
+      if (minRaw === undefined && maxRaw === undefined) continue;
+
+      const minValue = minRaw !== undefined ? Number(minRaw) : undefined;
+      const maxValue = maxRaw !== undefined ? Number(maxRaw) : undefined;
+      if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+        return [];
+      }
+      if (minValue !== undefined) {
+        results = results.filter((perm) => Number(perm?.[spec.field] || 0) >= minValue);
+      }
+      if (maxValue !== undefined) {
+        results = results.filter((perm) => Number(perm?.[spec.field] || 0) < maxValue);
+      }
+    }
+    return results;
+  }
+
+  private applyPermStateFilterToQuery(
+    query: any,
+    permStateRaw: any,
+    nowIso: string,
+    tablePrefix?: string
+  ): { pushedDown: boolean } {
+    if (!permStateRaw) return { pushedDown: false };
+
+    const permState = String(permStateRaw).toUpperCase();
+    const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name);
+    const baseNotRepaidSlashed = (qb: any) => {
+      qb.whereNull(col("repaid")).whereNull(col("slashed"));
+    };
+    const notRevokedAsOfNow = (qb: any) => {
+      qb.whereNull(col("revoked")).orWhere(col("revoked"), ">=", nowIso);
+    };
+
+    if (permState === "REPAID") {
+      query.whereNotNull(col("repaid"));
+      return { pushedDown: true };
+    }
+
+    if (permState === "SLASHED") {
+      query.whereNull(col("repaid")).whereNotNull(col("slashed"));
+      return { pushedDown: true };
+    }
+
+    if (permState === "REVOKED") {
+      query.where((qb: any) => {
+        baseNotRepaidSlashed(qb);
+        qb.whereNotNull(col("revoked")).andWhere(col("revoked"), "<", nowIso);
+      });
+      return { pushedDown: true };
+    }
+
+    if (permState === "EXPIRED") {
+      query.where((qb: any) => {
+        baseNotRepaidSlashed(qb);
+        qb.where(notRevokedAsOfNow);
+        qb.whereNotNull(col("effective_until")).andWhere(col("effective_until"), "<", nowIso);
+      });
+      return { pushedDown: true };
+    }
+
+    if (permState === "ACTIVE") {
+      query.where((qb: any) => {
+        baseNotRepaidSlashed(qb);
+        qb.where(notRevokedAsOfNow);
+        qb.where((q: any) => q.whereNull(col("effective_until")).orWhere(col("effective_until"), ">=", nowIso));
+        qb.whereNotNull(col("effective_from")).andWhere(col("effective_from"), "<=", nowIso);
+      });
+      return { pushedDown: true };
+    }
+
+    if (permState === "FUTURE") {
+      query.where((qb: any) => {
+        baseNotRepaidSlashed(qb);
+        qb.where(notRevokedAsOfNow);
+        qb.where((q: any) => q.whereNull(col("effective_until")).orWhere(col("effective_until"), ">=", nowIso));
+        qb.whereNotNull(col("effective_from")).andWhere(col("effective_from"), ">", nowIso);
+      });
+      return { pushedDown: true };
+    }
+
+    if (permState === "INACTIVE") {
+      query.where((qb: any) => {
+        baseNotRepaidSlashed(qb);
+        qb.where(notRevokedAsOfNow);
+        qb.where((q: any) => q.whereNull(col("effective_until")).orWhere(col("effective_until"), ">=", nowIso));
+        qb.whereNull(col("effective_from"));
+      });
+      return { pushedDown: true };
+    }
+
+    return { pushedDown: false };
   }
 
   private async batchEnrichPermissions(
     permissions: any[],
     blockHeight: number | undefined,
     now: Date,
-    batchSize: number = 50
+    batchSize: number = 50,
+    options?: {
+      lightweightDerivedStats?: boolean;
+      schemaModesById?: Map<number, SchemaData>;
+      validatorPermStateById?: Map<number, PermState | null>;
+      moduleParams?: any;
+    }
   ): Promise<any[]> {
+    if (permissions.length === 0) return [];
+
+    const schemaIds = Array.from(
+      new Set(
+        permissions
+          .map((perm) => Number(perm.schema_id))
+          .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
+      )
+    );
+    const validatorPermIds = Array.from(
+      new Set(
+        permissions
+          .map((perm) => Number(perm.validator_perm_id))
+          .filter((validatorPermId) => Number.isFinite(validatorPermId) && validatorPermId > 0)
+      )
+    );
+
+    const [schemaModesById, validatorPermStateById, moduleParams] = await Promise.all([
+      options?.schemaModesById ?? this.getSchemaModesBatch(schemaIds, blockHeight),
+      options?.validatorPermStateById ?? this.getValidatorPermStateMap(validatorPermIds, blockHeight, now),
+      options?.moduleParams !== undefined
+        ? Promise.resolve(options.moduleParams)
+        : this.getPermissionModuleParams(blockHeight).catch(() => undefined),
+    ]);
+
+    const mergedOptions = {
+      ...options,
+      schemaModesById,
+      validatorPermStateById,
+      moduleParams,
+    };
+
     const results: any[] = [];
     for (let i = 0; i < permissions.length; i += batchSize) {
       const batch = permissions.slice(i, i + batchSize);
       const batchResults = await Promise.all(
-        batch.map(perm => this.enrichPermissionWithStateAndActions(perm, blockHeight, now))
+        batch.map((perm) =>
+          this.enrichPermissionWithStateAndActions(perm, blockHeight, now, mergedOptions)
+        )
       );
       results.push(...batchResults);
     }
     return results;
+  }
+
+  private async getSchemaModesBatch(
+    schemaIds: number[],
+    blockHeight?: number
+  ): Promise<Map<number, SchemaData>> {
+    const modeMap = new Map<number, SchemaData>();
+    if (schemaIds.length === 0) return modeMap;
+
+    if (typeof blockHeight === "number") {
+      const rankedSchemas = knex("credential_schema_history as csh")
+        .select(
+          "csh.credential_schema_id",
+          "csh.issuer_perm_management_mode",
+          "csh.verifier_perm_management_mode",
+          knex.raw(
+            `ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC) as rn`
+          )
+        )
+        .whereIn("csh.credential_schema_id", schemaIds)
+        .where("csh.height", "<=", blockHeight)
+        .as("ranked");
+
+      const historicalModes = await knex
+        .from(rankedSchemas)
+        .select("credential_schema_id", "issuer_perm_management_mode", "verifier_perm_management_mode")
+        .where("rn", 1);
+
+      for (const row of historicalModes) {
+        const schemaId = Number(row.credential_schema_id);
+        modeMap.set(schemaId, {
+          issuer_perm_management_mode: row.issuer_perm_management_mode || null,
+          verifier_perm_management_mode: row.verifier_perm_management_mode || null,
+        });
+      }
+
+      const missingSchemaIds = schemaIds.filter((schemaId) => !modeMap.has(schemaId));
+      if (missingSchemaIds.length > 0) {
+        const fallbackRows = await knex("credential_schemas")
+          .whereIn("id", missingSchemaIds)
+          .select("id", "issuer_perm_management_mode", "verifier_perm_management_mode");
+
+        for (const row of fallbackRows) {
+          const schemaId = Number(row.id);
+          modeMap.set(schemaId, {
+            issuer_perm_management_mode: row.issuer_perm_management_mode || null,
+            verifier_perm_management_mode: row.verifier_perm_management_mode || null,
+          });
+        }
+      }
+
+      return modeMap;
+    }
+
+    const schemaRows = await knex("credential_schemas")
+      .whereIn("id", schemaIds)
+      .select("id", "issuer_perm_management_mode", "verifier_perm_management_mode");
+
+    for (const row of schemaRows) {
+      const schemaId = Number(row.id);
+      modeMap.set(schemaId, {
+        issuer_perm_management_mode: row.issuer_perm_management_mode || null,
+        verifier_perm_management_mode: row.verifier_perm_management_mode || null,
+      });
+    }
+
+    return modeMap;
+  }
+
+  private async getValidatorPermStateMap(
+    validatorPermIds: number[],
+    blockHeight: number | undefined,
+    now: Date
+  ): Promise<Map<number, PermState | null>> {
+    const stateMap = new Map<number, PermState | null>();
+    if (validatorPermIds.length === 0) return stateMap;
+
+    if (typeof blockHeight === "number") {
+      const rankedValidators = knex("permission_history as ph")
+        .select(
+          "ph.permission_id",
+          "ph.repaid",
+          "ph.slashed",
+          "ph.revoked",
+          "ph.effective_from",
+          "ph.effective_until",
+          "ph.type",
+          "ph.vp_state",
+          "ph.vp_exp",
+          "ph.validator_perm_id",
+          knex.raw(
+            `ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn`
+          )
+        )
+        .whereIn("ph.permission_id", validatorPermIds)
+        .where("ph.height", "<=", blockHeight)
+        .as("ranked");
+
+      const rows = await knex
+        .from(rankedValidators)
+        .select(
+          "permission_id",
+          "repaid",
+          "slashed",
+          "revoked",
+          "effective_from",
+          "effective_until",
+          "type",
+          "vp_state",
+          "vp_exp",
+          "validator_perm_id"
+        )
+        .where("rn", 1);
+
+      for (const row of rows) {
+        const permissionId = Number(row.permission_id);
+        stateMap.set(permissionId, calculatePermState(
+          {
+            repaid: row.repaid,
+            slashed: row.slashed,
+            revoked: row.revoked,
+            effective_from: row.effective_from,
+            effective_until: row.effective_until,
+            type: row.type,
+            vp_state: row.vp_state,
+            vp_exp: row.vp_exp,
+            validator_perm_id: row.validator_perm_id,
+          },
+          now
+        ));
+      }
+      return stateMap;
+    }
+
+    const rows = await knex("permissions")
+      .whereIn("id", validatorPermIds)
+      .select(
+        "id",
+        "repaid",
+        "slashed",
+        "revoked",
+        "effective_from",
+        "effective_until",
+        "type",
+        "vp_state",
+        "vp_exp",
+        "validator_perm_id"
+      );
+
+    for (const row of rows) {
+      const permissionId = Number(row.id);
+      stateMap.set(permissionId, calculatePermState(
+        {
+          repaid: row.repaid,
+          slashed: row.slashed,
+          revoked: row.revoked,
+          effective_from: row.effective_from,
+          effective_until: row.effective_until,
+          type: row.type,
+          vp_state: row.vp_state,
+          vp_exp: row.vp_exp,
+          validator_perm_id: row.validator_perm_id,
+        },
+        now
+      ));
+    }
+
+    return stateMap;
   }
 
   private async calculatePermissionWeight(
@@ -316,7 +781,8 @@ export default class PermAPIService extends BullableService {
   private async calculateExpireSoon(
     perm: any,
     now: Date,
-    blockHeight?: number
+    blockHeight?: number,
+    preloadedModuleParams?: any
   ): Promise<boolean | null> {
     const isActive = this.isPermissionActive(perm, now);
     if (!isActive) {
@@ -327,7 +793,7 @@ export default class PermAPIService extends BullableService {
     }
     let nDaysBefore = 0;
     try {
-      const moduleParams = await this.getPermissionModuleParamsCached(blockHeight);
+      const moduleParams = preloadedModuleParams ?? await this.getPermissionModuleParams(blockHeight);
       if (moduleParams?.params) {
         nDaysBefore = moduleParams.params.PERMISSION_SET_EXPIRE_SOON_N_DAYS_BEFORE || 0;
       }
@@ -355,59 +821,23 @@ export default class PermAPIService extends BullableService {
   private async enrichPermissionWithStateAndActions(
     perm: any,
     blockHeight?: number,
-    now: Date = new Date()
+    now: Date = new Date(),
+    options?: {
+      lightweightDerivedStats?: boolean;
+      schemaModesById?: Map<number, SchemaData>;
+      validatorPermStateById?: Map<number, PermState | null>;
+      moduleParams?: any;
+    }
   ): Promise<any> {
     const schemaId = Number(perm.schema_id);
-    const schema = await this.getSchemaModes(schemaId, blockHeight);
+    const schema = options?.schemaModesById?.get(schemaId) ?? await this.getSchemaModes(schemaId, blockHeight);
 
     let validatorPermState: PermState | null = null;
     if (perm.validator_perm_id) {
-      if (blockHeight !== undefined) {
-        const validatorPermHistory = await knex("permission_history")
-          .where({ permission_id: Number(perm.validator_perm_id) })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-
-        if (validatorPermHistory) {
-          validatorPermState = calculatePermState(
-            {
-              repaid: validatorPermHistory.repaid,
-              slashed: validatorPermHistory.slashed,
-              revoked: validatorPermHistory.revoked,
-              effective_from: validatorPermHistory.effective_from,
-              effective_until: validatorPermHistory.effective_until,
-              type: validatorPermHistory.type,
-              vp_state: validatorPermHistory.vp_state,
-              vp_exp: validatorPermHistory.vp_exp,
-              validator_perm_id: validatorPermHistory.validator_perm_id,
-            },
-            now
-          );
-        }
-      } else {
-        const validatorPerm = await knex("permissions")
-          .where({ id: perm.validator_perm_id })
-          .first();
-
-        if (validatorPerm) {
-          validatorPermState = calculatePermState(
-            {
-              repaid: validatorPerm.repaid,
-              slashed: validatorPerm.slashed,
-              revoked: validatorPerm.revoked,
-              effective_from: validatorPerm.effective_from,
-              effective_until: validatorPerm.effective_until,
-              type: validatorPerm.type,
-              vp_state: validatorPerm.vp_state,
-              vp_exp: validatorPerm.vp_exp,
-              validator_perm_id: validatorPerm.validator_perm_id,
-            },
-            now
-          );
-        }
-      }
+      const validatorPermId = Number(perm.validator_perm_id);
+      validatorPermState = options?.validatorPermStateById?.has(validatorPermId)
+        ? options.validatorPermStateById.get(validatorPermId) || null
+        : null;
     }
 
     const permState = calculatePermState(
@@ -458,15 +888,24 @@ export default class PermAPIService extends BullableService {
       now
     );
 
+    const useLightweightDerivedStats = !!options?.lightweightDerivedStats;
+
     if (blockHeight === undefined) {
       const [weight, statistics, participants, slashStats] = await Promise.all([
-        perm.weight !== undefined && perm.weight !== null
+        useLightweightDerivedStats
+          ? Promise.resolve(typeof perm.weight === "number" ? perm.weight : Number(perm.weight || 0))
+          : perm.weight !== undefined && perm.weight !== null
           ? Promise.resolve(typeof perm.weight === 'number' ? perm.weight : Number(perm.weight || 0))
           : this.calculatePermissionWeight(Number(perm.id), Number(perm.schema_id), blockHeight).catch((err: any) => {
             this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
             return 0;
           }),
-        perm.issued !== undefined && perm.issued !== null && perm.verified !== undefined && perm.verified !== null
+        useLightweightDerivedStats
+          ? Promise.resolve({
+            issued: typeof perm.issued === "number" ? perm.issued : Number(perm.issued || 0),
+            verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
+          })
+          : perm.issued !== undefined && perm.issued !== null && perm.verified !== undefined && perm.verified !== null
           ? Promise.resolve({
             issued: typeof perm.issued === 'number' ? perm.issued : Number(perm.issued || 0),
             verified: typeof perm.verified === 'number' ? perm.verified : Number(perm.verified || 0)
@@ -475,13 +914,24 @@ export default class PermAPIService extends BullableService {
             this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
             return { issued: 0, verified: 0 };
           }),
-        perm.participants !== undefined && perm.participants !== null
+        useLightweightDerivedStats
+          ? Promise.resolve(typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0))
+          : perm.participants !== undefined && perm.participants !== null
           ? Promise.resolve(typeof perm.participants === 'number' ? perm.participants : Number(perm.participants || 0))
           : this.calculateParticipants(Number(perm.id), Number(perm.schema_id), permState, blockHeight, now).catch((err: any) => {
             this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
             return 0;
           }),
-        perm.ecosystem_slash_events !== undefined && perm.ecosystem_slash_events !== null
+        useLightweightDerivedStats
+          ? Promise.resolve({
+            ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
+            ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
+            ecosystem_slashed_amount_repaid: typeof perm.ecosystem_slashed_amount_repaid === "number" ? perm.ecosystem_slashed_amount_repaid : Number(perm.ecosystem_slashed_amount_repaid || 0),
+            network_slash_events: typeof perm.network_slash_events === "number" ? perm.network_slash_events : Number(perm.network_slash_events || 0),
+            network_slashed_amount: typeof perm.network_slashed_amount === "number" ? perm.network_slashed_amount : Number(perm.network_slashed_amount || 0),
+            network_slashed_amount_repaid: typeof perm.network_slashed_amount_repaid === "number" ? perm.network_slashed_amount_repaid : Number(perm.network_slashed_amount_repaid || 0),
+          })
+          : perm.ecosystem_slash_events !== undefined && perm.ecosystem_slash_events !== null
           ? Promise.resolve({
             ecosystem_slash_events: typeof perm.ecosystem_slash_events === 'number' ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
             ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === 'number' ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
@@ -503,7 +953,7 @@ export default class PermAPIService extends BullableService {
           }),
       ]);
 
-      const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight).catch((err: any) => {
+      const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight, options?.moduleParams).catch((err: any) => {
         this.logger.warn(`Failed to calculate expire_soon for permission ${perm.id}:`, err?.message || err);
         return null;
       });
@@ -540,32 +990,50 @@ export default class PermAPIService extends BullableService {
     }
 
     const [weight, statistics, participants, slashStats] = await Promise.all([
-      this.calculatePermissionWeight(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-        this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
-        return 0;
-      }),
-      this.calculatePermissionStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-        this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
-        return { issued: 0, verified: 0 };
-      }),
-      this.calculateParticipants(perm.id, perm.schema_id, permState, blockHeight, now).catch((err: any) => {
-        this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
-        return 0;
-      }),
-      this.calculateSlashStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
-        this.logger.warn(`Failed to calculate slash statistics for permission ${perm.id}:`, err?.message || err);
-        return {
-          ecosystem_slash_events: 0,
-          ecosystem_slashed_amount: 0,
-          ecosystem_slashed_amount_repaid: 0,
-          network_slash_events: 0,
-          network_slashed_amount: 0,
-          network_slashed_amount_repaid: 0,
-        };
-      }),
+      useLightweightDerivedStats
+        ? Promise.resolve(typeof perm.weight === "number" ? perm.weight : Number(perm.weight || 0))
+        : this.calculatePermissionWeight(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
+          this.logger.warn(`Failed to calculate weight for permission ${perm.id}:`, err?.message || err);
+          return 0;
+        }),
+      useLightweightDerivedStats
+        ? Promise.resolve({
+          issued: typeof perm.issued === "number" ? perm.issued : Number(perm.issued || 0),
+          verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
+        })
+        : this.calculatePermissionStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
+          this.logger.warn(`Failed to calculate statistics for permission ${perm.id}:`, err?.message || err);
+          return { issued: 0, verified: 0 };
+        }),
+      useLightweightDerivedStats
+        ? Promise.resolve(typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0))
+        : this.calculateParticipants(perm.id, perm.schema_id, permState, blockHeight, now).catch((err: any) => {
+          this.logger.warn(`Failed to calculate participants for permission ${perm.id}:`, err?.message || err);
+          return 0;
+        }),
+      useLightweightDerivedStats
+        ? Promise.resolve({
+          ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
+          ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
+          ecosystem_slashed_amount_repaid: typeof perm.ecosystem_slashed_amount_repaid === "number" ? perm.ecosystem_slashed_amount_repaid : Number(perm.ecosystem_slashed_amount_repaid || 0),
+          network_slash_events: typeof perm.network_slash_events === "number" ? perm.network_slash_events : Number(perm.network_slash_events || 0),
+          network_slashed_amount: typeof perm.network_slashed_amount === "number" ? perm.network_slashed_amount : Number(perm.network_slashed_amount || 0),
+          network_slashed_amount_repaid: typeof perm.network_slashed_amount_repaid === "number" ? perm.network_slashed_amount_repaid : Number(perm.network_slashed_amount_repaid || 0),
+        })
+        : this.calculateSlashStatistics(perm.id, perm.schema_id, blockHeight).catch((err: any) => {
+          this.logger.warn(`Failed to calculate slash statistics for permission ${perm.id}:`, err?.message || err);
+          return {
+            ecosystem_slash_events: 0,
+            ecosystem_slashed_amount: 0,
+            ecosystem_slashed_amount_repaid: 0,
+            network_slash_events: 0,
+            network_slashed_amount: 0,
+            network_slashed_amount_repaid: 0,
+          };
+        }),
     ]);
 
-    const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight).catch((err: any) => {
+    const expireSoon = await this.calculateExpireSoon(perm, now, blockHeight, options?.moduleParams).catch((err: any) => {
       this.logger.warn(`Failed to calculate expire_soon for permission ${perm.id}:`, err?.message || err);
       return null;
     });
@@ -1031,373 +1499,295 @@ export default class PermAPIService extends BullableService {
       }
       const granteeFilter = granteeValidation.value;
 
-      const blockHeight = getBlockHeight(ctx);
-      const now = new Date().toISOString();
-      const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024);
-      const useValidationCache = this.isValidationListCacheEligible(p, blockHeight, limit);
-      const validationCacheKey = useValidationCache ? this.getValidationListCacheKey(p) : null;
-
-      perfMeta = {
-        did: p.did ? "[set]" : undefined,
-        type: p.type,
-        schema_id: p.schema_id,
-        limit,
-        blockHeight,
-        cacheEligible: useValidationCache,
+      const typeVpValidation = this.normalizeAndValidateTypeAndVpState(p);
+      if (!typeVpValidation.ok) {
+        return ApiResponder.error(ctx, typeVpValidation.message || "Invalid type/vp_state", 400);
+      }
+      const normalizedParams = {
+        ...p,
+        type: typeVpValidation.type,
+        vp_state: typeVpValidation.vp_state,
       };
 
-      if (validationCacheKey) {
-        const cached = this.readValidationListCache(validationCacheKey);
-        if (cached) {
-          perfMeta.cacheHit = true;
-          return ApiResponder.success(ctx, cached, 200);
-        }
-      }
-      perfMeta.cacheHit = false;
+      const blockHeight = getBlockHeight(ctx);
+      const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
+      const now = new Date().toISOString();
+      const limit = Math.min(Math.max(normalizedParams.response_max_size || 64, 1), 1024);
+
+      perfMeta = {
+        did: normalizedParams.did ? "[set]" : undefined,
+        type: normalizedParams.type,
+        schema_id: normalizedParams.schema_id,
+        limit,
+        blockHeight: useHistoryQuery ? blockHeight : undefined,
+      };
 
       try {
-        validateSortParameter(p.sort);
+        validateSortParameter(normalizedParams.sort);
       } catch (err: any) {
         return ApiResponder.error(ctx, err.message, 400);
       }
 
-      const onlyValid = p.only_valid === "true" || p.only_valid === true;
-      const onlySlashed = p.only_slashed === "true" || p.only_slashed === true;
-      const onlyRepaid = p.only_repaid === "true" || p.only_repaid === true;
+      const onlyValid = normalizedParams.only_valid === "true" || normalizedParams.only_valid === true;
+      const onlySlashed = normalizedParams.only_slashed === "true" || normalizedParams.only_slashed === true;
+      const onlyRepaid = normalizedParams.only_repaid === "true" || normalizedParams.only_repaid === true;
+      let modifiedAfterIso: string | undefined;
+      let whenIso: string | undefined;
 
-      if (hasBlockHeight(ctx) && blockHeight !== undefined) {
-        const latestHistorySubquery = knex("permission_history")
-          .select("permission_id")
-          .select(
-            knex.raw(
-              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
-            )
-          )
-          .where("height", "<=", blockHeight);
-
-        if (p.schema_id !== undefined) {
-          latestHistorySubquery.where("schema_id", Number(p.schema_id));
-        }
-
-        latestHistorySubquery.as("ranked");
-
-        const permIdsAtHeight = await knex
-          .from(latestHistorySubquery)
-          .select("permission_id")
-          .where("rn", 1)
-          .distinct()
-          .then((rows: any[]) => rows.map((r: any) => r.permission_id));
-
-        const totalPermsInTable = await knex("permissions").count("* as count").first();
-        const totalHistoryEntries = await knex("permission_history")
-          .where("height", "<=", blockHeight)
-          .countDistinct("permission_id as count")
-          .first();
-
-        this.logger.info(`[listPermissions] Debug at height ${blockHeight}: Total permissions in table: ${totalPermsInTable?.count}, Unique permissions in history: ${totalHistoryEntries?.count}, Found permission IDs: ${permIdsAtHeight.length}`);
-
-        if (permIdsAtHeight.length === 0) {
-          this.logger.warn(`[listPermissions] No permission IDs found at height ${blockHeight}`);
-          return ApiResponder.success(ctx, { permissions: [] }, 200);
-        }
-
-        this.logger.info(`[listPermissions] Found ${permIdsAtHeight.length} permission IDs at height ${blockHeight}: ${permIdsAtHeight.join(', ')}`);
-        
-        const {
-          hasIssuedColumn,
-          hasVerifiedColumn,
-          hasParticipantsColumn,
-          hasWeightColumn,
-          hasEcosystemSlashEventsColumn,
-        } = await this.getOptionalPermissionColumns("permission_history");
-        
-        const permissions = await Promise.all(
-          permIdsAtHeight.map(async (permId: number) => {
-            const selectColumns: any[] = [
-              "permission_id", "schema_id", "grantee", "did", "created_by", "validator_perm_id",
-              "type", "country", "vp_state", "revoked", "revoked_by", "slashed", "slashed_by",
-              "repaid", "repaid_by", "extended", "extended_by", "effective_from", "effective_until",
-              "validation_fees", "issuance_fees", "verification_fees", "deposit", "slashed_deposit",
-              "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit",
-              "vp_summary_digest_sri", "vp_exp", "vp_validator_deposit", "vp_term_requested",
-              "created", "modified"
-            ];
-            
-            if (hasIssuedColumn) {
-              selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
-            }
-            if (hasVerifiedColumn) {
-              selectColumns.push(knex.raw("COALESCE(verified, 0) as verified"));
-            }
-            if (hasParticipantsColumn) {
-              selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
-            }
-            if (hasWeightColumn) {
-              selectColumns.push(knex.raw("COALESCE(weight, 0) as weight"));
-            }
-            if (hasEcosystemSlashEventsColumn) {
-              selectColumns.push(
-                knex.raw("COALESCE(ecosystem_slash_events, 0) as ecosystem_slash_events"),
-                knex.raw("COALESCE(ecosystem_slashed_amount, 0) as ecosystem_slashed_amount"),
-                knex.raw("COALESCE(ecosystem_slashed_amount_repaid, 0) as ecosystem_slashed_amount_repaid"),
-                knex.raw("COALESCE(network_slash_events, 0) as network_slash_events"),
-                knex.raw("COALESCE(network_slashed_amount, 0) as network_slashed_amount"),
-                knex.raw("COALESCE(network_slashed_amount_repaid, 0) as network_slashed_amount_repaid")
-              );
-            }
-            
-            const historyRecord = await knex("permission_history")
-              .select(selectColumns)
-              .where({ permission_id: permId })
-              .where("height", "<=", blockHeight)
-              .orderBy("height", "desc")
-              .orderBy("created_at", "desc")
-              .orderBy("id", "desc")
-              .first();
-
-            if (!historyRecord) {
-              this.logger.warn(`[listPermissions] No history record found for permission ${permId} at height ${blockHeight}`);
-              return null;
-            }
-
-            this.logger.debug(`[listPermissions] Permission ${permId} at height ${blockHeight}: repaid=${historyRecord.repaid}, slashed=${historyRecord.slashed}, height=${historyRecord.height}`);
-
-            const permission: any = {
-              id: Number(historyRecord.permission_id),
-              schema_id: Number(historyRecord.schema_id),
-              grantee: historyRecord.grantee,
-              did: historyRecord.did,
-              created_by: historyRecord.created_by,
-              validator_perm_id: historyRecord.validator_perm_id ? Number(historyRecord.validator_perm_id) : null,
-              type: historyRecord.type,
-              country: historyRecord.country,
-              vp_state: historyRecord.vp_state,
-              revoked: historyRecord.revoked,
-              revoked_by: historyRecord.revoked_by,
-              slashed: historyRecord.slashed,
-              slashed_by: historyRecord.slashed_by,
-              repaid: historyRecord.repaid,
-              repaid_by: historyRecord.repaid_by,
-              extended: historyRecord.extended,
-              extended_by: historyRecord.extended_by,
-              effective_from: historyRecord.effective_from,
-              effective_until: historyRecord.effective_until,
-              validation_fees: historyRecord.validation_fees != null ? Number(historyRecord.validation_fees) : 0,
-              issuance_fees: historyRecord.issuance_fees != null ? Number(historyRecord.issuance_fees) : 0,
-              verification_fees: historyRecord.verification_fees != null ? Number(historyRecord.verification_fees) : 0,
-              deposit: historyRecord.deposit != null ? Number(historyRecord.deposit) : 0,
-              slashed_deposit: historyRecord.slashed_deposit != null ? Number(historyRecord.slashed_deposit) : 0,
-              repaid_deposit: historyRecord.repaid_deposit != null ? Number(historyRecord.repaid_deposit) : 0,
-              vp_last_state_change: historyRecord.vp_last_state_change,
-              vp_current_fees: historyRecord.vp_current_fees != null ? Number(historyRecord.vp_current_fees) : 0,
-              vp_current_deposit: historyRecord.vp_current_deposit != null ? Number(historyRecord.vp_current_deposit) : 0,
-              vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
-              vp_exp: historyRecord.vp_exp,
-              vp_validator_deposit: historyRecord.vp_validator_deposit != null ? Number(historyRecord.vp_validator_deposit) : 0,
-              vp_term_requested: historyRecord.vp_term_requested,
-              created: historyRecord.created,
-              modified: historyRecord.modified,
-            };
-            
-            if (hasIssuedColumn && historyRecord.issued !== undefined) {
-              permission.issued = Number(historyRecord.issued || 0);
-            }
-            if (hasVerifiedColumn && historyRecord.verified !== undefined) {
-              permission.verified = Number(historyRecord.verified || 0);
-            }
-            if (hasParticipantsColumn && historyRecord.participants !== undefined) {
-              permission.participants = Number(historyRecord.participants || 0);
-            }
-            if (hasWeightColumn && historyRecord.weight !== undefined) {
-              permission.weight = Number(historyRecord.weight || 0);
-            }
-            if (hasEcosystemSlashEventsColumn) {
-              permission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events || 0);
-              permission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount || 0);
-              permission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid || 0);
-              permission.network_slash_events = Number(historyRecord.network_slash_events || 0);
-              permission.network_slashed_amount = Number(historyRecord.network_slashed_amount || 0);
-              permission.network_slashed_amount_repaid = Number(historyRecord.network_slashed_amount_repaid || 0);
-            }
-            
-            return permission;
-          })
-        );
-
-        const validPermissions = permissions.filter((perm): perm is NonNullable<typeof permissions[0]> => perm !== null);
-        this.logger.info(`[listPermissions] After filtering nulls: ${validPermissions.length} permissions`);
-
-        let filteredPermissions = await this.batchEnrichPermissions(
-          validPermissions,
-          blockHeight,
-          new Date(now),
-          10
-        );
-
-        this.logger.info(`[listPermissions] After enrichment: ${filteredPermissions.length} permissions`);
-
-        if (p.schema_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.schema_id === Number(p.schema_id));
-        if (granteeFilter) filteredPermissions = filteredPermissions.filter(perm => perm.grantee === granteeFilter);
-        if (p.did) filteredPermissions = filteredPermissions.filter(perm => perm.did === p.did);
-        if (p.perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id === Number(p.perm_id));
-        if (p.validator_perm_id !== undefined) filteredPermissions = filteredPermissions.filter(perm => perm.validator_perm_id ? perm.validator_perm_id === Number(p.validator_perm_id) : false);
-        if (p.type) filteredPermissions = filteredPermissions.filter(perm => perm.type === p.type);
-        if (p.country) filteredPermissions = filteredPermissions.filter(perm => perm.country === p.country);
-        if (p.vp_state) filteredPermissions = filteredPermissions.filter(perm => perm.vp_state === p.vp_state);
-        if (p.perm_state) {
-          const requestedState = String(p.perm_state).toUpperCase();
-          filteredPermissions = filteredPermissions.filter(perm => perm.perm_state === requestedState);
-        }
-
-        if (p.modified_after) {
-          const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
-          if (!isValidISO8601UTC(p.modified_after)) {
+      if (normalizedParams.modified_after || normalizedParams.when) {
+        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+        if (normalizedParams.modified_after) {
+          if (!isValidISO8601UTC(normalizedParams.modified_after)) {
             return ApiResponder.error(
               ctx,
               "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
               400
             );
           }
-          const ts = new Date(p.modified_after);
-          if (!Number.isNaN(ts.getTime())) {
-            filteredPermissions = filteredPermissions.filter(perm => new Date(perm.modified) > ts);
-          }
+          const ts = new Date(normalizedParams.modified_after);
+          if (!Number.isNaN(ts.getTime())) modifiedAfterIso = ts.toISOString();
         }
-        if (p.when) {
-          const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
-          if (!isValidISO8601UTC(p.when)) {
+        if (normalizedParams.when) {
+          if (!isValidISO8601UTC(normalizedParams.when)) {
             return ApiResponder.error(
               ctx,
               "Invalid when format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
               400
             );
           }
-          const whenTs = new Date(p.when);
-          if (!Number.isNaN(whenTs.getTime())) {
-            filteredPermissions = filteredPermissions.filter(perm => new Date(perm.modified) <= whenTs);
+          const whenTs = new Date(normalizedParams.when);
+          if (!Number.isNaN(whenTs.getTime())) whenIso = whenTs.toISOString();
+        }
+      }
+      const derivedSortRequested = this.usesDerivedMetricSort(normalizedParams.sort);
+      const lightweightDerivedStats = this.shouldUseStrictTrustResolutionLightweightMode(normalizedParams, limit)
+        || this.isTrustResolutionListQuery(normalizedParams, useHistoryQuery ? blockHeight : undefined);
+
+      if (useHistoryQuery && blockHeight !== undefined) {
+        let historyRequiresMetricPostFilter = false;
+        let historyPermStatePushedDown = false;
+
+        const {
+          hasIssuedColumn,
+          hasVerifiedColumn,
+          hasParticipantsColumn,
+          hasWeightColumn,
+          hasEcosystemSlashEventsColumn,
+        } = await this.getMetricColumnAvailability("permission_history");
+        const historyHasAllDerivedColumns = hasIssuedColumn
+          && hasVerifiedColumn
+          && hasParticipantsColumn
+          && hasWeightColumn
+          && hasEcosystemSlashEventsColumn;
+        const historyColumns: any[] = [
+          "ph.permission_id as id",
+          "ph.schema_id",
+          "ph.grantee",
+          "ph.did",
+          "ph.created_by",
+          "ph.validator_perm_id",
+          "ph.type",
+          "ph.country",
+          "ph.vp_state",
+          "ph.revoked",
+          "ph.revoked_by",
+          "ph.slashed",
+          "ph.slashed_by",
+          "ph.repaid",
+          "ph.repaid_by",
+          "ph.extended",
+          "ph.extended_by",
+          "ph.effective_from",
+          "ph.effective_until",
+          "ph.validation_fees",
+          "ph.issuance_fees",
+          "ph.verification_fees",
+          "ph.deposit",
+          "ph.slashed_deposit",
+          "ph.repaid_deposit",
+          "ph.vp_last_state_change",
+          "ph.vp_current_fees",
+          "ph.vp_current_deposit",
+          "ph.vp_summary_digest_sri",
+          "ph.vp_exp",
+          "ph.vp_validator_deposit",
+          "ph.vp_term_requested",
+          "ph.created",
+          "ph.modified",
+          knex.raw(
+            `ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn`
+          ),
+        ];
+        if (hasIssuedColumn) historyColumns.push(knex.raw("COALESCE(ph.issued, 0) as issued"));
+        if (hasVerifiedColumn) historyColumns.push(knex.raw("COALESCE(ph.verified, 0) as verified"));
+        if (hasParticipantsColumn) historyColumns.push(knex.raw("COALESCE(ph.participants, 0) as participants"));
+        if (hasWeightColumn) historyColumns.push(knex.raw("COALESCE(ph.weight, 0) as weight"));
+        if (hasEcosystemSlashEventsColumn) {
+          historyColumns.push(
+            knex.raw("COALESCE(ph.ecosystem_slash_events, 0) as ecosystem_slash_events"),
+            knex.raw("COALESCE(ph.ecosystem_slashed_amount, 0) as ecosystem_slashed_amount"),
+            knex.raw("COALESCE(ph.ecosystem_slashed_amount_repaid, 0) as ecosystem_slashed_amount_repaid"),
+            knex.raw("COALESCE(ph.network_slash_events, 0) as network_slash_events"),
+            knex.raw("COALESCE(ph.network_slashed_amount, 0) as network_slashed_amount"),
+            knex.raw("COALESCE(ph.network_slashed_amount_repaid, 0) as network_slashed_amount_repaid")
+          );
+        }
+
+        const rankedHistory = knex("permission_history as ph")
+          .select(historyColumns)
+          .where("ph.height", "<=", blockHeight)
+          .modify((qb) => {
+            this.applyBaseListFiltersToQuery(
+              qb,
+              normalizedParams,
+              granteeFilter,
+              modifiedAfterIso,
+              whenIso,
+              onlyValid,
+              onlySlashed,
+              onlyRepaid,
+              now,
+              "ph",
+              "permission_id"
+            );
+            const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
+              participants: hasParticipantsColumn,
+              weight: hasWeightColumn,
+              issued: hasIssuedColumn,
+              verified: hasVerifiedColumn,
+              slashStats: hasEcosystemSlashEventsColumn,
+              tablePrefix: "ph",
+            });
+            historyRequiresMetricPostFilter = metricPushdown.requiresPostFilter;
+            const permStatePushdown = this.applyPermStateFilterToQuery(
+              qb,
+              normalizedParams.perm_state,
+              now,
+              "ph"
+            );
+            historyPermStatePushedDown = permStatePushdown.pushedDown;
+          })
+          .as("ranked");
+
+        const needsPostEnrichFiltering = (!historyPermStatePushedDown && !!normalizedParams.perm_state)
+          || historyRequiresMetricPostFilter
+          || derivedSortRequested;
+        const historyFetchLimit = needsPostEnrichFiltering
+          ? Math.min(Math.max(limit * 10, 500), 5000)
+          : limit;
+
+        perfMarks.dbQueryStart = Date.now();
+        const historySortParamForDb =
+          derivedSortRequested && historyRequiresMetricPostFilter ? undefined : normalizedParams.sort;
+        const historyQuery = knex
+          .from(rankedHistory)
+          .select("*")
+          .where("rn", 1);
+        const orderedHistoryQuery = applyOrdering(historyQuery, historySortParamForDb);
+        const historyRows = await orderedHistoryQuery.limit(historyFetchLimit);
+        perfMarks.dbQueryEnd = Date.now();
+
+        if (historyRows.length === 0) {
+          return ApiResponder.success(ctx, { permissions: [] }, 200);
+        }
+
+        const normalizedHistoryRows = historyRows.map((historyRecord: any) => {
+          const permission: any = {
+            id: Number(historyRecord.id),
+            schema_id: Number(historyRecord.schema_id),
+            grantee: historyRecord.grantee,
+            did: historyRecord.did,
+            created_by: historyRecord.created_by,
+            validator_perm_id: historyRecord.validator_perm_id ? Number(historyRecord.validator_perm_id) : null,
+            type: historyRecord.type,
+            country: historyRecord.country,
+            vp_state: historyRecord.vp_state,
+            revoked: historyRecord.revoked,
+            revoked_by: historyRecord.revoked_by,
+            slashed: historyRecord.slashed,
+            slashed_by: historyRecord.slashed_by,
+            repaid: historyRecord.repaid,
+            repaid_by: historyRecord.repaid_by,
+            extended: historyRecord.extended,
+            extended_by: historyRecord.extended_by,
+            effective_from: historyRecord.effective_from,
+            effective_until: historyRecord.effective_until,
+            validation_fees: historyRecord.validation_fees != null ? Number(historyRecord.validation_fees) : 0,
+            issuance_fees: historyRecord.issuance_fees != null ? Number(historyRecord.issuance_fees) : 0,
+            verification_fees: historyRecord.verification_fees != null ? Number(historyRecord.verification_fees) : 0,
+            deposit: historyRecord.deposit != null ? Number(historyRecord.deposit) : 0,
+            slashed_deposit: historyRecord.slashed_deposit != null ? Number(historyRecord.slashed_deposit) : 0,
+            repaid_deposit: historyRecord.repaid_deposit != null ? Number(historyRecord.repaid_deposit) : 0,
+            vp_last_state_change: historyRecord.vp_last_state_change,
+            vp_current_fees: historyRecord.vp_current_fees != null ? Number(historyRecord.vp_current_fees) : 0,
+            vp_current_deposit: historyRecord.vp_current_deposit != null ? Number(historyRecord.vp_current_deposit) : 0,
+            vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
+            vp_exp: historyRecord.vp_exp,
+            vp_validator_deposit: historyRecord.vp_validator_deposit != null ? Number(historyRecord.vp_validator_deposit) : 0,
+            vp_term_requested: historyRecord.vp_term_requested,
+            created: historyRecord.created,
+            modified: historyRecord.modified,
+          };
+          if (hasIssuedColumn && historyRecord.issued !== undefined) {
+            permission.issued = Number(historyRecord.issued || 0);
           }
-        }
-
-        // Only apply filters when explicitly set to true
-        if (onlyValid) {
-          filteredPermissions = filteredPermissions.filter(perm => {
-            const isNotRevoked = !perm.revoked;
-            const isNotSlashedOrRepaid = !perm.slashed || perm.repaid;
-            const isEffective = (!perm.effective_until || new Date(perm.effective_until) > new Date(now)) &&
-              (!perm.effective_from || new Date(perm.effective_from) <= new Date(now));
-            return isNotRevoked && isNotSlashedOrRepaid && isEffective;
-          });
-        }
-
-        if (p.only_slashed !== undefined) {
-          if (onlySlashed) {
-            filteredPermissions = filteredPermissions.filter(perm => perm.slashed !== null);
-          } else {
-            filteredPermissions = filteredPermissions.filter(perm => perm.slashed === null);
+          if (hasVerifiedColumn && historyRecord.verified !== undefined) {
+            permission.verified = Number(historyRecord.verified || 0);
           }
-        }
-
-        if (p.only_repaid !== undefined) {
-          if (onlyRepaid) {
-            filteredPermissions = filteredPermissions.filter(perm => perm.repaid !== null);
-          } else {
-            filteredPermissions = filteredPermissions.filter(perm => perm.repaid === null);
+          if (hasParticipantsColumn && historyRecord.participants !== undefined) {
+            permission.participants = Number(historyRecord.participants || 0);
           }
-        }
+          if (hasWeightColumn && historyRecord.weight !== undefined) {
+            permission.weight = Number(historyRecord.weight || 0);
+          }
+          if (hasEcosystemSlashEventsColumn) {
+            permission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events || 0);
+            permission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount || 0);
+            permission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid || 0);
+            permission.network_slash_events = Number(historyRecord.network_slash_events || 0);
+            permission.network_slashed_amount = Number(historyRecord.network_slashed_amount || 0);
+            permission.network_slashed_amount_repaid = Number(historyRecord.network_slashed_amount_repaid || 0);
+          }
+          return permission;
+        });
 
-        if (p.perm_state) {
-          const requestedState = String(p.perm_state).toUpperCase();
+        perfMarks.enrichStart = Date.now();
+        const historyLightweightDerivedStats = lightweightDerivedStats || historyHasAllDerivedColumns;
+        let filteredPermissions = await this.batchEnrichPermissions(
+          normalizedHistoryRows,
+          blockHeight,
+          new Date(now),
+          300,
+          { lightweightDerivedStats: historyLightweightDerivedStats }
+        );
+        perfMarks.enrichEnd = Date.now();
+
+        if (!historyPermStatePushedDown && normalizedParams.perm_state) {
+          const requestedState = String(normalizedParams.perm_state).toUpperCase();
           filteredPermissions = filteredPermissions.filter(perm => perm.perm_state === requestedState);
         }
-
-        if (p.min_participants !== undefined && p.max_participants !== undefined && p.min_participants === p.max_participants) {
-          filteredPermissions = [];
-        } else {
-          if (p.min_participants !== undefined) {
-            filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) >= p.min_participants);
-          }
-          if (p.max_participants !== undefined) {
-            filteredPermissions = filteredPermissions.filter(perm => (perm.participants || 0) < p.max_participants);
-          }
-        }
-        if (p.min_weight !== undefined && p.max_weight !== undefined && p.min_weight === p.max_weight) {
-          filteredPermissions = [];
-        } else {
-          if (p.min_weight !== undefined) {
-            const minWeight = Number(p.min_weight);
-            filteredPermissions = filteredPermissions.filter(perm => {
-              const permWeight = typeof perm.weight === 'number' ? perm.weight : Number(perm.weight || 0);
-              return permWeight >= minWeight;
-            });
-          }
-          if (p.max_weight !== undefined) {
-            const maxWeight = Number(p.max_weight);
-            filteredPermissions = filteredPermissions.filter(perm => {
-              const permWeight = typeof perm.weight === 'number' ? perm.weight : Number(perm.weight || 0);
-              return permWeight < maxWeight;
-            });
-          }
-        }
-        if (p.min_issued !== undefined && p.max_issued !== undefined && p.min_issued === p.max_issued) {
-          filteredPermissions = [];
-        } else {
-          if (p.min_issued !== undefined) {
-            const minIssued = Number(p.min_issued);
-            filteredPermissions = filteredPermissions.filter(perm => (perm.issued || 0) >= minIssued);
-          }
-          if (p.max_issued !== undefined) {
-            const maxIssued = Number(p.max_issued);
-            filteredPermissions = filteredPermissions.filter(perm => (perm.issued || 0) < maxIssued);
-          }
-        }
-        if (p.min_verified !== undefined && p.max_verified !== undefined && p.min_verified === p.max_verified) {
-          filteredPermissions = [];
-        } else {
-          if (p.min_verified !== undefined) {
-            const minVerified = Number(p.min_verified);
-            filteredPermissions = filteredPermissions.filter(perm => (perm.verified || 0) >= minVerified);
-          }
-          if (p.max_verified !== undefined) {
-            const maxVerified = Number(p.max_verified);
-            filteredPermissions = filteredPermissions.filter(perm => (perm.verified || 0) < maxVerified);
-          }
-        }
-        if (p.min_ecosystem_slash_events !== undefined && p.max_ecosystem_slash_events !== undefined && p.min_ecosystem_slash_events === p.max_ecosystem_slash_events) {
-          filteredPermissions = [];
-        } else {
-          if (p.min_ecosystem_slash_events !== undefined) {
-            filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
-          }
-          if (p.max_ecosystem_slash_events !== undefined) {
-            filteredPermissions = filteredPermissions.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
-          }
-        }
-        if (p.min_network_slash_events !== undefined && p.max_network_slash_events !== undefined && p.min_network_slash_events === p.max_network_slash_events) {
-          filteredPermissions = [];
-        } else {
-          if (p.min_network_slash_events !== undefined) {
-            filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
-          }
-          if (p.max_network_slash_events !== undefined) {
-            filteredPermissions = filteredPermissions.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
-          }
+        if (historyRequiresMetricPostFilter) {
+          filteredPermissions = this.applyMetricFiltersInMemory(filteredPermissions, normalizedParams);
         }
 
-        filteredPermissions = sortByStandardAttributes(filteredPermissions, p.sort, {
-          getId: (item) => Number(item.id),
-          getCreated: (item) => item.created,
-          getModified: (item) => item.modified,
-          getParticipants: (item) => item.participants,
-          getWeight: (item) => item.weight,
-          getIssued: (item) => item.issued,
-          getVerified: (item) => item.verified,
-          getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-          getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-          getNetworkSlashEvents: (item) => item.network_slash_events,
-          getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-          defaultAttribute: "modified",
-          defaultDirection: "desc",
-        }).slice(0, limit);
+        if (derivedSortRequested) {
+          filteredPermissions = sortByStandardAttributes(filteredPermissions, normalizedParams.sort, {
+            getId: (item) => Number(item.id),
+            getCreated: (item) => item.created,
+            getModified: (item) => item.modified,
+            getParticipants: (item) => item.participants,
+            getWeight: (item) => item.weight,
+            getIssued: (item) => item.issued,
+            getVerified: (item) => item.verified,
+            getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
+            getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
+            getNetworkSlashEvents: (item) => item.network_slash_events,
+            getNetworkSlashedAmount: (item) => item.network_slashed_amount,
+            defaultAttribute: "modified",
+            defaultDirection: "desc",
+          });
+        }
+        filteredPermissions = filteredPermissions.slice(0, limit);
 
         return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
       }
@@ -1445,7 +1835,12 @@ export default class PermAPIService extends BullableService {
         hasParticipantsColumn,
         hasWeightColumn,
         hasEcosystemSlashEventsColumn,
-      } = await this.getOptionalPermissionColumns("permissions");
+      } = await this.getMetricColumnAvailability("permissions");
+      const liveHasAllDerivedColumns = hasIssuedColumn
+        && hasVerifiedColumn
+        && hasParticipantsColumn
+        && hasWeightColumn
+        && hasEcosystemSlashEventsColumn;
 
       const selectColumns: any[] = [...baseColumns];
 
@@ -1473,77 +1868,43 @@ export default class PermAPIService extends BullableService {
       }
 
       const query = knex("permissions").select(selectColumns);
+      this.applyBaseListFiltersToQuery(
+        query,
+        normalizedParams,
+        granteeFilter,
+        modifiedAfterIso,
+        whenIso,
+        onlyValid,
+        onlySlashed,
+        onlyRepaid,
+        now,
+        undefined,
+        "id"
+      );
+      const liveMetricPushdown = this.applyMetricFiltersToSql(query, normalizedParams, {
+        participants: hasParticipantsColumn,
+        weight: hasWeightColumn,
+        issued: hasIssuedColumn,
+        verified: hasVerifiedColumn,
+        slashStats: hasEcosystemSlashEventsColumn,
+      });
+      const livePermStatePushdown = this.applyPermStateFilterToQuery(
+        query,
+        normalizedParams.perm_state,
+        now
+      );
 
-      if (p.schema_id !== undefined) query.where("schema_id", p.schema_id);
-      if (granteeFilter) query.where("grantee", granteeFilter);
-      if (p.did) query.where("did", p.did);
-      if (p.perm_id !== undefined) query.where("validator_perm_id", p.perm_id);
-      if (p.validator_perm_id !== undefined) {
-        if (p.validator_perm_id === null || p.validator_perm_id === "null") {
-          query.whereNull("validator_perm_id");
-        } else {
-          query.where("validator_perm_id", p.validator_perm_id);
-        }
-      }
-      if (p.type) query.where("type", p.type);
-      if (p.country) query.where("country", p.country);
-      if (p.vp_state) query.where("vp_state", p.vp_state);
-
-      if (p.modified_after) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
-        if (!isValidISO8601UTC(p.modified_after)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          );
-        }
-        const ts = new Date(p.modified_after);
-        if (!Number.isNaN(ts.getTime()))
-          query.where("modified", ">", ts.toISOString());
-      }
-      if (p.when) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
-        if (!isValidISO8601UTC(p.when)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid when format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          );
-        }
-        const whenTs = new Date(p.when);
-        if (!Number.isNaN(whenTs.getTime()))
-          query.where("modified", "<=", whenTs.toISOString());
-      }
-
-      if (onlyValid) {
-        query.where((qb) => {
-          qb.whereNull("revoked")
-            .andWhere((q) => q.whereNull("slashed").orWhereNotNull("repaid"))
-            .andWhere((q) =>
-              q
-                .whereNull("effective_until")
-                .orWhere("effective_until", ">", now)
-            )
-            .andWhere((q) =>
-              q.whereNull("effective_from").orWhere("effective_from", "<=", now)
-            );
-        });
-      }
-
-      if (p.only_slashed !== undefined) {
-        if (onlySlashed) query.whereNotNull("slashed");
-        else query.whereNull("slashed");
-      }
-
-      if (p.only_repaid !== undefined) {
-        if (onlyRepaid) query.whereNotNull("repaid");
-        else query.whereNull("repaid");
-      }
-
-      const orderedQuery = applyOrdering(query, p.sort);
+      const liveNeedsPostEnrich = (!livePermStatePushdown.pushedDown && !!normalizedParams.perm_state)
+        || liveMetricPushdown.requiresPostFilter
+        || derivedSortRequested;
+      const liveFetchLimit = liveNeedsPostEnrich
+        ? Math.min(Math.max(limit * 10, 500), 5000)
+        : limit;
+      const liveSortParamForDb =
+        derivedSortRequested && liveMetricPushdown.requiresPostFilter ? undefined : normalizedParams.sort;
+      const orderedQuery = applyOrdering(query, liveSortParamForDb);
       perfMarks.dbQueryStart = Date.now();
-      const results = await orderedQuery.limit(limit);
+      const results = await orderedQuery.limit(liveFetchLimit);
       perfMarks.dbQueryEnd = Date.now();
       const normalizedResults = results.map(perm => {
         const normalized: any = {
@@ -1587,114 +1948,53 @@ export default class PermAPIService extends BullableService {
       });
 
       perfMarks.enrichStart = Date.now();
+      const liveLightweightDerivedStats = lightweightDerivedStats || liveHasAllDerivedColumns;
       const enrichedResults = await this.batchEnrichPermissions(
         normalizedResults,
         blockHeight,
         new Date(now),
-        10
+        300,
+        { lightweightDerivedStats: liveLightweightDerivedStats }
       );
       perfMarks.enrichEnd = Date.now();
 
       let finalResults = enrichedResults;
-      if (p.perm_state) {
-        const requestedState = String(p.perm_state).toUpperCase();
+      if (!livePermStatePushdown.pushedDown && normalizedParams.perm_state) {
+        const requestedState = String(normalizedParams.perm_state).toUpperCase();
         finalResults = enrichedResults.filter(perm => perm.perm_state === requestedState);
       }
-
-      if (p.min_participants !== undefined && p.max_participants !== undefined && p.min_participants === p.max_participants) {
-        finalResults = [];
-      } else {
-        if (p.min_participants !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.participants || 0) >= p.min_participants);
-        }
-        if (p.max_participants !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.participants || 0) < p.max_participants);
-        }
-      }
-      if (p.min_weight !== undefined && p.max_weight !== undefined && p.min_weight === p.max_weight) {
-        finalResults = [];
-      } else {
-        if (p.min_weight !== undefined) {
-          const minWeight = Number(p.min_weight);
-          finalResults = finalResults.filter(perm => {
-            const permWeight = typeof perm.weight === 'number' ? perm.weight : Number(perm.weight || 0);
-            return permWeight >= minWeight;
-          });
-        }
-        if (p.max_weight !== undefined) {
-          const maxWeight = Number(p.max_weight);
-          finalResults = finalResults.filter(perm => {
-            const permWeight = typeof perm.weight === 'number' ? perm.weight : Number(perm.weight || 0);
-            return permWeight < maxWeight;
-          });
-        }
-      }
-      if (p.min_issued !== undefined && p.max_issued !== undefined && p.min_issued === p.max_issued) {
-        finalResults = [];
-      } else {
-        if (p.min_issued !== undefined) {
-          const minIssued = Number(p.min_issued);
-          finalResults = finalResults.filter(perm => (perm.issued || 0) >= minIssued);
-        }
-        if (p.max_issued !== undefined) {
-          const maxIssued = Number(p.max_issued);
-          finalResults = finalResults.filter(perm => (perm.issued || 0) < maxIssued);
-        }
-      }
-      if (p.min_verified !== undefined && p.max_verified !== undefined && p.min_verified === p.max_verified) {
-        finalResults = [];
-      } else {
-        if (p.min_verified !== undefined) {
-          const minVerified = Number(p.min_verified);
-          finalResults = finalResults.filter(perm => (perm.verified || 0) >= minVerified);
-        }
-        if (p.max_verified !== undefined) {
-          const maxVerified = Number(p.max_verified);
-          finalResults = finalResults.filter(perm => (perm.verified || 0) < maxVerified);
-        }
-      }
-      if (p.min_ecosystem_slash_events !== undefined && p.max_ecosystem_slash_events !== undefined && p.min_ecosystem_slash_events === p.max_ecosystem_slash_events) {
-        finalResults = [];
-      } else {
-        if (p.min_ecosystem_slash_events !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) >= p.min_ecosystem_slash_events);
-        }
-        if (p.max_ecosystem_slash_events !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.ecosystem_slash_events || 0) < p.max_ecosystem_slash_events);
-        }
-      }
-      if (p.min_network_slash_events !== undefined && p.max_network_slash_events !== undefined && p.min_network_slash_events === p.max_network_slash_events) {
-        finalResults = [];
-      } else {
-        if (p.min_network_slash_events !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) >= p.min_network_slash_events);
-        }
-        if (p.max_network_slash_events !== undefined) {
-          finalResults = finalResults.filter(perm => (perm.network_slash_events || 0) < p.max_network_slash_events);
-        }
+      if (liveMetricPushdown.requiresPostFilter) {
+        finalResults = this.applyMetricFiltersInMemory(finalResults, normalizedParams);
       }
 
-      finalResults = sortByStandardAttributes(finalResults, p.sort, {
-        getId: (item) => Number(item.id),
-        getCreated: (item) => item.created,
-        getModified: (item) => item.modified,
-        getParticipants: (item) => item.participants,
-        getWeight: (item) => item.weight,
-        getIssued: (item) => item.issued,
-        getVerified: (item) => item.verified,
-        getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-        getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-        getNetworkSlashEvents: (item) => item.network_slash_events,
-        getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-        defaultAttribute: "modified",
-        defaultDirection: "asc",
-      }).slice(0, limit);
+      if (derivedSortRequested) {
+        finalResults = sortByStandardAttributes(finalResults, normalizedParams.sort, {
+          getId: (item) => Number(item.id),
+          getCreated: (item) => item.created,
+          getModified: (item) => item.modified,
+          getParticipants: (item) => item.participants,
+          getWeight: (item) => item.weight,
+          getIssued: (item) => item.issued,
+          getVerified: (item) => item.verified,
+          getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
+          getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
+          getNetworkSlashEvents: (item) => item.network_slash_events,
+          getNetworkSlashedAmount: (item) => item.network_slashed_amount,
+          defaultAttribute: "modified",
+          defaultDirection: "asc",
+        });
+      }
+      finalResults = finalResults.slice(0, limit);
       const responsePayload = { permissions: finalResults };
-      if (validationCacheKey) {
-        this.writeValidationListCache(validationCacheKey, responsePayload);
-      }
       return ApiResponder.success(ctx, responsePayload, 200);
     } catch (err: any) {
+      const errMessage = err?.message || String(err);
+      if (typeof errMessage === "string" && (
+        errMessage.includes("invalid input value for enum permission_type")
+        || errMessage.includes("invalid input value for enum validation_state")
+      )) {
+        return ApiResponder.error(ctx, `Invalid enum filter value: ${errMessage}`, 400);
+      }
       this.logger.error("Error in listPermissions:", err);
       this.logger.error("Error details:", {
         message: err?.message,
@@ -1711,7 +2011,7 @@ export default class PermAPIService extends BullableService {
         ? perfMarks.enrichEnd - perfMarks.enrichStart
         : undefined;
 
-      const msg = `[listPermissions] duration=${totalMs}ms${dbMs !== undefined ? ` db=${dbMs}ms` : ""}${enrichMs !== undefined ? ` enrich=${enrichMs}ms` : ""} limit=${perfMeta.limit ?? "?"} schema_id=${perfMeta.schema_id ?? "-"} type=${perfMeta.type ?? "-"} did=${perfMeta.did ? "yes" : "no"} at_height=${perfMeta.blockHeight ?? "live"} cache=${perfMeta.cacheEligible ? (perfMeta.cacheHit ? "hit" : "miss") : "off"}`;
+      const msg = `[listPermissions] duration=${totalMs}ms${dbMs !== undefined ? ` db=${dbMs}ms` : ""}${enrichMs !== undefined ? ` enrich=${enrichMs}ms` : ""} limit=${perfMeta.limit ?? "?"} schema_id=${perfMeta.schema_id ?? "-"} type=${perfMeta.type ?? "-"} did=${perfMeta.did ? "yes" : "no"} at_height=${perfMeta.blockHeight ?? "live"}`;
 
       if (totalMs >= PermAPIService.LIST_PERMISSIONS_SLOW_MS) {
         this.logger.warn(msg);
@@ -1724,7 +2024,7 @@ export default class PermAPIService extends BullableService {
   @Action({
     rest: "GET get/:id",
     params: {
-      id: { type: "string", pattern: /^[0-9]+$/ },
+      id: { type: "number", integer: true },
     },
   })
   async getPermission(ctx: Context<{ id: number }>) {
@@ -1734,34 +2034,26 @@ export default class PermAPIService extends BullableService {
 
       // If AtBlockHeight is provided, query historical state
       if (hasBlockHeight(ctx) && blockHeight !== undefined) {
-        const hasIssuedColumn = await knex.schema.hasColumn("permission_history", "issued");
-        const hasVerifiedColumn = await knex.schema.hasColumn("permission_history", "verified");
-        const hasParticipantsColumn = await knex.schema.hasColumn("permission_history", "participants");
-        const hasWeightColumn = await knex.schema.hasColumn("permission_history", "weight");
-        const hasEcosystemSlashEventsColumn = await knex.schema.hasColumn("permission_history", "ecosystem_slash_events");
-        
+        const {
+          hasIssuedColumn,
+          hasVerifiedColumn,
+          hasParticipantsColumn,
+          hasWeightColumn,
+          hasEcosystemSlashEventsColumn,
+        } = await this.getMetricColumnAvailability("permission_history");
+
         const selectColumns: any[] = [
           "permission_id", "schema_id", "grantee", "did", "created_by", "validator_perm_id",
           "type", "country", "vp_state", "revoked", "revoked_by", "slashed", "slashed_by",
           "repaid", "repaid_by", "extended", "extended_by", "effective_from", "effective_until",
           "validation_fees", "issuance_fees", "verification_fees", "deposit", "slashed_deposit",
-          "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit",
-          "vp_summary_digest_sri", "vp_exp", "vp_validator_deposit", "vp_term_requested",
-          "created", "modified"
+          "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit", "vp_summary_digest_sri",
+          "vp_exp", "vp_validator_deposit", "vp_term_requested", "created", "modified",
         ];
-        
-        if (hasIssuedColumn) {
-          selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
-        }
-        if (hasVerifiedColumn) {
-          selectColumns.push(knex.raw("COALESCE(verified, 0) as verified"));
-        }
-        if (hasParticipantsColumn) {
-          selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
-        }
-        if (hasWeightColumn) {
-          selectColumns.push(knex.raw("COALESCE(weight, 0) as weight"));
-        }
+        if (hasIssuedColumn) selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
+        if (hasVerifiedColumn) selectColumns.push(knex.raw("COALESCE(verified, 0) as verified"));
+        if (hasParticipantsColumn) selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
+        if (hasWeightColumn) selectColumns.push(knex.raw("COALESCE(weight, 0) as weight"));
         if (hasEcosystemSlashEventsColumn) {
           selectColumns.push(
             knex.raw("COALESCE(ecosystem_slash_events, 0) as ecosystem_slash_events"),
@@ -1834,7 +2126,7 @@ export default class PermAPIService extends BullableService {
         if (hasWeightColumn && historyRecord.weight !== undefined) {
           historicalPermission.weight = Number(historyRecord.weight || 0);
         }
-        if (hasEcosystemSlashEventsColumn) {
+        if (hasEcosystemSlashEventsColumn && historyRecord.ecosystem_slash_events !== undefined) {
           historicalPermission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events || 0);
           historicalPermission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount || 0);
           historicalPermission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid || 0);
