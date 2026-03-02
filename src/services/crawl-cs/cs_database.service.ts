@@ -6,12 +6,13 @@ import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
-import { calculateCredentialSchemaStats } from "./cs_stats";
+import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
 import { extractTitleDescriptionFromJsonSchema } from "../../common/credential_schema_meta";
 
 let heightColumnExistsCache: boolean | null = null;
+let historyMetricColumnsExistCache: boolean | null = null;
 
 async function checkHeightColumnExists(): Promise<boolean> {
   if (heightColumnExistsCache !== null) {
@@ -23,6 +24,32 @@ async function checkHeightColumnExists(): Promise<boolean> {
     return result;
   } catch (error) {
     heightColumnExistsCache = false;
+    return false;
+  }
+}
+
+async function checkHistoryMetricColumnsExist(): Promise<boolean> {
+  if (historyMetricColumnsExistCache !== null) {
+    return historyMetricColumnsExistCache;
+  }
+  try {
+    const requiredColumns = [
+      "participants",
+      "weight",
+      "issued",
+      "verified",
+      "ecosystem_slash_events",
+      "ecosystem_slashed_amount",
+      "ecosystem_slashed_amount_repaid",
+      "network_slash_events",
+      "network_slashed_amount",
+      "network_slashed_amount_repaid",
+    ];
+    const checks = await Promise.all(requiredColumns.map((col) => knex.schema.hasColumn("credential_schema_history", col)));
+    historyMetricColumnsExistCache = checks.every(Boolean);
+    return historyMetricColumnsExistCache;
+  } catch {
+    historyMetricColumnsExistCache = false;
     return false;
   }
 }
@@ -55,6 +82,72 @@ function normalizeJsonSchema(js: unknown): object | null {
   }
   if (!obj) return null;
   return obj;
+}
+
+function toFiniteNumber(value: unknown): number {
+  const num = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function applyHalfOpenRangeToQuery(qb: any, column: string, minValue?: number, maxValue?: number) {
+  if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+    qb.whereRaw("1 = 0");
+    return;
+  }
+  if (minValue !== undefined) qb.where(column, ">=", minValue);
+  if (maxValue !== undefined) qb.where(column, "<", maxValue);
+}
+
+function applyHalfOpenRangeToRows<T>(
+  rows: T[],
+  minValue: number | string | undefined,
+  maxValue: number | string | undefined,
+  readValue: (row: T) => number
+): T[] {
+  if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+    return [];
+  }
+
+  let filtered = rows;
+  if (minValue !== undefined) {
+    const minNum = Number(minValue);
+    filtered = filtered.filter((row) => readValue(row) >= minNum);
+  }
+  if (maxValue !== undefined) {
+    const maxNum = Number(maxValue);
+    filtered = filtered.filter((row) => readValue(row) < maxNum);
+  }
+  return filtered;
+}
+
+function sortCredentialSchemaRows<T extends {
+  id: number;
+  created: string;
+  modified: string;
+  participants: number;
+  weight: number;
+  issued: number;
+  verified: number;
+  ecosystem_slash_events: number;
+  ecosystem_slashed_amount: number;
+  network_slash_events: number;
+  network_slashed_amount: number;
+}>(rows: T[], sort: string | undefined, limit: number): T[] {
+  return sortByStandardAttributes<T>(rows, sort, {
+    getId: (item) => item.id,
+    getCreated: (item) => item.created,
+    getModified: (item) => item.modified,
+    getParticipants: (item) => item.participants,
+    getWeight: (item) => item.weight,
+    getIssued: (item) => item.issued,
+    getVerified: (item) => item.verified,
+    getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
+    getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
+    getNetworkSlashEvents: (item) => item.network_slash_events,
+    getNetworkSlashedAmount: (item) => item.network_slashed_amount,
+    defaultAttribute: "modified",
+    defaultDirection: "desc",
+  }).slice(0, limit);
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -825,8 +918,32 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       const blockHeight = (ctx.meta as any)?.blockHeight;
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
+      let modifiedAfterIso: string | undefined;
+      if (modifiedAfter) {
+        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
+        if (!isValidISO8601UTC(modifiedAfter)) {
+          return ApiResponder.error(
+            ctx,
+            "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
+            400
+          );
+        }
+        const ts = new Date(modifiedAfter);
+        if (Number.isNaN(ts.getTime())) {
+          return ApiResponder.error(ctx, "Invalid modified_after format", 400);
+        }
+        modifiedAfterIso = ts.toISOString();
+      }
+      let onlyActiveBool: boolean | undefined;
+      if (typeof onlyActive === "string") {
+        onlyActiveBool = onlyActive.toLowerCase() === "true";
+      } else if (typeof onlyActive === "boolean") {
+        onlyActiveBool = onlyActive;
+      }
 
       if (typeof blockHeight === "number") {
+        const hasHeightColumn = await checkHeightColumnExists();
+        const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist();
         let schemaIdsAtHeight: number[];
         if (participantAccount) {
           schemaIdsAtHeight = await this.getCredentialSchemaIdsForParticipantAtHeight(participantAccount, blockHeight);
@@ -834,7 +951,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             return ApiResponder.success(ctx, { schemas: [] }, 200);
           }
         } else {
-          const hasHeightColumn = await checkHeightColumnExists();
           let subquery;
 
           if (hasHeightColumn) {
@@ -870,25 +986,62 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.success(ctx, { schemas: [] }, 200);
         }
 
-        const items = await Promise.all(
-          schemaIdsAtHeight.map(async (schemaId: number) => {
-            const hasHeightColumn = await checkHeightColumnExists();
-            let query = knex("credential_schema_history")
-              .where({ credential_schema_id: schemaId });
+        const applyMetricRangeFilters = (qb: any) => {
+          if (!hasHistoryMetricColumns) return;
+          applyHalfOpenRangeToQuery(qb, "participants", minParticipants, maxParticipants);
+          applyHalfOpenRangeToQuery(qb, "weight", minWeight, maxWeight);
+          applyHalfOpenRangeToQuery(qb, "issued", minIssued, maxIssued);
+          applyHalfOpenRangeToQuery(qb, "verified", minVerified, maxVerified);
+          applyHalfOpenRangeToQuery(qb, "ecosystem_slash_events", minEcosystemSlashEvents, maxEcosystemSlashEvents);
+          applyHalfOpenRangeToQuery(qb, "network_slash_events", minNetworkSlashEvents, maxNetworkSlashEvents);
+        };
 
-            if (hasHeightColumn) {
-              query = query.where("height", "<=", blockHeight)
-                .orderBy("height", "desc");
-            }
-            query = query.orderBy("created_at", "desc");
-
-            const historyRecord = await query.first();
-
-            if (!historyRecord) return null;
-
-            return historyRecord;
-          })
-        );
+        let items: any[] = [];
+        if (String((knex as any)?.client?.config?.client || "").includes("pg")) {
+          const latestSub = knex("credential_schema_history as csh")
+            .distinctOn("csh.credential_schema_id")
+            .select("csh.*")
+            .whereIn("csh.credential_schema_id", schemaIdsAtHeight)
+            .modify((qb) => {
+              if (hasHeightColumn) qb.where("csh.height", "<=", blockHeight);
+              if (trId) qb.where("csh.tr_id", trId);
+              if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
+              if (onlyActiveBool === true) qb.whereNull("csh.archived");
+              if (issuerPerm !== undefined) qb.where("csh.issuer_perm_management_mode", issuerPerm);
+              if (verifierPerm !== undefined) qb.where("csh.verifier_perm_management_mode", verifierPerm);
+              applyMetricRangeFilters(qb);
+            })
+            .orderBy("csh.credential_schema_id", "asc")
+            .modify((qb) => {
+              if (hasHeightColumn) qb.orderBy("csh.height", "desc");
+            })
+            .orderBy("csh.created_at", "desc")
+            .orderBy("csh.id", "desc")
+            .as("latest");
+          const orderedLatest = applyOrdering(knex.from(latestSub).select("*"), sort);
+          items = await orderedLatest.limit(limit);
+        } else {
+          const ranked = knex("credential_schema_history as csh")
+            .select(
+              "csh.*",
+              knex.raw(
+                `ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY ${hasHeightColumn ? "height DESC," : ""} created_at DESC, id DESC) as rn`
+              )
+            )
+            .whereIn("csh.credential_schema_id", schemaIdsAtHeight)
+            .modify((qb) => {
+              if (hasHeightColumn) qb.where("csh.height", "<=", blockHeight);
+              if (trId) qb.where("csh.tr_id", trId);
+              if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
+              if (onlyActiveBool === true) qb.whereNull("csh.archived");
+              if (issuerPerm !== undefined) qb.where("csh.issuer_perm_management_mode", issuerPerm);
+              if (verifierPerm !== undefined) qb.where("csh.verifier_perm_management_mode", verifierPerm);
+              applyMetricRangeFilters(qb);
+            })
+            .as("ranked");
+          const orderedLatest = applyOrdering(knex.from(ranked).select("*").where("rn", 1), sort);
+          items = await orderedLatest.limit(limit);
+        }
 
         let filteredItems = items
           .filter((item): item is NonNullable<typeof items[0]> => item !== null)
@@ -914,32 +1067,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             };
           });
 
-        if (trId) filteredItems = filteredItems.filter(item => String(item.tr_id) === String(trId));
-        if (modifiedAfter) {
-          const ts = new Date(modifiedAfter);
-          if (Number.isNaN(ts.getTime())) {
-            return ApiResponder.error(ctx, "Invalid modified_after timestamp", 400);
-          }
-          filteredItems = filteredItems.filter(item => new Date(item.modified) > ts);
-        }
-
-        let onlyActiveBool: boolean | undefined;
-        if (typeof onlyActive === "string") {
-          onlyActiveBool = onlyActive.toLowerCase() === "true";
-        } else if (typeof onlyActive === "boolean") {
-          onlyActiveBool = onlyActive;
-        }
-
-        if (onlyActiveBool === true) {
-          filteredItems = filteredItems.filter(item => !item.archived);
-        }
-
-        if (issuerPerm !== undefined) {
-          filteredItems = filteredItems.filter(item => item.issuer_perm_management_mode === issuerPerm);
-        }
-
-        if (verifierPerm !== undefined) {
-          filteredItems = filteredItems.filter(item => item.verifier_perm_management_mode === verifierPerm);
+        if (items.length >= limit) {
+          filteredItems = filteredItems.slice(0, limit);
         }
 
         type FilteredItem = {
@@ -960,9 +1089,52 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         };
         let schemasWithStats;
         if (typeof blockHeight === "number") {
-          schemasWithStats = await Promise.all(
-            filteredItems.map(async (item) => {
-              const stats = await calculateCredentialSchemaStats(item.id, blockHeight);
+          if (hasHistoryMetricColumns) {
+            const statsMap = new Map<number, any>();
+            for (const historyRecord of items) {
+              statsMap.set(Number(historyRecord.credential_schema_id), {
+                participants: Number(historyRecord.participants || 0),
+                weight: Number(historyRecord.weight || 0),
+                issued: Number(historyRecord.issued || 0),
+                verified: Number(historyRecord.verified || 0),
+                ecosystem_slash_events: Number(historyRecord.ecosystem_slash_events || 0),
+                ecosystem_slashed_amount: Number(historyRecord.ecosystem_slashed_amount || 0),
+                ecosystem_slashed_amount_repaid: Number(historyRecord.ecosystem_slashed_amount_repaid || 0),
+                network_slash_events: Number(historyRecord.network_slash_events || 0),
+                network_slashed_amount: Number(historyRecord.network_slashed_amount || 0),
+                network_slashed_amount_repaid: Number(historyRecord.network_slashed_amount_repaid || 0),
+              });
+            }
+            schemasWithStats = filteredItems.map((item) => ({
+              ...item,
+              ...(statsMap.get(Number(item.id)) || {
+                participants: 0,
+                weight: 0,
+                issued: 0,
+                verified: 0,
+                ecosystem_slash_events: 0,
+                ecosystem_slashed_amount: 0,
+                ecosystem_slashed_amount_repaid: 0,
+                network_slash_events: 0,
+                network_slashed_amount: 0,
+                network_slashed_amount_repaid: 0,
+              }),
+            }));
+          } else {
+            const statsMap = await calculateCredentialSchemaStatsBatch(filteredItems.map((item) => Number(item.id)), blockHeight);
+            schemasWithStats = filteredItems.map((item) => {
+              const stats = statsMap.get(Number(item.id)) || {
+                participants: 0,
+                weight: 0,
+                issued: 0,
+                verified: 0,
+                ecosystem_slash_events: 0,
+                ecosystem_slashed_amount: 0,
+                ecosystem_slashed_amount_repaid: 0,
+                network_slash_events: 0,
+                network_slashed_amount: 0,
+                network_slashed_amount_repaid: 0,
+              };
               return {
                 ...item,
                 participants: stats.participants,
@@ -976,8 +1148,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
                 network_slashed_amount: stats.network_slashed_amount,
                 network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
               };
-            })
-          );
+            });
+          }
         } else {
           const schemaIds = filteredItems.map((item) => item.id);
           const schemaStatsMap = new Map<number, any>();
@@ -1035,79 +1207,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         let filteredWithStats = schemasWithStats;
-
-        if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-          filteredWithStats = [];
-        } else {
-          if (minParticipants !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.participants >= minParticipants);
-          }
-          if (maxParticipants !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.participants < maxParticipants);
-          }
-        }
-        if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-          filteredWithStats = [];
-        } else {
-          if (minWeight !== undefined) {
-            const minWeightNum = Number(minWeight);
-            filteredWithStats = filteredWithStats.filter((s) => {
-              const sWeight = typeof s.weight === 'number' ? s.weight : Number(s.weight || 0);
-              return sWeight >= minWeightNum;
-            });
-          }
-          if (maxWeight !== undefined) {
-            const maxWeightNum = Number(maxWeight);
-            filteredWithStats = filteredWithStats.filter((s) => {
-              const sWeight = typeof s.weight === 'number' ? s.weight : Number(s.weight || 0);
-              return sWeight < maxWeightNum;
-            });
-          }
-        }
-        if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-          filteredWithStats = [];
-        } else {
-          if (minIssued !== undefined) {
-            const minIssuedNum = Number(minIssued);
-            filteredWithStats = filteredWithStats.filter((s) => s.issued >= minIssuedNum);
-          }
-          if (maxIssued !== undefined) {
-            const maxIssuedNum = Number(maxIssued);
-            filteredWithStats = filteredWithStats.filter((s) => s.issued < maxIssuedNum);
-          }
-        }
-        if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-          filteredWithStats = [];
-        } else {
-          if (minVerified !== undefined) {
-            const minVerifiedNum = Number(minVerified);
-            filteredWithStats = filteredWithStats.filter((s) => s.verified >= minVerifiedNum);
-          }
-          if (maxVerified !== undefined) {
-            const maxVerifiedNum = Number(maxVerified);
-            filteredWithStats = filteredWithStats.filter((s) => s.verified < maxVerifiedNum);
-          }
-        }
-        if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-          filteredWithStats = [];
-        } else {
-          if (minEcosystemSlashEvents !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.ecosystem_slash_events >= minEcosystemSlashEvents);
-          }
-          if (maxEcosystemSlashEvents !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.ecosystem_slash_events < maxEcosystemSlashEvents);
-          }
-        }
-        if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-          filteredWithStats = [];
-        } else {
-          if (minNetworkSlashEvents !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.network_slash_events >= minNetworkSlashEvents);
-          }
-          if (maxNetworkSlashEvents !== undefined) {
-            filteredWithStats = filteredWithStats.filter((s) => s.network_slash_events < maxNetworkSlashEvents);
-          }
-        }
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipants, maxParticipants, (s) => toFiniteNumber(s.participants));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minWeight, maxWeight, (s) => toFiniteNumber(s.weight));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minIssued, maxIssued, (s) => toFiniteNumber(s.issued));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minVerified, maxVerified, (s) => toFiniteNumber(s.verified));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minEcosystemSlashEvents, maxEcosystemSlashEvents, (s) => toFiniteNumber(s.ecosystem_slash_events));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minNetworkSlashEvents, maxNetworkSlashEvents, (s) => toFiniteNumber(s.network_slash_events));
 
         type FilteredItemWithStats = FilteredItem & {
           participants: number;
@@ -1123,21 +1228,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         };
 
         const typedFilteredItems = filteredWithStats as FilteredItemWithStats[];
-        const sortedItems = sortByStandardAttributes<FilteredItemWithStats>(typedFilteredItems, sort, {
-          getId: (item) => item.id,
-          getCreated: (item) => item.created,
-          getModified: (item) => item.modified,
-          getParticipants: (item) => item.participants,
-          getWeight: (item) => item.weight,
-          getIssued: (item) => item.issued,
-          getVerified: (item) => item.verified,
-          getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-          getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-          getNetworkSlashEvents: (item) => item.network_slash_events,
-          getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-          defaultAttribute: "modified",
-          defaultDirection: "desc",
-        }).slice(0, limit);
+        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, sort, limit);
 
         return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
       }
@@ -1151,30 +1242,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         query.whereIn("id", participantSchemaIds);
       }
       if (trId) query.where("tr_id", trId);
-      if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-        query.where("participants", minParticipants);
-      }
+      applyHalfOpenRangeToQuery(query, "participants", minParticipants, maxParticipants);
+      applyHalfOpenRangeToQuery(query, "weight", minWeight, maxWeight);
+      applyHalfOpenRangeToQuery(query, "issued", minIssued, maxIssued);
+      applyHalfOpenRangeToQuery(query, "verified", minVerified, maxVerified);
+      applyHalfOpenRangeToQuery(query, "ecosystem_slash_events", minEcosystemSlashEvents, maxEcosystemSlashEvents);
+      applyHalfOpenRangeToQuery(query, "network_slash_events", minNetworkSlashEvents, maxNetworkSlashEvents);
 
-      if (modifiedAfter) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
-        if (!isValidISO8601UTC(modifiedAfter)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          );
-        }
-        const ts = new Date(modifiedAfter);
-        if (Number.isNaN(ts.getTime())) {
-          return ApiResponder.error(ctx, "Invalid modified_after format", 400);
-        }
-        query.where("modified", ">", ts.toISOString());
-      }
-      let onlyActiveBool: boolean | undefined;
-      if (typeof onlyActive === "string") {
-        onlyActiveBool = onlyActive.toLowerCase() === "true";
-      } else if (typeof onlyActive === "boolean") {
-        onlyActiveBool = onlyActive;
+      if (modifiedAfterIso) {
+        query.where("modified", ">", modifiedAfterIso);
       }
 
       if (onlyActiveBool === true) {
@@ -1189,141 +1265,34 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         query.where("verifier_perm_management_mode", verifierPerm);
       }
       const orderedQuery = applyOrdering(query, sort);
-      const items = await orderedQuery.limit(limit * 2);
+      const items = await orderedQuery.limit(limit);
 
-      const schemasWithStats = await Promise.all(
-        items.map(async (item) => {
-          let stats;
-          try {
-            stats = await calculateCredentialSchemaStats(item.id);
-          } catch (statsError: any) {
-            this.logger.warn(` Failed to calculate statistics for CS ${item.id}: ${statsError?.message || String(statsError)}`);
-            stats = {
-              participants: 0,
-              weight: 0,
-              issued: 0,
-              verified: 0,
-              ecosystem_slash_events: 0,
-              ecosystem_slashed_amount: 0,
-              ecosystem_slashed_amount_repaid: 0,
-              network_slash_events: 0,
-              network_slashed_amount: 0,
-              network_slashed_amount_repaid: 0,
-            };
-          }
-          const storedSchemaString = getStoredSchemaString(item.json_schema);
-          return {
-            ...item,
-            json_schema: storedSchemaString,
-            title: item.title ?? undefined,
-            description: item.description ?? undefined,
-            participants: stats.participants,
-            weight: stats.weight,
-            issued: stats.issued,
-            verified: stats.verified,
-            ecosystem_slash_events: stats.ecosystem_slash_events,
-            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-            network_slash_events: stats.network_slash_events,
-            network_slashed_amount: stats.network_slashed_amount,
-            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-          };
-        })
-      );
+      const schemasWithStats = items.map((item) => {
+        const storedSchemaString = getStoredSchemaString(item.json_schema);
+        return {
+          ...item,
+          json_schema: storedSchemaString,
+          title: item.title ?? undefined,
+          description: item.description ?? undefined,
+          participants: typeof item.participants === "number" ? item.participants : Number(item.participants || 0),
+          weight: typeof item.weight === "number" ? item.weight : Number(item.weight || 0),
+          issued: typeof item.issued === "number" ? item.issued : Number(item.issued || 0),
+          verified: typeof item.verified === "number" ? item.verified : Number(item.verified || 0),
+          ecosystem_slash_events: typeof item.ecosystem_slash_events === "number" ? item.ecosystem_slash_events : Number(item.ecosystem_slash_events || 0),
+          ecosystem_slashed_amount: typeof item.ecosystem_slashed_amount === "number" ? item.ecosystem_slashed_amount : Number(item.ecosystem_slashed_amount || 0),
+          ecosystem_slashed_amount_repaid: typeof item.ecosystem_slashed_amount_repaid === "number" ? item.ecosystem_slashed_amount_repaid : Number(item.ecosystem_slashed_amount_repaid || 0),
+          network_slash_events: typeof item.network_slash_events === "number" ? item.network_slash_events : Number(item.network_slash_events || 0),
+          network_slashed_amount: typeof item.network_slashed_amount === "number" ? item.network_slashed_amount : Number(item.network_slashed_amount || 0),
+          network_slashed_amount_repaid: typeof item.network_slashed_amount_repaid === "number" ? item.network_slashed_amount_repaid : Number(item.network_slashed_amount_repaid || 0),
+        };
+      });
 
       const cleanItems = schemasWithStats.map(({ is_active, ...rest }) => rest);
 
-      let filteredItems = cleanItems;
-
-      if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-        filteredItems = [];
-      } else {
-        if (minParticipants !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.participants >= minParticipants);
-        }
-        if (maxParticipants !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.participants < maxParticipants);
-        }
-      }
-      if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-        filteredItems = [];
-      } else {
-        if (minWeight !== undefined) {
-          const minWeightNum = Number(minWeight);
-          filteredItems = filteredItems.filter((s) => {
-            const sWeight = typeof s.weight === 'number' ? s.weight : Number(s.weight || 0);
-            return sWeight >= minWeightNum;
-          });
-        }
-        if (maxWeight !== undefined) {
-          const maxWeightNum = Number(maxWeight);
-          filteredItems = filteredItems.filter((s) => {
-            const sWeight = typeof s.weight === 'number' ? s.weight : Number(s.weight || 0);
-            return sWeight < maxWeightNum;
-          });
-        }
-      }
-      if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-        filteredItems = [];
-      } else {
-        if (minIssued !== undefined) {
-          const minIssuedNum = Number(minIssued);
-          filteredItems = filteredItems.filter((s) => s.issued >= minIssuedNum);
-        }
-        if (maxIssued !== undefined) {
-          const maxIssuedNum = Number(maxIssued);
-          filteredItems = filteredItems.filter((s) => s.issued < maxIssuedNum);
-        }
-      }
-      if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-        filteredItems = [];
-      } else {
-        if (minVerified !== undefined) {
-          const minVerifiedNum = Number(minVerified);
-          filteredItems = filteredItems.filter((s) => s.verified >= minVerifiedNum);
-        }
-        if (maxVerified !== undefined) {
-          const maxVerifiedNum = Number(maxVerified);
-          filteredItems = filteredItems.filter((s) => s.verified < maxVerifiedNum);
-        }
-      }
-      if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-        filteredItems = [];
-      } else {
-        if (minEcosystemSlashEvents !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.ecosystem_slash_events >= minEcosystemSlashEvents);
-        }
-        if (maxEcosystemSlashEvents !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.ecosystem_slash_events < maxEcosystemSlashEvents);
-        }
-      }
-      if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-        filteredItems = [];
-      } else {
-        if (minNetworkSlashEvents !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.network_slash_events >= minNetworkSlashEvents);
-        }
-        if (maxNetworkSlashEvents !== undefined) {
-          filteredItems = filteredItems.filter((s) => s.network_slash_events < maxNetworkSlashEvents);
-        }
-      }
+      const filteredItems = cleanItems;
 
       type SchemaWithStats = typeof filteredItems[0];
-      const sortedItems = sortByStandardAttributes<SchemaWithStats>(filteredItems, sort, {
-        getId: (item) => item.id,
-        getCreated: (item) => item.created,
-        getModified: (item) => item.modified,
-        getParticipants: (item) => item.participants,
-        getWeight: (item) => item.weight,
-        getIssued: (item) => item.issued,
-        getVerified: (item) => item.verified,
-        getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-        getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-        getNetworkSlashEvents: (item) => item.network_slash_events,
-        getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-        defaultAttribute: "modified",
-        defaultDirection: "desc",
-      }).slice(0, limit);
+      const sortedItems = sortCredentialSchemaRows(filteredItems as SchemaWithStats[], sort, limit);
 
       return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
     } catch (err: any) {

@@ -9,15 +9,288 @@ import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
-import { calculateTrustRegistryStats } from "./tr_stats";
+import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from "./tr_stats";
 
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
     version: 1
 })
 export default class TrustRegistryDatabaseService extends BaseService {
+    private trHistoryColumnExistsCache = new Map<string, boolean>();
+
     public constructor(public broker: ServiceBroker) {
         super(broker);
+    }
+
+    private async hasTrHistoryColumn(tableName: string, columnName: string): Promise<boolean> {
+        const key = `${tableName}.${columnName}`;
+        const cached = this.trHistoryColumnExistsCache.get(key);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const exists = await knex.schema.hasColumn(tableName, columnName);
+        this.trHistoryColumnExistsCache.set(key, exists);
+        return exists;
+    }
+
+    private usesDerivedMetricSort(sort?: string): boolean {
+        if (!sort || typeof sort !== "string") return false;
+        const lower = sort.toLowerCase();
+        const derivedKeys = [
+            "participants",
+            "active_schemas",
+            "weight",
+            "issued",
+            "verified",
+            "ecosystem_slash_events",
+            "ecosystem_slashed_amount",
+            "network_slash_events",
+            "network_slashed_amount",
+        ];
+        return derivedKeys.some((key) => lower.includes(key));
+    }
+
+    private static toFiniteNumber(value: unknown): number {
+        const num = typeof value === "number" ? value : Number(value ?? 0);
+        return Number.isFinite(num) ? num : 0;
+    }
+
+    private applyRangeToQuery(query: any, column: string, minValue?: number, maxValue?: number): any {
+        if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+            return query.whereRaw("1 = 0");
+        }
+        let nextQuery = query;
+        if (minValue !== undefined) {
+            nextQuery = nextQuery.where(column, ">=", minValue);
+        }
+        if (maxValue !== undefined) {
+            nextQuery = nextQuery.where(column, "<", maxValue);
+        }
+        return nextQuery;
+    }
+
+    private applyRangeToRows<T>(
+        rows: T[],
+        minValue: number | string | undefined,
+        maxValue: number | string | undefined,
+        readValue: (row: T) => number
+    ): T[] {
+        if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+            return [];
+        }
+
+        let filtered = rows;
+        if (minValue !== undefined) {
+            const minNum = Number(minValue);
+            filtered = filtered.filter((row) => readValue(row) >= minNum);
+        }
+        if (maxValue !== undefined) {
+            const maxNum = Number(maxValue);
+            filtered = filtered.filter((row) => readValue(row) < maxNum);
+        }
+        return filtered;
+    }
+
+    private applyMetricFiltersToRegistries(
+        rows: any[],
+        filters: {
+            minActiveSchemas?: number;
+            maxActiveSchemas?: number;
+            minParticipants?: number;
+            maxParticipants?: number;
+            minWeight?: string;
+            maxWeight?: string;
+            minIssued?: string;
+            maxIssued?: string;
+            minVerified?: string;
+            maxVerified?: string;
+            minEcosystemSlashEvents?: number;
+            maxEcosystemSlashEvents?: number;
+            minNetworkSlashEvents?: number;
+            maxNetworkSlashEvents?: number;
+        }
+    ): any[] {
+        let filtered = rows;
+        filtered = this.applyRangeToRows(filtered, filters.minActiveSchemas, filters.maxActiveSchemas, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.active_schemas));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipants, filters.maxParticipants, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants));
+        filtered = this.applyRangeToRows(filtered, filters.minWeight, filters.maxWeight, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.weight));
+        filtered = this.applyRangeToRows(filtered, filters.minIssued, filters.maxIssued, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.issued));
+        filtered = this.applyRangeToRows(filtered, filters.minVerified, filters.maxVerified, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.verified));
+        filtered = this.applyRangeToRows(filtered, filters.minEcosystemSlashEvents, filters.maxEcosystemSlashEvents, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.ecosystem_slash_events));
+        filtered = this.applyRangeToRows(filtered, filters.minNetworkSlashEvents, filters.maxNetworkSlashEvents, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.network_slash_events));
+        return filtered;
+    }
+
+    private sortRegistries(rows: any[], sort: string | undefined, limit: number): any[] {
+        if (!this.usesDerivedMetricSort(sort)) {
+            return rows.slice(0, limit);
+        }
+        return sortByStandardAttributes(rows, sort, {
+            getId: (row) => row.id,
+            getCreated: (row) => row.created,
+            getModified: (row) => row.modified,
+            getParticipants: (row) => row.participants,
+            getActiveSchemas: (row) => row.active_schemas,
+            getWeight: (row) => row.weight,
+            getIssued: (row) => row.issued,
+            getVerified: (row) => row.verified,
+            getEcosystemSlashEvents: (row) => row.ecosystem_slash_events,
+            getEcosystemSlashedAmount: (row) => row.ecosystem_slashed_amount,
+            getNetworkSlashEvents: (row) => row.network_slash_events,
+            getNetworkSlashedAmount: (row) => row.network_slashed_amount,
+            defaultAttribute: "modified",
+            defaultDirection: "desc",
+        }).slice(0, limit);
+    }
+
+    private hasImpossibleMetricRanges(filters: {
+        minActiveSchemas?: number;
+        maxActiveSchemas?: number;
+        minParticipants?: number;
+        maxParticipants?: number;
+        minWeight?: string;
+        maxWeight?: string;
+        minIssued?: string;
+        maxIssued?: string;
+        minVerified?: string;
+        maxVerified?: string;
+        minEcosystemSlashEvents?: number;
+        maxEcosystemSlashEvents?: number;
+        minNetworkSlashEvents?: number;
+        maxNetworkSlashEvents?: number;
+    }): boolean {
+        return (
+            (filters.minActiveSchemas !== undefined && filters.maxActiveSchemas !== undefined && filters.minActiveSchemas === filters.maxActiveSchemas) ||
+            (filters.minParticipants !== undefined && filters.maxParticipants !== undefined && filters.minParticipants === filters.maxParticipants) ||
+            (filters.minWeight !== undefined && filters.maxWeight !== undefined && filters.minWeight === filters.maxWeight) ||
+            (filters.minIssued !== undefined && filters.maxIssued !== undefined && filters.minIssued === filters.maxIssued) ||
+            (filters.minVerified !== undefined && filters.maxVerified !== undefined && filters.minVerified === filters.maxVerified) ||
+            (filters.minEcosystemSlashEvents !== undefined && filters.maxEcosystemSlashEvents !== undefined && filters.minEcosystemSlashEvents === filters.maxEcosystemSlashEvents) ||
+            (filters.minNetworkSlashEvents !== undefined && filters.maxNetworkSlashEvents !== undefined && filters.minNetworkSlashEvents === filters.maxNetworkSlashEvents)
+        );
+    }
+
+    private async buildHistoricalVersionsByTrIds(
+        trIdsInput: number[],
+        blockHeight: number,
+        activeGfOnly: boolean,
+        preferredLanguage?: string
+    ): Promise<Map<number, any[]>> {
+        const trIds = Array.from(new Set(trIdsInput.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+        const versionsByTr = new Map<number, any[]>();
+        if (trIds.length === 0) return versionsByTr;
+
+        const gfvHistoryRows = await knex("governance_framework_version_history")
+            .select("id", "tr_id", "created", "version", "active_since", "height", "created_at")
+            .whereIn("tr_id", trIds)
+            .where("height", "<=", blockHeight)
+            .orderBy("tr_id", "asc")
+            .orderBy("version", "asc")
+            .orderBy("height", "desc")
+            .orderBy("created_at", "desc");
+
+        const gfvRows = await knex("governance_framework_version")
+            .select("id", "tr_id", "version")
+            .whereIn("tr_id", trIds);
+        const gfvIdByTrVersion = new Map<string, number>();
+        for (const row of gfvRows) {
+            gfvIdByTrVersion.set(`${Number(row.tr_id)}::${Number(row.version)}`, Number(row.id));
+        }
+
+        const latestByTrVersion = new Map<string, any>();
+        for (const gfv of gfvHistoryRows) {
+            const trId = Number(gfv.tr_id);
+            const version = Number(gfv.version);
+            const key = `${trId}::${version}`;
+            if (latestByTrVersion.has(key)) continue;
+
+            const actualGfvId = gfvIdByTrVersion.get(key);
+            const entry = {
+                id: Number.isFinite(actualGfvId as number) ? Number(actualGfvId) : Number(gfv.id),
+                tr_id: trId,
+                created: gfv.created,
+                version,
+                active_since: gfv.active_since,
+                documents: [] as any[],
+            };
+            latestByTrVersion.set(key, entry);
+            const trList = versionsByTr.get(trId) || [];
+            trList.push(entry);
+            versionsByTr.set(trId, trList);
+        }
+
+        const gfvIds = Array.from(new Set(Array.from(latestByTrVersion.values()).map((v: any) => Number(v.id)).filter((id) => Number.isFinite(id) && id > 0)));
+        if (gfvIds.length > 0) {
+            const hasGfdIdColumn = await this.hasTrHistoryColumn("governance_framework_document_history", "gfd_id");
+            const gfdSelectColumns: Array<string | any> = [
+                "id",
+                "gfv_id",
+                "tr_id",
+                "created",
+                "language",
+                "url",
+                "digest_sri",
+                "height",
+                "created_at",
+            ];
+            if (hasGfdIdColumn) {
+                gfdSelectColumns.splice(1, 0, "gfd_id");
+            }
+            const gfdHistoryRows = await knex("governance_framework_document_history")
+                .select(...gfdSelectColumns)
+                .whereIn("tr_id", trIds)
+                .whereIn("gfv_id", gfvIds)
+                .where("height", "<=", blockHeight)
+                .orderBy("gfv_id", "asc")
+                .orderBy("height", "desc")
+                .orderBy("created_at", "desc")
+                .orderBy("id", "desc");
+
+            const seenDocs = new Set<string>();
+            const entryByGfvId = new Map<number, any>();
+            for (const versionEntry of latestByTrVersion.values()) {
+                entryByGfvId.set(Number(versionEntry.id), versionEntry);
+            }
+
+            for (const gfd of gfdHistoryRows) {
+                const gfvId = Number(gfd.gfv_id);
+                const versionEntry = entryByGfvId.get(gfvId);
+                if (!versionEntry) continue;
+
+                const docId = Number(hasGfdIdColumn ? gfd.gfd_id : gfd.id);
+                const dedupeId = Number.isFinite(docId) && docId > 0 ? `doc:${docId}` : `url:${gfd.url || ""}:${gfd.language || ""}`;
+                const dedupeKey = `${Number(versionEntry.tr_id)}::${gfvId}::${dedupeId}`;
+                if (seenDocs.has(dedupeKey)) continue;
+                seenDocs.add(dedupeKey);
+
+                versionEntry.documents.push({
+                    id: Number.isFinite(docId) && docId > 0 ? docId : Number(gfd.id),
+                    gfv_id: gfvId,
+                    created: gfd.created,
+                    language: gfd.language,
+                    url: gfd.url,
+                    digest_sri: gfd.digest_sri,
+                });
+            }
+        }
+
+        for (const [trId, versions] of versionsByTr.entries()) {
+            let normalized = versions;
+            if (activeGfOnly) {
+                normalized = versions
+                    .sort((a, b) => new Date(b.active_since).getTime() - new Date(a.active_since).getTime())
+                    .slice(0, 1);
+            }
+            if (preferredLanguage) {
+                normalized = normalized.map((v) => ({
+                    ...v,
+                    documents: (v.documents || []).filter((d: any) => d.language === preferredLanguage),
+                }));
+            }
+            versionsByTr.set(trId, normalized);
+        }
+
+        return versionsByTr;
     }
     @Action()
     public async getTrustRegistry(ctx: Context<{
@@ -45,103 +318,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     return ApiResponder.error(ctx, `TrustRegistry with id ${tr_id} not found`, 404);
                 }
 
-                // Get governance framework versions at this block height
-                const gfvHistory = await knex("governance_framework_version_history")
-                    .where({ tr_id })
-                    .where("height", "<=", blockHeight)
-                    .orderBy("height", "desc")
-                    .orderBy("created_at", "desc");
-
-                // Get unique versions (latest state for each version at block height)
-                const versionMap = new Map<number, any>();
-                for (const gfv of gfvHistory) {
-                    if (!versionMap.has(gfv.version)) {
-                        versionMap.set(gfv.version, gfv);
-                    }
-                }
-
-                const versions = Array.from(versionMap.values()).map(async (gfv: any) => {
-                    const actualGfv = await knex("governance_framework_version")
-                        .where({ tr_id, version: gfv.version })
-                        .first();
-
-                    const gfdHistory = actualGfv ? await knex("governance_framework_document_history")
-                        .where({ gfv_id: actualGfv.id, tr_id })
-                        .where("height", "<=", blockHeight)
-                        .orderBy("height", "desc")
-                        .orderBy("created_at", "desc") : [];
-
-                    // Get unique documents (latest state for each document ID at block height)
-                    // IMPORTANT: Deduplicate by gfd_id, not by url+language, because multiple documents
-                    // can have the same URL and language but different IDs
-                    const docMap = new Map<number, any>();
-                    for (const gfd of gfdHistory) {
-                        // Validate that gfd_id exists
-                        if (!gfd.gfd_id) {
-                            this.logger.error(`❌ CRITICAL: Document history record missing gfd_id! gfv_id=${gfd.gfv_id}, tr_id=${tr_id}, url=${gfd.url}, height=${blockHeight}`);
-                            console.error("FATAL ID MISMATCH: Document history record missing gfd_id!", {
-                                gfv_id: gfd.gfv_id,
-                                tr_id,
-                                url: gfd.url,
-                                height: blockHeight,
-                                record: gfd
-                            });
-                        }
-                        // Validate gfd_id doesn't equal gfv_id (which would indicate a bug)
-                        if (gfd.gfd_id === gfd.gfv_id) {
-                            this.logger.error(`❌ CRITICAL: Document ID equals GFV ID! gfd_id=${gfd.gfd_id}, gfv_id=${gfd.gfv_id}, tr_id=${tr_id}, url=${gfd.url}, height=${blockHeight}`);
-                            console.error("FATAL ID MISMATCH: Document ID equals GFV ID!", {
-                                gfd_id: gfd.gfd_id,
-                                gfv_id: gfd.gfv_id,
-                                tr_id,
-                                url: gfd.url,
-                                height: blockHeight,
-                                record: gfd
-                            });
-                        }
-                        // Keep the latest state of each document (by gfd_id)
-                        if (!docMap.has(gfd.gfd_id)) {
-                            docMap.set(gfd.gfd_id, gfd);
-                        }
-                    }
-
-                    const documents = Array.from(docMap.values()).map((gfd: any) => ({
-                        id: gfd.gfd_id,
-                        gfv_id: gfd.gfv_id,
-                        created: gfd.created,
-                        language: gfd.language,
-                        url: gfd.url,
-                        digest_sri: gfd.digest_sri,
-                    }));
-
-                    return {
-                        id: actualGfv ? actualGfv.id : gfv.id,
-                        tr_id: gfv.tr_id,
-                        created: gfv.created,
-                        version: gfv.version,
-                        active_since: gfv.active_since,
-                        documents,
-                    };
-                });
-
-                const resolvedVersions = await Promise.all(versions);
-
-                let filteredVersions = resolvedVersions;
-                if (activeGfOnly) {
-                    filteredVersions = resolvedVersions
-                        .sort(
-                            (a, b) =>
-                                new Date(b.active_since).getTime() - new Date(a.active_since).getTime()
-                        )
-                        .slice(0, 1);
-                }
-
-                if (preferred_language) {
-                    for (const v of filteredVersions) {
-                        v.documents =
-                            v.documents?.filter((d) => d.language === preferred_language) ?? [];
-                    }
-                }
+                const versionsByTrId = await this.buildHistoricalVersionsByTrIds([Number(tr_id)], blockHeight, activeGfOnly, preferred_language);
+                const filteredVersions = versionsByTrId.get(Number(tr_id)) || [];
 
                 const stats = await calculateTrustRegistryStats(trHistory.tr_id, blockHeight);
 
@@ -208,26 +386,24 @@ export default class TrustRegistryDatabaseService extends BaseService {
             delete plain.governanceFrameworkVersions;
             delete (plain as any).height;
 
-            const stats = await calculateTrustRegistryStats(tr_id);
-
             return ApiResponder.success(ctx, {
                 trust_registry: {
                     ...plain,
                     id: plain.id,
                     deposit: plain.deposit ?? 0,
                     versions,
-                    participants: stats.participants,
-                    active_schemas: stats.active_schemas,
-                    archived_schemas: stats.archived_schemas,
-                    weight: stats.weight,
-                    issued: stats.issued,
-                    verified: stats.verified,
-                    ecosystem_slash_events: stats.ecosystem_slash_events,
-                    ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                    ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                    network_slash_events: stats.network_slash_events,
-                    network_slashed_amount: stats.network_slashed_amount,
-                    network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+                    participants: Number((plain as any).participants || 0),
+                    active_schemas: Number((plain as any).active_schemas || 0),
+                    archived_schemas: Number((plain as any).archived_schemas || 0),
+                    weight: Number((plain as any).weight || 0),
+                    issued: Number((plain as any).issued || 0),
+                    verified: Number((plain as any).verified || 0),
+                    ecosystem_slash_events: Number((plain as any).ecosystem_slash_events || 0),
+                    ecosystem_slashed_amount: Number((plain as any).ecosystem_slashed_amount || 0),
+                    ecosystem_slashed_amount_repaid: Number((plain as any).ecosystem_slashed_amount_repaid || 0),
+                    network_slash_events: Number((plain as any).network_slash_events || 0),
+                    network_slashed_amount: Number((plain as any).network_slashed_amount || 0),
+                    network_slashed_amount_repaid: Number((plain as any).network_slashed_amount_repaid || 0),
                 },
             }, 200);
         } catch (err: any) {
@@ -317,6 +493,27 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 return ApiResponder.error(ctx, "response_max_size must be between 1 and 1024", 400);
             }
 
+            const metricFilters = {
+                minActiveSchemas,
+                maxActiveSchemas,
+                minParticipants,
+                maxParticipants,
+                minWeight,
+                maxWeight,
+                minIssued,
+                maxIssued,
+                minVerified,
+                maxVerified,
+                minEcosystemSlashEvents,
+                maxEcosystemSlashEvents,
+                minNetworkSlashEvents,
+                maxNetworkSlashEvents,
+            };
+
+            if (this.hasImpossibleMetricRanges(metricFilters)) {
+                return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+            }
+
             // If AtBlockHeight is provided, query historical state
             if (typeof blockHeight === "number") {
                 let participantTrIds: number[] | undefined;
@@ -357,120 +554,49 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     .from(filteredSubquery.as("filtered"))
                     .as("ranked");
 
-                const latestTrHistory = await knex
+                const latestTrHistoryQuery = knex
                     .from(rankedSubquery)
                     .where("rn", 1);
 
-                const sortedHistory = sortByStandardAttributes(latestTrHistory, sort, {
-                    getId: (row) => row.tr_id,
-                    getCreated: (row) => row.created,
-                    getModified: (row) => row.modified,
-                    defaultAttribute: "modified",
-                    defaultDirection: "desc",
-                }).slice(0, responseMaxSize);
+                const latestTrHistory = await applyOrdering(latestTrHistoryQuery as any, sort).limit(Math.max(responseMaxSize * 2, 256)) as any[];
+                const hasDerivedSort = this.usesDerivedMetricSort(sort);
+                const sortedHistory = hasDerivedSort
+                    ? latestTrHistory.slice(0, Math.max(responseMaxSize * 2, 256))
+                    : latestTrHistory.slice(0, responseMaxSize);
 
                 if (sortedHistory.length === 0) {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
+                const versionsByTrId = await this.buildHistoricalVersionsByTrIds(
+                    sortedHistory.map((row: any) => Number(row.tr_id)),
+                    blockHeight,
+                    activeGfOnly,
+                    preferredLanguage
+                );
+                const statsByTrId = await calculateTrustRegistryStatsBatch(
+                    sortedHistory.map((row: any) => Number(row.tr_id)).filter((id: number) => Number.isFinite(id) && id > 0),
+                    blockHeight
+                );
 
                 const registriesWithStats = await Promise.all(
                     sortedHistory.map(async (trHistory: any) => {
                         const trId = trHistory.tr_id;
+                        const filteredVersions = versionsByTrId.get(Number(trId)) || [];
 
-                        // Get versions (simplified - just get latest state for each version)
-                        const gfvHistory = await knex("governance_framework_version_history")
-                            .where({ tr_id: trId })
-                            .where("height", "<=", blockHeight)
-                            .orderBy("height", "desc")
-                            .orderBy("created_at", "desc");
-
-                        const versionMap = new Map<number, any>();
-                        for (const gfv of gfvHistory) {
-                            if (!versionMap.has(gfv.version)) {
-                                versionMap.set(gfv.version, gfv);
-                            }
-                        }
-
-                        const versions = await Promise.all(
-                            Array.from(versionMap.values()).map(async (gfv: any) => {
-                                const actualGfv = await knex("governance_framework_version")
-                                    .where({ tr_id: trId, version: gfv.version })
-                                    .first();
-
-                                const gfdHistory = actualGfv ? await knex("governance_framework_document_history")
-                                    .where({ gfv_id: actualGfv.id, tr_id: trId })
-                                    .where("height", "<=", blockHeight)
-                                    .orderBy("height", "desc")
-                                    .orderBy("created_at", "desc") : [];
-
-                                // Get unique documents (latest state for each document ID at block height)
-                                // IMPORTANT: Deduplicate by gfd_id, not by url+language, because multiple documents
-                                // can have the same URL and language but different IDs
-                                const docMap = new Map<number, any>();
-                                for (const gfd of gfdHistory) {
-                                    // Validate that gfd_id exists
-                                    if (!gfd.gfd_id) {
-                                        this.logger.error(`❌ CRITICAL: Document history record missing gfd_id! gfv_id=${gfd.gfv_id}, tr_id=${trId}, url=${gfd.url}, height=${blockHeight}`);
-                                        console.error("FATAL ID MISMATCH: Document history record missing gfd_id!", {
-                                            gfv_id: gfd.gfv_id,
-                                            tr_id: trId,
-                                            url: gfd.url,
-                                            height: blockHeight,
-                                            record: gfd
-                                        });
-                                    }
-                                    // Validate gfd_id doesn't equal gfv_id (which would indicate a bug)
-                                    if (gfd.gfd_id === gfd.gfv_id) {
-                                        this.logger.error(`❌ CRITICAL: Document ID equals GFV ID! gfd_id=${gfd.gfd_id}, gfv_id=${gfd.gfv_id}, tr_id=${trId}, url=${gfd.url}, height=${blockHeight}`);
-                                        console.error("FATAL ID MISMATCH: Document ID equals GFV ID!", {
-                                            gfd_id: gfd.gfd_id,
-                                            gfv_id: gfd.gfv_id,
-                                            tr_id: trId,
-                                            url: gfd.url,
-                                            height: blockHeight,
-                                            record: gfd
-                                        });
-                                    }
-                                    // Keep the latest state of each document (by gfd_id)
-                                    if (!docMap.has(gfd.gfd_id)) {
-                                        docMap.set(gfd.gfd_id, gfd);
-                                    }
-                                }
-
-                                const documents = Array.from(docMap.values()).map((gfd: any) => ({
-                                    id: gfd.gfd_id,
-                                    gfv_id: gfd.gfv_id,
-                                    created: gfd.created,
-                                    language: gfd.language,
-                                    url: gfd.url,
-                                    digest_sri: gfd.digest_sri,
-                                }));
-
-                                return {
-                                    id: actualGfv ? actualGfv.id : gfv.id,
-                                    tr_id: gfv.tr_id,
-                                    created: gfv.created,
-                                    version: gfv.version,
-                                    active_since: gfv.active_since,
-                                    documents,
-                                };
-                            })
-                        );
-
-                        let filteredVersions = versions;
-                        if (activeGfOnly) {
-                            filteredVersions = versions
-                                .sort((a, b) => new Date(b.active_since).getTime() - new Date(a.active_since).getTime())
-                                .slice(0, 1);
-                        }
-
-                        if (preferredLanguage) {
-                            for (const v of filteredVersions) {
-                                v.documents = v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
-                            }
-                        }
-
-                        const stats = await calculateTrustRegistryStats(trId, blockHeight);
+                        const stats = statsByTrId.get(Number(trId)) || {
+                            participants: 0,
+                            active_schemas: 0,
+                            archived_schemas: 0,
+                            weight: 0,
+                            issued: 0,
+                            verified: 0,
+                            ecosystem_slash_events: 0,
+                            ecosystem_slashed_amount: 0,
+                            ecosystem_slashed_amount_repaid: 0,
+                            network_slash_events: 0,
+                            network_slashed_amount: 0,
+                            network_slashed_amount_repaid: 0,
+                        };
 
                         return {
                             id: trHistory.tr_id,
@@ -500,107 +626,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     })
                 );
 
-                let filteredRegistries = registriesWithStats.filter((r): r is NonNullable<typeof registriesWithStats[0]> => r !== null);
+                const filteredRegistries = this.applyMetricFiltersToRegistries(
+                    registriesWithStats.filter((r): r is NonNullable<typeof registriesWithStats[0]> => r !== null),
+                    metricFilters
+                );
 
-                if (minActiveSchemas !== undefined && maxActiveSchemas !== undefined && minActiveSchemas === maxActiveSchemas) {
-                    filteredRegistries = [];
-                } else {
-                    if (minActiveSchemas !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.active_schemas >= minActiveSchemas);
-                    }
-                    if (maxActiveSchemas !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.active_schemas < maxActiveSchemas);
-                    }
-                }
-                if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                    filteredRegistries = [];
-                } else {
-                    if (minParticipants !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
-                    }
-                    if (maxParticipants !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.participants < maxParticipants);
-                    }
-                }
-                if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-                    filteredRegistries = [];
-                } else {
-                    if (minWeight !== undefined) {
-                        const minWeightNum = Number(minWeight);
-                        filteredRegistries = filteredRegistries.filter((r) => {
-                            const rWeight = typeof r.weight === 'number' ? r.weight : Number(r.weight || 0);
-                            return rWeight >= minWeightNum;
-                        });
-                    }
-                    if (maxWeight !== undefined) {
-                        const maxWeightNum = Number(maxWeight);
-                        filteredRegistries = filteredRegistries.filter((r) => {
-                            const rWeight = typeof r.weight === 'number' ? r.weight : Number(r.weight || 0);
-                            return rWeight < maxWeightNum;
-                        });
-                    }
-                }
-                if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-                    filteredRegistries = [];
-                } else {
-                    if (minIssued !== undefined) {
-                        const minIssuedNum = parseFloat(minIssued);
-                        filteredRegistries = filteredRegistries.filter((r) => r.issued >= minIssuedNum);
-                    }
-                    if (maxIssued !== undefined) {
-                        const maxIssuedNum = parseFloat(maxIssued);
-                        filteredRegistries = filteredRegistries.filter((r) => r.issued < maxIssuedNum);
-                    }
-                }
-                if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-                    filteredRegistries = [];
-                } else {
-                    if (minVerified !== undefined) {
-                        const minVerifiedNum = parseFloat(minVerified);
-                        filteredRegistries = filteredRegistries.filter((r) => r.verified >= minVerifiedNum);
-                    }
-                    if (maxVerified !== undefined) {
-                        const maxVerifiedNum = parseFloat(maxVerified);
-                        filteredRegistries = filteredRegistries.filter((r) => r.verified < maxVerifiedNum);
-                    }
-                }
-                if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-                    filteredRegistries = [];
-                } else {
-                    if (minEcosystemSlashEvents !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events >= minEcosystemSlashEvents);
-                    }
-                    if (maxEcosystemSlashEvents !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events < maxEcosystemSlashEvents);
-                    }
-                }
-                if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-                    filteredRegistries = [];
-                } else {
-                    if (minNetworkSlashEvents !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events >= minNetworkSlashEvents);
-                    }
-                    if (maxNetworkSlashEvents !== undefined) {
-                        filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events < maxNetworkSlashEvents);
-                    }
-                }
-
-                const sortedRegistries = sortByStandardAttributes(filteredRegistries, sort, {
-                    getId: (row) => row.id,
-                    getCreated: (row) => row.created,
-                    getModified: (row) => row.modified,
-                    getParticipants: (row) => row.participants,
-                    getActiveSchemas: (row) => row.active_schemas,
-                    getWeight: (row) => row.weight,
-                    getIssued: (row) => row.issued,
-                    getVerified: (row) => row.verified,
-                    getEcosystemSlashEvents: (row) => row.ecosystem_slash_events,
-                    getEcosystemSlashedAmount: (row) => row.ecosystem_slashed_amount,
-                    getNetworkSlashEvents: (row) => row.network_slash_events,
-                    getNetworkSlashedAmount: (row) => row.network_slashed_amount,
-                    defaultAttribute: "modified",
-                    defaultDirection: "desc",
-                }).slice(0, responseMaxSize);
+                const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
 
                 return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
             }
@@ -613,14 +644,34 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
                 query = query.where("id", "in", participantTrIds) as any;
-            } else if (controllerAccount) {
+            }
+            if (controllerAccount) {
                 query = query.where("controller", controllerAccount);
             }
 
             query = query.withGraphFetched("governanceFrameworkVersions.documents") as any;
-            if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                query = (query as any).where("participants", minParticipants);
-            }
+            query = this.applyRangeToQuery(query, "participants", minParticipants, maxParticipants);
+            query = this.applyRangeToQuery(query, "active_schemas", minActiveSchemas, maxActiveSchemas);
+            query = this.applyRangeToQuery(
+                query,
+                "weight",
+                minWeight !== undefined ? Number(minWeight) : undefined,
+                maxWeight !== undefined ? Number(maxWeight) : undefined
+            );
+            query = this.applyRangeToQuery(
+                query,
+                "issued",
+                minIssued !== undefined ? Number(minIssued) : undefined,
+                maxIssued !== undefined ? Number(maxIssued) : undefined
+            );
+            query = this.applyRangeToQuery(
+                query,
+                "verified",
+                minVerified !== undefined ? Number(minVerified) : undefined,
+                maxVerified !== undefined ? Number(maxVerified) : undefined
+            );
+            query = this.applyRangeToQuery(query, "ecosystem_slash_events", minEcosystemSlashEvents, maxEcosystemSlashEvents);
+            query = this.applyRangeToQuery(query, "network_slash_events", minNetworkSlashEvents, maxNetworkSlashEvents);
 
             if (modifiedAfter) {
                 query = query.where("modified", ">", modifiedAfter);
@@ -636,207 +687,52 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             applyOrdering(query as any, sort);
 
-            const registries = await query.limit(responseMaxSize * 2);
+            const registries = await query.limit(responseMaxSize);
 
-            let registriesWithStats;
-            if (typeof blockHeight === "number") {
-                registriesWithStats = await Promise.all(
-                    registries.map(async (tr) => {
-                        const plain = tr.toJSON();
-                        let versions = plain.governanceFrameworkVersions ?? [];
+            const registriesWithStats = registries.map((tr) => {
+                const plain = tr.toJSON();
+                let versions = plain.governanceFrameworkVersions ?? [];
 
-                        if (activeGfOnly) {
-                            versions = versions
-                                .sort((a, b) => {
-                                    if (!a.active_since && !b.active_since) return 0;
-                                    if (!a.active_since) return 1;
-                                    if (!b.active_since) return -1;
-                                    return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
-                                })
-                                .slice(0, 1);
-                        }
+                if (activeGfOnly) {
+                    versions = versions
+                        .sort((a, b) => {
+                            if (!a.active_since && !b.active_since) return 0;
+                            if (!a.active_since) return 1;
+                            if (!b.active_since) return -1;
+                            return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
+                        })
+                        .slice(0, 1);
+                }
 
-                        if (preferredLanguage) {
-                            for (const v of versions) {
-                                v.documents =
-                                    v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
-                            }
-                        }
+                if (preferredLanguage) {
+                    for (const v of versions) {
+                        v.documents =
+                            v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
+                    }
+                }
 
-                        delete plain.governanceFrameworkVersions;
-                        delete (plain as any).height;
+                delete plain.governanceFrameworkVersions;
+                delete (plain as any).height;
 
-                        const stats = await calculateTrustRegistryStats(plain.id, blockHeight);
+                return {
+                    ...plain,
+                    versions,
+                    participants: Number(plain.participants || 0),
+                    active_schemas: Number(plain.active_schemas || 0),
+                    archived_schemas: Number(plain.archived_schemas || 0),
+                    weight: Number(plain.weight || 0),
+                    issued: Number(plain.issued || 0),
+                    verified: Number(plain.verified || 0),
+                    ecosystem_slash_events: Number(plain.ecosystem_slash_events || 0),
+                    ecosystem_slashed_amount: Number(plain.ecosystem_slashed_amount || 0),
+                    ecosystem_slashed_amount_repaid: Number(plain.ecosystem_slashed_amount_repaid || 0),
+                    network_slash_events: Number(plain.network_slash_events || 0),
+                    network_slashed_amount: Number(plain.network_slashed_amount || 0),
+                    network_slashed_amount_repaid: Number(plain.network_slashed_amount_repaid || 0),
+                };
+            });
 
-                        return {
-                            ...plain,
-                            versions,
-                            participants: stats.participants,
-                            active_schemas: stats.active_schemas,
-                            archived_schemas: stats.archived_schemas,
-                            weight: stats.weight,
-                            issued: stats.issued,
-                            verified: stats.verified,
-                            ecosystem_slash_events: stats.ecosystem_slash_events,
-                            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                            network_slash_events: stats.network_slash_events,
-                            network_slashed_amount: stats.network_slashed_amount,
-                            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-                        };
-                    })
-                );
-            } else {
-                // Use calculated stats (same as GET by id) so list matches get and participant-filtered TRs show correct values (#168)
-                registriesWithStats = await Promise.all(
-                    registries.map(async (tr) => {
-                        const plain = tr.toJSON();
-                        let versions = plain.governanceFrameworkVersions ?? [];
-
-                        if (activeGfOnly) {
-                            versions = versions
-                                .sort((a, b) => {
-                                    if (!a.active_since && !b.active_since) return 0;
-                                    if (!a.active_since) return 1;
-                                    if (!b.active_since) return -1;
-                                    return new Date(b.active_since).getTime() - new Date(a.active_since).getTime();
-                                })
-                                .slice(0, 1);
-                        }
-
-                        if (preferredLanguage) {
-                            for (const v of versions) {
-                                v.documents =
-                                    v.documents?.filter((d) => d.language === preferredLanguage) ?? [];
-                            }
-                        }
-
-                        delete plain.governanceFrameworkVersions;
-                        delete (plain as any).height;
-
-                        const stats = await calculateTrustRegistryStats(plain.id);
-
-                        return {
-                            ...plain,
-                            versions,
-                            participants: stats.participants,
-                            active_schemas: stats.active_schemas,
-                            archived_schemas: stats.archived_schemas,
-                            weight: stats.weight,
-                            issued: stats.issued,
-                            verified: stats.verified,
-                            ecosystem_slash_events: stats.ecosystem_slash_events,
-                            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                            network_slash_events: stats.network_slash_events,
-                            network_slashed_amount: stats.network_slashed_amount,
-                            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-                        };
-                    })
-                );
-            }
-
-            let filteredRegistries = registriesWithStats;
-
-            if (minActiveSchemas !== undefined && maxActiveSchemas !== undefined && minActiveSchemas === maxActiveSchemas) {
-                filteredRegistries = [];
-            } else {
-                if (minActiveSchemas !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.active_schemas >= minActiveSchemas);
-                }
-                if (maxActiveSchemas !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.active_schemas < maxActiveSchemas);
-                }
-            }
-            if (minParticipants !== undefined && maxParticipants !== undefined && minParticipants === maxParticipants) {
-                filteredRegistries = [];
-            } else {
-                if (minParticipants !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants >= minParticipants);
-                }
-                if (maxParticipants !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.participants < maxParticipants);
-                }
-            }
-            if (minWeight !== undefined && maxWeight !== undefined && minWeight === maxWeight) {
-                filteredRegistries = [];
-            } else {
-                if (minWeight !== undefined) {
-                    const minWeightNum = Number(minWeight);
-                    filteredRegistries = filteredRegistries.filter((r) => {
-                        const rWeight = typeof r.weight === 'number' ? r.weight : Number(r.weight || 0);
-                        return rWeight >= minWeightNum;
-                    });
-                }
-                if (maxWeight !== undefined) {
-                    const maxWeightNum = Number(maxWeight);
-                    filteredRegistries = filteredRegistries.filter((r) => {
-                        const rWeight = typeof r.weight === 'number' ? r.weight : Number(r.weight || 0);
-                        return rWeight < maxWeightNum;
-                    });
-                }
-            }
-            if (minIssued !== undefined && maxIssued !== undefined && minIssued === maxIssued) {
-                filteredRegistries = [];
-            } else {
-                if (minIssued !== undefined) {
-                    const minIssuedNum = parseFloat(minIssued);
-                    filteredRegistries = filteredRegistries.filter((r) => r.issued >= minIssuedNum);
-                }
-                if (maxIssued !== undefined) {
-                    const maxIssuedNum = parseFloat(maxIssued);
-                    filteredRegistries = filteredRegistries.filter((r) => r.issued < maxIssuedNum);
-                }
-            }
-            if (minVerified !== undefined && maxVerified !== undefined && minVerified === maxVerified) {
-                filteredRegistries = [];
-            } else {
-                if (minVerified !== undefined) {
-                    const minVerifiedNum = parseFloat(minVerified);
-                    filteredRegistries = filteredRegistries.filter((r) => r.verified >= minVerifiedNum);
-                }
-                if (maxVerified !== undefined) {
-                    const maxVerifiedNum = parseFloat(maxVerified);
-                    filteredRegistries = filteredRegistries.filter((r) => r.verified < maxVerifiedNum);
-                }
-            }
-            if (minEcosystemSlashEvents !== undefined && maxEcosystemSlashEvents !== undefined && minEcosystemSlashEvents === maxEcosystemSlashEvents) {
-                filteredRegistries = [];
-            } else {
-                if (minEcosystemSlashEvents !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events >= minEcosystemSlashEvents);
-                }
-                if (maxEcosystemSlashEvents !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.ecosystem_slash_events < maxEcosystemSlashEvents);
-                }
-            }
-            if (minNetworkSlashEvents !== undefined && maxNetworkSlashEvents !== undefined && minNetworkSlashEvents === maxNetworkSlashEvents) {
-                filteredRegistries = [];
-            } else {
-                if (minNetworkSlashEvents !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events >= minNetworkSlashEvents);
-                }
-                if (maxNetworkSlashEvents !== undefined) {
-                    filteredRegistries = filteredRegistries.filter((r) => r.network_slash_events < maxNetworkSlashEvents);
-                }
-            }
-
-            const sortedRegistries = sortByStandardAttributes(filteredRegistries, sort, {
-                getId: (row) => row.id,
-                getCreated: (row) => row.created,
-                getModified: (row) => row.modified,
-                getParticipants: (row) => row.participants,
-                getActiveSchemas: (row) => row.active_schemas,
-                getWeight: (row) => row.weight,
-                getIssued: (row) => row.issued,
-                getVerified: (row) => row.verified,
-                getEcosystemSlashEvents: (row) => row.ecosystem_slash_events,
-                getEcosystemSlashedAmount: (row) => row.ecosystem_slashed_amount,
-                getNetworkSlashEvents: (row) => row.network_slash_events,
-                getNetworkSlashedAmount: (row) => row.network_slashed_amount,
-                defaultAttribute: "modified",
-                defaultDirection: "desc",
-            }).slice(0, responseMaxSize);
+            const sortedRegistries = this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
             return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
         } catch (err: any) {

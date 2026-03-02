@@ -42,6 +42,7 @@ export default class AccountReputationService extends BullableService {
     const account = accountValidation.value;
     const { tr_id: trId, schema_id: schemaId, include_slash_details: includeSlashDetails } = ctx.params;
     const blockHeight = (ctx.meta as any)?.blockHeight;
+    const nowTs = Date.now();
 
     if (!this.isValidAccount(account)) {
       return ApiResponder.error(ctx, "Invalid account format", 400);
@@ -86,97 +87,180 @@ export default class AccountReputationService extends BullableService {
     const repaid = td?.repaid_deposit || "0";
     const slashCount = td?.slash_count || 0;
 
-    const slashDetails = includeSlashDetails
-      ? (typeof blockHeight === "number"
-          ? await knex("trust_deposit_history")
-              .where({ account })
-              .where("height", "<=", blockHeight)
-              .whereNotNull("last_slashed")
-              .select(
-                "slashed_deposit as slashed_amount",
-                "last_slashed as slashed_ts"
-              )
-              .orderBy("height", "desc")
-              .then(rows => rows.map(row => ({
-                ...row,
-                slashed_by: account
-              })))
-          : await knex("trust_deposits")
-              .where({ account })
-              .select(
-                "slashed_deposit as slashed_amount",
-                "last_slashed as slashed_ts"
-              )
-              .whereNotNull("last_slashed")
-              .then(rows => rows.map(row => ({
-                ...row,
-                slashed_by: account
-              }))))
-      : [];
-
-    const repayDetails = includeSlashDetails
-      ? (typeof blockHeight === "number"
-          ? await knex("trust_deposit_history")
-              .where({ account })
-              .where("height", "<=", blockHeight)
-              .whereNotNull("last_repaid")
-              .select(
-                "repaid_deposit as repaid_amount",
-                "last_repaid as repaid_ts",
-                "last_repaid_by as repaid_by"
-              )
-              .orderBy("height", "desc")
-          : await knex("trust_deposits")
-              .where({ account })
-              .select(
-                "repaid_deposit as repaid_amount",
-                "last_repaid as repaid_ts",
-                "last_repaid_by as repaid_by"
-              )
-              .whereNotNull("last_repaid"))
-      : [];
+    let slashDetails: any[] = [];
+    let repayDetails: any[] = [];
+    if (includeSlashDetails) {
+      if (typeof blockHeight === "number") {
+        const detailRows = await knex("trust_deposit_history")
+          .where({ account })
+          .where("height", "<=", blockHeight)
+          .where((qb) => qb.whereNotNull("last_slashed").orWhereNotNull("last_repaid"))
+          .select(
+            "slashed_deposit",
+            "last_slashed",
+            "repaid_deposit",
+            "last_repaid",
+            "last_repaid_by"
+          )
+          .orderBy("height", "desc")
+          .orderBy("created_at", "desc");
+        slashDetails = detailRows
+          .filter((row: any) => row.last_slashed != null)
+          .map((row: any) => ({
+            slashed_amount: row.slashed_deposit,
+            slashed_ts: row.last_slashed,
+            slashed_by: account,
+          }));
+        repayDetails = detailRows
+          .filter((row: any) => row.last_repaid != null)
+          .map((row: any) => ({
+            repaid_amount: row.repaid_deposit,
+            repaid_ts: row.last_repaid,
+            repaid_by: row.last_repaid_by,
+          }));
+      } else if (td) {
+        if (td.last_slashed) {
+          slashDetails = [{
+            slashed_amount: td.slashed_deposit,
+            slashed_ts: td.last_slashed,
+            slashed_by: account,
+          }];
+        }
+        if (td.last_repaid) {
+          repayDetails = [{
+            repaid_amount: td.repaid_deposit,
+            repaid_ts: td.last_repaid,
+            repaid_by: td.last_repaid_by,
+          }];
+        }
+      }
+    }
 
     let permissionRows: any[];
     if (typeof blockHeight === "number") {
-      const permHistory = await knex("permission_history")
-        .where("grantee", account)
-        .where("height", "<=", blockHeight)
-        .orderBy("height", "desc")
-        .orderBy("created_at", "desc");
+      let latestPerms: any[] = [];
+      if (String((knex as any)?.client?.config?.client || "").includes("pg")) {
+        latestPerms = await knex("permission_history as ph")
+          .distinctOn("ph.permission_id")
+          .select(
+            "ph.permission_id",
+            "ph.schema_id",
+            "ph.type",
+            "ph.revoked",
+            "ph.effective_until",
+            "ph.slashed",
+            "ph.repaid",
+            "ph.deposit",
+            "ph.slashed_deposit",
+            "ph.repaid_deposit"
+          )
+          .where("ph.grantee", account)
+          .where("ph.height", "<=", blockHeight)
+          .modify((qb) => {
+            if (schemaId) qb.where("ph.schema_id", schemaId);
+          })
+          .orderBy("ph.permission_id", "asc")
+          .orderBy("ph.height", "desc")
+          .orderBy("ph.created_at", "desc")
+          .orderBy("ph.id", "desc");
+      } else {
+        const rankedPerms = knex("permission_history as ph")
+          .select(
+            "ph.permission_id",
+            "ph.schema_id",
+            "ph.type",
+            "ph.revoked",
+            "ph.effective_until",
+            "ph.slashed",
+            "ph.repaid",
+            "ph.deposit",
+            "ph.slashed_deposit",
+            "ph.repaid_deposit",
+            knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+          )
+          .where("ph.grantee", account)
+          .where("ph.height", "<=", blockHeight)
+          .modify((qb) => {
+            if (schemaId) qb.where("ph.schema_id", schemaId);
+          })
+          .as("ranked");
+        latestPerms = await knex.from(rankedPerms).select("*").where("rn", 1);
+      }
 
-      const permMap = new Map<string, any>();
-      for (const perm of permHistory) {
-        if (!permMap.has(String(perm.permission_id))) {
-          permMap.set(String(perm.permission_id), perm);
+      const schemaIds = Array.from(new Set(latestPerms.map((perm: any) => Number(perm.schema_id)).filter((sid: number) => Number.isFinite(sid) && sid > 0)));
+      const schemaMap = new Map<number, any>();
+      if (schemaIds.length > 0) {
+        let latestSchemas: any[] = [];
+        if (String((knex as any)?.client?.config?.client || "").includes("pg")) {
+          latestSchemas = await knex("credential_schema_history as csh")
+            .distinctOn("csh.credential_schema_id")
+            .select("csh.credential_schema_id", "csh.tr_id", "csh.deposit")
+            .whereIn("csh.credential_schema_id", schemaIds)
+            .where("csh.height", "<=", blockHeight)
+            .orderBy("csh.credential_schema_id", "asc")
+            .orderBy("csh.height", "desc")
+            .orderBy("csh.created_at", "desc")
+            .orderBy("csh.id", "desc");
+        } else {
+          const rankedSchemas = knex("credential_schema_history as csh")
+            .select(
+              "csh.credential_schema_id",
+              "csh.tr_id",
+              "csh.deposit",
+              knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
+            )
+            .whereIn("csh.credential_schema_id", schemaIds)
+            .where("csh.height", "<=", blockHeight)
+            .as("ranked");
+          latestSchemas = await knex.from(rankedSchemas).select("credential_schema_id", "tr_id", "deposit").where("rn", 1);
+        }
+        for (const row of latestSchemas) {
+          schemaMap.set(Number(row.credential_schema_id), row);
         }
       }
 
-      permissionRows = await Promise.all(
-        Array.from(permMap.values()).map(async (perm: any) => {
-          const schemaHistory = await knex("credential_schema_history")
-            .where({ credential_schema_id: perm.schema_id })
-            .where("height", "<=", blockHeight)
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc")
-            .first();
-          
-          if (!schemaHistory) return null;
+      const trIds = Array.from(new Set(Array.from(schemaMap.values()).map((schema: any) => Number(schema.tr_id)).filter((tid: number) => Number.isFinite(tid) && tid > 0)));
+      const trMap = new Map<number, string | null>();
+      if (trIds.length > 0) {
+        let latestTrs: any[] = [];
+        if (String((knex as any)?.client?.config?.client || "").includes("pg")) {
+          latestTrs = await knex("trust_registry_history as trh")
+            .distinctOn("trh.tr_id")
+            .select("trh.tr_id", "trh.did")
+            .whereIn("trh.tr_id", trIds)
+            .where("trh.height", "<=", blockHeight)
+            .orderBy("trh.tr_id", "asc")
+            .orderBy("trh.height", "desc")
+            .orderBy("trh.created_at", "desc")
+            .orderBy("trh.id", "desc");
+        } else {
+          const rankedTrs = knex("trust_registry_history as trh")
+            .select(
+              "trh.tr_id",
+              "trh.did",
+              knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.tr_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
+            )
+            .whereIn("trh.tr_id", trIds)
+            .where("trh.height", "<=", blockHeight)
+            .as("ranked");
+          latestTrs = await knex.from(rankedTrs).select("tr_id", "did").where("rn", 1);
+        }
+        for (const row of latestTrs) {
+          trMap.set(Number(row.tr_id), row.did || null);
+        }
+      }
 
-          const trHistory = await knex("trust_registry_history")
-            .where({ tr_id: schemaHistory.tr_id })
-            .where("height", "<=", blockHeight)
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc")
-            .first();
-
-          if (trId && String(schemaHistory.tr_id) !== String(trId)) return null;
-          if (schemaId && schemaHistory.credential_schema_id !== schemaId) return null;
-
+      permissionRows = latestPerms
+        .map((perm: any) => {
+          const schema = schemaMap.get(Number(perm.schema_id));
+          if (!schema) return null;
+          const mappedTrId = Number(schema.tr_id);
+          if (trId && String(mappedTrId) !== String(trId)) return null;
           return {
-            tr_id: schemaHistory.tr_id,
-            tr_did: trHistory?.did || null,
-            schema_id: schemaHistory.credential_schema_id,
-            schema_deposit: schemaHistory.deposit,
+            tr_id: mappedTrId,
+            tr_did: trMap.get(mappedTrId) || null,
+            schema_id: Number(schema.credential_schema_id),
+            schema_deposit: schema.deposit,
             type: perm.type,
             revoked: perm.revoked,
             effective_until: perm.effective_until,
@@ -188,13 +272,11 @@ export default class AccountReputationService extends BullableService {
             perm_id: perm.permission_id,
           };
         })
-      );
-      permissionRows = permissionRows.filter((r): r is NonNullable<typeof permissionRows[0]> => r !== null);
+        .filter((row: any) => row !== null);
     } else {
       let permissionsQuery = knex("permissions as p")
-        .joinRaw("LEFT JOIN credential_schemas cs on p.schema_id::text = cs.id::text")
-        .joinRaw("LEFT JOIN trust_registry tr on tr.id::text = cs.tr_id::text")
-        .joinRaw("LEFT JOIN permission_sessions ps on p.id::text = ps.agent_perm_id::text")
+        .leftJoin("credential_schemas as cs", "p.schema_id", "cs.id")
+        .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
         .where("p.grantee", account);
 
       if (trId) permissionsQuery = permissionsQuery.andWhere("cs.tr_id", String(trId));
@@ -299,31 +381,31 @@ export default class AccountReputationService extends BullableService {
       switch (row.type) {
         case "ISSUER":
           schema.issuer_perm_count++;
-          if (!row.revoked && (!row.effective_until || new Date(row.effective_until) > new Date()) && (!row.slashed || row.repaid)) {
+          if (!row.revoked && (!row.effective_until || new Date(row.effective_until).getTime() > nowTs) && (!row.slashed || row.repaid)) {
             schema.active_issuer_perm_count++;
           }
           break;
         case "VERIFIER":
           schema.verifier_perm_count++;
-          if (!row.revoked && (!row.effective_until || new Date(row.effective_until) > new Date()) && (!row.slashed || row.repaid)) {
+          if (!row.revoked && (!row.effective_until || new Date(row.effective_until).getTime() > nowTs) && (!row.slashed || row.repaid)) {
             schema.active_verifier_perm_count++;
           }
           break;
         case "ISSUER_GRANTOR":
           schema.issuer_grantor_perm_count++;
-          if (!row.revoked && (!row.effective_until || new Date(row.effective_until) > new Date()) && (!row.slashed || row.repaid)) {
+          if (!row.revoked && (!row.effective_until || new Date(row.effective_until).getTime() > nowTs) && (!row.slashed || row.repaid)) {
             schema.active_issuer_grantor_perm_count++;
           }
           break;
         case "VERIFIER_GRANTOR":
           schema.verifier_grantor_perm_count++;
-          if (!row.revoked && (!row.effective_until || new Date(row.effective_until) > new Date()) && (!row.slashed || row.repaid)) {
+          if (!row.revoked && (!row.effective_until || new Date(row.effective_until).getTime() > nowTs) && (!row.slashed || row.repaid)) {
             schema.active_verifier_grantor_perm_count++;
           }
           break;
         case "ECOSYSTEM":
           schema.ecosystem_perm_count++;
-          if (!row.revoked && (!row.effective_until || new Date(row.effective_until) > new Date()) && (!row.slashed || row.repaid)) {
+          if (!row.revoked && (!row.effective_until || new Date(row.effective_until).getTime() > nowTs) && (!row.slashed || row.repaid)) {
             schema.active_ecosystem_perm_count++;
           }
           break;

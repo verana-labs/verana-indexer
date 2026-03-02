@@ -12,6 +12,7 @@ import { eventsBroadcaster } from "./events_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
+const REQUEST_START_NS = Symbol("requestStartNs");
 
 
 const DEFAULT_ROUTE_CONFIG = {
@@ -205,6 +206,14 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   res.setHeader("X-Query-At", new Date().toISOString());
 }
 
+function setResponseTimeHeader(req: IncomingMessage, res: ServerResponse) {
+  const startNs = (req as any)[REQUEST_START_NS];
+  if (typeof startNs === "bigint") {
+    const elapsedMs = Number(process.hrtime.bigint() - startNs) / 1_000_000;
+    res.setHeader("X-Response-Time-Ms", elapsedMs.toFixed(2));
+  }
+}
+
 function createOnBeforeCall(required: boolean = true, checkIndexerStatus: boolean = false) {
   return async function (
     ctx: Context<any, any>,
@@ -212,6 +221,7 @@ function createOnBeforeCall(required: boolean = true, checkIndexerStatus: boolea
     req: IncomingMessage
   ) {
     try {
+      (req as any)[REQUEST_START_NS] = process.hrtime.bigint();
       const urlPath = req.url || '';
       const isStatusEndpoint = urlPath.includes('/verana/indexer/v1/status') || 
                                urlPath.endsWith('/status') ||
@@ -282,6 +292,7 @@ function createOnError() {
       }
 
       res.setHeader("X-Query-At", new Date().toISOString());
+      setResponseTimeHeader(req, res);
 
       if (!res.headersSent) {
         res.writeHead(status, { "Content-Type": "application/json" });
@@ -301,11 +312,12 @@ function createOnAfterCall() {
   return async function (
     _ctx: Context<any, any>,
     _route: Route,
-    _req: IncomingMessage,
+    req: IncomingMessage,
     res: ServerResponse,
     data: any
   ) {
     await attachHeaders(_ctx, res);
+    setResponseTimeHeader(req, res);
       if ((_ctx.meta as any).$rawJsonResponse) {
       let rawData: string;
       if (typeof data === "string") {

@@ -4,19 +4,44 @@ import BaseService from "../../base/base.service";
 import knex from "../../common/utils/db_connection";
 import { BULL_JOB_NAME } from "../../common";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
-import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
-import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import { computeGlobalMetrics } from "./metrics_helper";
 import ApiResponder from "../../common/utils/apiResponse";
-import { calculatePermState } from "../crawl-perm/perm_state_utils";
 
 @Service({
   name: "MetricsApiService",
   version: 1,
 })
 export default class MetricsApiService extends BaseService {
+  private historyMetricColumnsAvailabilityPromise?: Promise<{
+    csHasMetricColumns: boolean;
+  }>;
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  private getHistoryMetricColumnsAvailability(): Promise<{ csHasMetricColumns: boolean }> {
+    if (!this.historyMetricColumnsAvailabilityPromise) {
+      this.historyMetricColumnsAvailabilityPromise = (async () => {
+        const requiredCsColumns = [
+          "issued",
+          "verified",
+          "weight",
+          "ecosystem_slash_events",
+          "ecosystem_slashed_amount",
+          "ecosystem_slashed_amount_repaid",
+          "network_slash_events",
+          "network_slashed_amount",
+          "network_slashed_amount_repaid",
+        ];
+        const checks = await Promise.all(requiredCsColumns.map((column) => knex.schema.hasColumn("credential_schema_history", column)));
+        return { csHasMetricColumns: checks.every(Boolean) };
+      })().catch((error) => {
+        this.historyMetricColumnsAvailabilityPromise = undefined;
+        throw error;
+      });
+    }
+    return this.historyMetricColumnsAvailabilityPromise;
   }
 
   private getSnapshotMinIntervalMs(): number {
@@ -166,143 +191,147 @@ export default class MetricsApiService extends BaseService {
         return ApiResponder.success(ctx, result, 200);
       }
 
-      const trSub = knex("trust_registry_history")
-        .select("tr_id")
-        .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn"))
-        .where("height", "<=", blockHeight)
+      const trRanked = knex("trust_registry_history as trh")
+        .select(
+          "trh.tr_id",
+          "trh.archived",
+          knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.tr_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
+        )
+        .where("trh.height", "<=", blockHeight)
         .as("ranked_tr");
+      const trLatest = knex.from(trRanked).select("tr_id", "archived").where("rn", 1).as("latest_tr");
+      const trAgg = await knex.from(trLatest)
+        .select(
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_trust_registries"),
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_trust_registries")
+        )
+        .first();
 
-      const trLatest = await knex.from(trSub).select("tr_id").where("rn", 1);
-      const trIds = trLatest.map((r: any) => Number(r.tr_id));
-
-      let activeTrustRegistries = 0;
-      let archivedTrustRegistries = 0;
-      for (const trId of trIds) {
-        const trHistory = await knex("trust_registry_history")
-          .where("tr_id", trId)
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-        if (trHistory) {
-          if (trHistory.archived) archivedTrustRegistries++;
-          else activeTrustRegistries++;
-        }
-      }
-
-      const csSub = knex("credential_schema_history")
-        .select("credential_schema_id")
-        .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"))
-        .where("height", "<=", blockHeight)
+      const csRanked = knex("credential_schema_history as csh")
+        .select(
+          "csh.credential_schema_id",
+          "csh.archived",
+          "csh.weight",
+          "csh.issued",
+          "csh.verified",
+          "csh.ecosystem_slash_events",
+          "csh.ecosystem_slashed_amount",
+          "csh.ecosystem_slashed_amount_repaid",
+          "csh.network_slash_events",
+          "csh.network_slashed_amount",
+          "csh.network_slashed_amount_repaid",
+          knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
+        )
+        .where("csh.height", "<=", blockHeight)
         .as("ranked_cs");
+      const csLatest = knex.from(csRanked)
+        .select(
+          "credential_schema_id",
+          "archived",
+          "weight",
+          "issued",
+          "verified",
+          "ecosystem_slash_events",
+          "ecosystem_slashed_amount",
+          "ecosystem_slashed_amount_repaid",
+          "network_slash_events",
+          "network_slashed_amount",
+          "network_slashed_amount_repaid"
+        )
+        .where("rn", 1)
+        .as("latest_cs");
 
-      const csLatest = await knex.from(csSub).select("credential_schema_id").where("rn", 1);
-      const schemaIds = csLatest.map((r: any) => Number(r.credential_schema_id));
+      const csStateAgg = await knex.from(csLatest)
+        .select(
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_schemas"),
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_schemas")
+        )
+        .first();
 
-      let activeSchemas = 0;
-      let archivedSchemas = 0;
-      const participants = 0;
-      let totalWeight = BigInt(0);
-      let issued = 0;
-      let verified = 0;
-      let ecosystemSlashEvents = 0;
-      let ecosystemSlashedAmount = BigInt(0);
-      let ecosystemSlashedAmountRepaid = BigInt(0);
-      let networkSlashEvents = 0;
-      let networkSlashedAmount = BigInt(0);
-      let networkSlashedAmountRepaid = BigInt(0);
-
-      for (const sid of schemaIds) {
-        const schHistory = await knex("credential_schema_history")
-          .where("credential_schema_id", sid)
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
-        if (!schHistory) continue;
-        if (schHistory.archived) archivedSchemas++;
-        else activeSchemas++;
-
-        try {
-          const stats = await calculateCredentialSchemaStats(sid, blockHeight);
-              try {
-            totalWeight += BigInt(stats.weight || "0");
-          } catch {}
-          issued += Number(stats.issued || 0);
-          verified += Number(stats.verified || 0);
-          ecosystemSlashEvents += Number(stats.ecosystem_slash_events || 0);
-          ecosystemSlashedAmount += BigInt(stats.ecosystem_slashed_amount || "0");
-          ecosystemSlashedAmountRepaid += BigInt(stats.ecosystem_slashed_amount_repaid || "0");
-          networkSlashEvents += Number(stats.network_slash_events || 0);
-          networkSlashedAmount += BigInt(stats.network_slashed_amount || "0");
-          networkSlashedAmountRepaid += BigInt(stats.network_slashed_amount_repaid || "0");
-        } catch (err: any) {
-          this.logger.warn(`Failed to calculate stats for schema ${sid} at height ${blockHeight}: ${err?.message || err}`);
-        }
-      }
-      const participantsSet = new Set<string>();
-      try {
-        const latestHistorySubquery = knex("permission_history")
-          .select("permission_id")
+      const { csHasMetricColumns } = await this.getHistoryMetricColumnsAvailability().catch(() => ({ csHasMetricColumns: false }));
+      let metricAgg: any = null;
+      if (csHasMetricColumns) {
+        metricAgg = await knex.from(csLatest)
           .select(
-            knex.raw(
-              `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
-            )
+            knex.raw("COALESCE(SUM(CAST(weight AS NUMERIC)), 0) as weight"),
+            knex.raw("COALESCE(SUM(CAST(issued AS NUMERIC)), 0) as issued"),
+            knex.raw("COALESCE(SUM(CAST(verified AS NUMERIC)), 0) as verified"),
+            knex.raw("COALESCE(SUM(ecosystem_slash_events), 0) as ecosystem_slash_events"),
+            knex.raw("COALESCE(SUM(CAST(ecosystem_slashed_amount AS NUMERIC)), 0) as ecosystem_slashed_amount"),
+            knex.raw("COALESCE(SUM(CAST(ecosystem_slashed_amount_repaid AS NUMERIC)), 0) as ecosystem_slashed_amount_repaid"),
+            knex.raw("COALESCE(SUM(network_slash_events), 0) as network_slash_events"),
+            knex.raw("COALESCE(SUM(CAST(network_slashed_amount AS NUMERIC)), 0) as network_slashed_amount"),
+            knex.raw("COALESCE(SUM(CAST(network_slashed_amount_repaid AS NUMERIC)), 0) as network_slashed_amount_repaid")
           )
-          .where("height", "<=", blockHeight)
-          .as("ranked");
+          .first();
+      }
 
-        const permIdsAtHeight = await knex
-          .from(latestHistorySubquery)
-          .select("permission_id")
-          .where("rn", 1)
-          .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
+      const nowIso = new Date().toISOString();
+      const latestPermRanked = knex("permission_history as ph")
+        .select(
+          "ph.permission_id",
+          "ph.grantee",
+          "ph.repaid",
+          "ph.slashed",
+          "ph.revoked",
+          "ph.effective_from",
+          "ph.effective_until",
+          knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+        )
+        .where("ph.height", "<=", blockHeight)
+        .as("ranked_perm");
+      const participantsAgg = await knex
+        .from(latestPermRanked)
+        .where("rn", 1)
+        .whereNotNull("grantee")
+        .whereNull("repaid")
+        .whereNull("slashed")
+        .where((qb) => qb.whereNull("revoked").orWhere("revoked", ">=", nowIso))
+        .whereNotNull("effective_from")
+        .where("effective_from", "<=", nowIso)
+        .where((qb) => qb.whereNull("effective_until").orWhere("effective_until", ">=", nowIso))
+        .countDistinct("grantee as participants")
+        .first();
 
-        for (const permId of permIdsAtHeight) {
-          const historyRecord = await knex("permission_history")
-            .where({ permission_id: String(permId) })
-            .where("height", "<=", blockHeight)
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc")
-            .first();
-          if (!historyRecord) continue;
-          const permState = calculatePermState(
-            {
-              repaid: historyRecord.repaid,
-              slashed: historyRecord.slashed,
-              revoked: historyRecord.revoked,
-              effective_from: historyRecord.effective_from,
-              effective_until: historyRecord.effective_until,
-              type: historyRecord.type,
-              vp_state: historyRecord.vp_state,
-              vp_exp: historyRecord.vp_exp,
-              validator_perm_id: historyRecord.validator_perm_id,
-            },
-            new Date()
-          );
-          if (permState === "ACTIVE" && historyRecord.grantee) {
-            participantsSet.add(historyRecord.grantee);
-          }
-        }
-      } catch (err: any) {
-        this.logger.warn(`Failed to compute historical participants: ${err?.message || err}`);
+      let weight = Number(metricAgg?.weight || 0);
+      let issued = Number(metricAgg?.issued || 0);
+      let verified = Number(metricAgg?.verified || 0);
+      let ecosystemSlashEvents = Number(metricAgg?.ecosystem_slash_events || 0);
+      let ecosystemSlashedAmount = Number(metricAgg?.ecosystem_slashed_amount || 0);
+      let ecosystemSlashedAmountRepaid = Number(metricAgg?.ecosystem_slashed_amount_repaid || 0);
+      let networkSlashEvents = Number(metricAgg?.network_slash_events || 0);
+      let networkSlashedAmount = Number(metricAgg?.network_slashed_amount || 0);
+      let networkSlashedAmountRepaid = Number(metricAgg?.network_slashed_amount_repaid || 0);
+
+      if (!csHasMetricColumns) {
+        // Backward-compatible fallback for deployments where historical metric columns do not exist.
+        const fallback = await computeGlobalMetrics(blockHeight);
+        weight = Number(fallback?.weight || 0);
+        issued = Number(fallback?.issued || 0);
+        verified = Number(fallback?.verified || 0);
+        ecosystemSlashEvents = Number(fallback?.ecosystem_slash_events || 0);
+        ecosystemSlashedAmount = Number(fallback?.ecosystem_slashed_amount || 0);
+        ecosystemSlashedAmountRepaid = Number(fallback?.ecosystem_slashed_amount_repaid || 0);
+        networkSlashEvents = Number(fallback?.network_slash_events || 0);
+        networkSlashedAmount = Number(fallback?.network_slashed_amount || 0);
+        networkSlashedAmountRepaid = Number(fallback?.network_slashed_amount_repaid || 0);
       }
 
       const result = {
-        participants: participantsSet.size || participants,
-        active_trust_registries: activeTrustRegistries || 0,
-        archived_trust_registries: archivedTrustRegistries || 0,
-        active_schemas: activeSchemas || 0,
-        archived_schemas: archivedSchemas || 0,
-        weight: Number(totalWeight),
+        participants: Number((participantsAgg as any)?.participants || 0),
+        active_trust_registries: Number((trAgg as any)?.active_trust_registries || 0),
+        archived_trust_registries: Number((trAgg as any)?.archived_trust_registries || 0),
+        active_schemas: Number((csStateAgg as any)?.active_schemas || 0),
+        archived_schemas: Number((csStateAgg as any)?.archived_schemas || 0),
+        weight,
         issued,
         verified,
         ecosystem_slash_events: ecosystemSlashEvents,
-        ecosystem_slashed_amount: Number(ecosystemSlashedAmount),
-        ecosystem_slashed_amount_repaid: Number(ecosystemSlashedAmountRepaid),
+        ecosystem_slashed_amount: ecosystemSlashedAmount,
+        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid,
         network_slash_events: networkSlashEvents,
-        network_slashed_amount: Number(networkSlashedAmount),
-        network_slashed_amount_repaid: Number(networkSlashedAmountRepaid),
+        network_slashed_amount: networkSlashedAmount,
+        network_slashed_amount_repaid: networkSlashedAmountRepaid,
       };
 
       return ApiResponder.success(ctx, result, 200);
@@ -312,4 +341,3 @@ export default class MetricsApiService extends BaseService {
     }
   }
 }
-

@@ -285,7 +285,13 @@ export default class IndexerMetaService extends BaseService {
         return await knex(tableName)
           .select(
             `${tableName}.*`,
-            "transaction.timestamp",
+            knex.raw(`(
+              SELECT t.timestamp
+              FROM transaction t
+              WHERE t.height = ${quotedTable}.height
+              ORDER BY t.index ASC, t.id ASC
+              LIMIT 1
+            ) as timestamp`),
             knex.raw('? as activity_entity_type', [entityType]),
             knex.raw(`COALESCE(CAST(${tableName}.${entityIdField} AS TEXT), CAST(${tableName}.id AS TEXT)) as activity_entity_id`),
             knex.raw(`(
@@ -307,9 +313,6 @@ export default class IndexerMetaService extends BaseService {
               LIMIT 1
             ) as sender`)
           )
-          .leftJoin("transaction", function () {
-            this.on(`${tableName}.height`, "=", "transaction.height");
-          })
           .where(`${tableName}.height`, height);
       } catch (error: any) {
         const errorMsg = error?.message || String(error);
