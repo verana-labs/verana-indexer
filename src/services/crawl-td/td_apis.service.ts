@@ -157,8 +157,18 @@ export default class TrustDepositApiService extends BullableService {
         return ApiResponder.error(ctx, "Invalid account format", 400);
       }
 
-      const trustDeposit = await TrustDeposit.query().findOne({ account });
-      if (!trustDeposit) {
+      const [trustDeposit, trustDepositHistory] = await Promise.all([
+        TrustDeposit.query().findOne({ account }),
+        knex("trust_deposit_history")
+          .where({ account })
+          .modify((qb) => {
+            if (atBlockHeight && Number.isFinite(Number(atBlockHeight))) {
+              qb.where("height", "<=", Number(atBlockHeight));
+            }
+          })
+          .first(),
+      ]);
+      if (!trustDeposit && !trustDepositHistory) {
         return ApiResponder.error(
           ctx,
           `No trust deposit found for account: ${account}`,
