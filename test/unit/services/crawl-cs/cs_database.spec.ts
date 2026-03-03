@@ -62,6 +62,131 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     expect(updated.deposit).toBe(20000000);
   });
 
+  it("should avoid synthetic updates in syncFromLedger and update title/description from json_schema changes", async () => {
+    const basePayload = {
+      tr_id: 321,
+      json_schema: JSON.stringify({
+        $id: "/vpr/v1/cs/js/placeholder",
+        type: "object",
+        title: "SchemaTitleV1",
+        description: "SchemaDescV1",
+        properties: { foo: { type: "string" } },
+      }),
+      deposit: 10000000,
+      is_active: true,
+      issuer_grantor_validation_validity_period: 365,
+      verifier_grantor_validation_validity_period: 365,
+      issuer_validation_validity_period: 180,
+      verifier_validation_validity_period: 180,
+      holder_validation_validity_period: 180,
+      issuer_perm_management_mode: "OPEN",
+      verifier_perm_management_mode: "OPEN",
+      created: new Date().toISOString(),
+      archived: null,
+      modified: new Date().toISOString(),
+    };
+
+    const createRes = await broker.call(`${serviceKey}.upsert`, { payload: basePayload });
+    const created = createRes?.result || createRes;
+    const createdId = Number(created.id);
+
+    const beforeSync = await knex("credential_schemas").where({ id: createdId }).first();
+    const historyCountBefore = await knex("credential_schema_history")
+      .where({ credential_schema_id: createdId })
+      .count<{ count: string }>("id as count")
+      .first();
+
+    await broker.call(`${serviceKey}.syncFromLedger`, {
+      ledgerResponse: {
+        schema: {
+          id: createdId,
+          tr_id: String(beforeSync.tr_id),
+          json_schema: beforeSync.json_schema,
+          deposit: beforeSync.deposit,
+          issuer_grantor_validation_validity_period: beforeSync.issuer_grantor_validation_validity_period,
+          verifier_grantor_validation_validity_period: beforeSync.verifier_grantor_validation_validity_period,
+          issuer_validation_validity_period: beforeSync.issuer_validation_validity_period,
+          verifier_validation_validity_period: beforeSync.verifier_validation_validity_period,
+          holder_validation_validity_period: beforeSync.holder_validation_validity_period,
+          issuer_perm_management_mode: beforeSync.issuer_perm_management_mode,
+          verifier_perm_management_mode: beforeSync.verifier_perm_management_mode,
+          archived: beforeSync.archived,
+          created: beforeSync.created,
+          modified: beforeSync.modified,
+        },
+      },
+      blockHeight: 777777,
+    });
+
+    const historyCountAfterNoop = await knex("credential_schema_history")
+      .where({ credential_schema_id: createdId })
+      .count<{ count: string }>("id as count")
+      .first();
+    const beforeCount = Number(historyCountBefore?.count || 0);
+    const afterNoopCount = Number(historyCountAfterNoop?.count || 0);
+    expect(afterNoopCount).toBeGreaterThanOrEqual(beforeCount);
+    expect(afterNoopCount - beforeCount).toBeLessThanOrEqual(1);
+
+    if (afterNoopCount > beforeCount) {
+      const latestNoopHistory = await knex("credential_schema_history")
+        .where({ credential_schema_id: createdId })
+        .orderBy("id", "desc")
+        .first();
+      const noopRawChanges = latestNoopHistory?.changes;
+      const noopChanges =
+        typeof noopRawChanges === "string"
+          ? JSON.parse(noopRawChanges)
+          : (noopRawChanges ?? {});
+      expect(noopChanges.title).toBeUndefined();
+      expect(noopChanges.description).toBeUndefined();
+    }
+
+    const changedSchema = {
+      $id: `vpr:verana:vna-testnet-1/cs/v1/js/${createdId}`,
+      type: "object",
+      title: "SchemaTitleV2",
+      description: "SchemaDescV2",
+      properties: { foo: { type: "string" } },
+    };
+    await broker.call(`${serviceKey}.syncFromLedger`, {
+      ledgerResponse: {
+        schema: {
+          id: createdId,
+          tr_id: String(beforeSync.tr_id),
+          json_schema: JSON.stringify(changedSchema),
+          deposit: beforeSync.deposit,
+          issuer_grantor_validation_validity_period: beforeSync.issuer_grantor_validation_validity_period,
+          verifier_grantor_validation_validity_period: beforeSync.verifier_grantor_validation_validity_period,
+          issuer_validation_validity_period: beforeSync.issuer_validation_validity_period,
+          verifier_validation_validity_period: beforeSync.verifier_validation_validity_period,
+          holder_validation_validity_period: beforeSync.holder_validation_validity_period,
+          issuer_perm_management_mode: beforeSync.issuer_perm_management_mode,
+          verifier_perm_management_mode: beforeSync.verifier_perm_management_mode,
+          archived: beforeSync.archived,
+          created: beforeSync.created,
+          modified: new Date().toISOString(),
+        },
+      },
+      blockHeight: 777778,
+    });
+
+    const afterUpdate = await knex("credential_schemas").where({ id: createdId }).first();
+    expect(afterUpdate.title).toBe("SchemaTitleV2");
+    expect(afterUpdate.description).toBe("SchemaDescV2");
+
+    const latestHistory = await knex("credential_schema_history")
+      .where({ credential_schema_id: createdId })
+      .orderBy("id", "desc")
+      .first();
+    const rawChanges = latestHistory?.changes;
+    const changes =
+      typeof rawChanges === "string"
+        ? JSON.parse(rawChanges)
+        : (rawChanges ?? {});
+    expect(changes.title).toBe("SchemaTitleV2");
+    expect(changes.description).toBe("SchemaDescV2");
+  });
+
   it("should archive the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.archive`, {
       payload: {

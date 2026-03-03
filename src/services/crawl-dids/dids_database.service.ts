@@ -5,7 +5,7 @@ import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../co
 import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
+import { applyOrdering, validateSortParameter } from "../../common/utils/query_ordering";
 
 function isValidDid(did: string): boolean {
     const didRegex = /^did:[a-z0-9]+:[A-Za-z0-9.\-_%]+$/;
@@ -18,8 +18,20 @@ function isValidDid(did: string): boolean {
     version: 1
 })
 export default class DidDatabaseService extends BullableService {
+    private didHistoryColumnExistsCache = new Map<string, boolean>();
+
     constructor(broker: ServiceBroker) {
         super(broker);
+    }
+
+    private async hasDidHistoryColumn(column: string): Promise<boolean> {
+        const cached = this.didHistoryColumnExistsCache.get(column);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const exists = await knex.schema.hasColumn("did_history", column);
+        this.didHistoryColumnExistsCache.set(column, exists);
+        return exists;
     }
 
     @Action({ name: "upsertProcessedDid" })
@@ -195,110 +207,75 @@ export default class DidDatabaseService extends BullableService {
             const blockHeight = (ctx.meta as any)?.blockHeight;
             const effectiveLimit = Math.min(responseMaxSize || 64, 1024);
             const now = new Date().toISOString();
+            const graceThreshold = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString();
 
             // If AtBlockHeight is provided, query historical state
             if (typeof blockHeight === "number") {
-                // Get all unique DIDs that existed at or before the block height
-                const historyQuery = knex("did_history")
-                    .select("did")
-                    .where("height", "<=", blockHeight)
-                    .where("is_deleted", false)
-                    .groupBy("did");
-
-                // Get the latest state for each DID at the given block height
-                const subquery = knex("did_history")
-                    .select("did")
-                    .select(
-                        knex.raw(
-                            `ROW_NUMBER() OVER (PARTITION BY did ORDER BY height DESC, created_at DESC) as rn`
+                const [hasModifiedColumn, hasIsDeletedColumn] = await Promise.all([
+                    this.hasDidHistoryColumn("modified"),
+                    this.hasDidHistoryColumn("is_deleted"),
+                ]);
+                const modifiedIso = modified && !Number.isNaN(new Date(modified).getTime())
+                    ? new Date(modified).toISOString()
+                    : undefined;
+                const modifiedSelect = hasModifiedColumn
+                    ? "dh.modified"
+                    : knex.raw("dh.created as modified");
+                let latestQuery: any;
+                if (String((knex as any)?.client?.config?.client || "").includes("pg")) {
+                    const latest = knex("did_history as dh")
+                        .distinctOn("dh.did")
+                        .select("dh.id", "dh.did", "dh.controller", "dh.deposit", "dh.exp", "dh.created", modifiedSelect)
+                        .where("dh.height", "<=", blockHeight)
+                        .orderBy("dh.did", "asc")
+                        .orderBy("dh.height", "desc")
+                        .orderBy("dh.created_at", "desc")
+                        .orderBy("dh.id", "desc")
+                        .as("latest");
+                    if (hasIsDeletedColumn) {
+                        latest.where("dh.is_deleted", false);
+                    }
+                    latestQuery = knex.from(latest).select("*");
+                } else {
+                    const ranked = knex("did_history as dh")
+                        .select(
+                            "dh.id",
+                            "dh.did",
+                            "dh.controller",
+                            "dh.deposit",
+                            "dh.exp",
+                            "dh.created",
+                            modifiedSelect,
+                            knex.raw("ROW_NUMBER() OVER (PARTITION BY dh.did ORDER BY dh.height DESC, dh.created_at DESC, dh.id DESC) as rn")
                         )
-                    )
-                    .where("height", "<=", blockHeight)
-                    .where("is_deleted", false)
-                    .as("ranked");
-
-                const latestHistory = await knex
-                    .from(subquery)
-                    .select("did")
-                    .where("rn", 1);
-
-                const didsAtHeight = latestHistory.map((r: any) => r.did);
-
-                if (didsAtHeight.length === 0) {
-                    return ApiResponder.success(ctx, { dids: [] }, 200);
+                        .where("dh.height", "<=", blockHeight)
+                        .as("ranked");
+                    if (hasIsDeletedColumn) {
+                        ranked.where("dh.is_deleted", false);
+                    }
+                    latestQuery = knex.from(ranked).select("id", "did", "controller", "deposit", "exp", "created", "modified").where("rn", 1);
                 }
 
-                const items = await Promise.all(
-                    didsAtHeight.map(async (did: string) => {
-                        const historyRecord = await knex("did_history")
-                            .where({ did })
-                            .where("height", "<=", blockHeight)
-                            .where("is_deleted", false)
-                            .orderBy("height", "desc")
-                            .orderBy("created_at", "desc")
-                            .first();
-
-                        if (!historyRecord) return null;
-
-                        return {
-                            did: historyRecord.did,
-                            controller: historyRecord.controller,
-                            deposit: historyRecord.deposit ?? 0,
-                            exp: historyRecord.exp,
-                            created: historyRecord.created,
-                            modified: historyRecord.modified,
-                        };
-                    })
-                );
-
-                // Filter out nulls and apply filters
-                let filteredItems = items.filter((item): item is NonNullable<typeof items[0]> => item !== null);
-
-                if (accountFilter) filteredItems = filteredItems.filter(item => item.controller === accountFilter);
-                if (modified) {
-                    const modifiedDate = new Date(modified);
-                    if (!Number.isNaN(modifiedDate.getTime())) {
-                        filteredItems = filteredItems.filter(item => new Date(item.modified) > modifiedDate);
-                    }
+                if (accountFilter) latestQuery.where("controller", accountFilter);
+                if (modifiedIso) {
+                    latestQuery.where(hasModifiedColumn ? "modified" : "created", ">", modifiedIso);
                 }
                 if (expired !== undefined) {
-                    filteredItems = expired
-                        ? filteredItems.filter(item => new Date(item.exp) < new Date(now))
-                        : filteredItems.filter(item => new Date(item.exp) > new Date(now));
+                    if (expired) latestQuery.where("exp", "<", now);
+                    else latestQuery.where("exp", ">", now);
                 }
                 if (overGrace !== undefined) {
-                    filteredItems = overGrace
-                        ? filteredItems.filter(item => {
-                            const graceDate = new Date(item.exp);
-                            graceDate.setDate(graceDate.getDate() + 30);
-                            return graceDate < new Date(now);
-                        })
-                        : filteredItems.filter(item => {
-                            const graceDate = new Date(item.exp);
-                            graceDate.setDate(graceDate.getDate() + 30);
-                            return graceDate >= new Date(now);
-                        });
+                    if (overGrace) latestQuery.where("exp", "<", graceThreshold);
+                    else latestQuery.where("exp", ">=", graceThreshold);
                 }
 
-                // Sort and limit (reusable in‑memory helper)
-                type FilteredDidItem = {
-                    did: string;
-                    controller: any;
-                    deposit: any;
-                    exp: any;
-                    created: string;
-                    modified: string;
-                };
-                const typedFilteredItems = filteredItems as FilteredDidItem[];
-                filteredItems = sortByStandardAttributes<FilteredDidItem>(typedFilteredItems, sort, {
-                    getId: (item) => item.did,
-                    getCreated: (item) => item.created,
-                    getModified: (item) => item.modified,
-                    defaultAttribute: "modified",
-                    defaultDirection: "desc",
-                }).slice(0, effectiveLimit) as typeof filteredItems;
-
-                return ApiResponder.success(ctx, { dids: filteredItems }, 200);
+                const orderedQuery = applyOrdering(latestQuery, sort);
+                const filteredItems = await orderedQuery.limit(effectiveLimit);
+                const dids = filteredItems.map((item: any) => {
+                    const { id, ...did } = item;
+                    return did;
+                });
+                return ApiResponder.success(ctx, { dids }, 200);
             }
 
             // Otherwise, return latest state
@@ -327,8 +304,8 @@ export default class DidDatabaseService extends BullableService {
 
             if (overGrace !== undefined) {
                 query = overGrace
-                    ? query.andWhereRaw(`exp + interval '30 days' < ?`, [now])
-                    : query.andWhereRaw(`exp + interval '30 days' >= ?`, [now]);
+                    ? query.andWhere("exp", "<", graceThreshold)
+                    : query.andWhere("exp", ">=", graceThreshold);
             }
 
             // Apply ordering

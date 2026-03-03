@@ -1,6 +1,8 @@
 import knex from "../../common/utils/db_connection";
 import { TrustRegistry } from "../../models/trust_registry";
-import { calculatePermState } from "../crawl-perm/perm_state_utils";
+import { calculateCredentialSchemaStatsBatch, getPermissionSessionCounters } from "../crawl-cs/cs_stats";
+
+const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
 
 export interface TrustRegistryStats {
     participants: number;
@@ -19,20 +21,26 @@ export interface TrustRegistryStats {
 
 export async function getSchemasForTrustRegistry(trId: number, blockHeight?: number): Promise<any[]> {
     if (typeof blockHeight === "number") {
-        const schemaHistory = await knex("credential_schema_history")
-            .where("tr_id", String(trId))
-            .where("height", "<=", blockHeight)
-            .orderBy("credential_schema_id", "asc")
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc");
-
-        const schemaMap = new Map<number, any>();
-        for (const sch of schemaHistory) {
-            if (!schemaMap.has(sch.credential_schema_id)) {
-                schemaMap.set(sch.credential_schema_id, sch);
-            }
+        if (IS_PG_CLIENT) {
+            return await knex("credential_schema_history as csh")
+                .distinctOn("csh.credential_schema_id")
+                .select("csh.*")
+                .where("csh.tr_id", String(trId))
+                .where("csh.height", "<=", blockHeight)
+                .orderBy("csh.credential_schema_id", "asc")
+                .orderBy("csh.height", "desc")
+                .orderBy("csh.created_at", "desc")
+                .orderBy("csh.id", "desc");
         }
-        return Array.from(schemaMap.values());
+        const ranked = knex("credential_schema_history as csh")
+            .select(
+                "csh.*",
+                knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
+            )
+            .where("csh.tr_id", String(trId))
+            .where("csh.height", "<=", blockHeight)
+            .as("ranked");
+        return await knex.from(ranked).select("*").where("rn", 1);
     }
     return await knex("credential_schemas")
         .where("tr_id", String(trId))
@@ -55,20 +63,26 @@ export async function getTrustRegistryController(trId: number, blockHeight?: num
 
 export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
     if (typeof blockHeight === "number") {
-        const permHistory = await knex("permission_history")
-            .where("schema_id", schemaId)
-            .where("height", "<=", blockHeight)
-            .orderBy("permission_id", "asc")
-            .orderBy("height", "desc")
-            .orderBy("created_at", "desc");
-
-        const permMap = new Map<string, any>();
-        for (const perm of permHistory) {
-            if (!permMap.has(String(perm.permission_id))) {
-                permMap.set(String(perm.permission_id), perm);
-            }
+        if (IS_PG_CLIENT) {
+            return await knex("permission_history as ph")
+                .distinctOn("ph.permission_id")
+                .select("ph.*")
+                .where("ph.schema_id", schemaId)
+                .where("ph.height", "<=", blockHeight)
+                .orderBy("ph.permission_id", "asc")
+                .orderBy("ph.height", "desc")
+                .orderBy("ph.created_at", "desc")
+                .orderBy("ph.id", "desc");
         }
-        return Array.from(permMap.values());
+        const ranked = knex("permission_history as ph")
+            .select(
+                "ph.*",
+                knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+            )
+            .where("ph.schema_id", schemaId)
+            .where("ph.height", "<=", blockHeight)
+            .as("ranked");
+        return await knex.from(ranked).select("*").where("rn", 1);
     }
     return await knex("permissions")
         .where("schema_id", Number(schemaId))
@@ -76,62 +90,21 @@ export async function getPermissionsForSchema(schemaId: number, blockHeight?: nu
 }
 
 export async function calculateIssuedVerifiedForSchema(
-    schemaId: number,
+    _schemaId: number,
     permissionIds: Set<number>,
     blockHeight?: number
 ): Promise<{ issued: number; verified: number }> {
     let totalIssued = 0;
     let totalVerified = 0;
 
-    if (typeof blockHeight === "number") {
-        const latestSessionSubquery = knex("permission_session_history")
-            .select("session_id")
-            .select(
-                knex.raw(
-                    `ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY height DESC, created_at DESC) as rn`
-                )
-            )
-            .where("height", "<=", blockHeight)
-            .as("ranked");
+    if (permissionIds.size === 0) {
+        return { issued: 0, verified: 0 };
+    }
 
-        const sessions = await knex
-            .from(latestSessionSubquery)
-            .join("permission_session_history as psh", function () {
-                this.on("ranked.session_id", "=", "psh.session_id")
-                    .andOn("ranked.rn", "=", knex.raw("1"));
-            })
-            .select("psh.authz");
-
-        for (const session of sessions) {
-            const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
-            if (Array.isArray(authz)) {
-                for (const entry of authz) {
-                    if (entry.issuer_perm_id && permissionIds.has(Number(entry.issuer_perm_id))) {
-                        totalIssued += 1;
-                    }
-                    if (entry.verifier_perm_id && permissionIds.has(Number(entry.verifier_perm_id))) {
-                        totalVerified += 1;
-                    }
-                }
-            }
-        }
-    } else {
-        const sessions = await knex("permission_sessions")
-            .select("authz");
-
-        for (const session of sessions) {
-            const authz = typeof session.authz === "string" ? JSON.parse(session.authz) : session.authz;
-            if (Array.isArray(authz)) {
-                for (const entry of authz) {
-                    if (entry.issuer_perm_id && permissionIds.has(Number(entry.issuer_perm_id))) {
-                        totalIssued += 1;
-                    }
-                    if (entry.verifier_perm_id && permissionIds.has(Number(entry.verifier_perm_id))) {
-                        totalVerified += 1;
-                    }
-                }
-            }
-        }
+    const counters = await getPermissionSessionCounters(blockHeight);
+    for (const permissionId of permissionIds) {
+        totalIssued += counters.issuer.get(Number(permissionId)) || 0;
+        totalVerified += counters.verifier.get(Number(permissionId)) || 0;
     }
 
     return { issued: totalIssued, verified: totalVerified };
@@ -255,93 +228,110 @@ export async function calculateTrustRegistryStats(
     trId: number,
     blockHeight?: number
 ): Promise<TrustRegistryStats> {
-    const now = new Date();
-    const schemas = await getSchemasForTrustRegistry(trId, blockHeight);
-    const trController = await getTrustRegistryController(trId, blockHeight);
+    const batch = await calculateTrustRegistryStatsBatch([trId], blockHeight);
+    return batch.get(Number(trId)) || {
+        participants: 0,
+        active_schemas: 0,
+        archived_schemas: 0,
+        weight: 0,
+        issued: 0,
+        verified: 0,
+        ecosystem_slash_events: 0,
+        ecosystem_slashed_amount: 0,
+        ecosystem_slashed_amount_repaid: 0,
+        network_slash_events: 0,
+        network_slashed_amount: 0,
+        network_slashed_amount_repaid: 0,
+    };
+}
 
-    let activeSchemas = 0;
-    let archivedSchemas = 0;
-    let totalWeight = 0;
-    let totalIssued = 0;
-    let totalVerified = 0;
-    let ecosystemSlashEvents = 0;
-    let ecosystemSlashedAmount = 0;
-    let ecosystemSlashedAmountRepaid = 0;
-    let networkSlashEvents = 0;
-    let networkSlashedAmount = 0;
-    let networkSlashedAmountRepaid = 0;
-    const activeParticipants = new Set<number>();
+export async function calculateTrustRegistryStatsBatch(
+    trIdsInput: number[],
+    blockHeight?: number
+): Promise<Map<number, TrustRegistryStats>> {
+    const trIds = Array.from(new Set(trIdsInput.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+    const result = new Map<number, TrustRegistryStats>();
+    if (trIds.length === 0) return result;
 
-    for (const schema of schemas) {
-        const schemaId = schema.credential_schema_id || schema.id;
-        const isArchived = schema.archived !== null && schema.archived !== undefined;
-
-        if (isArchived) {
-            archivedSchemas++;
+    let schemas: any[] = [];
+    if (typeof blockHeight === "number") {
+        if (IS_PG_CLIENT) {
+            schemas = await knex("credential_schema_history as csh")
+                .distinctOn("csh.credential_schema_id")
+                .select("csh.credential_schema_id", "csh.tr_id", "csh.archived")
+                .whereIn("csh.tr_id", trIds)
+                .where("csh.height", "<=", blockHeight)
+                .orderBy("csh.credential_schema_id", "asc")
+                .orderBy("csh.height", "desc")
+                .orderBy("csh.created_at", "desc")
+                .orderBy("csh.id", "desc");
         } else {
-            activeSchemas++;
+            const ranked = knex("credential_schema_history as csh")
+                .select(
+                    "csh.credential_schema_id",
+                    "csh.tr_id",
+                    "csh.archived",
+                    knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
+                )
+                .whereIn("csh.tr_id", trIds)
+                .where("csh.height", "<=", blockHeight)
+                .as("ranked");
+            schemas = await knex.from(ranked).select("credential_schema_id", "tr_id", "archived").where("rn", 1);
         }
-
-        const permissions = await getPermissionsForSchema(schemaId, blockHeight);
-        const permissionIds = new Set<number>();
-
-        for (const perm of permissions) {
-            const permId = Number(perm.permission_id || perm.id);
-            permissionIds.add(permId);
-
-            const permState = calculatePermState(
-                {
-                    repaid: perm.repaid,
-                    slashed: perm.slashed,
-                    revoked: perm.revoked,
-                    effective_from: perm.effective_from,
-                    effective_until: perm.effective_until,
-                    type: perm.type,
-                    vp_state: perm.vp_state,
-                    vp_exp: perm.vp_exp,
-                    validator_perm_id: perm.validator_perm_id,
-                },
-                now
-            );
-
-            if (permState === "ACTIVE") {
-                activeParticipants.add(permId);
-            }
-
-            if (perm.weight != null) {
-                const weightValue = typeof perm.weight === 'number' ? perm.weight : Number(perm.weight);
-                totalWeight += weightValue;
-            } else if (perm.deposit != null) {
-                const depositValue = typeof perm.deposit === 'number' ? perm.deposit : Number(perm.deposit);
-                totalWeight += depositValue;
-            }
-        }
-
-        const { issued, verified } = await calculateIssuedVerifiedForSchema(schemaId, permissionIds, blockHeight);
-        totalIssued += issued;
-        totalVerified += verified;
-
-        const slashStats = await calculateSlashStatsForSchema(schemaId, permissionIds, trController, blockHeight);
-        ecosystemSlashEvents += slashStats.ecosystem_slash_events;
-        ecosystemSlashedAmount += slashStats.ecosystem_slashed_amount;
-        ecosystemSlashedAmountRepaid += slashStats.ecosystem_slashed_amount_repaid;
-        networkSlashEvents += slashStats.network_slash_events;
-        networkSlashedAmount += slashStats.network_slashed_amount;
-        networkSlashedAmountRepaid += slashStats.network_slashed_amount_repaid;
+    } else {
+        schemas = await knex("credential_schemas").select("id as credential_schema_id", "tr_id", "archived").whereIn("tr_id", trIds);
     }
 
-    return {
-        participants: activeParticipants.size,
-        active_schemas: activeSchemas,
-        archived_schemas: archivedSchemas,
-        weight: totalWeight,
-        issued: totalIssued,
-        verified: totalVerified,
-        ecosystem_slash_events: ecosystemSlashEvents,
-        ecosystem_slashed_amount: ecosystemSlashedAmount,
-        ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid,
-        network_slash_events: networkSlashEvents,
-        network_slashed_amount: networkSlashedAmount,
-        network_slashed_amount_repaid: networkSlashedAmountRepaid,
-    };
+    for (const trId of trIds) {
+        result.set(trId, {
+            participants: 0,
+            active_schemas: 0,
+            archived_schemas: 0,
+            weight: 0,
+            issued: 0,
+            verified: 0,
+            ecosystem_slash_events: 0,
+            ecosystem_slashed_amount: 0,
+            ecosystem_slashed_amount_repaid: 0,
+            network_slash_events: 0,
+            network_slashed_amount: 0,
+            network_slashed_amount_repaid: 0,
+        });
+    }
+
+    const schemaIds: number[] = [];
+    const schemaToTr = new Map<number, number>();
+    for (const schema of schemas) {
+        const trId = Number(schema.tr_id);
+        const schemaId = Number(schema.credential_schema_id);
+        if (!Number.isFinite(trId) || !Number.isFinite(schemaId)) continue;
+        schemaToTr.set(schemaId, trId);
+        schemaIds.push(schemaId);
+
+        const trStats = result.get(trId);
+        if (!trStats) continue;
+        if (schema.archived !== null && schema.archived !== undefined) trStats.archived_schemas += 1;
+        else trStats.active_schemas += 1;
+    }
+
+    const schemaStats = await calculateCredentialSchemaStatsBatch(schemaIds, blockHeight);
+    for (const [schemaId, stats] of schemaStats.entries()) {
+        const trId = schemaToTr.get(schemaId);
+        if (!trId) continue;
+        const trStats = result.get(trId);
+        if (!trStats) continue;
+
+        trStats.participants += Number(stats.participants || 0);
+        trStats.weight += Number(stats.weight || 0);
+        trStats.issued += Number(stats.issued || 0);
+        trStats.verified += Number(stats.verified || 0);
+        trStats.ecosystem_slash_events += Number(stats.ecosystem_slash_events || 0);
+        trStats.ecosystem_slashed_amount += Number(stats.ecosystem_slashed_amount || 0);
+        trStats.ecosystem_slashed_amount_repaid += Number(stats.ecosystem_slashed_amount_repaid || 0);
+        trStats.network_slash_events += Number(stats.network_slash_events || 0);
+        trStats.network_slashed_amount += Number(stats.network_slashed_amount || 0);
+        trStats.network_slashed_amount_repaid += Number(stats.network_slashed_amount_repaid || 0);
+    }
+
+    return result;
 }

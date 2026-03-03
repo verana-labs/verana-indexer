@@ -9,8 +9,18 @@ describe("AccountReputationService", () => {
     const service = broker.createService(AccountReputationService);
     const mockKnex = require("../../../../src/common/utils/db_connection");
 
+    const createPermissionsQueryMock = (rows: any[] = []) => ({
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockResolvedValue(rows),
+    });
+
     beforeAll(() => broker.start());
     afterAll(() => broker.stop());
+    beforeEach(() => {
+        mockKnex.mockReset();
+    });
 
     it("returns 400 for invalid account", async () => {
         const res: any = await broker.call(
@@ -57,10 +67,7 @@ describe("AccountReputationService", () => {
                 })),
             }))
             .mockImplementationOnce((table: string) => ({
-                joinRaw: jest.fn().mockReturnThis(),
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                select: jest.fn().mockResolvedValue([]),
+                ...createPermissionsQueryMock([]),
             }));
 
         const res: any = await broker.call(
@@ -92,32 +99,14 @@ describe("AccountReputationService", () => {
                         slashed_deposit: "10",
                         repaid_deposit: "5",
                         slash_count: 2,
+                        last_slashed: "t1",
+                        last_repaid: "t2",
+                        last_repaid_by: "actor2",
                     })
                 })),
             }))
             .mockImplementationOnce(() => ({
-                where: jest.fn(() => ({
-                    select: jest.fn(() => ({
-                        whereNotNull: jest.fn(() => Promise.resolve([
-                            { slashed_amount: "10", slashed_ts: "t1" }
-                        ]))
-                    }))
-                })),
-            }))
-            .mockImplementationOnce(() => ({
-                where: jest.fn(() => ({
-                    select: jest.fn(() => ({
-                        whereNotNull: jest.fn(() => Promise.resolve([
-                            { repaid_amount: "5", repaid_ts: "t2", repaid_by: "actor2" }
-                        ]))
-                    }))
-                })),
-            }))
-            .mockImplementationOnce(() => ({
-                joinRaw: jest.fn().mockReturnThis(),
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                select: jest.fn().mockResolvedValue([]),
+                ...createPermissionsQueryMock([]),
             }));
 
         const res: any = await broker.call(

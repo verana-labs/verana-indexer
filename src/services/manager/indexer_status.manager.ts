@@ -45,8 +45,14 @@ class IndexerStatusManager {
   private readonly RECOVERY_CHECK_INTERVAL = 30000;
   private readonly RECOVERY_CHECK_TIMEOUT = 10000;
 
+  private dbStorageCheckInterval: NodeJS.Timeout | null = null;
+  private readonly DB_STORAGE_CHECK_INTERVAL_MS = 120000; // 2 minutes
+
   private constructor() {
     // Singleton pattern - private constructor to prevent instantiation
+    (global as any).__pauseCrawlingHook = async (error: Error, service?: string) => {
+      await this.stopCrawlingOnly(error, service);
+    };
   }
 
   public static getInstance(): IndexerStatusManager {
@@ -103,6 +109,7 @@ class IndexerStatusManager {
     this.status.stoppedReason = `Indexer stopped due to error in ${service || "unknown"}: ${error.message}`;
 
     await this.stopAllCrawlingJobs();
+    this.stopDbStorageChecker();
 
     const errorMessage = error.message || String(error);
     const isNetworkError = errorMessage.toLowerCase().includes('timeout') ||
@@ -134,6 +141,7 @@ class IndexerStatusManager {
     this.status.stoppedReason = `Crawling stopped due to: ${error.message}. Indexer APIs remain available.`;
 
     await this.stopAllCrawlingJobs();
+    this.stopDbStorageChecker();
 
     const errorMessage = error.message || String(error);
     const isNetworkError = errorMessage.toLowerCase().includes('timeout') ||
@@ -172,6 +180,7 @@ class IndexerStatusManager {
     this.status.stoppedReason = undefined;
 
     this.stopRecoveryChecker();
+    this.startDbStorageChecker();
 
     await this.resumeAllCrawlingJobs();
 
@@ -207,14 +216,60 @@ class IndexerStatusManager {
   private async checkAndRecover(): Promise<void> {
     if (!this.status.isCrawling || !this.status.isRunning) {
       try {
+        const stoppedByDbPool = this.status.lastError?.service === 'DB_POOL';
+        const stoppedByMemory = this.status.lastError?.service === 'MEMORY';
+
+        if (stoppedByDbPool) {
+          const { isPoolRecovered } = await import('../../common/utils/db_pool_guard');
+          if (isPoolRecovered()) {
+            if (this.logger) {
+              this.logger.info('DB pool recovered (pending drained). Automatically resuming crawling...');
+            } else {
+              console.log('DB pool recovered. Automatically resuming crawling...');
+            }
+            await this.resumeIndexer();
+            if (this.logger) {
+              this.logger.info('Crawling resumed successfully');
+            }
+            return;
+          }
+          if (this.logger) {
+            this.logger.info(`DB pool not yet recovered, will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
+          }
+          return;
+        }
+
+        if (stoppedByMemory) {
+          const parsedResume = parseInt(process.env.NODE_MEMORY_RESUME_MB || '1600', 10);
+          const resumeHeapMb = Number.isFinite(parsedResume) && parsedResume > 0 ? parsedResume : 1600;
+          if (global.gc) global.gc();
+          const heapUsedMb = (process.memoryUsage().heapUsed || 0) / (1024 * 1024);
+          if (heapUsedMb < resumeHeapMb) {
+            if (this.logger) {
+              this.logger.info(`Memory recovered (heap ${heapUsedMb.toFixed(0)} MB < ${resumeHeapMb} MB). Automatically resuming crawling...`);
+            } else {
+              console.log('Memory recovered. Automatically resuming crawling...');
+            }
+            await this.resumeIndexer();
+            if (this.logger) {
+              this.logger.info('Crawling resumed successfully');
+            }
+            return;
+          }
+          if (this.logger) {
+            this.logger.info(`Memory not yet recovered (heap ${heapUsedMb.toFixed(0)} MB), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
+          }
+          return;
+        }
+
         if (this.logger) {
           this.logger.info(`Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`);
         } else {
           console.log(`Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`);
         }
-        
+
         const isHealthy = await this.checkConnectionHealth();
-        
+
         if (isHealthy) {
           if (this.logger) {
             this.logger.info('Connection restored! Automatically resuming indexer...');
@@ -229,12 +284,12 @@ class IndexerStatusManager {
           }
           return;
         }
-        
-        const timeSinceStopped = this.status.stoppedAt 
+
+        const timeSinceStopped = this.status.stoppedAt
           ? Date.now() - new Date(this.status.stoppedAt).getTime()
           : 0;
         const minutesStopped = Math.floor(timeSinceStopped / 60000);
-        
+
         if (this.logger) {
           this.logger.info(`Connection not yet restored (stopped ${minutesStopped} minutes ago), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
         } else {
@@ -249,6 +304,51 @@ class IndexerStatusManager {
       }
     } else if (this.status.isCrawling && this.status.isRunning) {
       this.stopRecoveryChecker();
+    }
+  }
+
+  private startDbStorageChecker(): void {
+    this.stopDbStorageChecker();
+    const configuredLimitMb = (() => {
+      const raw = process.env.DB_STORAGE_MAX_MB;
+      const parsed = Number(raw);
+      return raw == null || raw === '' || !Number.isFinite(parsed) || parsed <= 0 ? 20 * 1024 : parsed;
+    })();
+    if (this.logger) {
+      this.logger.info(`Starting DB storage limit checker (every ${this.DB_STORAGE_CHECK_INTERVAL_MS / 1000}s, limit ${configuredLimitMb} MB)`);
+    }
+    const runCheck = async () => {
+      if (!this.status.isCrawling || !this.status.isRunning) return;
+      try {
+        const { checkDbStorageLimit } = await import('../../common/utils/db_storage_check');
+        const { overLimit, sizeMb, maxMb } = await checkDbStorageLimit();
+        if (overLimit) {
+          const msg = `DB storage limit reached: ${sizeMb.toFixed(1)} MB >= ${maxMb} MB. Crawling stopped to avoid out-of-space.`;
+          if (this.logger) {
+            this.logger.error(msg);
+          } else {
+            console.error(msg);
+          }
+          await this.stopCrawlingOnly(new Error(msg), 'DB_STORAGE');
+        }
+      } catch (err: any) {
+        if (this.logger) {
+          this.logger.warn(`DB storage check failed: ${err?.message || err}. Will retry.`);
+        }
+      }
+    };
+
+    this.dbStorageCheckInterval = setInterval(runCheck, this.DB_STORAGE_CHECK_INTERVAL_MS);
+    setImmediate(runCheck);
+  }
+
+  private stopDbStorageChecker(): void {
+    if (this.dbStorageCheckInterval) {
+      clearInterval(this.dbStorageCheckInterval);
+      this.dbStorageCheckInterval = null;
+      if (this.logger) {
+        this.logger.info('Stopped DB storage limit checker');
+      }
     }
   }
 
@@ -299,16 +399,25 @@ class IndexerStatusManager {
       }
 
       const redisClient = new Redis(Config.QUEUE_JOB_REDIS);
+      redisClient.setMaxListeners(Math.max(redisClient.getMaxListeners(), 100));
       
       const crawlingJobs = [
         BULL_JOB_NAME.CRAWL_BLOCK,
         BULL_JOB_NAME.CRAWL_TRANSACTION,
         BULL_JOB_NAME.HANDLE_TRANSACTION,
+        BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
+        BULL_JOB_NAME.HANDLE_TRUST_DEPOSIT,
+        BULL_JOB_NAME.CRAWL_PROPOSAL,
+        BULL_JOB_NAME.CRAWL_TALLY_PROPOSAL,
+        BULL_JOB_NAME.COUNT_VOTE_PROPOSAL,
+        BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
+        BULL_JOB_NAME.CALCULATE_STATS,
       ];
 
       for (const jobName of crawlingJobs) {
+        let queue: Queue | null = null;
         try {
-          const queue = new Queue(jobName, {
+          queue = new Queue(jobName, {
             prefix: DEFAULT_PREFIX,
             connection: redisClient,
           });
@@ -324,6 +433,14 @@ class IndexerStatusManager {
             this.logger.error(`Failed to resume queue ${jobName}:`, err);
           } else {
             console.error(`Failed to resume queue ${jobName}:`, err);
+          }
+        } finally {
+          if (queue) {
+            try {
+              await queue.close();
+            } catch {
+              // best effort; queue object is short-lived
+            }
           }
         }
       }
@@ -354,16 +471,25 @@ class IndexerStatusManager {
       }
 
       const redisClient = new Redis(Config.QUEUE_JOB_REDIS);
+      redisClient.setMaxListeners(Math.max(redisClient.getMaxListeners(), 100));
       
       const crawlingJobs = [
         BULL_JOB_NAME.CRAWL_BLOCK,
         BULL_JOB_NAME.CRAWL_TRANSACTION,
         BULL_JOB_NAME.HANDLE_TRANSACTION,
+        BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
+        BULL_JOB_NAME.HANDLE_TRUST_DEPOSIT,
+        BULL_JOB_NAME.CRAWL_PROPOSAL,
+        BULL_JOB_NAME.CRAWL_TALLY_PROPOSAL,
+        BULL_JOB_NAME.COUNT_VOTE_PROPOSAL,
+        BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
+        BULL_JOB_NAME.CALCULATE_STATS,
       ];
 
       for (const jobName of crawlingJobs) {
+        let queue: Queue | null = null;
         try {
-          const queue = new Queue(jobName, {
+          queue = new Queue(jobName, {
             prefix: DEFAULT_PREFIX,
             connection: redisClient,
           });
@@ -379,6 +505,14 @@ class IndexerStatusManager {
             this.logger.error(`Failed to stop queue ${jobName}:`, err);
           } else {
             console.error(`Failed to stop queue ${jobName}:`, err);
+          }
+        } finally {
+          if (queue) {
+            try {
+              await queue.close();
+            } catch {
+              // best effort; queue object is short-lived
+            }
           }
         }
       }
@@ -399,4 +533,3 @@ class IndexerStatusManager {
 }
 
 export const indexerStatusManager = IndexerStatusManager.getInstance();
-

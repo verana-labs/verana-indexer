@@ -258,19 +258,30 @@ export default class StatsAPIService extends BaseService {
       const bucketsArr: any[] = [];
       const granularitiesUsed = new Set<string>();
 
+      const preloadedQuery = Stats.query()
+        .where("timestamp", ">=", fromDate)
+        .where("timestamp", "<", untilDate)
+        .whereIn("granularity", ["HOUR", "DAY", "MONTH"])
+        .where("entity_type", entityType);
+
+      if (entityType === "GLOBAL") {
+        preloadedQuery.whereNull("entity_id");
+      } else {
+        preloadedQuery.whereIn("entity_id", parsedEntityIds);
+      }
+
+      const preloadedBuckets = await preloadedQuery;
+      const bucketByKey = new Map<string, Stats>();
+      for (const bucket of preloadedBuckets) {
+        const ts = new Date(bucket.timestamp).toISOString();
+        const key = `${bucket.granularity}|${ts}`;
+        bucketByKey.set(key, bucket);
+      }
+
       const cloneUtc = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
 
-      const addBucketIfExists = async (g: string, ts: Date) => {
-        const query = Stats.query()
-          .where("granularity", g)
-          .where("timestamp", ts)
-          .where("entity_type", entityType);
-        if (entityType === "GLOBAL") {
-          query.whereNull("entity_id");
-        } else {
-          query.whereIn("entity_id", parsedEntityIds);
-        }
-        const b = await query.first();
+      const addBucketIfExists = (g: string, ts: Date) => {
+        const b = bucketByKey.get(`${g}|${ts.toISOString()}`);
         if (b) {
           bucketsArr.push(b);
           granularitiesUsed.add(g);
@@ -286,13 +297,13 @@ export default class StatsAPIService extends BaseService {
         const nextMonth = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1, 0, 0, 0, 0));
         const nextDay = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + 1, 0, 0, 0, 0));
         if (startOfMonth(cur) && nextMonth <= untilDate) {
-          await addBucketIfExists("MONTH", cur);
+          addBucketIfExists("MONTH", cur);
           cur = nextMonth;
         } else if (startOfDay(cur) && nextDay <= untilDate) {
-          await addBucketIfExists("DAY", cur);
+          addBucketIfExists("DAY", cur);
           cur = nextDay;
         } else {
-          await addBucketIfExists("HOUR", cur);
+          addBucketIfExists("HOUR", cur);
           cur = new Date(cur.getTime() + 60 * 60 * 1000);
         }
       }

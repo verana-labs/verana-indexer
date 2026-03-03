@@ -108,11 +108,12 @@ async function buildHistoryQuery(
   options: {
     transactionTimestampOlderThan?: string;
     atBlockHeight?: string;
+    perQueryLimit?: number;
   }
 ) {
   try {
     const { entityType, historyTable, idField, entityId, msgTypePrefixes, entityIdField } = config;
-    const { transactionTimestampOlderThan, atBlockHeight } = options;
+    const { transactionTimestampOlderThan, atBlockHeight, perQueryLimit } = options;
 
   const prefixes = msgTypePrefixes || [];
   const msgTypeCondition = prefixes.length > 0 
@@ -129,7 +130,13 @@ async function buildHistoryQuery(
   let historyQuery = knex(historyTable)
     .select(
       `${historyTable}.*`,
-      "transaction.timestamp",
+      knex.raw(`(
+        SELECT t.timestamp
+        FROM transaction t
+        WHERE t.height = ${quotedTable}.height
+        ORDER BY t.index ASC, t.id ASC
+        LIMIT 1
+      ) as timestamp`),
       knex.raw('? as activity_entity_type', [entityType]),
       entityIdField 
         ? knex.raw(`COALESCE(CAST(${historyTable}.${entityIdField} AS TEXT), CAST(${historyTable}.id AS TEXT)) as activity_entity_id`)
@@ -153,9 +160,6 @@ async function buildHistoryQuery(
         LIMIT 1
       ) as sender`)
     )
-    .leftJoin("transaction", function () {
-      this.on(`${historyTable}.height`, "=", "transaction.height");
-    })
     .where(function () {
       this.where(`${historyTable}.${idField}`, entityId);
     });
@@ -171,7 +175,19 @@ async function buildHistoryQuery(
   }
 
   if (transactionTimestampOlderThan) {
-    historyQuery = historyQuery.where("transaction.timestamp", "<", transactionTimestampOlderThan);
+    historyQuery = historyQuery.whereRaw(
+      `(SELECT t.timestamp FROM transaction t WHERE t.height = ${quotedTable}.height ORDER BY t.index ASC, t.id ASC LIMIT 1) < ?`,
+      [transactionTimestampOlderThan]
+    );
+  }
+
+  historyQuery = historyQuery
+    .orderBy(`${historyTable}.height`, "desc")
+    .orderBy(`${historyTable}.created_at`, "desc")
+    .orderBy(`${historyTable}.id`, "desc");
+
+  if (perQueryLimit && Number.isFinite(perQueryLimit) && perQueryLimit > 0) {
+    historyQuery = historyQuery.limit(Math.floor(perQueryLimit));
   }
 
   return historyQuery;
@@ -191,8 +207,9 @@ export async function buildActivityTimeline(
   } = {}
 ): Promise<any[]> {
   try {
-    const { entityType, historyTable, idField, entityId, msgTypePrefixes, relatedEntities } = config;
-    const { responseMaxSize = 64, transactionTimestampOlderThan, atBlockHeight } = options;
+  const { entityType, historyTable, idField, entityId, msgTypePrefixes, relatedEntities } = config;
+  const { responseMaxSize = 64, transactionTimestampOlderThan, atBlockHeight } = options;
+  const perQueryLimit = Math.max(Number(responseMaxSize) * 4, 256);
 
   const queries: any[] = [];
 
@@ -206,7 +223,7 @@ export async function buildActivityTimeline(
         msgTypePrefixes,
         entityIdField: idField,
       },
-      { transactionTimestampOlderThan, atBlockHeight }
+      { transactionTimestampOlderThan, atBlockHeight, perQueryLimit }
     )
   );
 
@@ -222,7 +239,7 @@ export async function buildActivityTimeline(
             msgTypePrefixes: related.msgTypePrefixes,
             entityIdField: related.entityIdField,
           },
-          { transactionTimestampOlderThan, atBlockHeight }
+          { transactionTimestampOlderThan, atBlockHeight, perQueryLimit }
         )
       );
     }
