@@ -202,6 +202,72 @@ function sortCredentialSchemaRows<T extends {
   }).slice(0, limit);
 }
 
+function toFiniteNumber(value: unknown): number {
+  const num = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function applyHalfOpenRangeToQuery(qb: any, column: string, minValue?: number, maxValue?: number) {
+  if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+    qb.whereRaw("1 = 0");
+    return;
+  }
+  if (minValue !== undefined) qb.where(column, ">=", minValue);
+  if (maxValue !== undefined) qb.where(column, "<", maxValue);
+}
+
+function applyHalfOpenRangeToRows<T>(
+  rows: T[],
+  minValue: number | string | undefined,
+  maxValue: number | string | undefined,
+  readValue: (row: T) => number
+): T[] {
+  if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
+    return [];
+  }
+
+  let filtered = rows;
+  if (minValue !== undefined) {
+    const minNum = Number(minValue);
+    filtered = filtered.filter((row) => readValue(row) >= minNum);
+  }
+  if (maxValue !== undefined) {
+    const maxNum = Number(maxValue);
+    filtered = filtered.filter((row) => readValue(row) < maxNum);
+  }
+  return filtered;
+}
+
+function sortCredentialSchemaRows<T extends {
+  id: number;
+  created: string;
+  modified: string;
+  participants: number;
+  weight: number;
+  issued: number;
+  verified: number;
+  ecosystem_slash_events: number;
+  ecosystem_slashed_amount: number;
+  network_slash_events: number;
+  network_slashed_amount: number;
+}>(rows: T[], sort: string | undefined, limit: number): T[] {
+  return sortByStandardAttributes<T>(rows, sort, {
+    getId: (item) => item.id,
+    getCreated: (item) => item.created,
+    getModified: (item) => item.modified,
+    getParticipants: (item) => item.participants,
+    getWeight: (item) => item.weight,
+    getIssued: (item) => item.issued,
+    getVerified: (item) => item.verified,
+    getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
+    getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
+    getNetworkSlashEvents: (item) => item.network_slash_events,
+    getNetworkSlashedAmount: (item) => item.network_slashed_amount,
+    defaultAttribute: "modified",
+    defaultDirection: "desc",
+  }).slice(0, limit);
+}
+
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
   if (!row || !row.id) {
     throw new Error(`Invalid row data: missing id. Row: ${JSON.stringify(row)}`);
