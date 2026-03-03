@@ -211,6 +211,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     itIf('should get changes by block height - valid height', async () => {
       const response = await testEndpoint('GET', `/verana/indexer/v1/changes/${SAMPLE_BLOCK_HEIGHT}`);
       expect(response.status).not.toBeGreaterThanOrEqual(500);
+      if (response.status === 200) {
+        expect(response.data).toHaveProperty('next_change_at');
+        const nextChangeAt = response.data?.next_change_at;
+        expect(nextChangeAt === null || Number.isInteger(nextChangeAt)).toBe(true);
+        if (typeof nextChangeAt === 'number') {
+          expect(nextChangeAt).toBeGreaterThan(SAMPLE_BLOCK_HEIGHT);
+        }
+      }
     });
 
     itIf('should get changes by block height - edge case: height 0', async () => {
@@ -221,6 +229,10 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     itIf('should get changes by block height - edge case: very large height', async () => {
       const response = await testEndpoint('GET', '/verana/indexer/v1/changes/999999999');
       expect(response.status).not.toBeGreaterThanOrEqual(500);
+      if (response.status === 200) {
+        expect(response.data).toHaveProperty('next_change_at');
+        expect(response.data.next_change_at).toBeNull();
+      }
     });
 
     itIf('should get changes by block height - invalid: non-numeric', async () => {

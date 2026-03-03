@@ -318,6 +318,12 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "next_change_at": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true,
+                      "description": "The next block height greater than the requested block_height that has any indexed change events. Null when there is no later change."
+                    },
                     "activity": {
                       "type": "array",
                       "description": "List of activity items at this block height (same format as history endpoints)",
@@ -328,8 +334,8 @@
                   }
                 },
                 "example": {
-                  "entity_type": "DID",
-                  "entity_id": "did:Test:123",
+                  "block_height": 63120,
+                  "next_change_at": 63121,
                   "activity": [
                     {
                       "timestamp": "2025-10-06T08:46:20.686Z",

@@ -459,7 +459,8 @@ const ALTER_MIGRATIONS = [
   "20260130000004_alter_gfv_combined",
   "20260202000000_add_title_description_to_credential_schema",
   "20260203000000_add_indexes_permissions_history",
-  "20260218000000_credential_schema_json_schema_to_text"
+  "20260218000000_credential_schema_json_schema_to_text",
+  "20260226000000_add_permissions_lookup_index_for_perm_list",
 ];
 
 async function runMigrations(db: Knex): Promise<void> {

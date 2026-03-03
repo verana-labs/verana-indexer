@@ -99,6 +99,22 @@ interface IndexerChange {
   payload: Record<string, unknown>;
 }
 
+interface ChangesActivityItem {
+  timestamp: string | null;
+  block_height: string;
+  entity_type: string;
+  entity_id: string;
+  msg: string;
+  changes: Record<string, unknown> | null;
+  account?: string;
+}
+
+interface ChangesResponse {
+  block_height: number;
+  next_change_at: number | null;
+  activity: ChangesActivityItem[];
+}
+
 function toOperation(eventType?: string, isDelete?: boolean): ChangeOperation {
   if (isDelete) return "delete";
   const label = eventType?.toLowerCase() ?? "";
@@ -164,6 +180,43 @@ function safeJsonParse(value: unknown) {
 export default class IndexerMetaService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  private async getNextChangeAt(blockHeight: number): Promise<number | null> {
+    // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
+    const tables = [
+      "did_history",
+      "trust_registry_history",
+      "governance_framework_version_history",
+      "governance_framework_document_history",
+      "credential_schema_history",
+      "permission_history",
+      "permission_session_history",
+      "trust_deposit_history",
+      "module_params_history",
+    ];
+
+    const heights = await Promise.all(
+      tables.map(async (tableName) => {
+        try {
+          const row = await knex(tableName)
+            .select("height")
+            .where("height", ">", blockHeight)
+            .orderBy("height", "asc")
+            .limit(1)
+            .first();
+          const parsed = Number(row?.height);
+          return Number.isFinite(parsed) ? parsed : null;
+        } catch (error: any) {
+          const errorMsg = error?.message || String(error);
+          if (errorMsg.includes("does not exist")) return null;
+          throw error;
+        }
+      })
+    );
+
+    const validHeights = heights.filter((h): h is number => h !== null);
+    return validHeights.length > 0 ? Math.min(...validHeights) : null;
   }
 
   @Action()
@@ -264,56 +317,89 @@ export default class IndexerMetaService extends BaseService {
       );
     }
 
+    const txTimestampCache = new Map<number, Promise<string | null>>();
+    const txMetaCache = new Map<string, Promise<{ msg_type: string | null; sender: string | null }>>();
+
+    const getTimestampForHeight = async (height: number): Promise<string | null> => {
+      if (!txTimestampCache.has(height)) {
+        txTimestampCache.set(
+          height,
+          (async () => {
+            const row = await knex("transaction")
+              .select("timestamp")
+              .where("height", height)
+              .orderBy("index", "asc")
+              .orderBy("id", "asc")
+              .first();
+            return row?.timestamp ? new Date(row.timestamp).toISOString() : null;
+          })()
+        );
+      }
+      return txTimestampCache.get(height)!;
+    };
+
+    const getMsgMetaForHeight = async (
+      height: number,
+      msgTypePrefixes: string[]
+    ): Promise<{ msg_type: string | null; sender: string | null }> => {
+      const key = `${height}|${(msgTypePrefixes || []).join(",")}`;
+      if (!txMetaCache.has(key)) {
+        txMetaCache.set(
+          key,
+          (async () => {
+            const query = knex("transaction_message")
+              .innerJoin("transaction", "transaction.id", "transaction_message.tx_id")
+              .where("transaction.height", height)
+              .orderBy("transaction_message.index", "asc")
+              .select("transaction_message.type as msg_type", "transaction_message.sender as sender")
+              .first();
+
+            if (msgTypePrefixes && msgTypePrefixes.length > 0) {
+              query.andWhere((qb) => {
+                msgTypePrefixes.forEach((prefix, idx) => {
+                  if (idx === 0) qb.where("transaction_message.type", "like", `${prefix}%`);
+                  else qb.orWhere("transaction_message.type", "like", `${prefix}%`);
+                });
+              });
+            }
+
+            const row = await query;
+            return {
+              msg_type: row?.msg_type ?? null,
+              sender: row?.sender ?? null,
+            };
+          })()
+        );
+      }
+      return txMetaCache.get(key)!;
+    };
+
     const queryHistoryWithTx = async (
       tableName: string,
       height: number,
-      entityType: string,
-      idField: string,
-      entityIdField: string,
+      _entityType: string,
+      _idField: string,
+      _entityIdField: string,
       msgTypePrefixes: string[]
     ) => {
       try {
-        const quotedTable = `"${tableName}"`;
-        const prefixes = msgTypePrefixes || [];
-        const msgTypeCondition = prefixes.length > 0
-          ? `AND (${prefixes.map((p, idx) => {
-            const escapedPrefix = p.replace(/'/g, "''");
-            return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
-          }).join(' ')})`
-          : '';
-
-        return await knex(tableName)
-          .select(
-            `${tableName}.*`,
-            knex.raw(`(
-              SELECT t.timestamp
-              FROM transaction t
-              WHERE t.height = ${quotedTable}.height
-              ORDER BY t.index ASC, t.id ASC
-              LIMIT 1
-            ) as timestamp`),
-            knex.raw('? as activity_entity_type', [entityType]),
-            knex.raw(`COALESCE(CAST(${tableName}.${entityIdField} AS TEXT), CAST(${tableName}.id AS TEXT)) as activity_entity_id`),
-            knex.raw(`(
-              SELECT transaction_message.type 
-              FROM transaction_message 
-              INNER JOIN transaction t ON t.id = transaction_message.tx_id
-              WHERE t.height = ${quotedTable}.height
-              ${msgTypeCondition}
-              ORDER BY transaction_message.index ASC
-              LIMIT 1
-            ) as msg_type`),
-            knex.raw(`(
-              SELECT transaction_message.sender 
-              FROM transaction_message 
-              INNER JOIN transaction t ON t.id = transaction_message.tx_id
-              WHERE t.height = ${quotedTable}.height
-              ${msgTypeCondition}
-              ORDER BY transaction_message.index ASC
-              LIMIT 1
-            ) as sender`)
-          )
+        const rows = await knex(tableName)
+          .select(`${tableName}.*`)
           .where(`${tableName}.height`, height);
+
+        if (rows.length === 0) return [];
+
+        const [timestamp, txMeta] = await Promise.all([
+          getTimestampForHeight(height),
+          getMsgMetaForHeight(height, msgTypePrefixes || []),
+        ]);
+
+        return rows.map((row: any) => ({
+          ...row,
+          timestamp,
+          msg_type: txMeta.msg_type,
+          sender: txMeta.sender,
+        }));
       } catch (error: any) {
         const errorMsg = error?.message || String(error);
         if (errorMsg.includes("does not exist") && errorMsg.includes("height")) {
@@ -348,7 +434,7 @@ export default class IndexerMetaService extends BaseService {
       queryHistoryWithTx("module_params_history", blockHeight, "GlobalVariables", "module", "module", []),
     ]);
 
-    const activityItems: any[] = [];
+    const activityItems: ChangesActivityItem[] = [];
 
     const toActivityItem = (record: any, entityType: string, entityId: string) => {
       let changes = record.changes;
@@ -379,7 +465,7 @@ export default class IndexerMetaService extends BaseService {
         record.action
       );
 
-      const activityItem: any = {
+      const activityItem: ChangesActivityItem = {
         timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : null,
         block_height: String(record.height || blockHeight),
         entity_type: entityType,
@@ -442,12 +528,16 @@ export default class IndexerMetaService extends BaseService {
       return a.entity_id.localeCompare(b.entity_id);
     });
 
+    const nextChangeAt = await this.getNextChangeAt(blockHeight);
+    const response: ChangesResponse = {
+      block_height: blockHeight,
+      next_change_at: nextChangeAt,
+      activity: activityItems,
+    };
+
     return ApiResponder.success(
       ctx,
-      {
-        block_height: blockHeight,
-        activity: activityItems,
-      },
+      response,
       200
     );
   }
