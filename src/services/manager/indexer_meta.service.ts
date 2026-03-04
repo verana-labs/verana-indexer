@@ -561,7 +561,7 @@ export default class IndexerMetaService extends BaseService {
       let csSyncedFromLedger = 0;
       const errors: Array<{ id: number; error: string }> = [];
       const { overrideSchemaIdInString } = await import('../../common/utils/schema_id_normalizer');
-      const { getCredentialSchema } = await import('../../modules/cs-height-sync/ledger_client');
+      const { getCredentialSchema } = await import('../../modules/cs-height-sync/cs_height_sync_helpers');
 
       for (let i = 0; i < trustRegistries.length; i++) {
         const tr = trustRegistries[i];
