@@ -99,6 +99,22 @@ interface IndexerChange {
   payload: Record<string, unknown>;
 }
 
+interface ChangesActivityItem {
+  timestamp: string | null;
+  block_height: string;
+  entity_type: string;
+  entity_id: string;
+  msg: string;
+  changes: Record<string, unknown> | null;
+  account?: string;
+}
+
+interface ChangesResponse {
+  block_height: number;
+  next_change_at: number | null;
+  activity: ChangesActivityItem[];
+}
+
 function toOperation(eventType?: string, isDelete?: boolean): ChangeOperation {
   if (isDelete) return "delete";
   const label = eventType?.toLowerCase() ?? "";
@@ -164,6 +180,43 @@ function safeJsonParse(value: unknown) {
 export default class IndexerMetaService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  private async getNextChangeAt(blockHeight: number): Promise<number | null> {
+    // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
+    const tables = [
+      "did_history",
+      "trust_registry_history",
+      "governance_framework_version_history",
+      "governance_framework_document_history",
+      "credential_schema_history",
+      "permission_history",
+      "permission_session_history",
+      "trust_deposit_history",
+      "module_params_history",
+    ];
+
+    const heights = await Promise.all(
+      tables.map(async (tableName) => {
+        try {
+          const row = await knex(tableName)
+            .select("height")
+            .where("height", ">", blockHeight)
+            .orderBy("height", "asc")
+            .limit(1)
+            .first();
+          const parsed = Number(row?.height);
+          return Number.isFinite(parsed) ? parsed : null;
+        } catch (error: any) {
+          const errorMsg = error?.message || String(error);
+          if (errorMsg.includes("does not exist")) return null;
+          throw error;
+        }
+      })
+    );
+
+    const validHeights = heights.filter((h): h is number => h !== null);
+    return validHeights.length > 0 ? Math.min(...validHeights) : null;
   }
 
   @Action()
@@ -264,56 +317,76 @@ export default class IndexerMetaService extends BaseService {
       );
     }
 
+    const heightTimestampPromise = knex("transaction")
+      .select("timestamp")
+      .where("height", blockHeight)
+      .orderBy("index", "asc")
+      .orderBy("id", "asc")
+      .first()
+      .then((row: any) => (row?.timestamp ? new Date(row.timestamp).toISOString() : null));
+
+    const heightMessagesPromise = knex("transaction_message")
+      .innerJoin("transaction", "transaction.id", "transaction_message.tx_id")
+      .where("transaction.height", blockHeight)
+      .orderBy("transaction_message.index", "asc")
+      .select("transaction_message.type as msg_type", "transaction_message.sender as sender");
+
+    const txMetaByPrefixesCache = new Map<string, { msg_type: string | null; sender: string | null }>();
+    const getMsgMetaForPrefixes = (
+      allMessagesAtHeight: Array<{ msg_type?: string | null; sender?: string | null }>,
+      msgTypePrefixes: string[]
+    ): { msg_type: string | null; sender: string | null } => {
+      const cacheKey = (msgTypePrefixes || []).join(",");
+      const cached = txMetaByPrefixesCache.get(cacheKey);
+      if (cached) return cached;
+
+      let selected: { msg_type: string | null; sender: string | null };
+      if (!msgTypePrefixes || msgTypePrefixes.length === 0) {
+        const first = allMessagesAtHeight[0];
+        selected = {
+          msg_type: first?.msg_type ?? null,
+          sender: first?.sender ?? null,
+        };
+      } else {
+        const match = allMessagesAtHeight.find((m) => {
+          const type = String(m?.msg_type ?? "");
+          return msgTypePrefixes.some((prefix) => type.startsWith(prefix));
+        });
+        selected = {
+          msg_type: match?.msg_type ?? null,
+          sender: match?.sender ?? null,
+        };
+      }
+
+      txMetaByPrefixesCache.set(cacheKey, selected);
+      return selected;
+    };
+
     const queryHistoryWithTx = async (
       tableName: string,
       height: number,
-      entityType: string,
-      idField: string,
-      entityIdField: string,
-      msgTypePrefixes: string[]
+      _entityType: string,
+      _idField: string,
+      _entityIdField: string,
+      msgTypePrefixes: string[],
+      timestampAtHeight: string | null,
+      allMessagesAtHeight: Array<{ msg_type?: string | null; sender?: string | null }>
     ) => {
       try {
-        const quotedTable = `"${tableName}"`;
-        const prefixes = msgTypePrefixes || [];
-        const msgTypeCondition = prefixes.length > 0
-          ? `AND (${prefixes.map((p, idx) => {
-            const escapedPrefix = p.replace(/'/g, "''");
-            return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
-          }).join(' ')})`
-          : '';
-
-        return await knex(tableName)
-          .select(
-            `${tableName}.*`,
-            knex.raw(`(
-              SELECT t.timestamp
-              FROM transaction t
-              WHERE t.height = ${quotedTable}.height
-              ORDER BY t.index ASC, t.id ASC
-              LIMIT 1
-            ) as timestamp`),
-            knex.raw('? as activity_entity_type', [entityType]),
-            knex.raw(`COALESCE(CAST(${tableName}.${entityIdField} AS TEXT), CAST(${tableName}.id AS TEXT)) as activity_entity_id`),
-            knex.raw(`(
-              SELECT transaction_message.type 
-              FROM transaction_message 
-              INNER JOIN transaction t ON t.id = transaction_message.tx_id
-              WHERE t.height = ${quotedTable}.height
-              ${msgTypeCondition}
-              ORDER BY transaction_message.index ASC
-              LIMIT 1
-            ) as msg_type`),
-            knex.raw(`(
-              SELECT transaction_message.sender 
-              FROM transaction_message 
-              INNER JOIN transaction t ON t.id = transaction_message.tx_id
-              WHERE t.height = ${quotedTable}.height
-              ${msgTypeCondition}
-              ORDER BY transaction_message.index ASC
-              LIMIT 1
-            ) as sender`)
-          )
+        const rows = await knex(tableName)
+          .select(`${tableName}.*`)
           .where(`${tableName}.height`, height);
+
+        if (rows.length === 0) return [];
+
+        const txMeta = getMsgMetaForPrefixes(allMessagesAtHeight, msgTypePrefixes || []);
+
+        return rows.map((row: any) => ({
+          ...row,
+          timestamp: timestampAtHeight,
+          msg_type: txMeta.msg_type,
+          sender: txMeta.sender,
+        }));
       } catch (error: any) {
         const errorMsg = error?.message || String(error);
         if (errorMsg.includes("does not exist") && errorMsg.includes("height")) {
@@ -326,6 +399,11 @@ export default class IndexerMetaService extends BaseService {
       }
     };
 
+    const [timestampAtHeight, allMessagesAtHeight] = await Promise.all([
+      heightTimestampPromise,
+      heightMessagesPromise,
+    ]);
+
     const [
       didHistory,
       trHistory,
@@ -337,18 +415,18 @@ export default class IndexerMetaService extends BaseService {
       tdHistory,
       moduleParamsHistory,
     ] = await Promise.all([
-      queryHistoryWithTx("did_history", blockHeight, "DID", "did", "did", ["/verana.dd.v1", "/veranablockchain.diddirectory"]),
-      queryHistoryWithTx("trust_registry_history", blockHeight, "TrustRegistry", "tr_id", "tr_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"]),
-      queryHistoryWithTx("governance_framework_version_history", blockHeight, "GovernanceFrameworkVersion", "tr_id", "gfv_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"]),
-      queryHistoryWithTx("governance_framework_document_history", blockHeight, "GovernanceFrameworkDocument", "tr_id", "gfd_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"]),
-      queryHistoryWithTx("credential_schema_history", blockHeight, "CredentialSchema", "credential_schema_id", "credential_schema_id", ["/verana.cs.v1", "/veranablockchain.credentialschema"]),
-      queryHistoryWithTx("permission_history", blockHeight, "Permission", "permission_id", "permission_id", ["/verana.perm.v1"]),
-      queryHistoryWithTx("permission_session_history", blockHeight, "PermissionSession", "session_id", "session_id", ["/verana.perm.v1"]),
-      queryHistoryWithTx("trust_deposit_history", blockHeight, "TrustDeposit", "account", "account", ["/verana.td.v1"]),
-      queryHistoryWithTx("module_params_history", blockHeight, "GlobalVariables", "module", "module", []),
+      queryHistoryWithTx("did_history", blockHeight, "DID", "did", "did", ["/verana.dd.v1", "/veranablockchain.diddirectory"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("trust_registry_history", blockHeight, "TrustRegistry", "tr_id", "tr_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("governance_framework_version_history", blockHeight, "GovernanceFrameworkVersion", "tr_id", "gfv_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("governance_framework_document_history", blockHeight, "GovernanceFrameworkDocument", "tr_id", "gfd_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("credential_schema_history", blockHeight, "CredentialSchema", "credential_schema_id", "credential_schema_id", ["/verana.cs.v1", "/veranablockchain.credentialschema"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("permission_history", blockHeight, "Permission", "permission_id", "permission_id", ["/verana.perm.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("permission_session_history", blockHeight, "PermissionSession", "session_id", "session_id", ["/verana.perm.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("trust_deposit_history", blockHeight, "TrustDeposit", "account", "account", ["/verana.td.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("module_params_history", blockHeight, "GlobalVariables", "module", "module", [], timestampAtHeight, allMessagesAtHeight as any[]),
     ]);
 
-    const activityItems: any[] = [];
+    const activityItems: ChangesActivityItem[] = [];
 
     const toActivityItem = (record: any, entityType: string, entityId: string) => {
       let changes = record.changes;
@@ -379,7 +457,7 @@ export default class IndexerMetaService extends BaseService {
         record.action
       );
 
-      const activityItem: any = {
+      const activityItem: ChangesActivityItem = {
         timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : null,
         block_height: String(record.height || blockHeight),
         entity_type: entityType,
@@ -442,12 +520,16 @@ export default class IndexerMetaService extends BaseService {
       return a.entity_id.localeCompare(b.entity_id);
     });
 
+    const nextChangeAt = await this.getNextChangeAt(blockHeight);
+    const response: ChangesResponse = {
+      block_height: blockHeight,
+      next_change_at: nextChangeAt,
+      activity: activityItems,
+    };
+
     return ApiResponder.success(
       ctx,
-      {
-        block_height: blockHeight,
-        activity: activityItems,
-      },
+      response,
       200
     );
   }
