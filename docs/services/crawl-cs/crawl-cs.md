@@ -53,6 +53,13 @@ sequenceDiagram
    * Tracks lifecycle events in `credential_schema_history`.
    * Provides query APIs (`get`, `list`, `JsonSchema`, `getHistory`, `getParams`).
 
+### Activation & Archival Rules
+
+- New schemas are created as active (`is_active = true`).
+- Archiving a schema sets `archived` to a timestamp and `is_active = false`.
+- Unarchiving a schema sets `archived = null` and `is_active = true`.
+- `is_active` is derived from `archived` and should not be treated as an independent source of truth.
+
 ---
 
 ## 🗄️ Database Schema
@@ -74,8 +81,8 @@ sequenceDiagram
 | `holder_validation_validity_period`           | int            | Holder validity period             |
 | `issuer_perm_management_mode`                 | string            | Issuer permission mode             |
 | `verifier_perm_management_mode`               | string            | Verifier permission mode           |
-| `archived`                                    | timestamp/null | Archive flag (null = active)       |
-| `is_active`                                    | boolean        | Schema is active or not            |
+| `archived`                                    | timestamp/null | Archive timestamp (`null` = active) |
+| `is_active`                                   | boolean        | Derived activation state (`archived == null`) |
 | `created`                                     | timestamp      | Created timestamp                  |
 | `modified`                                    | timestamp      | Modified timestamp                 |
 
@@ -93,8 +100,8 @@ Keeps **full history of changes** to schemas.
 | `deposit`              | string         | Deposit at time of change                  |
 | `title`                | string/null    | Extracted title at time of change         |
 | `description`          | text/null      | Extracted description at time of change   |
-| `archived`             | timestamp/null | Archived state at time of change           |
-| `is_active`             | boolean        | Active state at time of change             |
+| `archived`             | timestamp/null | Archived state at time of change (`null` = active) |
+| `is_active`            | boolean        | Activation state snapshot (derived from `archived`) |
 | `action`               | enum           | `create`, `update`, `archive`, `unarchive` |
 | `changes`              | jsonb          | Field-level diffs                          |
 | `created_at`           | timestamp      | When the change was recorded               |
@@ -117,6 +124,7 @@ Keeps **full history of changes** to schemas.
 
 * Toggle schema archive state.
 * Records action + diffs in history.
+* Explicitly updates both `archived` and `is_active` together.
 
 ### 4. `get`
 
@@ -186,3 +194,4 @@ Defined in `module_params`:
 * [Verana VPR Spec – Credential Schema](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-cs-msg-1-create-new-credential-schema)
 * `CredentialSchemaDatabaseService.ts`
 * `ProcessCredentialSchemaService.ts`
+* [Credential Schema Height-Sync Refactor](./cs-height-sync.md)

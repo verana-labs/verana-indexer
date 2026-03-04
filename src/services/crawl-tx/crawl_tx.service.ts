@@ -50,6 +50,7 @@ import {
   Transaction,
   TransactionMessage,
 } from '../../models';
+import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers';
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
@@ -430,9 +431,10 @@ export default class CrawlTxService extends BullableService {
           permissionMessages: [],
           trustDepositList: [],
           updateParamsList: [],
+          blockHeight,
+          csEventsFromBlock: [],
         };
 
-        // Process transactions sequentially using a for loop
         for (let i = 0; i < blockTransactions.length; i++) {
           if (i > 0 && i % 10 === 0) {
             await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}-tx-loop`, this.logger);
@@ -440,9 +442,13 @@ export default class CrawlTxService extends BullableService {
           const tx = blockTransactions[i];
           this.logger.debug(` [HANDLE_TRANSACTION] Processing transaction ${i + 1}/${blockTransactions.length} (id: ${tx.id}, hash: ${tx.hash}) for block ${blockHeight}`);
 
+          const rawEvents = tx.data?.tx_response?.events;
+          if (Array.isArray(rawEvents)) {
+            allPayloads.csEventsFromBlock.push(...rawEvents);
+          }
+
           const txPayloads = await this.processSingleTransaction(tx, trx);
-          
-          // Merge payloads
+
           if (txPayloads) {
             if (txPayloads.DIDfiltered?.length) {
               allPayloads.DIDfiltered.push(...txPayloads.DIDfiltered);
@@ -616,10 +622,10 @@ export default class CrawlTxService extends BullableService {
         }
       }
 
-      // Process message types for payload generation
       const payload = await this.processMessageTypes(msgInsert, [tx]);
-      
-      // Process payloads inside transaction if configured
+      payload.blockHeight = tx.height;
+      payload.csEventsFromBlock = rawLogTx.tx_response?.events ?? [];
+
       if (config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction) {
         try {
           await this.processPayloads(payload);
@@ -1648,11 +1654,25 @@ export default class CrawlTxService extends BullableService {
       );
     }
 
-    if (payload.credentialSchemaMessages?.length) {
+    const useHeightSyncCS = process.env.USE_HEIGHT_SYNC_CS === "true";
+    const hasCsMessages = (payload.credentialSchemaMessages?.length ?? 0) > 0;
+    const blockHeight = payload.blockHeight;
+    if (useHeightSyncCS && typeof blockHeight === "number" && hasCsMessages) {
+     const { runHeightSyncCS } = await import("../../modules/cs-height-sync/cs_height_sync_service");
+      await runHeightSyncCS(this.broker, payload, blockHeight);
+    } else if (payload.credentialSchemaMessages?.length) {
       await this.broker.call(
         `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
         { credentialSchemaMessages: payload.credentialSchemaMessages },
       );
+    } else {
+      const hasCsEvents = (payload.csEventsFromBlock ?? []).some((event: { type?: string; attributes?: Array<{ key?: string; value?: string }> }) =>
+        isPotentialCredentialSchemaEvent(event, true)
+      );
+      if (useHeightSyncCS && hasCsEvents && typeof blockHeight === "number") {
+        const { runHeightSyncCS } = await import("../../modules/cs-height-sync/cs_height_sync_service");
+        await runHeightSyncCS(this.broker, payload, blockHeight);
+      }
     }
 
     if (payload.permissionMessages?.length) {
