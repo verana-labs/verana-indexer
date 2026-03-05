@@ -1,7 +1,5 @@
 import knex from "../../common/utils/db_connection";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
-import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
-import { getBlockHeight } from "../../common/utils/blockHeight";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
 
 export async function computeGlobalMetrics(blockHeight?: number) {
@@ -52,27 +50,51 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       .first();
 
     const nowIso = new Date().toISOString();
-    const activeParticipantsRow: any = await knex("permissions")
-      .whereNull("revoked")
+    const activeParticipantsByType = await knex("permissions")
+      .whereNotNull("grantee")
+      .whereNull("repaid")
+      .whereNull("slashed")
       .andWhere(function () {
-        this.whereNull("slashed").orWhereNotNull("repaid");
+        this.whereNull("revoked").orWhere("revoked", ">=", nowIso);
       })
       .andWhere(function () {
-        this.whereNull("effective_from").orWhere("effective_from", "<=", nowIso);
+        this.whereNotNull("effective_from").andWhere("effective_from", "<=", nowIso);
       })
       .andWhere(function () {
-        this.whereNull("effective_until").orWhere("effective_until", ">", nowIso);
+        this.whereNull("effective_until").orWhere("effective_until", ">=", nowIso);
       })
-      .andWhere(function () {
-        this.where("vp_state", "VALIDATED").orWhere("type", "ECOSYSTEM");
-      })
+      .select("type")
       .countDistinct("grantee as count")
-      .first();
+      .groupBy("type");
 
-    const participants = Number((activeParticipantsRow && (activeParticipantsRow.count || activeParticipantsRow.count_distinct)) || 0);
+    const participantsByType = {
+      participants_ecosystem: 0,
+      participants_issuer_grantor: 0,
+      participants_issuer: 0,
+      participants_verifier_grantor: 0,
+      participants_verifier: 0,
+      participants_holder: 0,
+    };
+    for (const row of activeParticipantsByType as any[]) {
+      const count = Number(row?.count || row?.count_distinct || 0);
+      if (row.type === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
+      if (row.type === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
+      if (row.type === "ISSUER") participantsByType.participants_issuer = count;
+      if (row.type === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
+      if (row.type === "VERIFIER") participantsByType.participants_verifier = count;
+      if (row.type === "HOLDER") participantsByType.participants_holder = count;
+    }
+    const participants =
+      participantsByType.participants_ecosystem
+      + participantsByType.participants_issuer_grantor
+      + participantsByType.participants_issuer
+      + participantsByType.participants_verifier_grantor
+      + participantsByType.participants_verifier
+      + participantsByType.participants_holder;
 
     return {
       participants,
+      ...participantsByType,
       active_trust_registries: activeTrustRegistries,
       archived_trust_registries: archivedTrustRegistries,
       active_schemas: Number(csAgg.active_schemas || 0),
@@ -162,7 +184,12 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     }
   }
 
-  const participantsSet = new Set<string>();
+  const participantsEcosystemSet = new Set<string>();
+  const participantsIssuerGrantorSet = new Set<string>();
+  const participantsIssuerSet = new Set<string>();
+  const participantsVerifierGrantorSet = new Set<string>();
+  const participantsVerifierSet = new Set<string>();
+  const participantsHolderSet = new Set<string>();
   const latestHistorySubquery = knex("permission_history")
     .select("permission_id")
     .select(
@@ -202,12 +229,36 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       new Date()
     );
     if (permState === "ACTIVE" && historyRecord.grantee) {
-      participantsSet.add(historyRecord.grantee);
+      if (historyRecord.type === "ECOSYSTEM") participantsEcosystemSet.add(historyRecord.grantee);
+      if (historyRecord.type === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(historyRecord.grantee);
+      if (historyRecord.type === "ISSUER") participantsIssuerSet.add(historyRecord.grantee);
+      if (historyRecord.type === "VERIFIER_GRANTOR") participantsVerifierGrantorSet.add(historyRecord.grantee);
+      if (historyRecord.type === "VERIFIER") participantsVerifierSet.add(historyRecord.grantee);
+      if (historyRecord.type === "HOLDER") participantsHolderSet.add(historyRecord.grantee);
     }
   }
 
+  const participantsEcosystem = participantsEcosystemSet.size;
+  const participantsIssuerGrantor = participantsIssuerGrantorSet.size;
+  const participantsIssuer = participantsIssuerSet.size;
+  const participantsVerifierGrantor = participantsVerifierGrantorSet.size;
+  const participantsVerifier = participantsVerifierSet.size;
+  const participantsHolder = participantsHolderSet.size;
+  const participantsTotal = participantsEcosystem
+    + participantsIssuerGrantor
+    + participantsIssuer
+    + participantsVerifierGrantor
+    + participantsVerifier
+    + participantsHolder;
+
   return {
-    participants: participantsSet.size,
+    participants: participantsTotal,
+    participants_ecosystem: participantsEcosystem,
+    participants_issuer_grantor: participantsIssuerGrantor,
+    participants_issuer: participantsIssuer,
+    participants_verifier_grantor: participantsVerifierGrantor,
+    participants_verifier: participantsVerifier,
+    participants_holder: participantsHolder,
     active_trust_registries: activeTrustRegistries,
     archived_trust_registries: archivedTrustRegistries,
     active_schemas: activeSchemas,

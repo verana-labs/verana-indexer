@@ -25,8 +25,23 @@ const DEFAULT_ROUTE_CONFIG = {
 
 async function fetchBlockCheckpoint() {
   return knex("block_checkpoint")
+    .select("height", "updated_at")
     .where("job_name", BLOCK_CHECKPOINT_JOB)
     .first();
+}
+
+async function fetchBlockCheckpointForHeaders() {
+  const timeoutMsRaw = Number(process.env.API_HEADER_CHECKPOINT_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? Math.floor(timeoutMsRaw) : 200;
+  try {
+    return await knex("block_checkpoint")
+      .select("height", "updated_at")
+      .where("job_name", BLOCK_CHECKPOINT_JOB)
+      .timeout(timeoutMs, { cancel: false })
+      .first();
+  } catch {
+    return null;
+  }
 }
 
 function getHeaderValue(req: IncomingMessage): string | null {
@@ -56,6 +71,29 @@ function getHeaderValue(req: IncomingMessage): string | null {
   return null;
 }
 
+function attachIndexerStatusHeaders(res: ServerResponse) {
+  const status = indexerStatusManager.getStatus();
+  res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
+  res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
+
+  if (!status.isRunning || !status.isCrawling) {
+    const errorMessage = status.lastError?.message || status.stoppedReason || "";
+    const isUnknown = isUnknownMessageError(errorMessage);
+
+    if (isUnknown) {
+      if (status.stoppedReason) {
+        res.setHeader("X-Crawling-Reason", status.stoppedReason);
+      }
+      if (status.lastError?.message) {
+        res.setHeader("X-Crawling-Error", status.lastError.message);
+      }
+    }
+    if (status.stoppedAt) {
+      res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
+    }
+  }
+}
+
 async function parseAtBlockHeight(
   ctx: Context<any, any>,
   req: IncomingMessage,
@@ -64,7 +102,7 @@ async function parseAtBlockHeight(
   ctx.meta = ctx.meta || {};
   const headerValue = getHeaderValue(req);
 
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.DEBUG_AT_BLOCK_HEADER === "true") {
     console.log("[DEBUG] Available headers:", Object.keys(req.headers));
     console.log("[DEBUG] Header value for 'at-block-height':", headerValue);
   }
@@ -112,21 +150,6 @@ async function parseAtBlockHeight(
   ctx.meta.$headers["At-Block-Height"] = String(parsedHeight);
 }
 
-function isTemporaryError(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  const lowerMessage = errorMessage.toLowerCase();
-  return lowerMessage.includes('timeout') ||
-         lowerMessage.includes('exceeded') ||
-         lowerMessage.includes('timed out') ||
-         lowerMessage.includes('econnrefused') ||
-         lowerMessage.includes('etimedout') ||
-         lowerMessage.includes('econaborted') ||
-         lowerMessage.includes('network') ||
-         lowerMessage.includes('connection') ||
-         lowerMessage.includes('non-critical') ||
-         lowerMessage.includes('service will continue');
-}
-
 function isUnknownMessageError(errorMessage: string): boolean {
   if (!errorMessage) return false;
   return errorMessage.includes('Unknown Verana message types') ||
@@ -138,7 +161,7 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
     let checkpoint = ctx?.meta?.latestCheckpoint;
     if (!checkpoint) {
       try {
-        checkpoint = await fetchBlockCheckpoint();
+        checkpoint = await fetchBlockCheckpointForHeaders();
       } catch (err: any) {
         console.error("Error fetching checkpoint:", err);
       }
@@ -160,47 +183,9 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       res.setHeader("X-Height", checkpoint.height.toString());
     }
 
-    const status = indexerStatusManager.getStatus();
-    res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
-    res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
-
-    if (!status.isRunning || !status.isCrawling) {
-      const errorMessage = status.lastError?.message || status.stoppedReason || '';
-      const isUnknown = isUnknownMessageError(errorMessage);
-      
-      if (isUnknown) {
-        if (status.stoppedReason) {
-          res.setHeader("X-Crawling-Reason", status.stoppedReason);
-        }
-        if (status.lastError?.message) {
-          res.setHeader("X-Crawling-Error", status.lastError.message);
-        }
-      }
-      if (status.stoppedAt) {
-        res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
-      }
-    }
+    attachIndexerStatusHeaders(res);
   } catch (err: any) {
-    const status = indexerStatusManager.getStatus();
-    res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
-    res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
-    
-    if (!status.isRunning || !status.isCrawling) {
-      const errorMessage = status.lastError?.message || status.stoppedReason || '';
-      const isUnknown = isUnknownMessageError(errorMessage);
-      
-      if (isUnknown) {
-        if (status.stoppedReason) {
-          res.setHeader("X-Crawling-Reason", status.stoppedReason);
-        }
-        if (status.lastError?.message) {
-          res.setHeader("X-Crawling-Error", status.lastError.message);
-        }
-      }
-      if (status.stoppedAt) {
-        res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
-      }
-    }
+    attachIndexerStatusHeaders(res);
   }
 
   res.setHeader("X-Query-At", new Date().toISOString());
@@ -214,7 +199,7 @@ function setResponseTimeHeader(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-function createOnBeforeCall(required: boolean = true, checkIndexerStatus: boolean = false) {
+function createOnBeforeCall(required: boolean = true) {
   return async function (
     ctx: Context<any, any>,
     _route: Route,
@@ -346,14 +331,13 @@ function createOnAfterCall() {
 function createRoute(
   path: string,
   aliases: Record<string, string>,
-  requireBlockHeight: boolean = false,
-  checkIndexerStatus: boolean = false
+  requireBlockHeight: boolean = false
 ) {
   return {
     path,
     aliases,
     ...DEFAULT_ROUTE_CONFIG,
-    onBeforeCall: createOnBeforeCall(requireBlockHeight, checkIndexerStatus),
+    onBeforeCall: createOnBeforeCall(requireBlockHeight),
     onError: createOnError(),
     onAfterCall: createOnAfterCall(),
   };

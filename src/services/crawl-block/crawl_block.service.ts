@@ -84,9 +84,23 @@ export default class CrawlBlockService extends BullableService {
 
   private _lastHealthCheckTime: number = 0;
 
+  private _lastRpcBatchErrorAt: Record<string, number> = {};
+
+  private _rpcBatchErrorLogThrottleMs: number = Number(process.env.CRAWL_BLOCK_RPC_ERROR_LOG_THROTTLE_MS || 15000);
+
   public constructor(public broker: ServiceBroker) {
     super(broker);
     this._httpBatchClient = getHttpBatchClient();
+  }
+
+  private shouldLogRpcBatchError(bucket: string): boolean {
+    const now = Date.now();
+    const lastAt = this._lastRpcBatchErrorAt[bucket] || 0;
+    if (now - lastAt < this._rpcBatchErrorLogThrottleMs) {
+      return false;
+    }
+    this._lastRpcBatchErrorAt[bucket] = now;
+    return true;
   }
 
   @QueueHandler({
@@ -237,7 +251,7 @@ export default class CrawlBlockService extends BullableService {
     this._processingLock = true;
 
     try {
-      const { runWithCrawlLock, CrawlSkipError } = await import('../../common/utils/db_pool_guard');
+      const { runWithCrawlLock } = await import('../../common/utils/db_pool_guard');
       try {
         await runWithCrawlLock(async () => {
       // Memory pressure check - pause if memory is critically high
@@ -458,6 +472,7 @@ export default class CrawlBlockService extends BullableService {
       
       const blockResponses: JsonRpcSuccessResponse[] = [];
       let failedBlocks = 0;
+      const failedSampleHeights: number[] = [];
       
       for (let i = 0; i < blockResponsesResults.length; i += 2) {
         const blockResult = blockResponsesResults[i];
@@ -468,11 +483,8 @@ export default class CrawlBlockService extends BullableService {
           blockResponses.push(blockResult.value, blockResultsResult.value);
         } else {
           failedBlocks++;
-          if (blockResult.status === 'rejected') {
-            this.logger.error(`Failed to fetch block ${blockHeight}: ${blockResult.reason}`);
-          }
-          if (blockResultsResult.status === 'rejected') {
-            this.logger.error(`Failed to fetch block_results ${blockHeight}: ${blockResultsResult.reason}`);
+          if (failedSampleHeights.length < 5) {
+            failedSampleHeights.push(blockHeight);
           }
         }
       }
@@ -485,7 +497,10 @@ export default class CrawlBlockService extends BullableService {
       }
 
       if (failedBlocks > 0) {
-        this.logger.warn(`${failedBlocks} block(s) failed to fetch, but processing ${blockResponses.length / 2} successful blocks`);
+        this.logger.warn(
+          `${failedBlocks} block(s) failed to fetch, processing ${blockResponses.length / 2} successful blocks. ` +
+          `Sample failed heights: ${failedSampleHeights.join(', ')}`
+        );
       }
 
       interface MergedBlockResponse {
@@ -632,9 +647,9 @@ export default class CrawlBlockService extends BullableService {
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
       if (err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND') {
-        this.logger.error(`❌ Failed to get latest block height due to network error (${err.code}): ${err.message}`);
+        this.logger.warn(`Failed to get latest block height due to network error (${err.code}): ${err.message}`);
       } else {
-        this.logger.error(`❌ Failed to get latest block height after retries: ${error}`);
+        this.logger.warn(`Failed to get latest block height after retries (transient): ${error}`);
       }
       return 0;
     }
@@ -741,13 +756,17 @@ export default class CrawlBlockService extends BullableService {
                               err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND';
         
         if (isLastAttempt || isNetworkError) {
-          if (isNetworkError) {
-            this.logger.error(
-              `❌ RPC batch call failed due to network error (${err.code}): ${operationName}. ${err.message}`
+          const operationType = operationName.split('-')[0] || 'unknown';
+          const shouldLog = this.shouldLogRpcBatchError(`executeRpcWithRetry:${operationType}`);
+          if (isNetworkError && shouldLog) {
+            this.logger.warn(
+              `RPC batch ${operationType} failing due to network errors (latest code: ${err.code || 'unknown'}). ` +
+              `Suppressing repetitive logs for ${this._rpcBatchErrorLogThrottleMs}ms.`
             );
-          } else {
-            this.logger.error(
-              `❌ RPC batch call failed after ${attempts} attempts: ${operationName}`
+          } else if (shouldLog) {
+            this.logger.warn(
+              `RPC batch ${operationType} failed after ${attempts} attempts (treated as transient). ` +
+              `Suppressing repetitive logs for ${this._rpcBatchErrorLogThrottleMs}ms.`
             );
           }
           throw error;

@@ -6,6 +6,12 @@ const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").include
 
 export interface TrustRegistryStats {
     participants: number;
+    participants_ecosystem: number;
+    participants_issuer_grantor: number;
+    participants_issuer: number;
+    participants_verifier_grantor: number;
+    participants_verifier: number;
+    participants_holder: number;
     active_schemas: number;
     archived_schemas: number;
     weight: number;
@@ -231,6 +237,12 @@ export async function calculateTrustRegistryStats(
     const batch = await calculateTrustRegistryStatsBatch([trId], blockHeight);
     return batch.get(Number(trId)) || {
         participants: 0,
+        participants_ecosystem: 0,
+        participants_issuer_grantor: 0,
+        participants_issuer: 0,
+        participants_verifier_grantor: 0,
+        participants_verifier: 0,
+        participants_holder: 0,
         active_schemas: 0,
         archived_schemas: 0,
         weight: 0,
@@ -285,6 +297,12 @@ export async function calculateTrustRegistryStatsBatch(
     for (const trId of trIds) {
         result.set(trId, {
             participants: 0,
+            participants_ecosystem: 0,
+            participants_issuer_grantor: 0,
+            participants_issuer: 0,
+            participants_verifier_grantor: 0,
+            participants_verifier: 0,
+            participants_holder: 0,
             active_schemas: 0,
             archived_schemas: 0,
             weight: 0,
@@ -322,6 +340,12 @@ export async function calculateTrustRegistryStatsBatch(
         if (!trStats) continue;
 
         trStats.participants += Number(stats.participants || 0);
+        trStats.participants_ecosystem += Number(stats.participants_ecosystem || 0);
+        trStats.participants_issuer_grantor += Number(stats.participants_issuer_grantor || 0);
+        trStats.participants_issuer += Number(stats.participants_issuer || 0);
+        trStats.participants_verifier_grantor += Number(stats.participants_verifier_grantor || 0);
+        trStats.participants_verifier += Number(stats.participants_verifier || 0);
+        trStats.participants_holder += Number(stats.participants_holder || 0);
         trStats.weight += Number(stats.weight || 0);
         trStats.issued += Number(stats.issued || 0);
         trStats.verified += Number(stats.verified || 0);

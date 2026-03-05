@@ -35,6 +35,12 @@ async function checkHistoryMetricColumnsExist(): Promise<boolean> {
   try {
     const requiredColumns = [
       "participants",
+      "participants_ecosystem",
+      "participants_issuer_grantor",
+      "participants_issuer",
+      "participants_verifier_grantor",
+      "participants_verifier",
+      "participants_holder",
       "weight",
       "issued",
       "verified",
@@ -190,6 +196,12 @@ function sortCredentialSchemaRows<T extends {
     getCreated: (item) => item.created,
     getModified: (item) => item.modified,
     getParticipants: (item) => item.participants,
+    getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
+    getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
+    getParticipantsIssuer: (item: any) => item.participants_issuer,
+    getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
+    getParticipantsVerifier: (item: any) => item.participants_verifier,
+    getParticipantsHolder: (item: any) => item.participants_holder,
     getWeight: (item) => item.weight,
     getIssued: (item) => item.issued,
     getVerified: (item) => item.verified,
@@ -829,6 +841,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           this.logger.warn(` Failed to calculate statistics for CS ${historyRecord.credential_schema_id}: ${statsError?.message || String(statsError)}`);
           stats = {
             participants: 0,
+            participants_ecosystem: 0,
+            participants_issuer_grantor: 0,
+            participants_issuer: 0,
+            participants_verifier_grantor: 0,
+            participants_verifier: 0,
+            participants_holder: 0,
             weight: 0,
             issued: 0,
             verified: 0,
@@ -845,6 +863,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           schema: {
             ...historicalSchema,
             participants: stats.participants,
+            participants_ecosystem: stats.participants_ecosystem,
+            participants_issuer_grantor: stats.participants_issuer_grantor,
+            participants_issuer: stats.participants_issuer,
+            participants_verifier_grantor: stats.participants_verifier_grantor,
+            participants_verifier: stats.participants_verifier,
+            participants_holder: stats.participants_holder,
             weight: stats.weight,
             issued: stats.issued,
             verified: stats.verified,
@@ -872,6 +896,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         this.logger.warn(` Failed to calculate statistics for CS ${id}: ${statsError?.message || String(statsError)}`);
         stats = {
           participants: 0,
+          participants_ecosystem: 0,
+          participants_issuer_grantor: 0,
+          participants_issuer: 0,
+          participants_verifier_grantor: 0,
+          participants_verifier: 0,
+          participants_holder: 0,
           weight: 0,
           issued: 0,
           verified: 0,
@@ -891,6 +921,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           title: schemaRecord.title ?? undefined,
           description: schemaRecord.description ?? undefined,
           participants: stats.participants,
+          participants_ecosystem: stats.participants_ecosystem,
+          participants_issuer_grantor: stats.participants_issuer_grantor,
+          participants_issuer: stats.participants_issuer,
+          participants_verifier_grantor: stats.participants_verifier_grantor,
+          participants_verifier: stats.participants_verifier,
+          participants_holder: stats.participants_holder,
           weight: stats.weight,
           issued: stats.issued,
           verified: stats.verified,
@@ -925,6 +961,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       sort: { type: "string", optional: true },
       min_participants: { type: "number", optional: true },
       max_participants: { type: "number", optional: true },
+      min_participants_ecosystem: { type: "number", optional: true },
+      max_participants_ecosystem: { type: "number", optional: true },
+      min_participants_issuer_grantor: { type: "number", optional: true },
+      max_participants_issuer_grantor: { type: "number", optional: true },
+      min_participants_issuer: { type: "number", optional: true },
+      max_participants_issuer: { type: "number", optional: true },
+      min_participants_verifier_grantor: { type: "number", optional: true },
+      max_participants_verifier_grantor: { type: "number", optional: true },
+      min_participants_verifier: { type: "number", optional: true },
+      max_participants_verifier: { type: "number", optional: true },
+      min_participants_holder: { type: "number", optional: true },
+      max_participants_holder: { type: "number", optional: true },
       min_weight: { type: "number", optional: true },
       max_weight: { type: "number", optional: true },
       min_issued: { type: "number", optional: true },
@@ -948,6 +996,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     sort?: string;
     min_participants?: number;
     max_participants?: number;
+    min_participants_ecosystem?: number;
+    max_participants_ecosystem?: number;
+    min_participants_issuer_grantor?: number;
+    max_participants_issuer_grantor?: number;
+    min_participants_issuer?: number;
+    max_participants_issuer?: number;
+    min_participants_verifier_grantor?: number;
+    max_participants_verifier_grantor?: number;
+    min_participants_verifier?: number;
+    max_participants_verifier?: number;
+    min_participants_holder?: number;
+    max_participants_holder?: number;
     min_weight?: number;
     max_weight?: number;
     min_issued?: number;
@@ -971,6 +1031,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         sort,
         min_participants: minParticipants,
         max_participants: maxParticipants,
+        min_participants_ecosystem: minParticipantsEcosystem,
+        max_participants_ecosystem: maxParticipantsEcosystem,
+        min_participants_issuer_grantor: minParticipantsIssuerGrantor,
+        max_participants_issuer_grantor: maxParticipantsIssuerGrantor,
+        min_participants_issuer: minParticipantsIssuer,
+        max_participants_issuer: maxParticipantsIssuer,
+        min_participants_verifier_grantor: minParticipantsVerifierGrantor,
+        max_participants_verifier_grantor: maxParticipantsVerifierGrantor,
+        min_participants_verifier: minParticipantsVerifier,
+        max_participants_verifier: maxParticipantsVerifier,
+        min_participants_holder: minParticipantsHolder,
+        max_participants_holder: maxParticipantsHolder,
         min_weight: minWeight,
         max_weight: maxWeight,
         min_issued: minIssued,
@@ -1068,6 +1140,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const applyMetricRangeFilters = (qb: any) => {
           if (!hasHistoryMetricColumns) return;
           applyHalfOpenRangeToQuery(qb, "participants", minParticipants, maxParticipants);
+          applyHalfOpenRangeToQuery(qb, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
+          applyHalfOpenRangeToQuery(qb, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
+          applyHalfOpenRangeToQuery(qb, "participants_issuer", minParticipantsIssuer, maxParticipantsIssuer);
+          applyHalfOpenRangeToQuery(qb, "participants_verifier_grantor", minParticipantsVerifierGrantor, maxParticipantsVerifierGrantor);
+          applyHalfOpenRangeToQuery(qb, "participants_verifier", minParticipantsVerifier, maxParticipantsVerifier);
+          applyHalfOpenRangeToQuery(qb, "participants_holder", minParticipantsHolder, maxParticipantsHolder);
           applyHalfOpenRangeToQuery(qb, "weight", minWeight, maxWeight);
           applyHalfOpenRangeToQuery(qb, "issued", minIssued, maxIssued);
           applyHalfOpenRangeToQuery(qb, "verified", minVerified, maxVerified);
@@ -1173,6 +1251,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             for (const historyRecord of items) {
               statsMap.set(Number(historyRecord.credential_schema_id), {
                 participants: Number(historyRecord.participants || 0),
+                participants_ecosystem: Number(historyRecord.participants_ecosystem || 0),
+                participants_issuer_grantor: Number(historyRecord.participants_issuer_grantor || 0),
+                participants_issuer: Number(historyRecord.participants_issuer || 0),
+                participants_verifier_grantor: Number(historyRecord.participants_verifier_grantor || 0),
+                participants_verifier: Number(historyRecord.participants_verifier || 0),
+                participants_holder: Number(historyRecord.participants_holder || 0),
                 weight: Number(historyRecord.weight || 0),
                 issued: Number(historyRecord.issued || 0),
                 verified: Number(historyRecord.verified || 0),
@@ -1188,6 +1272,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               ...item,
               ...(statsMap.get(Number(item.id)) || {
                 participants: 0,
+                participants_ecosystem: 0,
+                participants_issuer_grantor: 0,
+                participants_issuer: 0,
+                participants_verifier_grantor: 0,
+                participants_verifier: 0,
+                participants_holder: 0,
                 weight: 0,
                 issued: 0,
                 verified: 0,
@@ -1204,6 +1294,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             schemasWithStats = filteredItems.map((item) => {
               const stats = statsMap.get(Number(item.id)) || {
                 participants: 0,
+                participants_ecosystem: 0,
+                participants_issuer_grantor: 0,
+                participants_issuer: 0,
+                participants_verifier_grantor: 0,
+                participants_verifier: 0,
+                participants_holder: 0,
                 weight: 0,
                 issued: 0,
                 verified: 0,
@@ -1217,6 +1313,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               return {
                 ...item,
                 participants: stats.participants,
+                participants_ecosystem: stats.participants_ecosystem,
+                participants_issuer_grantor: stats.participants_issuer_grantor,
+                participants_issuer: stats.participants_issuer,
+                participants_verifier_grantor: stats.participants_verifier_grantor,
+                participants_verifier: stats.participants_verifier,
+                participants_holder: stats.participants_holder,
                 weight: stats.weight,
                 issued: stats.issued,
                 verified: stats.verified,
@@ -1287,6 +1389,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         let filteredWithStats = schemasWithStats;
         filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipants, maxParticipants, (s) => toFiniteNumber(s.participants));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipantsEcosystem, maxParticipantsEcosystem, (s) => toFiniteNumber((s as any).participants_ecosystem));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor, (s) => toFiniteNumber((s as any).participants_issuer_grantor));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipantsIssuer, maxParticipantsIssuer, (s) => toFiniteNumber((s as any).participants_issuer));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipantsVerifierGrantor, maxParticipantsVerifierGrantor, (s) => toFiniteNumber((s as any).participants_verifier_grantor));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipantsVerifier, maxParticipantsVerifier, (s) => toFiniteNumber((s as any).participants_verifier));
+        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipantsHolder, maxParticipantsHolder, (s) => toFiniteNumber((s as any).participants_holder));
         filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minWeight, maxWeight, (s) => toFiniteNumber(s.weight));
         filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minIssued, maxIssued, (s) => toFiniteNumber(s.issued));
         filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minVerified, maxVerified, (s) => toFiniteNumber(s.verified));
@@ -1295,6 +1403,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         type FilteredItemWithStats = FilteredItem & {
           participants: number;
+          participants_ecosystem: number;
+          participants_issuer_grantor: number;
+          participants_issuer: number;
+          participants_verifier_grantor: number;
+          participants_verifier: number;
+          participants_holder: number;
           weight: number;
           issued: number;
           verified: number;
@@ -1322,6 +1436,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       if (trId) query.where("tr_id", trId);
       applyHalfOpenRangeToQuery(query, "participants", minParticipants, maxParticipants);
+      applyHalfOpenRangeToQuery(query, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
+      applyHalfOpenRangeToQuery(query, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
+      applyHalfOpenRangeToQuery(query, "participants_issuer", minParticipantsIssuer, maxParticipantsIssuer);
+      applyHalfOpenRangeToQuery(query, "participants_verifier_grantor", minParticipantsVerifierGrantor, maxParticipantsVerifierGrantor);
+      applyHalfOpenRangeToQuery(query, "participants_verifier", minParticipantsVerifier, maxParticipantsVerifier);
+      applyHalfOpenRangeToQuery(query, "participants_holder", minParticipantsHolder, maxParticipantsHolder);
       applyHalfOpenRangeToQuery(query, "weight", minWeight, maxWeight);
       applyHalfOpenRangeToQuery(query, "issued", minIssued, maxIssued);
       applyHalfOpenRangeToQuery(query, "verified", minVerified, maxVerified);
@@ -1354,6 +1474,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           title: item.title ?? undefined,
           description: item.description ?? undefined,
           participants: typeof item.participants === "number" ? item.participants : Number(item.participants || 0),
+          participants_ecosystem: typeof (item as any).participants_ecosystem === "number" ? (item as any).participants_ecosystem : Number((item as any).participants_ecosystem || 0),
+          participants_issuer_grantor: typeof (item as any).participants_issuer_grantor === "number" ? (item as any).participants_issuer_grantor : Number((item as any).participants_issuer_grantor || 0),
+          participants_issuer: typeof (item as any).participants_issuer === "number" ? (item as any).participants_issuer : Number((item as any).participants_issuer || 0),
+          participants_verifier_grantor: typeof (item as any).participants_verifier_grantor === "number" ? (item as any).participants_verifier_grantor : Number((item as any).participants_verifier_grantor || 0),
+          participants_verifier: typeof (item as any).participants_verifier === "number" ? (item as any).participants_verifier : Number((item as any).participants_verifier || 0),
+          participants_holder: typeof (item as any).participants_holder === "number" ? (item as any).participants_holder : Number((item as any).participants_holder || 0),
           weight: typeof item.weight === "number" ? item.weight : Number(item.weight || 0),
           issued: typeof item.issued === "number" ? item.issued : Number(item.issued || 0),
           verified: typeof item.verified === "number" ? item.verified : Number(item.verified || 0),
