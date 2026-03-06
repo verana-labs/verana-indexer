@@ -36,6 +36,9 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
   </body>
 </html>`;
         res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
         res.end(html);
       },
       "GET /favicon.svg": (req: IncomingMessage, res: ServerResponse) => {
@@ -178,6 +181,9 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
 
           spec.servers = getServers();
 
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
           res.setHeader("Content-Type", "application/json; charset=utf-8");
           res.end(JSON.stringify(spec));
         } catch (err: any) {

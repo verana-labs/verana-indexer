@@ -8,7 +8,7 @@ import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
-import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from "./tr_stats";
 
 @Service({
@@ -17,6 +17,26 @@ import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from ".
 })
 export default class TrustRegistryDatabaseService extends BaseService {
     private trHistoryColumnExistsCache = new Map<string, boolean>();
+    private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
+        "id",
+        "modified",
+        "created",
+        "participants",
+        "participants_ecosystem",
+        "participants_issuer_grantor",
+        "participants_issuer",
+        "participants_verifier_grantor",
+        "participants_verifier",
+        "participants_holder",
+        "active_schemas",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "network_slash_events",
+        "network_slashed_amount",
+    ]);
 
     public constructor(public broker: ServiceBroker) {
         super(broker);
@@ -48,6 +68,31 @@ export default class TrustRegistryDatabaseService extends BaseService {
             "network_slashed_amount",
         ];
         return derivedKeys.some((key) => lower.includes(key));
+    }
+
+    private applyTrustRegistrySqlSort(query: any, sort?: string): { fullyApplied: boolean } {
+        if (!sort || typeof sort !== "string" || !sort.trim()) {
+            query.orderBy("modified", "desc").orderBy("id", "desc");
+            return { fullyApplied: true };
+        }
+
+        const sortOrders = parseSortParameter(sort);
+        let hasIdSort = false;
+        let fullyApplied = true;
+        for (const { attribute, direction } of sortOrders) {
+            if (!TrustRegistryDatabaseService.SQL_SORTABLE_TR_ATTRIBUTES.has(attribute)) {
+                fullyApplied = false;
+                continue;
+            }
+            query.orderBy(attribute, direction);
+            if (attribute === "id") hasIdSort = true;
+        }
+
+        if (!hasIdSort) {
+            query.orderBy("id", "desc");
+        }
+
+        return { fullyApplied };
     }
 
     private static toFiniteNumber(value: unknown): number {
@@ -98,6 +143,18 @@ export default class TrustRegistryDatabaseService extends BaseService {
             maxActiveSchemas?: number;
             minParticipants?: number;
             maxParticipants?: number;
+            minParticipantsEcosystem?: number;
+            maxParticipantsEcosystem?: number;
+            minParticipantsIssuerGrantor?: number;
+            maxParticipantsIssuerGrantor?: number;
+            minParticipantsIssuer?: number;
+            maxParticipantsIssuer?: number;
+            minParticipantsVerifierGrantor?: number;
+            maxParticipantsVerifierGrantor?: number;
+            minParticipantsVerifier?: number;
+            maxParticipantsVerifier?: number;
+            minParticipantsHolder?: number;
+            maxParticipantsHolder?: number;
             minWeight?: string;
             maxWeight?: string;
             minIssued?: string;
@@ -113,6 +170,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
         let filtered = rows;
         filtered = this.applyRangeToRows(filtered, filters.minActiveSchemas, filters.maxActiveSchemas, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.active_schemas));
         filtered = this.applyRangeToRows(filtered, filters.minParticipants, filters.maxParticipants, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsEcosystem, filters.maxParticipantsEcosystem, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_ecosystem));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsIssuerGrantor, filters.maxParticipantsIssuerGrantor, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_issuer_grantor));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsIssuer, filters.maxParticipantsIssuer, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_issuer));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsVerifierGrantor, filters.maxParticipantsVerifierGrantor, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_verifier_grantor));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsVerifier, filters.maxParticipantsVerifier, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_verifier));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsHolder, filters.maxParticipantsHolder, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_holder));
         filtered = this.applyRangeToRows(filtered, filters.minWeight, filters.maxWeight, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.weight));
         filtered = this.applyRangeToRows(filtered, filters.minIssued, filters.maxIssued, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.issued));
         filtered = this.applyRangeToRows(filtered, filters.minVerified, filters.maxVerified, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.verified));
@@ -130,6 +193,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
             getCreated: (row) => row.created,
             getModified: (row) => row.modified,
             getParticipants: (row) => row.participants,
+            getParticipantsEcosystem: (row) => row.participants_ecosystem,
+            getParticipantsIssuerGrantor: (row) => row.participants_issuer_grantor,
+            getParticipantsIssuer: (row) => row.participants_issuer,
+            getParticipantsVerifierGrantor: (row) => row.participants_verifier_grantor,
+            getParticipantsVerifier: (row) => row.participants_verifier,
+            getParticipantsHolder: (row) => row.participants_holder,
             getActiveSchemas: (row) => row.active_schemas,
             getWeight: (row) => row.weight,
             getIssued: (row) => row.issued,
@@ -148,6 +217,18 @@ export default class TrustRegistryDatabaseService extends BaseService {
         maxActiveSchemas?: number;
         minParticipants?: number;
         maxParticipants?: number;
+        minParticipantsEcosystem?: number;
+        maxParticipantsEcosystem?: number;
+        minParticipantsIssuerGrantor?: number;
+        maxParticipantsIssuerGrantor?: number;
+        minParticipantsIssuer?: number;
+        maxParticipantsIssuer?: number;
+        minParticipantsVerifierGrantor?: number;
+        maxParticipantsVerifierGrantor?: number;
+        minParticipantsVerifier?: number;
+        maxParticipantsVerifier?: number;
+        minParticipantsHolder?: number;
+        maxParticipantsHolder?: number;
         minWeight?: string;
         maxWeight?: string;
         minIssued?: string;
@@ -162,6 +243,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
         return (
             (filters.minActiveSchemas !== undefined && filters.maxActiveSchemas !== undefined && filters.minActiveSchemas === filters.maxActiveSchemas) ||
             (filters.minParticipants !== undefined && filters.maxParticipants !== undefined && filters.minParticipants === filters.maxParticipants) ||
+            (filters.minParticipantsEcosystem !== undefined && filters.maxParticipantsEcosystem !== undefined && filters.minParticipantsEcosystem === filters.maxParticipantsEcosystem) ||
+            (filters.minParticipantsIssuerGrantor !== undefined && filters.maxParticipantsIssuerGrantor !== undefined && filters.minParticipantsIssuerGrantor === filters.maxParticipantsIssuerGrantor) ||
+            (filters.minParticipantsIssuer !== undefined && filters.maxParticipantsIssuer !== undefined && filters.minParticipantsIssuer === filters.maxParticipantsIssuer) ||
+            (filters.minParticipantsVerifierGrantor !== undefined && filters.maxParticipantsVerifierGrantor !== undefined && filters.minParticipantsVerifierGrantor === filters.maxParticipantsVerifierGrantor) ||
+            (filters.minParticipantsVerifier !== undefined && filters.maxParticipantsVerifier !== undefined && filters.minParticipantsVerifier === filters.maxParticipantsVerifier) ||
+            (filters.minParticipantsHolder !== undefined && filters.maxParticipantsHolder !== undefined && filters.minParticipantsHolder === filters.maxParticipantsHolder) ||
             (filters.minWeight !== undefined && filters.maxWeight !== undefined && filters.minWeight === filters.maxWeight) ||
             (filters.minIssued !== undefined && filters.maxIssued !== undefined && filters.minIssued === filters.maxIssued) ||
             (filters.minVerified !== undefined && filters.maxVerified !== undefined && filters.minVerified === filters.maxVerified) ||
@@ -336,6 +423,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     active_version: trHistory.active_version,
                     versions: filteredVersions,
                     participants: stats.participants,
+                    participants_ecosystem: stats.participants_ecosystem,
+                    participants_issuer_grantor: stats.participants_issuer_grantor,
+                    participants_issuer: stats.participants_issuer,
+                    participants_verifier_grantor: stats.participants_verifier_grantor,
+                    participants_verifier: stats.participants_verifier,
+                    participants_holder: stats.participants_holder,
                     active_schemas: stats.active_schemas,
                     archived_schemas: stats.archived_schemas,
                     weight: stats.weight,
@@ -393,6 +486,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     deposit: plain.deposit ?? 0,
                     versions,
                     participants: Number((plain as any).participants || 0),
+                    participants_ecosystem: Number((plain as any).participants_ecosystem || 0),
+                    participants_issuer_grantor: Number((plain as any).participants_issuer_grantor || 0),
+                    participants_issuer: Number((plain as any).participants_issuer || 0),
+                    participants_verifier_grantor: Number((plain as any).participants_verifier_grantor || 0),
+                    participants_verifier: Number((plain as any).participants_verifier || 0),
+                    participants_holder: Number((plain as any).participants_holder || 0),
                     active_schemas: Number((plain as any).active_schemas || 0),
                     archived_schemas: Number((plain as any).archived_schemas || 0),
                     weight: Number((plain as any).weight || 0),
@@ -411,7 +510,44 @@ export default class TrustRegistryDatabaseService extends BaseService {
         }
     }
 
-    @Action()
+    @Action({
+        params: {
+            controller: { type: "any", optional: true },
+            participant: { type: "any", optional: true },
+            modified_after: { type: "string", optional: true },
+            only_active: { type: "any", optional: true },
+            active_gf_only: { type: "any", optional: true },
+            preferred_language: { type: "string", optional: true },
+            response_max_size: { type: "number", optional: true, default: 64 },
+            sort: { type: "string", optional: true },
+            min_active_schemas: { type: "number", optional: true },
+            max_active_schemas: { type: "number", optional: true },
+            min_participants: { type: "number", optional: true },
+            max_participants: { type: "number", optional: true },
+            min_participants_ecosystem: { type: "number", optional: true },
+            max_participants_ecosystem: { type: "number", optional: true },
+            min_participants_issuer_grantor: { type: "number", optional: true },
+            max_participants_issuer_grantor: { type: "number", optional: true },
+            min_participants_issuer: { type: "number", optional: true },
+            max_participants_issuer: { type: "number", optional: true },
+            min_participants_verifier_grantor: { type: "number", optional: true },
+            max_participants_verifier_grantor: { type: "number", optional: true },
+            min_participants_verifier: { type: "number", optional: true },
+            max_participants_verifier: { type: "number", optional: true },
+            min_participants_holder: { type: "number", optional: true },
+            max_participants_holder: { type: "number", optional: true },
+            min_weight: { type: "string", optional: true },
+            max_weight: { type: "string", optional: true },
+            min_issued: { type: "string", optional: true },
+            max_issued: { type: "string", optional: true },
+            min_verified: { type: "string", optional: true },
+            max_verified: { type: "string", optional: true },
+            min_ecosystem_slash_events: { type: "number", optional: true },
+            max_ecosystem_slash_events: { type: "number", optional: true },
+            min_network_slash_events: { type: "number", optional: true },
+            max_network_slash_events: { type: "number", optional: true },
+        },
+    })
     public async listTrustRegistries(ctx: Context<{
         controller?: string;
         participant?: string;
@@ -425,6 +561,18 @@ export default class TrustRegistryDatabaseService extends BaseService {
         max_active_schemas?: number;
         min_participants?: number;
         max_participants?: number;
+        min_participants_ecosystem?: number;
+        max_participants_ecosystem?: number;
+        min_participants_issuer_grantor?: number;
+        max_participants_issuer_grantor?: number;
+        min_participants_issuer?: number;
+        max_participants_issuer?: number;
+        min_participants_verifier_grantor?: number;
+        max_participants_verifier_grantor?: number;
+        min_participants_verifier?: number;
+        max_participants_verifier?: number;
+        min_participants_holder?: number;
+        max_participants_holder?: number;
         min_weight?: string;
         max_weight?: string;
         min_issued?: string;
@@ -449,6 +597,18 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 max_active_schemas: maxActiveSchemas,
                 min_participants: minParticipants,
                 max_participants: maxParticipants,
+                min_participants_ecosystem: minParticipantsEcosystem,
+                max_participants_ecosystem: maxParticipantsEcosystem,
+                min_participants_issuer_grantor: minParticipantsIssuerGrantor,
+                max_participants_issuer_grantor: maxParticipantsIssuerGrantor,
+                min_participants_issuer: minParticipantsIssuer,
+                max_participants_issuer: maxParticipantsIssuer,
+                min_participants_verifier_grantor: minParticipantsVerifierGrantor,
+                max_participants_verifier_grantor: maxParticipantsVerifierGrantor,
+                min_participants_verifier: minParticipantsVerifier,
+                max_participants_verifier: maxParticipantsVerifier,
+                min_participants_holder: minParticipantsHolder,
+                max_participants_holder: maxParticipantsHolder,
                 min_weight: minWeight,
                 max_weight: maxWeight,
                 min_issued: minIssued,
@@ -498,6 +658,18 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 maxActiveSchemas,
                 minParticipants,
                 maxParticipants,
+                minParticipantsEcosystem,
+                maxParticipantsEcosystem,
+                minParticipantsIssuerGrantor,
+                maxParticipantsIssuerGrantor,
+                minParticipantsIssuer,
+                maxParticipantsIssuer,
+                minParticipantsVerifierGrantor,
+                maxParticipantsVerifierGrantor,
+                minParticipantsVerifier,
+                maxParticipantsVerifier,
+                minParticipantsHolder,
+                maxParticipantsHolder,
                 minWeight,
                 maxWeight,
                 minIssued,
@@ -585,6 +757,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                         const stats = statsByTrId.get(Number(trId)) || {
                             participants: 0,
+                            participants_ecosystem: 0,
+                            participants_issuer_grantor: 0,
+                            participants_issuer: 0,
+                            participants_verifier_grantor: 0,
+                            participants_verifier: 0,
+                            participants_holder: 0,
                             active_schemas: 0,
                             archived_schemas: 0,
                             weight: 0,
@@ -611,6 +789,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             active_version: trHistory.active_version,
                             versions: filteredVersions,
                             participants: stats.participants,
+                            participants_ecosystem: stats.participants_ecosystem,
+                            participants_issuer_grantor: stats.participants_issuer_grantor,
+                            participants_issuer: stats.participants_issuer,
+                            participants_verifier_grantor: stats.participants_verifier_grantor,
+                            participants_verifier: stats.participants_verifier,
+                            participants_holder: stats.participants_holder,
                             active_schemas: stats.active_schemas,
                             archived_schemas: stats.archived_schemas,
                             weight: stats.weight,
@@ -651,6 +835,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             query = query.withGraphFetched("governanceFrameworkVersions.documents") as any;
             query = this.applyRangeToQuery(query, "participants", minParticipants, maxParticipants);
+            query = this.applyRangeToQuery(query, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
+            query = this.applyRangeToQuery(query, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
+            query = this.applyRangeToQuery(query, "participants_issuer", minParticipantsIssuer, maxParticipantsIssuer);
+            query = this.applyRangeToQuery(query, "participants_verifier_grantor", minParticipantsVerifierGrantor, maxParticipantsVerifierGrantor);
+            query = this.applyRangeToQuery(query, "participants_verifier", minParticipantsVerifier, maxParticipantsVerifier);
+            query = this.applyRangeToQuery(query, "participants_holder", minParticipantsHolder, maxParticipantsHolder);
             query = this.applyRangeToQuery(query, "active_schemas", minActiveSchemas, maxActiveSchemas);
             query = this.applyRangeToQuery(
                 query,
@@ -685,9 +875,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
 
-            applyOrdering(query as any, sort);
-
-            const registries = await query.limit(responseMaxSize);
+            const { fullyApplied: liveSortFullyApplied } = this.applyTrustRegistrySqlSort(query as any, sort);
+            const liveFetchLimit = liveSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256);
+            const registries = await query.limit(liveFetchLimit);
 
             const registriesWithStats = registries.map((tr) => {
                 const plain = tr.toJSON();
@@ -718,6 +908,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     ...plain,
                     versions,
                     participants: Number(plain.participants || 0),
+                    participants_ecosystem: Number((plain as any).participants_ecosystem || 0),
+                    participants_issuer_grantor: Number((plain as any).participants_issuer_grantor || 0),
+                    participants_issuer: Number((plain as any).participants_issuer || 0),
+                    participants_verifier_grantor: Number((plain as any).participants_verifier_grantor || 0),
+                    participants_verifier: Number((plain as any).participants_verifier || 0),
+                    participants_holder: Number((plain as any).participants_holder || 0),
                     active_schemas: Number(plain.active_schemas || 0),
                     archived_schemas: Number(plain.archived_schemas || 0),
                     weight: Number(plain.weight || 0),
@@ -732,7 +928,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 };
             });
 
-            const sortedRegistries = this.sortRegistries(registriesWithStats, sort, responseMaxSize);
+            const sortedRegistries = liveSortFullyApplied
+                ? registriesWithStats.slice(0, responseMaxSize)
+                : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
             return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
         } catch (err: any) {

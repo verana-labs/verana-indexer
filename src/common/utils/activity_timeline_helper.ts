@@ -114,71 +114,82 @@ async function buildHistoryQuery(
   try {
     const { entityType, historyTable, idField, entityId, msgTypePrefixes, entityIdField } = config;
     const { transactionTimestampOlderThan, atBlockHeight, perQueryLimit } = options;
+    const prefixes = msgTypePrefixes || [];
+    const msgTypeCondition = prefixes.length > 0
+      ? `AND (${prefixes.map((p, idx) => {
+          const escapedPrefix = p.replace(/'/g, "''");
+          return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
+        }).join(' ')})`
+      : '';
 
-  const prefixes = msgTypePrefixes || [];
-  const msgTypeCondition = prefixes.length > 0 
-    ? `AND (${prefixes.map((p, idx) => {
-        const escapedPrefix = p.replace(/'/g, "''");
-        return idx === 0 ? `transaction_message.type LIKE '${escapedPrefix}%'` : `OR transaction_message.type LIKE '${escapedPrefix}%'`;
-      }).join(' ')})`
-    : '';
+    const quotedTable = `"${historyTable}"`;
 
-  const isNumericId = typeof entityId === 'number' || !Number.isNaN(Number(entityId));
+    let historyQuery = knex(historyTable)
+      .select(
+        `${historyTable}.*`,
+        knex.raw(`(
+          SELECT t.timestamp
+          FROM transaction t
+          WHERE t.height = ${quotedTable}.height
+          ORDER BY t.index ASC, t.id ASC
+          LIMIT 1
+        ) as timestamp`),
+        knex.raw("? as activity_entity_type", [entityType]),
+        entityIdField
+          ? knex.raw(`COALESCE(CAST(${historyTable}.${entityIdField} AS TEXT), CAST(${historyTable}.id AS TEXT)) as activity_entity_id`)
+          : knex.raw("? as activity_entity_id", [String(entityId)]),
+        knex.raw(`(
+          SELECT transaction_message.type
+          FROM transaction_message
+          INNER JOIN transaction t ON t.id = transaction_message.tx_id
+          WHERE t.height = ${quotedTable}.height
+          ${msgTypeCondition}
+          ORDER BY transaction_message.index ASC
+          LIMIT 1
+        ) as msg_type`),
+        knex.raw(`(
+          SELECT transaction_message.sender
+          FROM transaction_message
+          INNER JOIN transaction t ON t.id = transaction_message.tx_id
+          WHERE t.height = ${quotedTable}.height
+          ${msgTypeCondition}
+          ORDER BY transaction_message.index ASC
+          LIMIT 1
+        ) as sender`)
+      )
+      .where(`${historyTable}.${idField}`, entityId);
 
-  const quotedTable = `"${historyTable}"`;
-  
-  let historyQuery = knex(historyTable)
-    .select(
-      `${historyTable}.*`,
-      knex.raw(`(
-        SELECT t.timestamp
-        FROM transaction t
-        WHERE t.height = ${quotedTable}.height
-        ORDER BY t.index ASC, t.id ASC
-        LIMIT 1
-      ) as timestamp`),
-      knex.raw('? as activity_entity_type', [entityType]),
-      entityIdField 
-        ? knex.raw(`COALESCE(CAST(${historyTable}.${entityIdField} AS TEXT), CAST(${historyTable}.id AS TEXT)) as activity_entity_id`)
-        : knex.raw('? as activity_entity_id', [String(entityId)]),
-      knex.raw(`(
-        SELECT transaction_message.type 
-        FROM transaction_message 
-        INNER JOIN transaction t ON t.id = transaction_message.tx_id
-        WHERE t.height = ${quotedTable}.height
-        ${msgTypeCondition}
-        ORDER BY transaction_message.index ASC
-        LIMIT 1
-      ) as msg_type`),
-      knex.raw(`(
-        SELECT transaction_message.sender 
-        FROM transaction_message 
-        INNER JOIN transaction t ON t.id = transaction_message.tx_id
-        WHERE t.height = ${quotedTable}.height
-        ${msgTypeCondition}
-        ORDER BY transaction_message.index ASC
-        LIMIT 1
-      ) as sender`)
-    )
-    .where(function () {
-      this.where(`${historyTable}.${idField}`, entityId);
-    });
+  let effectiveMaxHeight: number | null = null;
 
   if (atBlockHeight) {
     const blockHeight = Number(atBlockHeight);
     if (!Number.isNaN(blockHeight)) {
-      historyQuery = historyQuery.where(function() {
-        this.whereNotNull(`${historyTable}.height`)
-            .andWhere(`${historyTable}.height`, "<=", blockHeight);
-      });
+      effectiveMaxHeight = blockHeight;
     }
   }
 
   if (transactionTimestampOlderThan) {
-    historyQuery = historyQuery.whereRaw(
-      `(SELECT t.timestamp FROM transaction t WHERE t.height = ${quotedTable}.height ORDER BY t.index ASC, t.id ASC LIMIT 1) < ?`,
-      [transactionTimestampOlderThan]
-    );
+    const cutoff = await knex("transaction as t")
+      .select("t.height")
+      .where("t.timestamp", "<", transactionTimestampOlderThan)
+      .orderBy("t.timestamp", "desc")
+      .orderBy("t.height", "desc")
+      .first();
+    const cutoffHeight = cutoff?.height != null ? Number(cutoff.height) : NaN;
+    if (!Number.isFinite(cutoffHeight)) {
+      historyQuery = historyQuery.whereRaw("1 = 0");
+    } else {
+      effectiveMaxHeight = effectiveMaxHeight == null
+        ? cutoffHeight
+        : Math.min(effectiveMaxHeight, cutoffHeight);
+    }
+  }
+
+  if (effectiveMaxHeight != null) {
+    historyQuery = historyQuery.where(function() {
+      this.whereNotNull(`${historyTable}.height`)
+        .andWhere(`${historyTable}.height`, "<=", effectiveMaxHeight as number);
+    });
   }
 
   historyQuery = historyQuery
@@ -209,7 +220,9 @@ export async function buildActivityTimeline(
   try {
   const { entityType, historyTable, idField, entityId, msgTypePrefixes, relatedEntities } = config;
   const { responseMaxSize = 64, transactionTimestampOlderThan, atBlockHeight } = options;
-  const perQueryLimit = Math.max(Number(responseMaxSize) * 4, 256);
+  const queryMultiplier = 2;
+  const minPerQueryLimit = 128;
+  const perQueryLimit = Math.max(Number(responseMaxSize) * queryMultiplier, minPerQueryLimit);
 
   const queries: any[] = [];
 
@@ -247,18 +260,7 @@ export async function buildActivityTimeline(
 
   const allResults = await Promise.all(queries.map(async (q, index) => {
     try {
-      if (process.env.NODE_ENV !== "production") {
-        try {
-          const querySql = typeof q.toQuery === 'function' ? q.toQuery() : (typeof q.toString === 'function' ? q.toString() : JSON.stringify(q));
-          console.log(`[DEBUG] History query ${index} SQL:`, querySql);
-        } catch (e) {
-          console.log(`[DEBUG] Could not generate query SQL for query ${index}`);
-        }
-      }
       const result = await q;
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[DEBUG] History query ${index} returned ${result?.length || 0} records`);
-      }
       return result;
     } catch (err: any) {
       console.error(`Query error for query ${index}:`, err);
@@ -270,14 +272,6 @@ export async function buildActivityTimeline(
         bindings: err?.bindings,
       });
       console.error("Query config:", config);
-      if (process.env.NODE_ENV !== "production") {
-        try {
-          const querySql = typeof q.toQuery === 'function' ? q.toQuery() : (typeof q.toString === 'function' ? q.toString() : JSON.stringify(q));
-          console.error(`[DEBUG] Failed query SQL:`, querySql);
-        } catch (e) {
-          console.error(`[DEBUG] Could not generate query SQL:`, e);
-        }
-      }
       return [];
     }
   }));

@@ -53,6 +53,12 @@ const PERMISSION_HISTORY_FIELDS = [
   "vp_state",
   "vp_last_state_change",
   "participants",
+  "participants_ecosystem",
+  "participants_issuer_grantor",
+  "participants_issuer",
+  "participants_verifier_grantor",
+  "participants_verifier",
+  "participants_holder",
   "weight",
   "ecosystem_slash_events",
   "ecosystem_slashed_amount",
@@ -69,6 +75,15 @@ const PERMISSION_HISTORY_FIELDS = [
   "issued",
   "verified",
 ];
+
+const PARTICIPANT_ROLE_HISTORY_FIELDS = [
+  "participants_ecosystem",
+  "participants_issuer_grantor",
+  "participants_issuer",
+  "participants_verifier_grantor",
+  "participants_verifier",
+  "participants_holder",
+] as const;
 
 const PERMISSION_SESSION_HISTORY_FIELDS = [
   "controller",
@@ -119,34 +134,19 @@ function parseJson<T = any>(value: any): T | any {
   }
 }
 
-let permissionHistoryIssuedColumnExistsCache: boolean | null = null;
-let permissionHistoryVerifiedColumnExistsCache: boolean | null = null;
+const permissionHistoryColumnExistsCache: Record<string, boolean> = {};
 
 async function checkPermissionHistoryColumnExists(columnName: string): Promise<boolean> {
-  if (columnName === "issued") {
-    if (permissionHistoryIssuedColumnExistsCache !== null) {
-      return permissionHistoryIssuedColumnExistsCache;
-    }
-  } else if (columnName === "verified") {
-    if (permissionHistoryVerifiedColumnExistsCache !== null) {
-      return permissionHistoryVerifiedColumnExistsCache;
-    }
+  if (permissionHistoryColumnExistsCache[columnName] !== undefined) {
+    return permissionHistoryColumnExistsCache[columnName];
   }
 
   try {
     const result = await knex.schema.hasColumn('permission_history', columnName);
-    if (columnName === "issued") {
-      permissionHistoryIssuedColumnExistsCache = result;
-    } else if (columnName === "verified") {
-      permissionHistoryVerifiedColumnExistsCache = result;
-    }
+    permissionHistoryColumnExistsCache[columnName] = result;
     return result;
   } catch (error) {
-    if (columnName === "issued") {
-      permissionHistoryIssuedColumnExistsCache = false;
-    } else if (columnName === "verified") {
-      permissionHistoryVerifiedColumnExistsCache = false;
-    }
+    permissionHistoryColumnExistsCache[columnName] = false;
     return false;
   }
 }
@@ -159,6 +159,8 @@ async function pickPermissionSnapshot(record: any) {
   const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
   const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
   const hasParticipantsColumn = await checkPermissionHistoryColumnExists("participants");
+  const hasParticipantRoleColumns =
+    (await Promise.all(PARTICIPANT_ROLE_HISTORY_FIELDS.map((field) => checkPermissionHistoryColumnExists(field)))).every(Boolean);
   const hasWeightColumn = await checkPermissionHistoryColumnExists("weight");
   const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
 
@@ -173,6 +175,9 @@ async function pickPermissionSnapshot(record: any) {
       continue;
     }
     if (field === "participants" && !hasParticipantsColumn) {
+      continue;
+    }
+    if ((PARTICIPANT_ROLE_HISTORY_FIELDS as readonly string[]).includes(field) && !hasParticipantRoleColumns) {
       continue;
     }
     if (field === "weight" && !hasWeightColumn) {
@@ -205,6 +210,8 @@ async function recordPermissionHistory(
   const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
   const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
   const hasParticipantsColumn = await checkPermissionHistoryColumnExists("participants");
+  const hasParticipantRoleColumns =
+    (await Promise.all(PARTICIPANT_ROLE_HISTORY_FIELDS.map((field) => checkPermissionHistoryColumnExists(field)))).every(Boolean);
   const hasWeightColumn = await checkPermissionHistoryColumnExists("weight");
   const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
 
@@ -214,6 +221,7 @@ async function recordPermissionHistory(
     if (field === "issued" && !hasIssuedColumn) return false;
     if (field === "verified" && !hasVerifiedColumn) return false;
     if (field === "participants" && !hasParticipantsColumn) return false;
+    if ((PARTICIPANT_ROLE_HISTORY_FIELDS as readonly string[]).includes(field) && !hasParticipantRoleColumns) return false;
     if (field === "weight" && !hasWeightColumn) return false;
     if ((field === "ecosystem_slash_events" || field === "ecosystem_slashed_amount" ||
       field === "ecosystem_slashed_amount_repaid" || field === "network_slash_events" ||
@@ -436,6 +444,12 @@ export default class PermIngestService extends Service {
       const stats = await calculateTrustRegistryStats(trId);
       await knex("trust_registry").where("id", trId).update({
         participants: stats.participants,
+        participants_ecosystem: stats.participants_ecosystem,
+        participants_issuer_grantor: stats.participants_issuer_grantor,
+        participants_issuer: stats.participants_issuer,
+        participants_verifier_grantor: stats.participants_verifier_grantor,
+        participants_verifier: stats.participants_verifier,
+        participants_holder: stats.participants_holder,
         active_schemas: stats.active_schemas,
         archived_schemas: stats.archived_schemas,
         weight: stats.weight,
@@ -1885,6 +1899,12 @@ export default class PermIngestService extends Service {
             .where("id", schemaId)
             .update({
               participants: csStats.participants,
+              participants_ecosystem: csStats.participants_ecosystem,
+              participants_issuer_grantor: csStats.participants_issuer_grantor,
+              participants_issuer: csStats.participants_issuer,
+              participants_verifier_grantor: csStats.participants_verifier_grantor,
+              participants_verifier: csStats.participants_verifier,
+              participants_holder: csStats.participants_holder,
               weight: csStats.weight,
               issued: csStats.issued,
               verified: csStats.verified,
@@ -2088,6 +2108,12 @@ export default class PermIngestService extends Service {
             .where("id", schemaId)
             .update({
               participants: csStats.participants,
+              participants_ecosystem: csStats.participants_ecosystem,
+              participants_issuer_grantor: csStats.participants_issuer_grantor,
+              participants_issuer: csStats.participants_issuer,
+              participants_verifier_grantor: csStats.participants_verifier_grantor,
+              participants_verifier: csStats.participants_verifier,
+              participants_holder: csStats.participants_holder,
               weight: csStats.weight,
               issued: csStats.issued,
               verified: csStats.verified,
@@ -2366,6 +2392,19 @@ export default class PermIngestService extends Service {
     if (!hasParticipantsColumn) {
       return;
     }
+    const roleColumns = [
+      "participants_ecosystem",
+      "participants_issuer_grantor",
+      "participants_issuer",
+      "participants_verifier_grantor",
+      "participants_verifier",
+      "participants_holder",
+    ] as const;
+    const roleColumnsAvailabilityEntries = await Promise.all(
+      roleColumns.map(async (col) => [col, await this.checkPermissionsColumnExists(col)] as const)
+    );
+    const roleColumnsAvailability = new Map<string, boolean>(roleColumnsAvailabilityEntries);
+    const availableRoleColumns = roleColumns.filter((col) => roleColumnsAvailability.get(col));
 
     const initialPerm: { schema_id: number; validator_perm_id: number | null } | undefined =
       await trx("permissions").where({ id: permId }).select('schema_id', 'validator_perm_id').first();
@@ -2391,7 +2430,18 @@ export default class PermIngestService extends Service {
 
     for (let i = permStack.length - 1; i >= 0; i--) {
       const pid = permStack[i];
-      const perm = await trx("permissions").where({ id: pid }).select('repaid', 'slashed', 'revoked', 'effective_from', 'effective_until', 'type', 'vp_state', 'vp_exp', 'validator_perm_id', 'schema_id').first();
+      const perm = await trx("permissions").where({ id: pid }).select(
+        "repaid",
+        "slashed",
+        "revoked",
+        "effective_from",
+        "effective_until",
+        "type",
+        "vp_state",
+        "vp_exp",
+        "validator_perm_id",
+        "schema_id"
+      ).first();
       if (!perm) continue;
 
       const permState = calculatePermState(
@@ -2410,11 +2460,42 @@ export default class PermIngestService extends Service {
       );
 
       let count = permState === "ACTIVE" ? 1 : 0;
+      const roleTotals: Record<string, number> = {
+        participants_ecosystem: 0,
+        participants_issuer_grantor: 0,
+        participants_issuer: 0,
+        participants_verifier_grantor: 0,
+        participants_verifier: 0,
+        participants_holder: 0,
+      };
+      if (permState === "ACTIVE") {
+        if (perm.type === "ECOSYSTEM") roleTotals.participants_ecosystem += 1;
+        if (perm.type === "ISSUER_GRANTOR") roleTotals.participants_issuer_grantor += 1;
+        if (perm.type === "ISSUER") roleTotals.participants_issuer += 1;
+        if (perm.type === "VERIFIER_GRANTOR") roleTotals.participants_verifier_grantor += 1;
+        if (perm.type === "VERIFIER") roleTotals.participants_verifier += 1;
+        if (perm.type === "HOLDER") roleTotals.participants_holder += 1;
+      }
 
+      const childSelectColumns: string[] = [
+        "repaid",
+        "slashed",
+        "revoked",
+        "effective_from",
+        "effective_until",
+        "type",
+        "vp_state",
+        "vp_exp",
+        "validator_perm_id",
+        "participants",
+      ];
+      for (const roleCol of availableRoleColumns) {
+        childSelectColumns.push(roleCol);
+      }
       const children = await trx("permissions")
         .where("validator_perm_id", pid)
         .where("schema_id", perm.schema_id)
-        .select("repaid", "slashed", "revoked", "effective_from", "effective_until", "type", "vp_state", "vp_exp", "validator_perm_id", "participants");
+        .select(childSelectColumns);
 
       for (const child of children) {
         const childState = calculatePermState(
@@ -2438,12 +2519,19 @@ export default class PermIngestService extends Service {
 
         const childParticipants = child.participants ? Number(child.participants) : 0;
         count += childParticipants;
+        for (const roleCol of availableRoleColumns) {
+          roleTotals[roleCol] += Number(child?.[roleCol] || 0);
+        }
       }
 
       try {
+        const updates: Record<string, any> = { participants: count };
+        for (const roleCol of availableRoleColumns) {
+          updates[roleCol] = roleTotals[roleCol];
+        }
         await trx("permissions")
           .where({ id: pid })
-          .update({ participants: count });
+          .update(updates);
       } catch (error: any) {
         if (error?.nativeError?.code === '42703') {
           this.permissionsColumnExistsCache = null;

@@ -454,6 +454,7 @@ const ALTER_MIGRATIONS = [
   "20251125113000_add_height_indexes_to_history_tables",
   "20251210000000_add_permission_statistics",
   "20250115000000_add_permission_new_attributes",
+  "20260305000000_add_participant_role_counters",
   "20260126000000_add_trust_registry_statistics",
   "20260126000002_add_credential_schema_statistics",
   "20260130000004_alter_gfv_combined",
@@ -529,6 +530,7 @@ async function runMigrations(db: Knex): Promise<void> {
       "20251125113000_add_height_indexes_to_history_tables",
       "20251210000000_add_permission_statistics",
       "20250115000000_add_permission_new_attributes",
+      "20260305000000_add_participant_role_counters",
       "20260126000000_add_trust_registry_statistics",
       "20260126000002_add_credential_schema_statistics"
     ];
@@ -712,10 +714,13 @@ async function runMigrations(db: Knex): Promise<void> {
       }
       
       const hasParticipantsColumn = await db.schema.hasColumn("permissions", "participants");
-      if (hasParticipantsColumn) {
-        console.log("   ✓ New permission attributes (participants, slash stats) verified in permissions table");
+      const hasParticipantsEcosystemColumn = await db.schema.hasColumn("permissions", "participants_ecosystem");
+      if (hasParticipantsColumn && hasParticipantsEcosystemColumn) {
+        console.log("   ✓ New permission attributes (participants + role counters + slash stats) verified in permissions table");
       } else {
-        console.warn("   ⚠ Warning: participants column not found in permissions table after migrations");
+        console.warn("   ⚠ Warning: participant columns missing in permissions table after migrations");
+        if (!hasParticipantsColumn) console.warn("     - Missing: participants");
+        if (!hasParticipantsEcosystemColumn) console.warn("     - Missing: participants_ecosystem");
       }
 
       const hasTrustRegistryParticipantsColumn = await db.schema.hasColumn("trust_registry", "participants");

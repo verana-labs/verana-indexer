@@ -42,10 +42,12 @@ export function isPoolExhaustionError(error: any): boolean {
 }
 
 export function isConnectionTerminatedError(error: any): boolean {
-  const errorMessage = error?.message || String(error);
-  return errorMessage.includes('Connection terminated unexpectedly') ||
+  const errorMessage = (error?.message || String(error) || '').toLowerCase();
+  return errorMessage.includes('connection terminated unexpectedly') ||
     errorMessage.includes('connection closed') ||
-    errorMessage.includes('server closed the connection');
+    errorMessage.includes('server closed the connection') ||
+    errorMessage.includes('not queryable') ||
+    errorMessage.includes('connection error and is not queryable');
 }
 
 export function delay(ms: number): Promise<void> {
@@ -126,7 +128,7 @@ export async function executeWithRetry<T>(
   throw lastError;
 }
 
-export function withQueryTimeout<T>(
+export function withQueryTimeout(
   queryBuilder: any,
   timeout: number = DEFAULT_QUERY_TIMEOUT
 ): any {

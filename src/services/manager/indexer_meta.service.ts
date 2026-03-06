@@ -8,7 +8,6 @@ import knex from "../../common/utils/db_connection";
 import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
-import { indexerStatusManager } from "./indexer_status.manager";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import {
   VeranaTrustRegistryMessageTypes,
@@ -90,15 +89,6 @@ function filterChangedValues(changes: any): any {
   return Object.keys(filtered).length > 0 ? filtered : null;
 }
 
-type ChangeOperation = "create" | "update" | "delete";
-
-interface IndexerChange {
-  entity_type: string;
-  entity_id: string;
-  operation: ChangeOperation;
-  payload: Record<string, unknown>;
-}
-
 interface ChangesActivityItem {
   timestamp: string | null;
   block_height: string;
@@ -115,64 +105,6 @@ interface ChangesResponse {
   activity: ChangesActivityItem[];
 }
 
-function toOperation(eventType?: string, isDelete?: boolean): ChangeOperation {
-  if (isDelete) return "delete";
-  const label = eventType?.toLowerCase() ?? "";
-
-  // Explicit "create" operations - only actual creation of new entities
-  const createPatterns = [
-    "create",
-    "add_did", // legacy DID creation
-    "adddid", // AddDid message type
-  ];
-
-  // Explicit "delete" operations - only actual deletions
-  const deletePatterns = [
-    "remove_did",
-    "removedid",
-    "delete",
-  ];
-
-  // Check for explicit create patterns (must be actual creation, not just contains "create")
-  for (const pattern of createPatterns) {
-    if (label.includes(pattern)) {
-      return "create";
-    }
-  }
-
-  // Check for explicit delete patterns
-  for (const pattern of deletePatterns) {
-    if (label.includes(pattern)) {
-      return "delete";
-    }
-  }
-
-  // All other operations are updates:
-  // - START_PERMISSION_VP (starts a validation process on existing permission chain)
-  // - RENEW_PERMISSION_VP (renews an existing permission)
-  // - EXTEND_PERMISSION (extends an existing permission)
-  // - REVOKE_PERMISSION (marks as revoked, doesn't delete)
-  // - SET_VALIDATE_PERMISSION_VP, CANCEL_PERMISSION_VP
-  // - SLASH_PERMISSION_TRUST_DEPOSIT, REPAY_PERMISSION_SLASHED_TRUST_DEPOSIT
-  // - AddGFV, AddGFD (adds to existing TR, not a new entity creation)
-  // - ActivateGFV, IncreaseGFV
-  // - Archive (marks as archived, doesn't delete)
-  // - RenewDid, TouchDid (updates existing DID)
-  // - update, Update
-  return "update";
-}
-
-function safeJsonParse(value: unknown) {
-  if (!value) return null;
-  if (typeof value === "object") return value;
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
 @Service({
   name: SERVICE.V1.IndexerMetaService.key,
   version: 1,
@@ -180,6 +112,21 @@ function safeJsonParse(value: unknown) {
 export default class IndexerMetaService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
+  }
+
+  private async getNodeInfoWithTimeout(timeoutMs: number): Promise<GetNodeInfoResponseSDKType | null> {
+    try {
+      const lcdClient = await getLcdClient();
+      const nodeInfo = await Promise.race([
+        lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), timeoutMs);
+        }),
+      ]);
+      return nodeInfo as GetNodeInfoResponseSDKType | null;
+    } catch {
+      return null;
+    }
   }
 
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
@@ -222,8 +169,10 @@ export default class IndexerMetaService extends BaseService {
   @Action()
   public async getVersion(ctx: Context) {
     try {
-      const lcdClient = await getLcdClient();
-      const nodeInfo: GetNodeInfoResponseSDKType = await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
+      const includeRuntimeInfo = process.env.VERSION_INCLUDE_RUNTIME_NETWORK_INFO === "true";
+      const nodeInfo = includeRuntimeInfo
+        ? await this.getNodeInfoWithTimeout(Number(process.env.VERSION_NODE_INFO_TIMEOUT_MS || 250))
+        : null;
 
       const networkInfo = {
         chainId: nodeInfo?.default_node_info?.network || Network.chainId || "unknown",
