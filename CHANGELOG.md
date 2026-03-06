@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0](https://github.com/verana-labs/verana-indexer/compare/v1.0.0...v1.1.0) (2026-03-04)
+
+
+### Features
+
+* add next_change_at attribute to changes endpoint ([#189](https://github.com/verana-labs/verana-indexer/issues/189)) ([28b2962](https://github.com/verana-labs/verana-indexer/commit/28b296255ecbec7edc4f05b296f0efcaef868c2c))
+* optimize crawl speed for fresh and reindex modes with memory-safe tuning ([#180](https://github.com/verana-labs/verana-indexer/issues/180)) ([4d242cb](https://github.com/verana-labs/verana-indexer/commit/4d242cb42bea5c25e98cc93e945b9f4718147b24))
+
+
+### Bug Fixes
+
+* archive inconsistency in MsgArchiveCredentialSchema ([#178](https://github.com/verana-labs/verana-indexer/issues/178)) ([7d6b1ff](https://github.com/verana-labs/verana-indexer/commit/7d6b1ff8617b0e315473d0df0b00d0f43fa2ff0b))
+* optimize all APIs with proper indexing and query alignment ([#188](https://github.com/verana-labs/verana-indexer/issues/188)) ([3e766c2](https://github.com/verana-labs/verana-indexer/commit/3e766c2ba23fb85b8c6707ec5312057ca7f4ce0b))
+* reduce latency in perm list endpoint ([#183](https://github.com/verana-labs/verana-indexer/issues/183)) ([d628f5f](https://github.com/verana-labs/verana-indexer/commit/d628f5ff2e44d816acdc8cbe56884ec672409161))
+* refactor credential schema ([#182](https://github.com/verana-labs/verana-indexer/issues/182)) ([27436eb](https://github.com/verana-labs/verana-indexer/commit/27436ebf2529f7eae25dedddf22d1624ae72986e))
+
 ## [1.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.0.0...v1.0.0) (2026-02-19)
 
 
