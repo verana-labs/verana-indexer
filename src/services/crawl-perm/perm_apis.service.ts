@@ -11,6 +11,8 @@ import knex from "../../common/utils/db_connection";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { getModuleParams } from "../../common/utils/params_service";
+import { isValidISO8601UTC } from "../../common/utils/date_utils";
+import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
@@ -576,33 +578,79 @@ export default class PermAPIService extends BullableService {
   ): Promise<any[]> {
     if (permissions.length === 0) return [];
 
+    const requiresSchemaModes = (permType: string | undefined): boolean => {
+      if (!permType) return false;
+      return permType === "ISSUER_GRANTOR"
+        || permType === "ISSUER"
+        || permType === "VERIFIER_GRANTOR"
+        || permType === "VERIFIER";
+    };
+
     const schemaIds = Array.from(
       new Set(
         permissions
+          .filter((perm) => requiresSchemaModes(String(perm?.type || "").toUpperCase()))
           .map((perm) => Number(perm.schema_id))
           .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
       )
     );
+
+    const locallyKnownPermStateById = new Map<number, PermState>();
+    for (const perm of permissions) {
+      const permissionId = Number(perm?.id);
+      if (!Number.isFinite(permissionId) || permissionId <= 0) continue;
+      locallyKnownPermStateById.set(permissionId, calculatePermState(
+        {
+          repaid: perm.repaid,
+          slashed: perm.slashed,
+          revoked: perm.revoked,
+          effective_from: perm.effective_from,
+          effective_until: perm.effective_until,
+          type: perm.type,
+          vp_state: perm.vp_state,
+          vp_exp: perm.vp_exp,
+          validator_perm_id: perm.validator_perm_id,
+        },
+        now
+      ));
+    }
+
     const validatorPermIds = Array.from(
       new Set(
         permissions
+          .filter((perm) => String(perm?.type || "").toUpperCase() !== "ECOSYSTEM")
           .map((perm) => Number(perm.validator_perm_id))
           .filter((validatorPermId) => Number.isFinite(validatorPermId) && validatorPermId > 0)
       )
     );
+    const missingValidatorPermIds = validatorPermIds.filter(
+      (validatorPermId) => !locallyKnownPermStateById.has(validatorPermId)
+    );
+
+    const shouldLoadModuleParams = permissions.some(
+      (perm) => perm?.effective_until !== null && perm?.effective_until !== undefined
+    );
 
     const [schemaModesById, validatorPermStateById, moduleParams] = await Promise.all([
       options?.schemaModesById ?? this.getSchemaModesBatch(schemaIds, blockHeight),
-      options?.validatorPermStateById ?? this.getValidatorPermStateMap(validatorPermIds, blockHeight, now),
-      options?.moduleParams !== undefined
-        ? Promise.resolve(options.moduleParams)
+      options?.validatorPermStateById ?? this.getValidatorPermStateMap(missingValidatorPermIds, blockHeight, now),
+      options?.moduleParams !== undefined || !shouldLoadModuleParams
+        ? Promise.resolve(options?.moduleParams)
         : this.getPermissionModuleParams(blockHeight).catch(() => undefined),
     ]);
+
+    const mergedValidatorPermStateById = new Map<number, PermState | null>();
+    for (const [permissionId, state] of locallyKnownPermStateById.entries()) {
+      mergedValidatorPermStateById.set(permissionId, state);
+    }
+    for (const [permissionId, state] of validatorPermStateById.entries()) {
+      mergedValidatorPermStateById.set(permissionId, state);
+    }
 
     const mergedOptions = {
       ...options,
       schemaModesById,
-      validatorPermStateById,
+      validatorPermStateById: mergedValidatorPermStateById,
       moduleParams,
     };
 
@@ -1027,13 +1075,16 @@ export default class PermAPIService extends BullableService {
     }
   ): Promise<any> {
     const schemaId = Number(perm.schema_id);
-    const schema = options?.schemaModesById?.get(schemaId) ?? await this.getSchemaModes(schemaId, blockHeight);
+    const schemaFromBatch = options?.schemaModesById?.get(schemaId);
+    const schema = schemaFromBatch
+      || (options?.schemaModesById !== undefined ? {} : await this.getSchemaModes(schemaId, blockHeight));
 
     let validatorPermState: PermState | null = null;
+    const validatorPermStateById = options?.validatorPermStateById;
     if (perm.validator_perm_id) {
       const validatorPermId = Number(perm.validator_perm_id);
-      validatorPermState = options?.validatorPermStateById?.has(validatorPermId)
-        ? options.validatorPermStateById.get(validatorPermId) || null
+      validatorPermState = validatorPermStateById?.has(validatorPermId)
+        ? validatorPermStateById.get(validatorPermId) || null
         : null;
     }
 
@@ -1247,7 +1298,6 @@ export default class PermAPIService extends BullableService {
       let whenIso: string | undefined;
 
       if (normalizedParams.modified_after || normalizedParams.when) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (normalizedParams.modified_after) {
           if (!isValidISO8601UTC(normalizedParams.modified_after)) {
             return ApiResponder.error(
@@ -1978,7 +2028,6 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.error(ctx, `Permission with id=${id} not found`, 404);
       }
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "Permission",
@@ -2042,10 +2091,13 @@ export default class PermAPIService extends BullableService {
         .map((id) => Number(id));
 
       const initialMap = await this.getPermissionsByIdsMap(rootIds, useHistoryQuery ? blockHeight : undefined);
-      for (const rootId of rootIds) {
-        if (!initialMap.has(rootId)) {
-          throw new Error(`Permission ${rootId} not found`);
-        }
+      const missingRootIds = rootIds.filter((rootId) => !initialMap.has(rootId));
+      if (missingRootIds.length > 0) {
+        return ApiResponder.error(
+          ctx,
+          `Permission not found for id(s): ${missingRootIds.join(", ")}`,
+          404
+        );
       }
 
       const foundPermMap = new Map<number, any>();
@@ -2173,7 +2225,6 @@ export default class PermAPIService extends BullableService {
       const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
       
       if (transactionTimestampOlderThan) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
           return ApiResponder.error(
             ctx,
@@ -2197,7 +2248,6 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.error(ctx, `PermissionSession ${id} not found`, 404);
       }
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "PERMISSION_SESSION",
@@ -2253,7 +2303,6 @@ export default class PermAPIService extends BullableService {
       } = ctx.params;
 
       if (modifiedAfter) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(modifiedAfter)) {
           return ApiResponder.error(
             ctx,
@@ -2545,12 +2594,28 @@ export default class PermAPIService extends BullableService {
         }
         return false;
       });
-      filtered.sort((a: any, b: any) => {
-        const ta = new Date(a.modified).getTime();
-        const tb = new Date(b.modified).getTime();
-        return ta - tb;
+      const sortedFiltered = sortByStandardAttributes(filtered, sortParam, {
+        getId: (item: any) => item.id,
+        getCreated: (item: any) => item.created,
+        getModified: (item: any) => item.modified,
+        getParticipants: (item: any) => item.participants,
+        getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
+        getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
+        getParticipantsIssuer: (item: any) => item.participants_issuer,
+        getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
+        getParticipantsVerifier: (item: any) => item.participants_verifier,
+        getParticipantsHolder: (item: any) => item.participants_holder,
+        getWeight: (item: any) => item.weight,
+        getIssued: (item: any) => item.issued,
+        getVerified: (item: any) => item.verified,
+        getEcosystemSlashEvents: (item: any) => item.ecosystem_slash_events,
+        getEcosystemSlashedAmount: (item: any) => item.ecosystem_slashed_amount,
+        getNetworkSlashEvents: (item: any) => item.network_slash_events,
+        getNetworkSlashedAmount: (item: any) => item.network_slashed_amount,
+        defaultAttribute: "modified",
+        defaultDirection: "desc",
       });
-      const schemaIds = Array.from(new Set(filtered.map((r: any) => Number(r.schema_id))));
+      const schemaIds = Array.from(new Set(sortedFiltered.map((r: any) => Number(r.schema_id))));
       const schemas = schemaIds.length > 0
         ? await knex("credential_schemas").whereIn("id", schemaIds).select("id", "tr_id", "json_schema", "title", "description", "participants")
         : [];
@@ -2613,7 +2678,7 @@ export default class PermAPIService extends BullableService {
         trMap.set(Number(tr.id), { id: Number(tr.id), did: tr.did, aka: tr.aka, credential_schemas: [], pending_tasks: 0, participants: tr.participants ?? 0 });
       }
       const csMap = new Map<number, any>();
-      for (const perm of filtered) {
+      for (const perm of sortedFiltered) {
         const schemaId = perm.schema_id;
         const csInfo = schemaMap.get(schemaId) || { tr_id: null, title: undefined, description: undefined };
         if (!csMap.has(schemaId)) {
@@ -2629,13 +2694,6 @@ export default class PermAPIService extends BullableService {
         const entry = csMap.get(schemaId);
         entry.permissions.push({ ...perm });
         entry.pending_tasks++;
-      }
-      for (const csEntry of csMap.values()) {
-        csEntry.permissions.sort((a: any, b: any) => {
-          const ta = new Date(a.modified || 0).getTime();
-          const tb = new Date(b.modified || 0).getTime();
-          return ta - tb;
-        });
       }
       for (const [schemaId, csEntry] of csMap.entries()) {
         const csInfo = schemaMap.get(schemaId) || { tr_id: null };

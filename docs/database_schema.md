@@ -346,6 +346,13 @@
 | `aka`            | Alternative name or alias for the trust registry (if provided)              |
 | `language`       | Default language of the trust registry                                      |
 | `active_version` | ID of the currently active governance framework version (if applicable)     |
+| `participants`   | Total active participants across all role subtrees                           |
+| `participants_ecosystem` | Active ECOSYSTEM participants in the trust registry subtree         |
+| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the trust registry subtree |
+| `participants_issuer` | Active ISSUER participants in the trust registry subtree               |
+| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the trust registry subtree |
+| `participants_verifier` | Active VERIFIER participants in the trust registry subtree           |
+| `participants_holder` | Active HOLDER participants in the trust registry subtree               |
 
 **Relations**
 
@@ -400,6 +407,13 @@
 | `archived`                                    | Date/time when the schema was archived (nullable)                      |
 | `created`                                     | Creation date/time of the schema record                                |
 | `modified`                                    | Last modification date/time of the schema record                       |
+| `participants`                                | Total active participants for the schema permission tree               |
+| `participants_ecosystem`                      | Active ECOSYSTEM participants for the schema permission tree           |
+| `participants_issuer_grantor`                 | Active ISSUER_GRANTOR participants for the schema permission tree      |
+| `participants_issuer`                         | Active ISSUER participants for the schema permission tree              |
+| `participants_verifier_grantor`               | Active VERIFIER_GRANTOR participants for the schema permission tree    |
+| `participants_verifier`                       | Active VERIFIER participants for the schema permission tree            |
+| `participants_holder`                         | Active HOLDER participants for the schema permission tree              |
 
 ### `permissions`
 
@@ -439,6 +453,13 @@
 | `slashed_deposit`       | Amount slashed                                                                               |
 | `repaid_deposit`        | Amount repaid                                                                                |
 | `modified`              | Last modified timestamp                                                                      |
+| `participants`          | Total active participants in the permission subtree                                          |
+| `participants_ecosystem` | Active ECOSYSTEM participants in the permission subtree                                     |
+| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the permission subtree                          |
+| `participants_issuer`   | Active ISSUER participants in the permission subtree                                         |
+| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the permission subtree                      |
+| `participants_verifier` | Active VERIFIER participants in the permission subtree                                       |
+| `participants_holder`   | Active HOLDER participants in the permission subtree                                         |
 
 ### `permission_sessions`
 

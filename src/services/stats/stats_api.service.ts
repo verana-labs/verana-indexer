@@ -1,5 +1,5 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { Context, ServiceBroker, Errors } from "moleculer";
+import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";

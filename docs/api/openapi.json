@@ -1075,7 +1075,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+              "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1578,7 +1578,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+              "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "participant",
@@ -2297,7 +2297,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+              "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "min_participants",
@@ -2594,7 +2594,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Comma-separated list of sort criteria. Default: -modified"
+            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3661,6 +3661,14 @@
     }
   },
   "components": {
+    "headers": {
+      "X-Response-Time-Ms": {
+        "description": "Request processing time in milliseconds",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
     "parameters": {
       "At-Block-Height": {
         "name": "At-Block-Height",

@@ -127,8 +127,7 @@ export async function up(knex: Knex): Promise<void> {
     }
 
     if (!transactionTableExists) {
-      console.log('Transaction table does not exist. Skipping partition migration safely.');
-      return;
+      throw new Error('Transaction table does not exist. Cannot proceed with migration.');
     }
 
     // Create event table with config support partition on block height column

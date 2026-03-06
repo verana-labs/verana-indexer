@@ -5,11 +5,14 @@ import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../co
 import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
-import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from "./cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
 import { extractTitleDescriptionFromJsonSchema } from "../../modules/cs-height-sync/cs_height_sync_helpers";
 import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalizer";
+import { isValidISO8601UTC } from "../../common/utils/date_utils";
+import { getModuleParamsAction } from "../../common/utils/params_service";
+import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 
 let heightColumnExistsCache: boolean | null = null;
 let historyMetricColumnsExistCache: boolean | null = null;
@@ -212,6 +215,54 @@ function sortCredentialSchemaRows<T extends {
     defaultAttribute: "modified",
     defaultDirection: "desc",
   }).slice(0, limit);
+}
+
+const SQL_SORTABLE_CREDENTIAL_SCHEMA_ATTRIBUTES = new Set<string>([
+  "id",
+  "modified",
+  "created",
+  "participants",
+  "participants_ecosystem",
+  "participants_issuer_grantor",
+  "participants_issuer",
+  "participants_verifier_grantor",
+  "participants_verifier",
+  "participants_holder",
+  "weight",
+  "issued",
+  "verified",
+  "ecosystem_slash_events",
+  "ecosystem_slashed_amount",
+  "network_slash_events",
+  "network_slashed_amount",
+]);
+
+function applyCredentialSchemaSqlSort(
+  query: any,
+  sort: string | undefined
+): { fullyApplied: boolean } {
+  if (!sort || typeof sort !== "string" || !sort.trim()) {
+    query.orderBy("modified", "desc").orderBy("id", "desc");
+    return { fullyApplied: true };
+  }
+
+  const sortOrders = parseSortParameter(sort);
+  let hasIdSort = false;
+  let fullyApplied = true;
+  for (const { attribute, direction } of sortOrders) {
+    if (!SQL_SORTABLE_CREDENTIAL_SCHEMA_ATTRIBUTES.has(attribute)) {
+      fullyApplied = false;
+      continue;
+    }
+    query.orderBy(attribute, direction);
+    if (attribute === "id") hasIdSort = true;
+  }
+
+  if (!hasIdSort) {
+    query.orderBy("id", "desc");
+  }
+
+  return { fullyApplied };
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -1071,7 +1122,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const limit = Math.min(Math.max(maxSize || 64, 1), 1024);
       let modifiedAfterIso: string | undefined;
       if (modifiedAfter) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(modifiedAfter)) {
           return ApiResponder.error(
             ctx,
@@ -1463,8 +1513,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (verifierPerm !== undefined) {
         query.where("verifier_perm_management_mode", verifierPerm);
       }
-      const orderedQuery = applyOrdering(query, sort);
-      const items = await orderedQuery.limit(limit);
+      const { fullyApplied: liveSortFullyApplied } = applyCredentialSchemaSqlSort(query, sort);
+      const liveFetchLimit = liveSortFullyApplied ? limit : Math.max(limit * 2, 256);
+      const items = await query.limit(liveFetchLimit);
 
       const schemasWithStats = items.map((item) => {
         const storedSchemaString = getStoredSchemaString(item.json_schema);
@@ -1497,7 +1548,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const filteredItems = cleanItems;
 
       type SchemaWithStats = typeof filteredItems[0];
-      const sortedItems = sortCredentialSchemaRows(filteredItems as SchemaWithStats[], sort, limit);
+      const sortedItems = liveSortFullyApplied
+        ? (filteredItems as SchemaWithStats[]).slice(0, limit)
+        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], sort, limit);
 
       return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
     } catch (err: any) {
@@ -1566,7 +1619,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
   @Action()
   public async getParams(ctx: Context) {
-    const { getModuleParamsAction } = await import("../../common/utils/params_service");
     return getModuleParamsAction(ctx, ModulesParamsNamesTypes.CS, MODULE_DISPLAY_NAMES.CREDENTIAL_SCHEMA);
   }
 
@@ -1583,7 +1635,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
       
       if (transactionTimestampOlderThan) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
           return ApiResponder.error(
             ctx,
@@ -1604,7 +1655,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404);
       }
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "CredentialSchema",

@@ -268,6 +268,43 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     });
   });
 
+  describe('Participant Role Attributes and Filters', () => {
+    itIf('should accept participant-role min/max filters on perm/cs/tr list', async () => {
+      const perm = await testEndpoint('GET', '/verana/perm/v1/list', {
+        response_max_size: 1,
+        min_participants_ecosystem: 0,
+        max_participants_ecosystem: 10,
+      });
+      const cs = await testEndpoint('GET', '/verana/cs/v1/list', {
+        response_max_size: 1,
+        min_participants_issuer: 0,
+        max_participants_issuer: 10,
+      });
+      const tr = await testEndpoint('GET', '/verana/tr/v1/list', {
+        response_max_size: 1,
+        min_participants_verifier_grantor: 0,
+        max_participants_verifier_grantor: 10,
+      });
+
+      expect(perm.status).toBeLessThan(500);
+      expect(cs.status).toBeLessThan(500);
+      expect(tr.status).toBeLessThan(500);
+    });
+
+    itIf('should expose participant role counters in global metrics', async () => {
+      const response = await testEndpoint('GET', '/verana/metrics/v1/all');
+      expect(response.status).toBeLessThan(500);
+      if (response.status === 200) {
+        expect(response.data).toHaveProperty("participants_ecosystem");
+        expect(response.data).toHaveProperty("participants_issuer_grantor");
+        expect(response.data).toHaveProperty("participants_issuer");
+        expect(response.data).toHaveProperty("participants_verifier_grantor");
+        expect(response.data).toHaveProperty("participants_verifier");
+        expect(response.data).toHaveProperty("participants_holder");
+      }
+    });
+  });
+
   describe('DID Endpoints - All Parameters Tested', () => {
     describe('GET /verana/dd/v1/get/:did', () => {
       itIf('should get single DID - basic', async () => {
@@ -394,7 +431,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list DIDs - with At-Block-Height header', async () => {
         const response = await testEndpoint('GET', '/verana/dd/v1/list', {}, {
-          'At-Block-Height': String(SAMPLE_BLOCK_HEIGHT),
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -460,7 +497,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get DID history - with At-Block-Height header', async () => {
         const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {}, {
-          'At-Block-Height': String(SAMPLE_BLOCK_HEIGHT),
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -568,6 +605,13 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       itIf('should list trust registries - with sort parameter', async () => {
         const response = await testEndpoint('GET', '/verana/tr/v1/list', {
           sort: 'modified',
+        });
+        expect(response.status).not.toBeGreaterThanOrEqual(500);
+      });
+
+      itIf('should list trust registries - with participant-role sort parameter', async () => {
+        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+          sort: '-participants_verifier_grantor',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -685,7 +729,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get credential schema - with At-Block-Height header', async () => {
         const response = await testEndpoint('GET', `/verana/cs/v1/get/${SAMPLE_ID}`, {}, {
-          'At-Block-Height': String(SAMPLE_BLOCK_HEIGHT),
+          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -764,6 +808,13 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       itIf('should list credential schemas - with sort parameter', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
           sort: 'modified',
+        });
+        expect(response.status).not.toBeGreaterThanOrEqual(500);
+      });
+
+      itIf('should list credential schemas - with participant-role sort parameter', async () => {
+        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+          sort: '-participants_issuer_grantor',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -1002,6 +1053,13 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
+      itIf('should list permissions - with participant-role sort parameter', async () => {
+        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+          sort: '-participants_holder',
+        });
+        expect(response.status).not.toBeGreaterThanOrEqual(500);
+      });
+
       itIf('should list permissions - with min/max participants', async () => {
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
           min_participants: 1,
@@ -1093,6 +1151,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat', {
           account: SAMPLE_ACCOUNT,
           sort: 'modified',
+        });
+        expect(response.status).not.toBeGreaterThanOrEqual(500);
+      });
+
+      itIf('should get pending flat - with participant-role sort parameter', async () => {
+        const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat', {
+          account: SAMPLE_ACCOUNT,
+          sort: '-participants_ecosystem',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -1238,8 +1304,10 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     });
 
     itIf('should get all metrics - with At-Block-Height header', async () => {
+      const heightResponse = await testEndpoint('GET', '/verana/indexer/v1/block-height');
+      const currentHeight = Number(heightResponse?.data?.height || SAMPLE_BLOCK_HEIGHT);
       const response = await testEndpoint('GET', '/verana/metrics/v1/all', {}, {
-        'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
+        'At-Block-Height': currentHeight,
       });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
     });

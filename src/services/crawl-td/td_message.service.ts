@@ -160,6 +160,8 @@ export default class TrustDepositMessageProcessorService extends BullableService
   private trustDepositParams: any = {};
   private processorBase: MessageProcessorBase;
   private _isFreshStart: boolean = false;
+  private readonly zeroShareWarnCooldownMs = 60_000;
+  private readonly zeroShareWarnByAccount = new Map<string, number>();
 
   public constructor(public broker: ServiceBroker) {
     super(broker);
@@ -172,6 +174,19 @@ export default class TrustDepositMessageProcessorService extends BullableService
     this.processorBase.setFreshStartMode(this._isFreshStart);
     this.logger.info(`TrustDeposit message processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
     await this.loadTrustDepositParams();
+  }
+
+  private warnZeroShareValueOnce(action: string, account: string) {
+    const key = `${action}:${account}`;
+    const now = Date.now();
+    const lastWarnAt = this.zeroShareWarnByAccount.get(key) ?? 0;
+    if (now - lastWarnAt < this.zeroShareWarnCooldownMs) {
+      return;
+    }
+    this.zeroShareWarnByAccount.set(key, now);
+    this.logger.warn(
+      `[TrustDeposit] Division by zero prevented: trust_deposit_share_value is 0, skipping ${action} for account ${account}`
+    );
   }
 
   private async loadTrustDepositParams() {
@@ -264,9 +279,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
       if (shareValue === BigInt(0)) {
-        this.logger.error(
-          `[TrustDeposit]  Division by zero prevented: trust_deposit_share_value is 0, skipping reclaim for account ${account}`
-        );
+        this.warnZeroShareValueOnce("reclaim", account);
         return;
       }
       
@@ -330,9 +343,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
       if (shareValue === BigInt(0)) {
-        this.logger.error(
-          `[TrustDeposit] ❌ Division by zero prevented: trust_deposit_share_value is 0, skipping reclaim for account ${account}`
-        );
+        this.warnZeroShareValueOnce("reclaim", account);
         return; 
       }
       
@@ -378,8 +389,6 @@ export default class TrustDepositMessageProcessorService extends BullableService
           content
         )} — ${error.message || error}`
       );
-      console.error(error);
-
     }
   }
 
@@ -404,9 +413,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
       const shareValue = toBigIntSafe(params.trust_deposit_share_value);
       if (shareValue === BigInt(0)) {
-        this.logger.error(
-          `[TrustDeposit] ❌ Division by zero prevented: trust_deposit_share_value is 0, skipping repay for account ${account}`
-        );
+        this.warnZeroShareValueOnce("repay", account);
         return; 
       }
       

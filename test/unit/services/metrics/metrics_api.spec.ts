@@ -14,7 +14,6 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
   mockQuery.then = jest.fn();
   mockQuery.orderBy = jest.fn(() => mockQuery);
   mockQuery.limit = jest.fn(() => mockQuery);
-  mockQuery.select = jest.fn(() => mockQuery);
   mockQuery.returning = jest.fn().mockResolvedValue([{}]);
   return mockQuery;
 });
@@ -50,5 +49,17 @@ describe("Metrics API", () => {
     const ctx: any = { params: {}, meta: { $headers: { "at-block-height": "100" } } };
     await expect(service.getAll(ctx)).resolves.not.toThrow();
   });
-});
 
+  it("runs historical metrics when metric columns are unavailable", async () => {
+    jest.spyOn(service as any, "getHistoryMetricColumnsAvailability").mockResolvedValue({
+      csHasMetricColumns: false,
+    });
+    (knex as any).mockImplementation(() => ({
+      select: () => ({ first: async () => ({ count: '0' }) }),
+      where: () => ({ orderBy: () => ({ first: async () => null }) }),
+      from: () => ({ select: async () => [] }),
+    }));
+    const ctx: any = { params: {}, meta: { $headers: { "at-block-height": "100" } } };
+    await expect(service.getAll(ctx)).resolves.not.toThrow();
+  });
+});

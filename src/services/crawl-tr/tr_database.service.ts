@@ -8,7 +8,7 @@ import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
-import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from "./tr_stats";
 
 @Service({
@@ -17,6 +17,26 @@ import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from ".
 })
 export default class TrustRegistryDatabaseService extends BaseService {
     private trHistoryColumnExistsCache = new Map<string, boolean>();
+    private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
+        "id",
+        "modified",
+        "created",
+        "participants",
+        "participants_ecosystem",
+        "participants_issuer_grantor",
+        "participants_issuer",
+        "participants_verifier_grantor",
+        "participants_verifier",
+        "participants_holder",
+        "active_schemas",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "network_slash_events",
+        "network_slashed_amount",
+    ]);
 
     public constructor(public broker: ServiceBroker) {
         super(broker);
@@ -48,6 +68,31 @@ export default class TrustRegistryDatabaseService extends BaseService {
             "network_slashed_amount",
         ];
         return derivedKeys.some((key) => lower.includes(key));
+    }
+
+    private applyTrustRegistrySqlSort(query: any, sort?: string): { fullyApplied: boolean } {
+        if (!sort || typeof sort !== "string" || !sort.trim()) {
+            query.orderBy("modified", "desc").orderBy("id", "desc");
+            return { fullyApplied: true };
+        }
+
+        const sortOrders = parseSortParameter(sort);
+        let hasIdSort = false;
+        let fullyApplied = true;
+        for (const { attribute, direction } of sortOrders) {
+            if (!TrustRegistryDatabaseService.SQL_SORTABLE_TR_ATTRIBUTES.has(attribute)) {
+                fullyApplied = false;
+                continue;
+            }
+            query.orderBy(attribute, direction);
+            if (attribute === "id") hasIdSort = true;
+        }
+
+        if (!hasIdSort) {
+            query.orderBy("id", "desc");
+        }
+
+        return { fullyApplied };
     }
 
     private static toFiniteNumber(value: unknown): number {
@@ -830,9 +875,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
             }
 
-            applyOrdering(query as any, sort);
-
-            const registries = await query.limit(responseMaxSize);
+            const { fullyApplied: liveSortFullyApplied } = this.applyTrustRegistrySqlSort(query as any, sort);
+            const liveFetchLimit = liveSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256);
+            const registries = await query.limit(liveFetchLimit);
 
             const registriesWithStats = registries.map((tr) => {
                 const plain = tr.toJSON();
@@ -883,7 +928,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 };
             });
 
-            const sortedRegistries = this.sortRegistries(registriesWithStats, sort, responseMaxSize);
+            const sortedRegistries = liveSortFullyApplied
+                ? registriesWithStats.slice(0, responseMaxSize)
+                : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
             return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
         } catch (err: any) {

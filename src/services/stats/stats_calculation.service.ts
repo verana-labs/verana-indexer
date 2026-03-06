@@ -1405,7 +1405,7 @@ export default class StatsCalculationService extends BullableService {
 
     try {
       this.logger.debug(" Testing database connection...");
-      const dbTest = await knex.raw("SELECT 1 as connection_test");
+      await knex.raw("SELECT 1 as connection_test");
       this.logger.debug(" Database connection OK");
 
       this.logger.debug(` Processing timestamp: ${timestamp.toISOString()}`);

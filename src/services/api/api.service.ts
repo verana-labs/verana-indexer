@@ -12,7 +12,9 @@ import { eventsBroadcaster } from "./events_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
+const REQUEST_ACCEPTED_NS = Symbol("requestAcceptedNs");
 const REQUEST_START_NS = Symbol("requestStartNs");
+const requestTimingHookedServers = new WeakSet<Server>();
 
 
 const DEFAULT_ROUTE_CONFIG = {
@@ -28,20 +30,6 @@ async function fetchBlockCheckpoint() {
     .select("height", "updated_at")
     .where("job_name", BLOCK_CHECKPOINT_JOB)
     .first();
-}
-
-async function fetchBlockCheckpointForHeaders() {
-  const timeoutMsRaw = Number(process.env.API_HEADER_CHECKPOINT_TIMEOUT_MS);
-  const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? Math.floor(timeoutMsRaw) : 200;
-  try {
-    return await knex("block_checkpoint")
-      .select("height", "updated_at")
-      .where("job_name", BLOCK_CHECKPOINT_JOB)
-      .timeout(timeoutMs, { cancel: false })
-      .first();
-  } catch {
-    return null;
-  }
 }
 
 function getHeaderValue(req: IncomingMessage): string | null {
@@ -102,11 +90,6 @@ async function parseAtBlockHeight(
   ctx.meta = ctx.meta || {};
   const headerValue = getHeaderValue(req);
 
-  if (process.env.DEBUG_AT_BLOCK_HEADER === "true") {
-    console.log("[DEBUG] Available headers:", Object.keys(req.headers));
-    console.log("[DEBUG] Header value for 'at-block-height':", headerValue);
-  }
-
   if (!headerValue) {
     if (required) {
       throw new Errors.MoleculerError(
@@ -158,14 +141,7 @@ function isUnknownMessageError(errorMessage: string): boolean {
 
 async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   try {
-    let checkpoint = ctx?.meta?.latestCheckpoint;
-    if (!checkpoint) {
-      try {
-        checkpoint = await fetchBlockCheckpointForHeaders();
-      } catch (err: any) {
-        console.error("Error fetching checkpoint:", err);
-      }
-    }
+    const checkpoint = ctx?.meta?.latestCheckpoint;
 
     if (checkpoint) {
       let indexTs: string;
@@ -181,6 +157,9 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       }
       res.setHeader("X-Index-Ts", indexTs);
       res.setHeader("X-Height", checkpoint.height.toString());
+    } else if (typeof ctx?.meta?.blockHeight === "number") {
+      // Avoid an extra DB read in response path; use requested historical height if available.
+      res.setHeader("X-Height", String(ctx.meta.blockHeight));
     }
 
     attachIndexerStatusHeaders(res);
@@ -192,11 +171,28 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
 }
 
 function setResponseTimeHeader(req: IncomingMessage, res: ServerResponse) {
+  const acceptedNs = (req as any)[REQUEST_ACCEPTED_NS];
   const startNs = (req as any)[REQUEST_START_NS];
   if (typeof startNs === "bigint") {
-    const elapsedMs = Number(process.hrtime.bigint() - startNs) / 1_000_000;
-    res.setHeader("X-Response-Time-Ms", elapsedMs.toFixed(2));
+    const nowNs = process.hrtime.bigint();
+    let responseMs = Number(nowNs - startNs) / 1_000_000;
+    if (typeof acceptedNs === "bigint") {
+      responseMs = Number(nowNs - acceptedNs) / 1_000_000;
+    }
+    res.setHeader("X-Response-Time-Ms", responseMs.toFixed(2));
   }
+}
+
+function attachRequestTimingHook(server: Server) {
+  if (requestTimingHookedServers.has(server)) {
+    return;
+  }
+  server.prependListener("request", (req: IncomingMessage) => {
+    if (typeof (req as any)[REQUEST_ACCEPTED_NS] !== "bigint") {
+      (req as any)[REQUEST_ACCEPTED_NS] = process.hrtime.bigint();
+    }
+  });
+  requestTimingHookedServers.add(server);
 }
 
 function createOnBeforeCall(required: boolean = true) {
@@ -303,7 +299,7 @@ function createOnAfterCall() {
   ) {
     await attachHeaders(_ctx, res);
     setResponseTimeHeader(req, res);
-      if ((_ctx.meta as any).$rawJsonResponse) {
+    if ((_ctx.meta as any).$rawJsonResponse) {
       let rawData: string;
       if (typeof data === "string") {
         if (data.startsWith('"') && data.endsWith('"') && data.length > 1) {
@@ -314,7 +310,7 @@ function createOnAfterCall() {
       } else {
         rawData = JSON.stringify(data);
       }
-      
+
       const statusCode = (_ctx.meta as any).$statusCode || 200;
       if (!res.headersSent) {
         res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -322,7 +318,7 @@ function createOnAfterCall() {
         res.setHeader("Content-Type", "application/json");
       }
       res.end(rawData);
-      return undefined; 
+      return undefined;
     }
     return data;
   };
@@ -425,6 +421,7 @@ export default class ApiService extends BaseService {
 
     const server = (this as unknown as { server?: Server }).server;
     if (server) {
+      attachRequestTimingHook(server);
       eventsBroadcaster.setLogger(this.logger);
       eventsBroadcaster.initialize(server);
       this.logger.info("✅ WebSocket events broadcaster initialized on /verana/indexer/v1/events");

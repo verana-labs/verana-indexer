@@ -288,21 +288,27 @@ export default class MetricsApiService extends BaseService {
         )
         .first();
 
+      const { csHasMetricColumns } = await this.getHistoryMetricColumnsAvailability().catch(() => ({ csHasMetricColumns: false }));
+      const csMetricColumns = csHasMetricColumns
+        ? [
+          "csh.weight",
+          "csh.issued",
+          "csh.verified",
+          "csh.ecosystem_slash_events",
+          "csh.ecosystem_slashed_amount",
+          "csh.ecosystem_slashed_amount_repaid",
+          "csh.network_slash_events",
+          "csh.network_slashed_amount",
+          "csh.network_slashed_amount_repaid",
+        ]
+        : [];
       const csLatest = IS_PG_CLIENT
         ? knex("credential_schema_history as csh")
           .distinctOn("csh.credential_schema_id")
           .select(
             "csh.credential_schema_id",
             "csh.archived",
-            "csh.weight",
-            "csh.issued",
-            "csh.verified",
-            "csh.ecosystem_slash_events",
-            "csh.ecosystem_slashed_amount",
-            "csh.ecosystem_slashed_amount_repaid",
-            "csh.network_slash_events",
-            "csh.network_slashed_amount",
-            "csh.network_slashed_amount_repaid"
+            ...csMetricColumns
           )
           .where("csh.height", "<=", blockHeight)
           .orderBy("csh.credential_schema_id", "asc")
@@ -316,15 +322,7 @@ export default class MetricsApiService extends BaseService {
               .select(
                 "csh.credential_schema_id",
                 "csh.archived",
-                "csh.weight",
-                "csh.issued",
-                "csh.verified",
-                "csh.ecosystem_slash_events",
-                "csh.ecosystem_slashed_amount",
-                "csh.ecosystem_slashed_amount_repaid",
-                "csh.network_slash_events",
-                "csh.network_slashed_amount",
-                "csh.network_slashed_amount_repaid",
+                ...csMetricColumns,
                 knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
               )
               .where("csh.height", "<=", blockHeight)
@@ -333,15 +331,19 @@ export default class MetricsApiService extends BaseService {
           .select(
             "credential_schema_id",
             "archived",
-            "weight",
-            "issued",
-            "verified",
-            "ecosystem_slash_events",
-            "ecosystem_slashed_amount",
-            "ecosystem_slashed_amount_repaid",
-            "network_slash_events",
-            "network_slashed_amount",
-            "network_slashed_amount_repaid"
+            ...(csHasMetricColumns
+              ? [
+                "weight",
+                "issued",
+                "verified",
+                "ecosystem_slash_events",
+                "ecosystem_slashed_amount",
+                "ecosystem_slashed_amount_repaid",
+                "network_slash_events",
+                "network_slashed_amount",
+                "network_slashed_amount_repaid",
+              ]
+              : [])
           )
           .where("rn", 1)
           .as("latest_cs");
@@ -353,7 +355,6 @@ export default class MetricsApiService extends BaseService {
         )
         .first();
 
-      const { csHasMetricColumns } = await this.getHistoryMetricColumnsAvailability().catch(() => ({ csHasMetricColumns: false }));
       let metricAgg: any = null;
       if (csHasMetricColumns) {
         metricAgg = await knex.from(csLatest)
