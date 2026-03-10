@@ -47,6 +47,7 @@ export default class PermAPIService extends BullableService {
     hasParticipantsColumn: boolean;
     hasWeightColumn: boolean;
     hasEcosystemSlashEventsColumn: boolean;
+    hasExpireSoonColumn: boolean;
   }>>();
 
   constructor(broker: ServiceBroker) {

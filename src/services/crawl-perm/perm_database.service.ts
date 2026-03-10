@@ -903,12 +903,12 @@ export default class PermIngestService extends Service {
       const newIssuerPermIds = new Set(
         enrichedAuthz
           .map((entry: { issuer_perm_id?: number | null }) => entry.issuer_perm_id)
-          .filter((v: any) => v !== null && v !== undefined)
+          .filter((v): v is number => v !== null && v !== undefined)
       );
       const newVerifierPermIds = new Set(
         enrichedAuthz
           .map((entry: { verifier_perm_id?: number | null }) => entry.verifier_perm_id)
-          .filter((v: any) => v !== null && v !== undefined)
+          .filter((v): v is number => v !== null && v !== undefined)
       );
 
       for (const issuerId of newIssuerPermIds) {
