@@ -748,7 +748,7 @@ export default class PermIngestService extends Service {
           let isNetworkSlash = false;
 
           if (isEcosystemPermission) {
-            isNetworkSlash = true;
+            isEcosystemSlash = true;
           } else if (permRow.schema_id && (permRow.slashed_by || ledgerPermission.slashed_by)) {
             const schema = await trx("credential_schemas")
               .where({ id: permRow.schema_id })
@@ -761,10 +761,8 @@ export default class PermIngestService extends Service {
               } else {
                 isNetworkSlash = true;
               }
-            } else {
-              if (slashDelta > BigInt(0) || repayDelta > BigInt(0)) {
-                isNetworkSlash = true;
-              }
+            } else if (slashDelta > BigInt(0) || repayDelta > BigInt(0)) {
+              isNetworkSlash = true;
             }
           } else if (slashDelta > BigInt(0) || repayDelta > BigInt(0)) {
             isNetworkSlash = true;
@@ -2543,14 +2541,14 @@ export default class PermIngestService extends Service {
       // Determine if this is ecosystem or network slash
       const isEcosystemPermission = perm.type === "ECOSYSTEM";
       let isEcosystemSlash = false;
-      let isNetworkSlash = false;
+      const isNetworkSlash = false;
       let trController: string | null = null;
       let classificationReason = '';
 
       if (isEcosystemPermission) {
-        isNetworkSlash = true; // ECOSYSTEM permission slashed = network slash
+        isEcosystemSlash = true;
         classificationReason = 'ECOSYSTEM permission type';
-        this.logger.info(`[Slash] Permission ${msg.id} is ECOSYSTEM type - marking as network slash`);
+        this.logger.info(`[Slash] Permission ${msg.id} is ECOSYSTEM type - marking as ecosystem slash`);
       } else if (perm.schema_id) {
         const schema = await knex("credential_schemas")
           .where({ id: perm.schema_id })
@@ -2772,12 +2770,12 @@ export default class PermIngestService extends Service {
       // Determine if this was ecosystem or network slash based on previous slash
       const isEcosystemPermission = perm.type === "ECOSYSTEM";
       let isEcosystemSlash = false;
-      let isNetworkSlash = false;
+      const isNetworkSlash = false;
       let trController: string | null = null;
       let classificationReason = '';
 
       if (isEcosystemPermission) {
-        isNetworkSlash = true;
+        isEcosystemSlash = true;
         classificationReason = 'ECOSYSTEM permission type';
       } else if (perm.slashed_by && perm.schema_id) {
         const schema = await knex("credential_schemas")
