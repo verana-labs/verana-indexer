@@ -63,6 +63,8 @@ export async function up(knex: Knex): Promise<void> {
       table.timestamp("vp_exp").nullable();
       table.specificType("vp_validator_deposit", "NUMERIC(38,0)").notNullable().defaultTo(0);
       table.timestamp("vp_term_requested").nullable();
+      table.specificType("issuance_fee_discount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+      table.specificType("verification_fee_discount", "NUMERIC(38,0)").notNullable().defaultTo(0);
       table.index(["schema_id"]);
       table.index(["grantee"]);
       table.index(["type"]);

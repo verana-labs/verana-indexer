@@ -8,6 +8,9 @@ import { VeranaPermissionMessageTypes } from "../../common/verana-message-types"
 import { SERVICE } from "../../common";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
+import { runHeightSyncPerm } from "../../modules/perm-height-sync/perm_height_sync_service";
+import type { PermissionMessagePayload } from "../../modules/perm-height-sync/perm_height_sync_helpers";
+
 
 @Service({
   name: SERVICE.V1.PermProcessorService.key,
@@ -33,12 +36,7 @@ export default class PermProcessorService extends BullableService {
   @Action({ name: "handlePermissionMessages" })
   async handlePermissionMessages(
     ctx: Context<{
-      permissionMessages: Array<{
-        type: string;
-        content: any;
-        timestamp?: string;
-        height?: number;
-      }>;
+      permissionMessages: PermissionMessagePayload[];
     }>
   ) {
     const { permissionMessages } = ctx.params;
@@ -86,6 +84,12 @@ export default class PermProcessorService extends BullableService {
       const msg = sortedMessages[i];
       try {
         this.logger.info(` Processing Permission message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`);
+        const useHeightSyncPerm = process.env.USE_HEIGHT_SYNC_PERM !== "false";
+        if (useHeightSyncPerm) {
+          await runHeightSyncPerm(this.broker, [msg]);
+          continue;
+        }
+
         const payload = {
           ...msg.content,
           timestamp: msg.timestamp,

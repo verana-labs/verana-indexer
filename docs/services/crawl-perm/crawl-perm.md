@@ -32,6 +32,30 @@ All database operations are performed using **Knex.js**, and transactions are us
 
 ---
 
+## Permission Height-Sync Refactor
+
+Permission processing supports two modes:
+
+- **Height-sync mode (recommended)**: `USE_HEIGHT_SYNC_PERM=true`
+- **Legacy mode**: `USE_HEIGHT_SYNC_PERM=false`
+
+In height-sync mode, the **Permission module** uses a ledger-at-height strategy (similar in spirit to the CS height-sync refactor, but scoped only to Permission entities):
+
+1. Decode tx message and detect Permission message type.
+2. Read current processed block height from transaction context.
+3. Query ledger with header `x-cosmos-block-height: <height>`.
+4. Fetch authoritative state **for Permission entities only**:
+   - Permission: `GET /verana/perm/v1/get/{id}`
+   - PermissionSession: `GET /verana/perm/v1/get_session/{id}`
+   
+5. Sync DB from ledger state (permissions and permission_sessions only).
+6. Compare indexer state vs ledger state at same height and log diffs.
+7. Run rolling multi-height verification window (3 heights) for impacted permissions and log inconsistencies.
+
+This mode is designed to keep Permission state aligned with blockchain state across heights and reduce drift from partial message reconstruction.
+
+---
+
 ## Services
 
 ### PermProcessorService
@@ -41,7 +65,8 @@ Acts as a **message processor** that receives messages from external sources (li
 **Main Responsibilities:**
 
 - Receives an array of `permissionMessages` via `handlePermissionMessages`.
-- Maps message types to appropriate handlers in `PermIngestService`.
+- In `USE_HEIGHT_SYNC_PERM=true`, resolves impacted entities and performs ledger-backed sync + verification.
+- In `USE_HEIGHT_SYNC_PERM=false`, maps message types to legacy handlers in `PermIngestService`.
 - Logs all received messages.
 - Provides actions to **get** or **list permissions**.
 
@@ -134,27 +159,31 @@ Responsible for **directly interacting with the database** to manage permissions
 * `handleMsgSlashPermissionTrustDeposit`
 * `handleMsgRepayPermissionSlashedTrustDeposit`
 * `handleMsgCreateOrUpdatePermissionSession`
+* `syncPermissionFromLedger`
+* `syncPermissionSessionFromLedger`
+* `comparePermissionWithLedger`
+* `comparePermissionSessionWithLedger`
 
 **Key Points:**
 
 * **Transactions** are used for creating/updating permission sessions and VPs to ensure atomicity.
 * **Validation checks** are performed for required fields, type correctness, and authorization.
 * Fee and deposit calculations rely on **global variables** (`trust_unit_price` and `trust_deposit_rate`).
+* In height-sync mode, ledger state is authoritative and compare actions are used to detect and log mismatches.
 
 ---
 
 ## Data Flow
 
 1. **Permission messages** arrive at `PermProcessorService`.
-2. Messages are processed in `handlePermissionMessages`:
-
-   * Each message type is routed to the appropriate handler in `PermIngestService`.
-3. `PermIngestService` executes the database operations:
-
-   * Checks for existing records.
-   * Inserts new permissions or updates existing ones.
-   * Updates `permission_sessions` with `authz` entries if needed.
-4. Permissions are validated, renewed, or revoked, updating timestamps and state fields.
+2. If `USE_HEIGHT_SYNC_PERM=true`:
+   * Impacted IDs are extracted from message payload + tx events.
+   * Ledger entities are queried at processed block height.
+   * `PermIngestService` syncs DB from ledger responses.
+   * Runtime compare checks are executed (same height + rolling multi-height window).
+3. If `USE_HEIGHT_SYNC_PERM=false`:
+   * Each message type is routed to legacy `handleMsg*` handlers.
+4. Post-sync statistics are recalculated (permission tree participants/weight, schema/trust-registry/global metrics refresh).
 
 ---
 
@@ -277,4 +306,3 @@ The services together provide a **robust, blockchain-integrated permission manag
 * **PermIngestService**: Handles DB operations for creating, updating, validating, revoking, or extending permissions.
 * **Permission sessions** track authorization among agents, issuers, and verifiers.
 * **VPs** (Validation Processes) have their own lifecycle with fees and deposits.
-

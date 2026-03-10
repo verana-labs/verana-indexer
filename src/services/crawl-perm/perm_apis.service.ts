@@ -59,6 +59,7 @@ export default class PermAPIService extends BullableService {
     hasParticipantsColumn: boolean;
     hasWeightColumn: boolean;
     hasEcosystemSlashEventsColumn: boolean;
+    hasExpireSoonColumn: boolean;
   }> {
     const cacheKey = tableName;
     const cached = this.metricColumnAvailabilityCache.get(cacheKey);
@@ -72,6 +73,7 @@ export default class PermAPIService extends BullableService {
         hasParticipantsColumn: !!columnInfo.participants,
         hasWeightColumn: !!columnInfo.weight,
         hasEcosystemSlashEventsColumn: !!columnInfo.ecosystem_slash_events,
+        hasExpireSoonColumn: !!columnInfo.expire_soon,
       }))
       .catch((error) => {
         this.metricColumnAvailabilityCache.delete(cacheKey);
@@ -1636,6 +1638,7 @@ export default class PermAPIService extends BullableService {
           hasParticipantsColumn,
           hasWeightColumn,
           hasEcosystemSlashEventsColumn,
+          hasExpireSoonColumn,
         } = await this.getMetricColumnAvailability("permission_history");
         const historyHasAllDerivedColumns = hasIssuedColumn
           && hasVerifiedColumn
@@ -1651,6 +1654,7 @@ export default class PermAPIService extends BullableService {
           "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit", "vp_summary_digest_sri",
           "vp_exp", "vp_validator_deposit", "vp_term_requested", "created", "modified",
         ];
+        if (hasExpireSoonColumn) selectColumns.push("expire_soon");
         if (hasIssuedColumn) selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
         if (hasVerifiedColumn) selectColumns.push(knex.raw("COALESCE(verified, 0) as verified"));
         if (hasParticipantsColumn) selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
@@ -1715,25 +1719,28 @@ export default class PermAPIService extends BullableService {
           modified: historyRecord.modified,
         };
         
-        if (hasIssuedColumn && historyRecord.issued !== undefined) {
-          historicalPermission.issued = Number(historyRecord.issued || 0);
+        if (hasIssuedColumn) {
+          historicalPermission.issued = Number(historyRecord.issued ?? 0);
         }
-        if (hasVerifiedColumn && historyRecord.verified !== undefined) {
-          historicalPermission.verified = Number(historyRecord.verified || 0);
+        if (hasVerifiedColumn) {
+          historicalPermission.verified = Number(historyRecord.verified ?? 0);
         }
-        if (hasParticipantsColumn && historyRecord.participants !== undefined) {
-          historicalPermission.participants = Number(historyRecord.participants || 0);
+        if (hasParticipantsColumn) {
+          historicalPermission.participants = Number(historyRecord.participants ?? 0);
         }
-        if (hasWeightColumn && historyRecord.weight !== undefined) {
-          historicalPermission.weight = Number(historyRecord.weight || 0);
+        if (hasWeightColumn) {
+          historicalPermission.weight = Number(historyRecord.weight ?? 0);
         }
-        if (hasEcosystemSlashEventsColumn && historyRecord.ecosystem_slash_events !== undefined) {
-          historicalPermission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events || 0);
-          historicalPermission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount || 0);
-          historicalPermission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid || 0);
-          historicalPermission.network_slash_events = Number(historyRecord.network_slash_events || 0);
-          historicalPermission.network_slashed_amount = Number(historyRecord.network_slashed_amount || 0);
-          historicalPermission.network_slashed_amount_repaid = Number(historyRecord.network_slashed_amount_repaid || 0);
+        if (hasEcosystemSlashEventsColumn) {
+          historicalPermission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events ?? 0);
+          historicalPermission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount ?? 0);
+          historicalPermission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid ?? 0);
+          historicalPermission.network_slash_events = Number(historyRecord.network_slash_events ?? 0);
+          historicalPermission.network_slashed_amount = Number(historyRecord.network_slashed_amount ?? 0);
+          historicalPermission.network_slashed_amount_repaid = Number(historyRecord.network_slashed_amount_repaid ?? 0);
+        }
+        if (hasExpireSoonColumn) {
+          historicalPermission.expire_soon = historyRecord.expire_soon ?? null;
         }
 
         const enrichedPermission = await this.enrichPermissionWithStateAndActions(

@@ -24,10 +24,12 @@ jest.mock("../../../../src/common/utils/date_utils", () => ({
 describe("🧪 PermIngestService Unit Tests", () => {
   let broker: ServiceBroker;
   let service: any;
+  let syncPermissionFromLedger: any;
 
   beforeAll(() => {
     broker = new ServiceBroker({ logger: false });
     service = broker.createService(PermIngestService);
+    syncPermissionFromLedger = (service as any).syncPermissionFromLedger.bind(service);
   });
 
   afterEach(() => {
@@ -171,6 +173,42 @@ describe("🧪 PermIngestService Unit Tests", () => {
           vp_state: "PENDING",
         })
       );
+    });
+  });
+
+  describe("syncPermissionFromLedger vs legacy stats parity", () => {
+    it("should route through same stats helpers for participants/weight", async () => {
+      const mockTrx: any = knex;
+      const updateWeightSpy = jest
+        .spyOn(service as any, "updateWeight")
+        .mockResolvedValue(undefined);
+      const updateParticipantsSpy = jest
+        .spyOn(service as any, "updateParticipants")
+        .mockResolvedValue(undefined);
+
+      (knex.first as jest.Mock).mockResolvedValueOnce(null);
+      (knex.insert as jest.Mock).mockResolvedValueOnce([{
+        id: 7,
+        schema_id: 48,
+      }]);
+
+      const ledgerPermission = {
+        id: "7",
+        schema_id: "48",
+        type: "ISSUER",
+        did: "did:test:issuer",
+        grantee: "verana1test",
+        created: "2026-01-29T20:27:06.725Z",
+        modified: "2026-01-29T20:27:23.422Z",
+        effective_from: "2026-01-29T20:27:23.422Z",
+        effective_until: null,
+        vp_state: "VALIDATED",
+      };
+
+      await syncPermissionFromLedger(ledgerPermission, 1908620, "tx-hash", "/verana.perm.v1.MsgSetPermissionVPToValidated");
+
+      expect(updateWeightSpy).toHaveBeenCalledWith(mockTrx, 7);
+      expect(updateParticipantsSpy).toHaveBeenCalledWith(mockTrx, 7);
     });
   });
 });
