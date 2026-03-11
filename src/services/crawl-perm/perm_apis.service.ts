@@ -131,6 +131,39 @@ export default class PermAPIService extends BullableService {
     return getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
   }
 
+  private normalizePermissionSessionRow(row: any): any {
+    if (!row) return row;
+
+    let authz: any[] = [];
+    try {
+      if (typeof row.authz === "string") {
+        authz = JSON.parse(row.authz || "[]");
+      } else if (Array.isArray(row.authz)) {
+        authz = row.authz;
+      } else {
+        authz = [];
+      }
+    } catch {
+      authz = [];
+    }
+
+    const mappedAuthz = authz.map((entry: any) => ({
+      executor_perm_id: Number(entry?.executor_perm_id ?? 0) || 0,
+      beneficiary_perm_id: Number(entry?.beneficiary_perm_id ?? 0) || 0,
+      wallet_agent_perm_id: Number(entry?.wallet_agent_perm_id ?? 0) || 0,
+    }));
+
+    return {
+      id: row.id ?? row.session_id,
+      controller: row.controller ?? null,
+      agent_perm_id: Number(row.agent_perm_id ?? 0) || 0,
+      wallet_agent_perm_id: Number(row.wallet_agent_perm_id ?? 0) || 0,
+      authz: mappedAuthz,
+      created: row.created ?? null,
+      modified: row.modified ?? null,
+    };
+  }
+
   private isTrustResolutionListQuery(
     params: any,
     _blockHeight: number | undefined
@@ -1954,25 +1987,17 @@ export default class PermAPIService extends BullableService {
           return ApiResponder.error(ctx, "PermissionSession not found", 404);
         }
 
-        // Map history record to session format
-        const historicalSession = {
-          id: historyRecord.session_id,
-          controller: historyRecord.controller,
-          agent_perm_id: historyRecord.agent_perm_id,
-          wallet_agent_perm_id: historyRecord.wallet_agent_perm_id,
-          authz: historyRecord.authz,
-          created: historyRecord.created,
-          modified: historyRecord.modified,
-        };
-
+        const historicalSession = this.normalizePermissionSessionRow(historyRecord);
         return ApiResponder.success(ctx, { session: historicalSession }, 200);
       }
 
       // Otherwise, return latest state
       const session = await knex("permission_sessions").where("id", id).first();
-      if (!session)
+      if (!session) {
         return ApiResponder.error(ctx, "PermissionSession not found", 404);
-      return ApiResponder.success(ctx, { session: session }, 200);
+      }
+      const normalized = this.normalizePermissionSessionRow(session);
+      return ApiResponder.success(ctx, { session: normalized }, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermissionSession:", err);
       return ApiResponder.error(ctx, "Failed to get PermissionSession", 500);
@@ -2144,8 +2169,8 @@ export default class PermAPIService extends BullableService {
         const orderedHistoryQuery = sort
           ? applyOrdering(historyQuery, sort)
           : historyQuery.orderBy("modified", "asc").orderBy("id", "desc");
-        const sessions = await orderedHistoryQuery.limit(limit);
-
+        const sessionsRaw = await orderedHistoryQuery.limit(limit);
+        const sessions = sessionsRaw.map((row: any) => this.normalizePermissionSessionRow(row));
         return ApiResponder.success(ctx, { sessions }, 200);
       }
 
@@ -2158,7 +2183,8 @@ export default class PermAPIService extends BullableService {
       }
 
       const orderedQuery = applyOrdering(query, sort);
-      const results = await orderedQuery.limit(limit);
+      const resultsRaw = await orderedQuery.limit(limit);
+      const results = resultsRaw.map((row: any) => this.normalizePermissionSessionRow(row));
       return ApiResponder.success(ctx, { sessions: results }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissionSessions:", err);
