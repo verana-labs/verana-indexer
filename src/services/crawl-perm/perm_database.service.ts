@@ -693,6 +693,10 @@ export default class PermIngestService extends Service {
           network_slashed_amount: stats.network_slashed_amount,
           network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
         });
+      const hasParticipantsColumn = await this.checkPermissionsColumnExists("participants");
+      if (hasParticipantsColumn) {
+        await knex("permissions").where("schema_id", schemaId).update({ participants: stats.participants });
+      }
     } catch (error: any) {
       this.logger.warn(`Failed to refresh credential schema stats for schema_id=${schemaId}: ${error?.message || error}`);
     }
@@ -3282,13 +3286,14 @@ export default class PermIngestService extends Service {
         participants_verifier: 0,
         participants_holder: 0,
       };
+      const permType = normalizePermissionType(perm.type);
       if (permState === "ACTIVE") {
-        if (perm.type === "ECOSYSTEM") roleTotals.participants_ecosystem += 1;
-        if (perm.type === "ISSUER_GRANTOR") roleTotals.participants_issuer_grantor += 1;
-        if (perm.type === "ISSUER") roleTotals.participants_issuer += 1;
-        if (perm.type === "VERIFIER_GRANTOR") roleTotals.participants_verifier_grantor += 1;
-        if (perm.type === "VERIFIER") roleTotals.participants_verifier += 1;
-        if (perm.type === "HOLDER") roleTotals.participants_holder += 1;
+        if (permType === "ECOSYSTEM") roleTotals.participants_ecosystem += 1;
+        if (permType === "ISSUER_GRANTOR") roleTotals.participants_issuer_grantor += 1;
+        if (permType === "ISSUER") roleTotals.participants_issuer += 1;
+        if (permType === "VERIFIER_GRANTOR") roleTotals.participants_verifier_grantor += 1;
+        if (permType === "VERIFIER") roleTotals.participants_verifier += 1;
+        if (permType === "HOLDER") roleTotals.participants_holder += 1;
       }
 
       const childSelectColumns: string[] = [

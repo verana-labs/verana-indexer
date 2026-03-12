@@ -87,12 +87,15 @@ export default class MetricsApiService extends BaseService {
       participants_verifier: Number(snap.participants_verifier || 0),
       participants_holder: Number(snap.participants_holder || 0),
     };
-    const participantsTotal = participantsByRole.participants_ecosystem
-      + participantsByRole.participants_issuer_grantor
-      + participantsByRole.participants_issuer
-      + participantsByRole.participants_verifier_grantor
-      + participantsByRole.participants_verifier
-      + participantsByRole.participants_holder;
+    const participantsTotal =
+      snap.participants != null && snap.participants !== ""
+        ? Number(snap.participants)
+        : participantsByRole.participants_ecosystem
+          + participantsByRole.participants_issuer_grantor
+          + participantsByRole.participants_issuer
+          + participantsByRole.participants_verifier_grantor
+          + participantsByRole.participants_verifier
+          + participantsByRole.participants_holder;
 
     return {
       participants: participantsTotal,
