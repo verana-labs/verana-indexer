@@ -12,7 +12,9 @@ import { eventsBroadcaster } from "./events_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
+const REQUEST_ACCEPTED_NS = Symbol("requestAcceptedNs");
 const REQUEST_START_NS = Symbol("requestStartNs");
+const requestTimingHookedServers = new WeakSet<Server>();
 
 
 const DEFAULT_ROUTE_CONFIG = {
@@ -25,6 +27,7 @@ const DEFAULT_ROUTE_CONFIG = {
 
 async function fetchBlockCheckpoint() {
   return knex("block_checkpoint")
+    .select("height", "updated_at")
     .where("job_name", BLOCK_CHECKPOINT_JOB)
     .first();
 }
@@ -56,6 +59,29 @@ function getHeaderValue(req: IncomingMessage): string | null {
   return null;
 }
 
+function attachIndexerStatusHeaders(res: ServerResponse) {
+  const status = indexerStatusManager.getStatus();
+  res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
+  res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
+
+  if (!status.isRunning || !status.isCrawling) {
+    const errorMessage = status.lastError?.message || status.stoppedReason || "";
+    const isUnknown = isUnknownMessageError(errorMessage);
+
+    if (isUnknown) {
+      if (status.stoppedReason) {
+        res.setHeader("X-Crawling-Reason", status.stoppedReason);
+      }
+      if (status.lastError?.message) {
+        res.setHeader("X-Crawling-Error", status.lastError.message);
+      }
+    }
+    if (status.stoppedAt) {
+      res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
+    }
+  }
+}
+
 async function parseAtBlockHeight(
   ctx: Context<any, any>,
   req: IncomingMessage,
@@ -63,11 +89,6 @@ async function parseAtBlockHeight(
 ) {
   ctx.meta = ctx.meta || {};
   const headerValue = getHeaderValue(req);
-
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[DEBUG] Available headers:", Object.keys(req.headers));
-    console.log("[DEBUG] Header value for 'at-block-height':", headerValue);
-  }
 
   if (!headerValue) {
     if (required) {
@@ -112,21 +133,6 @@ async function parseAtBlockHeight(
   ctx.meta.$headers["At-Block-Height"] = String(parsedHeight);
 }
 
-function isTemporaryError(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  const lowerMessage = errorMessage.toLowerCase();
-  return lowerMessage.includes('timeout') ||
-         lowerMessage.includes('exceeded') ||
-         lowerMessage.includes('timed out') ||
-         lowerMessage.includes('econnrefused') ||
-         lowerMessage.includes('etimedout') ||
-         lowerMessage.includes('econaborted') ||
-         lowerMessage.includes('network') ||
-         lowerMessage.includes('connection') ||
-         lowerMessage.includes('non-critical') ||
-         lowerMessage.includes('service will continue');
-}
-
 function isUnknownMessageError(errorMessage: string): boolean {
   if (!errorMessage) return false;
   return errorMessage.includes('Unknown Verana message types') ||
@@ -135,14 +141,7 @@ function isUnknownMessageError(errorMessage: string): boolean {
 
 async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   try {
-    let checkpoint = ctx?.meta?.latestCheckpoint;
-    if (!checkpoint) {
-      try {
-        checkpoint = await fetchBlockCheckpoint();
-      } catch (err: any) {
-        console.error("Error fetching checkpoint:", err);
-      }
-    }
+    const checkpoint = ctx?.meta?.latestCheckpoint;
 
     if (checkpoint) {
       let indexTs: string;
@@ -158,63 +157,45 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       }
       res.setHeader("X-Index-Ts", indexTs);
       res.setHeader("X-Height", checkpoint.height.toString());
+    } else if (typeof ctx?.meta?.blockHeight === "number") {
+      // Avoid an extra DB read in response path; use requested historical height if available.
+      res.setHeader("X-Height", String(ctx.meta.blockHeight));
     }
 
-    const status = indexerStatusManager.getStatus();
-    res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
-    res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
-
-    if (!status.isRunning || !status.isCrawling) {
-      const errorMessage = status.lastError?.message || status.stoppedReason || '';
-      const isUnknown = isUnknownMessageError(errorMessage);
-      
-      if (isUnknown) {
-        if (status.stoppedReason) {
-          res.setHeader("X-Crawling-Reason", status.stoppedReason);
-        }
-        if (status.lastError?.message) {
-          res.setHeader("X-Crawling-Error", status.lastError.message);
-        }
-      }
-      if (status.stoppedAt) {
-        res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
-      }
-    }
+    attachIndexerStatusHeaders(res);
   } catch (err: any) {
-    const status = indexerStatusManager.getStatus();
-    res.setHeader("X-Indexer-Status", status.isRunning ? "running" : "stopped");
-    res.setHeader("X-Crawling-Status", status.isCrawling ? "active" : "stopped");
-    
-    if (!status.isRunning || !status.isCrawling) {
-      const errorMessage = status.lastError?.message || status.stoppedReason || '';
-      const isUnknown = isUnknownMessageError(errorMessage);
-      
-      if (isUnknown) {
-        if (status.stoppedReason) {
-          res.setHeader("X-Crawling-Reason", status.stoppedReason);
-        }
-        if (status.lastError?.message) {
-          res.setHeader("X-Crawling-Error", status.lastError.message);
-        }
-      }
-      if (status.stoppedAt) {
-        res.setHeader("X-Crawling-Stopped-At", status.stoppedAt);
-      }
-    }
+    attachIndexerStatusHeaders(res);
   }
 
   res.setHeader("X-Query-At", new Date().toISOString());
 }
 
 function setResponseTimeHeader(req: IncomingMessage, res: ServerResponse) {
+  const acceptedNs = (req as any)[REQUEST_ACCEPTED_NS];
   const startNs = (req as any)[REQUEST_START_NS];
   if (typeof startNs === "bigint") {
-    const elapsedMs = Number(process.hrtime.bigint() - startNs) / 1_000_000;
-    res.setHeader("X-Response-Time-Ms", elapsedMs.toFixed(2));
+    const nowNs = process.hrtime.bigint();
+    let responseMs = Number(nowNs - startNs) / 1_000_000;
+    if (typeof acceptedNs === "bigint") {
+      responseMs = Number(nowNs - acceptedNs) / 1_000_000;
+    }
+    res.setHeader("X-Response-Time-Ms", responseMs.toFixed(2));
   }
 }
 
-function createOnBeforeCall(required: boolean = true, checkIndexerStatus: boolean = false) {
+function attachRequestTimingHook(server: Server) {
+  if (requestTimingHookedServers.has(server)) {
+    return;
+  }
+  server.prependListener("request", (req: IncomingMessage) => {
+    if (typeof (req as any)[REQUEST_ACCEPTED_NS] !== "bigint") {
+      (req as any)[REQUEST_ACCEPTED_NS] = process.hrtime.bigint();
+    }
+  });
+  requestTimingHookedServers.add(server);
+}
+
+function createOnBeforeCall(required: boolean = true) {
   return async function (
     ctx: Context<any, any>,
     _route: Route,
@@ -318,7 +299,7 @@ function createOnAfterCall() {
   ) {
     await attachHeaders(_ctx, res);
     setResponseTimeHeader(req, res);
-      if ((_ctx.meta as any).$rawJsonResponse) {
+    if ((_ctx.meta as any).$rawJsonResponse) {
       let rawData: string;
       if (typeof data === "string") {
         if (data.startsWith('"') && data.endsWith('"') && data.length > 1) {
@@ -329,7 +310,7 @@ function createOnAfterCall() {
       } else {
         rawData = JSON.stringify(data);
       }
-      
+
       const statusCode = (_ctx.meta as any).$statusCode || 200;
       if (!res.headersSent) {
         res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -337,7 +318,7 @@ function createOnAfterCall() {
         res.setHeader("Content-Type", "application/json");
       }
       res.end(rawData);
-      return undefined; 
+      return undefined;
     }
     return data;
   };
@@ -346,14 +327,13 @@ function createOnAfterCall() {
 function createRoute(
   path: string,
   aliases: Record<string, string>,
-  requireBlockHeight: boolean = false,
-  checkIndexerStatus: boolean = false
+  requireBlockHeight: boolean = false
 ) {
   return {
     path,
     aliases,
     ...DEFAULT_ROUTE_CONFIG,
-    onBeforeCall: createOnBeforeCall(requireBlockHeight, checkIndexerStatus),
+    onBeforeCall: createOnBeforeCall(requireBlockHeight),
     onError: createOnError(),
     onAfterCall: createOnAfterCall(),
   };
@@ -441,6 +421,7 @@ export default class ApiService extends BaseService {
 
     const server = (this as unknown as { server?: Server }).server;
     if (server) {
+      attachRequestTimingHook(server);
       eventsBroadcaster.setLogger(this.logger);
       eventsBroadcaster.initialize(server);
       this.logger.info("✅ WebSocket events broadcaster initialized on /verana/indexer/v1/events");

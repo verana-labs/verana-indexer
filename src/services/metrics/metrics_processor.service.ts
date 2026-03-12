@@ -48,6 +48,12 @@ export default class MetricsSnapshotService extends BullableService {
       block_height: blockHeight,
       computed_at: new Date(),
       participants: Number(metrics.participants || 0),
+      participants_ecosystem: Number(metrics.participants_ecosystem || 0),
+      participants_issuer_grantor: Number(metrics.participants_issuer_grantor || 0),
+      participants_issuer: Number(metrics.participants_issuer || 0),
+      participants_verifier_grantor: Number(metrics.participants_verifier_grantor || 0),
+      participants_verifier: Number(metrics.participants_verifier || 0),
+      participants_holder: Number(metrics.participants_holder || 0),
       active_trust_registries: Number(metrics.active_trust_registries || 0),
       archived_trust_registries: Number(metrics.archived_trust_registries || 0),
       active_schemas: Number(metrics.active_schemas || 0),
@@ -103,6 +109,12 @@ export default class MetricsSnapshotService extends BullableService {
       block_height: useHistory ? blockHeight : null,
       computed_at: new Date(),
       participants: Number(metrics.participants || 0),
+      participants_ecosystem: Number(metrics.participants_ecosystem || 0),
+      participants_issuer_grantor: Number(metrics.participants_issuer_grantor || 0),
+      participants_issuer: Number(metrics.participants_issuer || 0),
+      participants_verifier_grantor: Number(metrics.participants_verifier_grantor || 0),
+      participants_verifier: Number(metrics.participants_verifier || 0),
+      participants_holder: Number(metrics.participants_holder || 0),
       active_trust_registries: Number(metrics.active_trust_registries || 0),
       archived_trust_registries: Number(metrics.archived_trust_registries || 0),
       active_schemas: Number(metrics.active_schemas || 0),
@@ -157,4 +169,3 @@ export default class MetricsSnapshotService extends BullableService {
     return super._start();
   }
 }
-

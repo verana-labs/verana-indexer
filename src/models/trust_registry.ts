@@ -16,6 +16,12 @@ export class TrustRegistry extends BaseModel {
   language!: string; 
   active_version?: number;
   participants?: number;
+  participants_ecosystem?: number;
+  participants_issuer_grantor?: number;
+  participants_issuer?: number;
+  participants_verifier_grantor?: number;
+  participants_verifier?: number;
+  participants_holder?: number;
   active_schemas?: number;
   archived_schemas?: number;
   weight?: number;

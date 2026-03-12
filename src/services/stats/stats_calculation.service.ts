@@ -20,6 +20,22 @@ export default class StatsCalculationService extends BullableService {
     super(broker);
   }
 
+  private sumParticipantsByRole(source: {
+    participants_ecosystem?: number | string | null;
+    participants_issuer_grantor?: number | string | null;
+    participants_issuer?: number | string | null;
+    participants_verifier_grantor?: number | string | null;
+    participants_verifier?: number | string | null;
+    participants_holder?: number | string | null;
+  }): number {
+    return Number(source.participants_ecosystem || 0)
+      + Number(source.participants_issuer_grantor || 0)
+      + Number(source.participants_issuer || 0)
+      + Number(source.participants_verifier_grantor || 0)
+      + Number(source.participants_verifier || 0)
+      + Number(source.participants_holder || 0);
+  }
+
 
 
   @Action({
@@ -543,11 +559,34 @@ export default class StatsCalculationService extends BullableService {
     this.logger.info(`GLOBAL  Computing stats: Querying permissions table...`);
     const allPerms = await knex("permissions")
       .where("created", "<=", timestamp)
-      .select("participants", "weight", "issued", "verified", "ecosystem_slash_events", "ecosystem_slashed_amount", "ecosystem_slashed_amount_repaid", "network_slash_events", "network_slashed_amount", "network_slashed_amount_repaid");
+      .select(
+        "participants",
+        "participants_ecosystem",
+        "participants_issuer_grantor",
+        "participants_issuer",
+        "participants_verifier_grantor",
+        "participants_verifier",
+        "participants_holder",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "ecosystem_slashed_amount_repaid",
+        "network_slash_events",
+        "network_slashed_amount",
+        "network_slashed_amount_repaid"
+      );
     this.logger.info(`GLOBAL  Found ${allPerms.length} permissions to process`);
 
     const cumulative = {
       participants: 0,
+      participants_ecosystem: 0,
+      participants_issuer_grantor: 0,
+      participants_issuer: 0,
+      participants_verifier_grantor: 0,
+      participants_verifier: 0,
+      participants_holder: 0,
       active_schemas: 0,
       archived_schemas: 0,
       weight: BigInt(0),
@@ -562,7 +601,13 @@ export default class StatsCalculationService extends BullableService {
     };
 
     for (const perm of allPerms) {
-      cumulative.participants += Number(perm.participants || 0);
+      cumulative.participants += this.sumParticipantsByRole(perm);
+      cumulative.participants_ecosystem += Number(perm.participants_ecosystem || 0);
+      cumulative.participants_issuer_grantor += Number(perm.participants_issuer_grantor || 0);
+      cumulative.participants_issuer += Number(perm.participants_issuer || 0);
+      cumulative.participants_verifier_grantor += Number(perm.participants_verifier_grantor || 0);
+      cumulative.participants_verifier += Number(perm.participants_verifier || 0);
+      cumulative.participants_holder += Number(perm.participants_holder || 0);
       cumulative.weight += BigInt(perm.weight || "0");
       cumulative.issued += BigInt(perm.issued || "0");
       cumulative.verified += BigInt(perm.verified || "0");
@@ -598,6 +643,12 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
+      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
+      participants_issuer_grantor: cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
+      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
+      participants_verifier_grantor: cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
+      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
+      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || "0"),
@@ -613,6 +664,12 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
+      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
+      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
+      cumulative_participants_issuer: cumulative.participants_issuer,
+      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
+      cumulative_participants_verifier: cumulative.participants_verifier,
+      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -625,6 +682,12 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
+      delta_participants_ecosystem: delta.participants_ecosystem,
+      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
+      delta_participants_issuer: delta.participants_issuer,
+      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
+      delta_participants_verifier: delta.participants_verifier,
+      delta_participants_holder: delta.participants_holder,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -654,10 +717,33 @@ export default class StatsCalculationService extends BullableService {
     const perms = await knex("permissions")
       .whereIn("schema_id", schemaIds)
       .where("created", "<=", timestamp)
-      .select("participants", "weight", "issued", "verified", "ecosystem_slash_events", "ecosystem_slashed_amount", "ecosystem_slashed_amount_repaid", "network_slash_events", "network_slashed_amount", "network_slashed_amount_repaid");
+      .select(
+        "participants",
+        "participants_ecosystem",
+        "participants_issuer_grantor",
+        "participants_issuer",
+        "participants_verifier_grantor",
+        "participants_verifier",
+        "participants_holder",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "ecosystem_slashed_amount_repaid",
+        "network_slash_events",
+        "network_slashed_amount",
+        "network_slashed_amount_repaid"
+      );
 
     const cumulative = {
       participants: 0,
+      participants_ecosystem: 0,
+      participants_issuer_grantor: 0,
+      participants_issuer: 0,
+      participants_verifier_grantor: 0,
+      participants_verifier: 0,
+      participants_holder: 0,
       active_schemas: 0,
       archived_schemas: 0,
       weight: BigInt(0),
@@ -672,7 +758,13 @@ export default class StatsCalculationService extends BullableService {
     };
 
     for (const perm of perms) {
-      cumulative.participants += Number(perm.participants || 0);
+      cumulative.participants += this.sumParticipantsByRole(perm);
+      cumulative.participants_ecosystem += Number(perm.participants_ecosystem || 0);
+      cumulative.participants_issuer_grantor += Number(perm.participants_issuer_grantor || 0);
+      cumulative.participants_issuer += Number(perm.participants_issuer || 0);
+      cumulative.participants_verifier_grantor += Number(perm.participants_verifier_grantor || 0);
+      cumulative.participants_verifier += Number(perm.participants_verifier || 0);
+      cumulative.participants_holder += Number(perm.participants_holder || 0);
       cumulative.weight += BigInt(perm.weight || "0");
       cumulative.issued += BigInt(perm.issued || "0");
       cumulative.verified += BigInt(perm.verified || "0");
@@ -710,6 +802,12 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
+      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
+      participants_issuer_grantor: cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
+      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
+      participants_verifier_grantor: cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
+      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
+      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || "0"),
@@ -725,6 +823,12 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
+      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
+      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
+      cumulative_participants_issuer: cumulative.participants_issuer,
+      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
+      cumulative_participants_verifier: cumulative.participants_verifier,
+      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -737,6 +841,12 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
+      delta_participants_ecosystem: delta.participants_ecosystem,
+      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
+      delta_participants_issuer: delta.participants_issuer,
+      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
+      delta_participants_verifier: delta.participants_verifier,
+      delta_participants_holder: delta.participants_holder,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -755,10 +865,33 @@ export default class StatsCalculationService extends BullableService {
     const perms = await knex("permissions")
       .where("schema_id", schemaId)
       .where("created", "<=", timestamp)
-      .select("participants", "weight", "issued", "verified", "ecosystem_slash_events", "ecosystem_slashed_amount", "ecosystem_slashed_amount_repaid", "network_slash_events", "network_slashed_amount", "network_slashed_amount_repaid");
+      .select(
+        "participants",
+        "participants_ecosystem",
+        "participants_issuer_grantor",
+        "participants_issuer",
+        "participants_verifier_grantor",
+        "participants_verifier",
+        "participants_holder",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "ecosystem_slashed_amount_repaid",
+        "network_slash_events",
+        "network_slashed_amount",
+        "network_slashed_amount_repaid"
+      );
 
     const cumulative = {
       participants: 0,
+      participants_ecosystem: 0,
+      participants_issuer_grantor: 0,
+      participants_issuer: 0,
+      participants_verifier_grantor: 0,
+      participants_verifier: 0,
+      participants_holder: 0,
       active_schemas: 0,
       archived_schemas: 0,
       weight: BigInt(0),
@@ -773,7 +906,13 @@ export default class StatsCalculationService extends BullableService {
     };
 
     for (const perm of perms) {
-      cumulative.participants += Number(perm.participants || 0);
+      cumulative.participants += this.sumParticipantsByRole(perm);
+      cumulative.participants_ecosystem += Number(perm.participants_ecosystem || 0);
+      cumulative.participants_issuer_grantor += Number(perm.participants_issuer_grantor || 0);
+      cumulative.participants_issuer += Number(perm.participants_issuer || 0);
+      cumulative.participants_verifier_grantor += Number(perm.participants_verifier_grantor || 0);
+      cumulative.participants_verifier += Number(perm.participants_verifier || 0);
+      cumulative.participants_holder += Number(perm.participants_holder || 0);
       cumulative.weight += BigInt(perm.weight || "0");
       cumulative.issued += BigInt(perm.issued || "0");
       cumulative.verified += BigInt(perm.verified || "0");
@@ -805,6 +944,12 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
+      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
+      participants_issuer_grantor: cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
+      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
+      participants_verifier_grantor: cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
+      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
+      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || "0"),
@@ -820,6 +965,12 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
+      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
+      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
+      cumulative_participants_issuer: cumulative.participants_issuer,
+      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
+      cumulative_participants_verifier: cumulative.participants_verifier,
+      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -832,6 +983,12 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
+      delta_participants_ecosystem: delta.participants_ecosystem,
+      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
+      delta_participants_issuer: delta.participants_issuer,
+      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
+      delta_participants_verifier: delta.participants_verifier,
+      delta_participants_holder: delta.participants_holder,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -850,7 +1007,24 @@ export default class StatsCalculationService extends BullableService {
     const perm = await knex("permissions")
       .where("id", permId)
       .where("created", "<=", timestamp)
-      .select("participants", "weight", "issued", "verified", "ecosystem_slash_events", "ecosystem_slashed_amount", "ecosystem_slashed_amount_repaid", "network_slash_events", "network_slashed_amount", "network_slashed_amount_repaid")
+      .select(
+        "participants",
+        "participants_ecosystem",
+        "participants_issuer_grantor",
+        "participants_issuer",
+        "participants_verifier_grantor",
+        "participants_verifier",
+        "participants_holder",
+        "weight",
+        "issued",
+        "verified",
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "ecosystem_slashed_amount_repaid",
+        "network_slash_events",
+        "network_slashed_amount",
+        "network_slashed_amount_repaid"
+      )
       .first();
 
     if (!perm) {
@@ -864,7 +1038,13 @@ export default class StatsCalculationService extends BullableService {
       .first();
 
     const cumulative = {
-      participants: Number(perm.participants || 0),
+      participants: this.sumParticipantsByRole(perm),
+      participants_ecosystem: Number(perm.participants_ecosystem || 0),
+      participants_issuer_grantor: Number(perm.participants_issuer_grantor || 0),
+      participants_issuer: Number(perm.participants_issuer || 0),
+      participants_verifier_grantor: Number(perm.participants_verifier_grantor || 0),
+      participants_verifier: Number(perm.participants_verifier || 0),
+      participants_holder: Number(perm.participants_holder || 0),
       active_schemas: schema && schema.archived === null ? 1 : 0,
       archived_schemas: schema && schema.archived !== null ? 1 : 0,
       weight: BigInt(perm.weight || "0"),
@@ -887,6 +1067,12 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
+      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
+      participants_issuer_grantor: cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
+      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
+      participants_verifier_grantor: cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
+      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
+      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || "0"),
@@ -902,6 +1088,12 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
+      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
+      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
+      cumulative_participants_issuer: cumulative.participants_issuer,
+      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
+      cumulative_participants_verifier: cumulative.participants_verifier,
+      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -914,6 +1106,12 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
+      delta_participants_ecosystem: delta.participants_ecosystem,
+      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
+      delta_participants_issuer: delta.participants_issuer,
+      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
+      delta_participants_verifier: delta.participants_verifier,
+      delta_participants_holder: delta.participants_holder,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -941,6 +1139,12 @@ export default class StatsCalculationService extends BullableService {
 
     const deltaFields = [
       "delta_participants",
+      "delta_participants_ecosystem",
+      "delta_participants_issuer_grantor",
+      "delta_participants_issuer",
+      "delta_participants_verifier_grantor",
+      "delta_participants_verifier",
+      "delta_participants_holder",
       "delta_active_schemas",
       "delta_archived_schemas",
       "delta_weight",
@@ -983,6 +1187,12 @@ export default class StatsCalculationService extends BullableService {
     if (!existing || !stats) return false;
     const fields = [
       "cumulative_participants",
+      "cumulative_participants_ecosystem",
+      "cumulative_participants_issuer_grantor",
+      "cumulative_participants_issuer",
+      "cumulative_participants_verifier_grantor",
+      "cumulative_participants_verifier",
+      "cumulative_participants_holder",
       "cumulative_active_schemas",
       "cumulative_archived_schemas",
       "cumulative_weight",
@@ -995,6 +1205,12 @@ export default class StatsCalculationService extends BullableService {
       "cumulative_network_slashed_amount",
       "cumulative_network_slashed_amount_repaid",
       "delta_participants",
+      "delta_participants_ecosystem",
+      "delta_participants_issuer_grantor",
+      "delta_participants_issuer",
+      "delta_participants_verifier_grantor",
+      "delta_participants_verifier",
+      "delta_participants_holder",
       "delta_active_schemas",
       "delta_archived_schemas",
       "delta_weight",
@@ -1189,7 +1405,7 @@ export default class StatsCalculationService extends BullableService {
 
     try {
       this.logger.debug(" Testing database connection...");
-      const dbTest = await knex.raw("SELECT 1 as connection_test");
+      await knex.raw("SELECT 1 as connection_test");
       this.logger.debug(" Database connection OK");
 
       this.logger.debug(` Processing timestamp: ${timestamp.toISOString()}`);

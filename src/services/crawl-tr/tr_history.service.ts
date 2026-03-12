@@ -5,6 +5,8 @@ import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
+import { isValidISO8601UTC } from "../../common/utils/date_utils";
+import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 
 @Service({
   name: SERVICE.V1.TrustRegistryHistoryService.key,
@@ -187,7 +189,6 @@ export default class TrustRegistryHistoryService extends BaseService {
       const { tr_id: trId, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
       
       if (transactionTimestampOlderThan) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
           return ApiResponder.error(
             ctx,
@@ -206,7 +207,6 @@ export default class TrustRegistryHistoryService extends BaseService {
       const tr = await knex("trust_registry").where("id", trId).first();
       if (!tr) return ApiResponder.error(ctx, "Trust Registry not found", 404);
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "TrustRegistry",

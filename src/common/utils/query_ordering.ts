@@ -5,6 +5,12 @@ export const ALLOWED_SORT_ATTRIBUTES = [
   "modified",
   "created",
   "participants",
+  "participants_ecosystem",
+  "participants_issuer_grantor",
+  "participants_issuer",
+  "participants_verifier_grantor",
+  "participants_verifier",
+  "participants_holder",
   "active_schemas",
   "weight",
   "issued",
@@ -110,6 +116,12 @@ export function sortByStandardAttributes<T>(
     getCreated?: (item: T) => string | Date | undefined | null;
     getModified?: (item: T) => string | Date | undefined | null;
     getParticipants?: (item: T) => number | undefined | null;
+    getParticipantsEcosystem?: (item: T) => number | undefined | null;
+    getParticipantsIssuerGrantor?: (item: T) => number | undefined | null;
+    getParticipantsIssuer?: (item: T) => number | undefined | null;
+    getParticipantsVerifierGrantor?: (item: T) => number | undefined | null;
+    getParticipantsVerifier?: (item: T) => number | undefined | null;
+    getParticipantsHolder?: (item: T) => number | undefined | null;
     getActiveSchemas?: (item: T) => number | undefined | null;
     getWeight?: (item: T) => number | undefined | null;
     getIssued?: (item: T) => number | undefined | null;
@@ -170,6 +182,24 @@ export function sortByStandardAttributes<T>(
       } else if (attribute === "participants") {
         av = opts.getParticipants ? (opts.getParticipants(a) || 0) : 0;
         bv = opts.getParticipants ? (opts.getParticipants(b) || 0) : 0;
+      } else if (attribute === "participants_ecosystem") {
+        av = opts.getParticipantsEcosystem ? (opts.getParticipantsEcosystem(a) || 0) : 0;
+        bv = opts.getParticipantsEcosystem ? (opts.getParticipantsEcosystem(b) || 0) : 0;
+      } else if (attribute === "participants_issuer_grantor") {
+        av = opts.getParticipantsIssuerGrantor ? (opts.getParticipantsIssuerGrantor(a) || 0) : 0;
+        bv = opts.getParticipantsIssuerGrantor ? (opts.getParticipantsIssuerGrantor(b) || 0) : 0;
+      } else if (attribute === "participants_issuer") {
+        av = opts.getParticipantsIssuer ? (opts.getParticipantsIssuer(a) || 0) : 0;
+        bv = opts.getParticipantsIssuer ? (opts.getParticipantsIssuer(b) || 0) : 0;
+      } else if (attribute === "participants_verifier_grantor") {
+        av = opts.getParticipantsVerifierGrantor ? (opts.getParticipantsVerifierGrantor(a) || 0) : 0;
+        bv = opts.getParticipantsVerifierGrantor ? (opts.getParticipantsVerifierGrantor(b) || 0) : 0;
+      } else if (attribute === "participants_verifier") {
+        av = opts.getParticipantsVerifier ? (opts.getParticipantsVerifier(a) || 0) : 0;
+        bv = opts.getParticipantsVerifier ? (opts.getParticipantsVerifier(b) || 0) : 0;
+      } else if (attribute === "participants_holder") {
+        av = opts.getParticipantsHolder ? (opts.getParticipantsHolder(a) || 0) : 0;
+        bv = opts.getParticipantsHolder ? (opts.getParticipantsHolder(b) || 0) : 0;
       } else if (attribute === "active_schemas") {
         av = opts.getActiveSchemas ? (opts.getActiveSchemas(a) || 0) : 0;
         bv = opts.getActiveSchemas ? (opts.getActiveSchemas(b) || 0) : 0;

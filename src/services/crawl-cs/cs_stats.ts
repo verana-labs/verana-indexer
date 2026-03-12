@@ -81,6 +81,12 @@ export async function getPermissionSessionCounters(blockHeight?: number): Promis
 
 export interface CredentialSchemaStats {
     participants: number;
+    participants_ecosystem: number;
+    participants_issuer_grantor: number;
+    participants_issuer: number;
+    participants_verifier_grantor: number;
+    participants_verifier: number;
+    participants_holder: number;
     weight: number;
     issued: number;
     verified: number;
@@ -300,6 +306,12 @@ export async function calculateCredentialSchemaStats(
     const batch = await calculateCredentialSchemaStatsBatch([schemaId], blockHeight);
     return batch.get(Number(schemaId)) || {
         participants: 0,
+        participants_ecosystem: 0,
+        participants_issuer_grantor: 0,
+        participants_issuer: 0,
+        participants_verifier_grantor: 0,
+        participants_verifier: 0,
+        participants_holder: 0,
         weight: 0,
         issued: 0,
         verified: 0,
@@ -424,12 +436,25 @@ export async function calculateCredentialSchemaStatsBatch(
     }
 
     const counters = await getPermissionSessionCounters(blockHeight);
-    const activeParticipantsBySchema = new Map<number, Set<number>>();
+    // Key = numeric schema id, value = unique participant account identifier (address string).
+    const activeParticipantsBySchema = new Map<number, Set<string>>();
+    const activeParticipantsEcosystemBySchema = new Map<number, Set<string>>();
+    const activeParticipantsIssuerGrantorBySchema = new Map<number, Set<string>>();
+    const activeParticipantsIssuerBySchema = new Map<number, Set<string>>();
+    const activeParticipantsVerifierGrantorBySchema = new Map<number, Set<string>>();
+    const activeParticipantsVerifierBySchema = new Map<number, Set<string>>();
+    const activeParticipantsHolderBySchema = new Map<number, Set<string>>();
     const permissionIdsBySchema = new Map<number, Set<number>>();
 
     for (const schemaId of schemaIds) {
         result.set(schemaId, {
             participants: 0,
+            participants_ecosystem: 0,
+            participants_issuer_grantor: 0,
+            participants_issuer: 0,
+            participants_verifier_grantor: 0,
+            participants_verifier: 0,
+            participants_holder: 0,
             weight: 0,
             issued: 0,
             verified: 0,
@@ -440,7 +465,13 @@ export async function calculateCredentialSchemaStatsBatch(
             network_slashed_amount: 0,
             network_slashed_amount_repaid: 0,
         });
-        activeParticipantsBySchema.set(schemaId, new Set<number>());
+        activeParticipantsBySchema.set(schemaId, new Set<string>());
+        activeParticipantsEcosystemBySchema.set(schemaId, new Set<string>());
+        activeParticipantsIssuerGrantorBySchema.set(schemaId, new Set<string>());
+        activeParticipantsIssuerBySchema.set(schemaId, new Set<string>());
+        activeParticipantsVerifierGrantorBySchema.set(schemaId, new Set<string>());
+        activeParticipantsVerifierBySchema.set(schemaId, new Set<string>());
+        activeParticipantsHolderBySchema.set(schemaId, new Set<string>());
         permissionIdsBySchema.set(schemaId, new Set<number>());
     }
 
@@ -468,8 +499,17 @@ export async function calculateCredentialSchemaStatsBatch(
             now
         );
 
-        if (permState === "ACTIVE") {
-            activeParticipantsBySchema.get(schemaId)?.add(permId);
+        const grantee = perm.grantee === null || perm.grantee === undefined
+            ? ""
+            : String(perm.grantee).trim();
+        if (permState === "ACTIVE" && grantee) {
+            activeParticipantsBySchema.get(schemaId)?.add(grantee);
+            if (perm.type === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(grantee);
+            if (perm.type === "ISSUER_GRANTOR") activeParticipantsIssuerGrantorBySchema.get(schemaId)?.add(grantee);
+            if (perm.type === "ISSUER") activeParticipantsIssuerBySchema.get(schemaId)?.add(grantee);
+            if (perm.type === "VERIFIER_GRANTOR") activeParticipantsVerifierGrantorBySchema.get(schemaId)?.add(grantee);
+            if (perm.type === "VERIFIER") activeParticipantsVerifierBySchema.get(schemaId)?.add(grantee);
+            if (perm.type === "HOLDER") activeParticipantsHolderBySchema.get(schemaId)?.add(grantee);
         }
 
         const stats = result.get(schemaId)!;
@@ -532,9 +572,23 @@ export async function calculateCredentialSchemaStatsBatch(
         }
     }
 
-    for (const [schemaId, activeSet] of activeParticipantsBySchema.entries()) {
+    for (const [schemaId] of activeParticipantsBySchema.entries()) {
         const stats = result.get(schemaId);
-        if (stats) stats.participants = activeSet.size;
+        if (stats) {
+            stats.participants_ecosystem = activeParticipantsEcosystemBySchema.get(schemaId)?.size || 0;
+            stats.participants_issuer_grantor = activeParticipantsIssuerGrantorBySchema.get(schemaId)?.size || 0;
+            stats.participants_issuer = activeParticipantsIssuerBySchema.get(schemaId)?.size || 0;
+            stats.participants_verifier_grantor = activeParticipantsVerifierGrantorBySchema.get(schemaId)?.size || 0;
+            stats.participants_verifier = activeParticipantsVerifierBySchema.get(schemaId)?.size || 0;
+            stats.participants_holder = activeParticipantsHolderBySchema.get(schemaId)?.size || 0;
+            stats.participants =
+                stats.participants_ecosystem
+                + stats.participants_issuer_grantor
+                + stats.participants_issuer
+                + stats.participants_verifier_grantor
+                + stats.participants_verifier
+                + stats.participants_holder;
+        }
     }
 
     return result;
