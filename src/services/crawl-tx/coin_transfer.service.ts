@@ -12,6 +12,7 @@ import config from '../../config.json' with { type: 'json' };
 import knex from '../../common/utils/db_connection';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
+import { executeWithRetry, isConnectionTerminatedError } from '../../common/utils/db_query_helper';
 
 @Service({
   name: SERVICE.V1.CoinTransfer.key,
@@ -106,8 +107,9 @@ export default class CoinTransferService extends BullableService {
       : config.handleCoinTransfer.chunkSize;
     const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
 
-    await knex.transaction(async (trx) => {
-      try {
+    try {
+      await executeWithRetry(
+        async () => knex.transaction(async (trx) => {
         let currentFrom = fromBlock;
         let totalInserted = 0;
         while (currentFrom < actualToBlock) {
@@ -242,11 +244,20 @@ export default class CoinTransferService extends BullableService {
           .merge();
 
         this.logger.info(`[COIN_TRANSFER] Total inserted ${totalInserted} coin transfers`);
-      } catch (error) {
-        this.logger.error(`❌ [COIN_TRANSFER] Transaction failed, rolling back:`, error);
-        throw error;
+        }),
+        { retries: 3, retryDelay: 1500 },
+        this.logger
+      );
+    } catch (error: any) {
+      if (isConnectionTerminatedError(error)) {
+        this.logger.warn(
+          `[COIN_TRANSFER] Transient DB connectivity issue, skipping this cycle and retrying on next schedule: ${error?.message || error}`
+        );
+        return;
       }
-    });
+      this.logger.error(`❌ [COIN_TRANSFER] Transaction failed:`, error);
+      throw error;
+    }
   }
 
   public async _start() {

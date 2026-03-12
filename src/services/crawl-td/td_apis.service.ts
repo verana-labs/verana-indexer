@@ -9,6 +9,9 @@ import { validateRequiredAccountParam } from "../../common/utils/accountValidati
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import TrustDeposit from "../../models/trust_deposit";
+import { getModuleParamsAction } from "../../common/utils/params_service";
+import { isValidISO8601UTC } from "../../common/utils/date_utils";
+import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 
 @Service({
   name: SERVICE.V1.TrustDepositApiService.key,
@@ -115,7 +118,6 @@ export default class TrustDepositApiService extends BullableService {
     name: "getModuleParams",
   })
   public async getModuleParams(ctx: Context) {
-    const { getModuleParamsAction } = await import("../../common/utils/params_service");
     return getModuleParamsAction(ctx, ModulesParamsNamesTypes.TD, MODULE_DISPLAY_NAMES.TRUST_DEPOSIT);
   }
 
@@ -137,7 +139,6 @@ export default class TrustDepositApiService extends BullableService {
       const { response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
 
       if (transactionTimestampOlderThan) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
           return ApiResponder.error(
             ctx,
@@ -176,7 +177,6 @@ export default class TrustDepositApiService extends BullableService {
         );
       }
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "TrustDeposit",

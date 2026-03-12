@@ -8,6 +8,7 @@ const DEFAULT_POOL_MAX = 100;
 const DEFAULT_STATEMENT_TIMEOUT = 600000;
 const DEFAULT_QUERY_TIMEOUT = 600000; 
 const DEFAULT_CONNECTION_TIMEOUT = 60000;
+const DEFAULT_IDLE_IN_TX_TIMEOUT_MS = 30000;
 
 const databaseName = Network.databaseName;
 
@@ -61,6 +62,11 @@ const createPool = (min: number, max: number, acquireTimeout: number = 60000) =>
     5000
   );
 
+  const idleInTxTimeout = toInt(
+    (Config as Record<string, unknown>).POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS as string | number | undefined,
+    DEFAULT_IDLE_IN_TX_TIMEOUT_MS
+  );
+
   return {
     min,
     max,
@@ -71,6 +77,12 @@ const createPool = (min: number, max: number, acquireTimeout: number = 60000) =>
     destroyTimeoutMillis: poolDestroyTimeout,
     propagateCreateError: false,
     createRetryIntervalMillis: 200,
+    afterCreate: (conn: any, done: (err: Error | null, conn: any) => void) => {
+      conn.query(
+        `SET idle_in_transaction_session_timeout = ${idleInTxTimeout};`,
+        (err: Error | null) => done(err, conn)
+      );
+    },
   };
 };
 
@@ -134,4 +146,3 @@ export const getConfigForEnv = (env?: string): Knex.Config => {
 };
 
 export default getConfigForEnv;
-

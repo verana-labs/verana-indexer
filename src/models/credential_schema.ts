@@ -19,6 +19,12 @@ export default class CredentialSchema extends BaseModel {
   modified!: Date;
   is_active!: boolean;
   participants?: number;
+  participants_ecosystem?: number;
+  participants_issuer_grantor?: number;
+  participants_issuer?: number;
+  participants_verifier_grantor?: number;
+  participants_verifier?: number;
+  participants_holder?: number;
   weight?: number;
   issued?: number;
   verified?: number;
@@ -66,6 +72,12 @@ export default class CredentialSchema extends BaseModel {
         created: { type: "string", format: "date-time" },
         modified: { type: "string", format: "date-time" },
         participants: { type: "integer" },
+        participants_ecosystem: { type: "integer" },
+        participants_issuer_grantor: { type: "integer" },
+        participants_issuer: { type: "integer" },
+        participants_verifier_grantor: { type: "integer" },
+        participants_verifier: { type: "integer" },
+        participants_holder: { type: "integer" },
         weight: { type: "integer" },
         issued: { type: "integer" },
         verified: { type: "integer" },

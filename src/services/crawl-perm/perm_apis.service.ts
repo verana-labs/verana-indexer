@@ -9,8 +9,10 @@ import { validateParticipantParam, validateRequiredAccountParam } from "../../co
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
-import { applyOrdering, validateSortParameter, sortByStandardAttributes } from "../../common/utils/query_ordering";
+import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { getModuleParams } from "../../common/utils/params_service";
+import { isValidISO8601UTC } from "../../common/utils/date_utils";
+import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
@@ -45,6 +47,7 @@ export default class PermAPIService extends BullableService {
     hasIssuedColumn: boolean;
     hasVerifiedColumn: boolean;
     hasParticipantsColumn: boolean;
+    hasParticipantRoleColumns: boolean;
     hasWeightColumn: boolean;
     hasEcosystemSlashEventsColumn: boolean;
     hasExpireSoonColumn: boolean;
@@ -58,6 +61,7 @@ export default class PermAPIService extends BullableService {
     hasIssuedColumn: boolean;
     hasVerifiedColumn: boolean;
     hasParticipantsColumn: boolean;
+    hasParticipantRoleColumns: boolean;
     hasWeightColumn: boolean;
     hasEcosystemSlashEventsColumn: boolean;
     hasExpireSoonColumn: boolean;
@@ -72,6 +76,12 @@ export default class PermAPIService extends BullableService {
         hasIssuedColumn: !!columnInfo.issued,
         hasVerifiedColumn: !!columnInfo.verified,
         hasParticipantsColumn: !!columnInfo.participants,
+        hasParticipantRoleColumns: !!columnInfo.participants_ecosystem
+          && !!columnInfo.participants_issuer_grantor
+          && !!columnInfo.participants_issuer
+          && !!columnInfo.participants_verifier_grantor
+          && !!columnInfo.participants_verifier
+          && !!columnInfo.participants_holder,
         hasWeightColumn: !!columnInfo.weight,
         hasEcosystemSlashEventsColumn: !!columnInfo.ecosystem_slash_events,
         hasExpireSoonColumn: !!columnInfo.expire_soon,
@@ -354,6 +364,7 @@ export default class PermAPIService extends BullableService {
     params: any,
     options: {
       participants: boolean;
+      participantRoles: boolean;
       weight: boolean;
       issued: boolean;
       verified: boolean;
@@ -364,6 +375,12 @@ export default class PermAPIService extends BullableService {
     const col = (name: string) => (options.tablePrefix ? `${options.tablePrefix}.${name}` : name);
     const metricSpecs = [
       { min: "min_participants", max: "max_participants", db: "participants", enabled: options.participants },
+      { min: "min_participants_ecosystem", max: "max_participants_ecosystem", db: "participants_ecosystem", enabled: options.participantRoles },
+      { min: "min_participants_issuer_grantor", max: "max_participants_issuer_grantor", db: "participants_issuer_grantor", enabled: options.participantRoles },
+      { min: "min_participants_issuer", max: "max_participants_issuer", db: "participants_issuer", enabled: options.participantRoles },
+      { min: "min_participants_verifier_grantor", max: "max_participants_verifier_grantor", db: "participants_verifier_grantor", enabled: options.participantRoles },
+      { min: "min_participants_verifier", max: "max_participants_verifier", db: "participants_verifier", enabled: options.participantRoles },
+      { min: "min_participants_holder", max: "max_participants_holder", db: "participants_holder", enabled: options.participantRoles },
       { min: "min_weight", max: "max_weight", db: "weight", enabled: options.weight },
       { min: "min_issued", max: "max_issued", db: "issued", enabled: options.issued },
       { min: "min_verified", max: "max_verified", db: "verified", enabled: options.verified },
@@ -398,9 +415,86 @@ export default class PermAPIService extends BullableService {
     return { requiresPostFilter, impossibleRange };
   }
 
+  private canPushDerivedSortToSql(
+    sort: any,
+    options: {
+      hasParticipantsColumn: boolean;
+      hasParticipantRoleColumns: boolean;
+      hasWeightColumn: boolean;
+      hasIssuedColumn: boolean;
+      hasVerifiedColumn: boolean;
+      hasEcosystemSlashEventsColumn: boolean;
+    }
+  ): boolean {
+    if (typeof sort !== "string" || !sort.trim()) return false;
+
+    try {
+      const sortOrders = parseSortParameter(sort);
+      for (const { attribute } of sortOrders) {
+        if (attribute === "id" || attribute === "modified" || attribute === "created") continue;
+        if (attribute === "participants" && options.hasParticipantsColumn) continue;
+        if (
+          (attribute === "participants_ecosystem"
+            || attribute === "participants_issuer_grantor"
+            || attribute === "participants_issuer"
+            || attribute === "participants_verifier_grantor"
+            || attribute === "participants_verifier"
+            || attribute === "participants_holder")
+          && options.hasParticipantRoleColumns
+        ) {
+          continue;
+        }
+        if ((attribute === "weight") && options.hasWeightColumn) continue;
+        if ((attribute === "issued") && options.hasIssuedColumn) continue;
+        if ((attribute === "verified") && options.hasVerifiedColumn) continue;
+        if (
+          (attribute === "ecosystem_slash_events"
+            || attribute === "ecosystem_slashed_amount"
+            || attribute === "network_slash_events"
+            || attribute === "network_slashed_amount")
+          && options.hasEcosystemSlashEventsColumn
+        ) {
+          continue;
+        }
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private applyRequestedSortToQuery(
+    query: any,
+    sort: string | undefined
+  ): any {
+    if (typeof sort !== "string" || !sort.trim()) {
+      return query.orderBy("modified", "desc").orderBy("id", "desc");
+    }
+
+    const sortOrders = parseSortParameter(sort);
+    let hasIdSort = false;
+    for (const { attribute, direction } of sortOrders) {
+      query.orderBy(attribute, direction);
+      if (attribute === "id") hasIdSort = true;
+    }
+
+    if (!hasIdSort) {
+      query.orderBy("id", "desc");
+    }
+
+    return query;
+  }
+
   private applyMetricFiltersInMemory(permissions: any[], params: any): any[] {
     const specs = [
       { min: "min_participants", max: "max_participants", field: "participants" },
+      { min: "min_participants_ecosystem", max: "max_participants_ecosystem", field: "participants_ecosystem" },
+      { min: "min_participants_issuer_grantor", max: "max_participants_issuer_grantor", field: "participants_issuer_grantor" },
+      { min: "min_participants_issuer", max: "max_participants_issuer", field: "participants_issuer" },
+      { min: "min_participants_verifier_grantor", max: "max_participants_verifier_grantor", field: "participants_verifier_grantor" },
+      { min: "min_participants_verifier", max: "max_participants_verifier", field: "participants_verifier" },
+      { min: "min_participants_holder", max: "max_participants_holder", field: "participants_holder" },
       { min: "min_weight", max: "max_weight", field: "weight" },
       { min: "min_issued", max: "max_issued", field: "issued" },
       { min: "min_verified", max: "max_verified", field: "verified" },
@@ -520,33 +614,79 @@ export default class PermAPIService extends BullableService {
   ): Promise<any[]> {
     if (permissions.length === 0) return [];
 
+    const requiresSchemaModes = (permType: string | undefined): boolean => {
+      if (!permType) return false;
+      return permType === "ISSUER_GRANTOR"
+        || permType === "ISSUER"
+        || permType === "VERIFIER_GRANTOR"
+        || permType === "VERIFIER";
+    };
+
     const schemaIds = Array.from(
       new Set(
         permissions
+          .filter((perm) => requiresSchemaModes(String(perm?.type || "").toUpperCase()))
           .map((perm) => Number(perm.schema_id))
           .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
       )
     );
+
+    const locallyKnownPermStateById = new Map<number, PermState>();
+    for (const perm of permissions) {
+      const permissionId = Number(perm?.id);
+      if (!Number.isFinite(permissionId) || permissionId <= 0) continue;
+      locallyKnownPermStateById.set(permissionId, calculatePermState(
+        {
+          repaid: perm.repaid,
+          slashed: perm.slashed,
+          revoked: perm.revoked,
+          effective_from: perm.effective_from,
+          effective_until: perm.effective_until,
+          type: perm.type,
+          vp_state: perm.vp_state,
+          vp_exp: perm.vp_exp,
+          validator_perm_id: perm.validator_perm_id,
+        },
+        now
+      ));
+    }
+
     const validatorPermIds = Array.from(
       new Set(
         permissions
+          .filter((perm) => String(perm?.type || "").toUpperCase() !== "ECOSYSTEM")
           .map((perm) => Number(perm.validator_perm_id))
           .filter((validatorPermId) => Number.isFinite(validatorPermId) && validatorPermId > 0)
       )
     );
+    const missingValidatorPermIds = validatorPermIds.filter(
+      (validatorPermId) => !locallyKnownPermStateById.has(validatorPermId)
+    );
+
+    const shouldLoadModuleParams = permissions.some(
+      (perm) => perm?.effective_until !== null && perm?.effective_until !== undefined
+    );
 
     const [schemaModesById, validatorPermStateById, moduleParams] = await Promise.all([
       options?.schemaModesById ?? this.getSchemaModesBatch(schemaIds, blockHeight),
-      options?.validatorPermStateById ?? this.getValidatorPermStateMap(validatorPermIds, blockHeight, now),
-      options?.moduleParams !== undefined
-        ? Promise.resolve(options.moduleParams)
+      options?.validatorPermStateById ?? this.getValidatorPermStateMap(missingValidatorPermIds, blockHeight, now),
+      options?.moduleParams !== undefined || !shouldLoadModuleParams
+        ? Promise.resolve(options?.moduleParams)
         : this.getPermissionModuleParams(blockHeight).catch(() => undefined),
     ]);
+
+    const mergedValidatorPermStateById = new Map<number, PermState | null>();
+    for (const [permissionId, state] of locallyKnownPermStateById.entries()) {
+      mergedValidatorPermStateById.set(permissionId, state);
+    }
+    for (const [permissionId, state] of validatorPermStateById.entries()) {
+      mergedValidatorPermStateById.set(permissionId, state);
+    }
 
     const mergedOptions = {
       ...options,
       schemaModesById,
-      validatorPermStateById,
+      validatorPermStateById: mergedValidatorPermStateById,
       moduleParams,
     };
 
@@ -751,6 +891,12 @@ export default class PermAPIService extends BullableService {
     if (perm.issued !== undefined) normalized.issued = perm.issued != null ? Number(perm.issued) : 0;
     if (perm.verified !== undefined) normalized.verified = perm.verified != null ? Number(perm.verified) : 0;
     if (perm.participants !== undefined) normalized.participants = perm.participants != null ? Number(perm.participants) : 0;
+    if (perm.participants_ecosystem !== undefined) normalized.participants_ecosystem = perm.participants_ecosystem != null ? Number(perm.participants_ecosystem) : 0;
+    if (perm.participants_issuer_grantor !== undefined) normalized.participants_issuer_grantor = perm.participants_issuer_grantor != null ? Number(perm.participants_issuer_grantor) : 0;
+    if (perm.participants_issuer !== undefined) normalized.participants_issuer = perm.participants_issuer != null ? Number(perm.participants_issuer) : 0;
+    if (perm.participants_verifier_grantor !== undefined) normalized.participants_verifier_grantor = perm.participants_verifier_grantor != null ? Number(perm.participants_verifier_grantor) : 0;
+    if (perm.participants_verifier !== undefined) normalized.participants_verifier = perm.participants_verifier != null ? Number(perm.participants_verifier) : 0;
+    if (perm.participants_holder !== undefined) normalized.participants_holder = perm.participants_holder != null ? Number(perm.participants_holder) : 0;
     if (perm.ecosystem_slash_events !== undefined) {
       normalized.ecosystem_slash_events = perm.ecosystem_slash_events != null ? Number(perm.ecosystem_slash_events) : 0;
       normalized.ecosystem_slashed_amount = perm.ecosystem_slashed_amount != null ? Number(perm.ecosystem_slashed_amount) : 0;
@@ -965,13 +1111,16 @@ export default class PermAPIService extends BullableService {
     }
   ): Promise<any> {
     const schemaId = Number(perm.schema_id);
-    const schema = options?.schemaModesById?.get(schemaId) ?? await this.getSchemaModes(schemaId, blockHeight);
+    const schemaFromBatch = options?.schemaModesById?.get(schemaId);
+    const schema = schemaFromBatch
+      || (options?.schemaModesById !== undefined ? {} : await this.getSchemaModes(schemaId, blockHeight));
 
     let validatorPermState: PermState | null = null;
+    const validatorPermStateById = options?.validatorPermStateById;
     if (perm.validator_perm_id) {
       const validatorPermId = Number(perm.validator_perm_id);
-      validatorPermState = options?.validatorPermStateById?.has(validatorPermId)
-        ? options.validatorPermStateById.get(validatorPermId) || null
+      validatorPermState = validatorPermStateById?.has(validatorPermId)
+        ? validatorPermStateById.get(validatorPermId) || null
         : null;
     }
 
@@ -1029,6 +1178,14 @@ export default class PermAPIService extends BullableService {
       verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
     };
     const participants = typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0);
+    const participantsByRole = {
+      participants_ecosystem: typeof perm.participants_ecosystem === "number" ? perm.participants_ecosystem : Number(perm.participants_ecosystem || 0),
+      participants_issuer_grantor: typeof perm.participants_issuer_grantor === "number" ? perm.participants_issuer_grantor : Number(perm.participants_issuer_grantor || 0),
+      participants_issuer: typeof perm.participants_issuer === "number" ? perm.participants_issuer : Number(perm.participants_issuer || 0),
+      participants_verifier_grantor: typeof perm.participants_verifier_grantor === "number" ? perm.participants_verifier_grantor : Number(perm.participants_verifier_grantor || 0),
+      participants_verifier: typeof perm.participants_verifier === "number" ? perm.participants_verifier : Number(perm.participants_verifier || 0),
+      participants_holder: typeof perm.participants_holder === "number" ? perm.participants_holder : Number(perm.participants_holder || 0),
+    };
     const slashStats = {
       ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
       ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
@@ -1064,6 +1221,12 @@ export default class PermAPIService extends BullableService {
       issued: statistics.issued,
       verified: statistics.verified,
       participants: participants,
+      participants_ecosystem: participantsByRole.participants_ecosystem,
+      participants_issuer_grantor: participantsByRole.participants_issuer_grantor,
+      participants_issuer: participantsByRole.participants_issuer,
+      participants_verifier_grantor: participantsByRole.participants_verifier_grantor,
+      participants_verifier: participantsByRole.participants_verifier,
+      participants_holder: participantsByRole.participants_holder,
       ecosystem_slash_events: slashStats.ecosystem_slash_events,
       ecosystem_slashed_amount: slashStats.ecosystem_slashed_amount,
       ecosystem_slashed_amount_repaid: slashStats.ecosystem_slashed_amount_repaid,
@@ -1098,6 +1261,18 @@ export default class PermAPIService extends BullableService {
       sort: { type: "string", optional: true },
       min_participants: { type: "number", integer: true, optional: true },
       max_participants: { type: "number", integer: true, optional: true },
+      min_participants_ecosystem: { type: "number", integer: true, optional: true },
+      max_participants_ecosystem: { type: "number", integer: true, optional: true },
+      min_participants_issuer_grantor: { type: "number", integer: true, optional: true },
+      max_participants_issuer_grantor: { type: "number", integer: true, optional: true },
+      min_participants_issuer: { type: "number", integer: true, optional: true },
+      max_participants_issuer: { type: "number", integer: true, optional: true },
+      min_participants_verifier_grantor: { type: "number", integer: true, optional: true },
+      max_participants_verifier_grantor: { type: "number", integer: true, optional: true },
+      min_participants_verifier: { type: "number", integer: true, optional: true },
+      max_participants_verifier: { type: "number", integer: true, optional: true },
+      min_participants_holder: { type: "number", integer: true, optional: true },
+      max_participants_holder: { type: "number", integer: true, optional: true },
       min_weight: { type: "number", optional: true },
       max_weight: { type: "number", optional: true },
       min_issued: { type: "number", optional: true },
@@ -1159,7 +1334,6 @@ export default class PermAPIService extends BullableService {
       let whenIso: string | undefined;
 
       if (normalizedParams.modified_after || normalizedParams.when) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (normalizedParams.modified_after) {
           if (!isValidISO8601UTC(normalizedParams.modified_after)) {
             return ApiResponder.error(
@@ -1195,6 +1369,7 @@ export default class PermAPIService extends BullableService {
           hasIssuedColumn,
           hasVerifiedColumn,
           hasParticipantsColumn,
+          hasParticipantRoleColumns,
           hasWeightColumn,
           hasEcosystemSlashEventsColumn,
         } = await this.getMetricColumnAvailability("permission_history");
@@ -1242,6 +1417,16 @@ export default class PermAPIService extends BullableService {
         if (hasIssuedColumn) historyColumns.push(knex.raw("COALESCE(ph.issued, 0) as issued"));
         if (hasVerifiedColumn) historyColumns.push(knex.raw("COALESCE(ph.verified, 0) as verified"));
         if (hasParticipantsColumn) historyColumns.push(knex.raw("COALESCE(ph.participants, 0) as participants"));
+        if (hasParticipantRoleColumns) {
+          historyColumns.push(
+            knex.raw("COALESCE(ph.participants_ecosystem, 0) as participants_ecosystem"),
+            knex.raw("COALESCE(ph.participants_issuer_grantor, 0) as participants_issuer_grantor"),
+            knex.raw("COALESCE(ph.participants_issuer, 0) as participants_issuer"),
+            knex.raw("COALESCE(ph.participants_verifier_grantor, 0) as participants_verifier_grantor"),
+            knex.raw("COALESCE(ph.participants_verifier, 0) as participants_verifier"),
+            knex.raw("COALESCE(ph.participants_holder, 0) as participants_holder")
+          );
+        }
         if (hasWeightColumn) historyColumns.push(knex.raw("COALESCE(ph.weight, 0) as weight"));
         if (hasEcosystemSlashEventsColumn) {
           historyColumns.push(
@@ -1254,16 +1439,7 @@ export default class PermAPIService extends BullableService {
           );
         }
 
-        const needsPostEnrichFiltering = (!historyPermStatePushedDown && !!normalizedParams.perm_state)
-          || historyRequiresMetricPostFilter
-          || derivedSortRequested;
-        const historyFetchLimit = needsPostEnrichFiltering
-          ? Math.min(Math.max(limit * 10, 500), 5000)
-          : limit;
-
         perfMarks.dbQueryStart = Date.now();
-        const historySortParamForDb =
-          derivedSortRequested && historyRequiresMetricPostFilter ? undefined : normalizedParams.sort;
         let historyQuery: any;
         if (IS_PG_CLIENT) {
           const latestHistory = knex("permission_history as ph")
@@ -1286,6 +1462,7 @@ export default class PermAPIService extends BullableService {
               );
               const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
                 participants: hasParticipantsColumn,
+                participantRoles: hasParticipantRoleColumns,
                 weight: hasWeightColumn,
                 issued: hasIssuedColumn,
                 verified: hasVerifiedColumn,
@@ -1332,6 +1509,7 @@ export default class PermAPIService extends BullableService {
               );
               const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
                 participants: hasParticipantsColumn,
+                participantRoles: hasParticipantRoleColumns,
                 weight: hasWeightColumn,
                 issued: hasIssuedColumn,
                 verified: hasVerifiedColumn,
@@ -1353,7 +1531,26 @@ export default class PermAPIService extends BullableService {
             .select("*")
             .where("rn", 1);
         }
-        const orderedHistoryQuery = applyOrdering(historyQuery, historySortParamForDb);
+
+        const historySortPushedToSql = this.canPushDerivedSortToSql(normalizedParams.sort, {
+          hasParticipantsColumn,
+          hasParticipantRoleColumns,
+          hasWeightColumn,
+          hasIssuedColumn,
+          hasVerifiedColumn,
+          hasEcosystemSlashEventsColumn,
+        });
+
+        const needsPostEnrichFiltering = (!historyPermStatePushedDown && !!normalizedParams.perm_state)
+          || historyRequiresMetricPostFilter
+          || (derivedSortRequested && !historySortPushedToSql);
+        const historyFetchLimit = needsPostEnrichFiltering
+          ? Math.min(Math.max(limit * 10, 500), 5000)
+          : limit;
+
+        const orderedHistoryQuery = historySortPushedToSql
+          ? this.applyRequestedSortToQuery(historyQuery, normalizedParams.sort)
+          : applyOrdering(historyQuery, derivedSortRequested ? undefined : normalizedParams.sort);
         const historyRows = await orderedHistoryQuery.limit(historyFetchLimit);
         perfMarks.dbQueryEnd = Date.now();
 
@@ -1407,6 +1604,14 @@ export default class PermAPIService extends BullableService {
           if (hasParticipantsColumn && historyRecord.participants !== undefined) {
             permission.participants = Number(historyRecord.participants || 0);
           }
+          if (hasParticipantRoleColumns) {
+            permission.participants_ecosystem = Number(historyRecord.participants_ecosystem || 0);
+            permission.participants_issuer_grantor = Number(historyRecord.participants_issuer_grantor || 0);
+            permission.participants_issuer = Number(historyRecord.participants_issuer || 0);
+            permission.participants_verifier_grantor = Number(historyRecord.participants_verifier_grantor || 0);
+            permission.participants_verifier = Number(historyRecord.participants_verifier || 0);
+            permission.participants_holder = Number(historyRecord.participants_holder || 0);
+          }
           if (hasWeightColumn && historyRecord.weight !== undefined) {
             permission.weight = Number(historyRecord.weight || 0);
           }
@@ -1440,12 +1645,18 @@ export default class PermAPIService extends BullableService {
           filteredPermissions = this.applyMetricFiltersInMemory(filteredPermissions, normalizedParams);
         }
 
-        if (derivedSortRequested) {
+        if (derivedSortRequested && !historySortPushedToSql) {
           filteredPermissions = sortByStandardAttributes(filteredPermissions, normalizedParams.sort, {
             getId: (item) => Number(item.id),
             getCreated: (item) => item.created,
             getModified: (item) => item.modified,
             getParticipants: (item) => item.participants,
+            getParticipantsEcosystem: (item) => item.participants_ecosystem,
+            getParticipantsIssuerGrantor: (item) => item.participants_issuer_grantor,
+            getParticipantsIssuer: (item) => item.participants_issuer,
+            getParticipantsVerifierGrantor: (item) => item.participants_verifier_grantor,
+            getParticipantsVerifier: (item) => item.participants_verifier,
+            getParticipantsHolder: (item) => item.participants_holder,
             getWeight: (item) => item.weight,
             getIssued: (item) => item.issued,
             getVerified: (item) => item.verified,
@@ -1503,6 +1714,7 @@ export default class PermAPIService extends BullableService {
         hasIssuedColumn,
         hasVerifiedColumn,
         hasParticipantsColumn,
+        hasParticipantRoleColumns,
         hasWeightColumn,
         hasEcosystemSlashEventsColumn,
       } = await this.getMetricColumnAvailability("permissions");
@@ -1522,6 +1734,16 @@ export default class PermAPIService extends BullableService {
       }
       if (hasParticipantsColumn) {
         selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
+      }
+      if (hasParticipantRoleColumns) {
+        selectColumns.push(
+          knex.raw("COALESCE(participants_ecosystem, 0) as participants_ecosystem"),
+          knex.raw("COALESCE(participants_issuer_grantor, 0) as participants_issuer_grantor"),
+          knex.raw("COALESCE(participants_issuer, 0) as participants_issuer"),
+          knex.raw("COALESCE(participants_verifier_grantor, 0) as participants_verifier_grantor"),
+          knex.raw("COALESCE(participants_verifier, 0) as participants_verifier"),
+          knex.raw("COALESCE(participants_holder, 0) as participants_holder")
+        );
       }
       if (hasWeightColumn) {
         selectColumns.push(knex.raw("COALESCE(weight, 0) as weight"));
@@ -1553,6 +1775,7 @@ export default class PermAPIService extends BullableService {
       );
       const liveMetricPushdown = this.applyMetricFiltersToSql(query, normalizedParams, {
         participants: hasParticipantsColumn,
+        participantRoles: hasParticipantRoleColumns,
         weight: hasWeightColumn,
         issued: hasIssuedColumn,
         verified: hasVerifiedColumn,
@@ -1563,20 +1786,30 @@ export default class PermAPIService extends BullableService {
         normalizedParams.perm_state,
         now
       );
+      const liveSortPushedToSql = this.canPushDerivedSortToSql(normalizedParams.sort, {
+        hasParticipantsColumn,
+        hasParticipantRoleColumns,
+        hasWeightColumn,
+        hasIssuedColumn,
+        hasVerifiedColumn,
+        hasEcosystemSlashEventsColumn,
+      });
 
       const liveNeedsPostEnrich = (!livePermStatePushdown.pushedDown && !!normalizedParams.perm_state)
         || liveMetricPushdown.requiresPostFilter
-        || derivedSortRequested;
+        || (derivedSortRequested && !liveSortPushedToSql);
       const liveFetchLimit = liveNeedsPostEnrich
         ? Math.min(Math.max(limit * 10, 500), 5000)
         : limit;
       const liveSortParamForDb =
-        derivedSortRequested && liveMetricPushdown.requiresPostFilter ? undefined : normalizedParams.sort;
-      const orderedQuery = applyOrdering(query, liveSortParamForDb);
+        liveSortPushedToSql ? normalizedParams.sort : (derivedSortRequested && liveMetricPushdown.requiresPostFilter ? undefined : normalizedParams.sort);
+      const orderedQuery = liveSortPushedToSql
+        ? this.applyRequestedSortToQuery(query, normalizedParams.sort)
+        : applyOrdering(query, liveSortParamForDb);
       perfMarks.dbQueryStart = Date.now();
       const results = await orderedQuery.limit(liveFetchLimit);
       perfMarks.dbQueryEnd = Date.now();
-      const normalizedResults = results.map((perm) => this.normalizePermissionRow(perm));
+      const normalizedResults = results.map((perm: any) => this.normalizePermissionRow(perm));
 
       perfMarks.enrichStart = Date.now();
       const liveLightweightDerivedStats = lightweightDerivedStats || liveHasAllDerivedColumns;
@@ -1598,12 +1831,18 @@ export default class PermAPIService extends BullableService {
         finalResults = this.applyMetricFiltersInMemory(finalResults, normalizedParams);
       }
 
-      if (derivedSortRequested) {
+      if (derivedSortRequested && !liveSortPushedToSql) {
         finalResults = sortByStandardAttributes(finalResults, normalizedParams.sort, {
           getId: (item) => Number(item.id),
           getCreated: (item) => item.created,
           getModified: (item) => item.modified,
           getParticipants: (item) => item.participants,
+          getParticipantsEcosystem: (item) => item.participants_ecosystem,
+          getParticipantsIssuerGrantor: (item) => item.participants_issuer_grantor,
+          getParticipantsIssuer: (item) => item.participants_issuer,
+          getParticipantsVerifierGrantor: (item) => item.participants_verifier_grantor,
+          getParticipantsVerifier: (item) => item.participants_verifier,
+          getParticipantsHolder: (item) => item.participants_holder,
           getWeight: (item) => item.weight,
           getIssued: (item) => item.issued,
           getVerified: (item) => item.verified,
@@ -1830,7 +2069,6 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.error(ctx, `Permission with id=${id} not found`, 404);
       }
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "Permission",
@@ -1894,10 +2132,13 @@ export default class PermAPIService extends BullableService {
         .map((id) => Number(id));
 
       const initialMap = await this.getPermissionsByIdsMap(rootIds, useHistoryQuery ? blockHeight : undefined);
-      for (const rootId of rootIds) {
-        if (!initialMap.has(rootId)) {
-          throw new Error(`Permission ${rootId} not found`);
-        }
+      const missingRootIds = rootIds.filter((rootId) => !initialMap.has(rootId));
+      if (missingRootIds.length > 0) {
+        return ApiResponder.error(
+          ctx,
+          `Permission not found for id(s): ${missingRootIds.join(", ")}`,
+          404
+        );
       }
 
       const foundPermMap = new Map<number, any>();
@@ -2017,7 +2258,6 @@ export default class PermAPIService extends BullableService {
       const { id, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
       
       if (transactionTimestampOlderThan) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
           return ApiResponder.error(
             ctx,
@@ -2041,7 +2281,6 @@ export default class PermAPIService extends BullableService {
         return ApiResponder.error(ctx, `PermissionSession ${id} not found`, 404);
       }
 
-      const { buildActivityTimeline } = await import("../../common/utils/activity_timeline_helper");
       const activity = await buildActivityTimeline(
         {
           entityType: "PERMISSION_SESSION",
@@ -2097,7 +2336,6 @@ export default class PermAPIService extends BullableService {
       } = ctx.params;
 
       if (modifiedAfter) {
-        const { isValidISO8601UTC } = await import("../../common/utils/date_utils");
         if (!isValidISO8601UTC(modifiedAfter)) {
           return ApiResponder.error(
             ctx,
@@ -2296,6 +2534,10 @@ export default class PermAPIService extends BullableService {
             )
           )
           .whereRaw("height <= ?", [Number(blockHeight)])
+          .where((qb) => {
+            qb.where("grantee", account);
+            if (parentIds.length > 0) qb.orWhereIn("validator_perm_id", parentIds);
+          })
           .as("ranked");
 
         const joined = await knex
@@ -2304,10 +2546,6 @@ export default class PermAPIService extends BullableService {
             join
               .on("ranked.permission_id", "=", "ph.permission_id")
               .andOn("ranked.rn", "=", knex.raw("1"));
-          })
-          .modify((qb) => {
-            qb.where("ph.grantee", account);
-            if (parentIds.length > 0) qb.orWhereIn("ph.validator_perm_id", parentIds);
           })
           .select(
             "ph.permission_id",
@@ -2390,12 +2628,28 @@ export default class PermAPIService extends BullableService {
         }
         return false;
       });
-      filtered.sort((a: any, b: any) => {
-        const ta = new Date(a.modified).getTime();
-        const tb = new Date(b.modified).getTime();
-        return ta - tb;
+      const sortedFiltered = sortByStandardAttributes(filtered, sortParam, {
+        getId: (item: any) => item.id,
+        getCreated: (item: any) => item.created,
+        getModified: (item: any) => item.modified,
+        getParticipants: (item: any) => item.participants,
+        getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
+        getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
+        getParticipantsIssuer: (item: any) => item.participants_issuer,
+        getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
+        getParticipantsVerifier: (item: any) => item.participants_verifier,
+        getParticipantsHolder: (item: any) => item.participants_holder,
+        getWeight: (item: any) => item.weight,
+        getIssued: (item: any) => item.issued,
+        getVerified: (item: any) => item.verified,
+        getEcosystemSlashEvents: (item: any) => item.ecosystem_slash_events,
+        getEcosystemSlashedAmount: (item: any) => item.ecosystem_slashed_amount,
+        getNetworkSlashEvents: (item: any) => item.network_slash_events,
+        getNetworkSlashedAmount: (item: any) => item.network_slashed_amount,
+        defaultAttribute: "modified",
+        defaultDirection: "desc",
       });
-      const schemaIds = Array.from(new Set(filtered.map((r: any) => Number(r.schema_id))));
+      const schemaIds = Array.from(new Set(sortedFiltered.map((r: any) => Number(r.schema_id))));
       const schemas = schemaIds.length > 0
         ? await knex("credential_schemas").whereIn("id", schemaIds).select("id", "tr_id", "json_schema", "title", "description", "participants")
         : [];
@@ -2458,7 +2712,7 @@ export default class PermAPIService extends BullableService {
         trMap.set(Number(tr.id), { id: Number(tr.id), did: tr.did, aka: tr.aka, credential_schemas: [], pending_tasks: 0, participants: tr.participants ?? 0 });
       }
       const csMap = new Map<number, any>();
-      for (const perm of filtered) {
+      for (const perm of sortedFiltered) {
         const schemaId = perm.schema_id;
         const csInfo = schemaMap.get(schemaId) || { tr_id: null, title: undefined, description: undefined };
         if (!csMap.has(schemaId)) {
@@ -2474,13 +2728,6 @@ export default class PermAPIService extends BullableService {
         const entry = csMap.get(schemaId);
         entry.permissions.push({ ...perm });
         entry.pending_tasks++;
-      }
-      for (const csEntry of csMap.values()) {
-        csEntry.permissions.sort((a: any, b: any) => {
-          const ta = new Date(a.modified || 0).getTime();
-          const tb = new Date(b.modified || 0).getTime();
-          return ta - tb;
-        });
       }
       for (const [schemaId, csEntry] of csMap.entries()) {
         const csInfo = schemaMap.get(schemaId) || { tr_id: null };
