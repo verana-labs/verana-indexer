@@ -50,19 +50,27 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       .first();
 
     const nowIso = new Date().toISOString();
-    const activeParticipantsByType = await knex("permissions")
-      .whereNotNull("grantee")
-      .whereNull("repaid")
-      .whereNull("slashed")
-      .andWhere(function () {
-        this.whereNull("revoked").orWhere("revoked", ">=", nowIso);
-      })
-      .andWhere(function () {
-        this.whereNotNull("effective_from").andWhere("effective_from", "<=", nowIso);
-      })
-      .andWhere(function () {
-        this.whereNull("effective_until").orWhere("effective_until", ">=", nowIso);
-      })
+    const activePermsBase = () =>
+      knex("permissions")
+        .whereNotNull("grantee")
+        .whereNull("repaid")
+        .whereNull("slashed")
+        .andWhere(function () {
+          this.whereNull("revoked").orWhere("revoked", ">=", nowIso);
+        })
+        .andWhere(function () {
+          this.whereNotNull("effective_from").andWhere("effective_from", "<=", nowIso);
+        })
+        .andWhere(function () {
+          this.whereNull("effective_until").orWhere("effective_until", ">=", nowIso);
+        });
+
+    const participantsResult = await activePermsBase()
+      .countDistinct("grantee as count")
+      .first();
+    const participants = Number((participantsResult as any)?.count ?? 0);
+
+    const activeParticipantsByType = await activePermsBase()
       .select("type")
       .countDistinct("grantee as count")
       .groupBy("type");
@@ -84,13 +92,6 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       if (row.type === "VERIFIER") participantsByType.participants_verifier = count;
       if (row.type === "HOLDER") participantsByType.participants_holder = count;
     }
-    const participants =
-      participantsByType.participants_ecosystem
-      + participantsByType.participants_issuer_grantor
-      + participantsByType.participants_issuer
-      + participantsByType.participants_verifier_grantor
-      + participantsByType.participants_verifier
-      + participantsByType.participants_holder;
 
     return {
       participants,
@@ -184,6 +185,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     }
   }
 
+  const allParticipantsSet = new Set<string>();
   const participantsEcosystemSet = new Set<string>();
   const participantsIssuerGrantorSet = new Set<string>();
   const participantsIssuerSet = new Set<string>();
@@ -229,6 +231,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       new Date()
     );
     if (permState === "ACTIVE" && historyRecord.grantee) {
+      allParticipantsSet.add(historyRecord.grantee);
       if (historyRecord.type === "ECOSYSTEM") participantsEcosystemSet.add(historyRecord.grantee);
       if (historyRecord.type === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(historyRecord.grantee);
       if (historyRecord.type === "ISSUER") participantsIssuerSet.add(historyRecord.grantee);
@@ -244,12 +247,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
   const participantsVerifierGrantor = participantsVerifierGrantorSet.size;
   const participantsVerifier = participantsVerifierSet.size;
   const participantsHolder = participantsHolderSet.size;
-  const participantsTotal = participantsEcosystem
-    + participantsIssuerGrantor
-    + participantsIssuer
-    + participantsVerifierGrantor
-    + participantsVerifier
-    + participantsHolder;
+  const participantsTotal = allParticipantsSet.size;
 
   return {
     participants: participantsTotal,

@@ -581,13 +581,7 @@ export async function calculateCredentialSchemaStatsBatch(
             stats.participants_verifier_grantor = activeParticipantsVerifierGrantorBySchema.get(schemaId)?.size || 0;
             stats.participants_verifier = activeParticipantsVerifierBySchema.get(schemaId)?.size || 0;
             stats.participants_holder = activeParticipantsHolderBySchema.get(schemaId)?.size || 0;
-            stats.participants =
-                stats.participants_ecosystem
-                + stats.participants_issuer_grantor
-                + stats.participants_issuer
-                + stats.participants_verifier_grantor
-                + stats.participants_verifier
-                + stats.participants_holder;
+            stats.participants = activeParticipantsBySchema.get(schemaId)?.size || 0;
         }
     }
 

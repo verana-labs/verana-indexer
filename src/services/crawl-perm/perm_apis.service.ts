@@ -13,6 +13,7 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSo
 import { getModuleParams } from "../../common/utils/params_service";
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
+import { mapPermissionType } from "../../common/utils/utils";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
@@ -50,6 +51,7 @@ export default class PermAPIService extends BullableService {
     hasParticipantRoleColumns: boolean;
     hasWeightColumn: boolean;
     hasEcosystemSlashEventsColumn: boolean;
+    hasExpireSoonColumn: boolean;
   }>>();
 
   constructor(broker: ServiceBroker) {
@@ -63,6 +65,7 @@ export default class PermAPIService extends BullableService {
     hasParticipantRoleColumns: boolean;
     hasWeightColumn: boolean;
     hasEcosystemSlashEventsColumn: boolean;
+    hasExpireSoonColumn: boolean;
   }> {
     const cacheKey = tableName;
     const cached = this.metricColumnAvailabilityCache.get(cacheKey);
@@ -82,6 +85,7 @@ export default class PermAPIService extends BullableService {
           && !!columnInfo.participants_holder,
         hasWeightColumn: !!columnInfo.weight,
         hasEcosystemSlashEventsColumn: !!columnInfo.ecosystem_slash_events,
+        hasExpireSoonColumn: !!columnInfo.expire_soon,
       }))
       .catch((error) => {
         this.metricColumnAvailabilityCache.delete(cacheKey);
@@ -136,6 +140,39 @@ export default class PermAPIService extends BullableService {
 
   private async getPermissionModuleParams(blockHeight?: number): Promise<any> {
     return getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
+  }
+
+  private normalizePermissionSessionRow(row: any): any {
+    if (!row) return row;
+
+    let authz: any[] = [];
+    try {
+      if (typeof row.authz === "string") {
+        authz = JSON.parse(row.authz || "[]");
+      } else if (Array.isArray(row.authz)) {
+        authz = row.authz;
+      } else {
+        authz = [];
+      }
+    } catch {
+      authz = [];
+    }
+
+    const mappedAuthz = authz.map((entry: any) => ({
+      executor_perm_id: Number(entry?.executor_perm_id ?? 0) || 0,
+      beneficiary_perm_id: Number(entry?.beneficiary_perm_id ?? 0) || 0,
+      wallet_agent_perm_id: Number(entry?.wallet_agent_perm_id ?? 0) || 0,
+    }));
+
+    return {
+      id: row.id ?? row.session_id,
+      controller: row.controller ?? null,
+      agent_perm_id: Number(row.agent_perm_id ?? 0) || 0,
+      wallet_agent_perm_id: Number(row.wallet_agent_perm_id ?? 0) || 0,
+      authz: mappedAuthz,
+      created: row.created ?? null,
+      modified: row.modified ?? null,
+    };
   }
 
   private isTrustResolutionListQuery(
@@ -835,11 +872,23 @@ export default class PermAPIService extends BullableService {
     return stateMap;
   }
 
+  private normalizeVpStateForResponse(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string") return value.toUpperCase();
+    const n = Number(value);
+    if (n === 1) return "PENDING";
+    if (n === 2) return "VALIDATED";
+    if (n === 3 || n === 4) return "TERMINATED";
+    return "VALIDATION_STATE_UNSPECIFIED";
+  }
+
   private normalizePermissionRow(perm: any): any {
     const normalized: any = {
       ...perm,
       id: Number(perm.id),
       schema_id: Number(perm.schema_id),
+      type: perm.type !== undefined && perm.type !== null ? mapPermissionType(perm.type) : perm.type,
+      vp_state: this.normalizeVpStateForResponse(perm.vp_state),
       validator_perm_id: perm.validator_perm_id ? Number(perm.validator_perm_id) : null,
       validation_fees: perm.validation_fees != null ? Number(perm.validation_fees) : 0,
       issuance_fees: perm.issuance_fees != null ? Number(perm.issuance_fees) : 0,
@@ -850,25 +899,23 @@ export default class PermAPIService extends BullableService {
       vp_current_fees: perm.vp_current_fees != null ? Number(perm.vp_current_fees) : 0,
       vp_current_deposit: perm.vp_current_deposit != null ? Number(perm.vp_current_deposit) : 0,
       vp_validator_deposit: perm.vp_validator_deposit != null ? Number(perm.vp_validator_deposit) : 0,
+      weight: perm.weight != null ? Number(perm.weight) : 0,
+      issued: perm.issued != null ? Number(perm.issued) : 0,
+      verified: perm.verified != null ? Number(perm.verified) : 0,
+      participants: perm.participants != null ? Number(perm.participants) : 0,
+      participants_ecosystem: perm.participants_ecosystem != null ? Number(perm.participants_ecosystem) : 0,
+      participants_issuer_grantor: perm.participants_issuer_grantor != null ? Number(perm.participants_issuer_grantor) : 0,
+      participants_issuer: perm.participants_issuer != null ? Number(perm.participants_issuer) : 0,
+      participants_verifier_grantor: perm.participants_verifier_grantor != null ? Number(perm.participants_verifier_grantor) : 0,
+      participants_verifier: perm.participants_verifier != null ? Number(perm.participants_verifier) : 0,
+      participants_holder: perm.participants_holder != null ? Number(perm.participants_holder) : 0,
+      ecosystem_slash_events: perm.ecosystem_slash_events != null ? Number(perm.ecosystem_slash_events) : 0,
+      ecosystem_slashed_amount: perm.ecosystem_slashed_amount != null ? Number(perm.ecosystem_slashed_amount) : 0,
+      ecosystem_slashed_amount_repaid: perm.ecosystem_slashed_amount_repaid != null ? Number(perm.ecosystem_slashed_amount_repaid) : 0,
+      network_slash_events: perm.network_slash_events != null ? Number(perm.network_slash_events) : 0,
+      network_slashed_amount: perm.network_slashed_amount != null ? Number(perm.network_slashed_amount) : 0,
+      network_slashed_amount_repaid: perm.network_slashed_amount_repaid != null ? Number(perm.network_slashed_amount_repaid) : 0,
     };
-    if (perm.weight !== undefined) normalized.weight = perm.weight != null ? Number(perm.weight) : 0;
-    if (perm.issued !== undefined) normalized.issued = perm.issued != null ? Number(perm.issued) : 0;
-    if (perm.verified !== undefined) normalized.verified = perm.verified != null ? Number(perm.verified) : 0;
-    if (perm.participants !== undefined) normalized.participants = perm.participants != null ? Number(perm.participants) : 0;
-    if (perm.participants_ecosystem !== undefined) normalized.participants_ecosystem = perm.participants_ecosystem != null ? Number(perm.participants_ecosystem) : 0;
-    if (perm.participants_issuer_grantor !== undefined) normalized.participants_issuer_grantor = perm.participants_issuer_grantor != null ? Number(perm.participants_issuer_grantor) : 0;
-    if (perm.participants_issuer !== undefined) normalized.participants_issuer = perm.participants_issuer != null ? Number(perm.participants_issuer) : 0;
-    if (perm.participants_verifier_grantor !== undefined) normalized.participants_verifier_grantor = perm.participants_verifier_grantor != null ? Number(perm.participants_verifier_grantor) : 0;
-    if (perm.participants_verifier !== undefined) normalized.participants_verifier = perm.participants_verifier != null ? Number(perm.participants_verifier) : 0;
-    if (perm.participants_holder !== undefined) normalized.participants_holder = perm.participants_holder != null ? Number(perm.participants_holder) : 0;
-    if (perm.ecosystem_slash_events !== undefined) {
-      normalized.ecosystem_slash_events = perm.ecosystem_slash_events != null ? Number(perm.ecosystem_slash_events) : 0;
-      normalized.ecosystem_slashed_amount = perm.ecosystem_slashed_amount != null ? Number(perm.ecosystem_slashed_amount) : 0;
-      normalized.ecosystem_slashed_amount_repaid = perm.ecosystem_slashed_amount_repaid != null ? Number(perm.ecosystem_slashed_amount_repaid) : 0;
-      normalized.network_slash_events = perm.network_slash_events != null ? Number(perm.network_slash_events) : 0;
-      normalized.network_slashed_amount = perm.network_slashed_amount != null ? Number(perm.network_slashed_amount) : 0;
-      normalized.network_slashed_amount_repaid = perm.network_slashed_amount_repaid != null ? Number(perm.network_slashed_amount_repaid) : 0;
-    }
     return normalized;
   }
 
@@ -1141,7 +1188,6 @@ export default class PermAPIService extends BullableService {
       issued: typeof perm.issued === "number" ? perm.issued : Number(perm.issued || 0),
       verified: typeof perm.verified === "number" ? perm.verified : Number(perm.verified || 0),
     };
-    const participants = typeof perm.participants === "number" ? perm.participants : Number(perm.participants || 0);
     const participantsByRole = {
       participants_ecosystem: typeof perm.participants_ecosystem === "number" ? perm.participants_ecosystem : Number(perm.participants_ecosystem || 0),
       participants_issuer_grantor: typeof perm.participants_issuer_grantor === "number" ? perm.participants_issuer_grantor : Number(perm.participants_issuer_grantor || 0),
@@ -1150,6 +1196,15 @@ export default class PermAPIService extends BullableService {
       participants_verifier: typeof perm.participants_verifier === "number" ? perm.participants_verifier : Number(perm.participants_verifier || 0),
       participants_holder: typeof perm.participants_holder === "number" ? perm.participants_holder : Number(perm.participants_holder || 0),
     };
+    const participantsSum = participantsByRole.participants_ecosystem
+      + participantsByRole.participants_issuer_grantor
+      + participantsByRole.participants_issuer
+      + participantsByRole.participants_verifier_grantor
+      + participantsByRole.participants_verifier
+      + participantsByRole.participants_holder;
+    const participants = (perm.participants != null && perm.participants !== "")
+      ? Number(perm.participants)
+      : participantsSum;
     const slashStats = {
       ecosystem_slash_events: typeof perm.ecosystem_slash_events === "number" ? perm.ecosystem_slash_events : Number(perm.ecosystem_slash_events || 0),
       ecosystem_slashed_amount: typeof perm.ecosystem_slashed_amount === "number" ? perm.ecosystem_slashed_amount : Number(perm.ecosystem_slashed_amount || 0),
@@ -1530,9 +1585,9 @@ export default class PermAPIService extends BullableService {
             did: historyRecord.did,
             created_by: historyRecord.created_by,
             validator_perm_id: historyRecord.validator_perm_id ? Number(historyRecord.validator_perm_id) : null,
-            type: historyRecord.type,
+            type: historyRecord.type !== undefined && historyRecord.type !== null ? mapPermissionType(historyRecord.type) : historyRecord.type,
             country: historyRecord.country,
-            vp_state: historyRecord.vp_state,
+            vp_state: this.normalizeVpStateForResponse(historyRecord.vp_state) ?? historyRecord.vp_state,
             revoked: historyRecord.revoked,
             revoked_by: historyRecord.revoked_by,
             slashed: historyRecord.slashed,
@@ -1875,6 +1930,7 @@ export default class PermAPIService extends BullableService {
           hasParticipantsColumn,
           hasWeightColumn,
           hasEcosystemSlashEventsColumn,
+          hasExpireSoonColumn,
         } = await this.getMetricColumnAvailability("permission_history");
         const historyHasAllDerivedColumns = hasIssuedColumn
           && hasVerifiedColumn
@@ -1890,6 +1946,7 @@ export default class PermAPIService extends BullableService {
           "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit", "vp_summary_digest_sri",
           "vp_exp", "vp_validator_deposit", "vp_term_requested", "created", "modified",
         ];
+        if (hasExpireSoonColumn) selectColumns.push("expire_soon");
         if (hasIssuedColumn) selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
         if (hasVerifiedColumn) selectColumns.push(knex.raw("COALESCE(verified, 0) as verified"));
         if (hasParticipantsColumn) selectColumns.push(knex.raw("COALESCE(participants, 0) as participants"));
@@ -1924,9 +1981,9 @@ export default class PermAPIService extends BullableService {
           did: historyRecord.did,
           created_by: historyRecord.created_by,
           validator_perm_id: historyRecord.validator_perm_id ? Number(historyRecord.validator_perm_id) : null,
-          type: historyRecord.type,
+          type: historyRecord.type !== undefined && historyRecord.type !== null ? mapPermissionType(historyRecord.type) : historyRecord.type,
           country: historyRecord.country,
-          vp_state: historyRecord.vp_state,
+          vp_state: this.normalizeVpStateForResponse(historyRecord.vp_state) ?? historyRecord.vp_state,
           revoked: historyRecord.revoked,
           revoked_by: historyRecord.revoked_by,
           slashed: historyRecord.slashed,
@@ -1954,25 +2011,28 @@ export default class PermAPIService extends BullableService {
           modified: historyRecord.modified,
         };
         
-        if (hasIssuedColumn && historyRecord.issued !== undefined) {
-          historicalPermission.issued = Number(historyRecord.issued || 0);
+        if (hasIssuedColumn) {
+          historicalPermission.issued = Number(historyRecord.issued ?? 0);
         }
-        if (hasVerifiedColumn && historyRecord.verified !== undefined) {
-          historicalPermission.verified = Number(historyRecord.verified || 0);
+        if (hasVerifiedColumn) {
+          historicalPermission.verified = Number(historyRecord.verified ?? 0);
         }
-        if (hasParticipantsColumn && historyRecord.participants !== undefined) {
-          historicalPermission.participants = Number(historyRecord.participants || 0);
+        if (hasParticipantsColumn) {
+          historicalPermission.participants = Number(historyRecord.participants ?? 0);
         }
-        if (hasWeightColumn && historyRecord.weight !== undefined) {
-          historicalPermission.weight = Number(historyRecord.weight || 0);
+        if (hasWeightColumn) {
+          historicalPermission.weight = Number(historyRecord.weight ?? 0);
         }
-        if (hasEcosystemSlashEventsColumn && historyRecord.ecosystem_slash_events !== undefined) {
-          historicalPermission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events || 0);
-          historicalPermission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount || 0);
-          historicalPermission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid || 0);
-          historicalPermission.network_slash_events = Number(historyRecord.network_slash_events || 0);
-          historicalPermission.network_slashed_amount = Number(historyRecord.network_slashed_amount || 0);
-          historicalPermission.network_slashed_amount_repaid = Number(historyRecord.network_slashed_amount_repaid || 0);
+        if (hasEcosystemSlashEventsColumn) {
+          historicalPermission.ecosystem_slash_events = Number(historyRecord.ecosystem_slash_events ?? 0);
+          historicalPermission.ecosystem_slashed_amount = Number(historyRecord.ecosystem_slashed_amount ?? 0);
+          historicalPermission.ecosystem_slashed_amount_repaid = Number(historyRecord.ecosystem_slashed_amount_repaid ?? 0);
+          historicalPermission.network_slash_events = Number(historyRecord.network_slash_events ?? 0);
+          historicalPermission.network_slashed_amount = Number(historyRecord.network_slashed_amount ?? 0);
+          historicalPermission.network_slashed_amount_repaid = Number(historyRecord.network_slashed_amount_repaid ?? 0);
+        }
+        if (hasExpireSoonColumn) {
+          historicalPermission.expire_soon = historyRecord.expire_soon ?? null;
         }
 
         const enrichedPermission = await this.enrichPermissionWithStateAndActions(
@@ -2187,25 +2247,17 @@ export default class PermAPIService extends BullableService {
           return ApiResponder.error(ctx, "PermissionSession not found", 404);
         }
 
-        // Map history record to session format
-        const historicalSession = {
-          id: historyRecord.session_id,
-          controller: historyRecord.controller,
-          agent_perm_id: historyRecord.agent_perm_id,
-          wallet_agent_perm_id: historyRecord.wallet_agent_perm_id,
-          authz: historyRecord.authz,
-          created: historyRecord.created,
-          modified: historyRecord.modified,
-        };
-
+        const historicalSession = this.normalizePermissionSessionRow(historyRecord);
         return ApiResponder.success(ctx, { session: historicalSession }, 200);
       }
 
       // Otherwise, return latest state
       const session = await knex("permission_sessions").where("id", id).first();
-      if (!session)
+      if (!session) {
         return ApiResponder.error(ctx, "PermissionSession not found", 404);
-      return ApiResponder.success(ctx, { session: session }, 200);
+      }
+      const normalized = this.normalizePermissionSessionRow(session);
+      return ApiResponder.success(ctx, { session: normalized }, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermissionSession:", err);
       return ApiResponder.error(ctx, "Failed to get PermissionSession", 500);
@@ -2374,8 +2426,8 @@ export default class PermAPIService extends BullableService {
         const orderedHistoryQuery = sort
           ? applyOrdering(historyQuery, sort)
           : historyQuery.orderBy("modified", "asc").orderBy("id", "desc");
-        const sessions = await orderedHistoryQuery.limit(limit);
-
+        const sessionsRaw = await orderedHistoryQuery.limit(limit);
+        const sessions = sessionsRaw.map((row: any) => this.normalizePermissionSessionRow(row));
         return ApiResponder.success(ctx, { sessions }, 200);
       }
 
@@ -2388,7 +2440,8 @@ export default class PermAPIService extends BullableService {
       }
 
       const orderedQuery = applyOrdering(query, sort);
-      const results = await orderedQuery.limit(limit);
+      const resultsRaw = await orderedQuery.limit(limit);
+      const results = resultsRaw.map((row: any) => this.normalizePermissionSessionRow(row));
       return ApiResponder.success(ctx, { sessions: results }, 200);
     } catch (err: any) {
       this.logger.error("Error in listPermissionSessions:", err);

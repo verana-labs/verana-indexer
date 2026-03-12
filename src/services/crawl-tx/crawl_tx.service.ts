@@ -1177,8 +1177,12 @@ export default class CrawlTxService extends BullableService {
         return {
           type: msg.type,
           content: msg.content ?? null,
-          timestamp: parentTx?.timestamp ?? null,
-          height: parentTx?.height ?? null,
+          timestamp: parentTx?.data?.tx_response?.timestamp ?? parentTx?.timestamp ?? null,
+          height: Number(parentTx?.data?.tx_response?.height ?? parentTx?.height ?? 0),
+          txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
+          txCode: Number(parentTx?.code ?? parentTx?.data?.tx_response?.code ?? 0),
+          msgIndex: Number(msg?.index ?? 0),
+          txEvents: parentTx?.data?.tx_response?.events ?? [],
         };
       });
 

@@ -129,6 +129,64 @@ export default class TrustDepositDatabaseService extends BullableService {
   }
 
   @Action({
+    name: "syncFromLedger",
+    params: {
+      ledgerTrustDeposit: "object",
+      blockHeight: "number",
+      eventType: { type: "string", optional: true },
+    },
+  })
+  public async syncFromLedger(ctx: any) {
+    const { ledgerTrustDeposit, blockHeight, eventType } = ctx.params;
+    const account = String(ledgerTrustDeposit?.account || "").trim();
+    if (!account) {
+      return { success: false, reason: "Missing trust deposit account from ledger" };
+    }
+
+    const payload = {
+      account,
+      amount: Number(ledgerTrustDeposit?.amount ?? 0),
+      share: Number(ledgerTrustDeposit?.share ?? 0),
+      claimable: Number(ledgerTrustDeposit?.claimable ?? 0),
+      slashed_deposit: Number(ledgerTrustDeposit?.slashed_deposit ?? ledgerTrustDeposit?.slashedDeposit ?? 0),
+      repaid_deposit: Number(ledgerTrustDeposit?.repaid_deposit ?? ledgerTrustDeposit?.repaidDeposit ?? 0),
+      last_slashed: ledgerTrustDeposit?.last_slashed ?? ledgerTrustDeposit?.lastSlashed ?? null,
+      last_repaid: ledgerTrustDeposit?.last_repaid ?? ledgerTrustDeposit?.lastRepaid ?? null,
+      slash_count: Number(ledgerTrustDeposit?.slash_count ?? ledgerTrustDeposit?.slashCount ?? 0),
+      last_repaid_by: ledgerTrustDeposit?.last_repaid_by ?? ledgerTrustDeposit?.lastRepaidBy ?? null,
+    };
+
+    const height = Number(blockHeight) || 0;
+
+    try {
+      await knex.transaction(async (trx) => {
+        const existing = await TrustDeposit.query(trx).findOne({ account });
+        const previous = existing ? { ...existing } : undefined;
+        let finalRecord: any;
+
+        if (existing) {
+          finalRecord = await TrustDeposit.query(trx).patchAndFetchById(existing.id, payload);
+        } else {
+          [finalRecord] = await trx("trust_deposits").insert(payload).returning("*");
+        }
+
+        await recordTrustDepositHistory(
+          trx,
+          finalRecord,
+          eventType || "SYNC_LEDGER",
+          height,
+          previous
+        );
+      });
+
+      return { success: true, account };
+    } catch (error: any) {
+      this.logger.warn(`[TrustDepositDB] syncFromLedger failed for account=${account}: ${error?.message || error}`);
+      return { success: false, reason: error?.message || String(error), account };
+    }
+  }
+
+  @Action({
     name: "adjustTrustDeposit",
     params: {
       account: { type: "string", min: 5 },
