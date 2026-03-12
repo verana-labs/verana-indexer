@@ -44,12 +44,24 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 
 ### Database Configuration (Optional)
 
-| Parameter                  | Description                                      | Default                          |
-| -------------------------- | ------------------------------------------------ | -------------------------------- |
-| `database.enabled`         | Enable PostgreSQL database                       | `false`                         |
-| `database.user`            | PostgreSQL username                              | `verana_testnet1`               |
-| `database.pwd`             | PostgreSQL password                              | `pass`                          |
-| `database.db`             | PostgreSQL database name                          | `verana_testnet1`               |
+| Parameter                    | Description                                                         | Default             |
+| ---------------------------- | ------------------------------------------------------------------- | ------------------- |
+| `database.enabled`           | Enable PostgreSQL database                                          | `false`             |
+| `database.user`              | PostgreSQL username                                                 | `verana_testnet1`   |
+| `database.pwd`               | PostgreSQL password (plain text). If set, takes precedence over `pwdSecret`. Leave empty to use `pwdSecret`. | `pass` |
+| `database.pwdSecret.name`    | Name of the Kubernetes Secret containing the DB password            | `""`                |
+| `database.pwdSecret.key`     | Key inside the Secret for the DB password                           | `""`                |
+| `database.db`                | PostgreSQL database name                                            | `verana_testnet1`   |
+
+**Password via Kubernetes Secret:**
+
+```yaml
+database:
+  pwd: ""              # leave empty to use the secret below
+  pwdSecret:
+    name: my-db-secret
+    key: password
+```
 
 ### Redis Configuration (Optional)
 
@@ -74,12 +86,22 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 
 ### Extra Environment Variables
 
-Add additional environment variables to Verana Indexer container with `extraEnv`:
+Add any valid Kubernetes env entry to the Verana Indexer container with `extraEnv`. Supports plain values, `secretKeyRef`, `configMapKeyRef`, or any other `valueFrom` source:
 
 ```yaml
 extraEnv:
-  - name: CUSTOM_ENV_VAR
-    value: custom-value
+  - name: MY_VAR
+    value: "my-value"
+  - name: MY_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: my-secret
+        key: my-key
+  - name: MY_CONFIGMAP_VAR
+    valueFrom:
+      configMapKeyRef:
+        name: my-configmap
+        key: my-key
 ```
 
 ---
