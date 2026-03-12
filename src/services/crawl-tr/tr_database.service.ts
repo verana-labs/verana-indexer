@@ -42,6 +42,190 @@ export default class TrustRegistryDatabaseService extends BaseService {
         super(broker);
     }
 
+    @Action({
+        name: "syncFromLedger",
+    })
+    public async syncFromLedger(
+        ctx: Context<{ ledgerResponse: { trust_registry?: any; trustRegistry?: any; tr?: any }; blockHeight: number }>
+    ) {
+        try {
+            const { ledgerResponse, blockHeight } = ctx.params;
+            const raw =
+                ledgerResponse?.trust_registry ??
+                ledgerResponse?.trustRegistry ??
+                ledgerResponse?.tr;
+            if (!raw || typeof raw !== "object") {
+                return ApiResponder.error(ctx, "Missing or invalid ledger trust_registry", 400);
+            }
+
+            const trId = Number((raw as any).id ?? (raw as any).tr_id);
+            if (!Number.isInteger(trId) || trId <= 0) {
+                return ApiResponder.error(ctx, "Invalid trust_registry id from ledger", 400);
+            }
+
+            const blockHeightNum = Number(blockHeight) || 0;
+
+            await knex.transaction(async (trx) => {
+                const existingTr = await trx("trust_registry").where({ id: trId }).first();
+
+                const activeVersionRaw =
+                    (raw as any).active_version ?? (raw as any).activeVersion ?? existingTr?.active_version ?? 0;
+
+                const basePayload: any = {
+                    did: (raw as any).did ?? existingTr?.did ?? null,
+                    controller: (raw as any).controller ?? existingTr?.controller ?? null,
+                    created: (raw as any).created ?? existingTr?.created ?? null,
+                    modified: (raw as any).modified ?? existingTr?.modified ?? null,
+                    archived: (raw as any).archived ?? existingTr?.archived ?? null,
+                    deposit: Number((raw as any).deposit ?? existingTr?.deposit ?? 0),
+                    aka: (raw as any).aka ?? existingTr?.aka ?? null,
+                    language: (raw as any).language ?? existingTr?.language ?? null,
+                    active_version: Number(activeVersionRaw) || 0,
+                    height: blockHeightNum,
+                };
+
+                if (existingTr) {
+                    await trx("trust_registry").where({ id: trId }).update(basePayload);
+                } else {
+                    await trx("trust_registry")
+                        .insert({
+                            id: trId,
+                            ...basePayload,
+                        });
+                }
+
+                const versions: any[] = Array.isArray((raw as any).versions)
+                    ? ((raw as any).versions as any[])
+                    : [];
+                const versionNumbers = versions
+                    .map((v) => Number((v as any).version ?? 0))
+                    .filter((v) => Number.isInteger(v) && v > 0);
+
+                if (versionNumbers.length > 0) {
+                    await trx("governance_framework_version")
+                        .where({ tr_id: trId })
+                        .whereNotIn("version", versionNumbers)
+                        .del();
+                }
+
+                const gfvIdByVersion = new Map<number, number>();
+
+                for (const v of versions) {
+                    const versionNum = Number((v as any).version ?? 0) || 0;
+                    if (!Number.isInteger(versionNum) || versionNum <= 0) continue;
+
+                    const gfvBase: any = {
+                        tr_id: trId,
+                        created: (v as any).created ?? null,
+                        version: versionNum,
+                        active_since: (v as any).active_since ?? (v as any).activeSince ?? null,
+                    };
+
+                    let gfvRow = await trx("governance_framework_version")
+                        .where({ tr_id: trId, version: versionNum })
+                        .first();
+
+                    if (gfvRow) {
+                        await trx("governance_framework_version")
+                            .where({ id: gfvRow.id })
+                            .update(gfvBase);
+                        gfvRow = await trx("governance_framework_version")
+                            .where({ id: gfvRow.id })
+                            .first();
+                    } else {
+                        const [inserted] = await trx("governance_framework_version")
+                            .insert(gfvBase)
+                            .returning("*");
+                        gfvRow = inserted;
+                    }
+
+                    const gfvId = Number(gfvRow.id);
+                    if (!Number.isInteger(gfvId) || gfvId <= 0) continue;
+                    gfvIdByVersion.set(versionNum, gfvId);
+
+                    const docs: any[] = Array.isArray((v as any).documents)
+                        ? ((v as any).documents as any[])
+                        : [];
+
+                    const desiredDocKeys = new Set<string>();
+                    for (const d of docs) {
+                        const language = (d as any).language ?? null;
+                        const digest =
+                            (d as any).digest_sri ?? (d as any).digestSri ?? null;
+                        if (!digest) continue;
+                        desiredDocKeys.add(`${language ?? ""}::${digest}`);
+                    }
+
+                    const existingDocs = await trx("governance_framework_document")
+                        .where({ gfv_id: gfvId });
+                    for (const d of existingDocs) {
+                        const key = `${d.language ?? ""}::${d.digest_sri ?? ""}`;
+                        if (!desiredDocKeys.has(key)) {
+                            await trx("governance_framework_document")
+                                .where({ id: d.id })
+                                .del();
+                        }
+                    }
+
+                    for (const d of docs) {
+                        const language = (d as any).language ?? null;
+                        const digest =
+                            (d as any).digest_sri ?? (d as any).digestSri ?? null;
+                        if (!digest) continue;
+
+                        const existingDoc = await trx("governance_framework_document")
+                            .where({
+                                gfv_id: gfvId,
+                                language,
+                                digest_sri: digest,
+                            })
+                            .first();
+
+                        const docPayload: any = {
+                            gfv_id: gfvId,
+                            created: (d as any).created ?? null,
+                            language,
+                            url: (d as any).url ?? null,
+                            digest_sri: digest,
+                        };
+
+                        if (existingDoc) {
+                            await trx("governance_framework_document")
+                                .where({ id: existingDoc.id })
+                                .update(docPayload);
+                        } else {
+                            await trx("governance_framework_document").insert(docPayload);
+                        }
+                    }
+                }
+
+                const stats = await calculateTrustRegistryStats(trId, blockHeightNum);
+                await trx("trust_registry")
+                    .where({ id: trId })
+                    .update({
+                        participants: stats.participants,
+                        active_schemas: stats.active_schemas,
+                        archived_schemas: stats.archived_schemas,
+                        weight: stats.weight,
+                        issued: stats.issued,
+                        verified: stats.verified,
+                        ecosystem_slash_events: stats.ecosystem_slash_events,
+                        ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
+                        ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
+                        network_slash_events: stats.network_slash_events,
+                        network_slashed_amount: stats.network_slashed_amount,
+                        network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+                    });
+
+                         });
+
+            return ApiResponder.success(ctx, { success: true }, 200);
+        } catch (err: any) {
+            this.logger.error("Error in TrustRegistry syncFromLedger:", err);
+            return ApiResponder.error(ctx, "Internal Server Error", 500);
+        }
+    }
+
     private async hasTrHistoryColumn(tableName: string, columnName: string): Promise<boolean> {
         const key = `${tableName}.${columnName}`;
         const cached = this.trHistoryColumnExistsCache.get(key);

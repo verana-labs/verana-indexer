@@ -17,6 +17,7 @@ import { requireController } from "../../common/utils/extract_controller";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import { calculateTrustRegistryStats } from "./tr_stats";
+import { getTrustRegistry } from "../../modules/tr-height-sync/tr_height_sync_helpers";
 
 type ChangeRecord = Record<string, any>;
 
@@ -56,7 +57,10 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
     const failThreshold = 0.1;
     const failedMessages: any[] = [];
+    const seenTrIds: number[] = [];
     const totalMessages = trustRegistryList.length;
+    const useHeightSyncTR = process.env.USE_HEIGHT_SYNC_TR === "true";
+    const debugLogPath = path.join(process.cwd(), "logs", "tr_ingest_debug.log");
 
     const processMessage = async (message: any, index: number) => {
       if (!message.type) {
@@ -75,43 +79,54 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         processedTR.trust_registry_id = message.content.id;
       }
 
+      const rawId = processedTR.trust_registry_id ?? processedTR.id;
+      const numericId = Number(rawId);
+      if (Number.isInteger(numericId) && numericId > 0) {
+        seenTrIds.push(numericId);
+      }
+
       delete processedTR?.content;
       delete processedTR?.id;
       delete processedTR?.tx_id;
       delete processedTR?.["@type"];
 
       let processed = false;
-      if (
-        processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
-        processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
-      ) {
-        await this.processCreateTR(processedTR);
+      if (useHeightSyncTR) {
+        await this.processTrustRegistryHeightSync(processedTR);
         processed = true;
-      }
+      } else {
+        if (
+          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
+          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
+        ) {
+          await this.processCreateTR(processedTR);
+          processed = true;
+        }
 
-      if (
-        processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
-      ) {
-        await this.processAddGovFrameworkDoc(processedTR);
-        processed = true;
-      }
+        if (
+          processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
+        ) {
+          await this.processAddGovFrameworkDoc(processedTR);
+          processed = true;
+        }
 
-      if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
-        await this.processUpdateTR(processedTR);
-        processed = true;
-      }
+        if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
+          await this.processUpdateTR(processedTR);
+          processed = true;
+        }
 
-      if (
-        processedTR.type ===
-        VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
-      ) {
-        await this.processIncreaseActiveGFV(processedTR);
-        processed = true;
-      }
+        if (
+          processedTR.type ===
+          VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
+        ) {
+          await this.processIncreaseActiveGFV(processedTR);
+          processed = true;
+        }
 
-      if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
-        await this.processArchiveTR(processedTR);
-        processed = true;
+        if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
+          await this.processArchiveTR(processedTR);
+          processed = true;
+        }
       }
 
       if (!processed) {
@@ -136,6 +151,42 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       } catch (err: any) {
         failedMessages.push({ message, error: err.message || String(err) });
       }
+    }
+
+    try {
+      const trIdsFromMessages = Array.from(new Set(seenTrIds));
+      let existingIds: number[] = [];
+      if (trIdsFromMessages.length > 0) {
+        const rows = await knex("trust_registry")
+          .whereIn("id", trIdsFromMessages)
+          .select("id");
+        existingIds = rows.map((r: any) => Number(r.id));
+      }
+      const existingSet = new Set(existingIds);
+      const missingIds = trIdsFromMessages.filter((id) => !existingSet.has(id));
+
+      const debugEntry = {
+        timestamp: new Date().toISOString(),
+        batchSize: totalMessages,
+        useHeightSyncTR,
+        uniqueTrIdsFromMessages: trIdsFromMessages,
+        persistedTrIds: existingIds,
+        missingTrIds: missingIds,
+        failedMessages,
+      };
+
+      const debugDir = path.dirname(debugLogPath);
+      await fs.promises.mkdir(debugDir, { recursive: true }).catch(() => undefined);
+
+      await fs.promises
+        .appendFile(debugLogPath, `${JSON.stringify(debugEntry)}\n`, { encoding: "utf8" })
+        .catch(() => undefined);
+    } catch (debugErr: any) {
+      this.logger.warn(
+        `[TR Ingest Debug] Failed to write debug snapshot: ${debugErr?.message || String(
+          debugErr
+        )}`
+      );
     }
 
     this.logger.info(`TrustRegistry processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${totalMessages} total`);
@@ -192,6 +243,22 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       aka: newData.aka ?? null,
       language: newData.language,
       active_version: newData.active_version ?? null,
+      participants: Number(newData.participants ?? 0) || 0,
+      active_schemas: Number(newData.active_schemas ?? 0) || 0,
+      archived_schemas: Number(newData.archived_schemas ?? 0) || 0,
+      weight: Number(newData.weight ?? 0) || 0,
+      issued: Number(newData.issued ?? 0) || 0,
+      verified: Number(newData.verified ?? 0) || 0,
+      ecosystem_slash_events: Number(newData.ecosystem_slash_events ?? 0) || 0,
+      ecosystem_slashed_amount: Number(newData.ecosystem_slashed_amount ?? 0) || 0,
+      ecosystem_slashed_amount_repaid: Number(
+        newData.ecosystem_slashed_amount_repaid ?? 0
+      ) || 0,
+      network_slash_events: Number(newData.network_slash_events ?? 0) || 0,
+      network_slashed_amount: Number(newData.network_slashed_amount ?? 0) || 0,
+      network_slashed_amount_repaid: Number(
+        newData.network_slashed_amount_repaid ?? 0
+      ) || 0,
       event_type: eventType,
       height,
       changes: changes ? JSON.stringify(changes) : null,
@@ -277,6 +344,121 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     });
   }
 
+  private async processTrustRegistryHeightSync(message: any) {
+    const rawId = message.trust_registry_id ?? message.id;
+    const trId = Number(rawId);
+    const heightNum = Number(message.height || 0);
+
+    if (!Number.isInteger(trId) || trId <= 0) {
+      this.logger.warn(
+        `[TR Height-Sync] Skipping message with invalid trust_registry_id=${String(
+          rawId
+        )}, height=${message.height}`
+      );
+      return;
+    }
+    if (!Number.isFinite(heightNum) || heightNum <= 0) {
+      this.logger.warn(
+        `[TR Height-Sync] Skipping message for tr_id=${trId} due to invalid height=${message.height}`
+      );
+      return;
+    }
+
+    const blockHeight = heightNum;
+
+    let oldTr: any | null = null;
+    try {
+      oldTr = await knex("trust_registry").where({ id: trId }).first();
+    } catch (err: any) {
+      this.logger.warn(
+        `[TR Height-Sync] Failed to load previous TR row for id=${trId}: ${
+          err?.message || String(err)
+        }`
+      );
+    }
+
+    try {
+      const ledgerResponse = await getTrustRegistry(trId, blockHeight);
+      if (!ledgerResponse?.trust_registry) {
+        this.logger.warn(
+          `[TR Height-Sync] Ledger returned no trust_registry for id=${trId} at height=${blockHeight}`
+        );
+        return;
+      }
+
+      await this.broker.call(
+        `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+        {
+          ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+          blockHeight,
+        }
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `[TR Height-Sync] Failed to sync TR id=${trId} from ledger at height=${blockHeight}: ${
+          err?.message || String(err)
+        }`
+      );
+      return;
+    }
+
+    let newTr: any | null = null;
+    try {
+      newTr = await knex("trust_registry").where({ id: trId }).first();
+    } catch (err: any) {
+      this.logger.warn(
+        `[TR Height-Sync] Failed to load updated TR row for id=${trId}: ${
+          err?.message || String(err)
+        }`
+      );
+    }
+
+    const isCreate =
+      message.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
+      message.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy;
+    const isUpdate = message.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry;
+    const isArchive = message.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry;
+    const isIncreaseGfv =
+      message.type === VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion;
+
+    let eventType: string | null =
+      (isCreate && "Create") ||
+      (isUpdate && "Update") ||
+      (isArchive && "Archive") ||
+      (isIncreaseGfv && "IncreaseGFV") ||
+      null;
+
+    if (message.type === "EVENT_SYNC_TR") {
+      return;
+    }
+
+    if (!eventType || !newTr) {
+      this.logger.warn(
+        `[TR Height-Sync] Skipping history record for TR id=${trId} at height=${blockHeight} (eventType=${eventType}, hasNewTr=${!!newTr})`
+      );
+      return;
+    }
+
+    try {
+      await knex.transaction(async (trx) => {
+        await this.recordTRHistory(
+          trx,
+          trId,
+          eventType,
+          blockHeight,
+          oldTr,
+          newTr
+        );
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `[TR Height-Sync] Failed to record TR history for id=${trId} at height=${blockHeight}: ${
+          err?.message || String(err)
+        }`
+      );
+    }
+  }
+
   private async processArchiveTR(message: any) {
     const trx = await knex.transaction();
     try {
@@ -330,6 +512,34 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           });
       } catch (statsError: any) {
         this.logger.warn(`⚠️ Failed to update statistics for TR ${tr.id}: ${statsError?.message || String(statsError)}`);
+      }
+      if (process.env.USE_HEIGHT_SYNC_TR === "true") {
+        try {
+          const trIdNum = Number(message.trust_registry_id ?? tr.id);
+          const blockHeight = Number(message.height || 0);
+          if (Number.isInteger(trIdNum) && trIdNum > 0 && blockHeight > 0) {
+            const ledgerResponse = await getTrustRegistry(trIdNum, blockHeight);
+            if (ledgerResponse?.trust_registry) {
+              await this.broker.call(
+                `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+                {
+                  ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+                  blockHeight,
+                }
+              );
+            } else {
+              this.logger.warn(
+                `[TR Ledger Sync] No ledger trust_registry found for id=${trIdNum} at height=${blockHeight}`
+              );
+            }
+          }
+        } catch (syncErr: any) {
+          this.logger.warn(
+            `[TR Ledger Sync] Failed to reconcile TR id=${message.trust_registry_id} after ArchiveTR: ${
+              syncErr?.message || String(syncErr)
+            }`
+          );
+        }
       }
     } catch (err: any) {
       await trx.rollback();
@@ -394,6 +604,34 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           });
       } catch (statsError: any) {
         this.logger.warn(`⚠️ Failed to update statistics for TR ${tr.id}: ${statsError?.message || String(statsError)}`);
+      }
+      if (process.env.USE_HEIGHT_SYNC_TR === "true") {
+        try {
+          const trIdNum = Number(message.trust_registry_id ?? tr.id);
+          const blockHeight = Number(message.height || 0);
+          if (Number.isInteger(trIdNum) && trIdNum > 0 && blockHeight > 0) {
+            const ledgerResponse = await getTrustRegistry(trIdNum, blockHeight);
+            if (ledgerResponse?.trust_registry) {
+              await this.broker.call(
+                `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+                {
+                  ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+                  blockHeight,
+                }
+              );
+            } else {
+              this.logger.warn(
+                `[TR Ledger Sync] No ledger trust_registry found for id=${trIdNum} at height=${blockHeight}`
+              );
+            }
+          }
+        } catch (syncErr: any) {
+          this.logger.warn(
+            `[TR Ledger Sync] Failed to reconcile TR id=${message.trust_registry_id} after UpdateTR: ${
+              syncErr?.message || String(syncErr)
+            }`
+          );
+        }
       }
     } catch (err: any) {
       await trx.rollback();
@@ -578,6 +816,34 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       } catch (statsError: any) {
         this.logger.warn(`⚠️ Failed to update statistics for TR ${tr.id}: ${statsError?.message || String(statsError)}`);
       }
+      if (process.env.USE_HEIGHT_SYNC_TR === "true") {
+        try {
+          const trIdNum = Number(tr.id);
+          const blockHeight = Number(message.height || 0);
+          if (Number.isInteger(trIdNum) && trIdNum > 0 && blockHeight > 0) {
+            const ledgerResponse = await getTrustRegistry(trIdNum, blockHeight);
+            if (ledgerResponse?.trust_registry) {
+              await this.broker.call(
+                `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+                {
+                  ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+                  blockHeight,
+                }
+              );
+            } else {
+              this.logger.warn(
+                `[TR Ledger Sync] No ledger trust_registry found for id=${trIdNum} at height=${blockHeight}`
+              );
+            }
+          }
+        } catch (syncErr: any) {
+          this.logger.warn(
+            `[TR Ledger Sync] Failed to reconcile TR after CreateTR for did=${message.did}: ${
+              syncErr?.message || String(syncErr)
+            }`
+          );
+        }
+      }
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
@@ -748,6 +1014,34 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(`✅ Successfully increased active GFV: tr_id=${tr.id}, version=${nextVersion}`);
+      if (process.env.USE_HEIGHT_SYNC_TR === "true") {
+        try {
+          const trIdNum = Number(message.trust_registry_id ?? tr.id);
+          const blockHeight = Number(message.height || 0);
+          if (Number.isInteger(trIdNum) && trIdNum > 0 && blockHeight > 0) {
+            const ledgerResponse = await getTrustRegistry(trIdNum, blockHeight);
+            if (ledgerResponse?.trust_registry) {
+              await this.broker.call(
+                `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+                {
+                  ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+                  blockHeight,
+                }
+              );
+            } else {
+              this.logger.warn(
+                `[TR Ledger Sync] No ledger trust_registry found for id=${trIdNum} at height=${blockHeight}`
+              );
+            }
+          }
+        } catch (syncErr: any) {
+          this.logger.warn(
+            `[TR Ledger Sync] Failed to reconcile TR id=${message.trust_registry_id} after IncreaseActiveGFV: ${
+              syncErr?.message || String(syncErr)
+            }`
+          );
+        }
+      }
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);

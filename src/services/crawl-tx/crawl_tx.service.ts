@@ -51,6 +51,7 @@ import {
   TransactionMessage,
 } from '../../models';
 import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers';
+import { extractTrustRegistryIdsFromEvents } from "../../modules/tr-height-sync/tr_height_sync_helpers";
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
@@ -1654,9 +1655,35 @@ export default class CrawlTxService extends BullableService {
       );
     }
 
+    const useHeightSyncTR = process.env.USE_HEIGHT_SYNC_TR === "true";
+    const blockHeight = payload.blockHeight;
+    if (useHeightSyncTR && typeof blockHeight === "number") {
+      const events = payload.csEventsFromBlock ?? [];
+      const trIdsFromEvents = extractTrustRegistryIdsFromEvents(events, true);
+      if (trIdsFromEvents.length > 0) {
+        try {
+          await this.broker.call(
+            `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
+            {
+              trustRegistryList: trIdsFromEvents.map((id: number) => ({
+                type: "EVENT_SYNC_TR",
+                height: blockHeight,
+                content: { id },
+              })),
+            }
+          );
+        } catch (err: any) {
+          this.logger.warn(
+            `[processPayloads] Failed to run TR height-sync from events at block=${blockHeight}: ${
+              err?.message || String(err)
+            }`
+          );
+        }
+      }
+    }
+
     const useHeightSyncCS = process.env.USE_HEIGHT_SYNC_CS === "true";
     const hasCsMessages = (payload.credentialSchemaMessages?.length ?? 0) > 0;
-    const blockHeight = payload.blockHeight;
     if (useHeightSyncCS && typeof blockHeight === "number" && hasCsMessages) {
      const { runHeightSyncCS } = await import("../../modules/cs-height-sync/cs_height_sync_service");
       await runHeightSyncCS(this.broker, payload, blockHeight);

@@ -16,6 +16,18 @@ export class TrustRegistryHistory extends BaseModel {
   aka?: string | null;
   language!: string;
   active_version?: number | null;
+  participants?: number;
+  active_schemas?: number;
+  archived_schemas?: number;
+  weight?: number;
+  issued?: number;
+  verified?: number;
+  ecosystem_slash_events?: number;
+  ecosystem_slashed_amount?: number;
+  ecosystem_slashed_amount_repaid?: number;
+  network_slash_events?: number;
+  network_slashed_amount?: number;
+  network_slashed_amount_repaid?: number;
   event_type!: string;
   height!: number;
   changes?: Record<string, any>;

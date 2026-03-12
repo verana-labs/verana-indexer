@@ -208,9 +208,10 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 - `METRICS_ENABLED`, `METRICS_TYPE`, `METRICS_PORT`, `METRICS_PATH` – Control Prometheus/Console metrics exposure.
 - `TRACING_ENABLED`, `TRACING_TYPE`, `TRACING_ZIPKIN_URL`, `TRACING_COLORS`, `TRACING_WIDTH`, `TRACING_GUAGEWIDTH` – Trace exporters (Console/Zipkin) and formatting.
 
-**Credential Schema (CS) Height-Sync Refactor**
-- `USE_HEIGHT_SYNC_CS` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed CS synchronization by block height. When `false`, the indexer uses the legacy CS message-processor path.
-- See `docs/services/crawl-cs/cs-height-sync.md` for flow, routing, and verification logs.
+**Height Sync Mode (CS & Trust Registry)**
+- `USE_HEIGHT_SYNC_CS` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Credential Schema (CS) synchronization by block height. When `false`, the indexer uses the legacy CS message-processor path.
+- `USE_HEIGHT_SYNC_TR` – Set to `true` to enable the Trust Registry (TR) height-sync reconciliation path. When `true`, TR message handlers will reconcile their state against the authoritative ledger `/verana/tr/v1/get/{id}` response at the processed block height and then compute indexer-only aggregates (participants, stats, ecosystem/network counters). When `false` or unset, the indexer uses the legacy TR message-processor logic only.
+- See `docs/services/crawl-cs/cs-height-sync.md` for the CS flow, routing, and verification logs. A corresponding TR height-sync document can be added under `docs/services/crawl-tr/` following the same structure.
 
 **Content gateways**
 - `IPFS_GATEWAY`, `REQUEST_IPFS_TIMEOUT`, `MAX_CONTENT_LENGTH_BYTE`, `MAX_BODY_LENGTH_BYTE`, `S3_GATEWAY` – Timeouts and size caps used when fetching off-chain artifacts from IPFS/S3 during DID or credential syncing.
