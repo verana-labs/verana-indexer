@@ -34,7 +34,15 @@ database:
   enabled: true
   host: localhost
   user: verana_testnet1
+  # pwd: use a plain-text password OR leave empty and use pwdSecret instead
+  # If both are set, pwd takes precedence.
   pwd: pass
+  # pwdSecret: reference an existing Kubernetes Secret for the DB password
+  # Example:
+  #   pwdSecret:
+  #     name: my-db-secret
+  #     key: password
+  pwdSecret: {}
   db: verana_testnet1
   resources:
     requests:
@@ -70,7 +78,22 @@ ingress:
     tlsSecret: "private.{{ .Values.name }}.{{ .Values.global.domain }}-cert"
     host: ""
 
-# Extra environment variables (extensible)
+# Extra environment variables for the indexer container.
+# Accepts any valid Kubernetes env entry (value, valueFrom, secretKeyRef, etc.)
+# Examples:
+#   extraEnv:
+#     - name: MY_VAR
+#       value: "my-value"
+#     - name: MY_SECRET
+#       valueFrom:
+#         secretKeyRef:
+#           name: my-secret
+#           key: my-key
+#     - name: MY_CONFIGMAP_VAR
+#       valueFrom:
+#         configMapKeyRef:
+#           name: my-configmap
+#           key: my-key
 extraEnv: []
 
 # Persistent volume configuration for app

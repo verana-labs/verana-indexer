@@ -142,17 +142,22 @@ spec:
                 value: verana
               - name: POSTGRES_USER
                 value: {{ .Values.database.user }}
+{{- if .Values.database.pwd }}
               - name: POSTGRES_PASSWORD
                 value: {{ .Values.database.pwd }}
+{{- else if .Values.database.pwdSecret }}
+              - name: POSTGRES_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: {{ .Values.database.pwdSecret.name }}
+                    key: {{ .Values.database.pwdSecret.key }}
+{{- end }}
               - name: POSTGRES_HOST
                 value: {{ .Values.database.host }}
               - name: POSTGRES_DB
                 value: {{ .Values.database.db }}
 {{- with .Values.extraEnv }}
-{{- range . }}
-              - name: {{ .name }}
-                value: {{ tpl .value $ | quote }}
-{{- end }}
+{{- toYaml . | nindent 14 }}
 {{- end }}
             ports:
             -  containerPort: {{ .Values.apiPort }}
@@ -161,8 +166,16 @@ spec:
             image: postgres:14-alpine
             imagePullPolicy: Always
             env:
+{{- if .Values.database.pwd }}
             - name: POSTGRES_PASSWORD
               value: {{ .Values.database.pwd }}
+{{- else if .Values.database.pwdSecret }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.pwdSecret.name }}
+                  key: {{ .Values.database.pwdSecret.key }}
+{{- end }}
             - name: POSTGRES_USER
               value: {{ .Values.database.user }}
             - name: PGDATA
