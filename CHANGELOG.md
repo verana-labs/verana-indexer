@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/verana-labs/verana-indexer/compare/v1.1.0...v1.2.0) (2026-03-13)
+
+
+### Features
+
+* add granular participant attributes, filters and sorting ([#190](https://github.com/verana-labs/verana-indexer/issues/190)) ([fc7ff3f](https://github.com/verana-labs/verana-indexer/commit/fc7ff3fa8d3bf00d9c3ffba353ae2e8696005269))
+* permission message processing using height-based ledger sync ([#192](https://github.com/verana-labs/verana-indexer/issues/192)) ([0ea57bd](https://github.com/verana-labs/verana-indexer/commit/0ea57bdf4a1718ffa3674288fe2ae7b4eec91bda))
+
+
+### Bug Fixes
+
+* include use secret to db ([#195](https://github.com/verana-labs/verana-indexer/issues/195)) ([8c36d3a](https://github.com/verana-labs/verana-indexer/commit/8c36d3a370f5cd7b1ec93e21e019c9050c887875))
+
 ## [1.1.0](https://github.com/verana-labs/verana-indexer/compare/v1.0.0...v1.1.0) (2026-03-04)
 
 
