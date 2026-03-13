@@ -9,7 +9,7 @@ import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
-import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from "./tr_stats";
+import { calculateTrustRegistryStats } from "./tr_stats";
 
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
@@ -17,6 +17,7 @@ import { calculateTrustRegistryStats, calculateTrustRegistryStatsBatch } from ".
 })
 export default class TrustRegistryDatabaseService extends BaseService {
     private trHistoryColumnExistsCache = new Map<string, boolean>();
+    private trHistoryColumnsCache: Set<string> | null = null;
     private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
         "id",
         "modified",
@@ -42,6 +43,28 @@ export default class TrustRegistryDatabaseService extends BaseService {
         super(broker);
     }
 
+    private valuesEquivalent(left: unknown, right: unknown): boolean {
+        if ((left === null || left === undefined) && (right === null || right === undefined)) {
+            return true;
+        }
+
+        if (left instanceof Date || right instanceof Date) {
+            const leftMs = left instanceof Date ? left.getTime() : Date.parse(String(left));
+            const rightMs = right instanceof Date ? right.getTime() : Date.parse(String(right));
+            if (Number.isFinite(leftMs) && Number.isFinite(rightMs)) {
+                return leftMs === rightMs;
+            }
+        }
+
+        const leftNum = typeof left === "number" ? left : Number(left);
+        const rightNum = typeof right === "number" ? right : Number(right);
+        if (Number.isFinite(leftNum) && Number.isFinite(rightNum)) {
+            return leftNum === rightNum;
+        }
+
+        return String(left) === String(right);
+    }
+
     @Action({
         name: "syncFromLedger",
     })
@@ -64,6 +87,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
             }
 
             const blockHeightNum = Number(blockHeight) || 0;
+            const ledgerTrCreatedAt =
+                (raw as any).modified ??
+                (raw as any).created ??
+                new Date();
+            const preSyncTr = await knex("trust_registry").where({ id: trId }).first();
 
             await knex.transaction(async (trx) => {
                 const existingTr = await trx("trust_registry").where({ id: trId }).first();
@@ -125,6 +153,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         .where({ tr_id: trId, version: versionNum })
                         .first();
 
+                    const oldGfvRow = gfvRow ? { ...gfvRow } : null;
+                    const isGfvCreation = !gfvRow;
+
                     if (gfvRow) {
                         await trx("governance_framework_version")
                             .where({ id: gfvRow.id })
@@ -142,6 +173,21 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     const gfvId = Number(gfvRow.id);
                     if (!Number.isInteger(gfvId) || gfvId <= 0) continue;
                     gfvIdByVersion.set(versionNum, gfvId);
+
+                    const gfvChanges: Record<string, any> = {};
+                    if (oldGfvRow) {
+                        for (const [key, value] of Object.entries(gfvRow)) {
+                            if (key !== 'id' && !this.valuesEquivalent(oldGfvRow[key], value)) {
+                                gfvChanges[key] = value;
+                            }
+                        }
+                    } else {
+                        for (const [key, value] of Object.entries(gfvRow)) {
+                            if (key !== 'id' && value !== null && value !== undefined) {
+                                gfvChanges[key] = value;
+                            }
+                        }
+                    }
 
                     const docs: any[] = Array.isArray((v as any).documents)
                         ? ((v as any).documents as any[])
@@ -167,6 +213,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         }
                     }
 
+                    const processedDocIds = new Set<number>();
+
                     for (const d of docs) {
                         const language = (d as any).language ?? null;
                         const digest =
@@ -189,6 +237,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             digest_sri: digest,
                         };
 
+                        const oldDoc = existingDoc ? { ...existingDoc } : null;
+                        const isDocCreation = !existingDoc;
+
                         if (existingDoc) {
                             await trx("governance_framework_document")
                                 .where({ id: existingDoc.id })
@@ -196,28 +247,246 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         } else {
                             await trx("governance_framework_document").insert(docPayload);
                         }
+
+                        const updatedDoc = await trx("governance_framework_document")
+                            .where({
+                                gfv_id: gfvId,
+                                language,
+                                digest_sri: digest,
+                            })
+                            .first();
+
+                        if (!updatedDoc || !updatedDoc.id) continue;
+                        processedDocIds.add(Number(updatedDoc.id));
+
+                        const docChanges: Record<string, any> = {};
+                        if (oldDoc) {
+                            for (const [key, value] of Object.entries(updatedDoc)) {
+                                if (key !== 'id' && !this.valuesEquivalent(oldDoc[key], value)) {
+                                    docChanges[key] = value;
+                                }
+                            }
+                        } else {
+                            for (const [key, value] of Object.entries(updatedDoc)) {
+                                if (key !== 'id' && value !== null && value !== undefined) {
+                                    docChanges[key] = value;
+                                }
+                            }
+                        }
+
+                        if (isGfvCreation || isDocCreation || Object.keys(docChanges).length > 0) {
+                            await trx("governance_framework_document_history").insert({
+                                gfv_id: gfvId,
+                                tr_id: trId,
+                                created: updatedDoc.created || new Date(),
+                                language: updatedDoc.language || "",
+                                url: updatedDoc.url || "",
+                                digest_sri: updatedDoc.digest_sri || "",
+                                event_type: isDocCreation ? "CreateGFD" : (isGfvCreation ? "CreateGFD" : "UpdateGFD"),
+                                height: blockHeightNum,
+                                changes: Object.keys(docChanges).length > 0 ? JSON.stringify(docChanges) : null,
+                                created_at: updatedDoc.created || new Date(),
+                            });
+                        }
+                    }
+
+                    if (isGfvCreation || Object.keys(gfvChanges).length > 0) {
+                        await trx("governance_framework_version_history").insert({
+                            tr_id: trId,
+                            created: gfvRow.created || new Date(),
+                            version: gfvRow.version,
+                            active_since: gfvRow.active_since || gfvRow.created || new Date(),
+                            event_type: isGfvCreation ? "CreateGFV" : "UpdateGFV",
+                            height: blockHeightNum,
+                            changes: Object.keys(gfvChanges).length > 0 ? JSON.stringify(gfvChanges) : null,
+                            created_at: gfvRow.active_since || gfvRow.created || new Date(),
+                        });
+                    }
+                }
+            });
+
+            const statsFields = [
+                "participants",
+                "participants_ecosystem",
+                "participants_issuer_grantor",
+                "participants_issuer",
+                "participants_verifier_grantor",
+                "participants_verifier",
+                "participants_holder",
+                "active_schemas",
+                "archived_schemas",
+                "weight",
+                "issued",
+                "verified",
+                "ecosystem_slash_events",
+                "ecosystem_slashed_amount",
+                "ecosystem_slashed_amount_repaid",
+                "network_slash_events",
+                "network_slashed_amount",
+                "network_slashed_amount_repaid",
+            ];
+
+            const currentTr = await knex("trust_registry").where({ id: trId }).first();
+            if (!currentTr) {
+                return ApiResponder.error(ctx, "TR not found after sync", 500);
+            }
+
+            let computedStats: any = null;
+            try {
+                computedStats = await calculateTrustRegistryStats(trId, blockHeightNum);
+            } catch (statsErr: any) {
+                this.logger.warn(
+                    `[TR syncFromLedger] Failed to calculate stats for tr_id=${trId}, height=${blockHeightNum}: ${statsErr?.message || String(statsErr)}`
+                );
+            }
+
+            const statsUpdatePayload: Record<string, number> = {};
+            for (const field of statsFields) {
+                const fallback = Number(currentTr[field] ?? 0);
+                statsUpdatePayload[field] = Number(computedStats?.[field] ?? fallback ?? 0);
+            }
+
+            const updatedTr = await knex("trust_registry")
+                .where({ id: trId })
+                .update(statsUpdatePayload)
+                .returning("*")
+                .then((rows) => rows[0]);
+
+            if (updatedTr) {
+                const oldTr = preSyncTr;
+                const trChanges: Record<string, any> = {};
+                const statsChanges: Record<string, any> = {};
+
+                if (oldTr) {
+                    for (const [key, value] of Object.entries(updatedTr)) {
+                        if (
+                            key !== "id" &&
+                            key !== "height" &&
+                            !statsFields.includes(key) &&
+                            !this.valuesEquivalent(oldTr[key], value)
+                        ) {
+                            trChanges[key] = value;
+                        }
+                    }
+                    for (const field of statsFields) {
+                        const oldVal = oldTr[field] != null ? Number(oldTr[field]) : 0;
+                        const newVal = updatedTr[field] != null ? Number(updatedTr[field]) : 0;
+                        if (oldVal !== newVal) {
+                            statsChanges[field] = newVal;
+                        }
+                    }
+                } else {
+                    for (const [key, value] of Object.entries(updatedTr)) {
+                        if (
+                            key !== "id" &&
+                            key !== "height" &&
+                            !statsFields.includes(key) &&
+                            value !== null &&
+                            value !== undefined
+                        ) {
+                            trChanges[key] = value;
+                        }
+                    }
+                    for (const field of statsFields) {
+                        trChanges[field] = updatedTr[field] != null ? Number(updatedTr[field]) : 0;
                     }
                 }
 
-                const stats = await calculateTrustRegistryStats(trId, blockHeightNum);
-                await trx("trust_registry")
-                    .where({ id: trId })
-                    .update({
-                        participants: stats.participants,
-                        active_schemas: stats.active_schemas,
-                        archived_schemas: stats.archived_schemas,
-                        weight: stats.weight,
-                        issued: stats.issued,
-                        verified: stats.verified,
-                        ecosystem_slash_events: stats.ecosystem_slash_events,
-                        ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                        ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                        network_slash_events: stats.network_slash_events,
-                        network_slashed_amount: stats.network_slashed_amount,
-                        network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-                    });
+                const hasCoreChanges = Object.keys(trChanges).length > 0;
+                const hasStatsChanges = Object.keys(statsChanges).length > 0;
 
-                         });
+                if (!oldTr || hasCoreChanges || hasStatsChanges) {
+                    await knex.transaction(async (trx) => {
+                        const baseHistoryPayload = await this.withDynamicTrustRegistryHistoryColumns(
+                            trx,
+                            {
+                                tr_id: trId,
+                                did: updatedTr.did,
+                                controller: updatedTr.controller,
+                                created: updatedTr.created,
+                                modified: updatedTr.modified,
+                                archived: updatedTr.archived ?? null,
+                                deposit: Number(updatedTr.deposit ?? 0),
+                                aka: updatedTr.aka ?? null,
+                                language: updatedTr.language,
+                                active_version: updatedTr.active_version ?? null,
+                                participants: Number(updatedTr.participants ?? 0),
+                                participants_ecosystem: Number(updatedTr.participants_ecosystem ?? 0),
+                                participants_issuer_grantor: Number(updatedTr.participants_issuer_grantor ?? 0),
+                                participants_issuer: Number(updatedTr.participants_issuer ?? 0),
+                                participants_verifier_grantor: Number(updatedTr.participants_verifier_grantor ?? 0),
+                                participants_verifier: Number(updatedTr.participants_verifier ?? 0),
+                                participants_holder: Number(updatedTr.participants_holder ?? 0),
+                                active_schemas: Number(updatedTr.active_schemas ?? 0),
+                                archived_schemas: Number(updatedTr.archived_schemas ?? 0),
+                                weight: Number(updatedTr.weight ?? 0),
+                                issued: Number(updatedTr.issued ?? 0),
+                                verified: Number(updatedTr.verified ?? 0),
+                                ecosystem_slash_events: Number(updatedTr.ecosystem_slash_events ?? 0),
+                                ecosystem_slashed_amount: Number(updatedTr.ecosystem_slashed_amount ?? 0),
+                                ecosystem_slashed_amount_repaid: Number(updatedTr.ecosystem_slashed_amount_repaid ?? 0),
+                                network_slash_events: Number(updatedTr.network_slash_events ?? 0),
+                                network_slashed_amount: Number(updatedTr.network_slashed_amount ?? 0),
+                                network_slashed_amount_repaid: Number(updatedTr.network_slashed_amount_repaid ?? 0),
+                                event_type: oldTr ? "Update" : "Create",
+                                height: blockHeightNum,
+                                changes: Object.keys(trChanges).length > 0 ? JSON.stringify(trChanges) : null,
+                                created_at: ledgerTrCreatedAt,
+                            },
+                            updatedTr
+                        );
+
+                        if (!oldTr || hasCoreChanges) {
+                            const existingSameBaseEvent = await trx("trust_registry_history")
+                                .where({
+                                    tr_id: trId,
+                                    event_type: oldTr ? "Update" : "Create",
+                                    height: blockHeightNum,
+                                })
+                                .orderBy("id", "desc")
+                                .first();
+                            const existingBaseChanges = existingSameBaseEvent?.changes
+                                ? String(existingSameBaseEvent.changes)
+                                : null;
+                            const nextBaseChanges = baseHistoryPayload?.changes
+                                ? String(baseHistoryPayload.changes)
+                                : null;
+                            if (!(existingSameBaseEvent && existingBaseChanges === nextBaseChanges)) {
+                                await trx("trust_registry_history").insert(baseHistoryPayload);
+                            }
+                        }
+
+                        if (oldTr && hasStatsChanges) {
+                            const statsHistoryPayload = await this.withDynamicTrustRegistryHistoryColumns(
+                                trx,
+                                {
+                                    ...baseHistoryPayload,
+                                    event_type: "StatsUpdate",
+                                    height: blockHeightNum,
+                                    changes: JSON.stringify(statsChanges),
+                                },
+                                updatedTr
+                            );
+
+                            const existingSameStatsEvent = await trx("trust_registry_history")
+                                .where({
+                                    tr_id: trId,
+                                    event_type: "StatsUpdate",
+                                    height: blockHeightNum,
+                                })
+                                .orderBy("id", "desc")
+                                .first();
+                            const existingStatsChanges = existingSameStatsEvent?.changes
+                                ? String(existingSameStatsEvent.changes)
+                                : null;
+                            const nextStatsChanges = String(statsHistoryPayload.changes);
+                            if (!(existingSameStatsEvent && existingStatsChanges === nextStatsChanges)) {
+                                await trx("trust_registry_history").insert(statsHistoryPayload);
+                            }
+                        }
+                    });
+                }
+            }
 
             return ApiResponder.success(ctx, { success: true }, 200);
         } catch (err: any) {
@@ -235,6 +504,36 @@ export default class TrustRegistryDatabaseService extends BaseService {
         const exists = await knex.schema.hasColumn(tableName, columnName);
         this.trHistoryColumnExistsCache.set(key, exists);
         return exists;
+    }
+
+    private async getTrustRegistryHistoryColumns(trx: any): Promise<Set<string>> {
+        if (this.trHistoryColumnsCache) {
+            return this.trHistoryColumnsCache;
+        }
+        const info = await trx("trust_registry_history").columnInfo();
+        this.trHistoryColumnsCache = new Set(Object.keys(info || {}));
+        return this.trHistoryColumnsCache;
+    }
+
+    private async withDynamicTrustRegistryHistoryColumns(
+        trx: any,
+        payload: Record<string, any>,
+        trRow: Record<string, any>
+    ): Promise<Record<string, any>> {
+        const historyColumns = await this.getTrustRegistryHistoryColumns(trx);
+        const reservedColumns = new Set(["id", "tr_id", "event_type", "height", "changes", "created_at"]);
+        const nextPayload: Record<string, any> = { ...payload };
+
+        for (const column of historyColumns) {
+            if (reservedColumns.has(column) || Object.prototype.hasOwnProperty.call(nextPayload, column)) {
+                continue;
+            }
+            if (Object.prototype.hasOwnProperty.call(trRow, column)) {
+                nextPayload[column] = trRow[column];
+            }
+        }
+
+        return nextPayload;
     }
 
     private usesDerivedMetricSort(sort?: string): boolean {
@@ -592,8 +891,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 const versionsByTrId = await this.buildHistoricalVersionsByTrIds([Number(tr_id)], blockHeight, activeGfOnly, preferred_language);
                 const filteredVersions = versionsByTrId.get(Number(tr_id)) || [];
 
-                const stats = await calculateTrustRegistryStats(trHistory.tr_id, blockHeight);
-
                 const trustRegistry = {
                     id: trHistory.tr_id,
                     did: trHistory.did,
@@ -606,24 +903,24 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     language: trHistory.language,
                     active_version: trHistory.active_version,
                     versions: filteredVersions,
-                    participants: stats.participants,
-                    participants_ecosystem: stats.participants_ecosystem,
-                    participants_issuer_grantor: stats.participants_issuer_grantor,
-                    participants_issuer: stats.participants_issuer,
-                    participants_verifier_grantor: stats.participants_verifier_grantor,
-                    participants_verifier: stats.participants_verifier,
-                    participants_holder: stats.participants_holder,
-                    active_schemas: stats.active_schemas,
-                    archived_schemas: stats.archived_schemas,
-                    weight: stats.weight,
-                    issued: stats.issued,
-                    verified: stats.verified,
-                    ecosystem_slash_events: stats.ecosystem_slash_events,
-                    ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                    ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                    network_slash_events: stats.network_slash_events,
-                    network_slashed_amount: stats.network_slashed_amount,
-                    network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+                    participants: Number(trHistory.participants ?? 0),
+                    participants_ecosystem: Number((trHistory as any).participants_ecosystem ?? 0),
+                    participants_issuer_grantor: Number((trHistory as any).participants_issuer_grantor ?? 0),
+                    participants_issuer: Number((trHistory as any).participants_issuer ?? 0),
+                    participants_verifier_grantor: Number((trHistory as any).participants_verifier_grantor ?? 0),
+                    participants_verifier: Number((trHistory as any).participants_verifier ?? 0),
+                    participants_holder: Number((trHistory as any).participants_holder ?? 0),
+                    active_schemas: Number((trHistory as any).active_schemas ?? 0),
+                    archived_schemas: Number((trHistory as any).archived_schemas ?? 0),
+                    weight: Number((trHistory as any).weight ?? 0),
+                    issued: Number((trHistory as any).issued ?? 0),
+                    verified: Number((trHistory as any).verified ?? 0),
+                    ecosystem_slash_events: Number((trHistory as any).ecosystem_slash_events ?? 0),
+                    ecosystem_slashed_amount: Number((trHistory as any).ecosystem_slashed_amount ?? 0),
+                    ecosystem_slashed_amount_repaid: Number((trHistory as any).ecosystem_slashed_amount_repaid ?? 0),
+                    network_slash_events: Number((trHistory as any).network_slash_events ?? 0),
+                    network_slashed_amount: Number((trHistory as any).network_slashed_amount ?? 0),
+                    network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
                 };
 
                 return ApiResponder.success(ctx, { trust_registry: trustRegistry }, 200);
@@ -929,36 +1226,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     activeGfOnly,
                     preferredLanguage
                 );
-                const statsByTrId = await calculateTrustRegistryStatsBatch(
-                    sortedHistory.map((row: any) => Number(row.tr_id)).filter((id: number) => Number.isFinite(id) && id > 0),
-                    blockHeight
-                );
 
                 const registriesWithStats = await Promise.all(
                     sortedHistory.map(async (trHistory: any) => {
                         const trId = trHistory.tr_id;
                         const filteredVersions = versionsByTrId.get(Number(trId)) || [];
-
-                        const stats = statsByTrId.get(Number(trId)) || {
-                            participants: 0,
-                            participants_ecosystem: 0,
-                            participants_issuer_grantor: 0,
-                            participants_issuer: 0,
-                            participants_verifier_grantor: 0,
-                            participants_verifier: 0,
-                            participants_holder: 0,
-                            active_schemas: 0,
-                            archived_schemas: 0,
-                            weight: 0,
-                            issued: 0,
-                            verified: 0,
-                            ecosystem_slash_events: 0,
-                            ecosystem_slashed_amount: 0,
-                            ecosystem_slashed_amount_repaid: 0,
-                            network_slash_events: 0,
-                            network_slashed_amount: 0,
-                            network_slashed_amount_repaid: 0,
-                        };
 
                         return {
                             id: trHistory.tr_id,
@@ -972,24 +1244,24 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             language: trHistory.language,
                             active_version: trHistory.active_version,
                             versions: filteredVersions,
-                            participants: stats.participants,
-                            participants_ecosystem: stats.participants_ecosystem,
-                            participants_issuer_grantor: stats.participants_issuer_grantor,
-                            participants_issuer: stats.participants_issuer,
-                            participants_verifier_grantor: stats.participants_verifier_grantor,
-                            participants_verifier: stats.participants_verifier,
-                            participants_holder: stats.participants_holder,
-                            active_schemas: stats.active_schemas,
-                            archived_schemas: stats.archived_schemas,
-                            weight: stats.weight,
-                            issued: stats.issued,
-                            verified: stats.verified,
-                            ecosystem_slash_events: stats.ecosystem_slash_events,
-                            ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                            ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                            network_slash_events: stats.network_slash_events,
-                            network_slashed_amount: stats.network_slashed_amount,
-                            network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+                            participants: Number(trHistory.participants ?? 0),
+                            participants_ecosystem: Number((trHistory as any).participants_ecosystem ?? 0),
+                            participants_issuer_grantor: Number((trHistory as any).participants_issuer_grantor ?? 0),
+                            participants_issuer: Number((trHistory as any).participants_issuer ?? 0),
+                            participants_verifier_grantor: Number((trHistory as any).participants_verifier_grantor ?? 0),
+                            participants_verifier: Number((trHistory as any).participants_verifier ?? 0),
+                            participants_holder: Number((trHistory as any).participants_holder ?? 0),
+                            active_schemas: Number((trHistory as any).active_schemas ?? 0),
+                            archived_schemas: Number((trHistory as any).archived_schemas ?? 0),
+                            weight: Number((trHistory as any).weight ?? 0),
+                            issued: Number((trHistory as any).issued ?? 0),
+                            verified: Number((trHistory as any).verified ?? 0),
+                            ecosystem_slash_events: Number((trHistory as any).ecosystem_slash_events ?? 0),
+                            ecosystem_slashed_amount: Number((trHistory as any).ecosystem_slashed_amount ?? 0),
+                            ecosystem_slashed_amount_repaid: Number((trHistory as any).ecosystem_slashed_amount_repaid ?? 0),
+                            network_slash_events: Number((trHistory as any).network_slash_events ?? 0),
+                            network_slashed_amount: Number((trHistory as any).network_slashed_amount ?? 0),
+                            network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
                         };
                     })
                 );

@@ -1148,12 +1148,16 @@ export default class CrawlTxService extends BullableService {
       .filter((msg: any) => isTrustRegistryMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const txEvents = parentTx?.data?.tx_response?.events ?? [];
+        const eventTrIds = extractTrustRegistryIdsFromEvents(txEvents, true);
         return {
           type: msg.type,
           content: msg.content ?? null,
           timestamp: parentTx?.timestamp ?? null,
           height: parentTx?.height ?? null,
           id: msg?.tx_id ?? null,
+          txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
+          eventTrIds,
         };
       });
 
@@ -1664,12 +1668,34 @@ export default class CrawlTxService extends BullableService {
     if (useHeightSyncTR && typeof blockHeight === "number") {
       const events = payload.csEventsFromBlock ?? [];
       const trIdsFromEvents = extractTrustRegistryIdsFromEvents(events, true);
-      if (trIdsFromEvents.length > 0) {
+      const handledTrIds = new Set<number>();
+      for (const msg of payload.trustRegistryList ?? []) {
+        const eventIds = Array.isArray(msg?.eventTrIds) ? msg.eventTrIds : [];
+        for (const raw of eventIds) {
+          const id = Number(raw);
+          if (Number.isInteger(id) && id > 0) handledTrIds.add(id);
+        }
+        const content = msg?.content ?? {};
+        const fallbackCandidates = [
+          content?.trust_registry_id,
+          content?.trustRegistryId,
+          content?.tr_id,
+          content?.trId,
+          content?.id,
+        ];
+        for (const raw of fallbackCandidates) {
+          const id = Number(raw);
+          if (Number.isInteger(id) && id > 0) handledTrIds.add(id);
+        }
+      }
+
+      const extraTrIdsFromEvents = trIdsFromEvents.filter((id) => !handledTrIds.has(id));
+      if (extraTrIdsFromEvents.length > 0) {
         try {
           await this.broker.call(
             `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
             {
-              trustRegistryList: trIdsFromEvents.map((id: number) => ({
+              trustRegistryList: extraTrIdsFromEvents.map((id: number) => ({
                 type: "EVENT_SYNC_TR",
                 height: blockHeight,
                 content: { id },

@@ -1,6 +1,17 @@
 import { Knex } from "knex";
 
 export async function up(knex: Knex): Promise<void> {
+
+  const hasParticipantsColumn = await knex.schema.hasColumn(
+    "trust_registry_history",
+    "participants"
+  );
+
+  if (hasParticipantsColumn) {
+    // Columns already exist - nothing to do.
+    return;
+  }
+
   await knex.schema.alterTable("trust_registry_history", (table) => {
     table.bigInteger("participants").notNullable().defaultTo(0);
     table.bigInteger("active_schemas").notNullable().defaultTo(0);
@@ -30,19 +41,30 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.alterTable("trust_registry_history", (table) => {
-    table.dropColumn("participants");
-    table.dropColumn("active_schemas");
-    table.dropColumn("archived_schemas");
-    table.dropColumn("weight");
-    table.dropColumn("issued");
-    table.dropColumn("verified");
-    table.dropColumn("ecosystem_slash_events");
-    table.dropColumn("ecosystem_slashed_amount");
-    table.dropColumn("ecosystem_slashed_amount_repaid");
-    table.dropColumn("network_slash_events");
-    table.dropColumn("network_slashed_amount");
-    table.dropColumn("network_slashed_amount_repaid");
-  });
+  const columns = [
+    "participants",
+    "active_schemas",
+    "archived_schemas",
+    "weight",
+    "issued",
+    "verified",
+    "ecosystem_slash_events",
+    "ecosystem_slashed_amount",
+    "ecosystem_slashed_amount_repaid",
+    "network_slash_events",
+    "network_slashed_amount",
+    "network_slashed_amount_repaid",
+  ] as const;
+
+  for (const col of columns) {
+    // eslint-disable-next-line no-await-in-loop
+    const exists = await knex.schema.hasColumn("trust_registry_history", col);
+    if (exists) {
+      // eslint-disable-next-line no-await-in-loop
+      await knex.schema.alterTable("trust_registry_history", (table) => {
+        table.dropColumn(col);
+      });
+    }
+  }
 }
 

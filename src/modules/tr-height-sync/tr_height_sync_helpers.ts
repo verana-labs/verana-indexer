@@ -85,48 +85,85 @@ export async function getTrustRegistry(
   blockHeight?: number
 ): Promise<LedgerTrustRegistryResponse | null> {
   const baseUrl = getLedgerBaseUrl();
-  if (!baseUrl) return null;
+  if (!baseUrl) {
+    throw new Error(
+      `[TR Height-Sync] Missing LCD base URL. Please set LCD_ENDPOINT or Network.LCD.`
+    );
+  }
   const url = `${baseUrl}${TR_GET_PATH}/${trId}`;
   const withHeight = typeof blockHeight === "number" && blockHeight > 0;
   const headers: Record<string, string> = {};
   if (withHeight) headers[HEIGHT_HEADER] = String(blockHeight);
 
-  try {
-    const res = await fetch(url, { headers });
-    const data = res.ok ? await res.json().catch(() => null) : null;
-    if (data) {
-      return normalizeLedgerResponse(data) ?? (data as LedgerTrustRegistryResponse);
-    }
-
-    if (withHeight && (res.status >= 400 || res.status < 200)) {
-      const fallback = await fetch(url);
-      const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
-      if (fallbackData) {
-        return (
-          normalizeLedgerResponse(fallbackData) ??
-          (fallbackData as LedgerTrustRegistryResponse)
-        );
+  const requestOnce = async (
+    useHeightHeader: boolean
+  ): Promise<{
+    payload: LedgerTrustRegistryResponse | null;
+    status: number | null;
+    bodySnippet: string;
+    errorMessage: string | null;
+  }> => {
+    const reqHeaders = useHeightHeader ? headers : {};
+    try {
+      const res = await fetch(url, { headers: reqHeaders });
+      const bodyText = await res.text().catch(() => "");
+      const bodySnippet = bodyText.slice(0, 300);
+      if (!res.ok) {
+        return {
+          payload: null,
+          status: res.status,
+          bodySnippet,
+          errorMessage: `HTTP ${res.status}`,
+        };
       }
-    }
-
-    return null;
-  } catch {
-    if (withHeight) {
-      try {
-        const fallback = await fetch(url);
-        const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
-        if (fallbackData) {
-          return (
-            normalizeLedgerResponse(fallbackData) ??
-            (fallbackData as LedgerTrustRegistryResponse)
-          );
-        }
-      } catch {
-        //
+      const data = bodyText ? JSON.parse(bodyText) : null;
+      if (!data) {
+        return {
+          payload: null,
+          status: res.status,
+          bodySnippet,
+          errorMessage: "Empty JSON response body",
+        };
       }
+      return {
+        payload: normalizeLedgerResponse(data) ?? (data as LedgerTrustRegistryResponse),
+        status: res.status,
+        bodySnippet,
+        errorMessage: null,
+      };
+    } catch (err: any) {
+      return {
+        payload: null,
+        status: null,
+        bodySnippet: "",
+        errorMessage: err?.message || String(err),
+      };
     }
-    return null;
+  };
+
+  const firstAttempt = await requestOnce(withHeight);
+  if (firstAttempt.payload) {
+    return firstAttempt.payload;
   }
+
+  if (withHeight) {
+    const fallbackAttempt = await requestOnce(false);
+    if (fallbackAttempt.payload) {
+      return fallbackAttempt.payload;
+    }
+    throw new Error(
+      `[TR Height-Sync] getTrustRegistry failed for trId=${trId}, height=${blockHeight}, ` +
+      `with-height(${firstAttempt.errorMessage || "unknown"}, status=${String(firstAttempt.status)}), ` +
+      `fallback(${fallbackAttempt.errorMessage || "unknown"}, status=${String(fallbackAttempt.status)}), ` +
+      `with-height-body="${firstAttempt.bodySnippet}", fallback-body="${fallbackAttempt.bodySnippet}"`
+    );
+  }
+
+  throw new Error(
+    `[TR Height-Sync] getTrustRegistry failed for trId=${trId}, ` +
+    `${firstAttempt.errorMessage || "unknown"} (status=${String(firstAttempt.status)}), ` +
+    `body="${firstAttempt.bodySnippet}"`
+  );
 }
 
 export function isTrMessageType(type: string): boolean {
@@ -137,10 +174,24 @@ export function extractTrustRegistryIdFromContent(
   content: Record<string, unknown> | null | undefined
 ): number | null {
   if (!content || typeof content !== "object") return null;
-  const raw = content.trust_registry_id ?? content.id;
-  if (raw === undefined || raw === null) return null;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : null;
+  const candidates = [
+    content.trust_registry_id,
+    content.trustRegistryId,
+    content.tr_id,
+    content.trId,
+    content.id,
+    (content.trust_registry as Record<string, unknown> | undefined)?.id,
+    (content.trust_registry as Record<string, unknown> | undefined)?.tr_id,
+    (content.trust_registry as Record<string, unknown> | undefined)?.trId,
+    (content.trustRegistry as Record<string, unknown> | undefined)?.id,
+    (content.trustRegistry as Record<string, unknown> | undefined)?.tr_id,
+    (content.trustRegistry as Record<string, unknown> | undefined)?.trId,
+  ];
+  for (const raw of candidates) {
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > 0) return n;
+  }
+  return null;
 }
 
 export interface TxEventLike {
