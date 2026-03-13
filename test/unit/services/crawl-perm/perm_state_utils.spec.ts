@@ -149,6 +149,74 @@ describe("🧪 perm_state_utils", () => {
 
       expect(actions).toEqual(["PERM_REVOKE", "VP_RENEW"]);
     });
+
+    it("for VERIFIER with OPEN schema, PENDING VP and INACTIVE perm_state allows only VP_CANCEL (issue #63)", () => {
+      const perm: PermissionData = {
+        ...basePerm,
+        type: "VERIFIER",
+        effective_from: null,
+        effective_until: null,
+        vp_state: "PENDING",
+      };
+
+      const schema: SchemaData = {
+        issuer_perm_management_mode: "OPEN",
+        verifier_perm_management_mode: "OPEN",
+      };
+
+      const actions = calculateGranteeAvailableActions(perm, schema, null, NOW);
+
+      expect(actions).toEqual(["VP_CANCEL"]);
+    });
+
+    it("for VERIFIER with numeric type (2) and numeric vp_state (1) from DB still yields VP_CANCEL", () => {
+      const perm = {
+        ...basePerm,
+        type: 2 as unknown as PermissionData["type"],
+        effective_from: null,
+        effective_until: null,
+        vp_state: 1 as unknown as PermissionData["vp_state"],
+      };
+
+      const schema: SchemaData = {
+        issuer_perm_management_mode: "OPEN",
+        verifier_perm_management_mode: "OPEN",
+      };
+
+      const actions = calculateGranteeAvailableActions(perm, schema, null, NOW);
+
+      expect(actions).toEqual(["VP_CANCEL"]);
+    });
+  });
+
+  describe("Issue #63 - client testnet Permission 69 exact payload", () => {
+    const openSchema: SchemaData = {
+      issuer_perm_management_mode: "OPEN",
+      verifier_perm_management_mode: "OPEN",
+    };
+
+    it("grantee_available_actions = [VP_CANCEL], validator_available_actions includes VP_SET_VALIDATED", () => {
+      const perm69: PermissionData = {
+        type: "VERIFIER",
+        repaid: null,
+        slashed: null,
+        revoked: null,
+        effective_from: null,
+        effective_until: null,
+        vp_state: "PENDING",
+        vp_exp: null,
+        validator_perm_id: "1",
+      };
+
+      expect(calculatePermState(perm69, NOW)).toBe("INACTIVE");
+
+      const granteeActions = calculateGranteeAvailableActions(perm69, openSchema, null, NOW);
+      expect(granteeActions).toEqual(["VP_CANCEL"]);
+
+      const validatorActions = calculateValidatorAvailableActions(perm69, openSchema, NOW);
+      expect(validatorActions).toContain("VP_SET_VALIDATED");
+      expect(validatorActions.sort()).toEqual(["PERM_SLASH", "VP_SET_VALIDATED"]);
+    });
   });
 
   describe("calculateValidatorAvailableActions", () => {
@@ -197,6 +265,26 @@ describe("🧪 perm_state_utils", () => {
         "PERM_SLASH",
         "VP_SET_VALIDATED",
       ]);
+    });
+
+    it("for VERIFIER with OPEN schema, PENDING VP and INACTIVE perm_state includes VP_SET_VALIDATED (issue #63)", () => {
+      const perm: PermissionData = {
+        ...basePerm,
+        type: "VERIFIER",
+        effective_from: null,
+        effective_until: null,
+        vp_state: "PENDING",
+      };
+
+      const schema: SchemaData = {
+        issuer_perm_management_mode: "OPEN",
+        verifier_perm_management_mode: "OPEN",
+      };
+
+      const actions = calculateValidatorAvailableActions(perm, schema, NOW);
+
+      expect(actions).toContain("VP_SET_VALIDATED");
+      expect(actions.sort()).toEqual(["PERM_SLASH", "VP_SET_VALIDATED"]);
     });
   });
 });

@@ -95,6 +95,7 @@ A list of services is shown below:
 - [**crawl-cs**](./docs/services/crawl-cs//crawl-cs.md): Crawl all credential schema–related transactions and update their state in the database.
 - [**crawl-cs height-sync refactor**](./docs/services/crawl-cs/cs-height-sync.md): Height-based Credential Schema synchronization path (ledger-backed CS sync).
 - [**crawl-perm**](./docs/services/crawl-perm/crawl-perm.md): Crawl all permissions related to Trust Registry and Credential Schema transactions, and synchronize their current state in the database.
+- [**crawl-perm height-sync refactor**](./docs/services/crawl-perm/crawl-perm.md#permission-height-sync-refactor): Height-based Permission synchronization path (ledger-backed Permission sync with runtime verification).
 - [**crawl-td**](./docs/services/crawl-td/crawl-td.md):This service is responsible for crawling and indexing all Trust Deposit states in the database to keep the data up to date.
 - [**crawl-ar**](./docs/services/crawl-ar/crawl-ar.md): Crawl all blockchain accounts, get their Account Reputation, and save it to the DB.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
@@ -212,6 +213,13 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 - `USE_HEIGHT_SYNC_CS` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Credential Schema (CS) synchronization by block height. When `false`, the indexer uses the legacy CS message-processor path.
 - `USE_HEIGHT_SYNC_TR` – Set to `true` to enable the Trust Registry (TR) height-sync reconciliation path. When `true`, TR message handlers will reconcile their state against the authoritative ledger `/verana/tr/v1/get/{id}` response at the processed block height and then compute indexer-only aggregates (participants, stats, ecosystem/network counters). When `false` or unset, the indexer uses the legacy TR message-processor logic only.
 - See `docs/services/crawl-cs/cs-height-sync.md` for the CS flow, routing, and verification logs. A corresponding TR height-sync document can be added under `docs/services/crawl-tr/` following the same structure.
+
+**Permission (PERM) Height-Sync Refactor**
+- `USE_HEIGHT_SYNC_PERM` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Permission synchronization by block height. When `false`, the indexer uses the legacy message-by-message Permission processor path.
+- Runtime verification is enabled in this mode:
+  - immediate compare at processed block height
+  - rolling multi-height verification window (3 heights)
+- See `docs/services/crawl-perm/crawl-perm.md` for flow and verification details.
 
 **Content gateways**
 - `IPFS_GATEWAY`, `REQUEST_IPFS_TIMEOUT`, `MAX_CONTENT_LENGTH_BYTE`, `MAX_BODY_LENGTH_BYTE`, `S3_GATEWAY` – Timeouts and size caps used when fetching off-chain artifacts from IPFS/S3 during DID or credential syncing.
