@@ -5,6 +5,8 @@ import { BULL_JOB_NAME } from "../../common/constant";
 import ConfigClass from "../../common/config";
 import { DEFAULT_PREFIX } from "../../base/bullable.service";
 import { getLcdClient } from "../../common/utils/verana_client";
+import { getBlockchainHealthMonitorStatus } from "../../common/utils/health_check";
+import knex from "../../common/utils/db_connection";
 
 const Config = new ConfigClass();
 
@@ -19,6 +21,9 @@ export interface IndexerStatus {
     service?: string;
   };
   stoppedReason?: string;
+  lastProcessedBlock?: number;
+  blockchainApiHealthy?: boolean;
+  blockchainApiLastCheckAt?: string;
 }
 
 type StatusChangeCallback = (status: {
@@ -41,8 +46,12 @@ class IndexerStatusManager {
   };
   private statusChangeCallback: StatusChangeCallback | null = null;
   private logger: LoggerInstance | null = null;
-  private recoveryCheckInterval: NodeJS.Timeout | null = null;
+  private recoveryCheckTimerId: ReturnType<typeof setTimeout> | null = null;
   private readonly RECOVERY_CHECK_INTERVAL = 30000;
+  private readonly RECOVERY_CHECK_INTERVAL_MIN = 10000;
+  private readonly RECOVERY_CHECK_INTERVAL_MAX = 300000;
+  private readonly RECOVERY_BACKOFF_MULTIPLIER = 1.5;
+  private _recoveryCheckIntervalMs = 30000;
   private readonly RECOVERY_CHECK_TIMEOUT = 10000;
 
   private dbStorageCheckInterval: NodeJS.Timeout | null = null;
@@ -90,6 +99,27 @@ class IndexerStatusManager {
 
   public getStatus(): IndexerStatus {
     return { ...this.status };
+  }
+
+  public async getDetailedStatus(): Promise<IndexerStatus> {
+    const base = this.getStatus();
+    let lastProcessedBlock: number | undefined;
+    try {
+      const row = await knex("block_checkpoint")
+        .where("job_name", BULL_JOB_NAME.CRAWL_BLOCK)
+        .select("height")
+        .first();
+      if (row?.height != null) lastProcessedBlock = Number(row.height);
+    } catch {
+      // ignore
+    }
+    const monitor = getBlockchainHealthMonitorStatus();
+    return {
+      ...base,
+      lastProcessedBlock,
+      blockchainApiHealthy: monitor.running ? monitor.isHealthy : undefined,
+      blockchainApiLastCheckAt: monitor.lastCheckAt,
+    };
   }
 
   public async stopIndexer(error: Error, service?: string): Promise<void> {
@@ -189,27 +219,33 @@ class IndexerStatusManager {
 
   private startRecoveryChecker(): void {
     this.stopRecoveryChecker();
+    this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
 
     if (this.logger) {
-      this.logger.info(`Starting automatic recovery checker (checking every ${this.RECOVERY_CHECK_INTERVAL / 1000}s)...`);
+      this.logger.info(`Starting automatic recovery checker (initial interval ${this._recoveryCheckIntervalMs / 1000}s, exponential backoff up to ${this.RECOVERY_CHECK_INTERVAL_MAX / 1000}s)...`);
     } else {
-      console.log(`Starting automatic recovery checker (checking every ${this.RECOVERY_CHECK_INTERVAL / 1000}s)...`);
+      console.log(`Starting automatic recovery checker (initial interval ${this._recoveryCheckIntervalMs / 1000}s)...`);
     }
 
-    this.recoveryCheckInterval = setInterval(async () => {
+    const run = async () => {
       await this.checkAndRecover();
-    }, this.RECOVERY_CHECK_INTERVAL);
+      if (this.recoveryCheckTimerId !== null) {
+        this.recoveryCheckTimerId = setTimeout(run, this._recoveryCheckIntervalMs);
+      }
+    };
+    this.recoveryCheckTimerId = setTimeout(run, this._recoveryCheckIntervalMs);
   }
 
   private stopRecoveryChecker(): void {
-    if (this.recoveryCheckInterval) {
-      clearInterval(this.recoveryCheckInterval);
-      this.recoveryCheckInterval = null;
-      if (this.logger) {
-        this.logger.info('Stopped automatic recovery checker');
-      } else {
-        console.log('Stopped automatic recovery checker');
-      }
+    if (this.recoveryCheckTimerId !== null) {
+      clearTimeout(this.recoveryCheckTimerId);
+      this.recoveryCheckTimerId = null;
+    }
+    this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL;
+    if (this.logger) {
+      this.logger.info('Stopped automatic recovery checker');
+    } else {
+      console.log('Stopped automatic recovery checker');
     }
   }
 
@@ -227,6 +263,7 @@ class IndexerStatusManager {
             } else {
               console.log('DB pool recovered. Automatically resuming crawling...');
             }
+            this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
             await this.resumeIndexer();
             if (this.logger) {
               this.logger.info('Crawling resumed successfully');
@@ -234,7 +271,7 @@ class IndexerStatusManager {
             return;
           }
           if (this.logger) {
-            this.logger.info(`DB pool not yet recovered, will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
+            this.logger.info(`DB pool not yet recovered, will retry in ${this._recoveryCheckIntervalMs / 1000}s...`);
           }
           return;
         }
@@ -250,6 +287,7 @@ class IndexerStatusManager {
             } else {
               console.log('Memory recovered. Automatically resuming crawling...');
             }
+            this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
             await this.resumeIndexer();
             if (this.logger) {
               this.logger.info('Crawling resumed successfully');
@@ -257,7 +295,7 @@ class IndexerStatusManager {
             return;
           }
           if (this.logger) {
-            this.logger.info(`Memory not yet recovered (heap ${heapUsedMb.toFixed(0)} MB), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
+            this.logger.info(`Memory not yet recovered (heap ${heapUsedMb.toFixed(0)} MB), will retry in ${this._recoveryCheckIntervalMs / 1000}s...`);
           }
           return;
         }
@@ -277,6 +315,7 @@ class IndexerStatusManager {
             console.log('Connection restored! Automatically resuming indexer...');
           }
           await this.resumeIndexer();
+          this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
           if (this.logger) {
             this.logger.info('Indexer resumed successfully');
           } else {
@@ -290,10 +329,14 @@ class IndexerStatusManager {
           : 0;
         const minutesStopped = Math.floor(timeSinceStopped / 60000);
 
+        this._recoveryCheckIntervalMs = Math.min(
+          Math.floor(this._recoveryCheckIntervalMs * this.RECOVERY_BACKOFF_MULTIPLIER),
+          this.RECOVERY_CHECK_INTERVAL_MAX
+        );
         if (this.logger) {
-          this.logger.info(`Connection not yet restored (stopped ${minutesStopped} minutes ago), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
+          this.logger.info(`Connection not yet restored (stopped ${minutesStopped} min ago), next check in ${this._recoveryCheckIntervalMs / 1000}s...`);
         } else {
-          console.log(`Connection not yet restored (stopped ${minutesStopped} minutes ago), will retry in ${this.RECOVERY_CHECK_INTERVAL / 1000}s...`);
+          console.log(`Connection not yet restored, next check in ${this._recoveryCheckIntervalMs / 1000}s...`);
         }
       } catch (error: any) {
         if (this.logger) {
@@ -303,6 +346,7 @@ class IndexerStatusManager {
         }
       }
     } else if (this.status.isCrawling && this.status.isRunning) {
+      this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
       this.stopRecoveryChecker();
     }
   }
@@ -477,6 +521,8 @@ class IndexerStatusManager {
         BULL_JOB_NAME.CRAWL_BLOCK,
         BULL_JOB_NAME.CRAWL_TRANSACTION,
         BULL_JOB_NAME.HANDLE_TRANSACTION,
+        BULL_JOB_NAME.HANDLE_AUTHZ_TX,
+        BULL_JOB_NAME.HANDLE_VOTE_TX,
         BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
         BULL_JOB_NAME.HANDLE_TRUST_DEPOSIT,
         BULL_JOB_NAME.CRAWL_PROPOSAL,

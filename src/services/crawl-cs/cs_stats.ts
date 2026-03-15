@@ -258,34 +258,22 @@ export async function calculateSlashStatsForSchema(
 
         prevSlashedDeposits.set(permIdStr, currentSlashed);
 
-        const isEcosystemPermission = event.type === "ECOSYSTEM";
-        const isSlashedByEcosystemGov = trController && event.slashed_by === trController;
+        const isEcosystemSlash =
+            event.type === "ECOSYSTEM" || (!!trController && event.slashed_by === trController);
 
-        if (isEcosystemPermission) {
-            networkSlashEvents++;
-            networkSlashedAmount += incrementalSlashed;
+        const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
+        const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
+        const incrementalRepaid = repaid - prevRepaid;
+        prevRepaidDeposits.set(permIdStr, repaid);
 
-            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
-            const incrementalRepaid = repaid - prevRepaid;
-            if (incrementalRepaid > 0) {
-                networkSlashedAmountRepaid += incrementalRepaid;
-            }
-            prevRepaidDeposits.set(permIdStr, repaid);
-        } else if (isSlashedByEcosystemGov) {
+        if (isEcosystemSlash) {
             ecosystemSlashEvents++;
             ecosystemSlashedAmount += incrementalSlashed;
-
-            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
-            const incrementalRepaid = repaid - prevRepaid;
-            if (incrementalRepaid > 0) {
-                ecosystemSlashedAmountRepaid += incrementalRepaid;
-            }
-            prevRepaidDeposits.set(permIdStr, repaid);
+            if (incrementalRepaid > 0) ecosystemSlashedAmountRepaid += incrementalRepaid;
         } else {
-            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            prevRepaidDeposits.set(permIdStr, repaid);
+            networkSlashEvents++;
+            networkSlashedAmount += incrementalSlashed;
+            if (incrementalRepaid > 0) networkSlashedAmountRepaid += incrementalRepaid;
         }
     }
 
@@ -521,19 +509,28 @@ export async function calculateCredentialSchemaStatsBatch(
 
         stats.issued += counters.issuer.get(permId) || 0;
         stats.verified += counters.verifier.get(permId) || 0;
+
+        if (typeof blockHeight === "undefined") {
+            stats.ecosystem_slash_events += Number(perm.ecosystem_slash_events ?? 0);
+            stats.ecosystem_slashed_amount += Number(perm.ecosystem_slashed_amount ?? 0);
+            stats.ecosystem_slashed_amount_repaid += Number(perm.ecosystem_slashed_amount_repaid ?? 0);
+            stats.network_slash_events += Number(perm.network_slash_events ?? 0);
+            stats.network_slashed_amount += Number(perm.network_slashed_amount ?? 0);
+            stats.network_slashed_amount_repaid += Number(perm.network_slashed_amount_repaid ?? 0);
+        }
     }
 
-    const slashEvents = await knex("permission_history")
-        .select("schema_id", "permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at", "id")
-        .whereIn("schema_id", schemaIds)
-        .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-        .modify((qb) => {
-            if (typeof blockHeight === "number") qb.where("height", "<=", blockHeight);
-        })
-        .orderBy("permission_id", "asc")
-        .orderBy("height", "asc")
-        .orderBy("created_at", "asc")
-        .orderBy("id", "asc");
+    const slashEvents: any[] = typeof blockHeight === "number"
+        ? await knex("permission_history")
+            .select("schema_id", "permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at", "id")
+            .whereIn("schema_id", schemaIds)
+            .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
+            .where("height", "<=", blockHeight)
+            .orderBy("permission_id", "asc")
+            .orderBy("height", "asc")
+            .orderBy("created_at", "asc")
+            .orderBy("id", "asc")
+        : [];
 
     const prevSlashedDeposits = new Map<number, number>();
     const prevRepaidDeposits = new Map<number, number>();
@@ -560,15 +557,17 @@ export async function calculateCredentialSchemaStatsBatch(
         const stats = result.get(schemaId)!;
         const trId = schemaToTr.get(schemaId);
         const trController = trId !== undefined ? trControllerMap.get(trId) : null;
+        const isEcosystemSlash =
+            event.type === "ECOSYSTEM" || (!!trController && event.slashed_by === trController);
 
-        if (event.type === "ECOSYSTEM") {
-            stats.network_slash_events += 1;
-            stats.network_slashed_amount += incrementalSlashed;
-            if (incrementalRepaid > 0) stats.network_slashed_amount_repaid += incrementalRepaid;
-        } else if (trController && event.slashed_by === trController) {
+        if (isEcosystemSlash) {
             stats.ecosystem_slash_events += 1;
             stats.ecosystem_slashed_amount += incrementalSlashed;
             if (incrementalRepaid > 0) stats.ecosystem_slashed_amount_repaid += incrementalRepaid;
+        } else {
+            stats.network_slash_events += 1;
+            stats.network_slashed_amount += incrementalSlashed;
+            if (incrementalRepaid > 0) stats.network_slashed_amount_repaid += incrementalRepaid;
         }
     }
 

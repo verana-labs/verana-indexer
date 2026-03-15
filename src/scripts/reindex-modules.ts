@@ -520,6 +520,7 @@ async function runMigrations(db: Knex): Promise<void> {
       "20241201000000_create_did_records_table",
       "20250919_create_credential_schema_history",
       "20250922_create_trust_registry_history",
+      "20260314000000_trust_registry_blockchain_id_and_snapshots",
       "20251125000000_create_permission_history",
       "20251125000001_create_permission_session_history",
       "20251125000002_create_trust_deposit_history",

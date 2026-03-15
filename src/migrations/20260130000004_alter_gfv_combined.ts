@@ -5,9 +5,11 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp("active_since").nullable().alter();
   });
 
-  await knex.schema.alterTable("governance_framework_version_history", (table) => {
-    table.timestamp("active_since").nullable().alter();
-  });
+  if (await knex.schema.hasTable("governance_framework_version_history")) {
+    await knex.schema.alterTable("governance_framework_version_history", (table) => {
+      table.timestamp("active_since").nullable().alter();
+    });
+  }
 
   await knex.schema.alterTable("governance_framework_document", (table) => {
     try {
@@ -21,9 +23,11 @@ export async function down(knex: Knex): Promise<void> {
     table.timestamp("active_since").notNullable().alter();
   });
 
-  await knex.schema.alterTable("governance_framework_version_history", (table) => {
-    table.timestamp("active_since").notNullable().alter();
-  });
+  if (await knex.schema.hasTable("governance_framework_version_history")) {
+    await knex.schema.alterTable("governance_framework_version_history", (table) => {
+      table.timestamp("active_since").notNullable().alter();
+    });
+  }
 
   await knex.schema.alterTable("governance_framework_document", (table) => {
     table.unique(["gfv_id", "url"], "gfd_gfvid_url_unique");
