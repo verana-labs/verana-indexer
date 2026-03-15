@@ -8,7 +8,7 @@ import knex from "../../common/utils/db_connection";
 import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
-import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
+import { calculateTrustRegistryStats, trustRegistryStatsToUpdateObject } from "../crawl-tr/tr_stats";
 import {
   VeranaTrustRegistryMessageTypes,
   VeranaCredentialSchemaMessageTypes,
@@ -517,24 +517,8 @@ export default class IndexerMetaService extends BaseService {
         const trId = Number(tr.id);
 
         try {
-          const stats = await calculateTrustRegistryStats(trId);
-
-          await knex("trust_registry")
-            .where("id", trId)
-            .update({
-              participants: stats.participants,
-              active_schemas: stats.active_schemas,
-              archived_schemas: stats.archived_schemas,
-              weight: stats.weight,
-              issued: stats.issued,
-              verified: stats.verified,
-              ecosystem_slash_events: stats.ecosystem_slash_events,
-              ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-              ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-              network_slash_events: stats.network_slash_events,
-              network_slashed_amount: stats.network_slashed_amount,
-              network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-            });
+          const stats = await calculateTrustRegistryStats(trId, undefined);
+          await knex("trust_registry").where("id", trId).update(trustRegistryStatsToUpdateObject(stats));
 
           const schemas = await knex("credential_schemas")
             .where("tr_id", trId)
@@ -591,6 +575,16 @@ export default class IndexerMetaService extends BaseService {
               resolve();
             }, 50);
           });
+        }
+      }
+
+      for (const tr of trustRegistries) {
+        const trId = Number(tr.id);
+        try {
+          const stats = await calculateTrustRegistryStats(trId, undefined);
+          await knex("trust_registry").where("id", trId).update(trustRegistryStatsToUpdateObject(stats));
+        } catch (err: any) {
+          this.logger.warn(`Backfill final TR stats failed for id=${trId}: ${err?.message ?? err}`);
         }
       }
 

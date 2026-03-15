@@ -9,6 +9,54 @@ const PARTICIPANT_ROLE_COLUMNS = [
   "participants_holder",
 ] as const;
 
+const CS_HISTORY_STATS_BIGINT = [
+  "participants",
+  "participants_ecosystem",
+  "participants_issuer_grantor",
+  "participants_issuer",
+  "participants_verifier_grantor",
+  "participants_verifier",
+  "participants_holder",
+  "ecosystem_slash_events",
+  "network_slash_events",
+] as const;
+const CS_HISTORY_STATS_NUMERIC = [
+  "weight",
+  "issued",
+  "verified",
+  "ecosystem_slashed_amount",
+  "ecosystem_slashed_amount_repaid",
+  "network_slashed_amount",
+  "network_slashed_amount_repaid",
+] as const;
+
+async function addCredentialSchemaHistoryStatsColumnsIfMissing(knex: Knex): Promise<void> {
+  if (!(await knex.schema.hasTable("credential_schema_history"))) return;
+  for (const col of CS_HISTORY_STATS_BIGINT) {
+    if (await knex.schema.hasColumn("credential_schema_history", col)) continue;
+    await knex.schema.alterTable("credential_schema_history", (table) => {
+      table.bigInteger(col).notNullable().defaultTo(0);
+    });
+  }
+  for (const col of CS_HISTORY_STATS_NUMERIC) {
+    if (await knex.schema.hasColumn("credential_schema_history", col)) continue;
+    await knex.schema.alterTable("credential_schema_history", (table) => {
+      table.specificType(col, "NUMERIC(38,0)").notNullable().defaultTo(0);
+    });
+  }
+}
+
+async function dropCredentialSchemaHistoryStatsColumnsIfExists(knex: Knex): Promise<void> {
+  if (!(await knex.schema.hasTable("credential_schema_history"))) return;
+  const cols = [...CS_HISTORY_STATS_BIGINT, ...CS_HISTORY_STATS_NUMERIC];
+  for (const col of cols) {
+    if (!(await knex.schema.hasColumn("credential_schema_history", col))) continue;
+    await knex.schema.alterTable("credential_schema_history", (table) => {
+      table.dropColumn(col);
+    });
+  }
+}
+
 async function addColumnsIfMissing(knex: Knex, tableName: string, columns: readonly string[]) {
   for (const col of columns) {
     const exists = await knex.schema.hasColumn(tableName, col);
@@ -75,7 +123,10 @@ export async function up(knex: Knex): Promise<void> {
 
   await addColumnsIfMissing(knex, "permission_history", PARTICIPANT_ROLE_COLUMNS);
   await addColumnsIfMissing(knex, "credential_schema_history", PARTICIPANT_ROLE_COLUMNS);
-  await addColumnsIfMissing(knex, "trust_registry_history", PARTICIPANT_ROLE_COLUMNS);
+  await addCredentialSchemaHistoryStatsColumnsIfMissing(knex);
+  if (await knex.schema.hasTable("trust_registry_history")) {
+    await addColumnsIfMissing(knex, "trust_registry_history", PARTICIPANT_ROLE_COLUMNS);
+  }
 
   const statsColumns: string[] = [];
   for (const col of PARTICIPANT_ROLE_COLUMNS) {
@@ -119,10 +170,12 @@ export async function up(knex: Knex): Promise<void> {
     knex,
     "CREATE INDEX IF NOT EXISTS idx_credential_schema_history_metrics_latest_desc ON credential_schema_history (credential_schema_id, height DESC, created_at DESC, id DESC)"
   );
-  await createRawIndexIfMissing(
-    knex,
-    "CREATE INDEX IF NOT EXISTS idx_trust_registry_history_metrics_latest_desc ON trust_registry_history (tr_id, height DESC, created_at DESC, id DESC)"
-  );
+  if (await knex.schema.hasTable("trust_registry_history")) {
+    await createRawIndexIfMissing(
+      knex,
+      "CREATE INDEX IF NOT EXISTS idx_trust_registry_history_metrics_latest_desc ON trust_registry_history (tr_id, height DESC, created_at DESC, id DESC)"
+    );
+  }
 }
 
 export async function down(knex: Knex): Promise<void> {
@@ -149,7 +202,10 @@ export async function down(knex: Knex): Promise<void> {
   }
   await dropColumnsIfExists(knex, "stats", statsColumns);
 
-  await dropColumnsIfExists(knex, "trust_registry_history", PARTICIPANT_ROLE_COLUMNS);
+  if (await knex.schema.hasTable("trust_registry_history")) {
+    await dropColumnsIfExists(knex, "trust_registry_history", PARTICIPANT_ROLE_COLUMNS);
+  }
+  await dropCredentialSchemaHistoryStatsColumnsIfExists(knex);
   await dropColumnsIfExists(knex, "credential_schema_history", PARTICIPANT_ROLE_COLUMNS);
   await dropColumnsIfExists(knex, "permission_history", PARTICIPANT_ROLE_COLUMNS);
 

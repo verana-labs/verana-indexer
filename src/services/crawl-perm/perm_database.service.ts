@@ -6,9 +6,10 @@ import getGlobalVariables from "../../common/utils/global_variables";
 import { mapPermissionType } from "../../common/utils/utils";
 import { requireController } from "../../common/utils/extract_controller";
 import { calculatePermState } from "./perm_state_utils";
+import { CS_STATS_FIELDS, statsToUpdateObject } from "../../common/utils/stats_fields";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
 import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
-import { syncTrustRegistryStatsAndHistoryFromSchemaChange } from "../crawl-cs/cs_database.service";
+import { syncTrustRegistryStatsAndHistoryFromSchemaChange, insertCredentialSchemaHistoryStatsRow } from "../crawl-cs/cs_database.service";
 import { getModuleParams } from "../../common/utils/params_service";
 import {
   getPermissionTypeString,
@@ -680,24 +681,22 @@ export default class PermIngestService extends Service {
     if (!schemaId || schemaId <= 0) return;
     const blockHeight = Number(blockHeightRaw) || 0;
     try {
-      const stats = await calculateCredentialSchemaStats(schemaId, blockHeight);
+      const stats = await calculateCredentialSchemaStats(schemaId, blockHeight > 0 ? blockHeight : undefined);
+      const slashFromPerms = await this.sumSlashStatsFromPermissionsForSchema(schemaId);
+      const mergedStats = { ...stats, ...slashFromPerms };
       await knex("credential_schemas")
         .where("id", schemaId)
-        .update({
-          participants: stats.participants,
-          weight: stats.weight,
-          issued: stats.issued,
-          verified: stats.verified,
-          ecosystem_slash_events: stats.ecosystem_slash_events,
-          ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-          ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-          network_slash_events: stats.network_slash_events,
-          network_slashed_amount: stats.network_slashed_amount,
-          network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-        });
+        .update(statsToUpdateObject(mergedStats as unknown as Record<string, unknown>, CS_STATS_FIELDS));
       const hasParticipantsColumn = await this.checkPermissionsColumnExists("participants");
       if (hasParticipantsColumn) {
-        await knex("permissions").where("schema_id", schemaId).update({ participants: stats.participants });
+        await knex("permissions").where("schema_id", schemaId).update({ participants: mergedStats.participants });
+      }
+      try {
+        await insertCredentialSchemaHistoryStatsRow(knex, schemaId, blockHeight, mergedStats);
+      } catch (historyErr: any) {
+        this.logger.warn(
+          `Failed to insert CS stats history for schema_id=${schemaId}: ${historyErr?.message || historyErr}`
+        );
       }
     } catch (error: any) {
       this.logger.warn(
@@ -825,7 +824,7 @@ export default class PermIngestService extends Service {
       );
     });
 
-    await this.refreshSchemaAndTrustRegistryStats(mapped.schema_id);
+    await this.refreshSchemaAndTrustRegistryStats(mapped.schema_id, effectiveHeight);
 
     return {
       success: true,
@@ -2725,31 +2724,29 @@ export default class PermIngestService extends Service {
         if (slashedPerm?.schema_id) {
           const schemaId = Number(slashedPerm.schema_id);
           const csStats = await calculateCredentialSchemaStats(schemaId);
-          await knex("credential_schemas")
-            .where("id", schemaId)
-            .update({
-              participants: csStats.participants,
-              participants_ecosystem: csStats.participants_ecosystem,
-              participants_issuer_grantor: csStats.participants_issuer_grantor,
-              participants_issuer: csStats.participants_issuer,
-              participants_verifier_grantor: csStats.participants_verifier_grantor,
-              participants_verifier: csStats.participants_verifier,
-              participants_holder: csStats.participants_holder,
-              weight: csStats.weight,
-              issued: csStats.issued,
-              verified: csStats.verified,
-              ecosystem_slash_events: csStats.ecosystem_slash_events,
-              ecosystem_slashed_amount: csStats.ecosystem_slashed_amount,
-              ecosystem_slashed_amount_repaid: csStats.ecosystem_slashed_amount_repaid,
-              network_slash_events: csStats.network_slash_events,
-              network_slashed_amount: csStats.network_slashed_amount,
-              network_slashed_amount_repaid: csStats.network_slashed_amount_repaid,
-            });
+          const slashFromPerms = await this.sumSlashStatsFromPermissionsForSchema(schemaId);
+          const mergedStats = { ...csStats, ...slashFromPerms };
+          const csUpdate = statsToUpdateObject(mergedStats as unknown as Record<string, unknown>, CS_STATS_FIELDS);
+          const updatedCount = await knex("credential_schemas").where("id", schemaId).update(csUpdate);
+          if (updatedCount === 0) {
+            this.logger.warn(`[Slash] credential_schemas update affected 0 rows for schema_id=${schemaId}`);
+          }
           const height = Number((msg as any)?.height) || 0;
           await this.refreshTrustRegistryStatsBySchemaId(schemaId, height);
+          const csStatsForHistory = { ...csStats, ...slashFromPerms };
+          try {
+            await insertCredentialSchemaHistoryStatsRow(knex, schemaId, height, csStatsForHistory);
+          } catch (historyErr: any) {
+            this.logger.warn(
+              `Failed to insert CS stats history after slash for schema_id=${schemaId}: ${historyErr?.message || historyErr}`
+            );
+          }
         }
       } catch (statsErr: any) {
-        this.logger.warn(` Failed to update CS/TR statistics after slash: ${statsErr?.message || String(statsErr)}`);
+        const code = statsErr?.nativeError?.code ?? statsErr?.code;
+        this.logger.warn(
+          `Failed to update CS/TR statistics after slash: ${statsErr?.message ?? String(statsErr)}${code ? ` [code=${code}]` : ""}`
+        );
       }
 
       this.logger.info(
@@ -2934,31 +2931,29 @@ export default class PermIngestService extends Service {
         if (repaidPerm?.schema_id) {
           const schemaId = Number(repaidPerm.schema_id);
           const csStats = await calculateCredentialSchemaStats(schemaId);
-          await knex("credential_schemas")
-            .where("id", schemaId)
-            .update({
-              participants: csStats.participants,
-              participants_ecosystem: csStats.participants_ecosystem,
-              participants_issuer_grantor: csStats.participants_issuer_grantor,
-              participants_issuer: csStats.participants_issuer,
-              participants_verifier_grantor: csStats.participants_verifier_grantor,
-              participants_verifier: csStats.participants_verifier,
-              participants_holder: csStats.participants_holder,
-              weight: csStats.weight,
-              issued: csStats.issued,
-              verified: csStats.verified,
-              ecosystem_slash_events: csStats.ecosystem_slash_events,
-              ecosystem_slashed_amount: csStats.ecosystem_slashed_amount,
-              ecosystem_slashed_amount_repaid: csStats.ecosystem_slashed_amount_repaid,
-              network_slash_events: csStats.network_slash_events,
-              network_slashed_amount: csStats.network_slashed_amount,
-              network_slashed_amount_repaid: csStats.network_slashed_amount_repaid,
-            });
+          const slashFromPerms = await this.sumSlashStatsFromPermissionsForSchema(schemaId);
+          const mergedStats = { ...csStats, ...slashFromPerms };
+          const csUpdate = statsToUpdateObject(mergedStats as unknown as Record<string, unknown>, CS_STATS_FIELDS);
+          const updatedCount = await knex("credential_schemas").where("id", schemaId).update(csUpdate);
+          if (updatedCount === 0) {
+            this.logger.warn(`[Repay] credential_schemas update affected 0 rows for schema_id=${schemaId}`);
+          }
           const height = Number((msg as any)?.height) || 0;
           await this.refreshTrustRegistryStatsBySchemaId(schemaId, height);
+          const csStatsForHistory = { ...csStats, ...slashFromPerms };
+          try {
+            await insertCredentialSchemaHistoryStatsRow(knex, schemaId, height, csStatsForHistory);
+          } catch (historyErr: any) {
+            this.logger.warn(
+              `Failed to insert CS stats history after repay for schema_id=${schemaId}: ${historyErr?.message || historyErr}`
+            );
+          }
         }
       } catch (statsErr: any) {
-        this.logger.warn(` Failed to update CS/TR statistics after repay: ${statsErr?.message || String(statsErr)}`);
+        const code = statsErr?.nativeError?.code ?? statsErr?.code;
+        this.logger.warn(
+          `Failed to update CS/TR statistics after repay: ${statsErr?.message ?? String(statsErr)}${code ? ` [code=${code}]` : ""}`
+        );
       }
 
       this.logger.info(
@@ -3063,10 +3058,60 @@ export default class PermIngestService extends Service {
     }
   }
 
-  /**
-   * Update slash statistics for a permission and all its ancestors
-   * when a slash or repay event occurs
-   */
+
+  private async sumSlashStatsFromPermissionsForSchema(schemaId: number): Promise<{
+    ecosystem_slash_events: number;
+    ecosystem_slashed_amount: number;
+    ecosystem_slashed_amount_repaid: number;
+    network_slash_events: number;
+    network_slashed_amount: number;
+    network_slashed_amount_repaid: number;
+  }> {
+    const hasCol = await this.checkPermissionsColumnExists("ecosystem_slash_events");
+    if (!hasCol) {
+      return {
+        ecosystem_slash_events: 0,
+        ecosystem_slashed_amount: 0,
+        ecosystem_slashed_amount_repaid: 0,
+        network_slash_events: 0,
+        network_slashed_amount: 0,
+        network_slashed_amount_repaid: 0,
+      };
+    }
+    const rows = await knex("permissions")
+      .where("schema_id", schemaId)
+      .select(
+        "ecosystem_slash_events",
+        "ecosystem_slashed_amount",
+        "ecosystem_slashed_amount_repaid",
+        "network_slash_events",
+        "network_slashed_amount",
+        "network_slashed_amount_repaid"
+      );
+    let ecosystemSlashEvents = 0;
+    let ecosystemSlashedAmount = 0;
+    let ecosystemSlashedAmountRepaid = 0;
+    let networkSlashEvents = 0;
+    let networkSlashedAmount = 0;
+    let networkSlashedAmountRepaid = 0;
+    for (const r of rows || []) {
+      ecosystemSlashEvents += Number(r.ecosystem_slash_events ?? 0);
+      ecosystemSlashedAmount += Number(r.ecosystem_slashed_amount ?? 0);
+      ecosystemSlashedAmountRepaid += Number(r.ecosystem_slashed_amount_repaid ?? 0);
+      networkSlashEvents += Number(r.network_slash_events ?? 0);
+      networkSlashedAmount += Number(r.network_slashed_amount ?? 0);
+      networkSlashedAmountRepaid += Number(r.network_slashed_amount_repaid ?? 0);
+    }
+    return {
+      ecosystem_slash_events: ecosystemSlashEvents,
+      ecosystem_slashed_amount: ecosystemSlashedAmount,
+      ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaid,
+      network_slash_events: networkSlashEvents,
+      network_slashed_amount: networkSlashedAmount,
+      network_slashed_amount_repaid: networkSlashedAmountRepaid,
+    };
+  }
+
   private async updateSlashStatistics(
     trx: any,
     permId: number,

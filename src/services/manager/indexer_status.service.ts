@@ -26,6 +26,12 @@ export default class IndexerStatusService extends BaseService {
     return ApiResponder.success(ctx, status, 200);
   }
 
+  @Action({ name: "getDetailedStatus" })
+  public async getDetailedStatus(ctx: Context): Promise<any> {
+    const status = await indexerStatusManager.getDetailedStatus();
+    return ApiResponder.success(ctx, status, 200);
+  }
+
   @Action()
   public async stopIndexer(ctx: Context<{ error: Error; service?: string }>): Promise<any> {
     const { error, service } = ctx.params;

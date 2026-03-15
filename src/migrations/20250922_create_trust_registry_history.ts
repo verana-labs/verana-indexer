@@ -48,7 +48,7 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger("tr_id").notNullable();
     table.timestamp("created").notNullable();
     table.integer("version").notNullable();
-    table.timestamp("active_since").notNullable();
+    table.timestamp("active_since").nullable();
     table.text("event_type").notNullable();
     table.bigInteger("height").notNullable();
     table.jsonb("changes").nullable();

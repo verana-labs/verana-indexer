@@ -1,5 +1,3 @@
-import * as fs from "fs";
-import * as path from "path";
 import {
   Action,
   Service,
@@ -16,7 +14,7 @@ import knex from "../../common/utils/db_connection";
 import { requireController } from "../../common/utils/extract_controller";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
-import { calculateTrustRegistryStats } from "./tr_stats";
+import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
 import { getTrustRegistry } from "../../modules/tr-height-sync/tr_height_sync_helpers";
 
 type ChangeRecord = Record<string, any>;
@@ -112,7 +110,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     this.logger.info(` Processing ${trustRegistryList?.length || 0} TrustRegistry messages`);
 
     if (!trustRegistryList || trustRegistryList.length === 0) {
-      this.logger.warn("⚠️ No TrustRegistry messages to process");
+      this.logger.warn(" No TrustRegistry messages to process");
       return;
     }
 
@@ -122,8 +120,8 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     const syncedTrIds: number[] = []; 
     const seenHeightSyncKeys = new Set<string>();
     const totalMessages = trustRegistryList.length;
-    const useHeightSyncTR = process.env.USE_HEIGHT_SYNC_TR === "true";
-    const debugLogPath = path.join(process.cwd(), "logs", "tr_ingest_debug.log");
+    const useHeightSyncTR =
+      process.env.NODE_ENV !== "test" && process.env.USE_HEIGHT_SYNC_TR === "true";
 
     const processMessage = async (message: any, index: number) => {
       if (!message.type) {
@@ -227,45 +225,6 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       }
     }
 
-    try {
-      const trIdsToCheck = useHeightSyncTR 
-        ? Array.from(new Set(syncedTrIds))
-        : Array.from(new Set(seenTrIds));
-      
-      let existingIds: number[] = [];
-      if (trIdsToCheck.length > 0) {
-        const rows = await knex("trust_registry")
-          .whereIn("id", trIdsToCheck)
-          .select("id");
-        existingIds = rows.map((r: any) => Number(r.id));
-      }
-      const existingSet = new Set(existingIds);
-      const missingIds = trIdsToCheck.filter((id) => !existingSet.has(id));
-
-      const debugEntry = {
-        timestamp: new Date().toISOString(),
-        batchSize: totalMessages,
-        useHeightSyncTR,
-        uniqueTrIdsFromMessages: trIdsToCheck,
-        persistedTrIds: existingIds,
-        missingTrIds: missingIds,
-        failedMessages,
-      };
-
-      const debugDir = path.dirname(debugLogPath);
-      await fs.promises.mkdir(debugDir, { recursive: true }).catch(() => undefined);
-
-      await fs.promises
-        .appendFile(debugLogPath, `${JSON.stringify(debugEntry)}\n`, { encoding: "utf8" })
-        .catch(() => undefined);
-    } catch (debugErr: any) {
-      this.logger.warn(
-        `[TR Ingest Debug] Failed to write debug snapshot: ${debugErr?.message || String(
-          debugErr
-        )}`
-      );
-    }
-
     this.logger.info(`TrustRegistry processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${totalMessages} total`);
 
     if (failedMessages.length > 0) {
@@ -330,7 +289,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         Number(oldTr.network_slashed_amount_repaid ?? 0) !== statsUpdate.network_slashed_amount_repaid;
 
       if (statsChanged) {
-        this.logger.info(`📊 Stats changed for TR ${trId}, updating main table and recording StatsUpdate history`);
+        this.logger.info(`Stats changed for TR ${trId}, updating main table and recording StatsUpdate history`);
       }
 
       await knex("trust_registry").where("id", trId).update(statsUpdate);
@@ -345,18 +304,18 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
               await this.recordTRHistory(trx, trId, "StatsUpdate", effectiveHeight, oldTr, updatedTrWithStats);
             });
           } else {
-            this.logger.warn(`⚠️ Updated TR ${trId} not found after stats update`);
+            this.logger.warn(` Updated TR ${trId} not found after stats update`);
           }
         } catch (historyErr: any) {
-          this.logger.warn(`⚠️ Failed to record StatsUpdate history for TR ${trId}: ${historyErr?.message || String(historyErr)}`);
+          this.logger.warn(` Failed to record StatsUpdate history for TR ${trId}: ${historyErr?.message || String(historyErr)}`);
         }
       }
 
       if (!statsChanged) {
-        this.logger.debug(`ℹ️ No stats changes detected for TR ${trId}, skipping history update`);
+        this.logger.debug(` No stats changes detected for TR ${trId}, skipping history update`);
       }
     } catch (statsError: any) {
-      this.logger.warn(`⚠️ Failed to update statistics for TR ${trId}: ${statsError?.message || String(statsError)}`);
+      this.logger.warn(` Failed to update statistics for TR ${trId}: ${statsError?.message || String(statsError)}`);
     }
 
     if (process.env.USE_HEIGHT_SYNC_TR === "true" && height) {
@@ -395,30 +354,29 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     oldData: any,
     newData: any
   ) {
-    const statsFields = [
-      'participants', 'participants_ecosystem', 'participants_issuer_grantor',
-      'participants_issuer', 'participants_verifier_grantor', 'participants_verifier',
-      'participants_holder', 'active_schemas', 'archived_schemas', 'weight',
-      'issued', 'verified', 'ecosystem_slash_events', 'ecosystem_slashed_amount',
-      'ecosystem_slashed_amount_repaid', 'network_slash_events', 'network_slashed_amount',
-      'network_slashed_amount_repaid'
-    ];
+    const hasIndexedStats =
+      !!newData &&
+      TR_STATS_FIELDS.some((field) => newData[field] !== undefined && newData[field] !== null);
 
     let stats: any;
-    try {
-      stats = await calculateTrustRegistryStats(trId, height);
-    } catch (err: any) {
-      this.logger.warn(
-        `Failed to calculate stats for TR ${trId} at height ${height}: ${err?.message || String(err)}`
-      );
+    if (hasIndexedStats) {
       stats = getDefaultTRStats(newData);
+    } else {
+      try {
+        stats = await calculateTrustRegistryStats(trId, height);
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to calculate stats for TR ${trId} at height ${height}: ${err?.message || String(err)}`
+        );
+        stats = getDefaultTRStats(newData);
+      }
     }
 
     const changes: ChangeRecord = {};
 
     if (oldData) {
       for (const [key, value] of Object.entries(newData)) {
-        if (key !== 'id' && key !== 'height' && !statsFields.includes(key)) {
+        if (key !== 'id' && key !== 'height' && !TR_STATS_FIELDS.includes(key)) {
           const oldVal = oldData[key];
           if (oldVal !== value) {
             changes[key] = value;
@@ -426,7 +384,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         }
       }
 
-      for (const field of statsFields) {
+      for (const field of TR_STATS_FIELDS) {
         const oldVal = oldData[field] != null ? Number(oldData[field]) : 0;
         const newVal = stats[field] != null ? Number(stats[field]) : 0;
         if (oldVal !== newVal) {
@@ -435,15 +393,17 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       }
     } else {
       for (const [key, value] of Object.entries(newData)) {
-        if (key !== 'id' && key !== 'height' && !statsFields.includes(key) && value !== null && value !== undefined) {
+        if (key !== 'id' && key !== 'height' && !TR_STATS_FIELDS.includes(key) && value !== null && value !== undefined) {
           changes[key] = value;
         }
       }
-      for (const field of statsFields) {
+      for (const field of TR_STATS_FIELDS) {
         const val = stats[field] != null ? Number(stats[field]) : 0;
         changes[field] = val;
       }
     }
+
+    changes.height = Number(height);
 
     const historyPayload: any = {
       tr_id: trId,
@@ -511,13 +471,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         const existingChanges = existingSameEvent.changes ? String(existingSameEvent.changes) : null;
         const nextChanges = historyPayload.changes ? String(historyPayload.changes) : null;
         if (existingChanges === nextChanges) {
-          this.logger.debug(`⏭️ Skipping duplicate TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
+          this.logger.debug(`Skipping duplicate TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
           return;
         }
       }
 
       await trx("trust_registry_history").insert(historyPayload);
-      this.logger.debug(`✅ Recorded TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
+      this.logger.debug(` Recorded TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
     } catch (insertErr: any) {
       this.logger.error(`❌ Failed to insert TR history for tr_id=${trId}: ${insertErr?.message || String(insertErr)}`);
       throw insertErr;
@@ -712,9 +672,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
       return null;
     }
-    // In height-sync mode, syncFromLedger is the single writer for TR/GFV/GFD history.
-    // Avoid writing history here to prevent duplicate rows for the same tr_id/event/height.
-    return actualTrId;
+     return actualTrId;
   }
 
   private async processArchiveTR(message: any) {
@@ -725,7 +683,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         .first();
       if (!tr) {
         await trx.rollback();
-        this.logger.warn(`⚠️ ArchiveTR: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
+        this.logger.warn(` ArchiveTR: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
         return;
       }
 
@@ -749,7 +707,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-      this.logger.info(`✅ Successfully archived TR: id=${tr.id}`);
+      this.logger.info(` Successfully archived TR: id=${tr.id}`);
 
       await this.updateTRStatsAndSync(tr.id, message.trust_registry_id ?? tr.id, message.height);
     } catch (err: any) {
@@ -769,7 +727,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         .first();
       if (!tr) {
         await trx.rollback();
-        this.logger.warn(`⚠️ UpdateTR: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
+        this.logger.warn(` UpdateTR: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
         return;
       }
 
@@ -796,7 +754,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       }
 
       await trx.commit();
-      this.logger.info(`✅ Successfully updated TR: id=${tr.id}`);
+      this.logger.info(` Successfully updated TR: id=${tr.id}`);
 
       await this.updateTRStatsAndSync(tr.id, message.trust_registry_id ?? tr.id, message.height);
     } catch (err: any) {
@@ -962,7 +920,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-      this.logger.info(`✅ Successfully created/updated TR: did=${message.did}, id=${tr.id}`);
+      this.logger.info(` Successfully created/updated TR: did=${message.did}, id=${tr.id}`);
 
       await this.updateTRStatsAndSync(tr.id, tr.id, message.height);
     } catch (err: any) {
@@ -1070,7 +1028,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       await trx.commit();
       this.logger.info(
-        `✅ AddGovFrameworkDoc OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}`
+        ` AddGovFrameworkDoc OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}`
       );
     } catch (err: any) {
       await trx.rollback();
@@ -1134,7 +1092,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       );
 
       await trx.commit();
-      this.logger.info(`✅ Successfully increased active GFV: tr_id=${tr.id}, version=${nextVersion}`);
+      this.logger.info(` Successfully increased active GFV: tr_id=${tr.id}, version=${nextVersion}`);
       
       await this.updateTRStatsAndSync(tr.id, message.trust_registry_id ?? tr.id, message.height);
     } catch (err: any) {

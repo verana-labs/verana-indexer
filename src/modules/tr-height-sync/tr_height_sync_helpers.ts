@@ -5,11 +5,13 @@ const TR_GET_PATH = "/verana/tr/v1/get";
 const HEIGHT_HEADER = "x-cosmos-block-height";
 
 export interface LedgerTrustRegistryVersion {
+  id?: number | string;
   version?: number | string;
   created?: string;
   active_since?: string | null;
   activeSince?: string | null;
   documents?: Array<{
+    id?: number | string;
     created?: string;
     language?: string | null;
     url?: string | null;

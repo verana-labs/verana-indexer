@@ -95,8 +95,8 @@ async function checkHeightColumnExists(): Promise<boolean> {
 }
 
 async function checkHistoryMetricColumnsExist(): Promise<boolean> {
-  if (historyMetricColumnsExistCache !== null) {
-    return historyMetricColumnsExistCache;
+  if (historyMetricColumnsExistCache === true) {
+    return true;
   }
   try {
     const requiredColumns = [
@@ -118,10 +118,10 @@ async function checkHistoryMetricColumnsExist(): Promise<boolean> {
       "network_slashed_amount_repaid",
     ];
     const checks = await Promise.all(requiredColumns.map((col) => knex.schema.hasColumn("credential_schema_history", col)));
-    historyMetricColumnsExistCache = checks.every(Boolean);
-    return historyMetricColumnsExistCache;
+    const allExist = checks.every(Boolean);
+    if (allExist) historyMetricColumnsExistCache = true;
+    return allExist;
   } catch {
-    historyMetricColumnsExistCache = false;
     return false;
   }
 }
@@ -170,7 +170,7 @@ export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
 
   let trStats: any;
   try {
-    trStats = await calculateTrustRegistryStats(trId, blockHeight);
+    trStats = await calculateTrustRegistryStats(trId, undefined);
   } catch {
     return;
   }
@@ -264,6 +264,26 @@ export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
   }
 
   await db("trust_registry_history").insert(trHistoryPayload);
+}
+
+
+export async function insertCredentialSchemaHistoryStatsRow(
+  db: any,
+  schemaId: number,
+  blockHeight: number,
+  stats: any
+): Promise<void> {
+  if (!schemaId || !Number.isInteger(schemaId) || schemaId <= 0) return;
+  const schemaRow = await db("credential_schemas").where("id", schemaId).first();
+  if (!schemaRow) return;
+  const hasHeightColumn = await checkHeightColumnExists();
+  const historyRow = mapToHistoryRow(schemaRow, {
+    changes: JSON.stringify({ stats_update: true }),
+    action: "stats_update",
+    height: blockHeight,
+  }, hasHeightColumn);
+  if (stats) addStatsToHistoryRow(historyRow, stats);
+  await db("credential_schema_history").insert(historyRow);
 }
 
 function ensureSchemaString(js: unknown): string {
@@ -612,7 +632,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         const hasHeightColumn = await checkHeightColumnExists();
-        const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist();
         const historyAction = existingSchema ? "update" : "create";
         
         let stats;
@@ -668,7 +687,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             height: blockHeight,
           }, hasHeightColumn);
           
-          if (hasHistoryMetricColumns && stats) {
+          if (stats) {
             addStatsToHistoryRow(historyRow, stats);
           }
           
@@ -810,7 +829,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       if (Object.keys(changes).length > 0 || statsChanged) {
         const hasHeightColumn = await checkHeightColumnExists();
-        const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist();
         
         const historyRow = mapToHistoryRow(updated, {
           changes: Object.keys(changes).length > 0 ? JSON.stringify(changes) : null,
@@ -818,7 +836,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           height: blockHeight,
         }, hasHeightColumn);
         
-        if (hasHistoryMetricColumns && stats) {
+        if (stats) {
           addStatsToHistoryRow(historyRow, stats);
         }
         
@@ -909,7 +927,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           height: blockHeight,
         }, hasHeightColumn);
         
-        if (hasHistoryMetricColumns && stats) {
+        if (stats) {
           addStatsToHistoryRow(historyRow, stats);
         }
         
@@ -1046,7 +1064,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         this.logger.warn(`Failed to persist title/description for CS ${finalRecord.id} in syncFromLedger: ${err?.message || err}`);
       }
       const hasHeightColumn = await checkHeightColumnExists();
-      const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist();
       const historyAction = existing ? "update" : "create";
       if (!existing || Object.keys(historyChangesForUpdate).length > 0) {
         let stats;
@@ -1087,23 +1104,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           height: blockHeightNum,
         }, hasHeightColumn);
         
-        if (hasHistoryMetricColumns && stats) {
-          historyRow.participants = stats.participants;
-          historyRow.participants_ecosystem = stats.participants_ecosystem;
-          historyRow.participants_issuer_grantor = stats.participants_issuer_grantor;
-          historyRow.participants_issuer = stats.participants_issuer;
-          historyRow.participants_verifier_grantor = stats.participants_verifier_grantor;
-          historyRow.participants_verifier = stats.participants_verifier;
-          historyRow.participants_holder = stats.participants_holder;
-          historyRow.weight = Number(stats.weight ?? 0);
-          historyRow.issued = Number(stats.issued ?? 0);
-          historyRow.verified = Number(stats.verified ?? 0);
-          historyRow.ecosystem_slash_events = stats.ecosystem_slash_events;
-          historyRow.ecosystem_slashed_amount = Number(stats.ecosystem_slashed_amount ?? 0);
-          historyRow.ecosystem_slashed_amount_repaid = Number(stats.ecosystem_slashed_amount_repaid ?? 0);
-          historyRow.network_slash_events = stats.network_slash_events;
-          historyRow.network_slashed_amount = Number(stats.network_slashed_amount ?? 0);
-          historyRow.network_slashed_amount_repaid = Number(stats.network_slashed_amount_repaid ?? 0);
+        if (stats) {
+          addStatsToHistoryRow(historyRow, stats);
         }
         
         await knex("credential_schema_history").insert(historyRow);
@@ -1189,26 +1191,29 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           modified: historyRecord.modified,
         };
 
-        const stats = hasHistoryMetricColumns
-          ? {
-              participants: Number(historyRecord.participants ?? 0),
-              participants_ecosystem: Number(historyRecord.participants_ecosystem ?? 0),
-              participants_issuer_grantor: Number(historyRecord.participants_issuer_grantor ?? 0),
-              participants_issuer: Number(historyRecord.participants_issuer ?? 0),
-              participants_verifier_grantor: Number(historyRecord.participants_verifier_grantor ?? 0),
-              participants_verifier: Number(historyRecord.participants_verifier ?? 0),
-              participants_holder: Number(historyRecord.participants_holder ?? 0),
-              weight: Number(historyRecord.weight ?? 0),
-              issued: Number(historyRecord.issued ?? 0),
-              verified: Number(historyRecord.verified ?? 0),
-              ecosystem_slash_events: Number(historyRecord.ecosystem_slash_events ?? 0),
-              ecosystem_slashed_amount: Number(historyRecord.ecosystem_slashed_amount ?? 0),
-              ecosystem_slashed_amount_repaid: Number(historyRecord.ecosystem_slashed_amount_repaid ?? 0),
-              network_slash_events: Number(historyRecord.network_slash_events ?? 0),
-              network_slashed_amount: Number(historyRecord.network_slashed_amount ?? 0),
-              network_slashed_amount_repaid: Number(historyRecord.network_slashed_amount_repaid ?? 0),
-            }
-          : getDefaultCSStats();
+        let stats: ReturnType<typeof getDefaultCSStats>;
+        if (hasHistoryMetricColumns) {
+          stats = {
+            participants: Number(historyRecord.participants ?? 0),
+            participants_ecosystem: Number(historyRecord.participants_ecosystem ?? 0),
+            participants_issuer_grantor: Number(historyRecord.participants_issuer_grantor ?? 0),
+            participants_issuer: Number(historyRecord.participants_issuer ?? 0),
+            participants_verifier_grantor: Number(historyRecord.participants_verifier_grantor ?? 0),
+            participants_verifier: Number(historyRecord.participants_verifier ?? 0),
+            participants_holder: Number(historyRecord.participants_holder ?? 0),
+            weight: Number(historyRecord.weight ?? 0),
+            issued: Number(historyRecord.issued ?? 0),
+            verified: Number(historyRecord.verified ?? 0),
+            ecosystem_slash_events: Number(historyRecord.ecosystem_slash_events ?? 0),
+            ecosystem_slashed_amount: Number(historyRecord.ecosystem_slashed_amount ?? 0),
+            ecosystem_slashed_amount_repaid: Number(historyRecord.ecosystem_slashed_amount_repaid ?? 0),
+            network_slash_events: Number(historyRecord.network_slash_events ?? 0),
+            network_slashed_amount: Number(historyRecord.network_slashed_amount ?? 0),
+            network_slashed_amount_repaid: Number(historyRecord.network_slashed_amount_repaid ?? 0),
+          };
+        } else {
+          stats = getDefaultCSStats();
+        }
 
         return ApiResponder.success(ctx, {
           schema: {
@@ -1303,7 +1308,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_perm_management_mode: { type: "string", optional: true },
       verifier_perm_management_mode: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
-      sort: { type: "string", optional: true },
+      sort: { type: "string", optional: true, default: "-modified" },
       min_participants: { type: "number", optional: true },
       max_participants: { type: "number", optional: true },
       min_participants_ecosystem: { type: "number", optional: true },
@@ -1406,8 +1411,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       const participantAccount = participantValidation.value;
 
+      const effectiveSort = sort ?? "-modified";
       try {
-        validateSortParameter(sort);
+        validateSortParameter(effectiveSort);
       } catch (err: any) {
         return ApiResponder.error(ctx, err.message, 400);
       }
@@ -1519,7 +1525,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .orderBy("csh.created_at", "desc")
             .orderBy("csh.id", "desc")
             .as("latest");
-          const orderedLatest = applyOrdering(knex.from(latestSub).select("*"), sort);
+          const orderedLatest = applyOrdering(knex.from(latestSub).select("*"), effectiveSort);
           items = await orderedLatest.limit(limit);
         } else {
           const ranked = knex("credential_schema_history as csh")
@@ -1704,6 +1710,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               .select(
                 "id",
                 "participants",
+                "participants_ecosystem",
+                "participants_issuer_grantor",
+                "participants_issuer",
+                "participants_verifier_grantor",
+                "participants_verifier",
+                "participants_holder",
                 "weight",
                 "issued",
                 "verified",
@@ -1720,32 +1732,45 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             }
           }
 
+          const defaultStats = {
+            participants: 0,
+            participants_ecosystem: 0,
+            participants_issuer_grantor: 0,
+            participants_issuer: 0,
+            participants_verifier_grantor: 0,
+            participants_verifier: 0,
+            participants_holder: 0,
+            weight: 0,
+            issued: 0,
+            verified: 0,
+            ecosystem_slash_events: 0,
+            ecosystem_slashed_amount: 0,
+            ecosystem_slashed_amount_repaid: 0,
+            network_slash_events: 0,
+            network_slashed_amount: 0,
+            network_slashed_amount_repaid: 0,
+          };
           schemasWithStats = filteredItems.map((item) => {
-            const stats = schemaStatsMap.get(item.id) || {
-              participants: 0,
-              weight: 0,
-              issued: 0,
-              verified: 0,
-              ecosystem_slash_events: 0,
-              ecosystem_slashed_amount: 0,
-              ecosystem_slashed_amount_repaid: 0,
-              network_slash_events: 0,
-              network_slashed_amount: 0,
-              network_slashed_amount_repaid: 0,
-            };
-
+            const stats = schemaStatsMap.get(item.id) || defaultStats;
+            const num = (v: any) => (typeof v === "number" ? v : Number(v || 0));
             return {
               ...item,
-              participants: typeof stats.participants === 'number' ? stats.participants : Number(stats.participants || 0),
-              weight: typeof stats.weight === 'number' ? stats.weight : Number(stats.weight || 0),
-              issued: typeof stats.issued === 'number' ? stats.issued : Number(stats.issued || 0),
-              verified: typeof stats.verified === 'number' ? stats.verified : Number(stats.verified || 0),
-              ecosystem_slash_events: typeof stats.ecosystem_slash_events === 'number' ? stats.ecosystem_slash_events : Number(stats.ecosystem_slash_events || 0),
-              ecosystem_slashed_amount: typeof stats.ecosystem_slashed_amount === 'number' ? stats.ecosystem_slashed_amount : Number(stats.ecosystem_slashed_amount || 0),
-              ecosystem_slashed_amount_repaid: typeof stats.ecosystem_slashed_amount_repaid === 'number' ? stats.ecosystem_slashed_amount_repaid : Number(stats.ecosystem_slashed_amount_repaid || 0),
-              network_slash_events: typeof stats.network_slash_events === 'number' ? stats.network_slash_events : Number(stats.network_slash_events || 0),
-              network_slashed_amount: typeof stats.network_slashed_amount === 'number' ? stats.network_slashed_amount : Number(stats.network_slashed_amount || 0),
-              network_slashed_amount_repaid: typeof stats.network_slashed_amount_repaid === 'number' ? stats.network_slashed_amount_repaid : Number(stats.network_slashed_amount_repaid || 0),
+              participants: num(stats.participants),
+              participants_ecosystem: num((stats as any).participants_ecosystem),
+              participants_issuer_grantor: num((stats as any).participants_issuer_grantor),
+              participants_issuer: num((stats as any).participants_issuer),
+              participants_verifier_grantor: num((stats as any).participants_verifier_grantor),
+              participants_verifier: num((stats as any).participants_verifier),
+              participants_holder: num((stats as any).participants_holder),
+              weight: num(stats.weight),
+              issued: num(stats.issued),
+              verified: num(stats.verified),
+              ecosystem_slash_events: num(stats.ecosystem_slash_events),
+              ecosystem_slashed_amount: num(stats.ecosystem_slashed_amount),
+              ecosystem_slashed_amount_repaid: num(stats.ecosystem_slashed_amount_repaid),
+              network_slash_events: num(stats.network_slash_events),
+              network_slashed_amount: num(stats.network_slashed_amount),
+              network_slashed_amount_repaid: num(stats.network_slashed_amount_repaid),
             };
           });
         }
@@ -1784,7 +1809,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         };
 
         const typedFilteredItems = filteredWithStats as FilteredItemWithStats[];
-        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, sort, limit);
+        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, effectiveSort, limit);
 
         return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
       }
@@ -1863,7 +1888,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       type SchemaWithStats = typeof filteredItems[0];
       const sortedItems = liveSortFullyApplied
         ? (filteredItems as SchemaWithStats[]).slice(0, limit)
-        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], sort, limit);
+        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], effectiveSort, limit);
 
       return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
     } catch (err: any) {
