@@ -61,7 +61,7 @@ export default class AccountReputationService extends BullableService {
       }
     })();
 
-    let td: any;
+    let td: { amount: number; slashed_deposit: number; repaid_deposit: number; slash_count: number; last_slashed: any; last_repaid: any; last_repaid_by: any } | null;
     if (typeof blockHeight === "number") {
       const tdHistory = await knex("trust_deposit_history")
         .where({ account })
@@ -69,23 +69,36 @@ export default class AccountReputationService extends BullableService {
         .orderBy("height", "desc")
         .orderBy("created_at", "desc")
         .first();
-      td = tdHistory ? {
-        amount: tdHistory.amount != null ? Number(tdHistory.amount) : 0,
-        slashed_deposit: tdHistory.slashed_deposit != null ? Number(tdHistory.slashed_deposit) : 0,
-        repaid_deposit: tdHistory.repaid_deposit != null ? Number(tdHistory.repaid_deposit) : 0,
-        slash_count: tdHistory.slash_count || 0,
-        last_slashed: tdHistory.last_slashed,
-        last_repaid: tdHistory.last_repaid,
-        last_repaid_by: tdHistory.last_repaid_by,
-      } : null;
+      td = tdHistory
+        ? {
+            amount: tdHistory.amount != null ? Number(tdHistory.amount) : 0,
+            slashed_deposit: tdHistory.slashed_deposit != null ? Number(tdHistory.slashed_deposit) : 0,
+            repaid_deposit: tdHistory.repaid_deposit != null ? Number(tdHistory.repaid_deposit) : 0,
+            slash_count: tdHistory.slash_count != null ? Number(tdHistory.slash_count) : 0,
+            last_slashed: tdHistory.last_slashed,
+            last_repaid: tdHistory.last_repaid,
+            last_repaid_by: tdHistory.last_repaid_by,
+          }
+        : null;
     } else {
-      td = await knex("trust_deposits").where({ account }).first();
+      const tdRow = await knex("trust_deposits").where({ account }).first();
+      td = tdRow
+        ? {
+            amount: tdRow.amount != null ? Number(tdRow.amount) : 0,
+            slashed_deposit: tdRow.slashed_deposit != null ? Number(tdRow.slashed_deposit) : 0,
+            repaid_deposit: tdRow.repaid_deposit != null ? Number(tdRow.repaid_deposit) : 0,
+            slash_count: tdRow.slash_count != null ? Number(tdRow.slash_count) : 0,
+            last_slashed: tdRow.last_slashed,
+            last_repaid: tdRow.last_repaid,
+            last_repaid_by: tdRow.last_repaid_by,
+          }
+        : null;
     }
 
-    const deposit = td?.amount || "0";
-    const slashed = td?.slashed_deposit || "0";
-    const repaid = td?.repaid_deposit || "0";
-    const slashCount = td?.slash_count || 0;
+    const deposit = td != null ? td.amount : 0;
+    const slashed = td != null ? td.slashed_deposit : 0;
+    const repaid = td != null ? td.repaid_deposit : 0;
+    const slashCount = td != null ? td.slash_count : 0;
 
     let slashDetails: any[] = [];
     let repayDetails: any[] = [];

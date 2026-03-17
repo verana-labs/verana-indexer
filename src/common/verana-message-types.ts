@@ -36,10 +36,12 @@ export enum VeranaPermissionMessageTypes {
 
 export enum VeranaTrustDepositMessageTypes {
   UpdateParams = "/verana.td.v1.MsgUpdateParams",
+  AdjustTrustDeposit = "/verana.td.v1.MsgAdjustTrustDeposit",
   ReclaimYield = "/verana.td.v1.MsgReclaimTrustDepositYield",
   ReclaimDeposit = "/verana.td.v1.MsgReclaimTrustDeposit",
   RepaySlashed = "/verana.td.v1.MsgRepaySlashedTrustDeposit",
   SlashTrustDeposit = "/verana.td.v1.MsgSlashTrustDeposit",
+  BurnEcosystemSlashedTrustDeposit = "/verana.td.v1.MsgBurnEcosystemSlashedTrustDeposit",
 }
 
 export enum VeranaTrustRegistryMessageTypes {

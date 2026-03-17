@@ -221,6 +221,10 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
   - rolling multi-height verification window (3 heights)
 - See `docs/services/crawl-perm/crawl-perm.md` for flow and verification details.
 
+**Trust Deposit (TD) Height-Sync Refactor**
+- `USE_HEIGHT_SYNC_TD` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Trust Deposit synchronization by block height (GET `/verana/td/v1/get/{id}` with `x-cosmos-block-height`). When unset or `false`, the indexer uses the legacy event/message processor path.
+- See `docs/services/crawl-td/td-height-sync.md` for flow, supported messages, and module layout.
+
 **Content gateways**
 - `IPFS_GATEWAY`, `REQUEST_IPFS_TIMEOUT`, `MAX_CONTENT_LENGTH_BYTE`, `MAX_BODY_LENGTH_BYTE`, `S3_GATEWAY` – Timeouts and size caps used when fetching off-chain artifacts from IPFS/S3 during DID or credential syncing.
 

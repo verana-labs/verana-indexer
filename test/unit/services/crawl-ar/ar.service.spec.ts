@@ -120,7 +120,7 @@ describe("AccountReputationService", () => {
         expect(res.repaid).toBe(5);
         expect(Array.isArray(res.slashs)).toBe(true);
         expect(Array.isArray(res.repayments)).toBe(true);
-        expect(res.slashs[0].slashed_amount).toBe("10");
-        expect(res.repayments[0].repaid_amount).toBe("5");
+        expect(res.slashs[0].slashed_amount).toBe(10);
+        expect(res.repayments[0].repaid_amount).toBe(5);
     });
 });
