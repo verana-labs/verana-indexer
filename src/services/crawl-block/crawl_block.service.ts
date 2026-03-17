@@ -29,7 +29,18 @@ import knex from '../../common/utils/db_connection';
 import ChainRegistry from '../../common/utils/chain.registry';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import { Network } from '../../network';
-import { checkHealth, getOptimalBlocksPerCall, getOptimalDelay, HealthStatus, triggerGC, shouldPauseForMemory, getMemoryRecoveryPauseMs } from '../../common/utils/health_check';
+import {
+  checkHealth,
+  getOptimalBlocksPerCall,
+  getOptimalDelay,
+  HealthStatus,
+  triggerGC,
+  shouldPauseForMemory,
+  getMemoryRecoveryPauseMs,
+  waitForHealthyDependencies,
+  startBlockchainHealthMonitor,
+  stopBlockchainHealthMonitor,
+} from '../../common/utils/health_check';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
 import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
@@ -1321,7 +1332,21 @@ export default class CrawlBlockService extends BullableService {
   public async _start() {
     const providerRegistry = await getProviderRegistry();
     this._registry = new ChainRegistry(this.logger, providerRegistry);
-    
+
+    const startupHealth = await waitForHealthyDependencies({
+      maxAttempts: Number(process.env.INDEXER_STARTUP_HEALTH_MAX_ATTEMPTS) || 30,
+      initialDelayMs: 2000,
+      backoffMultiplier: 1.5,
+      maxDelayMs: 60000,
+      checkpointJobName: BULL_JOB_NAME.CRAWL_BLOCK,
+      logger: this.logger,
+    });
+    if (!startupHealth.ok) {
+      const msg = `Startup health checks failed. DB: ${startupHealth.checks.database.ok ? "ok" : startupHealth.checks.database.error}, API: ${startupHealth.checks.blockchainApi.ok ? "ok" : startupHealth.checks.blockchainApi.error}. Refusing to start.`;
+      this.logger.error(msg);
+      throw new Error(msg);
+    }
+
     await this.ensureCheckpoint();
     
     const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_BLOCK);
@@ -1339,6 +1364,22 @@ export default class CrawlBlockService extends BullableService {
     );
     
     await this.ensureCrawlBlockJob();
+
+    startBlockchainHealthMonitor({
+      healthyIntervalMs: Number(process.env.BLOCKCHAIN_HEALTH_CHECK_INTERVAL_MS) || 20000,
+      unhealthyIntervalMs: 5000,
+      backoffMultiplier: 1.5,
+      maxBackoffMs: 300000,
+      consecutiveFailuresBeforePause: Number(process.env.BLOCKCHAIN_HEALTH_FAILURES_BEFORE_PAUSE) || 3,
+      healthCheckTimeoutMs: 10000,
+      onUnhealthy: async (error, consecutiveFailures) => {
+        await indexerStatusManager.stopCrawlingOnly(
+          new Error(`Blockchain API unhealthy (${consecutiveFailures} failures): ${error}`),
+          "BLOCKCHAIN_HEALTH"
+        );
+      },
+      logger: this.logger,
+    });
     
     return super._start();
   }
@@ -1512,6 +1553,7 @@ export default class CrawlBlockService extends BullableService {
 
  
   public async stopped() {
+    stopBlockchainHealthMonitor();
     await this.stopWebSocketSubscription();
     return super.stopped();
   }

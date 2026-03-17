@@ -21,6 +21,7 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
     mockQuery.orderBy = jest.fn(() => mockQuery);
     mockQuery.limit = jest.fn(() => mockQuery);
     mockQuery.first = jest.fn(() => mockQuery);
+    mockQuery.schema = { hasTable: jest.fn().mockResolvedValue(false) };
     return mockQuery;
 });
 

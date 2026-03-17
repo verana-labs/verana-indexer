@@ -1,5 +1,6 @@
 import knex from "../../common/utils/db_connection";
 import { TrustRegistry } from "../../models/trust_registry";
+import { TR_STATS_FIELDS, statsToUpdateObject } from "../../common/utils/stats_fields";
 import { calculateCredentialSchemaStatsBatch, getPermissionSessionCounters } from "../crawl-cs/cs_stats";
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
@@ -23,6 +24,12 @@ export interface TrustRegistryStats {
     network_slash_events: number;
     network_slashed_amount: number;
     network_slashed_amount_repaid: number;
+}
+
+export { TR_STATS_FIELDS };
+
+export function trustRegistryStatsToUpdateObject(stats: TrustRegistryStats | null | undefined): Record<string, number> {
+    return statsToUpdateObject((stats ?? null) as Record<string, unknown> | null, TR_STATS_FIELDS);
 }
 
 export async function getSchemasForTrustRegistry(trId: number, blockHeight?: number): Promise<any[]> {

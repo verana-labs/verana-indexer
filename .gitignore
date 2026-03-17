@@ -127,3 +127,7 @@ dump.rdb
 # Lock files
 package-lock.json
 yarn.lock
+
+# Local indexer artifacts
+genesis.json
+.reindex-checkpoint.json

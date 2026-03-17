@@ -16,6 +16,69 @@ import { buildActivityTimeline } from "../../common/utils/activity_timeline_help
 
 let heightColumnExistsCache: boolean | null = null;
 let historyMetricColumnsExistCache: boolean | null = null;
+let trHistoryColumnsCache: Set<string> | null = null;
+
+function getDefaultCSStats(): any {
+  return {
+    participants: 0,
+    participants_ecosystem: 0,
+    participants_issuer_grantor: 0,
+    participants_issuer: 0,
+    participants_verifier_grantor: 0,
+    participants_verifier: 0,
+    participants_holder: 0,
+    weight: 0,
+    issued: 0,
+    verified: 0,
+    ecosystem_slash_events: 0,
+    ecosystem_slashed_amount: 0,
+    ecosystem_slashed_amount_repaid: 0,
+    network_slash_events: 0,
+    network_slashed_amount: 0,
+    network_slashed_amount_repaid: 0,
+  };
+}
+
+function addStatsToHistoryRow(historyRow: any, stats: any): void {
+  const target = historyRow;
+  target.participants = stats.participants;
+  target.participants_ecosystem = stats.participants_ecosystem;
+  target.participants_issuer_grantor = stats.participants_issuer_grantor;
+  target.participants_issuer = stats.participants_issuer;
+  target.participants_verifier_grantor = stats.participants_verifier_grantor;
+  target.participants_verifier = stats.participants_verifier;
+  target.participants_holder = stats.participants_holder;
+  target.weight = Number(stats.weight ?? 0);
+  target.issued = Number(stats.issued ?? 0);
+  target.verified = Number(stats.verified ?? 0);
+  target.ecosystem_slash_events = stats.ecosystem_slash_events;
+  target.ecosystem_slashed_amount = Number(stats.ecosystem_slashed_amount ?? 0);
+  target.ecosystem_slashed_amount_repaid = Number(stats.ecosystem_slashed_amount_repaid ?? 0);
+  target.network_slash_events = stats.network_slash_events;
+  target.network_slashed_amount = Number(stats.network_slashed_amount ?? 0);
+  target.network_slashed_amount_repaid = Number(stats.network_slashed_amount_repaid ?? 0);
+}
+
+function getCSStatsUpdateObject(stats: any): any {
+  return {
+    participants: stats.participants,
+    participants_ecosystem: stats.participants_ecosystem,
+    participants_issuer_grantor: stats.participants_issuer_grantor,
+    participants_issuer: stats.participants_issuer,
+    participants_verifier_grantor: stats.participants_verifier_grantor,
+    participants_verifier: stats.participants_verifier,
+    participants_holder: stats.participants_holder,
+    weight: Number(stats.weight ?? 0),
+    issued: Number(stats.issued ?? 0),
+    verified: Number(stats.verified ?? 0),
+    ecosystem_slash_events: stats.ecosystem_slash_events,
+    ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
+    ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+    network_slash_events: stats.network_slash_events,
+    network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
+    network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+  };
+}
 
 async function checkHeightColumnExists(): Promise<boolean> {
   if (heightColumnExistsCache !== null) {
@@ -32,8 +95,8 @@ async function checkHeightColumnExists(): Promise<boolean> {
 }
 
 async function checkHistoryMetricColumnsExist(): Promise<boolean> {
-  if (historyMetricColumnsExistCache !== null) {
-    return historyMetricColumnsExistCache;
+  if (historyMetricColumnsExistCache === true) {
+    return true;
   }
   try {
     const requiredColumns = [
@@ -55,12 +118,172 @@ async function checkHistoryMetricColumnsExist(): Promise<boolean> {
       "network_slashed_amount_repaid",
     ];
     const checks = await Promise.all(requiredColumns.map((col) => knex.schema.hasColumn("credential_schema_history", col)));
-    historyMetricColumnsExistCache = checks.every(Boolean);
-    return historyMetricColumnsExistCache;
+    const allExist = checks.every(Boolean);
+    if (allExist) historyMetricColumnsExistCache = true;
+    return allExist;
   } catch {
-    historyMetricColumnsExistCache = false;
     return false;
   }
+}
+
+async function getTrustRegistryHistoryColumns(db: any): Promise<Set<string>> {
+  if (trHistoryColumnsCache) {
+    return trHistoryColumnsCache;
+  }
+  const info = await db("trust_registry_history").columnInfo();
+  trHistoryColumnsCache = new Set(Object.keys(info || {}));
+  return trHistoryColumnsCache;
+}
+
+async function withDynamicTrustRegistryHistoryColumns(
+  db: any,
+  payload: Record<string, any>,
+  trRow: Record<string, any>
+): Promise<Record<string, any>> {
+  const historyColumns = await getTrustRegistryHistoryColumns(db);
+  const reservedColumns = new Set(["id", "tr_id", "event_type", "height", "changes", "created_at"]);
+  const nextPayload: Record<string, any> = { ...payload };
+
+  for (const column of historyColumns) {
+    if (reservedColumns.has(column) || Object.prototype.hasOwnProperty.call(nextPayload, column)) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(trRow, column)) {
+      nextPayload[column] = trRow[column];
+    }
+  }
+
+  return nextPayload;
+}
+
+export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
+  db: any,
+  trIdRaw: unknown,
+  blockHeightRaw: unknown
+): Promise<void> {
+  const trId = Number(trIdRaw);
+  const blockHeight = Number(blockHeightRaw) || 0;
+  if (!Number.isInteger(trId) || trId <= 0) return;
+
+  const oldTr = await db("trust_registry").where("id", trId).first();
+  if (!oldTr) return;
+
+  let trStats: any;
+  try {
+    trStats = await calculateTrustRegistryStats(trId, undefined);
+  } catch {
+    return;
+  }
+
+  const trStatsUpdate: any = {
+    participants: Number(trStats.participants ?? 0),
+    participants_ecosystem: Number(trStats.participants_ecosystem ?? 0),
+    participants_issuer_grantor: Number(trStats.participants_issuer_grantor ?? 0),
+    participants_issuer: Number(trStats.participants_issuer ?? 0),
+    participants_verifier_grantor: Number(trStats.participants_verifier_grantor ?? 0),
+    participants_verifier: Number(trStats.participants_verifier ?? 0),
+    participants_holder: Number(trStats.participants_holder ?? 0),
+    active_schemas: Number(trStats.active_schemas ?? 0),
+    archived_schemas: Number(trStats.archived_schemas ?? 0),
+    weight: Number(trStats.weight ?? 0),
+    issued: Number(trStats.issued ?? 0),
+    verified: Number(trStats.verified ?? 0),
+    ecosystem_slash_events: Number(trStats.ecosystem_slash_events ?? 0),
+    ecosystem_slashed_amount: Number(trStats.ecosystem_slashed_amount ?? 0),
+    ecosystem_slashed_amount_repaid: Number(trStats.ecosystem_slashed_amount_repaid ?? 0),
+    network_slash_events: Number(trStats.network_slash_events ?? 0),
+    network_slashed_amount: Number(trStats.network_slashed_amount ?? 0),
+    network_slashed_amount_repaid: Number(trStats.network_slashed_amount_repaid ?? 0),
+  };
+
+  await db("trust_registry").where("id", trId).update(trStatsUpdate);
+  const updatedTr = await db("trust_registry").where("id", trId).first();
+  if (!updatedTr) return;
+
+  const trChanges: Record<string, any> = {};
+  for (const [key, value] of Object.entries(trStatsUpdate)) {
+    const oldVal = Number(oldTr[key] ?? 0);
+    const newVal = Number(value ?? 0);
+    if (oldVal !== newVal) {
+      trChanges[key] = newVal;
+    }
+  }
+  if (Object.keys(trChanges).length === 0) return;
+
+  const trHistoryPayload = await withDynamicTrustRegistryHistoryColumns(
+    db,
+    {
+      tr_id: trId,
+      did: updatedTr.did,
+      controller: updatedTr.controller,
+      created: updatedTr.created,
+      modified: updatedTr.modified,
+      archived: updatedTr.archived ?? null,
+      deposit: Number(updatedTr.deposit ?? 0),
+      aka: updatedTr.aka ?? null,
+      language: updatedTr.language,
+      active_version: updatedTr.active_version ?? null,
+      participants: trStatsUpdate.participants,
+      participants_ecosystem: trStatsUpdate.participants_ecosystem,
+      participants_issuer_grantor: trStatsUpdate.participants_issuer_grantor,
+      participants_issuer: trStatsUpdate.participants_issuer,
+      participants_verifier_grantor: trStatsUpdate.participants_verifier_grantor,
+      participants_verifier: trStatsUpdate.participants_verifier,
+      participants_holder: trStatsUpdate.participants_holder,
+      active_schemas: trStatsUpdate.active_schemas,
+      archived_schemas: trStatsUpdate.archived_schemas,
+      weight: trStatsUpdate.weight,
+      issued: trStatsUpdate.issued,
+      verified: trStatsUpdate.verified,
+      ecosystem_slash_events: trStatsUpdate.ecosystem_slash_events,
+      ecosystem_slashed_amount: trStatsUpdate.ecosystem_slashed_amount,
+      ecosystem_slashed_amount_repaid: trStatsUpdate.ecosystem_slashed_amount_repaid,
+      network_slash_events: trStatsUpdate.network_slash_events,
+      network_slashed_amount: trStatsUpdate.network_slashed_amount,
+      network_slashed_amount_repaid: trStatsUpdate.network_slashed_amount_repaid,
+      event_type: "StatsUpdate",
+      height: blockHeight,
+      changes: JSON.stringify(trChanges),
+      created_at: updatedTr.modified ?? updatedTr.created ?? new Date(),
+    },
+    updatedTr
+  );
+
+  const existingSameEvent = await db("trust_registry_history")
+    .where({
+      tr_id: trId,
+      event_type: "StatsUpdate",
+      height: blockHeight,
+    })
+    .orderBy("id", "desc")
+    .first();
+  const existingChanges = existingSameEvent?.changes ? String(existingSameEvent.changes) : null;
+  const nextChanges = trHistoryPayload?.changes ? String(trHistoryPayload.changes) : null;
+  if (existingSameEvent && existingChanges === nextChanges) {
+    return;
+  }
+
+  await db("trust_registry_history").insert(trHistoryPayload);
+}
+
+
+export async function insertCredentialSchemaHistoryStatsRow(
+  db: any,
+  schemaId: number,
+  blockHeight: number,
+  stats: any
+): Promise<void> {
+  if (!schemaId || !Number.isInteger(schemaId) || schemaId <= 0) return;
+  const schemaRow = await db("credential_schemas").where("id", schemaId).first();
+  if (!schemaRow) return;
+  const hasHeightColumn = await checkHeightColumnExists();
+  const historyRow = mapToHistoryRow(schemaRow, {
+    changes: JSON.stringify({ stats_update: true }),
+    action: "stats_update",
+    height: blockHeight,
+  }, hasHeightColumn);
+  if (stats) addStatsToHistoryRow(historyRow, stats);
+  await db("credential_schema_history").insert(historyRow);
 }
 
 function ensureSchemaString(js: unknown): string {
@@ -291,7 +514,7 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
     modified: row.modified ?? null,
     changes: overrides.changes ?? null,
     action: overrides.action ?? "unknown",
-    created_at: knex.fn.now(),
+    created_at: row.modified ?? row.created ?? knex.fn.now(),
   };
 
   if (includeHeight) {
@@ -410,49 +633,72 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         const hasHeightColumn = await checkHeightColumnExists();
         const historyAction = existingSchema ? "update" : "create";
-        const historyRow = mapToHistoryRow(finalRecord, {
-          changes: Object.keys(creationChanges).length > 0 ? JSON.stringify(creationChanges) : null,
-          action: historyAction,
-          height: blockHeight,
-        }, hasHeightColumn);
-        await trx("credential_schema_history").insert(historyRow);
+        
+        let stats;
+        try {
+          stats = await calculateCredentialSchemaStats(finalRecord.id, blockHeight);
+        } catch (statsError: any) {
+          this.logger.warn(`Failed to calculate stats for CS ${finalRecord.id} at height ${blockHeight}: ${statsError?.message || String(statsError)}`);
+          stats = getDefaultCSStats();
+        }
+
+        const oldStats = existingSchema ? {
+          participants: existingSchema.participants ?? 0,
+          participants_ecosystem: existingSchema.participants_ecosystem ?? 0,
+          participants_issuer_grantor: existingSchema.participants_issuer_grantor ?? 0,
+          participants_issuer: existingSchema.participants_issuer ?? 0,
+          participants_verifier_grantor: existingSchema.participants_verifier_grantor ?? 0,
+          participants_verifier: existingSchema.participants_verifier ?? 0,
+          participants_holder: existingSchema.participants_holder ?? 0,
+          weight: Number(existingSchema.weight ?? 0),
+          issued: Number(existingSchema.issued ?? 0),
+          verified: Number(existingSchema.verified ?? 0),
+          ecosystem_slash_events: existingSchema.ecosystem_slash_events ?? 0,
+          ecosystem_slashed_amount: Number(existingSchema.ecosystem_slashed_amount ?? 0),
+          ecosystem_slashed_amount_repaid: Number(existingSchema.ecosystem_slashed_amount_repaid ?? 0),
+          network_slash_events: existingSchema.network_slash_events ?? 0,
+          network_slashed_amount: Number(existingSchema.network_slashed_amount ?? 0),
+          network_slashed_amount_repaid: Number(existingSchema.network_slashed_amount_repaid ?? 0),
+        } : null;
+
+        const statsChanged = oldStats ? (
+          oldStats.participants !== stats.participants ||
+          oldStats.participants_ecosystem !== stats.participants_ecosystem ||
+          oldStats.participants_issuer_grantor !== stats.participants_issuer_grantor ||
+          oldStats.participants_issuer !== stats.participants_issuer ||
+          oldStats.participants_verifier_grantor !== stats.participants_verifier_grantor ||
+          oldStats.participants_verifier !== stats.participants_verifier ||
+          oldStats.participants_holder !== stats.participants_holder ||
+          oldStats.weight !== Number(stats.weight ?? 0) ||
+          oldStats.issued !== Number(stats.issued ?? 0) ||
+          oldStats.verified !== Number(stats.verified ?? 0) ||
+          oldStats.ecosystem_slash_events !== stats.ecosystem_slash_events ||
+          oldStats.ecosystem_slashed_amount !== Number(stats.ecosystem_slashed_amount ?? 0) ||
+          oldStats.ecosystem_slashed_amount_repaid !== Number(stats.ecosystem_slashed_amount_repaid ?? 0) ||
+          oldStats.network_slash_events !== stats.network_slash_events ||
+          oldStats.network_slashed_amount !== Number(stats.network_slashed_amount ?? 0) ||
+          oldStats.network_slashed_amount_repaid !== Number(stats.network_slashed_amount_repaid ?? 0)
+        ) : true;
+
+        if (Object.keys(creationChanges).length > 0 || statsChanged) {
+          const historyRow = mapToHistoryRow(finalRecord, {
+            changes: Object.keys(creationChanges).length > 0 ? JSON.stringify(creationChanges) : null,
+            action: historyAction,
+            height: blockHeight,
+          }, hasHeightColumn);
+          
+          if (stats) {
+            addStatsToHistoryRow(historyRow, stats);
+          }
+          
+          await trx("credential_schema_history").insert(historyRow);
+        }
 
         try {
-          const stats = await calculateCredentialSchemaStats(finalRecord.id, blockHeight);
           await trx("credential_schemas")
             .where("id", finalRecord.id)
-            .update({
-              participants: stats.participants,
-              weight: Number(stats.weight ?? 0),
-              issued: Number(stats.issued ?? 0),
-              verified: Number(stats.verified ?? 0),
-              ecosystem_slash_events: stats.ecosystem_slash_events,
-              ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-              ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
-              network_slash_events: stats.network_slash_events,
-              network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-              network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
-            });
-
-          if (finalRecord.tr_id) {
-            const trStats = await calculateTrustRegistryStats(finalRecord.tr_id, blockHeight);
-            await trx("trust_registry")
-              .where("id", finalRecord.tr_id)
-              .update({
-                participants: trStats.participants,
-                active_schemas: trStats.active_schemas,
-                archived_schemas: trStats.archived_schemas,
-                weight: trStats.weight,
-                issued: trStats.issued,
-                verified: trStats.verified,
-                ecosystem_slash_events: trStats.ecosystem_slash_events,
-                ecosystem_slashed_amount: trStats.ecosystem_slashed_amount,
-                ecosystem_slashed_amount_repaid: trStats.ecosystem_slashed_amount_repaid,
-                network_slash_events: trStats.network_slash_events,
-                network_slashed_amount: trStats.network_slashed_amount,
-                network_slashed_amount_repaid: trStats.network_slashed_amount_repaid,
-              });
-          }
+            .update(getCSStatsUpdateObject(stats));
+          await syncTrustRegistryStatsAndHistoryFromSchemaChange(trx, finalRecord.tr_id, blockHeight);
         } catch (statsError: any) {
           this.logger.warn(` Failed to update statistics for CS ${finalRecord.id}: ${statsError?.message || String(statsError)}`);
         }
@@ -536,52 +782,72 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
       }
 
-      if (Object.keys(changes).length > 0) {
+      let stats;
+      try {
+        stats = await calculateCredentialSchemaStats(existing.id, blockHeight);
+      } catch (statsError: any) {
+        this.logger.warn(`Failed to calculate stats for CS ${existing.id} at height ${blockHeight}: ${statsError?.message || String(statsError)}`);
+        stats = getDefaultCSStats();
+      }
+
+      const oldStats = {
+        participants: existing.participants ?? 0,
+        participants_ecosystem: existing.participants_ecosystem ?? 0,
+        participants_issuer_grantor: existing.participants_issuer_grantor ?? 0,
+        participants_issuer: existing.participants_issuer ?? 0,
+        participants_verifier_grantor: existing.participants_verifier_grantor ?? 0,
+        participants_verifier: existing.participants_verifier ?? 0,
+        participants_holder: existing.participants_holder ?? 0,
+        weight: Number(existing.weight ?? 0),
+        issued: Number(existing.issued ?? 0),
+        verified: Number(existing.verified ?? 0),
+        ecosystem_slash_events: existing.ecosystem_slash_events ?? 0,
+        ecosystem_slashed_amount: Number(existing.ecosystem_slashed_amount ?? 0),
+        ecosystem_slashed_amount_repaid: Number(existing.ecosystem_slashed_amount_repaid ?? 0),
+        network_slash_events: existing.network_slash_events ?? 0,
+        network_slashed_amount: Number(existing.network_slashed_amount ?? 0),
+        network_slashed_amount_repaid: Number(existing.network_slashed_amount_repaid ?? 0),
+      };
+
+      const statsChanged = 
+        oldStats.participants !== stats.participants ||
+        oldStats.participants_ecosystem !== stats.participants_ecosystem ||
+        oldStats.participants_issuer_grantor !== stats.participants_issuer_grantor ||
+        oldStats.participants_issuer !== stats.participants_issuer ||
+        oldStats.participants_verifier_grantor !== stats.participants_verifier_grantor ||
+        oldStats.participants_verifier !== stats.participants_verifier ||
+        oldStats.participants_holder !== stats.participants_holder ||
+        oldStats.weight !== Number(stats.weight ?? 0) ||
+        oldStats.issued !== Number(stats.issued ?? 0) ||
+        oldStats.verified !== Number(stats.verified ?? 0) ||
+        oldStats.ecosystem_slash_events !== stats.ecosystem_slash_events ||
+        oldStats.ecosystem_slashed_amount !== Number(stats.ecosystem_slashed_amount ?? 0) ||
+        oldStats.ecosystem_slashed_amount_repaid !== Number(stats.ecosystem_slashed_amount_repaid ?? 0) ||
+        oldStats.network_slash_events !== stats.network_slash_events ||
+        oldStats.network_slashed_amount !== Number(stats.network_slashed_amount ?? 0) ||
+        oldStats.network_slashed_amount_repaid !== Number(stats.network_slashed_amount_repaid ?? 0);
+
+      if (Object.keys(changes).length > 0 || statsChanged) {
         const hasHeightColumn = await checkHeightColumnExists();
+        
         const historyRow = mapToHistoryRow(updated, {
-          changes: JSON.stringify(changes),
+          changes: Object.keys(changes).length > 0 ? JSON.stringify(changes) : null,
           action: "update",
           height: blockHeight,
         }, hasHeightColumn);
+        
+        if (stats) {
+          addStatsToHistoryRow(historyRow, stats);
+        }
+        
         await knex("credential_schema_history").insert(historyRow);
       }
 
       try {
-        const stats = await calculateCredentialSchemaStats(existing.id, blockHeight);
         await knex("credential_schemas")
           .where("id", existing.id)
-          .update({
-            participants: stats.participants,
-            weight: Number(stats.weight ?? 0),
-            issued: Number(stats.issued ?? 0),
-            verified: Number(stats.verified ?? 0),
-            ecosystem_slash_events: stats.ecosystem_slash_events,
-            ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-            ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
-            network_slash_events: stats.network_slash_events,
-            network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-            network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
-          });
-
-        if (updated.tr_id) {
-          const trStats = await calculateTrustRegistryStats(Number(updated.tr_id), blockHeight);
-          await knex("trust_registry")
-            .where("id", updated.tr_id)
-            .update({
-              participants: trStats.participants,
-              active_schemas: trStats.active_schemas,
-              archived_schemas: trStats.archived_schemas,
-              weight: Number(trStats.weight ?? 0),
-              issued: Number(trStats.issued ?? 0),
-              verified: Number(trStats.verified ?? 0),
-              ecosystem_slash_events: trStats.ecosystem_slash_events,
-              ecosystem_slashed_amount: Number(trStats.ecosystem_slashed_amount ?? 0),
-              ecosystem_slashed_amount_repaid: Number(trStats.ecosystem_slashed_amount_repaid ?? 0),
-              network_slash_events: trStats.network_slash_events,
-              network_slashed_amount: Number(trStats.network_slashed_amount ?? 0),
-              network_slashed_amount_repaid: Number(trStats.network_slashed_amount_repaid ?? 0),
-            });
-        }
+          .update(getCSStatsUpdateObject(stats));
+        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.tr_id, blockHeight);
       } catch (statsError: any) {
         this.logger.warn(` Failed to update statistics for CS ${existing.id}: ${statsError?.message || String(statsError)}`);
       }
@@ -643,51 +909,35 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       );
 
       const hasHeightColumn = await checkHeightColumnExists();
-      const historyRow = mapToHistoryRow(updated, {
-        changes: JSON.stringify({
-          archived: updated.archived,
-        }),
-        action: archiveFlag ? "archive" : "unarchive",
-        height: blockHeight,
-      }, hasHeightColumn);
-      await knex("credential_schema_history").insert(historyRow);
+      const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist();
+      
+      let stats;
+      try {
+        stats = await calculateCredentialSchemaStats(id, blockHeight);
+        } catch (statsError: any) {
+          this.logger.warn(`Failed to calculate stats for CS ${id} at height ${blockHeight}: ${statsError?.message || String(statsError)}`);
+          stats = getDefaultCSStats();
+        }
+        
+        const historyRow = mapToHistoryRow(updated, {
+          changes: JSON.stringify({
+            archived: updated.archived,
+          }),
+          action: archiveFlag ? "archive" : "unarchive",
+          height: blockHeight,
+        }, hasHeightColumn);
+        
+        if (stats) {
+          addStatsToHistoryRow(historyRow, stats);
+        }
+        
+        await knex("credential_schema_history").insert(historyRow);
 
       try {
-        const stats = await calculateCredentialSchemaStats(id, blockHeight);
         await knex("credential_schemas")
           .where("id", id)
-          .update({
-            participants: stats.participants,
-            weight: Number(stats.weight ?? 0),
-            issued: Number(stats.issued ?? 0),
-            verified: Number(stats.verified ?? 0),
-            ecosystem_slash_events: stats.ecosystem_slash_events,
-            ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-            ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
-            network_slash_events: stats.network_slash_events,
-            network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-            network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
-          });
-
-        if (updated.tr_id) {
-          const trStats = await calculateTrustRegistryStats(Number(updated.tr_id), blockHeight);
-          await knex("trust_registry")
-            .where("id", updated.tr_id)
-            .update({
-              participants: trStats.participants,
-              active_schemas: trStats.active_schemas,
-              archived_schemas: trStats.archived_schemas,
-              weight: Number(trStats.weight ?? 0),
-              issued: Number(trStats.issued ?? 0),
-              verified: Number(trStats.verified ?? 0),
-              ecosystem_slash_events: trStats.ecosystem_slash_events,
-              ecosystem_slashed_amount: Number(trStats.ecosystem_slashed_amount ?? 0),
-              ecosystem_slashed_amount_repaid: Number(trStats.ecosystem_slashed_amount_repaid ?? 0),
-              network_slash_events: trStats.network_slash_events,
-              network_slashed_amount: Number(trStats.network_slashed_amount ?? 0),
-              network_slashed_amount_repaid: Number(trStats.network_slashed_amount_repaid ?? 0),
-            });
-        }
+          .update(getCSStatsUpdateObject(stats));
+        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.tr_id, blockHeight);
       } catch (statsError: any) {
         this.logger.warn(` Failed to update statistics for CS ${id}: ${statsError?.message || String(statsError)}`);
       }
@@ -816,6 +1066,31 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const hasHeightColumn = await checkHeightColumnExists();
       const historyAction = existing ? "update" : "create";
       if (!existing || Object.keys(historyChangesForUpdate).length > 0) {
+        let stats;
+        try {
+          stats = await calculateCredentialSchemaStats(id, blockHeightNum);
+        } catch (statsError: any) {
+          this.logger.warn(`Failed to calculate stats for CS ${id} at height ${blockHeightNum} in syncFromLedger: ${statsError?.message || String(statsError)}`);
+          stats = {
+            participants: 0,
+            participants_ecosystem: 0,
+            participants_issuer_grantor: 0,
+            participants_issuer: 0,
+            participants_verifier_grantor: 0,
+            participants_verifier: 0,
+            participants_holder: 0,
+            weight: 0,
+            issued: 0,
+            verified: 0,
+            ecosystem_slash_events: 0,
+            ecosystem_slashed_amount: 0,
+            ecosystem_slashed_amount_repaid: 0,
+            network_slash_events: 0,
+            network_slashed_amount: 0,
+            network_slashed_amount_repaid: 0,
+          };
+        }
+        
         const creationChanges: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(finalRecord)) {
           if (value !== null && value !== undefined && key !== "id" && key !== "is_active") {
@@ -828,7 +1103,37 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           action: historyAction,
           height: blockHeightNum,
         }, hasHeightColumn);
+        
+        if (stats) {
+          addStatsToHistoryRow(historyRow, stats);
+        }
+        
         await knex("credential_schema_history").insert(historyRow);
+        
+        try {
+          await knex("credential_schemas")
+            .where("id", id)
+            .update({
+              participants: stats.participants,
+              participants_ecosystem: stats.participants_ecosystem,
+              participants_issuer_grantor: stats.participants_issuer_grantor,
+              participants_issuer: stats.participants_issuer,
+              participants_verifier_grantor: stats.participants_verifier_grantor,
+              participants_verifier: stats.participants_verifier,
+              participants_holder: stats.participants_holder,
+              weight: Number(stats.weight ?? 0),
+              issued: Number(stats.issued ?? 0),
+              verified: Number(stats.verified ?? 0),
+              ecosystem_slash_events: stats.ecosystem_slash_events,
+              ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
+              ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+              network_slash_events: stats.network_slash_events,
+              network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
+              network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+            });
+        } catch (statsUpdateError: any) {
+          this.logger.warn(`Failed to update stats for CS ${id} in syncFromLedger: ${statsUpdateError?.message || String(statsUpdateError)}`);
+        }
       }
       return ApiResponder.success(ctx, { success: true, result: finalRecord }, 200);
     } catch (err: any) {
@@ -850,6 +1155,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       if (typeof blockHeight === "number") {
         const hasHeightColumn = await checkHeightColumnExists();
+        const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist();
         let query = knex("credential_schema_history")
           .where({ credential_schema_id: id });
 
@@ -885,29 +1191,28 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           modified: historyRecord.modified,
         };
 
-        let stats;
-        try {
-          stats = await calculateCredentialSchemaStats(historyRecord.credential_schema_id, blockHeight);
-        } catch (statsError: any) {
-          this.logger.warn(` Failed to calculate statistics for CS ${historyRecord.credential_schema_id}: ${statsError?.message || String(statsError)}`);
+        let stats: ReturnType<typeof getDefaultCSStats>;
+        if (hasHistoryMetricColumns) {
           stats = {
-            participants: 0,
-            participants_ecosystem: 0,
-            participants_issuer_grantor: 0,
-            participants_issuer: 0,
-            participants_verifier_grantor: 0,
-            participants_verifier: 0,
-            participants_holder: 0,
-            weight: 0,
-            issued: 0,
-            verified: 0,
-            ecosystem_slash_events: 0,
-            ecosystem_slashed_amount: 0,
-            ecosystem_slashed_amount_repaid: 0,
-            network_slash_events: 0,
-            network_slashed_amount: 0,
-            network_slashed_amount_repaid: 0,
+            participants: Number(historyRecord.participants ?? 0),
+            participants_ecosystem: Number(historyRecord.participants_ecosystem ?? 0),
+            participants_issuer_grantor: Number(historyRecord.participants_issuer_grantor ?? 0),
+            participants_issuer: Number(historyRecord.participants_issuer ?? 0),
+            participants_verifier_grantor: Number(historyRecord.participants_verifier_grantor ?? 0),
+            participants_verifier: Number(historyRecord.participants_verifier ?? 0),
+            participants_holder: Number(historyRecord.participants_holder ?? 0),
+            weight: Number(historyRecord.weight ?? 0),
+            issued: Number(historyRecord.issued ?? 0),
+            verified: Number(historyRecord.verified ?? 0),
+            ecosystem_slash_events: Number(historyRecord.ecosystem_slash_events ?? 0),
+            ecosystem_slashed_amount: Number(historyRecord.ecosystem_slashed_amount ?? 0),
+            ecosystem_slashed_amount_repaid: Number(historyRecord.ecosystem_slashed_amount_repaid ?? 0),
+            network_slash_events: Number(historyRecord.network_slash_events ?? 0),
+            network_slashed_amount: Number(historyRecord.network_slashed_amount ?? 0),
+            network_slashed_amount_repaid: Number(historyRecord.network_slashed_amount_repaid ?? 0),
           };
+        } else {
+          stats = getDefaultCSStats();
         }
 
         return ApiResponder.success(ctx, {
@@ -940,30 +1245,24 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       delete schemaRecord?.is_active;
       const storedSchemaString = getStoredSchemaString(schemaRecord.json_schema);
 
-      let stats;
-      try {
-        stats = await calculateCredentialSchemaStats(id);
-      } catch (statsError: any) {
-        this.logger.warn(` Failed to calculate statistics for CS ${id}: ${statsError?.message || String(statsError)}`);
-        stats = {
-          participants: 0,
-          participants_ecosystem: 0,
-          participants_issuer_grantor: 0,
-          participants_issuer: 0,
-          participants_verifier_grantor: 0,
-          participants_verifier: 0,
-          participants_holder: 0,
-          weight: 0,
-          issued: 0,
-          verified: 0,
-          ecosystem_slash_events: 0,
-          ecosystem_slashed_amount: 0,
-          ecosystem_slashed_amount_repaid: 0,
-          network_slash_events: 0,
-          network_slashed_amount: 0,
-          network_slashed_amount_repaid: 0,
-        };
-      }
+      const stats = {
+        participants: Number(schemaRecord.participants ?? 0),
+        participants_ecosystem: Number((schemaRecord as any).participants_ecosystem ?? 0),
+        participants_issuer_grantor: Number((schemaRecord as any).participants_issuer_grantor ?? 0),
+        participants_issuer: Number((schemaRecord as any).participants_issuer ?? 0),
+        participants_verifier_grantor: Number((schemaRecord as any).participants_verifier_grantor ?? 0),
+        participants_verifier: Number((schemaRecord as any).participants_verifier ?? 0),
+        participants_holder: Number((schemaRecord as any).participants_holder ?? 0),
+        weight: Number(schemaRecord.weight ?? 0),
+        issued: Number(schemaRecord.issued ?? 0),
+        verified: Number(schemaRecord.verified ?? 0),
+        ecosystem_slash_events: Number(schemaRecord.ecosystem_slash_events ?? 0),
+        ecosystem_slashed_amount: Number(schemaRecord.ecosystem_slashed_amount ?? 0),
+        ecosystem_slashed_amount_repaid: Number(schemaRecord.ecosystem_slashed_amount_repaid ?? 0),
+        network_slash_events: Number(schemaRecord.network_slash_events ?? 0),
+        network_slashed_amount: Number(schemaRecord.network_slashed_amount ?? 0),
+        network_slashed_amount_repaid: Number(schemaRecord.network_slashed_amount_repaid ?? 0),
+      };
 
       return ApiResponder.success(ctx, {
         schema: {
@@ -1009,7 +1308,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_perm_management_mode: { type: "string", optional: true },
       verifier_perm_management_mode: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
-      sort: { type: "string", optional: true },
+      sort: { type: "string", optional: true, default: "-modified" },
       min_participants: { type: "number", optional: true },
       max_participants: { type: "number", optional: true },
       min_participants_ecosystem: { type: "number", optional: true },
@@ -1112,8 +1411,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       const participantAccount = participantValidation.value;
 
+      const effectiveSort = sort ?? "-modified";
       try {
-        validateSortParameter(sort);
+        validateSortParameter(effectiveSort);
       } catch (err: any) {
         return ApiResponder.error(ctx, err.message, 400);
       }
@@ -1225,7 +1525,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .orderBy("csh.created_at", "desc")
             .orderBy("csh.id", "desc")
             .as("latest");
-          const orderedLatest = applyOrdering(knex.from(latestSub).select("*"), sort);
+          const orderedLatest = applyOrdering(knex.from(latestSub).select("*"), effectiveSort);
           items = await orderedLatest.limit(limit);
         } else {
           const ranked = knex("credential_schema_history as csh")
@@ -1340,44 +1640,63 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               }),
             }));
           } else {
-            const statsMap = await calculateCredentialSchemaStatsBatch(filteredItems.map((item) => Number(item.id)), blockHeight);
+            const statsRows = await knex("credential_schema_history as csh")
+              .select(
+                "csh.credential_schema_id",
+                "csh.participants",
+                "csh.participants_ecosystem",
+                "csh.participants_issuer_grantor",
+                "csh.participants_issuer",
+                "csh.participants_verifier_grantor",
+                "csh.participants_verifier",
+                "csh.participants_holder",
+                "csh.weight",
+                "csh.issued",
+                "csh.verified",
+                "csh.ecosystem_slash_events",
+                "csh.ecosystem_slashed_amount",
+                "csh.ecosystem_slashed_amount_repaid",
+                "csh.network_slash_events",
+                "csh.network_slashed_amount",
+                "csh.network_slashed_amount_repaid"
+              )
+              .whereIn("csh.credential_schema_id", filteredItems.map((i) => Number(i.id)))
+              .andWhere("csh.height", "<=", blockHeight)
+              .andWhereRaw(
+                `NOT EXISTS (
+                  SELECT 1 FROM credential_schema_history csh2
+                  WHERE csh2.credential_schema_id = csh.credential_schema_id
+                    AND csh2.height <= ?
+                    AND (csh2.height > csh.height OR (csh2.height = csh.height AND csh2.created_at > csh.created_at))
+                )`,
+                [blockHeight]
+              );
+
+            const statsMap = new Map<number, any>();
+            for (const row of statsRows) {
+              statsMap.set(Number(row.credential_schema_id), row);
+            }
+
             schemasWithStats = filteredItems.map((item) => {
-              const stats = statsMap.get(Number(item.id)) || {
-                participants: 0,
-                participants_ecosystem: 0,
-                participants_issuer_grantor: 0,
-                participants_issuer: 0,
-                participants_verifier_grantor: 0,
-                participants_verifier: 0,
-                participants_holder: 0,
-                weight: 0,
-                issued: 0,
-                verified: 0,
-                ecosystem_slash_events: 0,
-                ecosystem_slashed_amount: 0,
-                ecosystem_slashed_amount_repaid: 0,
-                network_slash_events: 0,
-                network_slashed_amount: 0,
-                network_slashed_amount_repaid: 0,
-              };
+              const stats = statsMap.get(Number(item.id)) || {};
               return {
                 ...item,
-                participants: stats.participants,
-                participants_ecosystem: stats.participants_ecosystem,
-                participants_issuer_grantor: stats.participants_issuer_grantor,
-                participants_issuer: stats.participants_issuer,
-                participants_verifier_grantor: stats.participants_verifier_grantor,
-                participants_verifier: stats.participants_verifier,
-                participants_holder: stats.participants_holder,
-                weight: stats.weight,
-                issued: stats.issued,
-                verified: stats.verified,
-                ecosystem_slash_events: stats.ecosystem_slash_events,
-                ecosystem_slashed_amount: stats.ecosystem_slashed_amount,
-                ecosystem_slashed_amount_repaid: stats.ecosystem_slashed_amount_repaid,
-                network_slash_events: stats.network_slash_events,
-                network_slashed_amount: stats.network_slashed_amount,
-                network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
+                participants: Number(stats.participants ?? 0),
+                participants_ecosystem: Number(stats.participants_ecosystem ?? 0),
+                participants_issuer_grantor: Number(stats.participants_issuer_grantor ?? 0),
+                participants_issuer: Number(stats.participants_issuer ?? 0),
+                participants_verifier_grantor: Number(stats.participants_verifier_grantor ?? 0),
+                participants_verifier: Number(stats.participants_verifier ?? 0),
+                participants_holder: Number(stats.participants_holder ?? 0),
+                weight: Number(stats.weight ?? 0),
+                issued: Number(stats.issued ?? 0),
+                verified: Number(stats.verified ?? 0),
+                ecosystem_slash_events: Number(stats.ecosystem_slash_events ?? 0),
+                ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
+                ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+                network_slash_events: Number(stats.network_slash_events ?? 0),
+                network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
+                network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
               };
             });
           }
@@ -1391,6 +1710,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               .select(
                 "id",
                 "participants",
+                "participants_ecosystem",
+                "participants_issuer_grantor",
+                "participants_issuer",
+                "participants_verifier_grantor",
+                "participants_verifier",
+                "participants_holder",
                 "weight",
                 "issued",
                 "verified",
@@ -1407,32 +1732,45 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             }
           }
 
+          const defaultStats = {
+            participants: 0,
+            participants_ecosystem: 0,
+            participants_issuer_grantor: 0,
+            participants_issuer: 0,
+            participants_verifier_grantor: 0,
+            participants_verifier: 0,
+            participants_holder: 0,
+            weight: 0,
+            issued: 0,
+            verified: 0,
+            ecosystem_slash_events: 0,
+            ecosystem_slashed_amount: 0,
+            ecosystem_slashed_amount_repaid: 0,
+            network_slash_events: 0,
+            network_slashed_amount: 0,
+            network_slashed_amount_repaid: 0,
+          };
           schemasWithStats = filteredItems.map((item) => {
-            const stats = schemaStatsMap.get(item.id) || {
-              participants: 0,
-              weight: 0,
-              issued: 0,
-              verified: 0,
-              ecosystem_slash_events: 0,
-              ecosystem_slashed_amount: 0,
-              ecosystem_slashed_amount_repaid: 0,
-              network_slash_events: 0,
-              network_slashed_amount: 0,
-              network_slashed_amount_repaid: 0,
-            };
-
+            const stats = schemaStatsMap.get(item.id) || defaultStats;
+            const num = (v: any) => (typeof v === "number" ? v : Number(v || 0));
             return {
               ...item,
-              participants: typeof stats.participants === 'number' ? stats.participants : Number(stats.participants || 0),
-              weight: typeof stats.weight === 'number' ? stats.weight : Number(stats.weight || 0),
-              issued: typeof stats.issued === 'number' ? stats.issued : Number(stats.issued || 0),
-              verified: typeof stats.verified === 'number' ? stats.verified : Number(stats.verified || 0),
-              ecosystem_slash_events: typeof stats.ecosystem_slash_events === 'number' ? stats.ecosystem_slash_events : Number(stats.ecosystem_slash_events || 0),
-              ecosystem_slashed_amount: typeof stats.ecosystem_slashed_amount === 'number' ? stats.ecosystem_slashed_amount : Number(stats.ecosystem_slashed_amount || 0),
-              ecosystem_slashed_amount_repaid: typeof stats.ecosystem_slashed_amount_repaid === 'number' ? stats.ecosystem_slashed_amount_repaid : Number(stats.ecosystem_slashed_amount_repaid || 0),
-              network_slash_events: typeof stats.network_slash_events === 'number' ? stats.network_slash_events : Number(stats.network_slash_events || 0),
-              network_slashed_amount: typeof stats.network_slashed_amount === 'number' ? stats.network_slashed_amount : Number(stats.network_slashed_amount || 0),
-              network_slashed_amount_repaid: typeof stats.network_slashed_amount_repaid === 'number' ? stats.network_slashed_amount_repaid : Number(stats.network_slashed_amount_repaid || 0),
+              participants: num(stats.participants),
+              participants_ecosystem: num((stats as any).participants_ecosystem),
+              participants_issuer_grantor: num((stats as any).participants_issuer_grantor),
+              participants_issuer: num((stats as any).participants_issuer),
+              participants_verifier_grantor: num((stats as any).participants_verifier_grantor),
+              participants_verifier: num((stats as any).participants_verifier),
+              participants_holder: num((stats as any).participants_holder),
+              weight: num(stats.weight),
+              issued: num(stats.issued),
+              verified: num(stats.verified),
+              ecosystem_slash_events: num(stats.ecosystem_slash_events),
+              ecosystem_slashed_amount: num(stats.ecosystem_slashed_amount),
+              ecosystem_slashed_amount_repaid: num(stats.ecosystem_slashed_amount_repaid),
+              network_slash_events: num(stats.network_slash_events),
+              network_slashed_amount: num(stats.network_slashed_amount),
+              network_slashed_amount_repaid: num(stats.network_slashed_amount_repaid),
             };
           });
         }
@@ -1471,7 +1809,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         };
 
         const typedFilteredItems = filteredWithStats as FilteredItemWithStats[];
-        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, sort, limit);
+        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, effectiveSort, limit);
 
         return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
       }
@@ -1550,7 +1888,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       type SchemaWithStats = typeof filteredItems[0];
       const sortedItems = liveSortFullyApplied
         ? (filteredItems as SchemaWithStats[]).slice(0, limit)
-        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], sort, limit);
+        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], effectiveSort, limit);
 
       return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
     } catch (err: any) {

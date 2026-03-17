@@ -1,6 +1,9 @@
 import os from 'os';
 import fs from 'fs';
 import knex from './db_connection';
+import { getLcdClient } from './verana_client';
+import { BULL_JOB_NAME } from '../constant';
+import { delay } from './db_query_helper';
 
 export interface HealthStatus {
   database: {
@@ -391,5 +394,270 @@ export function getMemoryRecoveryPauseMs(health: HealthStatus): number {
   if (memoryPercent > 90) return 5000;  // 5 seconds
   if (memoryPercent > 85) return 2000;  // 2 seconds
   return 0;
+}
+
+const DEFAULT_DB_TIMEOUT_MS = 10000;
+const DEFAULT_BLOCKCHAIN_TIMEOUT_MS = 15000;
+const DEFAULT_MONITOR_CHECK_TIMEOUT_MS = 10000;
+
+export async function checkDatabaseHealth(timeoutMs?: number): Promise<{ ok: boolean; error?: string }> {
+  const timeout = timeoutMs ?? DEFAULT_DB_TIMEOUT_MS;
+  try {
+    await Promise.race([
+      knex.raw('SELECT 1'),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Database health check timeout')), timeout);
+      }),
+    ]);
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+export async function checkBlockchainApiHealth(timeoutMs?: number): Promise<{ ok: boolean; error?: string }> {
+  const timeout = timeoutMs ?? DEFAULT_BLOCKCHAIN_TIMEOUT_MS;
+  try {
+    const lcdClient = await getLcdClient();
+    if (!lcdClient?.provider) {
+      return { ok: false, error: 'LCD client or provider not available' };
+    }
+    await Promise.race([
+      lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Blockchain API health check timeout')), timeout);
+      }),
+    ]);
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+export async function getLastProcessedBlockHeight(
+  jobName: string = BULL_JOB_NAME.CRAWL_BLOCK
+): Promise<{ ok: boolean; height?: number; error?: string }> {
+  try {
+    const row = await knex('block_checkpoint').where('job_name', jobName).select('height').first();
+    const height = row?.height != null ? Number(row.height) : undefined;
+    return { ok: true, height: height ?? 0 };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+export interface StartupHealthResult {
+  ok: boolean;
+  checks: {
+    database: { ok: boolean; error?: string };
+    blockchainApi: { ok: boolean; error?: string };
+    lastProcessedBlock: { ok: boolean; height?: number; error?: string };
+  };
+}
+
+export async function runPreStartupHealthChecks(options?: {
+  dbTimeoutMs?: number;
+  blockchainTimeoutMs?: number;
+  checkpointJobName?: string;
+}): Promise<StartupHealthResult> {
+  const dbTimeout = options?.dbTimeoutMs ?? DEFAULT_DB_TIMEOUT_MS;
+  const chainTimeout = options?.blockchainTimeoutMs ?? DEFAULT_BLOCKCHAIN_TIMEOUT_MS;
+  const jobName = options?.checkpointJobName ?? BULL_JOB_NAME.CRAWL_BLOCK;
+
+  const [database, blockchainApi, lastProcessedBlock] = await Promise.all([
+    checkDatabaseHealth(dbTimeout),
+    checkBlockchainApiHealth(chainTimeout),
+    getLastProcessedBlockHeight(jobName),
+  ]);
+
+  return {
+    ok: database.ok && blockchainApi.ok && lastProcessedBlock.ok,
+    checks: { database, blockchainApi, lastProcessedBlock },
+  };
+}
+
+export interface WaitForHealthyOptions {
+  maxAttempts?: number;
+  initialDelayMs?: number;
+  backoffMultiplier?: number;
+  maxDelayMs?: number;
+  dbTimeoutMs?: number;
+  blockchainTimeoutMs?: number;
+  lcdTimeoutMs?: number;
+  checkpointJobName?: string;
+  logger?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void };
+}
+
+export async function waitForHealthyDependencies(options: WaitForHealthyOptions = {}): Promise<StartupHealthResult> {
+  const {
+    maxAttempts = 30,
+    initialDelayMs = 2000,
+    backoffMultiplier = 1.5,
+    maxDelayMs = 60000,
+    logger,
+  } = options;
+
+  let delayMs = initialDelayMs;
+  let lastResult: StartupHealthResult | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    lastResult = await runPreStartupHealthChecks({
+      dbTimeoutMs: options.dbTimeoutMs,
+      blockchainTimeoutMs: options.blockchainTimeoutMs ?? options.lcdTimeoutMs,
+      checkpointJobName: options.checkpointJobName,
+    });
+
+    if (lastResult.ok) {
+      logger?.info?.(
+        `Startup health checks passed (attempt ${attempt}/${maxAttempts}). DB: ok, Blockchain API: ok, Last block: ${lastResult.checks.lastProcessedBlock.height ?? 'n/a'}.`
+      );
+      return lastResult;
+    }
+
+    const checks = lastResult.checks;
+    const errors: string[] = [];
+    if (!checks.database.ok) errors.push(`DB: ${checks.database.error}`);
+    if (!checks.blockchainApi.ok) errors.push(`API: ${checks.blockchainApi.error}`);
+    if (!checks.lastProcessedBlock.ok) errors.push(`Checkpoint: ${checks.lastProcessedBlock.error}`);
+
+    if (attempt < maxAttempts) {
+      logger?.warn?.(`Startup health check failed (attempt ${attempt}/${maxAttempts}): ${errors.join('; ')}. Retrying in ${delayMs}ms...`);
+      await delay(delayMs);
+      delayMs = Math.min(Math.floor(delayMs * backoffMultiplier), maxDelayMs);
+    }
+  }
+
+  const c = lastResult!.checks;
+  logger?.error?.(
+    `Startup health checks did not pass after ${maxAttempts} attempts. Last: DB=${c.database.ok ? 'ok' : c.database.error}, API=${c.blockchainApi.ok ? 'ok' : c.blockchainApi.error}, Checkpoint=${c.lastProcessedBlock.ok ? 'ok' : c.lastProcessedBlock.error}.`
+  );
+  return lastResult!;
+}
+
+const DEFAULT_MONITOR_HEALTHY_INTERVAL_MS = 20000;
+const DEFAULT_MONITOR_UNHEALTHY_INTERVAL_MS = 5000;
+const DEFAULT_MONITOR_BACKOFF_MULTIPLIER = 1.5;
+const DEFAULT_MONITOR_MAX_BACKOFF_MS = 300000;
+const DEFAULT_CONSECUTIVE_FAILURES_BEFORE_PAUSE = 3;
+
+export interface BlockchainHealthMonitorOptions {
+  healthyIntervalMs?: number;
+  unhealthyIntervalMs?: number;
+  backoffMultiplier?: number;
+  maxBackoffMs?: number;
+  consecutiveFailuresBeforePause?: number;
+  healthCheckTimeoutMs?: number;
+  onUnhealthy?: (error: string, consecutiveFailures: number) => Promise<void>;
+  onHealthy?: () => void;
+  logger?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void };
+}
+
+let blockchainMonitorInstance: {
+  stop: () => void;
+  getStatus: () => { isHealthy: boolean; lastCheckAt?: string; lastError?: string; consecutiveFailures: number };
+} | null = null;
+
+export function startBlockchainHealthMonitor(options: BlockchainHealthMonitorOptions = {}): void {
+  if (blockchainMonitorInstance) {
+    options.logger?.warn?.('Blockchain health monitor already running');
+    return;
+  }
+
+  const {
+    healthyIntervalMs = DEFAULT_MONITOR_HEALTHY_INTERVAL_MS,
+    unhealthyIntervalMs = DEFAULT_MONITOR_UNHEALTHY_INTERVAL_MS,
+    backoffMultiplier = DEFAULT_MONITOR_BACKOFF_MULTIPLIER,
+    maxBackoffMs = DEFAULT_MONITOR_MAX_BACKOFF_MS,
+    consecutiveFailuresBeforePause = DEFAULT_CONSECUTIVE_FAILURES_BEFORE_PAUSE,
+    healthCheckTimeoutMs = DEFAULT_MONITOR_CHECK_TIMEOUT_MS,
+    onUnhealthy,
+    onHealthy,
+    logger,
+  } = options;
+
+  let stopped = false;
+  let isHealthy = true;
+  let consecutiveFailures = 0;
+  let currentUnhealthyIntervalMs = unhealthyIntervalMs;
+  let lastCheckAt: string | undefined;
+  let lastError: string | undefined;
+
+  const runCheck = async (): Promise<void> => {
+    if (stopped) return;
+    const result = await checkBlockchainApiHealth(healthCheckTimeoutMs);
+    lastCheckAt = new Date().toISOString();
+
+    if (result.ok) {
+      if (!isHealthy) {
+        isHealthy = true;
+        consecutiveFailures = 0;
+        currentUnhealthyIntervalMs = unhealthyIntervalMs;
+        logger?.info?.('Blockchain API health monitor: API is healthy again.');
+        onHealthy?.();
+      }
+      consecutiveFailures = 0;
+      return;
+    }
+
+    lastError = result.error;
+    consecutiveFailures++;
+    if (isHealthy) {
+      isHealthy = false;
+      logger?.warn?.(`Blockchain API health monitor: API unhealthy (${consecutiveFailures}/${consecutiveFailuresBeforePause}): ${result.error}`);
+    }
+    if (consecutiveFailures >= consecutiveFailuresBeforePause && onUnhealthy) {
+      logger?.warn?.(`Blockchain API health monitor: Pausing indexer after ${consecutiveFailures} consecutive failures.`);
+      await onUnhealthy(lastError!, consecutiveFailures);
+    }
+  };
+
+  const scheduleNext = (): void => {
+    if (stopped) return;
+    const intervalMs = isHealthy ? healthyIntervalMs : currentUnhealthyIntervalMs;
+    const t = setTimeout(async () => {
+      await runCheck();
+      if (!isHealthy && !stopped) {
+        currentUnhealthyIntervalMs = Math.min(
+          Math.floor(currentUnhealthyIntervalMs * backoffMultiplier),
+          maxBackoffMs
+        );
+      }
+      scheduleNext();
+    }, intervalMs);
+    (blockchainMonitorInstance as any)._timer = t;
+  };
+
+  blockchainMonitorInstance = {
+    stop() {
+      stopped = true;
+      if ((blockchainMonitorInstance as any)?._timer) clearTimeout((blockchainMonitorInstance as any)._timer);
+      blockchainMonitorInstance = null;
+      logger?.info?.('Blockchain health monitor stopped.');
+    },
+    getStatus() {
+      return { isHealthy, lastCheckAt, lastError, consecutiveFailures };
+    },
+  };
+
+  logger?.info?.(
+    `Blockchain health monitor started. Healthy interval: ${healthyIntervalMs}ms, pause after ${consecutiveFailuresBeforePause} failures.`
+  );
+  scheduleNext();
+}
+
+export function stopBlockchainHealthMonitor(): void {
+  if (blockchainMonitorInstance) blockchainMonitorInstance.stop();
+}
+
+export function getBlockchainHealthMonitorStatus(): {
+  isHealthy: boolean;
+  lastCheckAt?: string;
+  lastError?: string;
+  consecutiveFailures: number;
+  running: boolean;
+} {
+  if (!blockchainMonitorInstance) return { isHealthy: true, consecutiveFailures: 0, running: false };
+  const s = blockchainMonitorInstance.getStatus();
+  return { ...s, running: true };
 }
 

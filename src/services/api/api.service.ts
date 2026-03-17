@@ -141,7 +141,13 @@ function isUnknownMessageError(errorMessage: string): boolean {
 
 async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
   try {
-    const checkpoint = ctx?.meta?.latestCheckpoint;
+    let checkpoint = ctx?.meta?.latestCheckpoint;
+    if (!checkpoint) {
+      checkpoint = await fetchBlockCheckpoint();
+      if (!checkpoint) {
+        checkpoint = { height: 0, updated_at: null } as { height: number; updated_at?: Date | string | null };
+      }
+    }
 
     if (checkpoint) {
       let indexTs: string;
@@ -158,12 +164,14 @@ async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
       res.setHeader("X-Index-Ts", indexTs);
       res.setHeader("X-Height", checkpoint.height.toString());
     } else if (typeof ctx?.meta?.blockHeight === "number") {
-      // Avoid an extra DB read in response path; use requested historical height if available.
       res.setHeader("X-Height", String(ctx.meta.blockHeight));
+    } else {
+      res.setHeader("X-Height", "0");
     }
 
     attachIndexerStatusHeaders(res);
   } catch (err: any) {
+    res.setHeader("X-Height", "0");
     attachIndexerStatusHeaders(res);
   }
 
@@ -245,6 +253,13 @@ function createOnError() {
       const errorType = err.type || err.name || "UNKNOWN_ERROR";
 
       const indexerStatus = indexerStatusManager.getStatus();
+
+      let heightValue = "0";
+      try {
+        const checkpoint = await fetchBlockCheckpoint();
+        if (checkpoint?.height != null) heightValue = String(checkpoint.height);
+      } catch (_) {}
+      res.setHeader("X-Height", heightValue);
 
       res.setHeader("X-Indexer-Status", indexerStatus.isRunning ? "running" : "stopped");
       res.setHeader("X-Crawling-Status", indexerStatus.isCrawling ? "active" : "stopped");
@@ -390,7 +405,7 @@ function createRoute(
         "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
-        "GET status": `${SERVICE.V1.IndexerStatusService.path}.getStatus`,
+        "GET status": `${SERVICE.V1.IndexerStatusService.path}.getDetailedStatus`,
         "GET errors/download": `v1.LogsService.downloadErrors`,
        // Used only for TR weight calculation. Will be removed in the future.
        // curl -X POST http://localhost:3000/verana/indexer/v1/backfill/trust-registry-stats
