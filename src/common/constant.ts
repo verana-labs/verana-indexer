@@ -142,9 +142,38 @@ export const MODULE_DISPLAY_NAMES = {
 } as const;
 
 export enum TrustDepositEventType {
-  ADJUST = "adjust_trust_deposit",
-  SLASH = "slash_trust_deposit",
+  SlashTrustDeposit = "slash_trust_deposit",
+  RepaySlashedTrustDeposit = "repay_slashed_trust_deposit",
+  ReclaimTrustDepositYield = "reclaim_trust_deposit_yield",
+  ReclaimTrustDeposit = "reclaim_trust_deposit",
+  AdjustTrustDeposit = "adjust_trust_deposit",
+  YieldDistribution = "yield_distribution",
+  YieldTransfer = "yield_transfer",
 }
+
+export const TrustDepositEventAttributeKey = {
+  Account: "account",
+  Amount: "amount",
+  SlashCount: "slash_count",
+  RepaidBy: "repaid_by",
+  Timestamp: "timestamp",
+  ClaimedYield: "claimed_yield",
+  SharesReduced: "shares_reduced",
+  ClaimedAmount: "claimed_amount",
+  BurnedAmount: "burned_amount",
+  TransferAmount: "transfer_amount",
+  Augend: "augend",
+  AdjustmentType: "adjustment_type",
+  NewAmount: "new_amount",
+  NewShare: "new_share",
+  NewClaimable: "new_claimable",
+  YIPIncomingBalance: "yip_incoming_balance",
+  YIPIncomingBalanceDec: "yip_incoming_balance_dec",
+  YIPBalanceBefore: "yip_balance_before",
+  Allowance: "allowance",
+  TrustDepositBalance: "trust_deposit_balance",
+  TransferAmountDec: "transfer_amount_dec",
+} as const;
 
 export const SERVICE = {
   V1: {

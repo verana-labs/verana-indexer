@@ -1211,6 +1211,7 @@ export default class CrawlTxService extends BullableService {
           content: msg.content ?? null,
           timestamp: parentTx?.timestamp ?? null,
           height: parentTx?.height ?? null,
+          txEvents: parentTx?.data?.tx_response?.events ?? [],
         };
       });
 
@@ -1761,10 +1762,17 @@ export default class CrawlTxService extends BullableService {
     }
 
     if (payload.trustDepositList?.length) {
-      await this.broker.call(
-        `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
-        { trustDepositList: payload.trustDepositList },
-      );
+      const useHeightSyncTD = process.env.USE_HEIGHT_SYNC_TD === "true";
+      const tdBlockHeight = typeof payload.blockHeight === "number" ? payload.blockHeight : undefined;
+      if (useHeightSyncTD && typeof tdBlockHeight === "number") {
+        const { runHeightSyncTD } = await import("../../modules/td-height-sync/td_height_sync_service");
+        await runHeightSyncTD(this.broker, { trustDepositList: payload.trustDepositList }, tdBlockHeight);
+      } else {
+        await this.broker.call(
+          `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
+          { trustDepositList: payload.trustDepositList },
+        );
+      }
     }
 
     if (payload.updateParamsList?.length) {

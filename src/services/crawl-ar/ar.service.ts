@@ -14,6 +14,7 @@ import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } fro
 import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
+import { isValidAccountAddress, fetchAccountBalance } from '../../common/utils/account_balance_utils';
 
 interface Balance {
     denom: string;
@@ -45,6 +46,14 @@ export default class CrawlNewAccountsService extends BullableService {
     private accountCache = new Map<string, Account>();
     private cacheSize = 1000;
     private _isFreshStart: boolean = false;
+
+    private readonly ACCOUNT_INSERT_BATCH = Math.min(500, Math.max(50, Number(process.env.ACCOUNT_INSERT_BATCH) || 200));
+    private readonly ACCOUNT_EXISTING_QUERY_CHUNK = Math.min(5000, Math.max(500, Number(process.env.ACCOUNT_EXISTING_QUERY_CHUNK) || 2000));
+    private readonly BALANCE_REFRESH_CONCURRENCY = Math.min(20, Math.max(2, Number(process.env.ACCOUNT_BALANCE_CONCURRENCY) || 8));
+    private readonly BALANCE_REFRESH_CHUNK = Math.min(1000, Math.max(50, Number(process.env.ACCOUNT_BALANCE_CHUNK) || 200));
+    private readonly BALANCE_FETCH_RETRIES = Math.min(5, Math.max(0, Number(process.env.ACCOUNT_BALANCE_FETCH_RETRIES) || 2));
+    private readonly BALANCE_FETCH_BACKOFF_MS = Math.min(5000, Math.max(100, Number(process.env.ACCOUNT_BALANCE_BACKOFF_MS) || 400));
+    private readonly DELAY_BETWEEN_BALANCE_CHUNKS_MS = Math.min(500, Math.max(0, Number(process.env.ACCOUNT_BALANCE_CHUNK_DELAY_MS) || 50));
 
     constructor(public broker: ServiceBroker) {
         super(broker);
@@ -457,6 +466,11 @@ export default class CrawlNewAccountsService extends BullableService {
                         throw err;
                     }
                 }
+                try {
+                    await this.doBulkRefreshAccountBalances(toCreate.map(b => b.address));
+                } catch {
+                    //
+                }
             }
         } catch (err: unknown) {
             const e = err as { code?: string; nativeError?: { code?: string } };
@@ -472,6 +486,124 @@ export default class CrawlNewAccountsService extends BullableService {
                 this.pendingAccountCreates.delete(addr);
                 this.accountCache.delete(addr);
             });
+        }
+    }
+
+    @Action({ name: 'upsertAccount', params: { address: { type: 'string', min: 5 } } })
+    async upsertAccount(ctx: { params: { address: string } }): Promise<{ success: boolean; created?: boolean }> {
+        const address = String(ctx.params.address || '').trim();
+        if (!address || !isValidAccountAddress(address)) {
+            return { success: false };
+        }
+        try {
+            if (!(await tableExists('account'))) {
+                return { success: false };
+            }
+            const existing = await Account.query(knex).findOne({ address }).select('address');
+            if (existing) {
+                return { success: true, created: false };
+            }
+            const accountData: AccountInsertData = {
+                address,
+                type: 'user-accounts',
+                balances: [],
+                spendable_balances: [],
+                account_number: 0,
+                sequence: 0,
+                created_at: new Date().toISOString(),
+            };
+            await Account.query(knex).insert(accountData);
+            try {
+                const balances = await fetchAccountBalance(address);
+                if (balances !== null) {
+                    await Account.query(knex)
+                        .patch({
+                            balances: balances as any,
+                            spendable_balances: balances as any,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .where({ address });
+                    this.accountCache.delete(address);
+                }
+            } catch {
+                //
+            }
+            return { success: true, created: true };
+        } catch (err: unknown) {
+            const e = err as { code?: string; nativeError?: { code?: string } };
+            if (e?.code === '23505' || e?.nativeError?.code === '23505') {
+                return { success: true, created: false };
+            }
+            this.logger.warn('[upsertAccount] Failed:', err);
+            return { success: false };
+        }
+    }
+
+    @Action({ name: 'bulkEnsureAccounts', params: { addresses: { type: 'array', items: 'string' } } })
+    async bulkEnsureAccounts(ctx: { params: { addresses: string[] } }): Promise<{ success: boolean; inserted: number }> {
+        const raw = ctx.params.addresses;
+        if (!Array.isArray(raw) || raw.length === 0) return { success: true, inserted: 0 };
+        const unique = [...new Set(raw.map((a) => String(a).trim()).filter((a) => a.length > 0 && isValidAccountAddress(a)))];
+        if (unique.length === 0) return { success: true, inserted: 0 };
+        try {
+            if (!(await tableExists('account'))) return { success: false, inserted: 0 };
+            const existingSet = new Set<string>();
+            for (let q = 0; q < unique.length; q += this.ACCOUNT_EXISTING_QUERY_CHUNK) {
+                const qChunk = unique.slice(q, q + this.ACCOUNT_EXISTING_QUERY_CHUNK);
+                const rows = await Account.query(knex).whereIn('address', qChunk).select('address');
+                rows.forEach((r) => existingSet.add(r.address));
+            }
+            const toInsert = unique.filter((a) => !existingSet.has(a));
+            if (toInsert.length === 0) return { success: true, inserted: 0 };
+            const { delay } = await import('../../common/utils/db_query_helper');
+            let inserted = 0;
+            for (let i = 0; i < toInsert.length; i += this.ACCOUNT_INSERT_BATCH) {
+                const chunk = toInsert.slice(i, i + this.ACCOUNT_INSERT_BATCH);
+                const accountDataList: AccountInsertData[] = chunk.map((address) => ({
+                    address,
+                    type: 'user-accounts',
+                    balances: [],
+                    spendable_balances: [],
+                    account_number: 0,
+                    sequence: 0,
+                    created_at: new Date().toISOString(),
+                }));
+                let done = false;
+                for (let attempt = 0; attempt <= 1 && !done; attempt++) {
+                    try {
+                        if (attempt > 0) await delay(this.BALANCE_FETCH_BACKOFF_MS);
+                        await Account.query(knex).insert(accountDataList);
+                        inserted += chunk.length;
+                        done = true;
+                    } catch (err: unknown) {
+                        const e = err as { code?: string; nativeError?: { code?: string; column?: string } };
+                        if (e?.nativeError?.code === '42703' && e?.nativeError?.column === 'pub_key') {
+                            const retry = accountDataList.map((d) => {
+                                const row = { ...(d as Record<string, unknown>) };
+                                delete row.pub_key;
+                                return row;
+                            });
+                            await Account.query(knex).insert(retry);
+                            inserted += chunk.length;
+                            done = true;
+                        } else if (e?.code === '23505' || e?.nativeError?.code === '23505') {
+                            inserted += chunk.length;
+                            done = true;
+                        } else if (attempt === 1) throw err;
+                    }
+                }
+            }
+            if (toInsert.length > 0) {
+                try {
+                    await this.doBulkRefreshAccountBalances(toInsert);
+                } catch {
+                    //
+                }
+            }
+            return { success: true, inserted };
+        } catch (err: unknown) {
+            this.logger.warn('[bulkEnsureAccounts] Failed:', err);
+            return { success: false, inserted: 0 };
         }
     }
 
@@ -643,6 +775,7 @@ export default class CrawlNewAccountsService extends BullableService {
                 : [];
             await Account.query(knex)
                 .patch({
+                    balances: onChainBalances as any,
                     spendable_balances: onChainBalances as any,
                     updated_at: new Date().toISOString(),
                 })
@@ -654,6 +787,87 @@ export default class CrawlNewAccountsService extends BullableService {
             if (err.name !== 'AbortError') {
                 this.logger.error(`[RECONCILE] Error ${address}:`, err);
             }
+        }
+    }
+
+    @Action({ name: 'updateAccountBalanceFromChain', params: { address: { type: 'string', min: 5 } } })
+    async updateAccountBalanceFromChain(ctx: { params: { address: string } }): Promise<{ success: boolean }> {
+        const address = String(ctx.params.address || '').trim();
+        if (!address || !isValidAccountAddress(address)) return { success: false };
+        try {
+            if (!(await tableExists('account'))) return { success: false };
+            const balances = await fetchAccountBalance(address);
+            if (balances === null) return { success: false };
+            await Account.query(knex)
+                .patch({
+                    balances: balances as any,
+                    spendable_balances: balances as any,
+                    updated_at: new Date().toISOString(),
+                })
+                .where({ address });
+            this.accountCache.delete(address);
+            return { success: true };
+        } catch (err: unknown) {
+            this.logger.warn('[updateAccountBalanceFromChain] Failed:', err);
+            return { success: false };
+        }
+    }
+
+    private async doBulkRefreshAccountBalances(addresses: string[]): Promise<{ updated: number }> {
+        if (addresses.length === 0) return { updated: 0 };
+        const unique = [...new Set(addresses.filter((a) => isValidAccountAddress(String(a).trim())))];
+        if (unique.length === 0) return { updated: 0 };
+        if (!(await tableExists('account'))) return { updated: 0 };
+        const { delay } = await import('../../common/utils/db_query_helper');
+        let updated = 0;
+        for (let outer = 0; outer < unique.length; outer += this.BALANCE_REFRESH_CHUNK) {
+            const chunk = unique.slice(outer, outer + this.BALANCE_REFRESH_CHUNK);
+            for (let i = 0; i < chunk.length; i += this.BALANCE_REFRESH_CONCURRENCY) {
+                const batch = chunk.slice(i, i + this.BALANCE_REFRESH_CONCURRENCY);
+                const results = await Promise.allSettled(
+                    batch.map(async (address) => {
+                        let balances: { denom: string; amount: string }[] | null = null;
+                        for (let r = 0; r <= this.BALANCE_FETCH_RETRIES; r++) {
+                            balances = await fetchAccountBalance(address);
+                            if (balances !== null) break;
+                            if (r < this.BALANCE_FETCH_RETRIES) await delay(this.BALANCE_FETCH_BACKOFF_MS);
+                        }
+                        if (balances === null) return;
+                        await Account.query(knex)
+                            .patch({
+                                balances: balances as any,
+                                spendable_balances: balances as any,
+                                updated_at: new Date().toISOString(),
+                            })
+                            .where({ address });
+                        this.accountCache.delete(address);
+                    })
+                );
+                updated += results.filter((r): r is PromiseFulfilledResult<void> => r.status === 'fulfilled').length;
+                for (const r of results) {
+                    if (r.status === 'rejected' && (r.reason as any)?.name !== 'AbortError') {
+                        this.logger.debug('[bulkRefreshAccountBalances] Single address failed:', r.reason);
+                    }
+                }
+            }
+            if (outer + this.BALANCE_REFRESH_CHUNK < unique.length && this.DELAY_BETWEEN_BALANCE_CHUNKS_MS > 0) {
+                await delay(this.DELAY_BETWEEN_BALANCE_CHUNKS_MS);
+            }
+        }
+        return { updated };
+    }
+
+    @Action({ name: 'bulkRefreshAccountBalances', params: { addresses: { type: 'array', items: 'string' } } })
+    async bulkRefreshAccountBalances(ctx: { params: { addresses: string[] } }): Promise<{ success: boolean; updated: number }> {
+        const raw = ctx.params.addresses;
+        if (!Array.isArray(raw) || raw.length === 0) return { success: true, updated: 0 };
+        const unique = [...new Set(raw.map((a) => String(a).trim()).filter((a) => a.length > 0 && isValidAccountAddress(a)))];
+        try {
+            const { updated } = await this.doBulkRefreshAccountBalances(unique);
+            return { success: true, updated };
+        } catch (err: unknown) {
+            this.logger.warn('[bulkRefreshAccountBalances] Failed:', err);
+            return { success: false, updated: 0 };
         }
     }
 }

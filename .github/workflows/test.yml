@@ -99,4 +99,7 @@ jobs:
           POSTGRES_USER: phamphong
           POSTGRES_DB_TEST: test
           USE_HEIGHT_SYNC_CS: true
+          USE_HEIGHT_SYNC_PERM: true
+          USE_HEIGHT_SYNC_TR: true
+          USE_HEIGHT_SYNC_TD: true
         run: pnpm run test-ci

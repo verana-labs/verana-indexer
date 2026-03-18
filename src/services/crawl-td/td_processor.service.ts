@@ -13,6 +13,12 @@ import { CheckpointManager } from '../../common/utils/checkpoint_manager';
 import { BatchProcessor } from '../../common/utils/batch_processor';
 import { queryWithAutoRetry, delay, isStatementTimeoutError, getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
 import { indexerStatusManager } from '../manager/indexer_status.manager';
+import { extractAccountAddressesFromEvents } from '../../common/utils/account_balance_utils';
+import {
+  buildDepositIdToEventTypeMapFromEvents,
+  extractTrustDepositIdsFromEvents,
+  fetchTrustDeposit,
+} from '../../modules/td-height-sync/td_height_sync_helpers';
 
 interface TrustDepositAdjustPayload {
   account: string;
@@ -221,11 +227,20 @@ export default class CrawlTrustDepositService extends BullableService {
     const events = [...finalizeBlockEvents, ...txEvents, ...endBlockEvents];
     if (!events.length) return;
 
-    const eventTypes = [TrustDepositEventType.ADJUST, TrustDepositEventType.SLASH];
+    const useHeightSyncTD = process.env.USE_HEIGHT_SYNC_TD === "true";
+    if (useHeightSyncTD) {
+      await this.processTrustDepositHeightSync(block.height, events);
+      return;
+    }
+
+    const eventTypes = [
+      TrustDepositEventType.AdjustTrustDeposit,
+      TrustDepositEventType.SlashTrustDeposit,
+    ];
     const filteredEvents = events.filter((e: any) => eventTypes.includes(e.type));
 
-    const adjustEvents = filteredEvents.filter((e: any) => e.type === TrustDepositEventType.ADJUST);
-    const slashEvents = filteredEvents.filter((e: any) => e.type === TrustDepositEventType.SLASH);
+    const adjustEvents = filteredEvents.filter((e: any) => e.type === TrustDepositEventType.AdjustTrustDeposit);
+    const slashEvents = filteredEvents.filter((e: any) => e.type === TrustDepositEventType.SlashTrustDeposit);
 
     if (adjustEvents.length) {
       this.logger.info(`[CrawlTrustDepositService] Found ${adjustEvents.length} adjust events`);
@@ -246,23 +261,72 @@ export default class CrawlTrustDepositService extends BullableService {
         this.logger.error('[CrawlTrustDepositService] Error processing adjust events:', err);
       }
     }
-      if (slashEvents.length) {
-        this.logger.info(`[CrawlTrustDepositService] Found ${slashEvents.length} slash events`);
+    if (slashEvents.length) {
+      this.logger.info(`[CrawlTrustDepositService] Found ${slashEvents.length} slash events`);
 
-        await this.batchProcessor.processInBatches(
-          slashEvents,
-          async (event: any) => {
-            await this.handleSlashTrustDepositEvent(block.height, event);
-          },
+      await this.batchProcessor.processInBatches(
+        slashEvents,
+        async (event: any) => {
+          await this.handleSlashTrustDepositEvent(block.height, event);
+        },
+        {
+          maxConcurrent: this._isFreshStart ? 1 : getRecommendedConcurrency(1, true),
+          batchSize: applySpeedToBatchSize(this._isFreshStart ? 2 : 3, !this._isFreshStart),
+          delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
+          logger: this.logger
+        }
+      );
+    }
+  }
+
+  private async processTrustDepositHeightSync(height: number, events: any[]) {
+    const depositIds = extractTrustDepositIdsFromEvents(events, true);
+    if (!depositIds.length) return;
+
+    const dedupeKey = (id: string) => `${height}::${id}`;
+    const seen = new Set<string>();
+    const toProcess: string[] = [];
+    for (const id of depositIds) {
+      const key = dedupeKey(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      toProcess.push(id);
+    }
+
+    const allAccounts = new Set<string>(toProcess);
+    extractAccountAddressesFromEvents(events, true).forEach((a) => allAccounts.add(a));
+
+    const depositIdToEventType = buildDepositIdToEventTypeMapFromEvents(events, true);
+
+    try {
+      await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.bulkEnsureAccounts`, {
+        addresses: [...allAccounts],
+      });
+      await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.bulkRefreshAccountBalances`, {
+        addresses: [...allAccounts],
+      });
+    } catch {
+      //
+    }
+
+    for (const depositId of toProcess) {
+      try {
+        const ledgerState = await fetchTrustDeposit(depositId, height);
+        if (!ledgerState) continue;
+        const eventType = depositIdToEventType.get(depositId) ?? "SYNC_LEDGER";
+        await this.broker.call(
+          `${SERVICE.V1.TrustDepositDatabaseService.path}.syncFromLedger`,
           {
-            maxConcurrent: this._isFreshStart ? 1 : getRecommendedConcurrency(1, true),
-            batchSize: applySpeedToBatchSize(this._isFreshStart ? 2 : 3, !this._isFreshStart),
-            delayBetweenBatches: applySpeedToDelay(this._isFreshStart ? 2000 : 1000, !this._isFreshStart),
-            logger: this.logger
+            ledgerTrustDeposit: ledgerState,
+            blockHeight: height,
+            eventType,
           }
         );
+      } catch (err) {
+        this.logger.warn(`[TD Height Sync] Sync failed for ${depositId} at height ${height}:`, err);
       }
     }
+  }
 
   private async handleAdjustTrustDepositEvent(height: number, event: any) {
     try {
