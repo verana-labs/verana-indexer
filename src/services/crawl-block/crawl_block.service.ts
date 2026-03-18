@@ -518,8 +518,13 @@ export default class CrawlBlockService extends BullableService {
         block?: {
           header?: {
             height?: string | number;
+            time?: string;
+            proposer_address?: string;
           };
+          data?: { txs?: any[] };
+          last_commit?: { signatures?: any[] };
         };
+        block_id?: { hash?: string };
         block_result?: unknown;
         [key: string]: unknown;
       }
@@ -530,7 +535,7 @@ export default class CrawlBlockService extends BullableService {
         if (i > 0 && i % 100 === 0) {
           await throwIfHeapCriticalDuringCrawl('crawl-block:merge-responses', this.logger);
         }
-        const blockData = blockResponses[i]?.result as MergedBlockResponse | undefined;
+        const blockData = blockResponses[i]?.result as any;
         const blockResultData = blockResponses[i + 1]?.result;
         
         if (!blockData || !blockResultData) {
@@ -539,17 +544,29 @@ export default class CrawlBlockService extends BullableService {
           continue;
         }
         
+        // Extract only the fields needed by handleListBlock.
+        // Crucially, we do NOT copy block.data.txs (base64 transaction bytes)
+        // which is typically the largest part of the raw RPC response.
+        const txCount = blockData.block?.data?.txs?.length ?? 0;
         mergeBlockResponses.push({
-          ...blockData,
+          block: blockData.block ? {
+            header: blockData.block.header,
+            data: { txs: new Array(txCount) },
+            last_commit: blockData.block.last_commit,
+          } : undefined,
+          block_id: blockData.block_id,
           block_result: blockResultData,
         });
       }
 
+      // Release the raw RPC responses immediately — they contain the huge
+      // base64 transaction bytes that are no longer needed.
+      blockQueries.length = 0;
+      blockResponsesResults.length = 0;
+      blockResponses.length = 0;
+
       if (mergeBlockResponses.length === 0) {
         this.logger.warn('⚠️ No valid blocks to process. Skipping this cycle.');
-        blockQueries.length = 0;
-        blockResponsesResults.length = 0;
-        blockResponses.length = 0;
         return;
       }
 
@@ -593,10 +610,7 @@ export default class CrawlBlockService extends BullableService {
         }
       }
 
-      // Clear large arrays AFTER processing to help garbage collection
-      blockQueries.length = 0;
-      blockResponsesResults.length = 0;
-      blockResponses.length = 0;
+      // Clear remaining large arrays to help garbage collection
       mergeBlockResponses.length = 0;
 
       await this.adjustPollingInterval(latestBlockNetwork);
@@ -1085,6 +1099,7 @@ export default class CrawlBlockService extends BullableService {
       });
       if (listBlockHeight.length) {
         const listExistedBlock = await Block.query()
+          .select('height')
           .whereIn('height', listBlockHeight)
           .timeout(getDbQueryTimeoutMs(30000));
         listExistedBlock?.forEach((block) => {
@@ -1132,7 +1147,7 @@ export default class CrawlBlockService extends BullableService {
               hash: block?.block_id?.hash,
               time: block?.block?.header?.time,
               proposer_address: block?.block?.header?.proposer_address,
-              data: config.crawlBlock.saveRawLog ? block : null,
+              data: config.crawlBlock.saveRawLog ? { block_result: block.block_result } : null,
               tx_count: block?.block?.data?.txs?.length ?? 0,
             }),
             signatures: block?.block?.last_commit?.signatures.map(

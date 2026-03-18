@@ -109,6 +109,7 @@ export default class CreateBlockPartitionJob extends BullableService {
   })
   async jobCreateBlockPartition(): Promise<boolean> {
     const latestBlock = await Block.query()
+      .select('height')
       .limit(1)
       .orderBy('height', 'DESC')
       .first();

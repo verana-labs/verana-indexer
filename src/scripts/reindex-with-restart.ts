@@ -87,6 +87,15 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
             nodeOptionsParts.push('--max-old-space-size=4096');
         }
 
+        // Match pnpm start's semi-space size — critical for GC during reindex.
+        // Without this, V8's default 16MB semi-space promotes short-lived objects
+        // (query results, model instances, decoded txs) to old generation too fast,
+        // causing monotonic heap growth that leads to OOM.
+        const hasSemiSpace = baseParts.some(opt => opt.includes('--max-semi-space-size'));
+        if (!hasSemiSpace) {
+            nodeOptionsParts.push('--max-semi-space-size=64');
+        }
+
         if (!hasExposeGc) {
             nodeOptionsParts.push('--expose-gc');
         }
@@ -205,6 +214,56 @@ function runReindex(checkpoint: ReindexCheckpoint | null): Promise<number> {
     });
 }
 
+const MAX_SERVICE_RESTARTS = 20;
+const SERVICE_RESTART_DELAY = 5000;
+const MEMORY_EXIT_CODES = new Set([3, 134]); // 3 = our graceful exit, 134 = OOM signal
+
+function startServicesWithRestart(dockerCommand: string): Promise<void> {
+    let restartCount = 0;
+
+    const launch = (): Promise<void> =>
+        new Promise((resolve, reject) => {
+            restartCount++;
+            log(`🚀 Starting services (${dockerCommand})... ${restartCount > 1 ? `[restart #${restartCount - 1}]` : ''}`);
+
+            const svcProcess = spawn('pnpm', ['run', dockerCommand], {
+                stdio: 'inherit',
+                shell: true
+            });
+
+            svcProcess.on('exit', (code, signal) => {
+                const exitCode = code ?? (signal === 'SIGKILL' ? 137 : 1);
+
+                if (exitCode === 0) {
+                    resolve();
+                    return;
+                }
+
+                if (MEMORY_EXIT_CODES.has(exitCode) && restartCount <= MAX_SERVICE_RESTARTS) {
+                    log(`⚠️  Services exited with code ${exitCode} (memory). Restarting in ${SERVICE_RESTART_DELAY / 1000}s... (${restartCount}/${MAX_SERVICE_RESTARTS})`);
+                    log(`   Checkpoints are preserved in the database — the fresh process will continue where it left off.`);
+                    setTimeout(() => {
+                        launch().then(resolve).catch(reject);
+                    }, SERVICE_RESTART_DELAY);
+                } else if (MEMORY_EXIT_CODES.has(exitCode)) {
+                    log(`❌ Services exceeded max restarts (${MAX_SERVICE_RESTARTS}) due to memory. Exiting.`);
+                    log(`   Run 'pnpm start' to continue from checkpoints.`);
+                    process.exit(exitCode);
+                } else {
+                    log(`❌ Services exited with code ${exitCode}${signal ? ` (signal: ${signal})` : ''}`);
+                    process.exit(exitCode);
+                }
+            });
+
+            svcProcess.on('error', (error) => {
+                log(`❌ Failed to start services: ${error.message}`);
+                reject(error);
+            });
+        });
+
+    return launch();
+}
+
 async function main(): Promise<void> {
     try {
         const checkpoint = loadCheckpoint();
@@ -222,20 +281,7 @@ async function main(): Promise<void> {
         if (exitCode === 0) {
             const isProduction = process.env.NODE_ENV === 'production';
             const dockerCommand = isProduction ? 'docker' : 'docker:dev';
-            log(`🚀 Starting docker services (${dockerCommand})...`);
-            const dockerProcess = spawn('pnpm', ['run', dockerCommand], {
-                stdio: 'inherit',
-                shell: true
-            });
-
-            dockerProcess.on('exit', (code) => {
-                process.exit(code || 0);
-            });
-
-            dockerProcess.on('error', (error) => {
-                log(`❌ Failed to start docker services: ${error.message}`);
-                process.exit(1);
-            });
+            await startServicesWithRestart(dockerCommand);
         } else {
             process.exit(exitCode);
         }

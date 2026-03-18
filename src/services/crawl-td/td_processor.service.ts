@@ -4,6 +4,7 @@ import config from '../../config.json' with { type: 'json' };
 import BullableService from '../../base/bullable.service';
 import { BULL_JOB_NAME, SERVICE, TrustDepositEventType } from '../../common';
 import { Block } from '../../models';
+import knex from '../../common/utils/db_connection';
 import { BlockCheckpoint } from '../../models/block_checkpoint';
 import { formatTimestamp } from '../../common/utils/date_utils';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
@@ -126,13 +127,14 @@ export default class CrawlTrustDepositService extends BullableService {
           this.logger.warn('[CrawlTrustDepositService] Crawling paused during processing loop, exiting cycle');
           break;
         }
-        let nextBlocks: Block[] = [];
+        let nextBlocks: { height: number; block_result: any }[] = [];
         const currentLastHeight = lastHeight;
         const queryTimeoutMs = getDbQueryTimeoutMs();
         try {
           nextBlocks = await queryWithAutoRetry(
             async () => {
-              const result = await Block.query()
+              const result = await knex('block')
+                .select('height', knex.raw("data->'block_result' as block_result"))
                 .where('height', '>', currentLastHeight)
                 .orderBy('height', 'asc')
                 .limit(maxBlockBatch)
@@ -215,8 +217,8 @@ export default class CrawlTrustDepositService extends BullableService {
     return await this.processBlockEventsInternal(block);
   }
 
-  private async processBlockEventsInternal(block: Block) {
-    const blockResult = block.data?.block_result;
+  private async processBlockEventsInternal(block: Block | { height: number; block_result: any }) {
+    const blockResult = (block as any).block_result ?? (block as any).data?.block_result;
     if (!blockResult) return;
 
     const finalizeBlockEvents = blockResult?.finalize_block_events || [];

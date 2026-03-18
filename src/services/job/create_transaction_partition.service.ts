@@ -111,6 +111,7 @@ export default class CreateTransactionPartitionJob extends BullableService {
   })
   async jobCreateTransactionPartition(): Promise<boolean> {
     const latestTransaction = await Transaction.query()
+      .select('id')
       .limit(1)
       .orderBy('id', 'DESC')
       .first();

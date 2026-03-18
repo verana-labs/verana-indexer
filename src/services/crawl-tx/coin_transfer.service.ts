@@ -37,6 +37,7 @@ export default class CoinTransferService extends BullableService {
     toHeight: number
   ): Promise<Transaction[]> {
     const transactions = await Transaction.query()
+      .select('id', 'height', 'hash', 'timestamp', 'index', 'code', 'codespace', 'gas_used', 'gas_wanted', 'gas_limit', 'fee', 'memo')
       .withGraphFetched('messages')
       .where('height', '>', fromHeight)
       .andWhere('height', '<=', toHeight)

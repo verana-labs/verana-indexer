@@ -61,6 +61,7 @@ export default class CrawlDelegatorsService extends BullableService {
     );
 
     const latestTransactionByHeight = await Transaction.query()
+      .select('id', 'height', 'hash')
       .findOne('height', _payload.params.height)
       .orderBy('id', 'DESC')
       .limit(1);

@@ -1349,6 +1349,7 @@ export default class StatsCalculationService extends BullableService {
       }
 
       const block = await Block.query()
+        .select('height', 'time')
         .where("height", handleTxHeight)
         .first();
 

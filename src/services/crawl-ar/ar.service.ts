@@ -166,11 +166,12 @@ export default class CrawlNewAccountsService extends BullableService {
                 await throwIfHeapCriticalDuringCrawl('crawl-new-accounts:loop', this.logger);
                 let nextBlocks: Block[];
                 try {
-                    nextBlocks = await Block.query()
+                    nextBlocks = await knex('block')
+                        .select('height', knex.raw("data->'block_result' as block_result"))
                         .where('height', '>', lastHeight)
                         .orderBy('height', 'asc')
                         .limit(this.BATCH_SIZE)
-                        .timeout(getDbQueryTimeoutMs(120000));
+                        .timeout(getDbQueryTimeoutMs(120000)) as any;
                 } catch (queryError: any) {
                     const errorCode = queryError?.code;
                     const errorMessage = queryError?.message || String(queryError);
@@ -309,10 +310,9 @@ export default class CrawlNewAccountsService extends BullableService {
         return results;
     }
 
-    private async processBlockTransactions(block: Block, changedAddresses: Set<string>): Promise<{ success: boolean; transfersProcessed: number; errorMessage?: string }> {
+    private async processBlockTransactions(block: Block | { height: number; block_result: any }, changedAddresses: Set<string>): Promise<{ success: boolean; transfersProcessed: number; errorMessage?: string }> {
         try {
-            const blockData = typeof block.data === 'string' ? JSON.parse(block.data) : block.data;
-            const blockResult = blockData?.block_result;
+            const blockResult = (block as any).block_result ?? ((block as any).data?.block_result);
             if (!blockResult) return { success: true, transfersProcessed: 0 };
 
             const transferEvents: Array<{ type: string; attributes?: Array<{ key: string; value: string }>; source: string }> = [];
