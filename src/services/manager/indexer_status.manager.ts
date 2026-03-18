@@ -271,7 +271,7 @@ class IndexerStatusManager {
             if (global.gc) {
               try { global.gc(); } catch {}
             }
-            await new Promise<void>(r => setTimeout(r, 200));
+            await new Promise<void>((r) => { setTimeout(r, 200); });
           }
 
           const mem = process.memoryUsage();
@@ -305,7 +305,7 @@ class IndexerStatusManager {
               `[Recovery #${this._memoryRecoveryFailures}] heap=${heapUsedMb.toFixed(0)}/${heapTotalMb.toFixed(0)}MB rss=${rssMb.toFixed(0)}MB ` +
               `handles=${handles} requests=${requests}${v8Info} ` +
               `(need <${resumeHeapMb}MB to resume)`
-            );
+           );
           }
 
           // Write heap snapshot on first failure — load in Chrome DevTools to see retained objects

@@ -221,8 +221,7 @@ const MEMORY_EXIT_CODES = new Set([3, 134]); // 3 = our graceful exit, 134 = OOM
 function startServicesWithRestart(dockerCommand: string): Promise<void> {
     let restartCount = 0;
 
-    const launch = (): Promise<void> => {
-        return new Promise((resolve, reject) => {
+    const launch = (): Promise<void> => new Promise((resolve, reject) => {
             restartCount++;
             log(`🚀 Starting services (${dockerCommand})... ${restartCount > 1 ? `[restart #${restartCount - 1}]` : ''}`);
 
@@ -260,7 +259,6 @@ function startServicesWithRestart(dockerCommand: string): Promise<void> {
                 reject(error);
             });
         });
-    };
 
     return launch();
 }
