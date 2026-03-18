@@ -53,6 +53,8 @@ class IndexerStatusManager {
   private readonly RECOVERY_BACKOFF_MULTIPLIER = 1.5;
   private _recoveryCheckIntervalMs = 30000;
   private readonly RECOVERY_CHECK_TIMEOUT = 10000;
+  private _memoryRecoveryFailures = 0;
+  private readonly EXIT_AFTER_RECOVERY_FAILURES = 5;
 
   private dbStorageCheckInterval: NodeJS.Timeout | null = null;
   private readonly DB_STORAGE_CHECK_INTERVAL_MS = 120000; // 2 minutes
@@ -170,34 +172,18 @@ class IndexerStatusManager {
     };
     this.status.stoppedReason = `Crawling stopped due to: ${error.message}. Indexer APIs remain available.`;
 
-    await this.stopAllCrawlingJobs();
+    const isMemoryStop = service === 'MEMORY';
+    // For MEMORY stops: only pause queues, preserve repeatable jobs so crawling can resume.
+    // For other stops: full stop including repeatable job removal.
+    await this.stopAllCrawlingJobs({ preserveRepeatableJobs: isMemoryStop });
     this.stopDbStorageChecker();
 
-    const errorMessage = error.message || String(error);
-    const isNetworkError = errorMessage.toLowerCase().includes('timeout') ||
-                          errorMessage.toLowerCase().includes('network') ||
-                          errorMessage.toLowerCase().includes('connection') ||
-                          errorMessage.toLowerCase().includes('econnrefused') ||
-                          errorMessage.toLowerCase().includes('etimedout') ||
-                          errorMessage.toLowerCase().includes('query read timeout') ||
-                          errorMessage.toLowerCase().includes('knextimeouterror') ||
-                          errorMessage.toLowerCase().includes('query timeout');
-    
-    if (isNetworkError) {
-      if (this.logger) {
-        this.logger.info(`Network/timeout error detected. Starting recovery checker...`);
-      } else {
-        console.log(`Network/timeout error detected. Starting recovery checker...`);
-      }
-      this.startRecoveryChecker();
+    if (this.logger) {
+      this.logger.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`);
     } else {
-      if (this.logger) {
-        this.logger.warn(`Non-network error stopped crawling. Starting recovery checker anyway to attempt auto-resume...`);
-      } else {
-        console.warn(`Non-network error stopped crawling. Starting recovery checker anyway to attempt auto-resume...`);
-      }
-      this.startRecoveryChecker();
+      console.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`);
     }
+    this.startRecoveryChecker();
 
     this.notifyStatusChange();
   }
@@ -279,24 +265,79 @@ class IndexerStatusManager {
         if (stoppedByMemory) {
           const parsedResume = parseInt(process.env.NODE_MEMORY_RESUME_MB || '1600', 10);
           const resumeHeapMb = Number.isFinite(parsedResume) && parsedResume > 0 ? parsedResume : 1600;
-          if (global.gc) global.gc();
-          const heapUsedMb = (process.memoryUsage().heapUsed || 0) / (1024 * 1024);
+
+          // Run multiple GC cycles for more effective reclamation
+          for (let i = 0; i < 3; i++) {
+            if (global.gc) {
+              try { global.gc(); } catch {}
+            }
+            await new Promise<void>(r => setTimeout(r, 200));
+          }
+
+          const mem = process.memoryUsage();
+          const heapUsedMb = mem.heapUsed / (1024 * 1024);
+          const heapTotalMb = mem.heapTotal / (1024 * 1024);
+          const rssMb = mem.rss / (1024 * 1024);
+
           if (heapUsedMb < resumeHeapMb) {
             if (this.logger) {
-              this.logger.info(`Memory recovered (heap ${heapUsedMb.toFixed(0)} MB < ${resumeHeapMb} MB). Automatically resuming crawling...`);
-            } else {
-              console.log('Memory recovered. Automatically resuming crawling...');
+              this.logger.info(`Memory recovered (heap ${heapUsedMb.toFixed(0)}/${heapTotalMb.toFixed(0)} MB < ${resumeHeapMb} MB). Resuming crawling...`);
             }
+            this._memoryRecoveryFailures = 0;
             this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
             await this.resumeIndexer();
-            if (this.logger) {
-              this.logger.info('Crawling resumed successfully');
-            }
             return;
           }
+
+          this._memoryRecoveryFailures++;
+
+          // Log diagnostics on every attempt
           if (this.logger) {
-            this.logger.info(`Memory not yet recovered (heap ${heapUsedMb.toFixed(0)} MB), will retry in ${this._recoveryCheckIntervalMs / 1000}s...`);
+            const handles = (process as any)._getActiveHandles?.()?.length ?? '?';
+            const requests = (process as any)._getActiveRequests?.()?.length ?? '?';
+            let v8Info = '';
+            try {
+              const v8 = await import('v8');
+              const hs = v8.getHeapStatistics();
+              v8Info = ` nativeCtx=${hs.number_of_native_contexts} detachedCtx=${hs.number_of_detached_contexts}`;
+            } catch {}
+            this.logger.info(
+              `[Recovery #${this._memoryRecoveryFailures}] heap=${heapUsedMb.toFixed(0)}/${heapTotalMb.toFixed(0)}MB rss=${rssMb.toFixed(0)}MB ` +
+              `handles=${handles} requests=${requests}${v8Info} ` +
+              `(need <${resumeHeapMb}MB to resume)`
+            );
           }
+
+          // Write heap snapshot on first failure — load in Chrome DevTools to see retained objects
+          if (this._memoryRecoveryFailures === 1) {
+            try {
+              const v8 = await import('v8');
+              const snapshotPath = v8.writeHeapSnapshot();
+              const msg = `[Recovery] Heap snapshot written to: ${snapshotPath}`;
+              if (this.logger) this.logger.warn(msg);
+              else console.warn(msg);
+            } catch (snapErr: any) {
+              const msg = `[Recovery] Failed to write heap snapshot: ${snapErr?.message || snapErr}`;
+              if (this.logger) this.logger.warn(msg);
+              else console.warn(msg);
+            }
+          }
+
+          // After N failures, exit process gracefully so a fresh restart can continue
+          // from DB checkpoints with a clean heap (pnpm start works fine for the same data)
+          if (this._memoryRecoveryFailures >= this.EXIT_AFTER_RECOVERY_FAILURES) {
+            const exitMsg = `[Recovery] Memory did not recover after ${this._memoryRecoveryFailures} attempts ` +
+              `(heap=${heapUsedMb.toFixed(0)}MB, need <${resumeHeapMb}MB). ` +
+              `Exiting process — restart with 'pnpm start' to continue from checkpoints with a fresh heap.`;
+            if (this.logger) {
+              this.logger.error(exitMsg);
+            } else {
+              console.error(exitMsg);
+            }
+            // Use exit code 3 to signal "memory recovery failed, please restart"
+            process.exit(3);
+          }
+
           return;
         }
 
@@ -503,7 +544,7 @@ class IndexerStatusManager {
     return this.status.isCrawling && this.status.isRunning;
   }
 
-  private async stopAllCrawlingJobs(): Promise<void> {
+  private async stopAllCrawlingJobs(opts?: { preserveRepeatableJobs?: boolean }): Promise<void> {
     try {
       if (!Config.QUEUE_JOB_REDIS) {
         if (this.logger) {
@@ -540,9 +581,11 @@ class IndexerStatusManager {
             connection: redisClient,
           });
 
-          const repeatableJobs = await queue.getRepeatableJobs();
-          for (const job of repeatableJobs) {
-            await queue.removeRepeatableByKey(job.key);
+          if (!opts?.preserveRepeatableJobs) {
+            const repeatableJobs = await queue.getRepeatableJobs();
+            for (const job of repeatableJobs) {
+              await queue.removeRepeatableByKey(job.key);
+            }
           }
 
           await queue.pause();

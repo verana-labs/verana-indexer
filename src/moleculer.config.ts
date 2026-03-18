@@ -262,6 +262,15 @@ const brokerConfig: BrokerOptions = {
         gaugeWidth: Config.TRACING_GUAGEWIDTH || 40,
       },
     },
+    tags: {
+      action: {
+        // Do NOT capture params/response in spans — they retain full payload
+        // objects in memory. During reindex with 434K+ broker.call() operations,
+        // this accumulates GB of unreclaimable span data.
+        params: false,
+        response: false,
+      },
+    },
   },
 
   // Register custom middlewares
@@ -275,6 +284,14 @@ const brokerConfig: BrokerOptions = {
   // replCommands: undefined,
   
   created: (broker: ServiceBroker): void => {
+    broker.logger?.info?.(
+      `[Config Check] tracing=${Config.TRACING_ENABLED} metrics=${Config.METRICS_ENABLED} ` +
+      `cacher=${Config.CACHER ? 'redis' : 'none'} transporter=${Config.TRANSPORTER ? 'redis' : 'none'} ` +
+      `pid=${process.pid}`
+    );
+    // Write PID file for easy SIGUSR2 heap snapshot trigger
+    try { fs.writeFileSync('.indexer.pid', String(process.pid)); } catch {}
+
     if (process.platform === 'win32') {
       const originalNetworkInterfaces = os.networkInterfaces;
       try {

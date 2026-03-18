@@ -55,6 +55,7 @@ export default class UpdateSenderInTxMessages extends BullableService {
         lastBlock = _payload.lastBlockCrawled;
       }
       const listTx = await Transaction.query()
+      .select('id', 'height', 'hash', 'index', 'code')
       .withGraphFetched('events.[attributes]')
       .modifyGraph('events', (builder) => {
         builder.orderBy('id', 'asc');

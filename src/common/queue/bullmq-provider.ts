@@ -71,14 +71,26 @@ export class BullQueueProvider implements QueueProvider {
   opt: QueueOptions,
   fn: (payload: object) => Promise<void>
 ): void {
+  const queueName = opt.queueName;
   // create a new worker to handle the job
   const processor = async (job: Job) => {
+    const heapBefore = process.memoryUsage().heapUsed;
     try {
       await fn(job.data);
     } catch (e) {
       this.log('error', `job ${job.name} failed`);
       this.log('error', e);
       throw e;
+    } finally {
+      const heapAfter = process.memoryUsage().heapUsed;
+      const deltaMb = (heapAfter - heapBefore) / (1024 * 1024);
+      // Only log when growth is significant (>5MB) to avoid noise
+      if (deltaMb > 5) {
+        this.log('warn',
+          `[MemTrack] ${queueName} +${deltaMb.toFixed(1)}MB ` +
+          `(${(heapBefore / (1024 * 1024)).toFixed(0)}→${(heapAfter / (1024 * 1024)).toFixed(0)}MB)`
+        );
+      }
     }
   };
 

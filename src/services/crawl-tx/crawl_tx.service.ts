@@ -233,6 +233,7 @@ export default class CrawlTxService extends BullableService {
       if (blockCheckpoint && blockCheckpoint.height > 0) {
         // Find the last transaction ID at or before the checkpoint height
         const txAtHeight = await Transaction.query()
+          .select('id')
           .where('height', '<=', blockCheckpoint.height)
           .orderBy('id', 'desc')
           .first();
@@ -317,6 +318,14 @@ export default class CrawlTxService extends BullableService {
         // Fetch transactions in batches by ID (much faster than by height)
         const batchSize = Math.min(50, maxTxsPerCall - txsProcessed);
         const transactions = await Transaction.query()
+          .select(
+            'id', 'height', 'index', 'hash', 'code', 'codespace',
+            'gas_used', 'gas_wanted', 'gas_limit', 'fee', 'timestamp', 'memo',
+            knex.raw(`jsonb_build_object(
+              'tx', jsonb_build_object('body', data->'tx'->'body'),
+              'tx_response', (data->'tx_response') - 'raw_log' - 'data'
+            ) as data`)
+          )
           .where('id', '>', currentTxId)
           .orderBy('id', 'asc')
           .limit(batchSize);
@@ -646,11 +655,12 @@ export default class CrawlTxService extends BullableService {
    * Process TrustDeposit events for a single block sequentially.
    */
   private async processTrustDepositEventsForSingleBlock(blockHeight: number): Promise<void> {
-    const block = await Block.query()
+    const rows = await knex('block')
+      .select('height', knex.raw("data->'block_result' as block_result"))
       .where('height', '=', blockHeight)
       .first();
 
-    if (!block) {
+    if (!rows) {
       this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for TrustDeposit processing`);
       return;
     }
@@ -658,7 +668,7 @@ export default class CrawlTxService extends BullableService {
     try {
       await this.broker.call(
         `${SERVICE.V1.CrawlTrustDepositService.path}.processBlockEvents`,
-        { block },
+        { block: rows },
         { timeout: 30000 }
       );
     } catch (err: any) {
@@ -822,6 +832,7 @@ export default class CrawlTxService extends BullableService {
       try {
         listHash = listTx.txs.map((tx: any) => tx.hash);
         const listTxExisted = await Transaction.query()
+          .select('id', 'hash')
           .whereIn('hash', listHash)
           .timeout(getDbQueryTimeoutMs(120000));
         listTxExisted.forEach((tx) => {
@@ -1574,7 +1585,8 @@ export default class CrawlTxService extends BullableService {
 
   private async processTrustDepositEventsForBlocks(startBlock: number, endBlock: number): Promise<void> {
     try {
-      const blocks = await Block.query()
+      const blocks = await knex('block')
+        .select('height', knex.raw("data->'block_result' as block_result"))
         .where('height', '>', startBlock)
         .andWhere('height', '<=', endBlock)
         .orderBy('height', 'asc');

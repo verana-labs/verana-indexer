@@ -34,11 +34,10 @@ async function requestCrawlerPause(message: string, serviceCode: string): Promis
 }
 
 function shouldPauseCrawlerForMemory(): boolean {
-  const mode = (global as any).__indexerStartMode as { isFreshStart?: boolean } | undefined;
-  if (!mode || typeof mode.isFreshStart !== 'boolean') {
-    return true; // fail-safe until start mode is known
-  }
-  return mode.isFreshStart;
+  // Always pause crawling when heap is critical — regardless of start mode.
+  // Previously this returned false during reindex (isFreshStart=false), which
+  // meant the crawler never paused and memory grew without bound.
+  return true;
 }
 
 function getConfiguredMemoryCriticalHeapMb(): number {
@@ -99,8 +98,23 @@ if (process.env.NODE_ENV !== 'test') {
 
   memoryCheckInterval = setInterval(runMemoryGuard, 2000);
 
+  // Periodic memory tracking — log every 60s to see growth pattern
+  let lastMemoryLogAt = 0;
+  const MEMORY_LOG_INTERVAL = 60000;
+
   poolStatusInterval = setInterval(() => {
     runMemoryGuard();
+
+    const memNow = Date.now();
+    if (memNow - lastMemoryLogAt >= MEMORY_LOG_INTERVAL) {
+      lastMemoryLogAt = memNow;
+      const mem = process.memoryUsage();
+      const fmt = (b: number) => (b / 1024 / 1024).toFixed(0);
+      const logger = (global as any).logger;
+      const line = `[Memory Track] pid=${process.pid} rss=${fmt(mem.rss)}MB heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)}MB ext=${fmt(mem.external)}MB buf=${fmt(mem.arrayBuffers)}MB`;
+      if (logger?.info) logger.info(line);
+      else console.log(line);
+    }
     const now = Date.now();
 
     if (knex.client && (knex.client as any).pool) {

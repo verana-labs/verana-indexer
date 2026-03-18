@@ -65,8 +65,8 @@
   "crawlTrustDeposit": {
     "key": "crawlTrustDeposit",
     "millisecondCrawl": 300,
-    "blocksPerCall": 2000,
-    "chunkSize": 2000,
+    "blocksPerCall": 500,
+    "chunkSize": 500,
     "maxLagBlocks": 50000,
     "freshStart": {
       "blocksPerCall": 50,
@@ -92,9 +92,9 @@
   },
   "handleCoinTransfer": {
     "key": "handleCoinTransfer",
-    "blocksPerCall": 2000,
+    "blocksPerCall": 500,
     "millisecondCrawl": 500,
-    "chunkSize": 5000,
+    "chunkSize": 1000,
     "freshStart": {
       "blocksPerCall": 50,
       "chunkSize": 300,
@@ -103,10 +103,10 @@
   },
   "handleTransaction": {
     "key": "handleTransaction",
-    "blocksPerCall": 500,
+    "blocksPerCall": 200,
     "millisecondCrawl": 500,
-    "chunkSize": 1000,
-    "txsPerCall": 500,
+    "chunkSize": 500,
+    "txsPerCall": 200,
     "saveRawLog": true,
     "lastEventsTypeTx": [
       "tx",
@@ -389,12 +389,12 @@
   },
   "jobUpdateSenderInTxMessages": {
     "millisecondCrawl": 500,
-    "blocksPerCall": 5000,
+    "blocksPerCall": 2000,
     "chunkSize": 1000,
     "reindexing": {
-      "blocksPerCall": 10000,
-      "chunkSize": 2000,
-      "millisecondCrawl": 100
+      "blocksPerCall": 2000,
+      "chunkSize": 1000,
+      "millisecondCrawl": 300
     }
   },
   "crawlIbcIcs20": {
