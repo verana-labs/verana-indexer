@@ -5,6 +5,17 @@ It listens to **on-chain events**, **transaction messages**, and **slash actions
 
 ---
 
+## Height-Sync vs Legacy
+
+- **Height-sync mode (recommended):** `USE_HEIGHT_SYNC_TD=true`  
+  The indexer reconciles with the ledger at the processed block height (`GET /verana/td/v1/get/{id}` with `x-cosmos-block-height`), then updates the DB and history from the diff. Used for both the **message path** (crawl_tx → `runHeightSyncTD`) and the **event path** (CrawlTrustDepositService → `processTrustDepositHeightSync`).
+- **Legacy mode:** `USE_HEIGHT_SYNC_TD` unset or not `"true"`  
+  Uses the legacy event handlers (adjust/slash) and `TrustDepositMessageProcessorService.handleTrustDepositMessages` for decoded TD messages.
+
+See **[td-height-sync.md](./td-height-sync.md)** for flow, supported messages, and module layout.
+
+---
+
 ## 🧭 Architecture Overview
 
 ```mermaid
@@ -44,10 +55,9 @@ flowchart LR
 
 ## 🕵️ 1. CrawlTrustDepositService
 
-**Path:** `src/services/crawl-td/td_adjust.service.ts`
-**Responsibility:**
-Continuously crawls blocks and extracts **`adjust_trust_deposit`** events from transaction responses.
-When found, updates `trust_deposits` table accordingly.
+**Path:** `src/services/crawl-td/td_processor.service.ts`  
+**Responsibility:**  
+Continuously crawls blocks and extracts **`adjust_trust_deposit`** and **`slash_trust_deposit`** events from transaction responses. When `USE_HEIGHT_SYNC_TD=true`, uses height-sync (ledger fetch at block height + `syncFromLedger`); otherwise updates `trust_deposits` via legacy adjust/slash handlers.
 
 ### Key Features
 
@@ -73,9 +83,9 @@ sequenceDiagram
 
 ## 📨 2. TrustDepositMessageProcessorService
 
-**Path:** `src/services/crawl-td/td_processor.service.ts`
-**Responsibility:**
-Processes **application-level messages** related to trust deposits such as reclaiming yield, reclaiming deposits, and repaying slashed amounts.
+**Path:** `src/services/crawl-td/td_message.service.ts`  
+**Responsibility:**  
+Processes **application-level messages** related to trust deposits (reclaim yield, reclaim deposit, repay slashed, etc.). When `USE_HEIGHT_SYNC_TD=true`, the message path is handled by the height-sync flow in `crawl_tx.service` instead of this service.
 
 ### Handled Message Types
 

@@ -143,6 +143,12 @@ export default class TrustDepositDatabaseService extends BullableService {
       return { success: false, reason: "Missing trust deposit account from ledger" };
     }
 
+    try {
+      await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.upsertAccount`, { address: account });
+    } catch {
+      //
+    }
+
     const payload = {
       account,
       amount: Number(ledgerTrustDeposit?.amount ?? 0),
@@ -196,6 +202,11 @@ export default class TrustDepositDatabaseService extends BullableService {
   public async adjustTrustDeposit(ctx: any) {
     const { account, newAmount, newShare, newClaimable, height } = ctx.params;
     const blockHeight = Number(height) || 0;
+    try {
+      await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.upsertAccount`, { address: account });
+    } catch {
+      //
+    }
     try {
       const result = await knex.transaction(async (trx) => {
         const existing = await TrustDeposit.query(trx).findOne({ account });
@@ -273,6 +284,12 @@ export default class TrustDepositDatabaseService extends BullableService {
     if (amountBig <= BigInt(0)) {
       this.logger.warn("[SlashTD] ❌ Slash amount must be > 0");
       return { success: false, message: "amount must be > 0" };
+    }
+
+    try {
+      await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.upsertAccount`, { address: account });
+    } catch {
+      //
     }
 
     try {
@@ -363,6 +380,12 @@ export default class TrustDepositDatabaseService extends BullableService {
     if (amountBig <= BigInt(0)) {
       this.logger.warn("[SlashPermTD] ❌ amount must be > 0");
       return { success: false, message: "amount must be > 0" };
+    }
+
+    try {
+      await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.upsertAccount`, { address: account });
+    } catch {
+      //
     }
 
     try {
