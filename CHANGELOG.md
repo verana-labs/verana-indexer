@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0](https://github.com/verana-labs/verana-indexer/compare/v1.1.0...v1.2.0) (2026-03-19)
+
+
+### Features
+
+* add granular participant attributes, filters and sorting ([#190](https://github.com/verana-labs/verana-indexer/issues/190)) ([fc7ff3f](https://github.com/verana-labs/verana-indexer/commit/fc7ff3fa8d3bf00d9c3ffba353ae2e8696005269))
+* add height-sync reconciliation for trust deposit module ([#196](https://github.com/verana-labs/verana-indexer/issues/196)) ([2140049](https://github.com/verana-labs/verana-indexer/commit/21400493acc4dcc921388fd09e47bf3a50a8d857))
+* add reindex job for k8s deployment ([#198](https://github.com/verana-labs/verana-indexer/issues/198)) ([f5d1309](https://github.com/verana-labs/verana-indexer/commit/f5d1309a74f5616edd7c0e8964a6f2727bee4e2a))
+* permission message processing using height-based ledger sync ([#192](https://github.com/verana-labs/verana-indexer/issues/192)) ([0ea57bd](https://github.com/verana-labs/verana-indexer/commit/0ea57bdf4a1718ffa3674288fe2ae7b4eec91bda))
+* trust registry message processing using height-sync strategy ([#194](https://github.com/verana-labs/verana-indexer/issues/194)) ([aa78587](https://github.com/verana-labs/verana-indexer/commit/aa785872bed79801f6ac26c1b48e73fc973acdb2))
+
+
+### Bug Fixes
+
+* include use secret to db ([#195](https://github.com/verana-labs/verana-indexer/issues/195)) ([8c36d3a](https://github.com/verana-labs/verana-indexer/commit/8c36d3a370f5cd7b1ec93e21e019c9050c887875))
+* resolve trust registry sync issue and normalize permissions fields to null ([#201](https://github.com/verana-labs/verana-indexer/issues/201)) ([da53a8e](https://github.com/verana-labs/verana-indexer/commit/da53a8ec4a05e98ea6f018799ed663c099b280f7))
+* several improvements in logging/queries/reindex mode tweaks ([#197](https://github.com/verana-labs/verana-indexer/issues/197)) ([00a3ce7](https://github.com/verana-labs/verana-indexer/commit/00a3ce7dfbb9915f2e231725ff3faf4df656f30b))
+
 ## [1.1.0](https://github.com/verana-labs/verana-indexer/compare/v1.0.0...v1.1.0) (2026-03-04)
 
 
