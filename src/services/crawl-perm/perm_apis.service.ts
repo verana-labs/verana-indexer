@@ -916,6 +916,12 @@ export default class PermAPIService extends BullableService {
       network_slashed_amount: perm.network_slashed_amount != null ? Number(perm.network_slashed_amount) : 0,
       network_slashed_amount_repaid: perm.network_slashed_amount_repaid != null ? Number(perm.network_slashed_amount_repaid) : 0,
     };
+
+    normalized.extended_by = perm.extended_by === "" ? null : perm.extended_by ?? null;
+    normalized.repaid_by = perm.repaid_by === "" ? null : perm.repaid_by ?? null;
+    normalized.slashed_by = perm.slashed_by === "" ? null : perm.slashed_by ?? null;
+    normalized.revoked_by = perm.revoked_by === "" ? null : perm.revoked_by ?? null;
+
     return normalized;
   }
 
@@ -2033,13 +2039,13 @@ export default class PermAPIService extends BullableService {
           country: historyRecord.country,
           vp_state: this.normalizeVpStateForResponse(historyRecord.vp_state) ?? historyRecord.vp_state,
           revoked: historyRecord.revoked,
-          revoked_by: historyRecord.revoked_by,
+          revoked_by: historyRecord.revoked_by === "" ? null : historyRecord.revoked_by ?? null,
           slashed: historyRecord.slashed,
-          slashed_by: historyRecord.slashed_by,
+          slashed_by: historyRecord.slashed_by === "" ? null : historyRecord.slashed_by ?? null,
           repaid: historyRecord.repaid,
-          repaid_by: historyRecord.repaid_by,
+          repaid_by: historyRecord.repaid_by === "" ? null : historyRecord.repaid_by ?? null,
           extended: historyRecord.extended,
-          extended_by: historyRecord.extended_by,
+          extended_by: historyRecord.extended_by === "" ? null : historyRecord.extended_by ?? null,
           effective_from: historyRecord.effective_from,
           effective_until: historyRecord.effective_until,
           validation_fees: historyRecord.validation_fees != null ? Number(historyRecord.validation_fees) : 0,
