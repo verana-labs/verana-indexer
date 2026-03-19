@@ -88,6 +88,7 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
     const criticalTables = [
       "account",
       "transaction",
+      "transaction_message",
       "trust_registry",
       "credential_schemas",
       "permissions",
@@ -157,6 +158,49 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
           }
         }
         
+        // Ensure base transaction tables exist before migrations.
+        // Partition migrations ALTER these tables, so they must exist first.
+        // This handles the case where reindex:prepare dropped them but failed
+        // before migrations could recreate them.
+        const txExists = await db.schema.hasTable("transaction");
+        const txMsgExists = await db.schema.hasTable("transaction_message");
+        if (!txExists) {
+          console.log(`  Creating base transaction table (needed by partition migrations)...`);
+          await db.schema.createTable("transaction", (table) => {
+            table.increments("id").primary();
+            table.integer("height").index().notNullable();
+            table.string("hash").unique().notNullable();
+            table.string("codespace").notNullable();
+            table.integer("code").notNullable();
+            table.bigInteger("gas_used").notNullable();
+            table.bigInteger("gas_wanted").notNullable();
+            table.bigInteger("gas_limit").notNullable();
+            table.jsonb("fee").notNullable();
+            table.timestamp("timestamp").notNullable();
+            table.jsonb("data");
+            table.text("memo");
+            table.integer("index");
+            table.foreign("height").references("block.height");
+          }).catch((err: any) => {
+            if (!err?.message?.includes("already exists")) throw err;
+          });
+        }
+        if (!txMsgExists) {
+          console.log(`  Creating base transaction_message table (needed by partition migrations)...`);
+          await db.schema.createTable("transaction_message", (table) => {
+            table.increments("id").primary();
+            table.integer("tx_id").index().notNullable();
+            table.integer("index").notNullable();
+            table.string("type").index().notNullable();
+            table.string("sender").index().notNullable();
+            table.jsonb("content").notNullable();
+            table.integer("parent_id").index();
+            table.foreign("tx_id").references("transaction.id");
+          }).catch((err: any) => {
+            if (!err?.message?.includes("already exists")) throw err;
+          });
+        }
+
         console.log(`  Running migrations using Knex migrate.latest()...`);
         await db.migrate.latest();
         console.log("Migrations finished successfully.");
