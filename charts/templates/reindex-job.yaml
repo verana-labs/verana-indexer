@@ -1,0 +1,74 @@
+{{- if .Values.reindex.enabled }}
+# Pre-upgrade Job: resets module tables and checkpoints so the indexer
+# re-processes all blocks from the beginning on its next start.
+#
+# The Job connects to the DB via the K8s Service (not localhost) because
+# it runs in a separate pod from the StatefulSet sidecars.
+#
+# Usage:
+#   helm upgrade --set reindex.enabled=true <release> <chart>
+#
+# After the upgrade succeeds, disable it for future upgrades:
+#   helm upgrade --set reindex.enabled=false <release> <chart>
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-reindex-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.name }}
+    component: reindex
+  annotations:
+    # Run before the StatefulSet is updated
+    helm.sh/hook: pre-upgrade
+    # Delete the Job after it succeeds (keep on failure for debugging)
+    helm.sh/hook-delete-policy: hook-succeeded
+    # Run before other pre-upgrade hooks (weight -5)
+    helm.sh/hook-weight: "-5"
+spec:
+  backoffLimit: {{ .Values.reindex.backoffLimit | default 3 }}
+  activeDeadlineSeconds: {{ .Values.reindex.activeDeadlineSeconds | default 600 }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        component: reindex
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: reindex-prepare
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.Version }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sh", "-c", "pnpm reindex:prepare"]
+          {{- if .Values.reindex.resources }}
+          resources:
+{{- toYaml .Values.reindex.resources | nindent 12 }}
+          {{- end }}
+          env:
+            - name: NODE_ENV
+              value: production
+            # Connect to DB via the K8s Service name (not localhost),
+            # since this Job runs in a separate pod from the DB sidecar.
+            - name: POSTGRES_HOST
+              value: {{ .Values.name }}
+            - name: POSTGRES_USER
+              value: {{ .Values.database.user }}
+{{- if .Values.database.pwd }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.database.pwd }}
+{{- else if .Values.database.pwdSecret }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.pwdSecret.name }}
+                  key: {{ .Values.database.pwdSecret.key }}
+{{- end }}
+            - name: POSTGRES_DB
+              value: {{ .Values.database.db }}
+            # Redis is needed for BullMQ queue cleanup (if applicable)
+            - name: QUEUE_JOB_REDIS
+              value: redis://{{ .Values.name }}:6379
+{{- with .Values.extraEnv }}
+{{- toYaml . | nindent 12 }}
+{{- end }}
+{{- end }}

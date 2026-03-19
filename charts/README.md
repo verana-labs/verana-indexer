@@ -152,6 +152,64 @@ helm upgrade --install idx ./verana-indexer-chart \
   --set resources.limits.memory=512Mi
 ```
 
+## Reindexing
+
+When you need to re-process all blocks from the beginning (e.g., after schema changes or data fixes), use the built-in reindex support instead of manually changing commands.
+
+### How it works
+
+1. A **pre-upgrade Helm hook Job** runs `pnpm reindex:prepare`, which:
+   - Drops module tables (transaction, accounts, DIDs, etc.)
+   - Resets all service checkpoints to 0
+   - Runs migrations to recreate tables
+   - Resets ID sequences
+   - Preserves the `block` table (blocks are NOT re-fetched from RPC)
+2. The Job connects to the DB via the K8s Service name (not localhost)
+3. After the Job succeeds, the StatefulSet rolls out normally
+4. `pnpm start` picks up from the reset checkpoints and re-processes all blocks
+
+### Configuration
+
+| Parameter                          | Description                              | Default |
+| ---------------------------------- | ---------------------------------------- | ------- |
+| `reindex.enabled`                  | Enable the pre-upgrade reindex Job       | `false` |
+| `reindex.resources.requests.cpu`   | CPU request for the Job                  | `100m`  |
+| `reindex.resources.requests.memory`| Memory request for the Job               | `256Mi` |
+| `reindex.resources.limits.cpu`     | CPU limit for the Job                    | `500m`  |
+| `reindex.resources.limits.memory`  | Memory limit for the Job                 | `512Mi` |
+| `reindex.backoffLimit`             | Number of retries before marking failed  | `3`     |
+| `reindex.activeDeadlineSeconds`    | Timeout for the Job                      | `600`   |
+
+### Usage
+
+**Trigger a reindex:**
+
+```bash
+helm upgrade --set reindex.enabled=true <release> <chart> -n <namespace>
+```
+
+**After the upgrade completes, disable reindex for future upgrades:**
+
+```bash
+helm upgrade --set reindex.enabled=false <release> <chart> -n <namespace>
+```
+
+> **Important:** If you leave `reindex.enabled=true`, every subsequent `helm upgrade` will re-run the reindex Job. Always set it back to `false` after the reindex completes.
+
+### Local development
+
+For local development (outside K8s), you can still use the original commands:
+
+```bash
+# Full reindex with auto-restart (local dev)
+pnpm reindex:dev
+
+# Or just the DB reset step (no service startup)
+pnpm reindex:prepare:dev
+```
+
+---
+
 ## Usage
 
 1. Update values in your `values.yaml` file as needed.

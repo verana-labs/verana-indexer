@@ -27,7 +27,10 @@ resources:
     memory: 4Gi
 
 # Node.js memory settings (should be ~75% of memory limit)
-nodeOptions: "--max-old-space-size=3072"
+# --max-semi-space-size=64: critical for GC — prevents short-lived objects from
+#   being promoted to old generation too fast during heavy processing
+# --expose-gc: allows the memory guard to trigger manual GC when heap is high
+nodeOptions: "--max-old-space-size=3072 --max-semi-space-size=64 --expose-gc"
 
 # DB and Redis configuration
 database:
@@ -77,6 +80,30 @@ ingress:
     whitelistSourceRange: "" # e.g. "xxx.xx.xxx.xxx/32"
     tlsSecret: "private.{{ .Values.name }}.{{ .Values.global.domain }}-cert"
     host: ""
+
+# Reindex configuration
+# When enabled, a pre-upgrade Job runs `pnpm reindex:prepare` to reset module
+# tables and checkpoints before the indexer starts. The indexer (pnpm start)
+# then re-processes all blocks from the beginning using existing block data.
+#
+# Usage:
+#   helm upgrade --set reindex.enabled=true <release> <chart>
+#
+# After the upgrade completes, disable it for subsequent upgrades:
+#   helm upgrade --set reindex.enabled=false <release> <chart>
+reindex:
+  enabled: false
+  # Resource limits for the reindex Job (DB reset is lightweight)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Timeout in seconds for the reindex Job to complete
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
 
 # Extra environment variables for the indexer container.
 # Accepts any valid Kubernetes env entry (value, valueFrom, secretKeyRef, etc.)
