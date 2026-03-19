@@ -162,9 +162,11 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
         // Partition migrations ALTER these tables, so they must exist first.
         // This handles the case where reindex:prepare dropped them but failed
         // before migrations could recreate them.
+        // Only do this when block table exists (partial reindex scenario).
+        // In a fresh DB, the init migration creates everything in order.
         const txExists = await db.schema.hasTable("transaction");
         const txMsgExists = await db.schema.hasTable("transaction_message");
-        if (!txExists) {
+        if (blockExists && !txExists) {
           console.log(`  Creating base transaction table (needed by partition migrations)...`);
           await db.schema.createTable("transaction", (table) => {
             table.increments("id").primary();
@@ -185,7 +187,7 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
             if (!err?.message?.includes("already exists")) throw err;
           });
         }
-        if (!txMsgExists) {
+        if (blockExists && !txMsgExists) {
           console.log(`  Creating base transaction_message table (needed by partition migrations)...`);
           await db.schema.createTable("transaction_message", (table) => {
             table.increments("id").primary();
