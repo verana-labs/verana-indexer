@@ -11,6 +11,10 @@ import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, TR_STATS_FIELDS, trustRegistryStatsToUpdateObject } from "./tr_stats";
 
+function ledgerHasKey(obj: unknown, key: string): boolean {
+    return typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
     version: 1
@@ -95,25 +99,65 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             await knex.transaction(async (trx) => {
                 const existingTr = await trx("trust_registry").where({ id: trId }).first();
+                const rawObj = raw as Record<string, unknown>;
 
-                const activeVersionRaw =
-                    (raw as any).active_version ?? (raw as any).activeVersion ?? existingTr?.active_version ?? 0;
+                const activeVersionFromLedger =
+                    ledgerHasKey(rawObj, "active_version") || ledgerHasKey(rawObj, "activeVersion")
+                        ? Number((raw as any).active_version ?? (raw as any).activeVersion ?? 0) || 0
+                        : Number(existingTr?.active_version ?? 0) || 0;
 
                 const basePayload: any = {
-                    did: (raw as any).did ?? existingTr?.did ?? null,
-                    controller: (raw as any).controller ?? existingTr?.controller ?? null,
-                    created: (raw as any).created ?? existingTr?.created ?? null,
-                    modified: (raw as any).modified ?? existingTr?.modified ?? null,
-                    archived: (raw as any).archived ?? existingTr?.archived ?? null,
-                    deposit: Number((raw as any).deposit ?? existingTr?.deposit ?? 0),
-                    aka: (raw as any).aka ?? existingTr?.aka ?? null,
-                    language: (raw as any).language ?? existingTr?.language ?? null,
-                    active_version: Number(activeVersionRaw) || 0,
+                    did: ledgerHasKey(rawObj, "did") ? ((raw as any).did ?? null) : (existingTr?.did ?? null),
+                    controller: ledgerHasKey(rawObj, "controller")
+                        ? ((raw as any).controller ?? null)
+                        : (existingTr?.controller ?? null),
+                    created: ledgerHasKey(rawObj, "created")
+                        ? ((raw as any).created ?? null)
+                        : (existingTr?.created ?? null),
+                    modified: ledgerHasKey(rawObj, "modified")
+                        ? ((raw as any).modified ?? null)
+                        : (existingTr?.modified ?? null),
+                    archived: ledgerHasKey(rawObj, "archived")
+                        ? (raw as any).archived
+                        : (existingTr?.archived ?? null),
+                    deposit: ledgerHasKey(rawObj, "deposit")
+                        ? Number((raw as any).deposit ?? 0)
+                        : Number(existingTr?.deposit ?? 0),
+                    aka: ledgerHasKey(rawObj, "aka") ? ((raw as any).aka ?? null) : (existingTr?.aka ?? null),
+                    language: ledgerHasKey(rawObj, "language")
+                        ? ((raw as any).language ?? null)
+                        : (existingTr?.language ?? null),
+                    active_version: activeVersionFromLedger,
                     height: blockHeightNum,
                 };
 
+                // skip changing height (avoids 23505). Do NOT use try/catch — Postgres aborts the txn on error (25P02).
                 if (existingTr) {
-                    await trx("trust_registry").where({ id: trId }).update(basePayload);
+                    let payloadForUpdate = basePayload;
+                    if (
+                        Number.isFinite(blockHeightNum) &&
+                        blockHeightNum > 0 &&
+                        Number(existingTr.height) !== Number(blockHeightNum)
+                    ) {
+                        const otherOwner = await trx("trust_registry")
+                            .select("id")
+                            .where("height", blockHeightNum)
+                            .whereNot("id", trId)
+                            .first();
+                        if (otherOwner) {
+                            const { height: originalHeight, ...ledgerFieldsOnly } = basePayload;
+                            payloadForUpdate = {
+                                ...ledgerFieldsOnly,
+                                height: existingTr.height ?? originalHeight,
+                            };
+                            this.logger.warn(
+                                `[TR syncFromLedger] tr_id=${trId}: cannot set height=${blockHeightNum} (legacy UNIQUE(height) ` +
+                                    `held by id=${otherOwner.id}); kept height=${existingTr.height}. Run migration ` +
+                                    `20260320000000_drop_trust_registry_height_unique when possible.`
+                            );
+                        }
+                    }
+                    await trx("trust_registry").where({ id: trId }).update(payloadForUpdate);
                 } else {
                     await trx("trust_registry")
                         .insert({
@@ -121,15 +165,26 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             ...basePayload,
                         });
                 }
+           const hasVersionsInLedger = ledgerHasKey(rawObj, "versions");
+                const versions: any[] | null = hasVersionsInLedger
+                    ? (Array.isArray((raw as any).versions) ? ((raw as any).versions as any[]) : [])
+                    : null;
 
-                const versions: any[] = Array.isArray((raw as any).versions)
-                    ? ((raw as any).versions as any[])
-                    : [];
-                const versionNumbers = versions
-                    .map((v) => Number((v as any).version ?? 0))
-                    .filter((v) => Number.isInteger(v) && v > 0);
+                if (versions === null) {
+                    this.logger.warn(
+                        `[TR syncFromLedger] Ledger response has no "versions" key for tr_id=${trId} at height=${blockHeightNum}; ` +
+                            "skipping governance framework / version document reconciliation (trust row still updated)."
+                    );
+                }
 
-                if (versionNumbers.length > 0) {
+                const versionNumbers =
+                    versions === null
+                        ? []
+                        : versions
+                              .map((v) => Number((v as any).version ?? 0))
+                              .filter((v) => Number.isInteger(v) && v > 0);
+
+                if (versions !== null && versionNumbers.length > 0) {
                     await trx("governance_framework_version")
                         .where({ tr_id: trId })
                         .whereNotIn("version", versionNumbers)
@@ -142,6 +197,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     (await trx.schema.hasTable("trust_registry_version")) &&
                     (await trx.schema.hasTable("trust_registry_document"));
 
+                if (versions !== null) {
                 for (const v of versions) {
                     const versionNum = Number((v as any).version ?? 0) || 0;
                     if (!Number.isInteger(versionNum) || versionNum <= 0) continue;
@@ -383,6 +439,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     } else {
                         await trx("trust_registry_version").where({ tr_id: trId }).del();
                     }
+                }
                 }
             });
 
