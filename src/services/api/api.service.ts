@@ -410,9 +410,6 @@ function createRoute(
        // Used only for TR weight calculation. Will be removed in the future.
        // curl -X POST http://localhost:3000/verana/indexer/v1/backfill/trust-registry-stats
        "POST backfill/trust-registry-stats": `${SERVICE.V1.IndexerMetaService.path}.backfillTrustRegistryStats`,
-       // Temporary: resync all TR rows from chain LCD (fix archived / drift). Remove when obsolete.
-       // curl -X POST http://localhost:3001/verana/indexer/v1/backfill/trust-registry-ledger-sync -H "Content-Type: application/json" -d "{}"
-       "POST backfill/trust-registry-ledger-sync": `${SERVICE.V1.IndexerMetaService.path}.backfillTrustRegistriesFromLedger`,
       }),
       createRoute("/verana/stats/v1", {
         "GET get": `${SERVICE.V1.StatsAPIService.path}.get`,
