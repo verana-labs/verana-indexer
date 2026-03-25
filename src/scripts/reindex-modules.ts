@@ -12,6 +12,26 @@ dotenv.config();
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
+// SAFETY: Tables that must NEVER be dropped during reindex.
+// These contain block data that takes days to rebuild from RPC.
+const PROTECTED_TABLES = [
+  "block",
+  "block_checkpoint",
+  "block_signature",
+  "knex_migrations",
+  "knex_migrations_lock",
+];
+
+// Also protect any table matching these patterns (block partitions)
+const PROTECTED_TABLE_PATTERNS = [
+  /^block_partition_/,
+];
+
+function isProtectedTable(tableName: string): boolean {
+  if (PROTECTED_TABLES.includes(tableName)) return true;
+  return PROTECTED_TABLE_PATTERNS.some(pattern => pattern.test(tableName));
+}
+
 const TABLES_TO_DROP = [
   "transaction_message",
   "transaction",
@@ -161,9 +181,102 @@ async function checkTableExists(db: Knex, tableName: string): Promise<boolean> {
   return result.rows[0]?.exists || false;
 }
 
+const REINDEX_APP_NAME = "reindex-prepare";
+
+async function acquireExclusiveDbAccess(db: Knex): Promise<void> {
+  console.log("  Acquiring exclusive database access...");
+
+  // 1. Tag our connections so we can identify them
+  await db.raw(`SET application_name = '${REINDEX_APP_NAME}'`);
+
+  // 2. Restrict new connections to the database.
+  //    Existing connections (ours) stay alive; the old indexer's pool can't
+  //    create NEW connections once its current ones are terminated.
+  //    We allow a small number (our pool size) rather than 0 to avoid blocking ourselves.
+  const dbNameResult = await db.raw(`SELECT current_database() AS db`);
+  const dbName = dbNameResult.rows[0]?.db;
+  try {
+    await db.raw(`ALTER DATABASE "${dbName}" CONNECTION LIMIT 5`);
+    console.log(`  Database "${dbName}" connection limit set to 5`);
+  } catch (alterErr: unknown) {
+    const error = alterErr as NodeJS.ErrnoException;
+    console.warn(`  Warning: Could not restrict connection limit: ${error.message}`);
+    console.warn(`  The DB user may not own the database. Falling back to terminate-only.`);
+  }
+
+  // 3. Terminate all connections that aren't ours.
+  //    The old indexer's pool will try to reconnect but hit the connection limit.
+  const terminated = await db.raw(`
+    SELECT pg_terminate_backend(pid)
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND pid != pg_backend_pid()
+      AND (application_name IS NULL OR application_name != '${REINDEX_APP_NAME}')
+  `);
+  const count = terminated.rows?.length || 0;
+  console.log(`  Terminated ${count} other connection(s)`);
+
+  // Brief pause to let PostgreSQL clean up terminated backends
+  await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+
+  // 4. Verify we have exclusive access
+  const remaining = await db.raw(`
+    SELECT pid, application_name, state, query
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND pid != pg_backend_pid()
+      AND (application_name IS NULL OR application_name != '${REINDEX_APP_NAME}')
+  `);
+  if (remaining.rows?.length > 0) {
+    console.warn(`  Warning: ${remaining.rows.length} non-reindex connection(s) still active`);
+    // Terminate stragglers
+    await db.raw(`
+      SELECT pg_terminate_backend(pid)
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid != pg_backend_pid()
+        AND (application_name IS NULL OR application_name != '${REINDEX_APP_NAME}')
+    `);
+  } else {
+    console.log("  Exclusive database access confirmed");
+  }
+}
+
+async function releaseExclusiveDbAccess(db: Knex): Promise<void> {
+  try {
+    const dbNameResult = await db.raw(`SELECT current_database() AS db`);
+    const dbName = dbNameResult.rows[0]?.db;
+    await db.raw(`ALTER DATABASE "${dbName}" CONNECTION LIMIT -1`);
+    console.log("  Database connection limit restored to unlimited");
+  } catch (error: unknown) {
+    const err = error as NodeJS.ErrnoException;
+    console.warn(`  Warning: Could not restore connection limit: ${err.message}`);
+    console.warn(`  You may need to run: ALTER DATABASE <dbname> CONNECTION LIMIT -1;`);
+  }
+}
+
 async function dropTables(db: Knex): Promise<void> {
   console.log("\nStep 2: Dropping transaction and module tables...");
-  
+
+  // SAFETY CHECK: abort if any protected table is in the drop list
+  const violations = TABLES_TO_DROP.filter(t => isProtectedTable(t));
+  if (violations.length > 0) {
+    throw new Error(
+      `SAFETY ABORT: The following protected tables are in TABLES_TO_DROP: ${violations.join(", ")}. ` +
+      `Block data and infrastructure tables must never be dropped during reindex.`
+    );
+  }
+
+  // Log what will be preserved
+  const allPublicTables = await db.raw(`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
+  `);
+  const preservedTables = allPublicTables.rows
+    .map((r: { tablename: string }) => r.tablename)
+    .filter((t: string) => !TABLES_TO_DROP.includes(t));
+  console.log(`  Protected/preserved tables (${preservedTables.length}): ${preservedTables.join(", ")}`);
+  console.log(`  Tables to drop (${TABLES_TO_DROP.length}): ${TABLES_TO_DROP.join(", ")}`);
+
   for (const tableName of TABLES_TO_DROP) {
     const exists = await checkTableExists(db, tableName);
     if (exists) {
@@ -1137,13 +1250,42 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
       console.log("Step 1: Connecting to database... [SKIPPED - already completed]\n");
     }
 
-    db = knex(config);
+    // Override pool to stay within the CONNECTION LIMIT we'll set (5).
+    // Tag all connections with our app name so acquireExclusiveDbAccess
+    // can distinguish them from the old indexer's connections.
+    const reindexConfig: Knex.Config = {
+      ...config,
+      pool: {
+        min: 1,
+        max: 3,
+        acquireTimeoutMillis: 120000,
+        createTimeoutMillis: 30000,
+        destroyTimeoutMillis: 5000,
+        idleTimeoutMillis: 5000,
+        reapIntervalMillis: 500,
+        propagateCreateError: false,
+        afterCreate: (conn: any, done: (err: Error | null, conn: any) => void) => {
+          conn.query(`SET application_name = '${REINDEX_APP_NAME}'`, (err: Error | null) => done(err, conn));
+        },
+      },
+    };
+    db = knex(reindexConfig);
 
     if (!isStepComplete('verify-blocks')) {
       await verifyBlocksTable(db);
       markStepComplete('verify-blocks');
     } else {
       console.log("Step: Verify blocks table... [SKIPPED - already completed]\n");
+    }
+
+    if (!isStepComplete('exclusive-access')) {
+      console.log("\nStep 1.5: Acquiring exclusive database access...");
+      await acquireExclusiveDbAccess(db);
+      markStepComplete('exclusive-access');
+    } else {
+      // Re-acquire on resume — the connection limit may have been restored by a crash
+      console.log("Step 1.5: Re-acquiring exclusive DB access (resuming)...");
+      await acquireExclusiveDbAccess(db);
     }
 
     if (!isStepComplete('drop-tables')) {
@@ -1250,6 +1392,7 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
     process.exitCode = 1;
   } finally {
     if (db) {
+      await releaseExclusiveDbAccess(db).catch(() => undefined);
       await db.destroy().catch(() => undefined);
     }
     process.exit(process.exitCode || 0);
