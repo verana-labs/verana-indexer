@@ -407,9 +407,6 @@ function createRoute(
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getDetailedStatus`,
         "GET errors/download": `v1.LogsService.downloadErrors`,
-       // Used only for TR weight calculation. Will be removed in the future.
-       // curl -X POST http://localhost:3000/verana/indexer/v1/backfill/trust-registry-stats
-       "POST backfill/trust-registry-stats": `${SERVICE.V1.IndexerMetaService.path}.backfillTrustRegistryStats`,
       }),
       createRoute("/verana/stats/v1", {
         "GET get": `${SERVICE.V1.StatsAPIService.path}.get`,
