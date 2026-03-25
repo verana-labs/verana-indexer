@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.1](https://github.com/verana-labs/verana-indexer/compare/v1.2.0...v1.2.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* add transaction message table as critical ([#202](https://github.com/verana-labs/verana-indexer/issues/202)) ([5e217ce](https://github.com/verana-labs/verana-indexer/commit/5e217ce683e4f9f9e1ab45de4d71410bce1d794a))
+* archived-trust-registry-sync-versions ([#205](https://github.com/verana-labs/verana-indexer/issues/205)) ([d4d8906](https://github.com/verana-labs/verana-indexer/commit/d4d8906136236e50a4fa2c61262ccc3b088374cd))
+* remove temporary backfill ([#206](https://github.com/verana-labs/verana-indexer/issues/206)) ([2b9e1e2](https://github.com/verana-labs/verana-indexer/commit/2b9e1e2f6837a4295ec44a3216e2dd706939ac32))
+
 ## [1.2.0](https://github.com/verana-labs/verana-indexer/compare/v1.1.0...v1.2.0) (2026-03-19)
 
 
