@@ -9,7 +9,7 @@ import ApiResponder from "../../common/utils/apiResponse";
 import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
-import { calculateTrustRegistryStats, TR_STATS_FIELDS, trustRegistryStatsToUpdateObject } from "./tr_stats";
+import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
 
 @Service({
     name: SERVICE.V1.TrustRegistryDatabaseService.key,
@@ -136,7 +136,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         .del();
                 }
 
-                const gfvIdByVersion = new Map<number, number>();
                 const chainVersionIds: number[] = [];
                 const hasNewTrTables =
                     (await trx.schema.hasTable("trust_registry_version")) &&
@@ -176,7 +175,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                     const gfvId = Number(gfvRow.id);
                     if (!Number.isInteger(gfvId) || gfvId <= 0) continue;
-                    gfvIdByVersion.set(versionNum, gfvId);
 
                     const chainVersionId = Number(
                         (v as any).id ?? (v as any).version_id ?? gfvRow.id
@@ -234,8 +232,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         }
                     }
 
-                    const processedDocIds = new Set<number>();
-
                     for (const d of docs) {
                         const language = (d as any).language ?? null;
                         const digest =
@@ -278,7 +274,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             .first();
 
                         if (!updatedDoc || !updatedDoc.id) continue;
-                        processedDocIds.add(Number(updatedDoc.id));
 
                         const chainDocId = Number(
                             (d as any).id ?? (d as any).document_id ?? updatedDoc.id
@@ -2040,23 +2035,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
         const granteeTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
 
         return [...new Set([...controllerTrIds, ...granteeTrIds])];
-    }
-
-    @Action({ name: "recomputeAllTrustRegistryStats" })
-    public async recomputeAllTrustRegistryStats(ctx: Context): Promise<any> {
-        const rows = await knex("trust_registry").select("id");
-        let updated = 0;
-        for (const row of rows as { id: number }[]) {
-            const trId = Number(row.id);
-            try {
-                const stats = await calculateTrustRegistryStats(trId, undefined);
-                await knex("trust_registry").where({ id: trId }).update(trustRegistryStatsToUpdateObject(stats));
-                updated++;
-            } catch (err: any) {
-                this.logger.warn(`[recomputeAllTrustRegistryStats] tr_id=${trId}: ${err?.message ?? err}`);
-            }
-        }
-        return ApiResponder.success(ctx, { updated, total: rows.length }, 200);
     }
 
     @Action()
