@@ -2688,12 +2688,14 @@ export default class PermAPIService extends BullableService {
           }))
           : [];
       } else {
+        const fetchLimit = Math.min(Math.max(limit * 10, 500), 50_000);
         const rows = await knex("permissions")
           .select(baseColumns)
           .where((qb) => {
             qb.where("grantee", account);
             qb.orWhereIn("validator_perm_id", validatorParentIdsSubquery.clone());
-          });
+          })
+          .limit(fetchLimit);
         permissionsAtHeight = Array.isArray(rows)
           ? rows.map((perm: any) => ({
             ...perm,
@@ -2819,13 +2821,6 @@ export default class PermAPIService extends BullableService {
         entry.pending_tasks++;
       }
 
-      for (const cs of csMap.values()) {
-        cs.permissions.sort((a: any, b: any) => {
-          const ta = a.modified != null ? new Date(a.modified).getTime() : 0;
-          const tb = b.modified != null ? new Date(b.modified).getTime() : 0;
-          return ta - tb;
-        });
-      }
 
       for (const [schemaId, csEntry] of csMap.entries()) {
         const csInfo = schemaMap.get(schemaId) || { tr_id: null };
