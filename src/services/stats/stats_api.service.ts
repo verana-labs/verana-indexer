@@ -72,6 +72,37 @@ export default class StatsAPIService extends BaseService {
     return normalized;
   }
 
+  private async getParticipantsAtHeightInternal(params: {
+    entityKind: number;
+    entityId: number | null;
+    roleType: number;
+    height: number;
+  }): Promise<number> {
+    const { entityKind, entityId, roleType, height } = params;
+
+    const row = await knex("entity_participant_changes")
+      .where("entity_kind", entityKind)
+      .andWhere((qb) => {
+        if (entityKind === 0 && entityId === null) {
+          qb.where((inner) => {
+            inner.whereNull("entity_id").orWhere("entity_id", 0);
+          });
+        } else if (entityId === null) {
+          qb.whereNull("entity_id");
+        } else {
+          qb.where("entity_id", entityId);
+        }
+      })
+      .andWhere("type", roleType)
+      .andWhere("height", "<=", height)
+      .orderBy("height", "desc")
+      .first();
+
+    if (!row) return 0;
+    const value = typeof row.value === "string" ? Number(row.value) : row.value;
+    return typeof value === "number" ? value : 0;
+  }
+
   @Action({
     name: "get",
     params: {
@@ -469,6 +500,61 @@ export default class StatsAPIService extends BaseService {
       return ApiResponder.success(ctx, response, 200);
     } catch (err: unknown) {
       this.logger.error("Error in stats:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
+    }
+  }
+
+  @Action({
+    name: "getParticipantsAtHeight",
+    params: {
+      entity_kind: { type: "number", integer: true, min: 0, max: 3, convert: true },
+      entity_id: { type: "any", optional: true },
+      role_type: { type: "number", integer: true, min: 0, max: 6, convert: true },
+      height: { type: "number", integer: true, positive: true, convert: true },
+    },
+  })
+  public async getParticipantsAtHeight(ctx: Context<{
+    entity_kind: number;
+    entity_id?: unknown;
+    role_type: number;
+    height: number;
+  }>): Promise<unknown> {
+    try {
+      const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType, height } = ctx.params;
+
+      let entityId: number | null = null;
+      if (entityKind === 0) {
+        entityId = null;
+      } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === "") {
+        return ApiResponder.error(ctx, "entity_id is required for non-GLOBAL entity_kind", 400);
+      } else {
+        const asString = String(rawEntityId);
+        if (!/^-?\d+$/.test(asString)) {
+          return ApiResponder.error(ctx, "entity_id must be a numeric identifier", 400);
+        }
+        entityId = Number(asString);
+      }
+
+      const value = await this.getParticipantsAtHeightInternal({
+        entityKind,
+        entityId,
+        roleType,
+        height,
+      });
+
+      return ApiResponder.success(
+        ctx,
+        {
+          entity_kind: entityKind,
+          entity_id: entityId,
+          role_type: roleType,
+          height,
+          value,
+        },
+        200
+      );
+    } catch (err: unknown) {
+      this.logger.error("Error in getParticipantsAtHeight:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }

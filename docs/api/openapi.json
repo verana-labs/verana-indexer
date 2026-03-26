@@ -3266,6 +3266,102 @@
         }
       }
     },
+    "/verana/stats/v1/participants-at-height": {
+      "get": {
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Get Participants at Height",
+        "description": "Returns the number of participants for a given entity (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, or PERMISSION) and role type at a specific block height, based on the entity_participant_changes log.",
+        "operationId": "getParticipantsAtHeight",
+        "parameters": [
+          {
+            "name": "entity_kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "description": "Entity kind: 0=GLOBAL, 1=TRUST_REGISTRY, 2=CREDENTIAL_SCHEMA, 3=PERMISSION"
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Entity ID (required for non-GLOBAL entity_kind; must be omitted for GLOBAL)"
+          },
+          {
+            "name": "role_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 6
+            },
+            "description": "Participant role type: 0=ANY, 1=ECOSYSTEM, 2=ISSUER_GRANTOR, 3=ISSUER, 4=VERIFIER_GRANTOR, 5=VERIFIER, 6=HOLDER"
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Block height at which to evaluate participants"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Participants count at the requested height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entity_kind": {
+                      "type": "integer"
+                    },
+                    "entity_id": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "role_type": {
+                      "type": "integer"
+                    },
+                    "height": {
+                      "type": "integer"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "description": "Number of participants at the given height"
+                    }
+                  },
+                  "required": [
+                    "entity_kind",
+                    "role_type",
+                    "height",
+                    "value"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/td/v1/get/{account}": {
       "get": {
         "tags": [

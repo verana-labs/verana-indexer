@@ -453,13 +453,15 @@
 | `slashed_deposit`       | Amount slashed                                                                               |
 | `repaid_deposit`        | Amount repaid                                                                                |
 | `modified`              | Last modified timestamp                                                                      |
-| `participants`          | Total active participants in the permission subtree                                          |
-| `participants_ecosystem` | Active ECOSYSTEM participants in the permission subtree                                     |
-| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the permission subtree                          |
-| `participants_issuer`   | Active ISSUER participants in the permission subtree                                         |
-| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the permission subtree                      |
-| `participants_verifier` | Active VERIFIER participants in the permission subtree                                       |
-| `participants_holder`   | Active HOLDER participants in the permission subtree                                         |
+| `participants`          | Total active participants in the permission subtree (current state)                          |
+| `participants_ecosystem` | Active ECOSYSTEM participants in the permission subtree (current state)                     |
+| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the permission subtree (current state)          |
+| `participants_issuer`   | Active ISSUER participants in the permission subtree (current state)                         |
+| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the permission subtree (current state)      |
+| `participants_verifier` | Active VERIFIER participants in the permission subtree (current state)                       |
+| `participants_holder`   | Active HOLDER participants in the permission subtree (current state)                         |
+| `last_valid_flip_version` | Version counter used to validate scheduled permission flips                                |
+| `is_active_now`         | Boolean flag indicating whether the permission is currently ACTIVE                           |
 
 ### `permission_sessions`
 
@@ -488,3 +490,27 @@
 | `last_repaid`     | Timestamp of the last repayment event (nullable)          |
 | `slash_count`     | Total number of times this trust deposit has been slashed |
 | `last_repaid_by`  | Address of the account who executed the last repayment    |
+
+### `permission_scheduled_flips`
+
+| Column          | Description                                                                                         |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| `perm_id`       | Foreign key → `permissions.id` (permission affected by this flip)                                   |
+| `flip_at_time`  | Timestamp when the permission should ENTER or EXIT the ACTIVE state                                |
+| `flip_kind`     | Flip kind: 1 = ENTER_ACTIVE, 2 = EXIT_ACTIVE                                                       |
+| `status`        | Flip status: 0 = PENDING, 1 = APPLIED, 2 = STALE                                                   |
+| `version`       | Version number, must match `permissions.last_valid_flip_version` when applied                      |
+| `applied_height` | Block height when the flip was applied (nullable until applied)                                   |
+| `applied_time`  | Timestamp when the flip was applied (nullable until applied)                                       |
+| `created_at`    | Timestamp when this flip entry was created                                                         |
+
+### `entity_participant_changes`
+
+| Column       | Description                                                                                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `height`     | Block height when the participant count changed                                                                        |
+| `block_time` | Block timestamp corresponding to `height`                                                                              |
+| `entity_kind`| Entity kind: 0=GLOBAL, 1=TRUST_REGISTRY, 2=CRED_SCHEMA, 3=PERMISSION                                                   |
+| `entity_id`  | Entity identifier (null for GLOBAL)                                                                                    |
+| `type`       | Participant role type: 0=ANY, 1=ECOSYSTEM, 2=ISSUER_GRANTOR, 3=ISSUER, 4=VERIFIER_GRANTOR, 5=VERIFIER, 6=HOLDER        |
+| `value`      | Current number of participants for the given entity_kind/entity_id/type combination at the specified `height`          |
