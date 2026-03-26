@@ -13,11 +13,13 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSo
 import { getModuleParams } from "../../common/utils/params_service";
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
-import { mapPermissionType } from "../../common/utils/utils";
+import { mapPermissionType, normalizePermissionEmptyStringsToNull } from "../../common/utils/utils";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
   calculateValidatorAvailableActions,
+  pendingFlatMatchesVpPendingWithEligiblePermState,
+  PENDING_FLAT_VALIDATOR_PARENT_TYPES,
   type SchemaData,
   type PermState,
 } from "./perm_state_utils";
@@ -883,7 +885,7 @@ export default class PermAPIService extends BullableService {
   }
 
   private normalizePermissionRow(perm: any): any {
-    const normalized: any = {
+    let normalized: any = {
       ...perm,
       id: Number(perm.id),
       schema_id: Number(perm.schema_id),
@@ -917,10 +919,7 @@ export default class PermAPIService extends BullableService {
       network_slashed_amount_repaid: perm.network_slashed_amount_repaid != null ? Number(perm.network_slashed_amount_repaid) : 0,
     };
 
-    normalized.extended_by = perm.extended_by === "" ? null : perm.extended_by ?? null;
-    normalized.repaid_by = perm.repaid_by === "" ? null : perm.repaid_by ?? null;
-    normalized.slashed_by = perm.slashed_by === "" ? null : perm.slashed_by ?? null;
-    normalized.revoked_by = perm.revoked_by === "" ? null : perm.revoked_by ?? null;
+    normalized = normalizePermissionEmptyStringsToNull(normalized);
 
     return normalized;
   }
@@ -1130,8 +1129,21 @@ export default class PermAPIService extends BullableService {
     blockHeight?: number,
     preloadedModuleParams?: any
   ): Promise<boolean | null> {
-    const isActive = this.isPermissionActive(perm, now);
-    if (!isActive) {
+    const permState = calculatePermState(
+      {
+        repaid: perm.repaid,
+        slashed: perm.slashed,
+        revoked: perm.revoked,
+        effective_from: perm.effective_from,
+        effective_until: perm.effective_until,
+        type: perm.type,
+        vp_state: perm.vp_state,
+        vp_exp: perm.vp_exp,
+        validator_perm_id: perm.validator_perm_id,
+      },
+      now
+    );
+    if (permState !== "ACTIVE") {
       return null;
     }
     if (!perm.effective_until) {
@@ -1151,17 +1163,6 @@ export default class PermAPIService extends BullableService {
     expirationCheckDate.setDate(expirationCheckDate.getDate() + nDaysBefore);
     const effectiveUntil = new Date(perm.effective_until);
     return expirationCheckDate > effectiveUntil;
-  }
-
-  private isPermissionActive(perm: any, now: Date = new Date()): boolean {
-    const effectiveFrom = perm.effective_from ? new Date(perm.effective_from) : null;
-    const effectiveUntil = perm.effective_until ? new Date(perm.effective_until) : null;
-    if (effectiveFrom && now < effectiveFrom) return false;
-    if (effectiveUntil && now > effectiveUntil) return false;
-    if (perm.revoked) return false;
-    if (perm.slashed && !perm.repaid) return false;
-
-    return perm.vp_state === 'VALIDATED' || perm.type === 'ECOSYSTEM';
   }
 
   private async enrichPermissionWithStateAndActions(
@@ -1273,7 +1274,7 @@ export default class PermAPIService extends BullableService {
       return null;
     });
 
-    return {
+    const enriched: any = {
       ...perm,
       perm_state: permState,
       grantee_available_actions: granteeActions,
@@ -1308,6 +1309,7 @@ export default class PermAPIService extends BullableService {
       network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
       expire_soon: expireSoon,
     };
+    return normalizePermissionEmptyStringsToNull(enriched);
   }
 
   /**
@@ -2039,13 +2041,13 @@ export default class PermAPIService extends BullableService {
           country: historyRecord.country,
           vp_state: this.normalizeVpStateForResponse(historyRecord.vp_state) ?? historyRecord.vp_state,
           revoked: historyRecord.revoked,
-          revoked_by: historyRecord.revoked_by === "" ? null : historyRecord.revoked_by ?? null,
+          revoked_by: historyRecord.revoked_by,
           slashed: historyRecord.slashed,
-          slashed_by: historyRecord.slashed_by === "" ? null : historyRecord.slashed_by ?? null,
+          slashed_by: historyRecord.slashed_by,
           repaid: historyRecord.repaid,
-          repaid_by: historyRecord.repaid_by === "" ? null : historyRecord.repaid_by ?? null,
+          repaid_by: historyRecord.repaid_by,
           extended: historyRecord.extended,
-          extended_by: historyRecord.extended_by === "" ? null : historyRecord.extended_by ?? null,
+          extended_by: historyRecord.extended_by,
           effective_from: historyRecord.effective_from,
           effective_until: historyRecord.effective_until,
           validation_fees: historyRecord.validation_fees != null ? Number(historyRecord.validation_fees) : 0,
@@ -2533,11 +2535,14 @@ export default class PermAPIService extends BullableService {
       const blockHeight = getBlockHeight(ctx);
       const useHistory = this.shouldUseHistoryQuery(ctx, blockHeight);
 
-      let parentIds: number[] = [];
       const parentIdSet = new Set<number>();
 
+      const validatorParentTypeList = [...PENDING_FLAT_VALIDATOR_PARENT_TYPES];
+
+      /** At-height: latest row per permission where account holds a grantor/validator parent role. */
+      let parentIdsAtHeightSubquery: ReturnType<typeof knex> | null = null;
       if (useHistory) {
-        const latestParentSub = knex("permission_history")
+        const rankedParentAtHeight = knex("permission_history")
           .select("permission_id")
           .select(
             knex.raw(
@@ -2546,18 +2551,30 @@ export default class PermAPIService extends BullableService {
           )
           .whereRaw("height <= ?", [Number(blockHeight)])
           .andWhere("grantee", account)
-          .as("ranked");
+          .whereIn("type", validatorParentTypeList)
+          .as("ranked_parent");
 
-        parentIds = await knex
-          .from(latestParentSub)
-          .select("permission_id")
+        parentIdsAtHeightSubquery = knex
+          .from(rankedParentAtHeight)
           .where("rn", 1)
-          .then((rows: any[]) => rows.map((r: any) => Number(r.permission_id)));
-        for (const id of parentIds) parentIdSet.add(id);
-      } else {
-        const parentRows = await knex("permissions").select("id").where("grantee", account).limit(Math.max(limit * 10, 500));
-        parentIds = Array.isArray(parentRows) ? parentRows.map((r: any) => r.id) : [];
-        for (const id of parentIds) parentIdSet.add(id);
+          .select("permission_id");
+
+        const parentIdNums = await parentIdsAtHeightSubquery.then((rows: any[]) =>
+          rows.map((r: any) => Number(r.permission_id))
+        );
+        for (const id of parentIdNums) parentIdSet.add(id);
+      }
+
+      const validatorParentIdsSubquery = knex("permissions")
+        .select("id")
+        .where("grantee", account)
+        .whereIn("type", validatorParentTypeList);
+
+      if (!useHistory) {
+        const parentRows = await validatorParentIdsSubquery.clone();
+        if (Array.isArray(parentRows)) {
+          for (const r of parentRows) parentIdSet.add(Number(r.id));
+        }
       }
 
       const baseColumns = [
@@ -2609,7 +2626,7 @@ export default class PermAPIService extends BullableService {
           .whereRaw("height <= ?", [Number(blockHeight)])
           .where((qb) => {
             qb.where("grantee", account);
-            if (parentIds.length > 0) qb.orWhereIn("validator_perm_id", parentIds);
+            qb.orWhereIn("validator_perm_id", parentIdsAtHeightSubquery!.clone());
           })
           .as("ranked");
 
@@ -2675,9 +2692,8 @@ export default class PermAPIService extends BullableService {
           .select(baseColumns)
           .where((qb) => {
             qb.where("grantee", account);
-            if (parentIds.length > 0) qb.orWhereIn("validator_perm_id", parentIds);
-          })
-          .limit(Math.max(limit * 10, 500));
+            qb.orWhereIn("validator_perm_id", validatorParentIdsSubquery.clone());
+          });
         permissionsAtHeight = Array.isArray(rows)
           ? rows.map((perm: any) => ({
             ...perm,
@@ -2691,12 +2707,12 @@ export default class PermAPIService extends BullableService {
       const enriched = await this.batchEnrichPermissions(permissionsAtHeight, useHistory ? blockHeight : undefined, now, 50);
       const filtered = enriched.filter((perm: any) => {
         if (perm.grantee === account) {
-          if (perm.vp_state === "PENDING") return true;
+          if (pendingFlatMatchesVpPendingWithEligiblePermState(perm)) return true;
           if (perm.perm_state === "SLASHED") return true;
           if (perm.perm_state === "ACTIVE" && perm.expire_soon === true) return true;
         }
         if (perm.validator_perm_id && parentIdSet.has(Number(perm.validator_perm_id))) {
-          if (perm.vp_state === "PENDING") return true;
+          if (pendingFlatMatchesVpPendingWithEligiblePermState(perm)) return true;
           if (perm.perm_state === "SLASHED") return true;
         }
         return false;
@@ -2802,6 +2818,15 @@ export default class PermAPIService extends BullableService {
         entry.permissions.push({ ...perm });
         entry.pending_tasks++;
       }
+
+      for (const cs of csMap.values()) {
+        cs.permissions.sort((a: any, b: any) => {
+          const ta = a.modified != null ? new Date(a.modified).getTime() : 0;
+          const tb = b.modified != null ? new Date(b.modified).getTime() : 0;
+          return ta - tb;
+        });
+      }
+
       for (const [schemaId, csEntry] of csMap.entries()) {
         const csInfo = schemaMap.get(schemaId) || { tr_id: null };
         const trId = csInfo.tr_id != null ? Number(csInfo.tr_id) : null;

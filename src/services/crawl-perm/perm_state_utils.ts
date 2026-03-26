@@ -24,6 +24,29 @@ export interface SchemaData {
   verifier_perm_management_mode?: string;
 }
 
+export const PENDING_FLAT_VP_PENDING_PERM_STATES: ReadonlySet<PermState> = new Set([
+  "INACTIVE",
+  "ACTIVE",
+  "FUTURE",
+  "EXPIRED",
+]);
+
+export function pendingFlatMatchesVpPendingWithEligiblePermState(perm: {
+  vp_state?: string | null;
+  perm_state?: string | null;
+}): boolean {
+  if (String(perm.vp_state ?? "").toUpperCase() !== "PENDING") return false;
+  const ps = perm.perm_state as PermState | undefined;
+  return ps !== undefined && PENDING_FLAT_VP_PENDING_PERM_STATES.has(ps);
+}
+
+export const PENDING_FLAT_VALIDATOR_PARENT_TYPES: ReadonlySet<string> = new Set([
+  "ISSUER_GRANTOR",
+  "VERIFIER_GRANTOR",
+  "ECOSYSTEM",
+  "ISSUER",
+]);
+
 export function calculatePermState(perm: PermissionData, now: Date = new Date()): PermState {
   if (perm.repaid !== null && perm.repaid !== undefined) {
     return "REPAID";
