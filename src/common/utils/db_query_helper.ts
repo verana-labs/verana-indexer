@@ -26,7 +26,6 @@ export function isStatementTimeoutError(error: any): boolean {
   return errorCode === '57014' ||
     errorMessage.includes('statement timeout') ||
     errorMessage.includes('canceling statement') ||
-    errorMessage.includes('query read timeout') ||
     errorMessage.includes('query timeout');
 }
 
