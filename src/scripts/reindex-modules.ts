@@ -217,9 +217,7 @@ async function acquireExclusiveDbAccess(db: Knex): Promise<void> {
   console.log(`  Terminated ${count} other connection(s)`);
 
   // Brief pause to let PostgreSQL clean up terminated backends
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 1000);
-  });
+  await new Promise<void>((resolve) => { setTimeout(resolve, 1000); });
 
   // 4. Verify we have exclusive access
   const remaining = await db.raw(`

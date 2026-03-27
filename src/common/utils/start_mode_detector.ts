@@ -11,6 +11,7 @@ export interface StartModeResult {
 }
 
 let reindexCacheCleared = false;
+let cachedStartMode: StartModeResult | null = null;
 
 function publishStartMode(mode: StartModeResult, jobName?: string): void {
   (global as any).__indexerStartMode = {
@@ -21,11 +22,21 @@ function publishStartMode(mode: StartModeResult, jobName?: string): void {
 }
 
 export async function detectStartMode(jobName?: string, logger?: any): Promise<StartModeResult> {
+  // Return cached result — start mode never changes during a process's lifetime
+  if (cachedStartMode) {
+    publishStartMode(cachedStartMode, jobName);
+    return cachedStartMode;
+  }
+
   try {
-    const blockCountResult = await knex('block').count('* as count').first();
-    const totalBlocks = blockCountResult 
-      ? parseInt(String((blockCountResult as { count: string | number }).count), 10) 
-      : 0;
+    // We determine if it is a fresh start by checking if there are less than 100 blocks
+    // in the database and if the current block is less than 1000.
+    // Here we are using a bounded query instead of count(*) to avoid a full sequential scan,
+    // which might be too expensive since the block table is large.
+    const boundedResult = await knex.raw(
+      `SELECT count(*) AS count FROM (SELECT 1 FROM block LIMIT 100) sub`
+    );
+    const totalBlocks = parseInt(String(boundedResult.rows?.[0]?.count ?? '0'), 10);
     
     const checkpointJobName = jobName || BULL_JOB_NAME.CRAWL_BLOCK;
     const checkpoint = await BlockCheckpoint.query().findOne({
@@ -49,6 +60,7 @@ export async function detectStartMode(jobName?: string, logger?: any): Promise<S
       currentBlock,
       cacheCleared,
     };
+    cachedStartMode = result;
     publishStartMode(result, checkpointJobName);
     return result;
   } catch (error) {
