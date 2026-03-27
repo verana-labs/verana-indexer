@@ -5,6 +5,7 @@ import {
   VeranaDidMessageTypes,
   VeranaPermissionMessageTypes,
 } from "../verana-message-types";
+import { normalizePermissionEmptyStringsToNull } from "./utils";
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: "CreateTrustRegistry",
@@ -506,6 +507,10 @@ export async function buildActivityTimeline(
         }
         changes = filterChangedValues(changes);
       }
+    }
+
+    if (changes && activityEntityType === "Permission") {
+      changes = normalizePermissionEmptyStringsToNull(changes);
     }
 
     const activityItem: any = {

@@ -2,6 +2,7 @@ import {
   calculatePermState,
   calculateGranteeAvailableActions,
   calculateValidatorAvailableActions,
+  pendingFlatMatchesVpPendingWithEligiblePermState,
   type PermissionData,
   type SchemaData,
 } from "../../../../src/services/crawl-perm/perm_state_utils";
@@ -12,6 +13,41 @@ describe("🧪 perm_state_utils", () => {
   const basePerm: PermissionData = {
     type: "ISSUER",
   };
+
+  describe("pendingFlatMatchesVpPendingWithEligiblePermState", () => {
+    it("is true when vp_state is PENDING and perm_state is INACTIVE, ACTIVE, FUTURE, or EXPIRED", () => {
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "INACTIVE" })
+      ).toBe(true);
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "pending", perm_state: "ACTIVE" })
+      ).toBe(true);
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "FUTURE" })
+      ).toBe(true);
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "EXPIRED" })
+      ).toBe(true);
+    });
+
+    it("is false when vp_state is PENDING but perm_state is REPAID, REVOKED, or SLASHED", () => {
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "REPAID" })
+      ).toBe(false);
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "REVOKED" })
+      ).toBe(false);
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "SLASHED" })
+      ).toBe(false);
+    });
+
+    it("is false when vp_state is not PENDING", () => {
+      expect(
+        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "VALIDATED", perm_state: "ACTIVE" })
+      ).toBe(false);
+    });
+  });
 
   const makeDate = (iso: string) => new Date(iso).toISOString();
 
