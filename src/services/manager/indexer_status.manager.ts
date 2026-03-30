@@ -5,7 +5,7 @@ import { BULL_JOB_NAME } from "../../common/constant";
 import ConfigClass from "../../common/config";
 import { DEFAULT_PREFIX } from "../../base/bullable.service";
 import { getLcdClient } from "../../common/utils/verana_client";
-import { getBlockchainHealthMonitorStatus } from "../../common/utils/health_check";
+import { checkDatabaseHealth, getBlockchainHealthMonitorStatus } from "../../common/utils/health_check";
 import knex from "../../common/utils/db_connection";
 
 const Config = new ConfigClass();
@@ -172,10 +172,10 @@ class IndexerStatusManager {
     };
     this.status.stoppedReason = `Crawling stopped due to: ${error.message}. Indexer APIs remain available.`;
 
-    const isMemoryStop = service === 'MEMORY';
-    // For MEMORY stops: only pause queues, preserve repeatable jobs so crawling can resume.
-    // For other stops: full stop including repeatable job removal.
-    await this.stopAllCrawlingJobs({ preserveRepeatableJobs: isMemoryStop });
+    // stopCrawlingOnly should pause workers but keep repeatable definitions intact.
+    // Removing repeatables during transient DB pressure can cause noisy lock/key errors
+    // and breaks the "automatic recovery resumes crawling" contract.
+    await this.stopAllCrawlingJobs({ preserveRepeatableJobs: true });
     this.stopDbStorageChecker();
 
     if (this.logger) {
@@ -441,6 +441,14 @@ class IndexerStatusManager {
 
   private async checkConnectionHealth(): Promise<boolean> {
     try {
+      const db = await checkDatabaseHealth(this.RECOVERY_CHECK_TIMEOUT);
+      if (!db.ok) {
+        if (this.logger) {
+          this.logger.debug(`Health check: database not ready: ${db.error ?? 'unknown'}`);
+        }
+        return false;
+      }
+
       const lcdClient = await getLcdClient();
       if (!lcdClient?.provider) {
         if (this.logger) {
@@ -458,7 +466,7 @@ class IndexerStatusManager {
 
       await healthCheck;
       if (this.logger) {
-        this.logger.debug('Connection health check passed');
+        this.logger.debug('Connection health check passed (database + blockchain)');
       }
       return true;
     } catch (error: any) {
