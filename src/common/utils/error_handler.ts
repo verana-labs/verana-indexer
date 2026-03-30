@@ -1,4 +1,5 @@
 import { indexerStatusManager } from '../../services/manager/indexer_status.manager';
+import { isPoolExhaustionError, isStatementTimeoutError } from './db_query_helper';
 
 export interface ErrorInfo {
   isNetworkError: boolean;
@@ -13,13 +14,16 @@ export interface ErrorInfo {
 
 
 export function analyzeError(error: any): ErrorInfo {
-  const errorCode = error?.code || '';
+  const rawErrorCode = error?.code;
+  const errorCode = rawErrorCode == null ? '' : String(rawErrorCode);
   const statusCode = error?.response?.status;
   const statusText = error?.response?.statusText || '';
-  const errorMessage = error?.response?.data?.message ||
+  const errorMessage = String(
+    error?.response?.data?.message ||
     error?.response?.statusText ||
     error?.message ||
-    String(error);
+    String(error)
+  );
 
   const networkErrorCodes = [
     'EACCES',
@@ -50,6 +54,7 @@ export function analyzeError(error: any): ErrorInfo {
     'ECONNABORTED',
     'statement timeout',
     'query timeout',
+    'query read timeout',
     'canceling statement',
     'Connection terminated unexpectedly',
   ];
@@ -184,6 +189,23 @@ export async function handleErrorGracefully(
     } else {
       console.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`);
     }
+    return true;
+  }
+
+  if (
+    !isNonCritical &&
+    !stopCrawlingOnly &&
+    (isStatementTimeoutError(error) || isPoolExhaustionError(error))
+  ) {
+    const enhancedError = createEnhancedError(error, context);
+    if (logger.error) {
+      logger.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`);
+      logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+    } else {
+      console.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`);
+      console.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+    }
+    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);
     return true;
   }
 

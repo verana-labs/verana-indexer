@@ -402,11 +402,15 @@ const DEFAULT_MONITOR_CHECK_TIMEOUT_MS = 10000;
 
 export async function checkDatabaseHealth(timeoutMs?: number): Promise<{ ok: boolean; error?: string }> {
   const timeout = timeoutMs ?? DEFAULT_DB_TIMEOUT_MS;
+  const timeoutInt = Math.max(1, Math.floor(timeout));
   try {
     await Promise.race([
-      knex.raw('SELECT 1'),
+      knex.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL statement_timeout = ${timeoutInt}`);
+        await trx.raw("SELECT 1");
+      }),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Database health check timeout')), timeout);
+        setTimeout(() => reject(new Error("Database health check timeout")), timeoutInt);
       }),
     ]);
     return { ok: true };
