@@ -77,30 +77,41 @@ export default class StatsAPIService extends BaseService {
     entityId: number | null;
     roleType: number;
     height: number;
-  }): Promise<number> {
+  }): Promise<number | string> {
     const { entityKind, entityId, roleType, height } = params;
+
+    if (entityKind !== 0 && entityId === null) return 0;
 
     const row = await knex("entity_participant_changes")
       .where("entity_kind", entityKind)
-      .andWhere((qb) => {
-        if (entityKind === 0 && entityId === null) {
-          qb.where((inner) => {
-            inner.whereNull("entity_id").orWhere("entity_id", 0);
-          });
-        } else if (entityId === null) {
-          qb.whereNull("entity_id");
-        } else {
-          qb.where("entity_id", entityId);
-        }
-      })
+      .andWhere("entity_id", entityKind === 0 ? 0 : (entityId as number))
       .andWhere("type", roleType)
       .andWhere("height", "<=", height)
       .orderBy("height", "desc")
       .first();
 
     if (!row) return 0;
-    const value = typeof row.value === "string" ? Number(row.value) : row.value;
-    return typeof value === "number" ? value : 0;
+    const rawValue = (row as any).value;
+    if (rawValue === null || rawValue === undefined) return 0;
+
+    const minSafe = BigInt(Number.MIN_SAFE_INTEGER);
+    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+
+    if (typeof rawValue === "bigint") {
+      return rawValue >= minSafe && rawValue <= maxSafe ? Number(rawValue) : rawValue.toString();
+    }
+
+    if (typeof rawValue === "string") {
+      if (!/^-?\d+$/.test(rawValue)) return 0;
+      const asBigInt = BigInt(rawValue);
+      return asBigInt >= minSafe && asBigInt <= maxSafe ? Number(asBigInt) : rawValue;
+    }
+
+    if (typeof rawValue === "number") {
+      return Number.isSafeInteger(rawValue) ? rawValue : String(rawValue);
+    }
+
+    return 0;
   }
 
   @Action({
@@ -522,17 +533,21 @@ export default class StatsAPIService extends BaseService {
     try {
       const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType, height } = ctx.params;
 
-      let entityId: number | null = null;
+      let entityId: number = 0;
       if (entityKind === 0) {
-        entityId = null;
+        entityId = 0;
       } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === "") {
         return ApiResponder.error(ctx, "entity_id is required for non-GLOBAL entity_kind", 400);
       } else {
         const asString = String(rawEntityId);
-        if (!/^-?\d+$/.test(asString)) {
-          return ApiResponder.error(ctx, "entity_id must be a numeric identifier", 400);
+        if (!/^\d+$/.test(asString)) {
+          return ApiResponder.error(ctx, "entity_id must be a positive integer identifier", 400);
         }
-        entityId = Number(asString);
+        const parsedId = Number(asString);
+        if (!Number.isSafeInteger(parsedId) || parsedId <= 0) {
+          return ApiResponder.error(ctx, "entity_id must be a positive, safe integer identifier", 400);
+        }
+        entityId = parsedId;
       }
 
       const value = await this.getParticipantsAtHeightInternal({

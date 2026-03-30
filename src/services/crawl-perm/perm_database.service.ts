@@ -858,6 +858,18 @@ export default class PermIngestService extends Service {
                 flip_kind: 2, // EXIT_ACTIVE
               });
             }
+          } else if (permState === "EXPIRED") {
+            if (
+              prevIsActiveNow &&
+              effectiveUntil &&
+              !Number.isNaN(effectiveUntil.getTime()) &&
+              effectiveUntil < currentBlockTime
+            ) {
+              exitFlips.push({
+                flip_at_time: effectiveUntil.toISOString(),
+                flip_kind: 2, // EXIT_ACTIVE
+              });
+            }
           } else if (permState === "SLASHED" || permState === "REVOKED" || permState === "REPAID") {
             let exitTime: Date | null = null;
             if (permState === "SLASHED") exitTime = slashed;

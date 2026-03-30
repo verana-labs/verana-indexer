@@ -101,8 +101,21 @@ export async function applyScheduledPermissionFlipsForBlock(
 
       const permChain: Array<{ id: number; schema_id: number }> = [];
       let currentId: number | null = perm.id;
+      const visited = new Set<number>();
+      const MAX_VALIDATOR_CHAIN_DEPTH = 1000;
+      let traversalAborted = false;
 
+      let depth = 0;
       while (currentId) {
+        if (depth++ >= MAX_VALIDATOR_CHAIN_DEPTH) {
+          traversalAborted = true;
+          break;
+        }
+        if (visited.has(currentId)) {
+          traversalAborted = true;
+          break;
+        }
+        visited.add(currentId);
         const p = await trx("permissions")
           .select("id", "schema_id", "validator_perm_id")
           .where({ id: currentId })
@@ -110,6 +123,11 @@ export async function applyScheduledPermissionFlipsForBlock(
         if (!p) break;
         permChain.push({ id: p.id, schema_id: p.schema_id });
         currentId = p.validator_perm_id ?? null;
+      }
+
+      if (traversalAborted) {
+        await markFlipStale(trx, flip, height, blockTime);
+        continue;
       }
 
       const schemaId = perm.schema_id;

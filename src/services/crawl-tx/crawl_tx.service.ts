@@ -441,8 +441,14 @@ export default class CrawlTxService extends BullableService {
       if (!minFlip) return;
       const minIso = new Date(minFlip).toISOString();
       if (minIso > endTimeIso) return;
-    } catch {
-      // If table doesn't exist yet, or block time missing, just fall back to existing behavior.
+    } catch (error) {
+      // If the scheduled-flips table doesn't exist yet, skip applying scheduled flips
+      // for this range rather than failing later when processing each block.
+      this.logger.debug(
+        `[SCHEDULED_FLIPS] Skipping scheduled flips range ${startHeight}-${endHeight} due to missing/invalid prerequisites`,
+        error
+      );
+      return;
     }
 
     const blocks = await Block.query()

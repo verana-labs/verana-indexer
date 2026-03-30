@@ -3,7 +3,7 @@ import { Knex } from "knex";
 export async function up(knex: Knex): Promise<void> {
   if (!(await knex.schema.hasColumn("permissions", "last_valid_flip_version"))) {
     await knex.schema.alterTable("permissions", (table) => {
-      table.specificType("last_valid_flip_version", "SMALLINT").notNullable().defaultTo(0);
+      table.specificType("last_valid_flip_version", "INTEGER").notNullable().defaultTo(0);
     });
   }
 
@@ -25,7 +25,7 @@ export async function up(knex: Knex): Promise<void> {
 
       table.specificType("status", "SMALLINT").notNullable().defaultTo(0);
 
-      table.specificType("version", "SMALLINT").notNullable();
+      table.specificType("version", "INTEGER").notNullable();
 
       table.bigInteger("applied_height").nullable();
       table.timestamp("applied_time", { useTz: true }).nullable();
