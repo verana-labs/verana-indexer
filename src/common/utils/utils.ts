@@ -282,3 +282,22 @@ export function mapPermissionType(input: string | number): string {
       return "UNSPECIFIED";
   }
 }
+
+export const PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS = [
+  "extended_by",
+  "slashed_by",
+  "repaid_by",
+  "revoked_by",
+] as const;
+
+export function normalizePermissionEmptyStringsToNull(obj: Record<string, any>): Record<string, any> {
+  if (!obj || typeof obj !== "object") return obj;
+
+  const normalized: Record<string, any> = { ...obj };
+  for (const key of PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(normalized, key) && normalized[key] === "") {
+      normalized[key] = null;
+    }
+  }
+  return normalized;
+}

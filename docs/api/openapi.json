@@ -5714,37 +5714,10 @@
         "properties": {
           "trust_registries": {
             "type": "array",
+            "description": "Trust registries with nested credential schemas and enriched permission rows (see implementation for full permission fields).",
             "items": {
               "$ref": "#/components/schemas/TrustRegistryPending"
             }
-          }
-        }
-      },
-      "PermissionPending": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "type": {
-            "type": "string"
-          },
-          "vp_state": {
-            "type": "string"
-          },
-          "perm_state": {
-            "type": "string"
-          },
-          "grantee": {
-            "type": "string"
-          },
-          "did": {
-            "type": "string",
-            "nullable": true
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
