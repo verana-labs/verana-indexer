@@ -32,14 +32,22 @@ export function isStatementTimeoutError(error: any): boolean {
 
 export function isPoolExhaustionError(error: any): boolean {
   const errorCode = error?.code;
-  const errorMessage = error?.message || String(error);
+  const errorMessageRaw = error?.message || String(error);
+  const errorMessage = errorMessageRaw.toLowerCase();
+  const errorName = String(error?.name ?? "").toLowerCase();
   
   return errorCode === 'ECONNREFUSED' ||
+    errorMessage.includes('timeout acquiring a connection') ||
     errorMessage.includes('timeout acquiring connection') ||
+    errorMessage.includes('acquiring a connection') ||
+    errorName.includes('knextimeouterror') ||
+    errorMessage.includes('knextimeouterror') ||
     errorMessage.includes('pool is full') ||
     errorMessage.includes('connection pool exhausted') ||
-    errorMessage.includes('Query read timeout') ||
-    errorMessage.includes('KnexTimeoutError');
+    errorMessage.includes('query read timeout') ||
+    errorMessage.includes('knex timeout') ||
+    errorMessage.includes('knex: timeout') ||
+    errorMessage.includes('timeouterror');
 }
 
 export function isConnectionTerminatedError(error: any): boolean {
