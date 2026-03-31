@@ -1,4 +1,5 @@
 import knex from "../../common/utils/db_connection";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
 
@@ -208,6 +209,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     .where("rn", 1)
     .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
 
+  const asOfTime = await getBlockChainTimeAsOf(blockHeight, { logContext: "[metrics_helper]" });
+
   for (const permId of permIdsAtHeight) {
     const historyRecord = await knex("permission_history")
       .where({ permission_id: String(permId) })
@@ -228,7 +231,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
         vp_exp: historyRecord.vp_exp,
         validator_perm_id: historyRecord.validator_perm_id,
       },
-      new Date()
+      asOfTime
     );
     if (permState === "ACTIVE" && historyRecord.grantee) {
       allParticipantsSet.add(historyRecord.grantee);

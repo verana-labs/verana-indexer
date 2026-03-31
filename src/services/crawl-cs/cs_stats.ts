@@ -1,4 +1,5 @@
 import knex from "../../common/utils/db_connection";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
@@ -320,7 +321,10 @@ export async function calculateCredentialSchemaStatsBatch(
     const result = new Map<number, CredentialSchemaStats>();
     if (schemaIds.length === 0) return result;
 
-    const now = new Date();
+    let now = new Date();
+    if (typeof blockHeight === "number" && Number.isFinite(blockHeight) && blockHeight >= 0) {
+        now = await getBlockChainTimeAsOf(blockHeight, { logContext: "[cs_stats]" });
+    }
 
     let schemaRows: any[] = [];
     if (typeof blockHeight === "number") {

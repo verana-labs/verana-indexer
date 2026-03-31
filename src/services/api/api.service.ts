@@ -411,6 +411,7 @@ function createRoute(
       createRoute("/verana/stats/v1", {
         "GET get": `${SERVICE.V1.StatsAPIService.path}.get`,
         "GET stats": `${SERVICE.V1.StatsAPIService.path}.stats`,
+        "GET participants-at-height": `${SERVICE.V1.StatsAPIService.path}.getParticipantsAtHeight`,
       }), 
       {
         path: "/",

@@ -52,6 +52,7 @@ import {
 } from '../../models';
 import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers';
 import { extractTrustRegistryIdsFromEvents } from "../../modules/tr-height-sync/tr_height_sync_helpers";
+import { applyScheduledPermissionFlipsForBlock } from "../crawl-perm/perm_flip_processor";
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
@@ -259,6 +260,7 @@ export default class CrawlTxService extends BullableService {
         const crawlTxHeight = crawlTxCheckpoint?.height || 0;
         if (blockCheckpoint && crawlTxHeight > blockCheckpoint.height) {
           const previousHeight = blockCheckpoint.height;
+          await this.applyScheduledFlipsForRange(previousHeight + 1, crawlTxHeight);
           blockCheckpoint.height = crawlTxHeight;
           blockCheckpoint.updated_at = new Date();
           await knex.transaction(async (trx) => {
@@ -347,6 +349,10 @@ export default class CrawlTxService extends BullableService {
         for (const [blockHeight, blockTxs] of transactionsByBlock.entries()) {
           await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}`, this.logger);
           try {
+            if (blockHeight > (lastProcessedHeight + 1)) {
+              await this.applyScheduledFlipsForRange(lastProcessedHeight + 1, blockHeight - 1);
+            }
+
             // Process all transactions for this block
             const processingPayloads = await this.processTransactionsForBlock(blockTxs, blockCheckpoint);
 
@@ -359,6 +365,7 @@ export default class CrawlTxService extends BullableService {
                 throw err;
               }
             }
+            await this.applyScheduledFlipsForBlockHeight(blockHeight, blockTxs[0]?.timestamp as Date | string | undefined);
 
             // Update tracking
             lastProcessedHeight = blockHeight;
@@ -411,6 +418,76 @@ export default class CrawlTxService extends BullableService {
       if (txsProcessed > 0) {
         this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing ${txsProcessed} transaction(s), checkpoint at height ${lastProcessedHeight}, last tx ID ${currentTxId}`);
       }
+  }
+
+  private async applyScheduledFlipsForRange(startHeight: number, endHeight: number): Promise<void> {
+    if (!Number.isInteger(startHeight) || !Number.isInteger(endHeight) || endHeight < startHeight) {
+      return;
+    }
+
+    try {
+      const endBlock = await Block.query()
+        .select("time")
+        .where("height", endHeight)
+        .first();
+      if (!endBlock?.time) return;
+      const endTimeIso = new Date(endBlock.time).toISOString();
+
+      const earliest = await knex("permission_scheduled_flips")
+        .where("status", 0)
+        .min("flip_at_time as min")
+        .first();
+      const minFlip = (earliest as any)?.min;
+      if (!minFlip) return;
+      const minIso = new Date(minFlip).toISOString();
+      if (minIso > endTimeIso) return;
+    } catch (error) {
+      // If the scheduled-flips table doesn't exist yet, skip applying scheduled flips
+      // for this range rather than failing later when processing each block.
+      this.logger.debug(
+        `[SCHEDULED_FLIPS] Skipping scheduled flips range ${startHeight}-${endHeight} due to missing/invalid prerequisites`,
+        error
+      );
+      return;
+    }
+
+    const blocks = await Block.query()
+      .select("height", "time")
+      .where("height", ">=", startHeight)
+      .andWhere("height", "<=", endHeight)
+      .orderBy("height", "asc");
+
+    for (const block of blocks) {
+      await this.applyScheduledFlipsForBlockHeight(
+        Number(block.height),
+        block.time ? new Date(block.time) : undefined
+      );
+    }
+  }
+
+  private async applyScheduledFlipsForBlockHeight(
+    blockHeight: number,
+    blockTimeHint?: Date | string
+  ): Promise<void> {
+    if (!Number.isInteger(blockHeight) || blockHeight <= 0) return;
+
+    let blockTime = blockTimeHint ? new Date(blockTimeHint) : null;
+    if (!blockTime || Number.isNaN(blockTime.getTime())) {
+      const block = await Block.query()
+        .select("time")
+        .where("height", blockHeight)
+        .first();
+      if (!block?.time) {
+        this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for scheduled flips`);
+        return;
+      }
+      blockTime = new Date(block.time);
+    }
+
+    await applyScheduledPermissionFlipsForBlock({
+      height: blockHeight,
+      blockTime,
+    });
   }
 
   /**
