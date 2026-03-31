@@ -1,5 +1,6 @@
 import { Service, ServiceBroker } from "moleculer";
 import { formatTimestamp } from "../../common/utils/date_utils";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import knex from "../../common/utils/db_connection";
 import { SERVICE, ModulesParamsNamesTypes } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
@@ -761,19 +762,13 @@ export default class PermIngestService extends Service {
           await this.checkPermissionsColumnExists("is_active_now");
 
         if (hasFlipMetaColumns && finalPermission) {
-          let currentBlockTime = new Date(mapped.modified || finalPermission.modified || new Date().toISOString());
-          try {
-            const blockRow = await trx("block")
-              .select("time")
-              .where("height", effectiveHeight)
-              .first();
-            if (blockRow?.time) {
-              const t = new Date(blockRow.time);
-              if (!Number.isNaN(t.getTime())) currentBlockTime = t;
-            }
-          } catch {
-            // Fallback to modified timestamps.
-          }
+          const fallbackTime = new Date(mapped.modified || finalPermission.modified || new Date().toISOString());
+          const currentBlockTime = await getBlockChainTimeAsOf(effectiveHeight, {
+            db: trx,
+            logContext: "[perm_database]",
+            fallback: fallbackTime,
+            logger: this.logger,
+          });
 
           const permState = calculatePermState(
             {

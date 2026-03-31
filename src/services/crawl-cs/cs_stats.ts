@@ -1,4 +1,5 @@
 import knex from "../../common/utils/db_connection";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
@@ -322,15 +323,7 @@ export async function calculateCredentialSchemaStatsBatch(
 
     let now = new Date();
     if (typeof blockHeight === "number" && Number.isFinite(blockHeight) && blockHeight >= 0) {
-        try {
-            const blockRow = await knex("block").select("time").where("height", blockHeight).first();
-            if (blockRow?.time) {
-                const t = new Date(blockRow.time);
-                if (!Number.isNaN(t.getTime())) now = t;
-            }
-        } catch {
-            // Fallback to wall-clock; should not generally happen.
-        }
+        now = await getBlockChainTimeAsOf(blockHeight, { logContext: "[cs_stats]" });
     }
 
     let schemaRows: any[] = [];

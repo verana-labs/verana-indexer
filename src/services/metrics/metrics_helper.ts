@@ -1,4 +1,5 @@
 import knex from "../../common/utils/db_connection";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
 
@@ -208,16 +209,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     .where("rn", 1)
     .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
 
-  let asOfTime = new Date();
-  try {
-    const blockRow = await knex("block").select("time").where("height", blockHeight).first();
-    if (blockRow?.time) {
-      const t = new Date(blockRow.time);
-      if (!Number.isNaN(t.getTime())) asOfTime = t;
-    }
-  } catch {
-    // Fallback to wall-clock time.
-  }
+  const asOfTime = await getBlockChainTimeAsOf(blockHeight, { logContext: "[metrics_helper]" });
 
   for (const permId of permIdsAtHeight) {
     const historyRecord = await knex("permission_history")
