@@ -500,7 +500,6 @@ export default class MetricsApiService extends BaseService {
         }
       }
 
-      let weight = Number(metricAgg?.weight || 0);
       let issued = Number(metricAgg?.issued || 0);
       let verified = Number(metricAgg?.verified || 0);
       let ecosystemSlashEvents = Number(metricAgg?.ecosystem_slash_events || 0);
@@ -513,7 +512,6 @@ export default class MetricsApiService extends BaseService {
       if (!csHasMetricColumns) {
         // Backward-compatible fallback for deployments where historical metric columns do not exist.
         const fallback = await computeGlobalMetrics(blockHeight, new Date(asOfIso));
-        weight = Number(fallback?.weight || 0);
         issued = Number(fallback?.issued || 0);
         verified = Number(fallback?.verified || 0);
         ecosystemSlashEvents = Number(fallback?.ecosystem_slash_events || 0);
@@ -524,10 +522,7 @@ export default class MetricsApiService extends BaseService {
         networkSlashedAmountRepaid = Number(fallback?.network_slashed_amount_repaid || 0);
       }
 
-      {
-        const { weight: trustDepositWeight } = await computeTotalLockedTrustDepositWeight(blockHeight);
-        weight = trustDepositWeight;
-      }
+      const { weight } = await computeTotalLockedTrustDepositWeight(blockHeight);
 
       const participantsTotal =
         participantsByType.participants_ecosystem
