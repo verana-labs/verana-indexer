@@ -211,7 +211,7 @@ function logGlobalWeightSanity(opts: {
   }
 }
 
-export async function computeGlobalMetrics(blockHeight?: number, asOfDate?: Date) {
+export async function computeGlobalMetrics(blockHeight?: number) {
   const useHistory = typeof blockHeight === "number";
 
   if (!useHistory) {
@@ -450,7 +450,12 @@ export async function computeGlobalMetrics(blockHeight?: number, asOfDate?: Date
     .where("rn", 1)
     .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
 
-  const asOfTime = await getBlockChainTimeAsOf(blockHeight, { logContext: "[metrics_helper]" });
+  const asOfTime = await getBlockChainTimeAsOf(blockHeight, {
+    db: knex,
+    logContext: "[metrics_helper]",
+    atOrBefore: true,
+    fallback: new Date(),
+  });
 
   for (const permId of permIdsAtHeight) {
     const historyRecord = await knex("permission_history")

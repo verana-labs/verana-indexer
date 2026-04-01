@@ -243,7 +243,8 @@ export default class MetricsApiService extends BaseService {
             mapped.active_trust_registries === 0 &&
             mapped.active_schemas === 0 &&
             mapped.issued === 0 &&
-            mapped.verified === 0;
+            mapped.verified === 0 &&
+            mapped.weight === 0;
           if (!looksEmpty) {
             return ApiResponder.success(ctx, mapped, 200);
           }
@@ -507,7 +508,7 @@ export default class MetricsApiService extends BaseService {
 
       if (!csHasMetricColumns) {
         // Backward-compatible fallback for deployments where historical metric columns do not exist.
-        const fallback = await computeGlobalMetrics(blockHeight, new Date(asOfIso));
+        const fallback = await computeGlobalMetrics(blockHeight);
         issued = Number(fallback?.issued || 0);
         verified = Number(fallback?.verified || 0);
         ecosystemSlashEvents = Number(fallback?.ecosystem_slash_events || 0);
