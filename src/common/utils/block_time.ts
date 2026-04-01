@@ -6,6 +6,7 @@ export type GetBlockChainTimeAsOfOptions = {
   logContext?: string;
   fallback?: Date;
   logger?: { warn?: (msg: string, ...args: unknown[]) => void };
+  atOrBefore?: boolean;
 };
 
 export async function getBlockChainTimeAsOf(
@@ -17,19 +18,25 @@ export async function getBlockChainTimeAsOf(
   const fallback = options?.fallback ?? new Date();
   const logWarn = options?.logger?.warn ?? (global as any)?.logger?.warn;
 
+  const atOrBefore = options?.atOrBefore === true;
+  const heightLabel = atOrBefore ? "at or before" : "at";
+
   try {
-    const blockRow = await db("block").select("time").where("height", height).first();
+    const q = db("block").select("time");
+    const blockRow = atOrBefore
+      ? await q.where("height", "<=", height).orderBy("height", "desc").first()
+      : await q.where("height", height).first();
     if (blockRow?.time) {
       const t = new Date(blockRow.time);
       if (!Number.isNaN(t.getTime())) return t;
       logWarn?.(
-        `${logContext} block.time at height ${height} is not a valid date; using fallback time`,
+        `${logContext} block.time ${heightLabel} height ${height} is not a valid date; using fallback time`,
         { raw: blockRow.time }
       );
     }
   } catch (err: any) {
     logWarn?.(
-      `${logContext} Failed to load block.time for height ${height}; using fallback time`,
+      `${logContext} Failed to load block.time ${atOrBefore ? "at or before" : "for"} height ${height}; using fallback time`,
       err?.message ?? err
     );
   }

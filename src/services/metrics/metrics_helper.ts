@@ -4,8 +4,8 @@ import {
   calculateCredentialSchemaStats,
   calculateCredentialSchemaStatsBatch,
 } from "../crawl-cs/cs_stats";
-import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 
 function isMetricsPgClient(db: Knex): boolean {
   return String((db as any)?.client?.config?.client || "").includes("pg");

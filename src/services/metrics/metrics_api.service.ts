@@ -6,6 +6,7 @@ import { BULL_JOB_NAME } from "../../common";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
 import { computeGlobalMetrics, computeTotalLockedTrustDepositWeight } from "./metrics_helper";
 import ApiResponder from "../../common/utils/apiResponse";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
 
@@ -211,18 +212,6 @@ export default class MetricsApiService extends BaseService {
     }
   }
 
-  private async getBlockTimeIsoAtOrBeforeHeight(height: number): Promise<string> {
-    const row = await knex("block")
-      .select("time")
-      .where("height", "<=", height)
-      .orderBy("height", "desc")
-      .first();
-
-    const t = (row as any)?.time;
-    const d = t ? new Date(t) : new Date();
-    return Number.isFinite(d.getTime()) ? d.toISOString() : new Date().toISOString();
-  }
-
   @Action({
     rest: "GET all",
     params: {},
@@ -288,7 +277,14 @@ export default class MetricsApiService extends BaseService {
       }
 
       stage = "history_aggregate";
-      const asOfIso = await this.getBlockTimeIsoAtOrBeforeHeight(blockHeight);
+      const asOfDate = await getBlockChainTimeAsOf(blockHeight, {
+        db: knex,
+        logContext: "[metrics_api]",
+        atOrBefore: true,
+        fallback: new Date(),
+        logger: { warn: (msg, ...args) => this.logger.warn(msg, ...args) },
+      });
+      const asOfIso = asOfDate.toISOString();
 
       const trLatest = IS_PG_CLIENT
         ? knex("trust_registry_history as trh")
