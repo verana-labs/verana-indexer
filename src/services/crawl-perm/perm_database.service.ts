@@ -1,5 +1,6 @@
 import { Service, ServiceBroker } from "moleculer";
 import { formatTimestamp } from "../../common/utils/date_utils";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import knex from "../../common/utils/db_connection";
 import { SERVICE, ModulesParamsNamesTypes } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
@@ -752,6 +753,167 @@ export default class PermIngestService extends Service {
       } else {
         await trx("permissions").insert(payload);
         finalPermission = await trx("permissions").where({ id: mapped.id }).first();
+      }
+
+      try {
+        const hasFlipMetaColumns =
+          await this.checkPermissionsColumnExists("last_valid_flip_version");
+        const hasIsActiveNowColumn =
+          await this.checkPermissionsColumnExists("is_active_now");
+
+        if (hasFlipMetaColumns && finalPermission) {
+          const fallbackTime = new Date(mapped.modified || finalPermission.modified || new Date().toISOString());
+          const currentBlockTime = await getBlockChainTimeAsOf(effectiveHeight, {
+            db: trx,
+            logContext: "[perm_database]",
+            fallback: fallbackTime,
+            logger: this.logger,
+          });
+
+          const permState = calculatePermState(
+            {
+              repaid: finalPermission.repaid,
+              slashed: finalPermission.slashed,
+              revoked: finalPermission.revoked,
+              effective_from: finalPermission.effective_from,
+              effective_until: finalPermission.effective_until,
+              type: finalPermission.type,
+              vp_state: finalPermission.vp_state,
+              vp_exp: finalPermission.vp_exp,
+              validator_perm_id: finalPermission.validator_perm_id,
+            },
+            currentBlockTime
+          );
+
+          const stateInputsChanged =
+            !previousPermission
+            || previousPermission.repaid !== finalPermission.repaid
+            || previousPermission.slashed !== finalPermission.slashed
+            || previousPermission.revoked !== finalPermission.revoked
+            || previousPermission.effective_from !== finalPermission.effective_from
+            || previousPermission.effective_until !== finalPermission.effective_until;
+
+          if (stateInputsChanged) {
+            const prevVersion: number =
+              typeof previousPermission?.last_valid_flip_version === "number"
+                ? previousPermission.last_valid_flip_version
+                : 0;
+            const newVersion = prevVersion + 1;
+
+            const prevIsActiveNow =
+              hasIsActiveNowColumn && previousPermission
+                ? Boolean((previousPermission as any).is_active_now)
+                : false;
+
+            const permUpdate: Record<string, any> = {
+              last_valid_flip_version: newVersion,
+            };
+       
+            await trx("permissions")
+              .where({ id: finalPermission.id })
+              .update(permUpdate);
+
+            const enterFlips: Array<{ flip_at_time: string; flip_kind: number }> = [];
+            const exitFlips: Array<{ flip_at_time: string; flip_kind: number }> = [];
+
+          const effectiveFrom = finalPermission.effective_from
+            ? new Date(finalPermission.effective_from)
+            : null;
+          const effectiveUntil = finalPermission.effective_until
+            ? new Date(finalPermission.effective_until)
+            : null;
+          const revoked = finalPermission.revoked ? new Date(finalPermission.revoked) : null;
+          const slashed = finalPermission.slashed ? new Date(finalPermission.slashed) : null;
+          const repaid = finalPermission.repaid ? new Date(finalPermission.repaid) : null;
+
+          if (permState === "FUTURE") {
+            if (effectiveFrom && !Number.isNaN(effectiveFrom.getTime())) {
+              enterFlips.push({
+                flip_at_time: effectiveFrom.toISOString(),
+                flip_kind: 1, // ENTER_ACTIVE
+              });
+            }
+            if (effectiveUntil && !Number.isNaN(effectiveUntil.getTime())) {
+              exitFlips.push({
+                flip_at_time: effectiveUntil.toISOString(),
+                flip_kind: 2, // EXIT_ACTIVE
+              });
+            }
+          } else if (permState === "ACTIVE") {
+            // Spec: insert ENTER_ACTIVE at effective_from.
+            if (effectiveFrom && !Number.isNaN(effectiveFrom.getTime())) {
+              enterFlips.push({
+                flip_at_time: effectiveFrom.toISOString(),
+                flip_kind: 1, // ENTER_ACTIVE
+              });
+            }
+            if (effectiveUntil && !Number.isNaN(effectiveUntil.getTime())) {
+              exitFlips.push({
+                flip_at_time: effectiveUntil.toISOString(),
+                flip_kind: 2, // EXIT_ACTIVE
+              });
+            }
+          } else if (permState === "EXPIRED") {
+            if (
+              prevIsActiveNow &&
+              effectiveUntil &&
+              !Number.isNaN(effectiveUntil.getTime()) &&
+              effectiveUntil < currentBlockTime
+            ) {
+              exitFlips.push({
+                flip_at_time: effectiveUntil.toISOString(),
+                flip_kind: 2, // EXIT_ACTIVE
+              });
+            }
+          } else if (permState === "SLASHED" || permState === "REVOKED" || permState === "REPAID") {
+            let exitTime: Date | null = null;
+            if (permState === "SLASHED") exitTime = slashed;
+            if (permState === "REVOKED") exitTime = revoked;
+            if (permState === "REPAID") exitTime = repaid;
+
+            if (
+              effectiveFrom &&
+              !Number.isNaN(effectiveFrom.getTime()) &&
+              effectiveFrom < currentBlockTime &&
+              exitTime &&
+              !Number.isNaN(exitTime.getTime()) &&
+              prevIsActiveNow
+            ) {
+              exitFlips.push({
+                flip_at_time: exitTime.toISOString(),
+                flip_kind: 2, // EXIT_ACTIVE
+              });
+            }
+          }
+
+            const flipsToInsert = [...enterFlips, ...exitFlips];
+            for (const flip of flipsToInsert) {
+              try {
+                await trx("permission_scheduled_flips")
+                  .insert({
+                    perm_id: finalPermission.id,
+                    flip_at_time: flip.flip_at_time,
+                    flip_kind: flip.flip_kind,
+                    status: 0, // PENDING
+                    version: newVersion,
+                    created_at: currentBlockTime.toISOString(),
+                  })
+                  .onConflict(["perm_id", "version", "flip_at_time", "flip_kind"])
+                  .ignore();
+              } catch (err: any) {
+                this.logger.warn(
+                  `[syncPermissionFromLedger] Failed to insert scheduled flip for permission ${finalPermission.id}:`,
+                  err?.message || err
+                );
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `[syncPermissionFromLedger] Failed to update scheduled flips metadata for permission ${mapped.id}:`,
+          err?.message || err
+        );
       }
   try {
         const prevSlashed = BigInt(previousPermission?.slashed_deposit ?? 0);

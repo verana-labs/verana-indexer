@@ -72,6 +72,48 @@ export default class StatsAPIService extends BaseService {
     return normalized;
   }
 
+  private async getParticipantsAtHeightInternal(params: {
+    entityKind: number;
+    entityId: number | null;
+    roleType: number;
+    height: number;
+  }): Promise<number | string> {
+    const { entityKind, entityId, roleType, height } = params;
+
+    if (entityKind !== 0 && entityId === null) return 0;
+
+    const row = await knex("entity_participant_changes")
+      .where("entity_kind", entityKind)
+      .andWhere("entity_id", entityKind === 0 ? 0 : (entityId as number))
+      .andWhere("type", roleType)
+      .andWhere("height", "<=", height)
+      .orderBy("height", "desc")
+      .first();
+
+    if (!row) return 0;
+    const rawValue = (row as any).value;
+    if (rawValue === null || rawValue === undefined) return 0;
+
+    const minSafe = BigInt(Number.MIN_SAFE_INTEGER);
+    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+
+    if (typeof rawValue === "bigint") {
+      return rawValue >= minSafe && rawValue <= maxSafe ? Number(rawValue) : rawValue.toString();
+    }
+
+    if (typeof rawValue === "string") {
+      if (!/^-?\d+$/.test(rawValue)) return 0;
+      const asBigInt = BigInt(rawValue);
+      return asBigInt >= minSafe && asBigInt <= maxSafe ? Number(asBigInt) : rawValue;
+    }
+
+    if (typeof rawValue === "number") {
+      return Number.isSafeInteger(rawValue) ? rawValue : String(rawValue);
+    }
+
+    return 0;
+  }
+
   @Action({
     name: "get",
     params: {
@@ -469,6 +511,65 @@ export default class StatsAPIService extends BaseService {
       return ApiResponder.success(ctx, response, 200);
     } catch (err: unknown) {
       this.logger.error("Error in stats:", err);
+      return ApiResponder.error(ctx, "Internal Server Error", 500);
+    }
+  }
+
+  @Action({
+    name: "getParticipantsAtHeight",
+    params: {
+      entity_kind: { type: "number", integer: true, min: 0, max: 3, convert: true },
+      entity_id: { type: "any", optional: true },
+      role_type: { type: "number", integer: true, min: 0, max: 6, convert: true },
+      height: { type: "number", integer: true, positive: true, convert: true },
+    },
+  })
+  public async getParticipantsAtHeight(ctx: Context<{
+    entity_kind: number;
+    entity_id?: unknown;
+    role_type: number;
+    height: number;
+  }>): Promise<unknown> {
+    try {
+      const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType, height } = ctx.params;
+
+      let entityId: number = 0;
+      if (entityKind === 0) {
+        entityId = 0;
+      } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === "") {
+        return ApiResponder.error(ctx, "entity_id is required for non-GLOBAL entity_kind", 400);
+      } else {
+        const asString = String(rawEntityId);
+        if (!/^\d+$/.test(asString)) {
+          return ApiResponder.error(ctx, "entity_id must be a positive integer identifier", 400);
+        }
+        const parsedId = Number(asString);
+        if (!Number.isSafeInteger(parsedId) || parsedId <= 0) {
+          return ApiResponder.error(ctx, "entity_id must be a positive, safe integer identifier", 400);
+        }
+        entityId = parsedId;
+      }
+
+      const value = await this.getParticipantsAtHeightInternal({
+        entityKind,
+        entityId,
+        roleType,
+        height,
+      });
+
+      return ApiResponder.success(
+        ctx,
+        {
+          entity_kind: entityKind,
+          entity_id: entityId,
+          role_type: roleType,
+          height,
+          value,
+        },
+        200
+      );
+    } catch (err: unknown) {
+      this.logger.error("Error in getParticipantsAtHeight:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);
     }
   }

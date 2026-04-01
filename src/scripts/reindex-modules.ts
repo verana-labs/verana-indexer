@@ -59,6 +59,8 @@ const TABLES_TO_DROP = [
   "account_statistics",
   "daily_statistics",
   "account",
+  "permission_scheduled_flips",
+  "entity_participant_changes",
 ];
 
 const SEQUENCES_TO_RESET = [
@@ -87,6 +89,7 @@ const SEQUENCES_TO_RESET = [
   "account_statistics_id_seq",
   "daily_statistics_id_seq",
   "account_id_seq",
+  "stats_id_seq",
 ];
 
 async function waitForDatabase(config: Knex.Config, maxRetries = 30, delayMs = 2000): Promise<void> {
@@ -558,6 +561,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   "20251125000003_create_module_params_history": ["module_params_history"],
   "20260126000001_create_did_history": ["did_history"],
   "20260202020000_create_global_metrics": ["global_metrics"],
+  "20260317000000_add_permission_flips": ["permission_scheduled_flips", "permissions"],
   "partition-transaction-table": ["transaction"],
   "transaction_message_partition": ["transaction_message"]
 };
@@ -575,6 +579,7 @@ const ALTER_MIGRATIONS = [
   "20260203000000_add_indexes_permissions_history",
   "20260218000000_credential_schema_json_schema_to_text",
   "20260226000000_add_permissions_lookup_index_for_perm_list",
+  "20260317000000_add_permission_flips",
 ];
 
 async function runMigrations(db: Knex): Promise<void> {
@@ -1238,6 +1243,26 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
     }
 
     const config = getConfigForEnv();
+
+    const migrationsDirectory = (config.migrations as { directory?: string } | undefined)?.directory;
+    if (typeof migrationsDirectory === "string") {
+      const migrationsDirectoryExists = fs.existsSync(migrationsDirectory);
+      if (!migrationsDirectoryExists) {
+        throw new Error(
+          `Knex migrations directory does not exist: ${migrationsDirectory}\n` +
+          `This usually means NODE_ENV='production' while running from TypeScript, or the project was not built.\n` +
+          `Fix: run 'pnpm run build' then re-run reindex, or run with NODE_ENV='development' (use 'pnpm run reindex:dev').`
+        );
+      }
+
+      const filesInDirectory = fs.readdirSync(migrationsDirectory).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+      if (filesInDirectory.length === 0) {
+        throw new Error(
+          `Knex migrations directory is empty: ${migrationsDirectory}\n` +
+          `Fix: ensure migrations are compiled to dist for production, or run with NODE_ENV='development'.`
+        );
+      }
+    }
     const connInfo = config.connection as { database?: string; host?: string; port?: number };
     console.log(`Database: ${connInfo.database || 'unknown'} @ ${connInfo.host || 'unknown'}:${connInfo.port || 'unknown'}\n`);
 
