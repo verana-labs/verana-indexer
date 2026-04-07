@@ -4,8 +4,9 @@ import BaseService from "../../base/base.service";
 import knex from "../../common/utils/db_connection";
 import { BULL_JOB_NAME } from "../../common";
 import { getBlockHeight, hasBlockHeight } from "../../common/utils/blockHeight";
-import { computeGlobalMetrics } from "./metrics_helper";
+import { computeGlobalMetrics, computeTotalLockedTrustDepositWeight } from "./metrics_helper";
 import ApiResponder from "../../common/utils/apiResponse";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
 
@@ -233,7 +234,20 @@ export default class MetricsApiService extends BaseService {
           .first();
         if (snap) {
           this.setCheckpointMeta(ctx, Number(snap.block_height || blockHeight), snap.computed_at);
-          return ApiResponder.success(ctx, this.mapSnapshotToMetrics(snap), 200);
+          const mapped = this.mapSnapshotToMetrics(snap);
+          const { weight } = await computeTotalLockedTrustDepositWeight(blockHeight);
+          mapped.weight = weight;
+
+          const looksEmpty =
+            mapped.participants === 0 &&
+            mapped.active_trust_registries === 0 &&
+            mapped.active_schemas === 0 &&
+            mapped.issued === 0 &&
+            mapped.verified === 0 &&
+            mapped.weight === 0;
+          if (!looksEmpty) {
+            return ApiResponder.success(ctx, mapped, 200);
+          }
         }
       } else {
         // Fast path for live metrics: latest snapshot by compute time.
@@ -247,6 +261,8 @@ export default class MetricsApiService extends BaseService {
         if (snap) {
           this.setCheckpointMeta(ctx, snap.block_height != null ? Number(snap.block_height) : null, snap.computed_at);
           const result = this.mapSnapshotToMetrics(snap);
+          const { weight } = await computeTotalLockedTrustDepositWeight(undefined);
+          result.weight = weight;
           return ApiResponder.success(ctx, result, 200);
         }
       }
@@ -254,12 +270,23 @@ export default class MetricsApiService extends BaseService {
       if (!useHistory) {
         stage = "live_compute_fallback";
         const result = await this.computeAndStoreLiveMetrics();
+        const { weight } = await computeTotalLockedTrustDepositWeight(undefined);
+        result.weight = weight;
         const latestHeight = await this.getLatestBlockHeight();
         this.setCheckpointMeta(ctx, latestHeight, new Date().toISOString());
         return ApiResponder.success(ctx, result, 200);
       }
 
       stage = "history_aggregate";
+      const asOfDate = await getBlockChainTimeAsOf(blockHeight, {
+        db: knex,
+        logContext: "[metrics_api]",
+        atOrBefore: true,
+        fallback: new Date(),
+        logger: { warn: (msg, ...args) => this.logger.warn(msg, ...args) },
+      });
+      const asOfIso = asOfDate.toISOString();
+
       const trLatest = IS_PG_CLIENT
         ? knex("trust_registry_history as trh")
           .distinctOn("trh.tr_id")
@@ -375,7 +402,7 @@ export default class MetricsApiService extends BaseService {
           .first();
       }
 
-      const nowIso = new Date().toISOString();
+      const nowIso = asOfIso;
       const latestPermRanked = IS_PG_CLIENT
         ? knex("permission_history as ph")
           .distinctOn("ph.permission_id")
@@ -470,7 +497,6 @@ export default class MetricsApiService extends BaseService {
         }
       }
 
-      let weight = Number(metricAgg?.weight || 0);
       let issued = Number(metricAgg?.issued || 0);
       let verified = Number(metricAgg?.verified || 0);
       let ecosystemSlashEvents = Number(metricAgg?.ecosystem_slash_events || 0);
@@ -483,7 +509,6 @@ export default class MetricsApiService extends BaseService {
       if (!csHasMetricColumns) {
         // Backward-compatible fallback for deployments where historical metric columns do not exist.
         const fallback = await computeGlobalMetrics(blockHeight);
-        weight = Number(fallback?.weight || 0);
         issued = Number(fallback?.issued || 0);
         verified = Number(fallback?.verified || 0);
         ecosystemSlashEvents = Number(fallback?.ecosystem_slash_events || 0);
@@ -493,6 +518,8 @@ export default class MetricsApiService extends BaseService {
         networkSlashedAmount = Number(fallback?.network_slashed_amount || 0);
         networkSlashedAmountRepaid = Number(fallback?.network_slashed_amount_repaid || 0);
       }
+
+      const { weight } = await computeTotalLockedTrustDepositWeight(blockHeight);
 
       const participantsTotal =
         participantsByType.participants_ecosystem

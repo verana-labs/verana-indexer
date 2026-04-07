@@ -1,7 +1,215 @@
+import type { Knex } from "knex";
 import knex from "../../common/utils/db_connection";
-import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
-import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
+import {
+  calculateCredentialSchemaStats,
+  calculateCredentialSchemaStatsBatch,
+} from "../crawl-cs/cs_stats";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
+import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
+
+function isMetricsPgClient(db: Knex): boolean {
+  return String((db as any)?.client?.config?.client || "").includes("pg");
+}
+
+async function aggregateLiveTrustWeightFromPermissions(db: Knex): Promise<{
+  totalWeight: number;
+  maxSinglePermWeight: number;
+}> {
+  const sumExpr = isMetricsPgClient(db)
+    ? `COALESCE(SUM(
+         CASE
+           WHEN p.weight IS NOT NULL THEN p.weight::numeric
+           ELSE COALESCE(p.deposit::numeric, 0)
+         END
+       ), 0)`
+    : `COALESCE(SUM(
+         CASE
+           WHEN p.weight IS NOT NULL THEN CAST(p.weight AS REAL)
+           ELSE COALESCE(CAST(p.deposit AS REAL), 0)
+         END
+       ), 0)`;
+
+  const maxExpr = isMetricsPgClient(db)
+    ? `COALESCE(MAX(
+         CASE
+           WHEN p.weight IS NOT NULL THEN p.weight::numeric
+           ELSE COALESCE(p.deposit::numeric, 0)
+         END
+       ), 0)`
+    : `COALESCE(MAX(
+         CASE
+           WHEN p.weight IS NOT NULL THEN CAST(p.weight AS REAL)
+           ELSE COALESCE(CAST(p.deposit AS REAL), 0)
+         END
+       ), 0)`;
+
+  const row = await db("permissions as p")
+    .join("credential_schemas as cs", "cs.id", "p.schema_id")
+    .select(db.raw(`${sumExpr} as total_weight`), db.raw(`${maxExpr} as max_single`))
+    .first();
+
+  const totalWeight = parseMetricsNumeric((row as any)?.total_weight);
+  const maxSinglePermWeight = parseMetricsNumeric((row as any)?.max_single);
+  return { totalWeight, maxSinglePermWeight };
+}
+
+async function sumDenormalizedCredentialSchemaWeights(db: Knex): Promise<number> {
+  const row = await db("credential_schemas")
+    .select(db.raw("COALESCE(SUM(CAST(weight AS NUMERIC)), 0) as s"))
+    .first();
+  return parseMetricsNumeric((row as any)?.s);
+}
+
+function parseMetricsNumeric(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  const n = Number(String(v).trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function aggregateLiveTrustDepositWeight(db: Knex): Promise<{
+  totalWeight: number;
+  maxSingleDeposit: number;
+}> {
+  const castTotalExpr = isMetricsPgClient(db)
+    ? `COALESCE(SUM(amount::numeric), 0)`
+    : `COALESCE(SUM(CAST(amount AS REAL)), 0)`;
+
+  const castMaxExpr = isMetricsPgClient(db)
+    ? `COALESCE(MAX(amount::numeric), 0)`
+    : `COALESCE(MAX(CAST(amount AS REAL)), 0)`;
+
+  const row = await db("trust_deposits")
+    .select(db.raw(`${castTotalExpr} as total_weight`), db.raw(`${castMaxExpr} as max_single`))
+    .first();
+
+  const totalWeight = parseMetricsNumeric((row as any)?.total_weight);
+  const maxSingleDeposit = parseMetricsNumeric((row as any)?.max_single);
+  return { totalWeight, maxSingleDeposit };
+}
+
+async function aggregateHistoricalTrustDepositWeight(
+  db: Knex,
+  blockHeight: number
+): Promise<{
+  totalWeight: number;
+  maxSingleDeposit: number;
+}> {
+  if (isMetricsPgClient(db)) {
+    const tdLatest = db("trust_deposit_history as tdh")
+      .distinctOn("tdh.account")
+      .select("tdh.account", "tdh.amount")
+      .where("tdh.height", "<=", blockHeight)
+      .orderBy("tdh.account", "asc")
+      .orderBy("tdh.height", "desc")
+      .orderBy("tdh.created_at", "desc")
+      .orderBy("tdh.id", "desc")
+      .as("latest_td");
+
+    const row = await db.from(tdLatest)
+      .select(
+        db.raw(`COALESCE(SUM(latest_td.amount::numeric), 0) as total_weight`),
+        db.raw(`COALESCE(MAX(latest_td.amount::numeric), 0) as max_single`)
+      )
+      .first();
+
+    return {
+      totalWeight: parseMetricsNumeric((row as any)?.total_weight),
+      maxSingleDeposit: parseMetricsNumeric((row as any)?.max_single),
+    };
+  }
+
+  const tdSub = db("trust_deposit_history as tdh")
+    .select("tdh.account", "tdh.amount")
+    .select(db.raw("ROW_NUMBER() OVER (PARTITION BY tdh.account ORDER BY tdh.height DESC, tdh.created_at DESC, tdh.id DESC) as rn"))
+    .where("tdh.height", "<=", blockHeight)
+    .as("ranked_td");
+
+  const tdLatest = db.from(tdSub).select("account", "amount").where("rn", 1).as("latest_td");
+
+  const row = await db.from(tdLatest)
+    .select(
+      db.raw(`COALESCE(SUM(CAST(latest_td.amount AS REAL)), 0) as total_weight`),
+      db.raw(`COALESCE(MAX(CAST(latest_td.amount AS REAL)), 0) as max_single`)
+    )
+    .first();
+
+  return {
+    totalWeight: parseMetricsNumeric((row as any)?.total_weight),
+    maxSingleDeposit: parseMetricsNumeric((row as any)?.max_single),
+  };
+}
+
+export async function computeTotalLockedTrustDepositWeight(blockHeight?: number): Promise<{
+  weight: number;
+  maxSingleDeposit: number;
+}> {
+  const db = knex;
+  const result =
+    typeof blockHeight === "number"
+      ? await aggregateHistoricalTrustDepositWeight(db, blockHeight)
+      : await aggregateLiveTrustDepositWeight(db);
+
+  if (result.maxSingleDeposit > result.totalWeight + 1e-9) {
+    (global as any)?.logger?.warn?.(
+      "[metrics] Invariant failed: totalWeight < maxSingleDeposit",
+      result
+    );
+  }
+
+  return { weight: result.totalWeight, maxSingleDeposit: result.maxSingleDeposit };
+}
+
+function logGlobalWeightSanity(opts: {
+  totalWeightFromTrustDeposits: number;
+  maxSingleDeposit: number;
+  permissionsDerivedTotalWeight?: number;
+  denormalizedCsSum?: number;
+  logger?: { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void };
+}): void {
+  const { totalWeightFromTrustDeposits, maxSingleDeposit, permissionsDerivedTotalWeight, denormalizedCsSum, logger } = opts;
+  const log = logger?.warn ?? logger?.debug ?? ((...args: unknown[]) => console.warn(...args));
+
+  if (maxSingleDeposit > totalWeightFromTrustDeposits + 1e-6) {
+    log(
+      "[metrics] Invariant failed: max single deposit exceeds global total (aggregation bug?)",
+      { totalWeightFromTrustDeposits, maxSingleDeposit }
+    );
+  }
+
+  if (
+    typeof denormalizedCsSum === "number" &&
+    Number.isFinite(denormalizedCsSum) &&
+    denormalizedCsSum > 0 &&
+    totalWeightFromTrustDeposits > 0
+  ) {
+    const relDiff = Math.abs(totalWeightFromTrustDeposits - denormalizedCsSum) / Math.max(totalWeightFromTrustDeposits, denormalizedCsSum);
+    if (relDiff > 0.05) {
+      log(
+        "[metrics] Global trust weight from trust deposits differs from SUM(credential_schemas.weight) by >5% — denormalized CS columns may be stale (reindex or crawl lag).",
+        { totalFromTrustDeposits: totalWeightFromTrustDeposits, sumCredentialSchemasWeight: denormalizedCsSum, relDiff }
+      );
+    }
+  }
+
+  if (
+    typeof permissionsDerivedTotalWeight === "number" &&
+    Number.isFinite(permissionsDerivedTotalWeight) &&
+    permissionsDerivedTotalWeight > 0 &&
+    totalWeightFromTrustDeposits > 0
+  ) {
+    const relDiff = Math.abs(permissionsDerivedTotalWeight - totalWeightFromTrustDeposits) / Math.max(
+      permissionsDerivedTotalWeight,
+      totalWeightFromTrustDeposits
+    );
+    if (relDiff > 0.05) {
+      log(
+        "[metrics] Global trust weight from permissions differs from trust_deposits SUM by >5% — permissions denormalized columns may be stale (reindex or crawl lag).",
+        { totalFromPermissions: permissionsDerivedTotalWeight, totalFromTrustDeposits: totalWeightFromTrustDeposits, relDiff }
+      );
+    }
+  }
+}
 
 export async function computeGlobalMetrics(blockHeight?: number) {
   const useHistory = typeof blockHeight === "number";
@@ -37,18 +245,53 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     const csAgg = await knex("credential_schemas")
       .select(
         knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_schemas"),
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_schemas"),
-        knex.raw("COALESCE(SUM(weight), 0) as total_weight"),
-        knex.raw("COALESCE(SUM(issued), 0) as issued_sum"),
-        knex.raw("COALESCE(SUM(verified), 0) as verified_sum"),
-        knex.raw("COALESCE(SUM(COALESCE(ecosystem_slash_events,0)), 0) as ecosystem_slash_events_sum"),
-        knex.raw("COALESCE(SUM(ecosystem_slashed_amount), 0) as ecosystem_slashed_amount_sum"),
-        knex.raw("COALESCE(SUM(ecosystem_slashed_amount_repaid), 0) as ecosystem_slashed_amount_repaid_sum"),
-        knex.raw("COALESCE(SUM(COALESCE(network_slash_events,0)), 0) as network_slash_events_sum"),
-        knex.raw("COALESCE(SUM(network_slashed_amount), 0) as network_slashed_amount_sum"),
-        knex.raw("COALESCE(SUM(network_slashed_amount_repaid), 0) as network_slashed_amount_repaid_sum")
+        knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_schemas")
       )
       .first();
+    const schemaIdRows = await knex("credential_schemas").select("id");
+    const schemaIds = schemaIdRows
+      .map((r: { id: unknown }) => Number(r.id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    const logger = (global as any).logger as { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void } | undefined;
+
+    const [trustDepositWeightAgg, permissionsWeightAgg, denormalizedCsWeightSum, csStatsBySchema] = await Promise.all([
+      aggregateLiveTrustDepositWeight(knex),
+      aggregateLiveTrustWeightFromPermissions(knex).catch(() => ({ totalWeight: 0, maxSinglePermWeight: 0 })),
+      sumDenormalizedCredentialSchemaWeights(knex).catch(() => 0),
+      calculateCredentialSchemaStatsBatch(schemaIds, undefined),
+    ]);
+
+    const totalWeight = trustDepositWeightAgg.totalWeight;
+    logGlobalWeightSanity({
+      totalWeightFromTrustDeposits: totalWeight,
+      maxSingleDeposit: trustDepositWeightAgg.maxSingleDeposit,
+      permissionsDerivedTotalWeight: permissionsWeightAgg.totalWeight,
+      denormalizedCsSum: denormalizedCsWeightSum,
+      logger,
+    });
+
+    let issuedSum = 0;
+    let verifiedSum = 0;
+    let ecosystemSlashEventsSum = 0;
+    let ecosystemSlashedAmountSum = 0;
+    let ecosystemSlashedAmountRepaidSum = 0;
+    let networkSlashEventsSum = 0;
+    let networkSlashedAmountSum = 0;
+    let networkSlashedAmountRepaidSum = 0;
+
+    for (const sid of schemaIds) {
+      const s = csStatsBySchema.get(sid);
+      if (!s) continue;
+      issuedSum += Number(s.issued || 0);
+      verifiedSum += Number(s.verified || 0);
+      ecosystemSlashEventsSum += Number(s.ecosystem_slash_events || 0);
+      ecosystemSlashedAmountSum += Number(s.ecosystem_slashed_amount || 0);
+      ecosystemSlashedAmountRepaidSum += Number(s.ecosystem_slashed_amount_repaid || 0);
+      networkSlashEventsSum += Number(s.network_slash_events || 0);
+      networkSlashedAmountSum += Number(s.network_slashed_amount || 0);
+      networkSlashedAmountRepaidSum += Number(s.network_slashed_amount_repaid || 0);
+    }
 
     const nowIso = new Date().toISOString();
     const activePermsBase = () =>
@@ -101,15 +344,15 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       archived_trust_registries: archivedTrustRegistries,
       active_schemas: Number(csAgg.active_schemas || 0),
       archived_schemas: Number(csAgg.archived_schemas || 0),
-      weight: Number(csAgg.total_weight || 0),
-      issued: Number(csAgg.issued_sum || 0),
-      verified: Number(csAgg.verified_sum || 0),
-      ecosystem_slash_events: Number(csAgg.ecosystem_slash_events_sum || 0),
-      ecosystem_slashed_amount: Number(csAgg.ecosystem_slashed_amount_sum || 0),
-      ecosystem_slashed_amount_repaid: Number(csAgg.ecosystem_slashed_amount_repaid_sum || 0),
-      network_slash_events: Number(csAgg.network_slash_events_sum || 0),
-      network_slashed_amount: Number(csAgg.network_slashed_amount_sum || 0),
-      network_slashed_amount_repaid: Number(csAgg.network_slashed_amount_repaid_sum || 0),
+      weight: totalWeight,
+      issued: issuedSum,
+      verified: verifiedSum,
+      ecosystem_slash_events: ecosystemSlashEventsSum,
+      ecosystem_slashed_amount: ecosystemSlashedAmountSum,
+      ecosystem_slashed_amount_repaid: ecosystemSlashedAmountRepaidSum,
+      network_slash_events: networkSlashEventsSum,
+      network_slashed_amount: networkSlashedAmountSum,
+      network_slashed_amount_repaid: networkSlashedAmountRepaidSum,
     };
   }
 
@@ -147,7 +390,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
 
   let activeSchemas = 0;
   let archivedSchemas = 0;
-  let totalWeight = BigInt(0);
+  const trustDepositWeightAgg = await aggregateHistoricalTrustDepositWeight(knex, blockHeight);
+  const totalWeight = trustDepositWeightAgg.totalWeight;
   let issued = 0;
   let verified = 0;
   let ecosystemSlashEvents = 0;
@@ -170,9 +414,6 @@ export async function computeGlobalMetrics(blockHeight?: number) {
 
     try {
       const stats = await calculateCredentialSchemaStats(sid, blockHeight);
-      try {
-        totalWeight += BigInt(stats.weight || "0");
-      } catch {}
       issued += Number(stats.issued || 0);
       verified += Number(stats.verified || 0);
       ecosystemSlashEvents += Number(stats.ecosystem_slash_events || 0);
@@ -209,7 +450,12 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     .where("rn", 1)
     .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
 
-  const asOfTime = await getBlockChainTimeAsOf(blockHeight, { logContext: "[metrics_helper]" });
+  const asOfTime = await getBlockChainTimeAsOf(blockHeight, {
+    db: knex,
+    logContext: "[metrics_helper]",
+    atOrBefore: true,
+    fallback: new Date(),
+  });
 
   for (const permId of permIdsAtHeight) {
     const historyRecord = await knex("permission_history")
