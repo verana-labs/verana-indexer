@@ -12,6 +12,7 @@ import TrustDeposit from "../../models/trust_deposit";
 import { getModuleParamsAction } from "../../common/utils/params_service";
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
+import { mapTrustDepositApiFields } from "../../common/vpr-v4-mapping";
 
 @Service({
   name: SERVICE.V1.TrustDepositApiService.key,
@@ -61,7 +62,7 @@ export default class TrustDepositApiService extends BullableService {
         }
 
         const result = {
-          trust_deposit: {
+          trust_deposit: mapTrustDepositApiFields({
             account: historyRecord.account,
             share: Number(historyRecord.share ?? 0),
             amount: Number(historyRecord.amount ?? 0),
@@ -72,7 +73,7 @@ export default class TrustDepositApiService extends BullableService {
             last_repaid: historyRecord.last_repaid,
             slash_count: historyRecord.slash_count || 0,
             last_repaid_by: historyRecord.last_repaid_by || "",
-          },
+          } as Record<string, unknown>),
         };
 
         return ApiResponder.success(ctx, result, 200);
@@ -90,7 +91,7 @@ export default class TrustDepositApiService extends BullableService {
         );
       }
       const result = {
-        trust_deposit: {
+        trust_deposit: mapTrustDepositApiFields({
           account: trustDeposit.account,
           share: Number(trustDeposit.share ?? 0),
           amount: Number(trustDeposit.amount ?? 0),
@@ -101,7 +102,7 @@ export default class TrustDepositApiService extends BullableService {
           last_repaid: trustDeposit.last_repaid,
           slash_count: Number(trustDeposit.slash_count ?? 0),
           last_repaid_by: trustDeposit.last_repaid_by,
-        },
+        } as Record<string, unknown>),
       }
       return ApiResponder.success(
         ctx,

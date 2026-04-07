@@ -35,6 +35,8 @@ export default class Permission extends BaseModel {
     validation_fees!: number;
     issuance_fees!: number;
     verification_fees!: number;
+    issuance_fee_discount?: number;
+    verification_fee_discount?: number;
     deposit!: number;
     slashed_deposit!: number;
     repaid_deposit!: number;
@@ -49,6 +51,13 @@ export default class Permission extends BaseModel {
     vp_current_fees!: number;
     vp_current_deposit!: number;
     vp_summary_digest_sri?: string;
+    vs_operator?: string | null;
+    adjusted?: Date | string | null;
+    vs_operator_authz_enabled?: boolean;
+    vs_operator_authz_spend_limit?: unknown;
+    vs_operator_authz_with_feegrant?: boolean;
+    vs_operator_authz_fee_spend_limit?: unknown;
+    vs_operator_authz_spend_period?: string | null;
     vp_term_requested?: string | null;
     expire_soon?: boolean | null;
     participants?: number;

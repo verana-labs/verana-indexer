@@ -13,10 +13,39 @@ import { overrideSchemaIdInString } from "../../common/utils/schema_id_normalize
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { getModuleParamsAction } from "../../common/utils/params_service";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
+import {
+  mapCredentialSchemaApiFields,
+  normalizeIssuerVerifierOnboardingModeForDbFilter,
+} from "../../common/vpr-v4-mapping";
 
 let heightColumnExistsCache: boolean | null = null;
 let historyMetricColumnsExistCache: boolean | null = null;
 let trHistoryColumnsCache: Set<string> | null = null;
+
+const CS_V4_OPTIONAL_COLUMNS = [
+  "holder_onboarding_mode",
+  "pricing_asset_type",
+  "pricing_asset",
+  "digest_algorithm",
+] as const;
+
+type KnexSchemaLike = {
+  schema: { hasColumn: (table: string, column: string) => Promise<boolean> };
+};
+
+async function stripCsV4OptionalFields(
+  db: KnexSchemaLike,
+  table: "credential_schemas" | "credential_schema_history",
+  row: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = { ...row };
+  for (const col of CS_V4_OPTIONAL_COLUMNS) {
+    if (!(await db.schema.hasColumn(table, col))) {
+      delete out[col];
+    }
+  }
+  return out;
+}
 
 function getDefaultCSStats(): any {
   return {
@@ -283,7 +312,12 @@ export async function insertCredentialSchemaHistoryStatsRow(
     height: blockHeight,
   }, hasHeightColumn);
   if (stats) addStatsToHistoryRow(historyRow, stats);
-  await db("credential_schema_history").insert(historyRow);
+  const historyRowForDb = await stripCsV4OptionalFields(
+    db,
+    "credential_schema_history",
+    historyRow as Record<string, unknown>
+  );
+  await db("credential_schema_history").insert(historyRowForDb);
 }
 
 function ensureSchemaString(js: unknown): string {
@@ -508,6 +542,10 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
     holder_validation_validity_period: row.holder_validation_validity_period || 0,
     issuer_perm_management_mode: row.issuer_perm_management_mode ?? null,
     verifier_perm_management_mode: row.verifier_perm_management_mode ?? null,
+    holder_onboarding_mode: (row as any).holder_onboarding_mode ?? null,
+    pricing_asset_type: (row as any).pricing_asset_type ?? null,
+    pricing_asset: (row as any).pricing_asset ?? null,
+    digest_algorithm: (row as any).digest_algorithm ?? null,
     archived: row.archived ?? null,
     is_active: row.is_active ?? false,
     created: row.created ?? null,
@@ -578,9 +616,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             const rawString = ensureSchemaString(updates.json_schema);
             updates.json_schema = overrideSchemaIdInString(rawString, existingSchema.id);
           }
+          const updatesForDb = await stripCsV4OptionalFields(
+            trx,
+            "credential_schemas",
+            updates as Record<string, unknown>
+          );
           const [updated] = await trx("credential_schemas")
             .where({ id: existingSchema.id })
-            .update(updates)
+            .update(updatesForDb)
             .returning("*");
           
           if (!updated || updated.id !== existingSchema.id) {
@@ -598,8 +641,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           insertPayload.is_active = deriveIsActiveFromArchived(insertPayload.archived);
           const rawSchemaString = insertPayload.json_schema != null ? ensureSchemaString(insertPayload.json_schema) : "";
           insertPayload.json_schema = rawSchemaString || "{}";
+          const insertForDb = await stripCsV4OptionalFields(
+            trx,
+            "credential_schemas",
+            insertPayload as Record<string, unknown>
+          );
           const [inserted] = await trx("credential_schemas")
-            .insert(insertPayload)
+            .insert(insertForDb)
             .returning("*");
           finalRecord = inserted;
           if (rawSchemaString && inserted.id != null) {
@@ -690,8 +738,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           if (stats) {
             addStatsToHistoryRow(historyRow, stats);
           }
-          
-          await trx("credential_schema_history").insert(historyRow);
+
+          const historyRowForDb = await stripCsV4OptionalFields(
+            trx,
+            "credential_schema_history",
+            historyRow as Record<string, unknown>
+          );
+          await trx("credential_schema_history").insert(historyRowForDb);
         }
 
         try {
@@ -755,9 +808,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         updatesWithoutHeight.json_schema = overrideSchemaIdInString(rawString, existing.id);
       }
 
+      const updatesForDb = await stripCsV4OptionalFields(
+        knex,
+        "credential_schemas",
+        updatesWithoutHeight as Record<string, unknown>
+      );
       let [updated] = await knex("credential_schemas")
         .where({ id: existing.id })
-        .update(updatesWithoutHeight)
+        .update(updatesForDb)
         .returning("*");
 
       try {
@@ -839,8 +897,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (stats) {
           addStatsToHistoryRow(historyRow, stats);
         }
-        
-        await knex("credential_schema_history").insert(historyRow);
+
+        const historyRowForDb = await stripCsV4OptionalFields(
+          knex,
+          "credential_schema_history",
+          historyRow as Record<string, unknown>
+        );
+        await knex("credential_schema_history").insert(historyRowForDb);
       }
 
       try {
@@ -930,8 +993,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (stats) {
           addStatsToHistoryRow(historyRow, stats);
         }
-        
-        await knex("credential_schema_history").insert(historyRow);
+
+        const historyRowForDb = await stripCsV4OptionalFields(
+          knex,
+          "credential_schema_history",
+          historyRow as Record<string, unknown>
+        );
+        await knex("credential_schema_history").insert(historyRowForDb);
 
       try {
         await knex("credential_schemas")
@@ -982,6 +1050,22 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         holder_validation_validity_period: Number(schema.holder_validation_validity_period ?? 0),
         issuer_perm_management_mode: String(schema.issuer_perm_management_mode ?? schema.issuerPermManagementMode ?? "MODE_UNSPECIFIED"),
         verifier_perm_management_mode: String(schema.verifier_perm_management_mode ?? schema.verifierPermManagementMode ?? "MODE_UNSPECIFIED"),
+        holder_onboarding_mode:
+          schema.holder_onboarding_mode != null || schema.holderOnboardingMode != null
+            ? String(schema.holder_onboarding_mode ?? schema.holderOnboardingMode ?? "")
+            : null,
+        pricing_asset_type:
+          schema.pricing_asset_type != null || schema.pricingAssetType != null
+            ? String(schema.pricing_asset_type ?? schema.pricingAssetType ?? "")
+            : null,
+        pricing_asset:
+          schema.pricing_asset != null || schema.pricingAsset != null
+            ? String(schema.pricing_asset ?? schema.pricingAsset ?? "")
+            : null,
+        digest_algorithm:
+          schema.digest_algorithm != null || schema.digestAlgorithm != null
+            ? String(schema.digest_algorithm ?? schema.digestAlgorithm ?? "")
+            : null,
         archived: normalizedArchived,
         created: schema.created ?? null,
         modified: schema.modified ?? null,
@@ -990,7 +1074,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (typeof schema.title === "string") payload.title = schema.title;
       if (typeof schema.description === "string") payload.description = schema.description;
       const existing = await knex("credential_schemas").where({ id }).first();
-      const updates: Record<string, unknown> = { ...payload };
+      const payloadForDb = await stripCsV4OptionalFields(
+        knex,
+        "credential_schemas",
+        payload as Record<string, unknown>
+      );
+      const updates: Record<string, unknown> = { ...payloadForDb };
       delete (updates as Record<string, unknown>).id;
       if (updates.json_schema != null) {
         (updates as Record<string, unknown>).json_schema = overrideSchemaIdInString(
@@ -1023,7 +1112,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
         }
       } else {
-        const insertPayload = { ...payload };
+        const insertPayload = { ...payloadForDb };
         (insertPayload as Record<string, unknown>).json_schema = (insertPayload as Record<string, unknown>).json_schema ?? "{}";
         const [inserted] = await knex("credential_schemas")
           .insert(insertPayload)
@@ -1107,8 +1196,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (stats) {
           addStatsToHistoryRow(historyRow, stats);
         }
-        
-        await knex("credential_schema_history").insert(historyRow);
+
+        const historyRowForDb = await stripCsV4OptionalFields(
+          knex,
+          "credential_schema_history",
+          historyRow as Record<string, unknown>
+        );
+        await knex("credential_schema_history").insert(historyRowForDb);
         
         try {
           await knex("credential_schemas")
@@ -1186,6 +1280,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           holder_validation_validity_period: historyRecord.holder_validation_validity_period,
           issuer_perm_management_mode: historyRecord.issuer_perm_management_mode,
           verifier_perm_management_mode: historyRecord.verifier_perm_management_mode,
+          holder_onboarding_mode: (historyRecord as any).holder_onboarding_mode ?? null,
+          pricing_asset_type: (historyRecord as any).pricing_asset_type ?? null,
+          pricing_asset: (historyRecord as any).pricing_asset ?? null,
+          digest_algorithm: (historyRecord as any).digest_algorithm ?? null,
           archived: historyRecord.archived,
           created: historyRecord.created,
           modified: historyRecord.modified,
@@ -1216,7 +1314,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         return ApiResponder.success(ctx, {
-          schema: {
+          schema: mapCredentialSchemaApiFields({
             ...historicalSchema,
             participants: stats.participants,
             participants_ecosystem: stats.participants_ecosystem,
@@ -1234,7 +1332,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             network_slash_events: stats.network_slash_events,
             network_slashed_amount: stats.network_slashed_amount,
             network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-          },
+          } as Record<string, unknown>),
         }, 200);
       }
 
@@ -1265,7 +1363,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       };
 
       return ApiResponder.success(ctx, {
-        schema: {
+        schema: mapCredentialSchemaApiFields({
           ...schemaRecord,
           json_schema: storedSchemaString,
           title: schemaRecord.title ?? undefined,
@@ -1286,7 +1384,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           network_slash_events: stats.network_slash_events,
           network_slashed_amount: stats.network_slashed_amount,
           network_slashed_amount_repaid: stats.network_slashed_amount_repaid,
-        },
+        } as Record<string, unknown>),
       }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema get:", err);
@@ -1307,6 +1405,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       },
       issuer_perm_management_mode: { type: "string", optional: true },
       verifier_perm_management_mode: { type: "string", optional: true },
+      issuer_onboarding_mode: { type: "string", optional: true },
+      verifier_onboarding_mode: { type: "string", optional: true },
+      holder_onboarding_mode: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
       sort: { type: "string", optional: true, default: "-modified" },
       min_participants: { type: "number", optional: true },
@@ -1342,6 +1443,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     only_active?: any;
     issuer_perm_management_mode?: string;
     verifier_perm_management_mode?: string;
+    issuer_onboarding_mode?: string;
+    verifier_onboarding_mode?: string;
+    holder_onboarding_mode?: string;
     response_max_size?: number;
     sort?: string;
     min_participants?: number;
@@ -1403,7 +1507,41 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         max_ecosystem_slash_events: maxEcosystemSlashEvents,
         min_network_slash_events: minNetworkSlashEvents,
         max_network_slash_events: maxNetworkSlashEvents,
+        issuer_onboarding_mode: issuerOnboardingModeParam,
+        verifier_onboarding_mode: verifierOnboardingModeParam,
+        holder_onboarding_mode: holderOnboardingModeParam,
       } = ctx.params;
+
+      let effectiveIssuerPerm: string | undefined = issuerPerm;
+      if (issuerOnboardingModeParam !== undefined && issuerOnboardingModeParam !== "") {
+        const normalized = normalizeIssuerVerifierOnboardingModeForDbFilter(issuerOnboardingModeParam);
+        if (issuerPerm !== undefined && issuerPerm !== normalized) {
+          return ApiResponder.error(
+            ctx,
+            "issuer_perm_management_mode and issuer_onboarding_mode conflict after normalization",
+            400
+          );
+        }
+        effectiveIssuerPerm = normalized;
+      }
+
+      let effectiveVerifierPerm: string | undefined = verifierPerm;
+      if (verifierOnboardingModeParam !== undefined && verifierOnboardingModeParam !== "") {
+        const normalized = normalizeIssuerVerifierOnboardingModeForDbFilter(verifierOnboardingModeParam);
+        if (verifierPerm !== undefined && verifierPerm !== normalized) {
+          return ApiResponder.error(
+            ctx,
+            "verifier_perm_management_mode and verifier_onboarding_mode conflict after normalization",
+            400
+          );
+        }
+        effectiveVerifierPerm = normalized;
+      }
+
+      let effectiveHolderOnboarding: string | undefined;
+      if (holderOnboardingModeParam !== undefined && holderOnboardingModeParam !== "") {
+        effectiveHolderOnboarding = String(holderOnboardingModeParam).trim();
+      }
 
       const participantValidation = validateParticipantParam(participant, "participant");
       if (!participantValidation.valid) {
@@ -1514,8 +1652,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               if (trId) qb.where("csh.tr_id", trId);
               if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
               if (onlyActiveBool === true) qb.whereNull("csh.archived");
-              if (issuerPerm !== undefined) qb.where("csh.issuer_perm_management_mode", issuerPerm);
-              if (verifierPerm !== undefined) qb.where("csh.verifier_perm_management_mode", verifierPerm);
+              if (effectiveIssuerPerm !== undefined) qb.where("csh.issuer_perm_management_mode", effectiveIssuerPerm);
+              if (effectiveVerifierPerm !== undefined) qb.where("csh.verifier_perm_management_mode", effectiveVerifierPerm);
+              if (effectiveHolderOnboarding !== undefined) qb.where("csh.holder_onboarding_mode", effectiveHolderOnboarding);
               applyMetricRangeFilters(qb);
             })
             .orderBy("csh.credential_schema_id", "asc")
@@ -1541,8 +1680,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               if (trId) qb.where("csh.tr_id", trId);
               if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
               if (onlyActiveBool === true) qb.whereNull("csh.archived");
-              if (issuerPerm !== undefined) qb.where("csh.issuer_perm_management_mode", issuerPerm);
-              if (verifierPerm !== undefined) qb.where("csh.verifier_perm_management_mode", verifierPerm);
+              if (effectiveIssuerPerm !== undefined) qb.where("csh.issuer_perm_management_mode", effectiveIssuerPerm);
+              if (effectiveVerifierPerm !== undefined) qb.where("csh.verifier_perm_management_mode", effectiveVerifierPerm);
+              if (effectiveHolderOnboarding !== undefined) qb.where("csh.holder_onboarding_mode", effectiveHolderOnboarding);
               applyMetricRangeFilters(qb);
             })
             .as("ranked");
@@ -1568,6 +1708,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             holder_validation_validity_period: historyRecord.holder_validation_validity_period,
               issuer_perm_management_mode: historyRecord.issuer_perm_management_mode,
               verifier_perm_management_mode: historyRecord.verifier_perm_management_mode,
+              holder_onboarding_mode: (historyRecord as any).holder_onboarding_mode ?? null,
+              pricing_asset_type: (historyRecord as any).pricing_asset_type ?? null,
+              pricing_asset: (historyRecord as any).pricing_asset ?? null,
+              digest_algorithm: (historyRecord as any).digest_algorithm ?? null,
               archived: historyRecord.archived,
               created: historyRecord.created,
               modified: historyRecord.modified,
@@ -1811,7 +1955,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const typedFilteredItems = filteredWithStats as FilteredItemWithStats[];
         const sortedItems = sortCredentialSchemaRows(typedFilteredItems, effectiveSort, limit);
 
-        return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
+        return ApiResponder.success(
+          ctx,
+          {
+            schemas: sortedItems.map((s) => mapCredentialSchemaApiFields(s as Record<string, unknown>)),
+          },
+          200
+        );
       }
 
       const query = knex("credential_schemas");
@@ -1844,12 +1994,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         query.whereNull("archived");
       }
 
-      if (issuerPerm !== undefined) {
-        query.where("issuer_perm_management_mode", issuerPerm);
+      if (effectiveIssuerPerm !== undefined) {
+        query.where("issuer_perm_management_mode", effectiveIssuerPerm);
       }
 
-      if (verifierPerm !== undefined) {
-        query.where("verifier_perm_management_mode", verifierPerm);
+      if (effectiveVerifierPerm !== undefined) {
+        query.where("verifier_perm_management_mode", effectiveVerifierPerm);
+      }
+
+      if (effectiveHolderOnboarding !== undefined) {
+        query.where("holder_onboarding_mode", effectiveHolderOnboarding);
       }
       const { fullyApplied: liveSortFullyApplied } = applyCredentialSchemaSqlSort(query, sort);
       const liveFetchLimit = liveSortFullyApplied ? limit : Math.max(limit * 2, 256);
@@ -1890,7 +2044,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         ? (filteredItems as SchemaWithStats[]).slice(0, limit)
         : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], effectiveSort, limit);
 
-      return ApiResponder.success(ctx, { schemas: sortedItems }, 200);
+      return ApiResponder.success(ctx, {
+        schemas: sortedItems.map((s) => mapCredentialSchemaApiFields(s as Record<string, unknown>)),
+      }, 200);
     } catch (err: any) {
       this.logger.error("Error in CredentialSchema list:", err);
       return ApiResponder.error(ctx, "Internal Server Error", 500);

@@ -13,6 +13,7 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSo
 import { getModuleParams } from "../../common/utils/params_service";
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
+import { mapPermissionApiFields } from "../../common/vpr-v4-mapping";
 import { mapPermissionType, normalizePermissionEmptyStringsToNull } from "../../common/utils/utils";
 import {
   calculatePermState,
@@ -917,11 +918,13 @@ export default class PermAPIService extends BullableService {
       network_slash_events: perm.network_slash_events != null ? Number(perm.network_slash_events) : 0,
       network_slashed_amount: perm.network_slashed_amount != null ? Number(perm.network_slashed_amount) : 0,
       network_slashed_amount_repaid: perm.network_slashed_amount_repaid != null ? Number(perm.network_slashed_amount_repaid) : 0,
+      issuance_fee_discount: perm.issuance_fee_discount != null ? Number(perm.issuance_fee_discount) : 0,
+      verification_fee_discount: perm.verification_fee_discount != null ? Number(perm.verification_fee_discount) : 0,
     };
 
     normalized = normalizePermissionEmptyStringsToNull(normalized);
 
-    return normalized;
+    return mapPermissionApiFields(normalized as Record<string, unknown>) as any;
   }
 
   private async getPermissionsByIdsMap(permissionIds: number[], blockHeight?: number): Promise<Map<number, any>> {
@@ -2001,6 +2004,7 @@ export default class PermAPIService extends BullableService {
           "validation_fees", "issuance_fees", "verification_fees", "deposit", "slashed_deposit",
           "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit", "vp_summary_digest_sri",
           "vp_exp", "vp_validator_deposit", "vp_term_requested", "created", "modified",
+          "issuance_fee_discount", "verification_fee_discount",
         ];
         if (hasExpireSoonColumn) selectColumns.push("expire_soon");
         if (hasIssuedColumn) selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
@@ -2065,6 +2069,10 @@ export default class PermAPIService extends BullableService {
           vp_term_requested: historyRecord.vp_term_requested,
           created: historyRecord.created,
           modified: historyRecord.modified,
+          issuance_fee_discount:
+            historyRecord.issuance_fee_discount != null ? Number(historyRecord.issuance_fee_discount) : 0,
+          verification_fee_discount:
+            historyRecord.verification_fee_discount != null ? Number(historyRecord.verification_fee_discount) : 0,
         };
         
         if (hasIssuedColumn) {
@@ -2098,7 +2106,9 @@ export default class PermAPIService extends BullableService {
           { lightweightDerivedStats: historyHasAllDerivedColumns }
         );
 
-        return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
+        return ApiResponder.success(ctx, {
+          permission: mapPermissionApiFields(enrichedPermission as Record<string, unknown>),
+        }, 200);
       }
 
       const permission = await knex("permissions").where("id", Number(id)).first();

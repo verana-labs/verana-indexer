@@ -10,6 +10,7 @@ import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
+import { mapTrustRegistryApiFields } from "../../common/vpr-v4-mapping";
 
 function ledgerHasKey(obj: unknown, key: string): boolean {
     return typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
@@ -117,6 +118,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     did: ledgerHasKey(rawObj, "did") ? ((raw as any).did ?? null) : (existingTr?.did ?? null),
                     controller: ledgerHasKey(rawObj, "controller")
                         ? ((raw as any).controller ?? null)
+                        : ledgerHasKey(rawObj, "corporation")
+                        ? ((raw as any).corporation ?? null)
                         : (existingTr?.controller ?? null),
                     created: ledgerHasKey(rawObj, "created")
                         ? ((raw as any).created ?? null)
@@ -1177,7 +1180,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         network_slashed_amount: Number(snapshot.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
                     };
-                    return ApiResponder.success(ctx, { trust_registry: trustRegistry }, 200);
+                    return ApiResponder.success(ctx, { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) }, 200);
                 }
                 const tr = await knex("trust_registry").where({ id: trId }).first();
                 if (!tr) {
@@ -1225,7 +1228,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
                 const t = tr as any;
                 return ApiResponder.success(ctx, {
-                    trust_registry: {
+                    trust_registry: mapTrustRegistryApiFields({
                         id: tr.id,
                         did: tr.did,
                         controller: tr.controller,
@@ -1255,7 +1258,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         network_slash_events: Number(t.network_slash_events ?? 0),
                         network_slashed_amount: Number(t.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
-                    },
+                    } as Record<string, unknown>),
                 }, 200);
             }
 
@@ -1286,7 +1289,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         }
                         const s = snapshot as any;
                         return ApiResponder.success(ctx, {
-                            trust_registry: {
+                            trust_registry: mapTrustRegistryApiFields({
                                 id: s.tr_id,
                                 did: s.did,
                                 controller: s.controller,
@@ -1316,7 +1319,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                                 network_slash_events: Number(s.network_slash_events ?? 0),
                                 network_slashed_amount: Number(s.network_slashed_amount ?? 0),
                                 network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
-                            },
+                            } as Record<string, unknown>),
                         }, 200);
                     }
                 }
@@ -1367,7 +1370,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
                 };
 
-                return ApiResponder.success(ctx, { trust_registry: trustRegistry }, 200);
+                return ApiResponder.success(ctx, { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) }, 200);
             }
 
             const registry = await TrustRegistry.query()
@@ -1405,7 +1408,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
             const p = plain as any;
             return ApiResponder.success(ctx, {
-                trust_registry: {
+                trust_registry: mapTrustRegistryApiFields({
                     ...plain,
                     id: plain.id,
                     deposit: plain.deposit ?? 0,
@@ -1428,7 +1431,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     network_slash_events: Number(p.network_slash_events ?? 0),
                     network_slashed_amount: Number(p.network_slashed_amount ?? 0),
                     network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
-                },
+                } as Record<string, unknown>),
             }, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
@@ -1693,7 +1696,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     });
                     const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters);
                     const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
-                    return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
+                    return ApiResponder.success(ctx, {
+                        trust_registries: sortedRegistries.map((r) =>
+                            mapTrustRegistryApiFields(r as Record<string, unknown>)
+                        ),
+                    }, 200);
                 }
 
                 let participantTrIds: number[] | undefined;
@@ -1800,7 +1807,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                 const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
 
-                return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
+                return ApiResponder.success(ctx, {
+                    trust_registries: sortedRegistries.map((r) =>
+                        mapTrustRegistryApiFields(r as Record<string, unknown>)
+                    ),
+                }, 200);
             }
 
             const useHeightSyncListLive =
@@ -1924,7 +1935,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 });
                 const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters);
                 const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize);
-                return ApiResponder.success(ctx, { trust_registries: sortedBatch }, 200);
+                return ApiResponder.success(ctx, {
+                    trust_registries: sortedBatch.map((r) =>
+                        mapTrustRegistryApiFields(r as Record<string, unknown>)
+                    ),
+                }, 200);
             }
 
             let query = TrustRegistry.query();
@@ -2039,7 +2054,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 ? registriesWithStats.slice(0, responseMaxSize)
                 : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
-            return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
+            return ApiResponder.success(ctx, {
+                trust_registries: sortedRegistries.map((r) =>
+                    mapTrustRegistryApiFields(r as Record<string, unknown>)
+                ),
+            }, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }

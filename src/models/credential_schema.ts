@@ -14,6 +14,10 @@ export default class CredentialSchema extends BaseModel {
   issuer_perm_management_mode!: string;
   deposit!: number;
   verifier_perm_management_mode!: string;
+  holder_onboarding_mode?: string | null;
+  pricing_asset_type?: string | null;
+  pricing_asset?: string | null;
+  digest_algorithm?: string | null;
   archived!: Date | null;
   created!: Date;
   modified!: Date;

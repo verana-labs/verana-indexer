@@ -80,6 +80,13 @@ const PERMISSION_HISTORY_FIELDS = [
   "issuance_fee_discount",
   "verification_fee_discount",
   "expire_soon",
+  "vs_operator",
+  "adjusted",
+  "vs_operator_authz_enabled",
+  "vs_operator_authz_spend_limit",
+  "vs_operator_authz_with_feegrant",
+  "vs_operator_authz_fee_spend_limit",
+  "vs_operator_authz_spend_period",
 ];
 
 const PARTICIPANT_ROLE_HISTORY_FIELDS = [
@@ -99,6 +106,16 @@ const PERMISSION_SESSION_HISTORY_FIELDS = [
   "created",
   "modified",
 ];
+
+const PERMISSION_HISTORY_V4_FIELDS = [
+  "vs_operator",
+  "adjusted",
+  "vs_operator_authz_enabled",
+  "vs_operator_authz_spend_limit",
+  "vs_operator_authz_with_feegrant",
+  "vs_operator_authz_fee_spend_limit",
+  "vs_operator_authz_spend_period",
+] as const;
 
 function normalizeValue(value: any) {
   if (value === undefined) return null;
@@ -200,6 +217,18 @@ function toIsoOrNull(value: unknown): string | null {
   return d.toISOString();
 }
 
+function jsonbColumnValue(value: unknown): string | object | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value as object;
+}
+
 const permissionHistoryColumnExistsCache: Record<string, boolean> = {};
 
 async function checkPermissionHistoryColumnExists(columnName: string): Promise<boolean> {
@@ -232,6 +261,7 @@ async function pickPermissionSnapshot(record: any) {
   const hasExpireSoonColumn = await checkPermissionHistoryColumnExists("expire_soon");
    const hasIssuanceDiscountColumn = await checkPermissionHistoryColumnExists("issuance_fee_discount");
    const hasVerificationDiscountColumn = await checkPermissionHistoryColumnExists("verification_fee_discount");
+  const hasV4PermColumns = await checkPermissionHistoryColumnExists("vs_operator");
 
   for (const field of PERMISSION_HISTORY_FIELDS) {
     if (field === "expire_soon" && !hasExpireSoonColumn) continue;
@@ -261,6 +291,9 @@ async function pickPermissionSnapshot(record: any) {
     if (field === "verification_fee_discount" && !hasVerificationDiscountColumn) {
       continue;
     }
+    if (!hasV4PermColumns && (PERMISSION_HISTORY_V4_FIELDS as readonly string[]).includes(field)) {
+      continue;
+    }
     if (field === "schema_id") {
       const schemaIdValue = record[field];
       snapshot[field] = schemaIdValue !== null && schemaIdValue !== undefined ? Number(schemaIdValue) : null;
@@ -280,6 +313,12 @@ async function pickPermissionSnapshot(record: any) {
     } else if (field === "issuance_fee_discount" || field === "verification_fee_discount") {
       const v = record[field];
       snapshot[field] = v !== null && v !== undefined ? Number(v) : 0;
+    } else if (field === "vs_operator_authz_spend_limit" || field === "vs_operator_authz_fee_spend_limit") {
+      snapshot[field] = jsonbColumnValue(record[field]);
+    } else if (field === "vs_operator_authz_enabled" || field === "vs_operator_authz_with_feegrant") {
+      snapshot[field] = Boolean(record[field]);
+    } else if (field === "adjusted") {
+      snapshot[field] = toIsoOrNull(record[field]);
     } else {
       snapshot[field] = normalizeValue(record[field]);
     }
@@ -316,6 +355,7 @@ async function recordPermissionHistory(
   const hasExpireSoonColumn = await checkPermissionHistoryColumnExists("expire_soon");
   const hasIssuanceDiscountColumn = await checkPermissionHistoryColumnExists("issuance_fee_discount");
   const hasVerificationDiscountColumn = await checkPermissionHistoryColumnExists("verification_fee_discount");
+  const hasV4PermColumns = await checkPermissionHistoryColumnExists("vs_operator");
 
   const fieldsToUse = PERMISSION_HISTORY_FIELDS.filter(field => {
     if (field === "expire_soon" && !hasExpireSoonColumn) return false;
@@ -331,6 +371,7 @@ async function recordPermissionHistory(
     }
     if (field === "issuance_fee_discount" && !hasIssuanceDiscountColumn) return false;
     if (field === "verification_fee_discount" && !hasVerificationDiscountColumn) return false;
+    if (!hasV4PermColumns && (PERMISSION_HISTORY_V4_FIELDS as readonly string[]).includes(field)) return false;
     return true;
   });
 
@@ -672,6 +713,30 @@ export default class PermIngestService extends Service {
       vp_current_deposit: Number(ledgerPermission.vp_current_deposit ?? ledgerPermission.vpCurrentDeposit ?? 0),
       vp_summary_digest_sri: ledgerPermission.vp_summary_digest_sri ?? ledgerPermission.vpSummaryDigestSri ?? null,
       vp_term_requested: toIsoOrNull(ledgerPermission.vp_term_requested ?? ledgerPermission.vpTermRequested),
+      issuance_fee_discount: Number(
+        ledgerPermission.issuance_fee_discount ?? ledgerPermission.issuanceFeeDiscount ?? 0
+      ),
+      verification_fee_discount: Number(
+        ledgerPermission.verification_fee_discount ?? ledgerPermission.verificationFeeDiscount ?? 0
+      ),
+      vs_operator: ledgerPermission.vs_operator ?? ledgerPermission.vsOperator ?? null,
+      adjusted: toIsoOrNull(ledgerPermission.adjusted ?? ledgerPermission.adjustedAt),
+      vs_operator_authz_enabled: Boolean(
+        ledgerPermission.vs_operator_authz_enabled ?? ledgerPermission.vsOperatorAuthzEnabled ?? false
+      ),
+      vs_operator_authz_spend_limit: jsonbColumnValue(
+        ledgerPermission.vs_operator_authz_spend_limit ?? ledgerPermission.vsOperatorAuthzSpendLimit
+      ),
+      vs_operator_authz_with_feegrant: Boolean(
+        ledgerPermission.vs_operator_authz_with_feegrant ?? ledgerPermission.vsOperatorAuthzWithFeegrant ?? false
+      ),
+      vs_operator_authz_fee_spend_limit: jsonbColumnValue(
+        ledgerPermission.vs_operator_authz_fee_spend_limit ?? ledgerPermission.vsOperatorAuthzFeeSpendLimit
+      ),
+      vs_operator_authz_spend_period:
+        ledgerPermission.vs_operator_authz_spend_period ??
+        ledgerPermission.vsOperatorAuthzSpendPeriod ??
+        null,
     };
   }
 

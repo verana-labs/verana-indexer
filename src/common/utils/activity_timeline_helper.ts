@@ -365,7 +365,22 @@ export async function buildActivityTimeline(
     
     if (!changes || Object.keys(changes).length === 0) {
       const computedChanges: Record<string, any> = {};
-      const excludeFields = ["id", "created_at", "event_type", "height", "changes", "msg_type", "sender", "timestamp", "activity_entity_type", "activity_entity_id"];
+      const baseExclude = [
+        "id",
+        "created_at",
+        "event_type",
+        "height",
+        "changes",
+        "msg_type",
+        "sender",
+        "timestamp",
+        "activity_entity_type",
+        "activity_entity_id",
+      ];
+      const excludeFields =
+        entityType === "CredentialSchema" || record.activity_entity_type === "CredentialSchema"
+          ? [...baseExclude, "is_active"]
+          : baseExclude;
       for (const [key, value] of Object.entries(record)) {
         if (!excludeFields.includes(key)) {
           if (key === "json_schema" && (entityType === "CredentialSchema" || record.activity_entity_type === "CredentialSchema")) {
@@ -468,6 +483,11 @@ export async function buildActivityTimeline(
           }
         }
       }
+    }
+
+    if (activityEntityType === "CredentialSchema" && changes && typeof changes === "object") {
+      delete (changes as Record<string, unknown>).is_active;
+      changes = filterChangedValues(changes);
     }
 
     if (activityEntityType === "TrustRegistry") {

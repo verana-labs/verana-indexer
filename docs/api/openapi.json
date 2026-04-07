@@ -3927,6 +3927,10 @@
           "controller": {
             "type": "string"
           },
+          "corporation": {
+            "type": "string",
+            "description": "VPR v4 alias for controller (group)."
+          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -4253,6 +4257,34 @@
               "GRANTOR_VALIDATION"
             ]
           },
+          "issuer_onboarding_mode": {
+            "type": "string",
+            "description": "VPR v4 name for issuer_perm_management_mode (e.g. GRANTOR_VALIDATION_PROCESS)."
+          },
+          "verifier_onboarding_mode": {
+            "type": "string",
+            "description": "VPR v4 name for verifier_perm_management_mode (e.g. ECOSYSTEM_VALIDATION_PROCESS)."
+          },
+          "holder_onboarding_mode": {
+            "type": "string",
+            "nullable": true,
+            "description": "VPR v4 HolderOnboardingMode (e.g. ISSUER_VALIDATION_PROCESS, PERMISSIONLESS)."
+          },
+          "pricing_asset_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "VPR v4 PricingAssetType (TU, COIN, FIAT)."
+          },
+          "pricing_asset": {
+            "type": "string",
+            "nullable": true,
+            "description": "VPR v4 pricing asset identifier (e.g. tu, uvna, ISO-4217 for FIAT)."
+          },
+          "digest_algorithm": {
+            "type": "string",
+            "nullable": true,
+            "description": "VPR v4 digest algorithm for credentials under this schema (per Verifiable Trust spec)."
+          },
           "archived": {
             "type": "string",
             "format": "date-time",
@@ -4481,6 +4513,47 @@
           },
           "grantee": {
             "type": "string"
+          },
+          "corporation": {
+            "type": "string",
+            "description": "VPR v4 alias for grantee (group account)."
+          },
+          "vs_operator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verifiable service operator account (VPR v4)."
+          },
+          "adjusted": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Last permission adjustment time (VPR v4)."
+          },
+          "vs_operator_authz_enabled": {
+            "type": "boolean"
+          },
+          "vs_operator_authz_spend_limit": {
+            "nullable": true,
+            "description": "DenomAmount[] as JSON (VPR v4)."
+          },
+          "vs_operator_authz_with_feegrant": {
+            "type": "boolean"
+          },
+          "vs_operator_authz_fee_spend_limit": {
+            "nullable": true,
+            "description": "DenomAmount[] as JSON (VPR v4)."
+          },
+          "vs_operator_authz_spend_period": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuance_fee_discount": {
+            "type": "number",
+            "description": "0–1 discount factor (VPR v4)."
+          },
+          "verification_fee_discount": {
+            "type": "number",
+            "description": "0–1 discount factor (VPR v4)."
           },
           "created_by": {
             "type": "string"
@@ -4868,6 +4941,14 @@
           "account": {
             "type": "string",
             "description": "Account address"
+          },
+          "corporation": {
+            "type": "string",
+            "description": "VPR v4 alias for account (group key)."
+          },
+          "deposit": {
+            "type": "integer",
+            "description": "VPR v4 alias for amount (on-chain deposit in native denom)."
           },
           "share": {
             "type": "integer",
