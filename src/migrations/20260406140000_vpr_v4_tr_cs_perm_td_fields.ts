@@ -10,6 +10,7 @@ const CS_V4 = [
 const PERM_V4 = [
   "vs_operator",
   "adjusted",
+  "adjusted_by",
   "vs_operator_authz_enabled",
   "vs_operator_authz_spend_limit",
   "vs_operator_authz_with_feegrant",
@@ -23,13 +24,13 @@ export async function up(knex: Knex): Promise<void> {
       if (!(await knex.schema.hasColumn("credential_schemas", col))) {
         await knex.schema.alterTable("credential_schemas", (table) => {
           if (col === "holder_onboarding_mode") {
-            table.string("holder_onboarding_mode", 64).nullable();
+            table.text("holder_onboarding_mode").nullable();
           } else if (col === "pricing_asset_type") {
-            table.string("pricing_asset_type", 32).nullable();
+            table.text("pricing_asset_type").nullable();
           } else if (col === "pricing_asset") {
-            table.string("pricing_asset", 128).nullable();
+            table.text("pricing_asset").nullable();
           } else {
-            table.string("digest_algorithm", 64).nullable();
+            table.text("digest_algorithm").nullable();
           }
         });
       }
@@ -41,13 +42,13 @@ export async function up(knex: Knex): Promise<void> {
       if (!(await knex.schema.hasColumn("credential_schema_history", col))) {
         await knex.schema.alterTable("credential_schema_history", (table) => {
           if (col === "holder_onboarding_mode") {
-            table.string("holder_onboarding_mode", 64).nullable();
+            table.text("holder_onboarding_mode").nullable();
           } else if (col === "pricing_asset_type") {
-            table.string("pricing_asset_type", 32).nullable();
+            table.text("pricing_asset_type").nullable();
           } else if (col === "pricing_asset") {
-            table.string("pricing_asset", 128).nullable();
+            table.text("pricing_asset").nullable();
           } else {
-            table.string("digest_algorithm", 64).nullable();
+            table.text("digest_algorithm").nullable();
           }
         });
       }
@@ -59,9 +60,11 @@ export async function up(knex: Knex): Promise<void> {
       if (!(await knex.schema.hasColumn("permissions", col))) {
         await knex.schema.alterTable("permissions", (table) => {
           if (col === "vs_operator") {
-            table.string("vs_operator", 255).nullable();
+            table.text("vs_operator").nullable();
           } else if (col === "adjusted") {
             table.timestamp("adjusted").nullable();
+          } else if (col === "adjusted_by") {
+            table.text("adjusted_by").nullable();
           } else if (col === "vs_operator_authz_enabled") {
             table.boolean("vs_operator_authz_enabled").notNullable().defaultTo(false);
           } else if (col === "vs_operator_authz_spend_limit") {
@@ -71,7 +74,7 @@ export async function up(knex: Knex): Promise<void> {
           } else if (col === "vs_operator_authz_fee_spend_limit") {
             table.jsonb("vs_operator_authz_fee_spend_limit").nullable();
           } else {
-            table.string("vs_operator_authz_spend_period", 64).nullable();
+            table.text("vs_operator_authz_spend_period").nullable();
           }
         });
       }
@@ -83,9 +86,11 @@ export async function up(knex: Knex): Promise<void> {
       if (!(await knex.schema.hasColumn("permission_history", col))) {
         await knex.schema.alterTable("permission_history", (table) => {
           if (col === "vs_operator") {
-            table.string("vs_operator", 255).nullable();
+            table.text("vs_operator").nullable();
           } else if (col === "adjusted") {
             table.timestamp("adjusted").nullable();
+          } else if (col === "adjusted_by") {
+            table.text("adjusted_by").nullable();
           } else if (col === "vs_operator_authz_enabled") {
             table.boolean("vs_operator_authz_enabled").notNullable().defaultTo(false);
           } else if (col === "vs_operator_authz_spend_limit") {
@@ -95,7 +100,7 @@ export async function up(knex: Knex): Promise<void> {
           } else if (col === "vs_operator_authz_fee_spend_limit") {
             table.jsonb("vs_operator_authz_fee_spend_limit").nullable();
           } else {
-            table.string("vs_operator_authz_spend_period", 64).nullable();
+            table.text("vs_operator_authz_spend_period").nullable();
           }
         });
       }

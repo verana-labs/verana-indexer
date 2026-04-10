@@ -1,4 +1,5 @@
 import { Service, ServiceBroker } from "moleculer";
+import type { Knex } from "knex";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import knex from "../../common/utils/db_connection";
@@ -18,7 +19,7 @@ import {
   MsgCreateOrUpdatePermissionSession,
   MsgCreatePermission,
   MsgCreateRootPermission,
-  MsgExtendPermission,
+  MsgAdjustPermission,
   MsgRenewPermissionVP,
   MsgRepayPermissionSlashedTrustDeposit,
   MsgRevokePermission,
@@ -82,6 +83,7 @@ const PERMISSION_HISTORY_FIELDS = [
   "expire_soon",
   "vs_operator",
   "adjusted",
+  "adjusted_by",
   "vs_operator_authz_enabled",
   "vs_operator_authz_spend_limit",
   "vs_operator_authz_with_feegrant",
@@ -110,6 +112,7 @@ const PERMISSION_SESSION_HISTORY_FIELDS = [
 const PERMISSION_HISTORY_V4_FIELDS = [
   "vs_operator",
   "adjusted",
+  "adjusted_by",
   "vs_operator_authz_enabled",
   "vs_operator_authz_spend_limit",
   "vs_operator_authz_with_feegrant",
@@ -512,9 +515,9 @@ export default class PermIngestService extends Service {
           params: { data: "object" },
           handler: async (ctx) => this.handleCreatePermission(ctx.params.data),
         },
-        handleMsgExtendPermission: {
+        handleMsgAdjustPermission: {
           params: { data: "object" },
-          handler: async (ctx) => this.handleExtendPermission(ctx.params.data),
+          handler: async (ctx) => this.handleAdjustPermission(ctx.params.data),
         },
         handleMsgRevokePermission: {
           params: { data: "object" },
@@ -648,6 +651,49 @@ export default class PermIngestService extends Service {
     });
   }
 
+  private async handleAdjustPermission(msg: MsgAdjustPermission & { height?: number }) {
+    const height = Number((msg as any)?.height) || 0;
+    const permId = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId ?? 0) || 0;
+    if (!Number.isInteger(permId) || permId <= 0) {
+      this.logger.warn(`[handleAdjustPermission] Invalid permission id: ${String((msg as any)?.id)}`);
+      return;
+    }
+
+    const ts = (msg as any)?.timestamp ? formatTimestamp((msg as any).timestamp) : null;
+    const effectiveUntilRaw = (msg as any)?.effective_until ?? (msg as any)?.effectiveUntil ?? null;
+    const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
+
+    try {
+      const previous = await knex("permissions").where({ id: permId }).first();
+      if (!previous) {
+        this.logger.warn(`[handleAdjustPermission] Permission id=${permId} not found; skipping`);
+        return;
+      }
+
+      await knex("permissions")
+        .where({ id: permId })
+        .update({
+          effective_until: effectiveUntil ?? previous.effective_until ?? null,
+          adjusted: ts,
+          modified: ts ?? previous.modified ?? null,
+        });
+
+      const updated = await knex("permissions").where({ id: permId }).first();
+      try {
+        await recordPermissionHistory(knex, updated ?? { id: permId }, "ADJUST_PERMISSION", height, previous);
+      } catch (historyErr: any) {
+        this.logger.warn(
+          `[handleAdjustPermission] Failed to record permission history for id=${permId}: ${historyErr?.message || historyErr}`
+        );
+      }
+
+      await this.refreshSchemaAndTrustRegistryStats(previous.schema_id ?? updated?.schema_id, height);
+    } catch (err: any) {
+      this.logger.error("CRITICAL: Error in handleAdjustPermission:", err);
+      throw err;
+    }
+  }
+
   private async refreshTrustRegistryStatsBySchemaId(
     schemaId: number | null | undefined,
     blockHeightRaw?: number
@@ -683,8 +729,18 @@ export default class PermIngestService extends Service {
       schema_id: schemaId,
       type: normalizePermissionType(ledgerPermission.type),
       did: ledgerPermission.did ?? null,
-      grantee: ledgerPermission.grantee ?? null,
-      created_by: ledgerPermission.created_by ?? ledgerPermission.createdBy ?? ledgerPermission.grantee ?? null,
+      grantee:
+        ledgerPermission.grantee ??
+        ledgerPermission.authority ??
+        ledgerPermission.created_by ??
+        ledgerPermission.createdBy ??
+        "",
+      created_by:
+        ledgerPermission.created_by ??
+        ledgerPermission.createdBy ??
+        ledgerPermission.grantee ??
+        ledgerPermission.authority ??
+        null,
       created: toIsoOrNull(ledgerPermission.created) ?? nowIso,
       modified: toIsoOrNull(ledgerPermission.modified) ?? nowIso,
       extended: toIsoOrNull(ledgerPermission.extended),
@@ -721,6 +777,7 @@ export default class PermIngestService extends Service {
       ),
       vs_operator: ledgerPermission.vs_operator ?? ledgerPermission.vsOperator ?? null,
       adjusted: toIsoOrNull(ledgerPermission.adjusted ?? ledgerPermission.adjustedAt),
+      adjusted_by: ledgerPermission.adjusted_by ?? ledgerPermission.adjustedBy ?? null,
       vs_operator_authz_enabled: Boolean(
         ledgerPermission.vs_operator_authz_enabled ?? ledgerPermission.vsOperatorAuthzEnabled ?? false
       ),
@@ -738,6 +795,38 @@ export default class PermIngestService extends Service {
         ledgerPermission.vsOperatorAuthzSpendPeriod ??
         null,
     };
+  }
+
+  private didEnsurePermV4Columns = false;
+  private async ensurePermV4Columns(db: Knex): Promise<void> {
+    if (this.didEnsurePermV4Columns) return;
+
+    await db.raw(`
+      ALTER TABLE IF EXISTS permissions
+        ADD COLUMN IF NOT EXISTS vs_operator text,
+        ADD COLUMN IF NOT EXISTS adjusted timestamptz,
+        ADD COLUMN IF NOT EXISTS adjusted_by text,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_fee_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_period text;
+    `);
+
+    await db.raw(`
+      ALTER TABLE IF EXISTS permission_history
+        ADD COLUMN IF NOT EXISTS vs_operator text,
+        ADD COLUMN IF NOT EXISTS adjusted timestamptz,
+        ADD COLUMN IF NOT EXISTS adjusted_by text,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_fee_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_period text;
+    `);
+
+    this.permissionsColumnExistsCache = null;
+    this.didEnsurePermV4Columns = true;
   }
 
   private async refreshSchemaAndTrustRegistryStats(
@@ -796,6 +885,8 @@ export default class PermIngestService extends Service {
     const effectiveHeight = Number(blockHeight) || 0;
     let finalPermission: any = null;
     let previousPermission: any = null;
+
+    await this.ensurePermV4Columns(knex);
 
     await knex.transaction(async (trx) => {
       previousPermission = await trx("permissions").where({ id: mapped.id }).first();
@@ -1547,6 +1638,9 @@ export default class PermIngestService extends Service {
 
       this.logger.info(`[handleCreateRootPermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
+      const msgIdNum = Number((msg as any)?.id);
+      const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
+
       const insertData: any = {
         schema_id: schemaId,
         type: "ECOSYSTEM",
@@ -1565,6 +1659,10 @@ export default class PermIngestService extends Service {
         created: timestamp,
       };
 
+      if (hasValidMsgId) {
+        insertData.id = msgIdNum;
+      }
+
       if (hasExpireSoonColumn) {
         insertData.expire_soon = expireSoon;
         this.logger.info(`[handleCreateRootPermission] Adding expire_soon=${expireSoon} to insert data`);
@@ -1572,23 +1670,36 @@ export default class PermIngestService extends Service {
         this.logger.warn(`[handleCreateRootPermission] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
       }
 
-      let insertedPermission;
-      try {
-        [insertedPermission] = await knex("permissions")
-          .insert(insertData)
-          .returning("*");
-      } catch (insertError: any) {
-        if (insertError?.code === '42703' && insertError?.message?.includes('expire_soon')) {
-          this.logger.warn(`[handleCreateRootPermission] expire_soon column error detected, clearing cache and retrying without expire_soon`);
-          this.permissionsColumnExistsCache = null;
-          delete insertData.expire_soon;
-          [insertedPermission] = await knex("permissions")
-            .insert(insertData)
-            .returning("*");
+      let insertedPermission: any = null;
+      await knex.transaction(async (trx) => {
+        const existing = hasValidMsgId
+          ? await trx("permissions").where({ id: msgIdNum }).first()
+          : null;
+
+        if (existing) {
+          await trx("permissions").where({ id: msgIdNum }).update(insertData);
+          insertedPermission = await trx("permissions").where({ id: msgIdNum }).first();
         } else {
-          throw insertError;
+          try {
+            [insertedPermission] = await trx("permissions")
+              .insert(insertData)
+              .returning("*");
+          } catch (insertError: any) {
+            if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
+              this.logger.warn(
+                `[handleCreateRootPermission] expire_soon column error detected, clearing cache and retrying without expire_soon`
+              );
+              this.permissionsColumnExistsCache = null;
+              delete insertData.expire_soon;
+              [insertedPermission] = await trx("permissions")
+                .insert(insertData)
+                .returning("*");
+            } else {
+              throw insertError;
+            }
+          }
         }
-      }
+      });
 
       if (!insertedPermission) {
         this.logger.error(
@@ -1677,6 +1788,9 @@ export default class PermIngestService extends Service {
 
       this.logger.info(`[handleCreatePermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
+      const msgIdNum = Number((msg as any)?.id);
+      const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
+
       const insertData: any = {
         schema_id: schemaId,
         type,
@@ -1696,6 +1810,10 @@ export default class PermIngestService extends Service {
         created: timestamp,
       };
 
+      if (hasValidMsgId) {
+        insertData.id = msgIdNum;
+      }
+
       if (hasExpireSoonColumn) {
         insertData.expire_soon = expireSoon;
         this.logger.info(`[handleCreatePermission] Adding expire_soon=${expireSoon} to insert data`);
@@ -1703,24 +1821,37 @@ export default class PermIngestService extends Service {
         this.logger.warn(`[handleCreatePermission] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
       }
 
-      let permission;
-      try {
-        [permission] = await knex("permissions")
-          .insert(insertData)
-          .returning("*");
-      } catch (insertError: any) {
-        // If error is about missing column, clear cache and retry without expire_soon
-        if (insertError?.code === '42703' && insertError?.message?.includes('expire_soon')) {
-          this.logger.warn(`[handleCreatePermission] expire_soon column error detected, clearing cache and retrying without expire_soon`);
-          this.permissionsColumnExistsCache = null;
-          delete insertData.expire_soon;
-          [permission] = await knex("permissions")
-            .insert(insertData)
-            .returning("*");
+      let permission: any = null;
+      await knex.transaction(async (trx) => {
+        const existing = hasValidMsgId
+          ? await trx("permissions").where({ id: msgIdNum }).first()
+          : null;
+
+        if (existing) {
+          await trx("permissions").where({ id: msgIdNum }).update(insertData);
+          permission = await trx("permissions").where({ id: msgIdNum }).first();
         } else {
-          throw insertError;
+          try {
+            [permission] = await trx("permissions")
+              .insert(insertData)
+              .returning("*");
+          } catch (insertError: any) {
+            // If error is about missing column, clear cache and retry without expire_soon
+            if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
+              this.logger.warn(
+                `[handleCreatePermission] expire_soon column error detected, clearing cache and retrying without expire_soon`
+              );
+              this.permissionsColumnExistsCache = null;
+              delete insertData.expire_soon;
+              [permission] = await trx("permissions")
+                .insert(insertData)
+                .returning("*");
+            } else {
+              throw insertError;
+            }
+          }
         }
-      }
+      });
 
       if (!permission) {
         this.logger.error(
@@ -1759,160 +1890,6 @@ export default class PermIngestService extends Service {
       this.logger.error("CRITICAL: Error in handleCreatePermission:", err);
       console.error("FATAL PERM CREATE ERROR:", err);
 
-    }
-  }
-  private async handleExtendPermission(msg: MsgExtendPermission & { height?: number }) {
-    try {
-      if (!msg.id || !msg.effective_until) {
-        this.logger.warn("Missing mandatory parameter: id or effective_until");
-        return { success: false, reason: "Missing mandatory parameter" };
-      }
-
-      const idNum = Number(msg.id);
-      if (!Number.isInteger(idNum) || idNum <= 0) {
-        this.logger.warn(`Invalid id: ${msg.id}. Must be a valid uint64.`);
-        return { success: false, reason: "Invalid permission ID" };
-      }
-
-      const newEffectiveUntil = new Date(msg.effective_until);
-      if (Number.isNaN(newEffectiveUntil.getTime())) {
-        this.logger.warn(
-          `Invalid effective_until timestamp: ${msg.effective_until}`
-        );
-        return { success: false, reason: "Invalid effective_until timestamp" };
-      }
-
-      const applicantPerm = await knex("permissions")
-        .where({ id: msg.id })
-        .first();
-      if (!applicantPerm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
-      }
-
-      const currentEffectiveUntil = applicantPerm.effective_until
-        ? new Date(applicantPerm.effective_until)
-        : null;
-
-      if (currentEffectiveUntil && newEffectiveUntil <= currentEffectiveUntil) {
-        this.logger.warn(
-          `New effective_until ${newEffectiveUntil.toISOString()} must be greater than current ${currentEffectiveUntil.toISOString()}`
-        );
-        return {
-          success: false,
-          reason: "effective_until must be greater than current",
-        };
-      }
-
-      const caller = msg.creator;
-
-      if (
-        !applicantPerm.validator_perm_id &&
-        applicantPerm.type === "ECOSYSTEM"
-      ) {
-        if (caller !== applicantPerm.grantee) {
-          this.logger.warn("Only grantee can extend ECOSYSTEM permission");
-          return { success: false, reason: "Unauthorized caller" };
-        }
-      } else if (applicantPerm.validator_perm_id) {
-        const validatorPerm = await knex("permissions")
-          .where({ id: applicantPerm.validator_perm_id })
-          .first();
-
-        if (!validatorPerm) {
-          this.logger.warn(
-            `Validator permission ${applicantPerm.validator_perm_id} not found`
-          );
-          return { success: false, reason: "Validator permission not found" };
-        }
-
-        if (validatorPerm.type !== "ECOSYSTEM") {
-          this.logger.warn("Validator permission must be of type ECOSYSTEM");
-          return {
-            success: false,
-            reason: "Invalid validator permission type",
-          };
-        }
-
-        if (caller !== applicantPerm.grantee) {
-          this.logger.warn("Only grantee can extend self-created permission");
-          return { success: false, reason: "Unauthorized caller" };
-        }
-      } else {
-        this.logger.warn("Invalid permission structure");
-        return { success: false, reason: "Invalid permission structure" };
-      }
-
-      const now = formatTimestamp(msg.timestamp);
-      const height = Number((msg as any)?.height) || 0;
-      await knex.transaction(async (trx) => {
-        // Calculate expire_soon for the updated permission
-        const updatedPermData = {
-          ...applicantPerm,
-          effective_until: newEffectiveUntil.toISOString(),
-        };
-        const expireSoon = await this.calculateExpireSoon(updatedPermData, new Date(now), height);
-        const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
-
-        const updateData: any = {
-          effective_until: newEffectiveUntil.toISOString(),
-          extended: now,
-          modified: now,
-          extended_by: caller,
-        };
-
-        if (hasExpireSoonColumn) {
-          updateData.expire_soon = expireSoon;
-        }
-
-        const [updated] = await trx("permissions")
-          .where({ id: msg.id })
-          .update(updateData)
-          .returning("*");
-
-        if (!updated) {
-          this.logger.error(
-            `CRITICAL: Failed to extend permission ${msg.id} - update returned no record`
-          );
-
-        }
-
-        try {
-          await this.updateWeight(trx, Number(msg.id));
-          await this.updateParticipants(trx, Number(msg.id));
-        } catch (participantsErr: any) {
-          this.logger.warn(`Failed to update weight/participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
-        }
-
-        try {
-          await recordPermissionHistory(
-            trx,
-            updated,
-            "EXTEND_PERMISSION",
-            height,
-            applicantPerm
-          );
-        } catch (historyErr: any) {
-          this.logger.error(
-            "CRITICAL: Failed to record permission history for extend:",
-            historyErr
-          );
-
-        }
-      });
-
-      await this.refreshTrustRegistryStatsBySchemaId(applicantPerm?.schema_id, height);
-
-      this.logger.info(
-        `✅ Permission ${msg.id
-        } extended until ${newEffectiveUntil.toISOString()} by ${caller}`
-      );
-
-      return { success: true };
-    } catch (err: any) {
-      this.logger.error("CRITICAL: Error in handleExtendPermission:", err);
-      console.error("FATAL PERM EXTEND ERROR:", err);
-      return { success: false, reason: "Internal error extending permission" };
     }
   }
 
@@ -2101,6 +2078,9 @@ export default class PermIngestService extends Service {
       const expireSoon = await this.calculateExpireSoon(newPermData, new Date(now), height);
       const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
 
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
+
       const Entry: any = {
         schema_id: perm?.schema_id,
         type: typeStr,
@@ -2126,6 +2106,10 @@ export default class PermIngestService extends Service {
         created: now, 
       };
 
+      if (hasValidMsgId) {
+        Entry.id = msgIdNum;
+      }
+
       if (hasExpireSoonColumn) {
         Entry.expire_soon = expireSoon;
         this.logger.info(`[handleStartPermissionVP] Adding expire_soon=${expireSoon} to insert data`);
@@ -2133,19 +2117,33 @@ export default class PermIngestService extends Service {
         this.logger.warn(`[handleStartPermissionVP] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
       }
 
-      let newPermission;
-      try {
-        [newPermission] = await knex("permissions").insert(Entry).returning("*");
-      } catch (insertError: any) {
-        if (insertError?.code === '42703' && insertError?.message?.includes('expire_soon')) {
-          this.logger.warn(`[handleStartPermissionVP] expire_soon column error detected, clearing cache and retrying without expire_soon`);
-          this.permissionsColumnExistsCache = null;
-          delete Entry.expire_soon;
-          [newPermission] = await knex("permissions").insert(Entry).returning("*");
-        } else {
-          throw insertError;
+      await this.ensurePermV4Columns(knex);
+
+      let newPermission: any = null;
+      await knex.transaction(async (trx) => {
+        const existing = hasValidMsgId ? await trx("permissions").where({ id: msgIdNum }).first() : null;
+
+        if (existing) {
+          await trx("permissions").where({ id: msgIdNum }).update(Entry);
+          newPermission = await trx("permissions").where({ id: msgIdNum }).first();
+          return;
         }
-      }
+
+        try {
+          [newPermission] = await trx("permissions").insert(Entry).returning("*");
+        } catch (insertError: any) {
+          if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
+            this.logger.warn(
+              `[handleStartPermissionVP] expire_soon column error detected, clearing cache and retrying without expire_soon`
+            );
+            this.permissionsColumnExistsCache = null;
+            delete Entry.expire_soon;
+            [newPermission] = await trx("permissions").insert(Entry).returning("*");
+          } else {
+            throw insertError;
+          }
+        }
+      });
 
       if (!newPermission) {
         this.logger.error(

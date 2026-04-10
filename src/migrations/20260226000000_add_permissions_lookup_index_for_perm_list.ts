@@ -6,6 +6,8 @@ const isPostgres = (knex: Knex): boolean =>
   String(knex.client.config?.client || "").includes("pg");
 
 const hasColumns = async (knex: Knex, table: string, columns: string[]): Promise<boolean> => {
+  const tableExists = await knex.schema.hasTable(table);
+  if (!tableExists) return false;
   const checks = await Promise.all(columns.map((column) => knex.schema.hasColumn(table, column)));
   return checks.every(Boolean);
 };

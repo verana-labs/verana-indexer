@@ -93,6 +93,102 @@ export function extractImpactedPermissionIds(
   return [...ids];
 }
 
+export function extractStartPermissionVpNewPermissionId(
+  msg: PermissionMessagePayload
+): number | undefined {
+  const validatorRaw =
+    msg?.content?.validator_perm_id ?? msg?.content?.validatorPermId;
+  const validatorId = Number(validatorRaw);
+  const hasValidator =
+    validatorRaw !== undefined &&
+    validatorRaw !== null &&
+    String(validatorRaw).trim() !== "" &&
+    Number.isInteger(validatorId) &&
+    validatorId > 0;
+
+  const directCandidates = [
+    msg?.content?.id,
+    msg?.content?.permission_id,
+    msg?.content?.permissionId,
+  ];
+  for (const candidate of directCandidates) {
+    const n = Number(candidate);
+    if (!Number.isInteger(n) || n <= 0) continue;
+    if (hasValidator && n === validatorId) continue;
+    return n;
+  }
+
+  const exactNewPermKeys = new Set([
+    "permission_id",
+    "permissionid",
+    "new_permission_id",
+    "new_permissionid",
+    "created_permission_id",
+    "created_permissionid",
+  ]);
+  const fromExactEvents: number[] = [];
+  if (Array.isArray(msg.txEvents)) {
+    for (const event of msg.txEvents) {
+      for (const attr of event?.attributes || []) {
+        const key = decodeEventValue(attr?.key).toLowerCase();
+        if (!exactNewPermKeys.has(key)) continue;
+        const id = Number(decodeEventValue(attr?.value));
+        if (Number.isInteger(id) && id > 0) {
+          fromExactEvents.push(id);
+        }
+      }
+    }
+  }
+  const uniqueExact = [...new Set(fromExactEvents)];
+  const filteredExact = hasValidator
+    ? uniqueExact.filter((id) => id !== validatorId)
+    : uniqueExact;
+  if (filteredExact.length === 1) {
+    return filteredExact[0];
+  }
+  if (filteredExact.length > 1) {
+    const notValidator = filteredExact.filter(
+      (id) => !hasValidator || id !== validatorId
+    );
+    if (notValidator.length === 1) return notValidator[0];
+  }
+
+  // Fallback: attribute keys like `msg_permission_id` (contains `permission_id`, not `validator_*`)
+  const looseFromEvents: number[] = [];
+  if (Array.isArray(msg.txEvents)) {
+    for (const event of msg.txEvents) {
+      for (const attr of event?.attributes || []) {
+        const key = decodeEventValue(attr?.key).toLowerCase();
+        if (!key.includes("permission_id") && !key.includes("permissionid")) {
+          continue;
+        }
+        if (key.includes("validator")) continue;
+        const id = Number(decodeEventValue(attr?.value));
+        if (Number.isInteger(id) && id > 0) {
+          looseFromEvents.push(id);
+        }
+      }
+    }
+  }
+  const uniqueLoose = [...new Set(looseFromEvents)];
+  const filteredLoose = hasValidator
+    ? uniqueLoose.filter((id) => id !== validatorId)
+    : uniqueLoose;
+  if (filteredLoose.length === 1) {
+    return filteredLoose[0];
+  }
+
+  const impacted = extractImpactedPermissionIds(msg);
+  const remaining = hasValidator
+    ? impacted.filter((id) => id !== validatorId)
+    : impacted;
+  if (remaining.length === 1) {
+    return remaining[0];
+  }
+
+  return undefined;
+}
+
 export function extractImpactedSessionIds(
   msg: PermissionMessagePayload
 ): string[] {

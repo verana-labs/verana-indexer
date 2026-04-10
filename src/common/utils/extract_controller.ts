@@ -9,10 +9,11 @@ export function extractController(
   const controller = 
     message.controller || 
     message.creator || 
+    message.grantee ||
     message.authority ||
+    message.operator ||
     message.sender ||
     message.account ||
-    message.grantee ||
     message.created_by;
 
   if (controller && typeof controller === 'string' && controller.trim()) {

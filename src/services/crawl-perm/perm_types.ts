@@ -82,10 +82,13 @@ export interface MsgRenewPermissionVP {
   timestamp: Date | string;
   id: number;
 }
-export interface MsgExtendPermission {
-  creator: string;
+export interface MsgAdjustPermission {
+  creator?: string;
+  authority?: string;
+  operator?: string;
   id: number;
   effective_until?: Date | undefined;
+  effectiveUntil?: Date | undefined;
   timestamp?: Date | undefined;
 }
 export interface MsgCreatePermission {

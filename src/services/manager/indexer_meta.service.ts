@@ -35,7 +35,6 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
   [VeranaPermissionMessageTypes.RenewPermissionVP]: "RenewPermissionVP",
   [VeranaPermissionMessageTypes.RevokePermission]: "RevokePermission",
-  [VeranaPermissionMessageTypes.ExtendPermission]: "ExtendPermission",
   [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: "SetPermissionVPToValidated",
   [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: "CreateOrUpdatePermissionSession",
   [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: "SlashPermissionTrustDeposit",

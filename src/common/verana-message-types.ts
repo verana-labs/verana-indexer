@@ -26,7 +26,7 @@ export enum VeranaPermissionMessageTypes {
   StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
   RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
   RevokePermission = "/verana.perm.v1.MsgRevokePermission",
-  ExtendPermission = "/verana.perm.v1.MsgExtendPermission",
+  AdjustPermission = "/verana.perm.v1.MsgAdjustPermission",
   SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
   CreateOrUpdatePermissionSession = "/verana.perm.v1.MsgCreateOrUpdatePermissionSession",
   SlashPermissionTrustDeposit = "/verana.perm.v1.MsgSlashPermissionTrustDeposit",
