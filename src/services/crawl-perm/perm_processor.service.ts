@@ -223,12 +223,12 @@ export default class PermProcessorService extends BullableService {
 
   @Action({ name: "getPermission" })
   async getPermission(
-    ctx: Context<{ schema_id: number; grantee: string; type: string }>
+    ctx: Context<{ schema_id: number; corporation: string; type: string }>
   ) {
-    const { schema_id: schemaId, grantee, type } = ctx.params;
+    const { schema_id: schemaId, corporation, type } = ctx.params;
     const permission = await this.broker.call("permIngest.getPermission", {
       schema_id: schemaId,
-      grantee,
+      corporation,
       type,
     });
     return permission;
@@ -236,12 +236,12 @@ export default class PermProcessorService extends BullableService {
 
   @Action({ name: "listPermissions" })
   async listPermissions(
-    ctx: Context<{ schema_id?: number; grantee?: string; type?: string }>
+    ctx: Context<{ schema_id?: number; corporation?: string; type?: string }>
   ) {
-    const { schema_id: schemaId, grantee, type } = ctx.params;
+    const { schema_id: schemaId, corporation, type } = ctx.params;
     const permissions = await this.broker.call("permIngest.listPermissions", {
       schema_id: schemaId,
-      grantee,
+      corporation,
       type,
     });
     return permissions;

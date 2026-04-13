@@ -1,6 +1,18 @@
 import knex from "../../common/utils/db_connection";
 import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
+import {
+    resolveTrustRegistryHistoryParticipantColumn,
+    resolveTrustRegistryParticipantColumn,
+} from "../../common/utils/installed_table_columns";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
+
+function participantFromTrRow(row: Record<string, unknown> | null | undefined): string | null {
+    if (!row) return null;
+    const v = row.corporation ?? row.controller;
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    return s === "" ? null : s;
+}
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
 const MAX_SESSION_COUNTER_CACHE_ENTRIES = 24;
@@ -119,7 +131,7 @@ export async function getSchemaController(schemaId: number, blockHeight?: number
             .orderBy("created_at", "desc")
             .first();
         
-        return trHistory?.controller || null;
+        return participantFromTrRow(trHistory as Record<string, unknown>) ?? null;
     }
     
     const schema = await knex("credential_schemas")
@@ -134,7 +146,7 @@ export async function getSchemaController(schemaId: number, blockHeight?: number
         .where("id", schema.tr_id)
         .first();
     
-    return tr?.controller || null;
+    return participantFromTrRow(tr as Record<string, unknown>) ?? null;
 }
 
 export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
@@ -370,33 +382,46 @@ export async function calculateCredentialSchemaStatsBatch(
     const trControllerMap = new Map<number, string | null>();
     if (uniqueTrIds.length > 0) {
         if (typeof blockHeight === "number") {
+            const trHistPartCol = await resolveTrustRegistryHistoryParticipantColumn(knex);
             if (IS_PG_CLIENT) {
                 const trRows = await knex("trust_registry_history as trh")
                     .distinctOn("trh.tr_id")
-                    .select("trh.tr_id", "trh.controller")
+                    .select("trh.tr_id", knex.raw("??.?? as tr_participant", ["trh", trHistPartCol]))
                     .whereIn("trh.tr_id", uniqueTrIds)
                     .where("trh.height", "<=", blockHeight)
                     .orderBy("trh.tr_id", "asc")
                     .orderBy("trh.height", "desc")
                     .orderBy("trh.created_at", "desc")
                     .orderBy("trh.id", "desc");
-                for (const row of trRows) trControllerMap.set(Number(row.tr_id), row.controller || null);
+                for (const row of trRows) {
+                    const v = (row as { tr_participant?: unknown }).tr_participant;
+                    trControllerMap.set(Number(row.tr_id), v != null && String(v).trim() !== "" ? String(v) : null);
+                }
             } else {
                 const rankedTrs = knex("trust_registry_history as trh")
                     .select(
                         "trh.tr_id",
-                        "trh.controller",
+                        knex.raw("??.?? as tr_participant", ["trh", trHistPartCol]),
                         knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.tr_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
                     )
                     .whereIn("trh.tr_id", uniqueTrIds)
                     .where("trh.height", "<=", blockHeight)
                     .as("ranked");
-                const trRows = await knex.from(rankedTrs).select("tr_id", "controller").where("rn", 1);
-                for (const row of trRows) trControllerMap.set(Number(row.tr_id), row.controller || null);
+                const trRows = await knex.from(rankedTrs).select("tr_id", "tr_participant").where("rn", 1);
+                for (const row of trRows) {
+                    const v = (row as { tr_participant?: unknown }).tr_participant;
+                    trControllerMap.set(Number(row.tr_id), v != null && String(v).trim() !== "" ? String(v) : null);
+                }
             }
         } else {
-            const trRows = await knex("trust_registry").select("id", "controller").whereIn("id", uniqueTrIds);
-            for (const row of trRows) trControllerMap.set(Number(row.id), row.controller || null);
+            const trLivePartCol = await resolveTrustRegistryParticipantColumn(knex);
+            const trRows = await knex("trust_registry")
+                .select("id", knex.raw("?? as tr_participant", [trLivePartCol]))
+                .whereIn("id", uniqueTrIds);
+            for (const row of trRows) {
+                const v = (row as { tr_participant?: unknown }).tr_participant;
+                trControllerMap.set(Number(row.id), v != null && String(v).trim() !== "" ? String(v) : null);
+            }
         }
     }
 
@@ -491,9 +516,10 @@ export async function calculateCredentialSchemaStatsBatch(
             now
         );
 
-        const grantee = perm.grantee === null || perm.grantee === undefined
-            ? ""
-            : String(perm.grantee).trim();
+        const permRow = perm as Record<string, unknown>;
+        const granteeRaw = permRow.corporation ?? permRow.grantee ?? permRow.controller;
+        const grantee =
+            granteeRaw === null || granteeRaw === undefined ? "" : String(granteeRaw).trim();
         if (permState === "ACTIVE" && grantee) {
             activeParticipantsBySchema.get(schemaId)?.add(grantee);
             if (perm.type === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(grantee);

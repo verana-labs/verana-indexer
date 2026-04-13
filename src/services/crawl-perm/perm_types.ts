@@ -31,7 +31,6 @@ export interface MsgCreateRootPermission {
   creator: string;
   schema_id: number;
   did: string;
-  country: string;
   effective_from?: Date | undefined;
   timestamp?: Date | undefined;
   effective_until?: Date | undefined;
@@ -44,7 +43,6 @@ export interface MsgStartPermissionVP {
   timestamp?: Date | undefined;
   type: number;
   validator_perm_id: number;
-  country: string;
   did: string;
   effective_from: Date | undefined;
   effective_until: Date | undefined;
@@ -63,8 +61,7 @@ export interface MsgSetPermissionVPToValidated {
   validation_fees: number;
   issuance_fees: number;
   verification_fees: number;
-  country: string;
-  vp_summary_digest_sri: string;
+  vp_summary_digest?: string;
 }
 
 export interface MsgRevokePermission {
@@ -84,6 +81,7 @@ export interface MsgRenewPermissionVP {
 }
 export interface MsgAdjustPermission {
   creator?: string;
+  corporation?: string;
   authority?: string;
   operator?: string;
   id: number;
@@ -96,7 +94,6 @@ export interface MsgCreatePermission {
   schema_id: number;
   type: PermissionType;
   did: string;
-  country: string;
   effective_from?: Date | undefined;
   timestamp?: Date | undefined;
   effective_until?: Date | undefined;

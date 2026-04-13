@@ -2,7 +2,6 @@ import knex from "./db_connection";
 import {
   VeranaTrustRegistryMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaDidMessageTypes,
   VeranaPermissionMessageTypes,
 } from "../verana-message-types";
 import { normalizePermissionEmptyStringsToNull } from "./utils";
@@ -18,10 +17,6 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy]: "CreateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
-  [VeranaDidMessageTypes.AddDid]: "AddDID",
-  [VeranaDidMessageTypes.RenewDid]: "RenewDID",
-  [VeranaDidMessageTypes.TouchDid]: "TouchDID",
-  [VeranaDidMessageTypes.RemoveDid]: "RemoveDID",
   [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
   [VeranaPermissionMessageTypes.CreatePermission]: "CreatePermission",
   [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
@@ -431,16 +426,6 @@ export async function buildActivityTimeline(
           "repaid_deposit",
           "slash_count",
         ];
-        for (const field of numericFields) {
-          if (Object.prototype.hasOwnProperty.call(changes, field) && changes[field] != null) {
-            const n = Number(changes[field]);
-            if (!Number.isNaN(n)) {
-              changes[field] = n;
-            }
-          }
-        }
-      } else if (activityEntityType === "DID") {
-        const numericFields = ["deposit", "years", "height"];
         for (const field of numericFields) {
           if (Object.prototype.hasOwnProperty.call(changes, field) && changes[field] != null) {
             const n = Number(changes[field]);

@@ -6,9 +6,23 @@ import {
 } from "../crawl-cs/cs_stats";
 import { calculatePermState } from "../crawl-perm/perm_state_utils";
 import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
+import { resolvePermissionsParticipantColumn } from "../../common/utils/installed_table_columns";
 
 function isMetricsPgClient(db: Knex): boolean {
   return String((db as any)?.client?.config?.client || "").includes("pg");
+}
+
+async function pgTableColumnsLower(db: Knex, table: string): Promise<Set<string>> {
+  if (!isMetricsPgClient(db)) {
+    return new Set();
+  }
+  const r = await db.raw(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = current_schema() AND table_name = ?`,
+    [table]
+  );
+  const rows = (r as { rows?: { column_name: string }[] }).rows ?? [];
+  return new Set(rows.map((x) => String(x.column_name).toLowerCase()));
 }
 
 async function aggregateLiveTrustWeightFromPermissions(db: Knex): Promise<{
@@ -67,21 +81,65 @@ function parseMetricsNumeric(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function resolveTrustDepositsAmountColumn(db: Knex): Promise<"deposit" | "amount"> {
+  if (isMetricsPgClient(db)) {
+    const cols = await pgTableColumnsLower(db, "trust_deposits");
+    if (cols.has("deposit")) return "deposit";
+    if (cols.has("amount")) return "amount";
+    return "amount";
+  }
+  if (await db.schema.hasColumn("trust_deposits", "deposit")) return "deposit";
+  return "amount";
+}
+
+async function resolveTrustDepositHistoryColumns(
+  db: Knex
+): Promise<{ corp: "corporation" | "account"; amount: "deposit" | "amount" }> {
+  if (isMetricsPgClient(db)) {
+    const cols = await pgTableColumnsLower(db, "trust_deposit_history");
+    return {
+      corp: cols.has("corporation") ? "corporation" : "account",
+      amount: cols.has("deposit") ? "deposit" : "amount",
+    };
+  }
+  const hasCorp = await db.schema.hasColumn("trust_deposit_history", "corporation");
+  const hasDeposit = await db.schema.hasColumn("trust_deposit_history", "deposit");
+  return {
+    corp: hasCorp ? "corporation" : "account",
+    amount: hasDeposit ? "deposit" : "amount",
+  };
+}
+
 async function aggregateLiveTrustDepositWeight(db: Knex): Promise<{
   totalWeight: number;
   maxSingleDeposit: number;
 }> {
-  const castTotalExpr = isMetricsPgClient(db)
-    ? `COALESCE(SUM(amount::numeric), 0)`
-    : `COALESCE(SUM(CAST(amount AS REAL)), 0)`;
+  let amountCol = await resolveTrustDepositsAmountColumn(db);
+  const buildSelect = (col: "deposit" | "amount") => {
+    const castTotalExpr = isMetricsPgClient(db)
+      ? `COALESCE(SUM(${col}::numeric), 0)`
+      : `COALESCE(SUM(CAST(${col} AS REAL)), 0)`;
+    const castMaxExpr = isMetricsPgClient(db)
+      ? `COALESCE(MAX(${col}::numeric), 0)`
+      : `COALESCE(MAX(CAST(${col} AS REAL)), 0)`;
+    return db("trust_deposits")
+      .select(db.raw(`${castTotalExpr} as total_weight`), db.raw(`${castMaxExpr} as max_single`))
+      .first();
+  };
 
-  const castMaxExpr = isMetricsPgClient(db)
-    ? `COALESCE(MAX(amount::numeric), 0)`
-    : `COALESCE(MAX(CAST(amount AS REAL)), 0)`;
-
-  const row = await db("trust_deposits")
-    .select(db.raw(`${castTotalExpr} as total_weight`), db.raw(`${castMaxExpr} as max_single`))
-    .first();
+  let row: unknown;
+  try {
+    row = await buildSelect(amountCol);
+  } catch (err: unknown) {
+    const msg = err && typeof err === "object" && "message" in err ? String((err as Error).message) : "";
+    const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
+    if (code === "42703" && amountCol === "deposit" && /column .*deposit/i.test(msg)) {
+      amountCol = "amount";
+      row = await buildSelect(amountCol);
+    } else {
+      throw err;
+    }
+  }
 
   const totalWeight = parseMetricsNumeric((row as any)?.total_weight);
   const maxSingleDeposit = parseMetricsNumeric((row as any)?.max_single);
@@ -96,11 +154,14 @@ async function aggregateHistoricalTrustDepositWeight(
   maxSingleDeposit: number;
 }> {
   if (isMetricsPgClient(db)) {
+    const { corp, amount } = await resolveTrustDepositHistoryColumns(db);
+    const corpQualified = `tdh.${corp}`;
+    const amountQualified = `tdh.${amount}`;
     const tdLatest = db("trust_deposit_history as tdh")
-      .distinctOn("tdh.account")
-      .select("tdh.account", "tdh.amount")
+      .distinctOn(corpQualified)
+      .select(db.raw(`${corpQualified} as corporation`), db.raw(`${amountQualified} as deposit`))
       .where("tdh.height", "<=", blockHeight)
-      .orderBy("tdh.account", "asc")
+      .orderBy(corpQualified, "asc")
       .orderBy("tdh.height", "desc")
       .orderBy("tdh.created_at", "desc")
       .orderBy("tdh.id", "desc")
@@ -108,8 +169,8 @@ async function aggregateHistoricalTrustDepositWeight(
 
     const row = await db.from(tdLatest)
       .select(
-        db.raw(`COALESCE(SUM(latest_td.amount::numeric), 0) as total_weight`),
-        db.raw(`COALESCE(MAX(latest_td.amount::numeric), 0) as max_single`)
+        db.raw(`COALESCE(SUM(latest_td.deposit::numeric), 0) as total_weight`),
+        db.raw(`COALESCE(MAX(latest_td.deposit::numeric), 0) as max_single`)
       )
       .first();
 
@@ -119,18 +180,19 @@ async function aggregateHistoricalTrustDepositWeight(
     };
   }
 
+  const { corp, amount } = await resolveTrustDepositHistoryColumns(db);
   const tdSub = db("trust_deposit_history as tdh")
-    .select("tdh.account", "tdh.amount")
-    .select(db.raw("ROW_NUMBER() OVER (PARTITION BY tdh.account ORDER BY tdh.height DESC, tdh.created_at DESC, tdh.id DESC) as rn"))
+    .select(db.raw(`tdh.${corp} as corporation`), db.raw(`tdh.${amount} as deposit`))
+    .select(db.raw(`ROW_NUMBER() OVER (PARTITION BY tdh.${corp} ORDER BY tdh.height DESC, tdh.created_at DESC, tdh.id DESC) as rn`))
     .where("tdh.height", "<=", blockHeight)
     .as("ranked_td");
 
-  const tdLatest = db.from(tdSub).select("account", "amount").where("rn", 1).as("latest_td");
+  const tdLatest = db.from(tdSub).select("corporation", "deposit").where("rn", 1).as("latest_td");
 
   const row = await db.from(tdLatest)
     .select(
-      db.raw(`COALESCE(SUM(CAST(latest_td.amount AS REAL)), 0) as total_weight`),
-      db.raw(`COALESCE(MAX(CAST(latest_td.amount AS REAL)), 0) as max_single`)
+      db.raw(`COALESCE(SUM(CAST(latest_td.deposit AS REAL)), 0) as total_weight`),
+      db.raw(`COALESCE(MAX(CAST(latest_td.deposit AS REAL)), 0) as max_single`)
     )
     .first();
 
@@ -294,9 +356,10 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     }
 
     const nowIso = new Date().toISOString();
+    const permParticipantCol = await resolvePermissionsParticipantColumn(knex);
     const activePermsBase = () =>
       knex("permissions")
-        .whereNotNull("grantee")
+        .whereNotNull(permParticipantCol)
         .whereNull("repaid")
         .whereNull("slashed")
         .andWhere(function () {
@@ -310,13 +373,13 @@ export async function computeGlobalMetrics(blockHeight?: number) {
         });
 
     const participantsResult = await activePermsBase()
-      .countDistinct("grantee as count")
+      .countDistinct(`${permParticipantCol} as count`)
       .first();
     const participants = Number((participantsResult as any)?.count ?? 0);
 
     const activeParticipantsByType = await activePermsBase()
       .select("type")
-      .countDistinct("grantee as count")
+      .countDistinct(`${permParticipantCol} as count`)
       .groupBy("type");
 
     const participantsByType = {
@@ -479,14 +542,18 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       },
       asOfTime
     );
-    if (permState === "ACTIVE" && historyRecord.grantee) {
-      allParticipantsSet.add(historyRecord.grantee);
-      if (historyRecord.type === "ECOSYSTEM") participantsEcosystemSet.add(historyRecord.grantee);
-      if (historyRecord.type === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(historyRecord.grantee);
-      if (historyRecord.type === "ISSUER") participantsIssuerSet.add(historyRecord.grantee);
-      if (historyRecord.type === "VERIFIER_GRANTOR") participantsVerifierGrantorSet.add(historyRecord.grantee);
-      if (historyRecord.type === "VERIFIER") participantsVerifierSet.add(historyRecord.grantee);
-      if (historyRecord.type === "HOLDER") participantsHolderSet.add(historyRecord.grantee);
+    const corp =
+      (historyRecord as { corporation?: string; grantee?: string; controller?: string }).corporation ??
+      (historyRecord as { grantee?: string }).grantee ??
+      (historyRecord as { controller?: string }).controller;
+    if (permState === "ACTIVE" && corp) {
+      allParticipantsSet.add(corp);
+      if (historyRecord.type === "ECOSYSTEM") participantsEcosystemSet.add(corp);
+      if (historyRecord.type === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(corp);
+      if (historyRecord.type === "ISSUER") participantsIssuerSet.add(corp);
+      if (historyRecord.type === "VERIFIER_GRANTOR") participantsVerifierGrantorSet.add(corp);
+      if (historyRecord.type === "VERIFIER") participantsVerifierSet.add(corp);
+      if (historyRecord.type === "HOLDER") participantsHolderSet.add(corp);
     }
   }
 

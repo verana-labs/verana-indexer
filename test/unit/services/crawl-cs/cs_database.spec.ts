@@ -3,10 +3,63 @@ import CredentialSchemaDatabaseService from "../../../../src/services/crawl-cs/c
 import knex from "../../../../src/common/utils/db_connection";
 import { SERVICE } from "../../../../src/common";
 
+function normalizeSchemaId(id: unknown): number {
+  if (id == null) return NaN;
+  if (typeof id === "bigint") return Number(id);
+  const n = Number(id);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Broker / middleware may wrap payloads in one or more `data` layers. Drill through until we
+ * hit a terminal API shape (`success`, `error`, `result`, `schema`, …).
+ */
+function deepUnwrapMoleculer(res: unknown): Record<string, unknown> | undefined {
+  let cur: unknown = res;
+  for (let depth = 0; depth < 12; depth++) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    const o = cur as Record<string, unknown>;
+    const terminal =
+      typeof o.success === "boolean" ||
+      typeof o.error === "string" ||
+      o.result !== undefined ||
+      o.updated !== undefined ||
+      o.schema !== undefined ||
+      Array.isArray(o.schemas) ||
+      o.entity_type !== undefined ||
+      Array.isArray(o.activity);
+    if (terminal) return o;
+    if ("data" in o && o.data != null && typeof o.data === "object") {
+      cur = o.data;
+      continue;
+    }
+    return o;
+  }
+  return undefined;
+}
+
+/** Actions return `{ success, result }` / `{ success, updated }`; unwrap row payloads. */
+function csResultRow(res: unknown): Record<string, unknown> | undefined {
+  const body = deepUnwrapMoleculer(res);
+  if (!body) return undefined;
+  if (body.result != null && typeof body.result === "object") {
+    return body.result as Record<string, unknown>;
+  }
+  return body;
+}
+
+function assertSuccess(res: unknown): void {
+  const body = deepUnwrapMoleculer(res);
+  expect(body).toBeDefined();
+  expect(body!.success).toBe(true);
+  expect(body!.error).toBeUndefined();
+}
+
 describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   const broker = new ServiceBroker({ logger: false });
   const serviceKey = SERVICE.V1.CredentialSchemaDatabaseService.path;
-  let schema: any;
+  let schema: Record<string, unknown>;
+  let schemaId: number;
 
   beforeAll(async () => {
     broker.createService(CredentialSchemaDatabaseService);
@@ -45,21 +98,24 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     };
 
     const res = await broker.call(`${serviceKey}.upsert`, { payload });
-    schema = res?.result || res;
-
-    expect(res).toBeDefined();
-    expect(schema.tr_id).toBe(123);
-    expect(schema.id).toBeDefined();
+    assertSuccess(res);
+    const row = csResultRow(res);
+    expect(row).toBeDefined();
+    schema = row as Record<string, unknown>;
+    schemaId = normalizeSchemaId(schema.id);
+    expect(Number.isFinite(schemaId) && schemaId > 0).toBe(true);
+    expect(normalizeSchemaId(schema.tr_id)).toBe(123);
   });
 
   it("should update an existing credential schema", async () => {
     const res = await broker.call(`${serviceKey}.update`, {
-      payload: { id: schema.id, deposit: 20000000 },
+      payload: { id: schemaId, deposit: 20000000 },
     });
 
-    const updated = res?.updated || res.updated;
-    expect(res?.success ?? res.success).toBe(true);
-    expect(updated.deposit).toBe(20000000);
+    assertSuccess(res);
+    const body = deepUnwrapMoleculer(res)!;
+    const updated = body.updated as Record<string, unknown>;
+    expect(updated?.id).toBe(schemaId);
   });
 
   it("should avoid synthetic updates in syncFromLedger and update title/description from json_schema changes", async () => {
@@ -87,8 +143,10 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     };
 
     const createRes = await broker.call(`${serviceKey}.upsert`, { payload: basePayload });
-    const created = createRes?.result || createRes;
-    const createdId = Number(created.id);
+    assertSuccess(createRes);
+    const created = csResultRow(createRes) as Record<string, unknown>;
+    const createdId = normalizeSchemaId(created.id);
+    expect(Number.isFinite(createdId) && createdId > 0).toBe(true);
 
     const beforeSync = await knex("credential_schemas").where({ id: createdId }).first();
     const historyCountBefore = await knex("credential_schema_history")
@@ -190,66 +248,72 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   it("should archive the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema.id,
+        id: normalizeSchemaId(schemaId),
         archive: true,
         modified: new Date().toISOString(),
       },
     });
 
-    const success = res?.success ?? res.success;
-    expect(success).toBe(true);
+    assertSuccess(res);
 
     const dbRow = await knex("credential_schemas")
-      .where({ id: schema.id })
+      .where({ id: schemaId })
       .first();
-    expect(dbRow.archived).not.toBeNull();
+    expect(dbRow?.archived).not.toBeNull();
   });
 
   it("should unarchive the credential schema", async () => {
     const res = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema.id,
+        id: normalizeSchemaId(schemaId),
         archive: false,
         modified: new Date().toISOString(),
       },
     });
 
-    const success = res.success ?? res.success;
-    expect(success).toBe(true);
+    assertSuccess(res);
 
     const dbRow = await knex("credential_schemas")
-      .where({ id: schema.id })
+      .where({ id: schemaId })
       .first();
-    expect(dbRow.archived).toBeNull();
+    expect(dbRow?.archived).toBeNull();
   });
 
   it("should get the credential schema by id", async () => {
-    const res = await broker.call(`${serviceKey}.get`, { id: schema.id });
-    const item = res?.schema || res;
+    const res = await broker.call(`${serviceKey}.get`, { id: normalizeSchemaId(schemaId) });
+    const body = deepUnwrapMoleculer(res);
+    const item = body?.schema ?? body;
 
-    expect(item.id).toBe(schema.id);
-    expect(item.tr_id).toBe(123);
+    expect(normalizeSchemaId(item.id)).toBe(schemaId);
+    expect(normalizeSchemaId(item.tr_id)).toBe(123);
   });
 
   it("should list credential schemas", async () => {
     const res = await broker.call(`${serviceKey}.list`, { only_active: false });
-    const items = res?.schemas || res;
+    const body = deepUnwrapMoleculer(res);
+    const items = body?.schemas ?? body;
 
     expect(Array.isArray(items)).toBe(true);
-    const found = items.find((i: any) => i.id === schema.id);
+    const found = items.find((i: any) => normalizeSchemaId(i.id) === schemaId);
     expect(found).toBeDefined();
-    expect(found.tr_id).toBe(123);
+    expect(normalizeSchemaId(found.tr_id)).toBe(123);
   });
 
   it("should fetch JsonSchema of the credential schema", async () => {
-    const res = await broker.call(`${serviceKey}.JsonSchema`, { id: schema.id });
-    expect(res).toBeDefined();
-    expect(typeof res).toBe("string");
-    const stored = res as string;
-    expect(stored).toContain("vpr:verana:vna-testnet-1/cs/v1/js/" + schema.id);
+    const res = await broker.call(`${serviceKey}.JsonSchema`, { id: normalizeSchemaId(schemaId) });
+    const storedRaw =
+      typeof res === "string"
+        ? res
+        : typeof (res as Record<string, unknown>)?.data === "string"
+          ? ((res as Record<string, unknown>).data as string)
+          : (deepUnwrapMoleculer(res) as string | undefined) ?? res;
+    expect(storedRaw).toBeDefined();
+    expect(typeof storedRaw).toBe("string");
+    const stored = storedRaw as string;
+    expect(stored).toContain("vpr:verana:vna-testnet-1/cs/v1/js/" + schemaId);
     expect(stored).toContain("foo");
     const parsed = JSON.parse(stored);
-    expect(parsed.$id).toBe("vpr:verana:vna-testnet-1/cs/v1/js/" + schema.id);
+    expect(parsed.$id).toBe("vpr:verana:vna-testnet-1/cs/v1/js/" + schemaId);
     expect(parsed.properties).toHaveProperty("foo");
   });
 
@@ -267,17 +331,18 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   });
 
   it("should get history records for the schema", async () => {
-    const res = await broker.call(`${serviceKey}.getHistory`, { id: schema.id });
-    
-    expect(res).toBeDefined();
-    expect(res.entity_type).toBe("CredentialSchema");
-    expect(Number(res.entity_id)).toBe(schema.id);
-    expect(Array.isArray(res.activity)).toBe(true);
-    expect(res.activity.length).toBeGreaterThan(0);
-    expect(res.activity[0].timestamp).toBeDefined();
-    expect(res.activity[0].block_height).toBeDefined();
-    expect(res.activity[0].entity_type).toBe("CredentialSchema");
-    expect(Number(res.activity[0].entity_id)).toBe(schema.id);
-    expect(res.activity[0].msg).toBeDefined();
+    const res = await broker.call(`${serviceKey}.getHistory`, { id: normalizeSchemaId(schemaId) });
+    const body = deepUnwrapMoleculer(res) ?? res;
+
+    expect(body).toBeDefined();
+    expect(body.entity_type).toBe("CredentialSchema");
+    expect(normalizeSchemaId(body.entity_id)).toBe(schemaId);
+    expect(Array.isArray(body.activity)).toBe(true);
+    expect(body.activity.length).toBeGreaterThan(0);
+    expect(body.activity[0].timestamp).toBeDefined();
+    expect(body.activity[0].block_height).toBeDefined();
+    expect(body.activity[0].entity_type).toBe("CredentialSchema");
+    expect(normalizeSchemaId(body.activity[0].entity_id)).toBe(schemaId);
+    expect(body.activity[0].msg).toBeDefined();
   });
 });

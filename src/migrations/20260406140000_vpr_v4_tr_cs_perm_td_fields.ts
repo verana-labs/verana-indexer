@@ -62,7 +62,7 @@ export async function up(knex: Knex): Promise<void> {
           if (col === "vs_operator") {
             table.text("vs_operator").nullable();
           } else if (col === "adjusted") {
-            table.timestamp("adjusted").nullable();
+            table.timestamp("adjusted", { useTz: true }).nullable();
           } else if (col === "adjusted_by") {
             table.text("adjusted_by").nullable();
           } else if (col === "vs_operator_authz_enabled") {
@@ -88,7 +88,7 @@ export async function up(knex: Knex): Promise<void> {
           if (col === "vs_operator") {
             table.text("vs_operator").nullable();
           } else if (col === "adjusted") {
-            table.timestamp("adjusted").nullable();
+            table.timestamp("adjusted", { useTz: true }).nullable();
           } else if (col === "adjusted_by") {
             table.text("adjusted_by").nullable();
           } else if (col === "vs_operator_authz_enabled") {

@@ -1,7 +1,6 @@
 import { Knex } from "knex";
 
 const HISTORY_TABLES = [
-  "did_history",
   "trust_registry_history",
   "governance_framework_version_history",
   "governance_framework_document_history",

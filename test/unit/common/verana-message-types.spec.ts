@@ -1,13 +1,12 @@
 import { describe, it, expect } from "@jest/globals";
 import {
-  VeranaDidMessageTypes,
+  ALL_KNOWN_VERANA_MESSAGE_TYPES,
   VeranaCredentialSchemaMessageTypes,
   VeranaPermissionMessageTypes,
   VeranaTrustDepositMessageTypes,
   VeranaTrustRegistryMessageTypes,
   isKnownVeranaMessageType,
   isVeranaMessageType,
-  isDidMessageType,
   isTrustRegistryMessageType,
   isCredentialSchemaMessageType,
   isPermissionMessageType,
@@ -19,9 +18,10 @@ import {
 
 describe("verana-message-types", () => {
   describe("Message Type Enums", () => {
-    it("should have correct VeranaDidMessageTypes values", () => {
-      expect(VeranaDidMessageTypes.AddDid).toBe("/verana.dd.v1.MsgAddDID");
-      expect(VeranaDidMessageTypes.UpdateParams).toBe("/verana.dd.v1.MsgUpdateParams");
+    it("should aggregate all indexed Verana and tracked Cosmos message types", () => {
+      expect(ALL_KNOWN_VERANA_MESSAGE_TYPES.has(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema)).toBe(true);
+      expect(ALL_KNOWN_VERANA_MESSAGE_TYPES.has(VeranaTrustRegistryMessageTypes.CreateTrustRegistry)).toBe(true);
+      expect(ALL_KNOWN_VERANA_MESSAGE_TYPES.size).toBeGreaterThan(10);
     });
 
     it("should have correct VeranaCredentialSchemaMessageTypes values", () => {
@@ -47,8 +47,8 @@ describe("verana-message-types", () => {
 
   describe("isVeranaMessageType", () => {
     it("should return true for Verana message types", () => {
-      expect(isVeranaMessageType("/verana.dd.v1.MsgAddDID")).toBe(true);
       expect(isVeranaMessageType("/verana.cs.v1.MsgCreateCredentialSchema")).toBe(true);
+      expect(isVeranaMessageType("/verana.tr.v1.MsgCreateTrustRegistry")).toBe(true);
     });
 
     it("should return false for non-Verana message types", () => {
@@ -59,7 +59,7 @@ describe("verana-message-types", () => {
 
   describe("isKnownVeranaMessageType", () => {
     it("should return true for known Verana message types", () => {
-      expect(isKnownVeranaMessageType(VeranaDidMessageTypes.AddDid)).toBe(true);
+      expect(isKnownVeranaMessageType(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema)).toBe(true);
       expect(isKnownVeranaMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(true);
     });
 
@@ -73,39 +73,32 @@ describe("verana-message-types", () => {
   });
 
   describe("Message Type Checkers", () => {
-    it("isDidMessageType should work correctly", () => {
-      expect(isDidMessageType(VeranaDidMessageTypes.AddDid)).toBe(true);
-      expect(isDidMessageType(VeranaDidMessageTypes.UpdateParams)).toBe(true);
-      expect(isDidMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(false);
-    });
-
     it("isTrustRegistryMessageType should work correctly", () => {
       expect(isTrustRegistryMessageType(VeranaTrustRegistryMessageTypes.CreateTrustRegistry)).toBe(true);
-      expect(isTrustRegistryMessageType(VeranaDidMessageTypes.AddDid)).toBe(false);
+      expect(isTrustRegistryMessageType(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema)).toBe(false);
     });
 
     it("isCredentialSchemaMessageType should work correctly", () => {
       expect(isCredentialSchemaMessageType(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema)).toBe(true);
-      expect(isCredentialSchemaMessageType(VeranaDidMessageTypes.AddDid)).toBe(false);
+      expect(isCredentialSchemaMessageType(VeranaTrustRegistryMessageTypes.CreateTrustRegistry)).toBe(false);
     });
 
     it("isPermissionMessageType should work correctly", () => {
       expect(isPermissionMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(true);
-      expect(isPermissionMessageType(VeranaDidMessageTypes.AddDid)).toBe(false);
+      expect(isPermissionMessageType(VeranaTrustRegistryMessageTypes.CreateTrustRegistry)).toBe(false);
     });
 
     it("isTrustDepositMessageType should work correctly", () => {
       expect(isTrustDepositMessageType(VeranaTrustDepositMessageTypes.ReclaimYield)).toBe(true);
-      expect(isTrustDepositMessageType(VeranaDidMessageTypes.AddDid)).toBe(false);
+      expect(isTrustDepositMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(false);
     });
 
     it("isUpdateParamsMessageType should work correctly", () => {
-      expect(isUpdateParamsMessageType(VeranaDidMessageTypes.UpdateParams)).toBe(true);
+      expect(isUpdateParamsMessageType("/verana.unknown.v1.MsgUpdateParams")).toBe(false);
       expect(isUpdateParamsMessageType(VeranaCredentialSchemaMessageTypes.UpdateParams)).toBe(true);
       expect(isUpdateParamsMessageType(VeranaPermissionMessageTypes.UpdateParams)).toBe(true);
       expect(isUpdateParamsMessageType(VeranaTrustDepositMessageTypes.UpdateParams)).toBe(true);
       expect(isUpdateParamsMessageType(VeranaTrustRegistryMessageTypes.UpdateParams)).toBe(true);
-      expect(isUpdateParamsMessageType(VeranaDidMessageTypes.AddDid)).toBe(false);
     });
   });
 
@@ -114,7 +107,7 @@ describe("verana-message-types", () => {
       const types = getAllKnownMessageTypes();
       expect(Array.isArray(types)).toBe(true);
       expect(types.length).toBeGreaterThan(0);
-      expect(types).toContain(VeranaDidMessageTypes.AddDid);
+      expect(types).toContain(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema);
       expect(types).toContain(VeranaPermissionMessageTypes.CreateRootPermission);
     });
   });
@@ -138,4 +131,3 @@ describe("verana-message-types", () => {
     });
   });
 });
-

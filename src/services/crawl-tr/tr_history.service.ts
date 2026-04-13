@@ -248,7 +248,7 @@ export default class TrustRegistryHistoryService extends BaseService {
 
     const rows = await query.select(
       "id", "tr_id", "height", "event_type", "created_at",
-      "did", "controller", "created", "modified", "archived", "deposit", "aka", "language", "active_version",
+      "did", "corporation", "created", "modified", "archived", "aka", "language", "active_version",
       "participants", "participants_ecosystem", "participants_issuer_grantor", "participants_issuer",
       "participants_verifier_grantor", "participants_verifier", "participants_holder",
       "active_schemas", "archived_schemas", "weight", "issued", "verified",
@@ -299,11 +299,10 @@ export default class TrustRegistryHistoryService extends BaseService {
 
       const changes: Record<string, unknown> = {
         did: row.did,
-        controller: row.controller,
+        corporation: row.corporation,
         created: row.created != null ? (row.created instanceof Date ? row.created.toISOString() : new Date(row.created).toISOString()) : null,
         modified: row.modified != null ? (row.modified instanceof Date ? row.modified.toISOString() : new Date(row.modified).toISOString()) : null,
         archived: row.archived != null ? (row.archived instanceof Date ? row.archived.toISOString() : new Date(row.archived).toISOString()) : null,
-        deposit: Number(row.deposit ?? 0),
         aka: row.aka ?? null,
         language: row.language ?? null,
         active_version: row.active_version ?? null,

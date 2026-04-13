@@ -8,6 +8,7 @@ export function extractController(
 
   const controller = 
     message.controller || 
+    message.corporation ||
     message.creator || 
     message.grantee ||
     message.authority ||

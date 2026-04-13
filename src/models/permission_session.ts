@@ -2,7 +2,8 @@ import { Model } from "objection";
 import BaseModel from "./base";
 import Permission from "./permission";
 
-export interface AuthzEntry {
+export interface PermissionSessionRecord {
+  created: string;
   issuer_perm_id?: number | null;
   verifier_perm_id?: number | null;
   wallet_agent_perm_id: number;
@@ -12,10 +13,11 @@ export default class PermissionSession extends BaseModel {
   static tableName = "permission_sessions";
 
   id!: string;
-  controller!: string;
+  corporation!: string;
+  vs_operator?: string | null;
   agent_perm_id!: number;
   wallet_agent_perm_id!: number;
-  authz!: AuthzEntry[];
+  session_records!: PermissionSessionRecord[];
   created!: string;
   modified!: string;
 
@@ -24,26 +26,28 @@ export default class PermissionSession extends BaseModel {
       type: "object",
       required: [
         "id",
-        "controller",
+        "corporation",
         "agent_perm_id",
         "wallet_agent_perm_id",
-        "authz",
+        "session_records",
       ],
       properties: {
         id: { type: "string" },
-        controller: { type: "string", maxLength: 255 },
+        corporation: { type: "string", maxLength: 255 },
+        vs_operator: { type: ["string", "null"] },
         agent_perm_id: { type: "integer" },
         wallet_agent_perm_id: { type: "integer" },
-        authz: {
+        session_records: {
           type: "array",
           items: {
             type: "object",
             properties: {
+              created: { type: "string" },
               issuer_perm_id: { type: ["integer", "null"] },
               verifier_perm_id: { type: ["integer", "null"] },
               wallet_agent_perm_id: { type: "integer" },
             },
-            required: ["wallet_agent_perm_id"],
+            required: ["created", "wallet_agent_perm_id"],
           },
         },
         created: { type: "string" },
@@ -53,7 +57,7 @@ export default class PermissionSession extends BaseModel {
   }
 
   static get jsonAttributes() {
-    return ["authz"];
+    return ["session_records"];
   }
 
   static get relationMappings() {
@@ -77,18 +81,16 @@ export default class PermissionSession extends BaseModel {
     };
   }
 
-  addAuthz(entry: AuthzEntry): void {
-    if (!this.authz) {
-      this.authz = [];
+  pushSessionRecord(entry: Omit<PermissionSessionRecord, "created"> & { created?: string }): void {
+    if (!this.session_records) {
+      this.session_records = [];
     }
-    this.authz.push(entry);
-  }
-
-  hasAuthzFor(issuerPermId?: number, verifierPermId?: number): boolean {
-    return this.authz.some(
-      (entry) =>
-        (!issuerPermId || entry.issuer_perm_id === Number(issuerPermId)) &&
-        (!verifierPermId || entry.verifier_perm_id === Number(verifierPermId))
-    );
+    const created = entry.created ?? new Date().toISOString();
+    this.session_records.push({
+      created,
+      issuer_perm_id: entry.issuer_perm_id ?? null,
+      verifier_perm_id: entry.verifier_perm_id ?? null,
+      wallet_agent_perm_id: entry.wallet_agent_perm_id,
+    });
   }
 }

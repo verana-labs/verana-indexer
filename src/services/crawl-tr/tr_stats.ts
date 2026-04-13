@@ -64,10 +64,10 @@ export async function getTrustRegistryController(trId: number, blockHeight?: num
             .orderBy("height", "desc")
             .orderBy("created_at", "desc")
             .first();
-        return trHistory?.controller || null;
+        return trHistory?.corporation || null;
     }
     const tr = await TrustRegistry.query().findById(trId);
-    return tr?.controller || null;
+    return tr?.corporation || null;
 }
 
 export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {

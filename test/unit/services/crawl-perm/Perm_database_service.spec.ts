@@ -67,11 +67,10 @@ describe("🧪 PermIngestService Unit Tests", () => {
           schema_id: 99,
           type: "ECOSYSTEM",
           did: "did:test:123",
-          grantee: "grantee1",
+          corporation: "grantee1",
           validation_fees: 10,
           issuance_fees: 5,
           verification_fees: 2,
-          country: "PK",
         })
       );
     });
@@ -103,7 +102,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         expect.objectContaining({
           validator_perm_id: 1,
           schema_id: 99,
-          grantee: "issuer1",
+          corporation: "issuer1",
         })
       );
     });
@@ -113,7 +112,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
     it("should revoke permission if caller is grantee", async () => {
       (knex.first as jest.Mock).mockResolvedValueOnce({
         id: 10,
-        grantee: "user1",
+        corporation: "user1",
+        schema_id: 1,
       });
       (knex.transaction as jest.Mock).mockImplementation((fn) => fn(knex));
 
@@ -163,8 +163,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("mapLedgerPermissionToDbRow (v4 grantee / authority)", () => {
-    it("maps authority to grantee when grantee is absent (NOT NULL grantee)", () => {
+  describe("mapLedgerPermissionToDbRow (v4 corporation / grantee / authority)", () => {
+    it("maps authority to corporation when grantee is absent (NOT NULL corporation)", () => {
       const row = mapLedgerPermissionToDbRow({
         id: 1,
         schema_id: 2,
@@ -172,7 +172,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         did: "did:example:x",
         authority: "did:example:authority",
       });
-      expect(row.grantee).toBe("did:example:authority");
+      expect(row.corporation).toBe("did:example:authority");
     });
 
     it("prefers explicit grantee over authority", () => {
@@ -183,7 +183,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         grantee: "did:g",
         authority: "did:a",
       });
-      expect(row.grantee).toBe("did:g");
+      expect(row.corporation).toBe("did:g");
     });
 
     it("uses empty string when no grantee/authority/created fields (DB NOT NULL)", () => {
@@ -193,7 +193,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         type: "ECOSYSTEM",
         did: "did:x",
       });
-      expect(row.grantee).toBe("");
+      expect(row.corporation).toBe("");
     });
   });
 

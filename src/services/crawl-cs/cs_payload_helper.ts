@@ -47,20 +47,16 @@ export function enrichSchemaMessageWithEvent(
     eventData.holder_validation_validity_period
   );
   ensure(
-    "deposit",
-    eventData.deposit
-  );
-  ensure(
     "archived",
     eventData.archived ? eventData.archived.toISOString() : null
   );
   ensure(
-    "verifier_perm_management_mode",
-    eventData.verifier_perm_management_mode
+    "verifier_onboarding_mode",
+    eventData.verifier_onboarding_mode
   );
   ensure(
-    "issuer_perm_management_mode",
-    eventData.issuer_perm_management_mode
+    "issuer_onboarding_mode",
+    eventData.issuer_onboarding_mode
   );
 
   const id = schemaMessage.id ?? eventData.id;

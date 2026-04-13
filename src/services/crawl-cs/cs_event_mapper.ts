@@ -43,14 +43,13 @@ export interface CredentialSchemaEventData {
   type: CSType;
   id: number;
   tr_id: number;
-  deposit: number;
   issuer_grantor_validation_validity_period: number;
   verifier_grantor_validation_validity_period: number;
   issuer_validation_validity_period: number;
   verifier_validation_validity_period: number;
   holder_validation_validity_period: number;
-  verifier_perm_management_mode: string;
-  issuer_perm_management_mode: string;
+  issuer_onboarding_mode: string;
+  verifier_onboarding_mode: string;
   archived: Date | null;
   modified: Date;
 }
@@ -100,14 +99,13 @@ export function parseCredentialSchemaEvent(
     type: typeMap[event.type] ?? "update",
     id: num(getAttr(attributeMap, "credential_schema_id")),
     tr_id: num(getAttr(attributeMap, "trust_registry_id")),
-    deposit: num(getAttr(attributeMap, "deposit")),
     issuer_grantor_validation_validity_period: num(getAttr(attributeMap, "issuer_grantor_validation_validity_period")),
     verifier_grantor_validation_validity_period: num(getAttr(attributeMap, "verifier_grantor_validation_validity_period")),
     issuer_validation_validity_period: num(getAttr(attributeMap, "issuer_validation_validity_period")),
     verifier_validation_validity_period: num(getAttr(attributeMap, "verifier_validation_validity_period")),
     holder_validation_validity_period: num(getAttr(attributeMap, "holder_validation_validity_period")),
-    verifier_perm_management_mode: getAttr(attributeMap, "verifier_perm_management_mode"),
-    issuer_perm_management_mode: getAttr(attributeMap, "issuer_perm_management_mode"),
+    issuer_onboarding_mode: getAttr(attributeMap, "issuer_onboarding_mode") || getAttr(attributeMap, "issuer_perm_management_mode"),
+    verifier_onboarding_mode: getAttr(attributeMap, "verifier_onboarding_mode") || getAttr(attributeMap, "verifier_perm_management_mode"),
     archived: isArchived ? modified : null,
     modified,
   };

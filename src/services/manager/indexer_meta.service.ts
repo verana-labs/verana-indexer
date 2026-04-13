@@ -11,7 +11,6 @@ import { Network } from "../../network";
 import {
   VeranaTrustRegistryMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaDidMessageTypes,
   VeranaPermissionMessageTypes,
 } from "../../common/verana-message-types";
 
@@ -26,10 +25,6 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy]: "CreateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
-  [VeranaDidMessageTypes.AddDid]: "AddDID",
-  [VeranaDidMessageTypes.RenewDid]: "RenewDID",
-  [VeranaDidMessageTypes.TouchDid]: "TouchDID",
-  [VeranaDidMessageTypes.RemoveDid]: "RemoveDID",
   [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
   [VeranaPermissionMessageTypes.CreatePermission]: "CreatePermission",
   [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
@@ -130,7 +125,6 @@ export default class IndexerMetaService extends BaseService {
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
     // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
     const tables = [
-      "did_history",
       "trust_registry_history",
       "governance_framework_version_history",
       "governance_framework_document_history",
@@ -352,7 +346,6 @@ export default class IndexerMetaService extends BaseService {
     ]);
 
     const [
-      didHistory,
       trHistory,
       gfvHistory,
       gfdHistory,
@@ -362,14 +355,13 @@ export default class IndexerMetaService extends BaseService {
       tdHistory,
       moduleParamsHistory,
     ] = await Promise.all([
-      queryHistoryWithTx("did_history", blockHeight, "DID", "did", "did", ["/verana.dd.v1", "/veranablockchain.diddirectory"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("trust_registry_history", blockHeight, "TrustRegistry", "tr_id", "tr_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("governance_framework_version_history", blockHeight, "GovernanceFrameworkVersion", "tr_id", "gfv_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("governance_framework_document_history", blockHeight, "GovernanceFrameworkDocument", "tr_id", "gfd_id", ["/verana.tr.v1", "/veranablockchain.trustregistry"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("credential_schema_history", blockHeight, "CredentialSchema", "credential_schema_id", "credential_schema_id", ["/verana.cs.v1", "/veranablockchain.credentialschema"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("permission_history", blockHeight, "Permission", "permission_id", "permission_id", ["/verana.perm.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("permission_session_history", blockHeight, "PermissionSession", "session_id", "session_id", ["/verana.perm.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
-      queryHistoryWithTx("trust_deposit_history", blockHeight, "TrustDeposit", "account", "account", ["/verana.td.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("trust_deposit_history", blockHeight, "TrustDeposit", "corporation", "corporation", ["/verana.td.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("module_params_history", blockHeight, "GlobalVariables", "module", "module", [], timestampAtHeight, allMessagesAtHeight as any[]),
     ]);
 
@@ -420,10 +412,6 @@ export default class IndexerMetaService extends BaseService {
       return activityItem;
     };
 
-    for (const record of didHistory) {
-      activityItems.push(toActivityItem(record, "DID", record.did));
-    }
-
     for (const record of trHistory) {
       activityItems.push(toActivityItem(record, "TrustRegistry", String(record.tr_id)));
     }
@@ -449,7 +437,8 @@ export default class IndexerMetaService extends BaseService {
     }
 
     for (const record of tdHistory) {
-      activityItems.push(toActivityItem(record, "TrustDeposit", record.account));
+      const tdId = String(record.corporation ?? record.account ?? "");
+      activityItems.push(toActivityItem(record, "TrustDeposit", tdId));
     }
 
     for (const record of moduleParamsHistory) {

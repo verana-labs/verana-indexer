@@ -2,6 +2,37 @@ import { ServiceBroker } from "moleculer";
 import CredentialSchemaDatabaseService from "../../../../src/services/crawl-cs/cs_database.service";
 import knex from "../../../../src/common/utils/db_connection";
 import { SERVICE } from "../../../../src/common";
+
+function normalizeSchemaId(id: unknown): number {
+  if (id == null) return NaN;
+  if (typeof id === "bigint") return Number(id);
+  const n = Number(id);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function deepUnwrapMoleculer(res: unknown): Record<string, unknown> | undefined {
+  let cur: unknown = res;
+  for (let depth = 0; depth < 12; depth++) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    const o = cur as Record<string, unknown>;
+    const terminal =
+      typeof o.success === "boolean" ||
+      typeof o.error === "string" ||
+      o.result !== undefined ||
+      o.updated !== undefined ||
+      o.schema !== undefined ||
+      Array.isArray(o.schemas) ||
+      o.entity_type !== undefined;
+    if (terminal) return o;
+    if ("data" in o && o.data != null && typeof o.data === "object") {
+      cur = o.data;
+      continue;
+    }
+    return o;
+  }
+  return undefined;
+}
+
 describe("CredentialSchemaDatabaseService Tests", () => {
   const broker = new ServiceBroker({ logger: false });
   const serviceKey = SERVICE.V1.CredentialSchemaDatabaseService.path;
@@ -75,14 +106,16 @@ describe("CredentialSchemaDatabaseService Tests", () => {
     };
 
     const upsertRes = await broker.call(`${serviceKey}.upsert`, { payload });
-    schema = upsertRes.data?.result || upsertRes.result || upsertRes;
+    const upsertBody = deepUnwrapMoleculer(upsertRes) as Record<string, unknown>;
+    expect(upsertBody?.success).toBe(true);
+    schema = (upsertBody?.result ?? upsertBody) as Record<string, unknown>;
 
-    expect(schema.tr_id).toBe(6);
+    expect(normalizeSchemaId(schema.tr_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
   it("should update a credential schema", async () => {
     const payload = {
-      id: schema?.id,
+      id: normalizeSchemaId(schema?.id),
       issuer_grantor_validation_validity_period: 1000,
       verifier_grantor_validation_validity_period: 1000,
       issuer_validation_validity_period: 1000,
@@ -93,41 +126,43 @@ describe("CredentialSchemaDatabaseService Tests", () => {
     };
 
     const upsertRes = await broker.call(`${serviceKey}.update`, { payload });
-    schema = upsertRes.data?.updated || upsertRes.updated || upsertRes;
-    expect(schema.tr_id).toBe(6);
+    const updateBody = deepUnwrapMoleculer(upsertRes) as Record<string, unknown>;
+    expect(updateBody?.success).toBe(true);
+    schema = (updateBody?.updated ?? updateBody) as Record<string, unknown>;
+    expect(normalizeSchemaId(schema.tr_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
 
   it("should archive a credential schema", async () => {
     const archiveRes = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema.id,
+        id: normalizeSchemaId(schema.id),
         archive: true,
         modified: new Date().toISOString(),
       },
     });
 
-    const archiveSuccess = archiveRes.data?.success ?? archiveRes.success;
-    expect(archiveSuccess).toBe(true);
+    const archiveBody = deepUnwrapMoleculer(archiveRes) as Record<string, unknown>;
+    expect(archiveBody?.success).toBe(true);
   });
   it("should reflect the archive status in the database", async () => {
     const dbSchema = await knex("credential_schemas")
-      .where({ id: schema?.id })
+      .where({ id: normalizeSchemaId(schema?.id) })
       .first();
-    const unarchiveSuccess = dbSchema ?? dbSchema;
 
-    expect(unarchiveSuccess.is_active).toBe(false);
+    expect(dbSchema?.archived).not.toBeNull();
+    expect(dbSchema?.is_active).toBe(false);
   });
   it("should unarchive a credential schema", async () => {
     const unarchiveRes = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema?.id,
+        id: normalizeSchemaId(schema?.id),
         archive: false,
         modified: new Date().toISOString(),
       },
     });
 
-    const unarchiveSuccess = unarchiveRes.data?.success ?? unarchiveRes.success;
-    expect(unarchiveSuccess).toBe(true);
+    const unarchiveBody = deepUnwrapMoleculer(unarchiveRes) as Record<string, unknown>;
+    expect(unarchiveBody?.success).toBe(true);
   });
 });

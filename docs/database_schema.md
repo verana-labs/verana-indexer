@@ -315,23 +315,6 @@
 | denom       |                                      |
 | processed   | marked this feegrant is done or not  |
 
-### `dids`
-
-| Column       | Description                                                             |
-| ------------ | ----------------------------------------------------------------------- |
-| `id`         | Primary key of the record                                               |
-| `height`     | Block height when the DID record was created or last updated            |
-| `did`        | Decentralized Identifier (DID) string (must be unique)                  |
-| `controller` | Controller of the DID                                                   |
-| `created`    | Creation date/time of the DID record                                    |
-| `modified`   | Last modification date/time of the DID record                           |
-| `exp`        | Expiration date/time of the DID                                         |
-| `deposit`    | Deposit amount associated with the DID                                  |
-| `event_type` | Event type that triggered the DID change (e.g., create, update, revoke) |
-| `years`      | Number of years the DID is valid (if applicable)                        |
-| `is_deleted` | Whether the DID has been marked as deleted                              |
-| `deleted_at` | Date/time when the DID was marked as deleted (if applicable)            |
-
 ### `trust_registry`
 
 | Column           | Description                                                                 |

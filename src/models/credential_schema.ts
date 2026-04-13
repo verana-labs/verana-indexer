@@ -11,9 +11,8 @@ export default class CredentialSchema extends BaseModel {
   issuer_validation_validity_period!: number;
   verifier_validation_validity_period!: number;
   holder_validation_validity_period!: number;
-  issuer_perm_management_mode!: string;
-  deposit!: number;
-  verifier_perm_management_mode!: string;
+  issuer_onboarding_mode!: string;
+  verifier_onboarding_mode!: string;
   holder_onboarding_mode?: string | null;
   pricing_asset_type?: string | null;
   pricing_asset?: string | null;
@@ -52,14 +51,13 @@ export default class CredentialSchema extends BaseModel {
         "issuer_validation_validity_period",
         "verifier_validation_validity_period",
         "holder_validation_validity_period",
-        "issuer_perm_management_mode",
-        "verifier_perm_management_mode",
+        "issuer_onboarding_mode",
+        "verifier_onboarding_mode",
 
       ],
       properties: {
         id: { type: "integer" },
         tr_id: { type: "integer" },
-        deposit: { type: "integer" },
         json_schema: { type: "object" },
 
         issuer_grantor_validation_validity_period: { type: "integer" },
@@ -68,8 +66,12 @@ export default class CredentialSchema extends BaseModel {
         verifier_validation_validity_period: { type: "integer" },
         holder_validation_validity_period: { type: "integer" },
 
-        issuer_perm_management_mode: { type: "string" },
-        verifier_perm_management_mode: { type: "string" },
+        issuer_onboarding_mode: { type: "string" },
+        verifier_onboarding_mode: { type: "string" },
+        holder_onboarding_mode: { type: ["string", "null"] },
+        pricing_asset_type: { type: ["string", "null"] },
+        pricing_asset: { type: ["string", "null"] },
+        digest_algorithm: { type: ["string", "null"] },
         is_active: { type: "boolean" },
 
         archived: { type: ["string", "null"], format: "date-time" },

@@ -1,22 +1,13 @@
 
-export enum VeranaDidMessageTypes {
-  UpdateParams = "/verana.dd.v1.MsgUpdateParams",
-  AddDid = "/verana.dd.v1.MsgAddDID",
-  AddDidLegacy = "/veranablockchain.diddirectory.MsgAddDID",
-  RenewDid = "/verana.dd.v1.MsgRenewDID",
-  RenewDidLegacy = "/veranablockchain.diddirectory.MsgRenewDID",
-  RemoveDid = "/verana.dd.v1.MsgRemoveDID",
-  RemoveDidLegacy = "/veranablockchain.diddirectory.MsgRemoveDID",
-  TouchDid = "/verana.dd.v1.MsgTouchDID",
-  TouchDidLegacy = "/veranablockchain.diddirectory.MsgTouchDID",
-}
-
 export enum VeranaCredentialSchemaMessageTypes {
   UpdateParams = "/verana.cs.v1.MsgUpdateParams",
   CreateCredentialSchema = "/verana.cs.v1.MsgCreateCredentialSchema",
   CreateCredentialSchemaLegacy = "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
   UpdateCredentialSchema = "/verana.cs.v1.MsgUpdateCredentialSchema",
   ArchiveCredentialSchema = "/verana.cs.v1.MsgArchiveCredentialSchema",
+  CreateSchemaAuthorizationPolicyDraft = "/verana.cs.v1.MsgCreateSchemaAuthorizationPolicyDraft",
+  ActivateSchemaAuthorizationPolicyVersion = "/verana.cs.v1.MsgActivateSchemaAuthorizationPolicyVersion",
+  RevokeSchemaAuthorizationPolicyVersion = "/verana.cs.v1.MsgRevokeSchemaAuthorizationPolicyVersion",
 }
 
 export enum VeranaPermissionMessageTypes {
@@ -56,7 +47,6 @@ export enum VeranaTrustRegistryMessageTypes {
 
 export enum UpdateParamsMessageTypes {
   CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
-  DID_DIRECTORY = "/verana.dd.v1.MsgUpdateParams",
   PERMISSION = "/verana.perm.v1.MsgUpdateParams",
   TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
   TRUST_REGISTRY = "/verana.tr.v1.MsgUpdateParams",
@@ -75,7 +65,6 @@ export enum CosmosSlashingMessageTypes {
 }
 
 export const ALL_KNOWN_VERANA_MESSAGE_TYPES = new Set<string>([
-  ...Object.values(VeranaDidMessageTypes),
   ...Object.values(VeranaCredentialSchemaMessageTypes),
   ...Object.values(VeranaPermissionMessageTypes),
   ...Object.values(VeranaTrustDepositMessageTypes),
@@ -101,10 +90,6 @@ export function isVeranaMessageType(messageType: string): boolean {
   return messageType.startsWith('/verana.');
 }
 
-export function isDidMessageType(messageType: string): boolean {
-  return Object.values(VeranaDidMessageTypes).includes(messageType as VeranaDidMessageTypes);
-}
-
 export function isTrustRegistryMessageType(messageType: string): boolean {
   return Object.values(VeranaTrustRegistryMessageTypes).includes(messageType as VeranaTrustRegistryMessageTypes);
 }
@@ -122,8 +107,7 @@ export function isTrustDepositMessageType(messageType: string): boolean {
 }
 
 export function isUpdateParamsMessageType(messageType: string): boolean {
-  return messageType === VeranaDidMessageTypes.UpdateParams ||
-         messageType === VeranaCredentialSchemaMessageTypes.UpdateParams ||
+  return messageType === VeranaCredentialSchemaMessageTypes.UpdateParams ||
          messageType === VeranaPermissionMessageTypes.UpdateParams ||
          messageType === VeranaTrustDepositMessageTypes.UpdateParams ||
          messageType === VeranaTrustRegistryMessageTypes.UpdateParams;

@@ -30,44 +30,37 @@ describe("🧪 TrustDepositDatabaseService", () => {
     it("✅ should return trust deposit successfully", async () => {
       (TrustDeposit.query as any).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          account: "verana1testaccountxyz",
+          corporation: "verana1testaccountxyz",
           share: 100000,
-          amount:100000,
+          deposit: 100000,
           claimable: 0,
           slashed_deposit: 1000,
           repaid_deposit: 500,
           last_slashed: "2025-10-09T10:00:00Z",
           last_repaid: "2025-10-09T12:00:00Z",
           slash_count: 1,
-          last_repaid_by: "verana1dummyxyz12345",
         }),
       });
 
       const res: any = await broker.call(
         SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
         {
-          account: "verana1testaccountxyz",
+          corporation: "verana1testaccountxyz",
         }
       );
 
       expect(res.trust_deposit).toBeDefined();
-      expect(res.trust_deposit.account).toBe("verana1testaccountxyz");
+      expect(res.trust_deposit.corporation).toBe("verana1testaccountxyz");
       expect(res.trust_deposit.slashed_deposit).toBe(1000);
     });
 
     it("❌ should return 400 for invalid account", async () => {
-      try {
-        const res: any = await broker.call(
-          SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
-          { account: "abc" }
-        );
-        // Service may return structured error or throw based on framework config
-        expect(res.status).toBe(400);
-        expect(res.error).toBe("Invalid account format");
-      } catch (err: any) {
-        // If framework throws, just ensure it's an error
-        expect(err).toBeDefined();
-      }
+      const res: any = await broker.call(
+        SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
+        { corporation: "notavalidverana1addressformat123456789" }
+      );
+      expect(res.code).toBe(400);
+      expect(String(res.error)).toContain("Invalid corporation address format");
     });
 
     it("❌ should return 404 if not found", async () => {
@@ -78,7 +71,7 @@ describe("🧪 TrustDepositDatabaseService", () => {
       const res: any = await broker.call(
         SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
         {
-          account: "verana1notfoundxyz",
+          corporation: "verana1notfoundxyz",
         }
       );
       expect(res.error).toContain("No trust deposit found");

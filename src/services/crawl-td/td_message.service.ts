@@ -38,14 +38,13 @@ function toBigIntSafe(value: any): bigint {
 
 const TRUST_DEPOSIT_HISTORY_FIELDS = [
   "share",
-  "amount",
+  "deposit",
   "claimable",
   "slashed_deposit",
   "repaid_deposit",
   "last_slashed",
   "last_repaid",
   "slash_count",
-  "last_repaid_by",
 ];
 
 function computeTdChanges(
@@ -89,7 +88,7 @@ async function recordTrustDepositHistory(
   }
   
   const existingHistory = await trx("trust_deposit_history")
-    .where({ account: td.account, height })
+    .where({ corporation: td.corporation, height })
     .first();
   
   if (existingHistory) {
@@ -97,14 +96,13 @@ async function recordTrustDepositHistory(
       .where({ id: existingHistory.id })
       .update({
         share: td.share ?? 0,
-        amount: td.amount ?? 0,
+        deposit: td.deposit ?? 0,
         claimable: td.claimable ?? 0,
         slashed_deposit: td.slashed_deposit ?? 0,
         repaid_deposit: td.repaid_deposit ?? 0,
         last_slashed: td.last_slashed ?? null,
         last_repaid: td.last_repaid ?? null,
         slash_count: td.slash_count ?? 0,
-        last_repaid_by: td.last_repaid_by ?? "",
         event_type: eventType,
         changes: changes ? JSON.stringify(changes) : null,
       });
@@ -112,16 +110,15 @@ async function recordTrustDepositHistory(
   }
   
   await trx("trust_deposit_history").insert({
-    account: td.account,
+    corporation: td.corporation,
     share: td.share ?? 0,
-    amount: td.amount ?? 0,
+    deposit: td.deposit ?? 0,
     claimable: td.claimable ?? 0,
     slashed_deposit: td.slashed_deposit ?? 0,
     repaid_deposit: td.repaid_deposit ?? 0,
     last_slashed: td.last_slashed ?? null,
     last_repaid: td.last_repaid ?? null,
     slash_count: td.slash_count ?? 0,
-    last_repaid_by: td.last_repaid_by ?? null,
     event_type: eventType,
     height,
     changes: changes ? JSON.stringify(changes) : null,
@@ -267,7 +264,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
     try {
       const account = requireController(content, "TrustDeposit RECLAIM_YIELD");
 
-      const td = await TrustDeposit.query(trx).findOne({ account });
+      const td = await TrustDeposit.query(trx).findOne({ corporation: account });
       if (!td) {
         this.logger.warn("No trust deposit found");
         return;
@@ -284,7 +281,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
       }
       
       const claimableYield =
-        toBigIntSafe(td.share) * shareValue - toBigIntSafe(td.amount);
+        toBigIntSafe(td.share) * shareValue - toBigIntSafe(td.deposit);
 
       if (claimableYield <= BigInt(0)) this.logger.warn("No yield available");
 
@@ -323,7 +320,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
         return;
       }
 
-      const td: any = await TrustDeposit.query(trx).findOne({ account });
+      const td: any = await TrustDeposit.query(trx).findOne({ corporation: account });
       if (!td) {
         this.logger.warn(`❌ No trust deposit found for ${account}`);
         return;
@@ -348,7 +345,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
       }
       
       const requiredMinimum = toBigIntSafe(td.share) * shareValue;
-      const newDeposit = toBigIntSafe(td.amount) - claimed;
+      const newDeposit = toBigIntSafe(td.deposit) - claimed;
 
       this.logger.info(
         `[TrustDeposit] Debug: requiredMinimum=${requiredMinimum}, newDeposit=${newDeposit}, claimed=${claimed}`
@@ -367,7 +364,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
       const newShare = toBigIntSafe(td.share) - claimed / shareValue;
 
       const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-        amount: Number(newDeposit),
+        deposit: Number(newDeposit),
         claimable: Number(newClaimable),
         share: Number(newShare),
       });
@@ -398,7 +395,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
       const amount = toBigIntSafe(content.amount);
       if (amount <= BigInt(0)) this.logger.warn("Amount must be > 0");
 
-      const td = await TrustDeposit.query(trx).findOne({ account });
+      const td = await TrustDeposit.query(trx).findOne({ corporation: account });
       if (!td) {
         this.logger.warn("No trust deposit found");
         return;
@@ -417,16 +414,15 @@ export default class TrustDepositMessageProcessorService extends BullableService
         return; 
       }
       
-      const newDeposit = toBigIntSafe(td.amount) + amount;
+      const newDeposit = toBigIntSafe(td.deposit) + amount;
       const newShare = toBigIntSafe(td.share) + amount / shareValue;
       const newRepaid = repaid + amount;
 
       const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-        amount: Number(newDeposit),
+        deposit: Number(newDeposit),
         share: Number(newShare),
         repaid_deposit: Number(newRepaid),
         last_repaid: ts ? new Date(ts).toISOString() : null,
-        last_repaid_by: extractController(content, "unknown"),
       });
 
       await recordTrustDepositHistory(

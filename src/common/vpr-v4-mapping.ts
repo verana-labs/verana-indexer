@@ -56,6 +56,8 @@ export function mapCredentialSchemaApiFields(
     holderRaw != null && holderRaw !== ""
       ? normalizeHolderOnboardingModeV4(String(holderRaw))
       : null;
+  delete out.issuer_perm_management_mode;
+  delete out.verifier_perm_management_mode;
   return out;
 }
 
@@ -63,23 +65,57 @@ export function mapTrustRegistryApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
-  const corp = row.corporation ?? row.controller;
-  if (corp != null && corp !== undefined) {
-    out.corporation = corp;
-    out.controller = row.controller ?? row.corporation;
-  }
+  const corp = out.corporation ?? out.controller;
+  out.corporation = corp ?? null;
+  delete out.controller;
+  return out;
+}
+
+export function normalizeVprFeeDiscountRatio(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  if (n > 1) return Math.min(1, n / 10000);
+  return Math.min(1, Math.max(0, n));
+}
+
+export function mergePermissionExtendedAdjustedAliases(
+  row: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...row };
+  const ts = out.adjusted ?? out.extended;
+  const by = out.adjusted_by ?? out.extended_by;
+  out.adjusted = ts ?? null;
+  out.adjusted_by = by ?? null;
+  delete out.extended;
+  delete out.extended_by;
   return out;
 }
 
 export function mapPermissionApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...row };
-  const corp = row.corporation ?? row.grantee;
-  if (corp != null && corp !== undefined) {
-    out.corporation = corp;
-    out.grantee = row.grantee ?? row.corporation;
+  const merged = mergePermissionExtendedAdjustedAliases({ ...row });
+  const out: Record<string, unknown> = { ...merged };
+  const corp = out.corporation ?? out.grantee ?? out.authority;
+  out.corporation = corp ?? null;
+  delete out.grantee;
+  delete out.authority;
+  if (out.vp_summary_digest == null && out.vp_summary_digest_sri != null) {
+    out.vp_summary_digest = out.vp_summary_digest_sri;
   }
+  delete out.vp_summary_digest_sri;
+  if ("issuance_fee_discount" in out) {
+    out.issuance_fee_discount = normalizeVprFeeDiscountRatio(out.issuance_fee_discount);
+  }
+  if ("verification_fee_discount" in out) {
+    out.verification_fee_discount = normalizeVprFeeDiscountRatio(out.verification_fee_discount);
+  }
+  delete out.created_by;
+  delete out.revoked_by;
+  delete out.slashed_by;
+  delete out.repaid_by;
+  delete out.country;
+  delete out.vp_term_requested;
   return out;
 }
 
@@ -87,15 +123,16 @@ export function mapTrustDepositApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
-  const corp = row.corporation ?? row.account;
-  if (corp != null && corp !== undefined) {
+  const corp = out.corporation ?? out.account;
+  if (corp !== undefined) {
     out.corporation = corp;
-    out.account = row.account ?? row.corporation;
   }
-  const dep = row.deposit ?? row.amount;
+  delete out.account;
+  const dep = out.deposit ?? out.amount;
   if (dep != null && dep !== undefined) {
     out.deposit = dep;
-    out.amount = row.amount ?? row.deposit;
   }
+  delete out.amount;
+  delete out.last_repaid_by;
   return out;
 }

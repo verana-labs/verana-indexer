@@ -13,7 +13,7 @@ import knex from "../../common/utils/db_connection";
 import { Network } from "../../network";
 import { hasMeaningfulChanges, recordModuleParamsHistorySafe } from "../../common/utils/params_utils";
 import { clearParamsCache } from "../../common/utils/params_service";
-import { VeranaCredentialSchemaMessageTypes, VeranaDidMessageTypes, VeranaPermissionMessageTypes, VeranaTrustDepositMessageTypes, VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
+import { VeranaCredentialSchemaMessageTypes, VeranaPermissionMessageTypes, VeranaTrustDepositMessageTypes, VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
 
 @Service({
   name: SERVICE.V1.GenesisParamsService.key,
@@ -352,8 +352,6 @@ export default class GenesisParamsService extends BullableService {
     let module: string;
     if (type === VeranaCredentialSchemaMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.CS;
-    } else if (type === VeranaDidMessageTypes.UpdateParams) {
-      module = ModulesParamsNamesTypes.DD;
     } else if (type === VeranaPermissionMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.PERM;
     } else if (type === VeranaTrustDepositMessageTypes.UpdateParams) {

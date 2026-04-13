@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop */
 /* eslint-disable no-restricted-syntax */
 import { Describe, Test } from '@jest-decorated/core';
-import { VeranaDidMessageTypes } from '../../../../src/common/verana-message-types';
+import { ALL_KNOWN_VERANA_MESSAGE_TYPES } from '../../../../src/common/verana-message-types';
 
 @Describe('Test message type validation functionality')
 export default class MessageValidationTest {
@@ -9,19 +9,19 @@ export default class MessageValidationTest {
   @Test('Should identify known Verana message types')
   public testKnownMessageTypes() {
     const knownTypes = new Set([
-      ...Object.values(VeranaDidMessageTypes),
+      ...ALL_KNOWN_VERANA_MESSAGE_TYPES,
     ]);
 
-    expect(knownTypes.has('/verana.dd.v1.MsgAddDID')).toBe(true);
-    expect(knownTypes.has('/verana.dd.v1.MsgRenewDID')).toBe(true);
+    expect(knownTypes.has('/verana.cs.v1.MsgUpdateParams')).toBe(true);
+    expect(knownTypes.has('/verana.cs.v1.MsgCreateCredentialSchema')).toBe(true);
     expect(knownTypes.has('/verana.unknown.v1.MsgUnknown')).toBe(false);
   }
 
   @Test('Should detect unknown Verana message types')
   public testUnknownMessageTypes() {
     const knownTypes = new Set([
-      '/verana.dd.v1.MsgAddDID',
-      '/verana.dd.v1.MsgRenewDID',
+      '/verana.cs.v1.MsgCreateCredentialSchema',
+      '/verana.cs.v1.MsgUpdateCredentialSchema',
     ]);
 
     const unknownMsg = {
@@ -39,13 +39,13 @@ export default class MessageValidationTest {
   @Test('Should allow known Verana message types to pass')
   public testKnownMessageTypesPass() {
     const knownTypes = new Set([
-      '/verana.dd.v1.MsgAddDID',
-      '/verana.dd.v1.MsgRenewDID',
+      '/verana.cs.v1.MsgCreateCredentialSchema',
+      '/verana.cs.v1.MsgUpdateCredentialSchema',
     ]);
 
     const knownMsg = {
-      type: '/verana.dd.v1.MsgAddDID',
-      content: { did: 'test-did', years: 1 }
+      type: '/verana.cs.v1.MsgCreateCredentialSchema',
+      content: { schema_id: 'test-schema' }
     };
 
     const isVeranaMessage = knownMsg.type.startsWith('/verana.');
@@ -58,7 +58,7 @@ export default class MessageValidationTest {
   @Test('Should ignore non-Verana message types')
   public testNonVeranaMessagesIgnored() {
     const knownTypes = new Set([
-      '/verana.dd.v1.MsgAddDID',
+      '/verana.cs.v1.MsgCreateCredentialSchema',
     ]);
 
     const nonVeranaMsg = {
@@ -83,7 +83,7 @@ export default class MessageValidationTest {
 
     try {
       const knownVeranaMessageTypes = new Set([
-        ...Object.values(VeranaDidMessageTypes),
+        ...ALL_KNOWN_VERANA_MESSAGE_TYPES,
       ]);
 
       const messages = [{
@@ -158,7 +158,7 @@ export default class MessageValidationTest {
 
     try {
       const knownVeranaMessageTypes = new Set([
-        ...Object.values(VeranaDidMessageTypes),
+        ...ALL_KNOWN_VERANA_MESSAGE_TYPES,
       ]);
 
       const messages = [{

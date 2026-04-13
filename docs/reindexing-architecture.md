@@ -25,7 +25,6 @@ Only the `block` table stays untouched. This is your source of truth from the bl
 - **Trust Registry**: `trust_registry`, `governance_framework_version`, `governance_framework_document`, plus all their history tables
 - **Permissions**: `permissions`, `permission_sessions`, and their history tables
 - **Trust Deposits**: `trust_deposits` and `trust_deposit_history`
-- **DID**: `dids` and `did_history`
 - **Module Params**: `module_params` and `module_params_history`
 
 One thing to note about trust deposits: even though they're read directly from block events, we still drop them. They can be fully rebuilt from blocks, and keeping them might cause inconsistencies with other data that's being rebuilt.
@@ -111,7 +110,6 @@ Once you start the services:
    - Credential Schemas
    - Trust Registry entries
    - Permissions
-   - DID records
    - Module parameters
 
 Everything processes from block 0 to the latest block.

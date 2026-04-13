@@ -119,11 +119,11 @@ describe("🧪 perm_state_utils", () => {
 
   describe("calculateGranteeAvailableActions", () => {
     const openSchema: SchemaData = {
-      issuer_perm_management_mode: "OPEN",
-      verifier_perm_management_mode: "OPEN",
+      issuer_onboarding_mode: "OPEN",
+      verifier_onboarding_mode: "OPEN",
     };
 
-    it("for ISSUER in OPEN mode and ACTIVE state allows PERM_REVOKE and PERM_EXTEND", () => {
+    it("for ISSUER in OPEN mode and ACTIVE state allows PERM_REVOKE and PERM_ADJUST", () => {
       const perm: PermissionData = {
         ...basePerm,
         type: "ISSUER",
@@ -133,7 +133,7 @@ describe("🧪 perm_state_utils", () => {
 
       const actions = calculateGranteeAvailableActions(perm, openSchema, null, NOW);
 
-      expect(actions).toEqual(["PERM_EXTEND", "PERM_REVOKE"]);
+      expect(actions).toEqual(["PERM_ADJUST", "PERM_REVOKE"]);
     });
 
     it("for ISSUER in OPEN mode and SLASHED state allows only PERM_REPAY", () => {
@@ -158,8 +158,8 @@ describe("🧪 perm_state_utils", () => {
       };
 
       const schema: SchemaData = {
-        issuer_perm_management_mode: "GRANTOR_VALIDATION",
-        verifier_perm_management_mode: "OPEN",
+        issuer_onboarding_mode: "GRANTOR_VALIDATION",
+        verifier_onboarding_mode: "OPEN",
       };
 
       const actions = calculateGranteeAvailableActions(perm, schema, "ACTIVE", NOW);
@@ -177,8 +177,8 @@ describe("🧪 perm_state_utils", () => {
       };
 
       const schema: SchemaData = {
-        issuer_perm_management_mode: "OPEN",
-        verifier_perm_management_mode: "OPEN",
+        issuer_onboarding_mode: "OPEN",
+        verifier_onboarding_mode: "OPEN",
       };
 
       const actions = calculateGranteeAvailableActions(perm, schema, "ACTIVE", NOW);
@@ -196,8 +196,8 @@ describe("🧪 perm_state_utils", () => {
       };
 
       const schema: SchemaData = {
-        issuer_perm_management_mode: "OPEN",
-        verifier_perm_management_mode: "OPEN",
+        issuer_onboarding_mode: "OPEN",
+        verifier_onboarding_mode: "OPEN",
       };
 
       const actions = calculateGranteeAvailableActions(perm, schema, null, NOW);
@@ -215,8 +215,8 @@ describe("🧪 perm_state_utils", () => {
       };
 
       const schema: SchemaData = {
-        issuer_perm_management_mode: "OPEN",
-        verifier_perm_management_mode: "OPEN",
+        issuer_onboarding_mode: "OPEN",
+        verifier_onboarding_mode: "OPEN",
       };
 
       const actions = calculateGranteeAvailableActions(perm, schema, null, NOW);
@@ -227,11 +227,11 @@ describe("🧪 perm_state_utils", () => {
 
   describe("Issue #63 - client testnet Permission 69 exact payload", () => {
     const openSchema: SchemaData = {
-      issuer_perm_management_mode: "OPEN",
-      verifier_perm_management_mode: "OPEN",
+      issuer_onboarding_mode: "OPEN",
+      verifier_onboarding_mode: "OPEN",
     };
 
-    it("grantee_available_actions = [VP_CANCEL], validator_available_actions includes VP_SET_VALIDATED", () => {
+    it("corporation_available_actions = [VP_CANCEL], validator_available_actions includes VP_SET_VALIDATED", () => {
       const perm69: PermissionData = {
         type: "VERIFIER",
         repaid: null,
@@ -257,8 +257,8 @@ describe("🧪 perm_state_utils", () => {
 
   describe("calculateValidatorAvailableActions", () => {
     const grantorSchema: SchemaData = {
-      issuer_perm_management_mode: "GRANTOR_VALIDATION",
-      verifier_perm_management_mode: "GRANTOR_VALIDATION",
+      issuer_onboarding_mode: "GRANTOR_VALIDATION",
+      verifier_onboarding_mode: "GRANTOR_VALIDATION",
     };
 
     it("for ISSUER in GRANTOR_VALIDATION with ACTIVE state and PENDING VP includes slash, revoke, extend and set validated", () => {
@@ -273,14 +273,14 @@ describe("🧪 perm_state_utils", () => {
       const actions = calculateValidatorAvailableActions(perm, grantorSchema, NOW);
 
       expect(actions).toEqual([
-        "PERM_EXTEND",
+        "PERM_ADJUST",
         "PERM_REVOKE",
         "PERM_SLASH",
         "VP_SET_VALIDATED",
       ]);
     });
 
-    it("for HOLDER with ACTIVE state and PENDING VP includes slash, revoke, extend and set validated", () => {
+    it("for HOLDER with ACTIVE state and PENDING VP includes slash, revoke, adjust and set validated", () => {
       const perm: PermissionData = {
         type: "HOLDER",
         effective_from: makeDate("2025-01-01T00:00:00.000Z"),
@@ -289,14 +289,14 @@ describe("🧪 perm_state_utils", () => {
       };
 
       const schema: SchemaData = {
-        issuer_perm_management_mode: "OPEN",
-        verifier_perm_management_mode: "OPEN",
+        issuer_onboarding_mode: "OPEN",
+        verifier_onboarding_mode: "OPEN",
       };
 
       const actions = calculateValidatorAvailableActions(perm, schema, NOW);
 
       expect(actions).toEqual([
-        "PERM_EXTEND",
+        "PERM_ADJUST",
         "PERM_REVOKE",
         "PERM_SLASH",
         "VP_SET_VALIDATED",
@@ -313,8 +313,8 @@ describe("🧪 perm_state_utils", () => {
       };
 
       const schema: SchemaData = {
-        issuer_perm_management_mode: "OPEN",
-        verifier_perm_management_mode: "OPEN",
+        issuer_onboarding_mode: "OPEN",
+        verifier_onboarding_mode: "OPEN",
       };
 
       const actions = calculateValidatorAvailableActions(perm, schema, NOW);

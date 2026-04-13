@@ -34,14 +34,12 @@ import {
   isPermissionMessageType,
   isTrustDepositMessageType,
   isTrustRegistryMessageType,
-  isDidMessageType,
   isKnownVeranaMessageType,
 } from '../../common/verana-message-types';
 import ChainRegistry from '../../common/utils/chain.registry';
 import knex from '../../common/utils/db_connection';
 import { getProviderRegistry } from '../../common/utils/provider.registry';
 import Utils from '../../common/utils/utils';
-import { extractController } from '../../common/utils/extract_controller';
 import { detectStartMode } from '../../common/utils/start_mode_detector';
 import {
   Block,
@@ -512,7 +510,6 @@ export default class CrawlTxService extends BullableService {
     return await knex.transaction(async (trx) => {
       try {
         const allPayloads: any = {
-          DIDfiltered: [],
           trustRegistryList: [],
           credentialSchemaMessages: [],
           permissionMessages: [],
@@ -537,9 +534,6 @@ export default class CrawlTxService extends BullableService {
           const txPayloads = await this.processSingleTransaction(tx, trx);
 
           if (txPayloads) {
-            if (txPayloads.DIDfiltered?.length) {
-              allPayloads.DIDfiltered.push(...txPayloads.DIDfiltered);
-            }
             if (txPayloads.trustRegistryList?.length) {
               allPayloads.trustRegistryList.push(...txPayloads.trustRegistryList);
             }
@@ -1199,7 +1193,6 @@ export default class CrawlTxService extends BullableService {
       return payload;
     }
     return {
-      DIDfiltered: [],
       trustRegistryList: [],
       credentialSchemaMessages: [],
       permissionMessages: [],
@@ -1215,22 +1208,6 @@ export default class CrawlTxService extends BullableService {
     });
 
     this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
-
-    const DIDfiltered = successfulMsgs
-      .filter((msg: any) => isDidMessageType(msg.type))
-      .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-        const controller = extractController(msg.content || {});
-        return {
-          type: msg.type,
-          did: msg.content?.did ?? null,
-          controller: controller ?? null,
-          years: msg.content?.years ?? null,
-          timestamp: parentTx?.timestamp ?? null,
-          height: parentTx?.height ?? null,
-          id: msg?.tx_id ?? null,
-        };
-      });
 
     const trustRegistryList = successfulMsgs
       .filter((msg: any) => isTrustRegistryMessageType(msg.type))
@@ -1308,7 +1285,6 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`[insertRelatedTx] Completed processing all messages (payload prepared)`);
 
     return {
-      DIDfiltered,
       trustRegistryList,
       credentialSchemaMessages,
       permissionMessages,
@@ -1740,12 +1716,6 @@ export default class CrawlTxService extends BullableService {
   }
   private async processPayloads(payload: any) {
     if (!payload) return;
-    if (payload.DIDfiltered?.length) {
-      await this.broker.call(
-        `${SERVICE.V1.DidMessageProcessorService.path}.handleDidMessages`,
-        { messages: payload.DIDfiltered },
-      );
-    }
     if (payload.trustRegistryList?.length) {
       await this.broker.call(
         `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
