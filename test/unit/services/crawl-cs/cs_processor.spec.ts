@@ -33,6 +33,20 @@ function deepUnwrapMoleculer(res: unknown): Record<string, unknown> | undefined 
   return undefined;
 }
 
+function assertOk(res: unknown): void {
+  const body = deepUnwrapMoleculer(res);
+  expect(body).toBeDefined();
+  expect(body!.error).toBeUndefined();
+}
+
+function unwrapRow(res: unknown): Record<string, unknown> | undefined {
+  const body = deepUnwrapMoleculer(res);
+  if (!body) return undefined;
+  const row = (body.updated ?? body.result ?? body.schema ?? body) as unknown;
+  if (row != null && typeof row === "object") return row as Record<string, unknown>;
+  return undefined;
+}
+
 describe("CredentialSchemaDatabaseService Tests", () => {
   const broker = new ServiceBroker({ logger: false });
   const serviceKey = SERVICE.V1.CredentialSchemaDatabaseService.path;
@@ -98,17 +112,16 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       issuer_validation_validity_period: 180,
       verifier_validation_validity_period: 180,
       holder_validation_validity_period: 180,
-      issuer_perm_management_mode: 2,
-      verifier_perm_management_mode: 2,
+      issuer_onboarding_mode: 2,
+      verifier_onboarding_mode: 2,
       created: new Date().toISOString(),
       archived: null,
       modified: new Date().toISOString(),
     };
 
     const upsertRes = await broker.call(`${serviceKey}.upsert`, { payload });
-    const upsertBody = deepUnwrapMoleculer(upsertRes) as Record<string, unknown>;
-    expect(upsertBody?.success).toBe(true);
-    schema = (upsertBody?.result ?? upsertBody) as Record<string, unknown>;
+    assertOk(upsertRes);
+    schema = unwrapRow(upsertRes);
 
     expect(normalizeSchemaId(schema.tr_id)).toBe(6);
     expect(schema.id).toBeDefined();
@@ -121,14 +134,13 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       issuer_validation_validity_period: 1000,
       verifier_validation_validity_period: 1000,
       holder_validation_validity_period: 1000,
-      issuer_perm_management_mode: 1000,
-      verifier_perm_management_mode: 1000,
+      issuer_onboarding_mode: 1000,
+      verifier_onboarding_mode: 1000,
     };
 
     const upsertRes = await broker.call(`${serviceKey}.update`, { payload });
-    const updateBody = deepUnwrapMoleculer(upsertRes) as Record<string, unknown>;
-    expect(updateBody?.success).toBe(true);
-    schema = (updateBody?.updated ?? updateBody) as Record<string, unknown>;
+    assertOk(upsertRes);
+    schema = unwrapRow(upsertRes);
     expect(normalizeSchemaId(schema.tr_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
@@ -142,8 +154,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       },
     });
 
-    const archiveBody = deepUnwrapMoleculer(archiveRes) as Record<string, unknown>;
-    expect(archiveBody?.success).toBe(true);
+    assertOk(archiveRes);
   });
   it("should reflect the archive status in the database", async () => {
     const dbSchema = await knex("credential_schemas")
@@ -162,7 +173,6 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       },
     });
 
-    const unarchiveBody = deepUnwrapMoleculer(unarchiveRes) as Record<string, unknown>;
-    expect(unarchiveBody?.success).toBe(true);
+    assertOk(unarchiveRes);
   });
 });

@@ -5,7 +5,6 @@ export async function up(knex: Knex): Promise<void> {
     table.increments("id").primary();
     table.integer("tr_id").notNullable();
     table.jsonb("json_schema").notNullable();
-    table.specificType("deposit", "NUMERIC(38,0)").notNullable();
     table.boolean("is_active").notNullable().defaultTo(false);
 
     table.integer("issuer_grantor_validation_validity_period").notNullable();
@@ -14,8 +13,8 @@ export async function up(knex: Knex): Promise<void> {
     table.integer("verifier_validation_validity_period").notNullable();
     table.integer("holder_validation_validity_period").notNullable();
 
-    table.string("issuer_perm_management_mode").notNullable();
-    table.string("verifier_perm_management_mode").notNullable();
+    table.string("issuer_onboarding_mode").notNullable();
+    table.string("verifier_onboarding_mode").notNullable();
 
     table.timestamp("archived").nullable();
     table.timestamp("created").defaultTo(knex.fn.now());

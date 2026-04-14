@@ -103,7 +103,7 @@ describe("🧪 PermProcessorService", () => {
         timestamp: "2025-10-08T10:00:00Z",
       },
       {
-        type: PermissionMessageTypes.CreatePermission,
+        type: PermissionMessageTypes.SelfCreatePermission,
         content: { "@type": "someType", id: "perm2", controller: "acc2" },
         timestamp: "2025-10-08T11:00:00Z",
       },
@@ -190,7 +190,7 @@ describe("🧪 PermProcessorService", () => {
       `v1.${SERVICE.V1.PermProcessorService.key}.handlePermissionMessages`,
       {
         permissionMessages: [{
-          type: PermissionMessageTypes.CreatePermission,
+          type: PermissionMessageTypes.SelfCreatePermission,
           content: { id: 101 },
           height: 123,
           timestamp: "2026-03-01T00:00:00Z",

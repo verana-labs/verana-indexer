@@ -574,8 +574,7 @@ const ALTER_MIGRATIONS = [
   "20260218000000_credential_schema_json_schema_to_text",
   "20260226000000_add_permissions_lookup_index_for_perm_list",
   "20260317000000_add_permission_flips",
-  "20260406140000_vpr_v4_tr_cs_perm_td_fields",
-  "20260410170000_vpr_v4_terminology_tr_cs_perm_td_sap",
+  "20260414120000_vpr_v4_tr_cs_perm_td_combined",
 ];
 
 async function runMigrations(db: Knex): Promise<void> {

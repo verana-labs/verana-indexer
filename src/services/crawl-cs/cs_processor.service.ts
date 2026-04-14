@@ -72,8 +72,8 @@ interface CredentialSchemaMessage {
   issuer_validation_validity_period: number;
   verifier_validation_validity_period: number;
   holder_validation_validity_period: number;
-  issuer_perm_management_mode: string;
-  verifier_perm_management_mode: string;
+  issuer_onboarding_mode: string;
+  verifier_onboarding_mode: string;
   timestamp?: string;
   creator?: string;
   archive?: string;
@@ -127,12 +127,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
         await this.updateSchema(ctx, schemaMessage);
       } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema) {
         await this.archiveSchema(ctx, schemaMessage);
-      } else if (
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateSchemaAuthorizationPolicyDraft ||
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.ActivateSchemaAuthorizationPolicyVersion ||
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.RevokeSchemaAuthorizationPolicyVersion
-      ) {
-        await this.handleSchemaAuthorizationPolicyMessage(schemaMessage);
       }
     };
 
@@ -181,20 +175,10 @@ export default class ProcessCredentialSchemaService extends BullableService {
         holder_validation_validity_period:
           getValidityPeriod('holder_validation_validity_period', content, schemaMessage),
         issuer_onboarding_mode: getModeString(
-          Number(
-            content.issuer_onboarding_mode ??
-              content.issuer_perm_management_mode ??
-              content.issuerPermManagementMode ??
-              0
-          )
+          Number(content.issuer_onboarding_mode ?? content.issuerOnboardingMode ?? 0)
         ),
         verifier_onboarding_mode: getModeString(
-          Number(
-            content.verifier_onboarding_mode ??
-              content.verifier_perm_management_mode ??
-              content.verifierPermManagementMode ??
-              0
-          )
+          Number(content.verifier_onboarding_mode ?? content.verifierOnboardingMode ?? 0)
         ),
         holder_onboarding_mode: extractHolderOnboardingMode(content as Record<string, unknown>),
         pricing_asset_type: extractNullableStringFromContent(
@@ -335,69 +319,4 @@ export default class ProcessCredentialSchemaService extends BullableService {
   }
 
 
-  private async handleSchemaAuthorizationPolicyMessage(schemaMessage: CredentialSchemaMessage & { type: string }) {
-    const content = (schemaMessage.content ?? {}) as Record<string, unknown>;
-    const schemaId = Number(
-      content.schema_id ?? content.schemaId ?? 0
-    );
-    if (!Number.isFinite(schemaId) || schemaId <= 0) {
-      this.logger.warn("[CS SAP] Missing schema_id in message");
-      return;
-    }
-    const version = Number(content.version ?? content.policy_version ?? 0);
-    const role = String(content.role ?? content.policy_role ?? "").trim();
-    const url = String(content.url ?? "").trim();
-    const digestSri = String(
-      content.digest_sri ?? content.digestSri ?? ""
-    ).trim();
-    const created = formatTimestamp(schemaMessage.timestamp) ?? new Date().toISOString();
-    const height = Number(schemaMessage.height ?? 0) || null;
-
-    const effectiveFromRaw = content.effective_from ?? content.effectiveFrom;
-    const effectiveUntilRaw = content.effective_until ?? content.effectiveUntil;
-    const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw as string) : null;
-    const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw as string) : null;
-
-    let revoked = false;
-    if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.RevokeSchemaAuthorizationPolicyVersion) {
-      revoked = true;
-    }
-
-    if (!(await knex.schema.hasTable("schema_authorization_policies"))) {
-      this.logger.warn("[CS SAP] schema_authorization_policies table missing; run migrations");
-      return;
-    }
-
-    try {
-      await knex("schema_authorization_policies").insert({
-        schema_id: schemaId,
-        created,
-        version: Number.isFinite(version) && version > 0 ? version : 1,
-        role: role || "SCHEMA_AUTHORIZATION_POLICY_ROLE_UNSPECIFIED",
-        url: url || "about:blank",
-        digest_sri: digestSri || "",
-        effective_from: effectiveFrom,
-        effective_until: effectiveUntil,
-        revoked,
-        height,
-        tx_hash: null,
-      });
-      this.logger.info(`[CS SAP] Stored policy row for schema_id=${schemaId} version=${version}`);
-    } catch (e: any) {
-      if (e?.code === "23505") {
-        await knex("schema_authorization_policies")
-          .where({ schema_id: schemaId, version })
-          .update({
-            url: url || undefined,
-            digest_sri: digestSri || undefined,
-            effective_from: effectiveFrom,
-            effective_until: effectiveUntil,
-            revoked,
-            height,
-          });
-        return;
-      }
-      this.logger.error("[CS SAP] insert failed:", e);
-    }
-  }
 }

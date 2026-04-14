@@ -125,30 +125,6 @@ async function recordTrustDepositHistory(
   });
 }
 
-function parseDecimalToIntMultiplier(value: any, logger?: any): bigint {
-  if (value === null || value === undefined) return BigInt(0);
-  const str = String(value).trim();
-
-  if (str === "" || Number.isNaN(Number(str))) {
-    if (logger) {
-      logger.warn(
-        `[TrustDeposit] ⚠️ Invalid decimal multiplier "${str}", defaulting to 0`
-      );
-    }
-    return BigInt(0);
-  }
-
-  const num = Number(str);
-  const scaled = Math.floor(num * 1_000_000);
-  return BigInt(scaled);
-}
-
-function applyBurn(amount: bigint, burnRate: any, logger?: any): bigint {
-  const burnInt = parseDecimalToIntMultiplier(burnRate, logger);
-  if (burnInt <= BigInt(0)) return BigInt(0);
-  return (amount * burnInt) / BigInt(1_000_000);
-}
-
 @Service({
   name: SERVICE.V1.TrustDepositMessageProcessorService.key,
   version: 1,
@@ -248,9 +224,6 @@ export default class TrustDepositMessageProcessorService extends BullableService
       case VeranaTrustDepositMessageTypes.ReclaimYield:
         return this.reclaimYield(content, params, trx, blockHeight);
 
-      case VeranaTrustDepositMessageTypes.ReclaimDeposit:
-        return this.reclaimDeposit(content, params, trx, blockHeight);
-
       case VeranaTrustDepositMessageTypes.RepaySlashed:
         return this.repaySlashed(content, ts, params, trx, blockHeight);
 
@@ -308,84 +281,6 @@ export default class TrustDepositMessageProcessorService extends BullableService
         `[TrustDeposit] ❌ Yield reclaim failed: ${errorMessage}`
       );
       throw error;
-    }
-  }
-
-  private async reclaimDeposit(content: any, params: any, trx: any, height: number) {
-    try {
-      const account = requireController(content, "TrustDeposit RECLAIM_DEPOSIT");
-      const claimed = toBigIntSafe(content.claimed);
-      if (claimed <= BigInt(0)) {
-        this.logger.warn("❌ Claimed must be > 0");
-        return;
-      }
-
-      const td: any = await TrustDeposit.query(trx).findOne({ corporation: account });
-      if (!td) {
-        this.logger.warn(`❌ No trust deposit found for ${account}`);
-        return;
-      }
-      const previousRecord = { ...td };
-      const slashed = toBigIntSafe(td.slashed_deposit);
-      const repaid = toBigIntSafe(td.repaid_deposit);
-      if (slashed > repaid)
-        this.logger.warn("❌ Deposit slashed and not repaid");
-
-      const claimable = toBigIntSafe(td.claimable);
-      if (claimable < claimed) {
-        this.logger.warn(
-          `❌ Insufficient claimable. Requested=${claimed}, Available=${claimable}`
-        );
-      }
-
-      const shareValue = toBigIntSafe(params.trust_deposit_share_value);
-      if (shareValue === BigInt(0)) {
-        this.warnZeroShareValueOnce("reclaim", account);
-        return; 
-      }
-      
-      const requiredMinimum = toBigIntSafe(td.share) * shareValue;
-      const newDeposit = toBigIntSafe(td.deposit) - claimed;
-
-      this.logger.info(
-        `[TrustDeposit] Debug: requiredMinimum=${requiredMinimum}, newDeposit=${newDeposit}, claimed=${claimed}`
-      );
-
-      if (requiredMinimum > newDeposit) {
-        this.logger.warn(
-          `❌ Reclaim violates minimum deposit requirement. requiredMinimum=${requiredMinimum}, newDeposit=${newDeposit}`
-        );
-      }
-
-      const burnRate = params.trust_deposit_reclaim_burn_rate ?? "0";
-      const burn = applyBurn(claimed, burnRate, this.logger);
-      const transfer = claimed - burn;
-      const newClaimable = claimable - claimed;
-      const newShare = toBigIntSafe(td.share) - claimed / shareValue;
-
-      const updated = await TrustDeposit.query(trx).patchAndFetchById(td.id, {
-        deposit: Number(newDeposit),
-        claimable: Number(newClaimable),
-        share: Number(newShare),
-      });
-
-      await recordTrustDepositHistory(
-        trx,
-        updated,
-        "RECLAIM_DEPOSIT",
-        height,
-        previousRecord
-      );
-
-      this.logger.info(
-        `[TrustDeposit] ✅ Reclaimed ${transfer} (burned ${burn}) for ${account}`
-      );
-    } catch (error: any) {
-      this.logger.error(
-        `[TrustDeposit] ❌ Reclaim failed for content=${JSON.stringify(
-          content
-        )} — ${error.message || error}`
-      );
     }
   }
 

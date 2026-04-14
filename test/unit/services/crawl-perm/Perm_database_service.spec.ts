@@ -163,30 +163,19 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("mapLedgerPermissionToDbRow (v4 corporation / grantee / authority)", () => {
-    it("maps authority to corporation when grantee is absent (NOT NULL corporation)", () => {
+  describe("mapLedgerPermissionToDbRow (VPR v4 corporation)", () => {
+    it("maps corporation from ledger", () => {
       const row = mapLedgerPermissionToDbRow({
         id: 1,
         schema_id: 2,
         type: "ECOSYSTEM",
         did: "did:example:x",
-        authority: "did:example:authority",
+        corporation: "verana1corp",
       });
-      expect(row.corporation).toBe("did:example:authority");
+      expect(row.corporation).toBe("verana1corp");
     });
 
-    it("prefers explicit grantee over authority", () => {
-      const row = mapLedgerPermissionToDbRow({
-        id: 1,
-        schema_id: 2,
-        type: "ECOSYSTEM",
-        grantee: "did:g",
-        authority: "did:a",
-      });
-      expect(row.corporation).toBe("did:g");
-    });
-
-    it("uses empty string when no grantee/authority/created fields (DB NOT NULL)", () => {
+    it("uses empty string when corporation is missing (NOT NULL column)", () => {
       const row = mapLedgerPermissionToDbRow({
         id: 1,
         schema_id: 2,
@@ -218,7 +207,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         schema_id: "48",
         type: "ISSUER",
         did: "did:test:issuer",
-        grantee: "verana1test",
+        corporation: "verana1test",
         created: "2026-01-29T20:27:06.725Z",
         modified: "2026-01-29T20:27:23.422Z",
         effective_from: "2026-01-29T20:27:23.422Z",

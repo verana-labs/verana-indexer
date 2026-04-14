@@ -9,7 +9,6 @@ const TD_MESSAGE_TYPES = new Set<string>([
   VeranaTrustDepositMessageTypes.UpdateParams,
   VeranaTrustDepositMessageTypes.AdjustTrustDeposit,
   VeranaTrustDepositMessageTypes.ReclaimYield,
-  VeranaTrustDepositMessageTypes.ReclaimDeposit,
   VeranaTrustDepositMessageTypes.RepaySlashed,
   VeranaTrustDepositMessageTypes.SlashTrustDeposit,
   VeranaTrustDepositMessageTypes.BurnEcosystemSlashedTrustDeposit,
@@ -20,7 +19,9 @@ export const TD_BLOCKCHAIN_EVENT_TYPES = new Set<string>(
 );
 
 export interface LedgerTrustDepositResponse {
+  corporation?: string;
   account?: string;
+  deposit?: number | string;
   amount?: number | string;
   share?: number | string;
   claimable?: number | string;
@@ -34,14 +35,12 @@ export interface LedgerTrustDepositResponse {
   lastRepaid?: string | null;
   slash_count?: number | string;
   slashCount?: number | string;
-  last_repaid_by?: string | null;
-  lastRepaidBy?: string | null;
   [key: string]: unknown;
 }
 
 export interface NormalizedLedgerTrustDeposit {
-  account: string;
-  amount: number;
+  corporation: string;
+  deposit: number;
   share: number;
   claimable: number;
   slashed_deposit: number;
@@ -49,7 +48,6 @@ export interface NormalizedLedgerTrustDeposit {
   last_slashed: string | null;
   last_repaid: string | null;
   slash_count: number;
-  last_repaid_by: string | null;
 }
 
 export interface TdMessageLike {
@@ -167,11 +165,11 @@ export function normalizeLedgerResponse(data: unknown): NormalizedLedgerTrustDep
     obj.data;
   if (!raw || typeof raw !== "object") return null;
   const r = raw as LedgerTrustDepositResponse;
-  const account = String(r.account ?? "").trim();
-  if (!account) return null;
+  const corporation = String(r.corporation ?? r.account ?? "").trim();
+  if (!corporation) return null;
   return {
-    account,
-    amount: Number(r.amount ?? 0),
+    corporation,
+    deposit: Number(r.deposit ?? r.amount ?? 0),
     share: Number(r.share ?? 0),
     claimable: Number(r.claimable ?? 0),
     slashed_deposit: Number(r.slashed_deposit ?? r.slashedDeposit ?? 0),
@@ -179,7 +177,6 @@ export function normalizeLedgerResponse(data: unknown): NormalizedLedgerTrustDep
     last_slashed: r.last_slashed ?? r.lastSlashed ?? null,
     last_repaid: r.last_repaid ?? r.lastRepaid ?? null,
     slash_count: Number(r.slash_count ?? r.slashCount ?? 0),
-    last_repaid_by: r.last_repaid_by ?? r.lastRepaidBy ?? null,
   };
 }
 
@@ -241,6 +238,7 @@ export function extractTrustDepositIdsFromMessageContent(
   if (!content || typeof content !== "object") return [];
   const ids: string[] = [];
   const candidates = [
+    content.corporation,
     content.account,
     content.deposit_account,
     content.depositAccount,
@@ -376,8 +374,6 @@ export function messageTypeToEventType(msgType: string): string {
       return "ADJUST_TRUST_DEPOSIT";
     case VeranaTrustDepositMessageTypes.ReclaimYield:
       return "RECLAIM_YIELD";
-    case VeranaTrustDepositMessageTypes.ReclaimDeposit:
-      return "RECLAIM_DEPOSIT";
     case VeranaTrustDepositMessageTypes.RepaySlashed:
       return "REPAY_SLASHED";
     case VeranaTrustDepositMessageTypes.SlashTrustDeposit:

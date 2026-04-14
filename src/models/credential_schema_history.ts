@@ -15,8 +15,8 @@ export default class CredentialSchemaHistory extends BaseModel {
   verifier_validation_validity_period!: number;
   holder_validation_validity_period!: number;
 
-  issuer_perm_management_mode!: string;
-  verifier_perm_management_mode!: string;
+  issuer_onboarding_mode!: string;
+  verifier_onboarding_mode!: string;
   holder_onboarding_mode?: string | null;
   pricing_asset_type?: string | null;
   pricing_asset?: string | null;
@@ -54,8 +54,8 @@ export default class CredentialSchemaHistory extends BaseModel {
         verifier_validation_validity_period: { type: "integer" },
         holder_validation_validity_period: { type: "integer" },
 
-        issuer_perm_management_mode: { type: "string" },
-        verifier_perm_management_mode: { type: "string" },
+        issuer_onboarding_mode: { type: "string" },
+        verifier_onboarding_mode: { type: "string" },
 
         height: { type: "integer" },
         archived: { type: ["string", "null"], format: "date-time" },

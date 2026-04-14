@@ -20,46 +20,14 @@ export function finalizeTrustRegistryHistoryInsert(
     }
   }
 
-  const participantVal =
-    trRow.corporation ??
-    trRow.controller ??
-    nextPayload.corporation ??
-    nextPayload.controller ??
-    null;
-
-  const hasCorp = historyColumns.has("corporation");
-  const hasCtrl = historyColumns.has("controller");
-
-  if (hasCorp && hasCtrl) {
+  if (historyColumns.has("corporation")) {
     const v =
-      (participantVal as string | null) ??
+      (trRow.corporation as string | undefined) ??
       (nextPayload.corporation as string | undefined) ??
-      (nextPayload.controller as string | undefined) ??
-      null;
-    if (v != null) {
-      nextPayload.corporation = v;
-      nextPayload.controller = v;
-    }
-  } else if (hasCorp) {
-    const v =
-      (participantVal as string | null) ??
-      (nextPayload.corporation as string | undefined) ??
-      (nextPayload.controller as string | undefined) ??
       null;
     if (v != null) nextPayload.corporation = v;
-    delete nextPayload.controller;
-  } else if (hasCtrl) {
-    const v =
-      (participantVal as string | null) ??
-      (nextPayload.controller as string | undefined) ??
-      (nextPayload.corporation as string | undefined) ??
-      null;
-    if (v != null) nextPayload.controller = v;
-    delete nextPayload.corporation;
-  } else {
-    delete nextPayload.controller;
-    delete nextPayload.corporation;
   }
+  delete nextPayload.controller;
 
   if (historyColumns.has("deposit")) {
     const dep = nextPayload.deposit ?? trRow.deposit ?? 0;
@@ -84,39 +52,42 @@ async function tableColumnNames(db: KnexWithTable, table: string): Promise<Set<s
 }
 
 export async function resolveTrustRegistryParticipantColumn(
-  db: KnexWithTable
-): Promise<"corporation" | "controller"> {
-  const cols = await tableColumnNames(db, "trust_registry");
-  return cols.has("corporation") ? "corporation" : "controller";
+  _db: KnexWithTable
+): Promise<"corporation"> {
+  return "corporation";
 }
 
 export async function resolveTrustRegistryHistoryParticipantColumn(
-  db: KnexWithTable
-): Promise<"corporation" | "controller"> {
-  const cols = await tableColumnNames(db, "trust_registry_history");
-  return cols.has("corporation") ? "corporation" : "controller";
+  _db: KnexWithTable
+): Promise<"corporation"> {
+  return "corporation";
 }
 
 export async function resolvePermissionsParticipantColumn(
-  db: KnexWithTable
-): Promise<"corporation" | "grantee" | "controller"> {
-  const cols = await tableColumnNames(db, "permissions");
-  if (cols.has("corporation")) return "corporation";
-  if (cols.has("grantee")) return "grantee";
-  if (cols.has("controller")) return "controller";
-  return "grantee";
+  _db: KnexWithTable
+): Promise<"corporation"> {
+  return "corporation";
 }
 
 export async function resolvePermissionHistoryParticipantColumn(
-  db: KnexWithTable
-): Promise<"corporation" | "grantee" | "controller"> {
-  const cols = await tableColumnNames(db, "permission_history");
-  if (cols.has("corporation")) return "corporation";
-  if (cols.has("grantee")) return "grantee";
-  if (cols.has("controller")) return "controller";
-  return "grantee";
+  _db: KnexWithTable
+): Promise<"corporation"> {
+  return "corporation";
 }
 
+export async function resolveTrustDepositTableOwnerColumn(
+  _db: KnexWithTable,
+  _table: "trust_deposits" | "trust_deposit_history"
+): Promise<"corporation"> {
+  return "corporation";
+}
+
+export async function resolveTrustDepositTableBalanceColumn(
+  _db: KnexWithTable,
+  _table: "trust_deposits" | "trust_deposit_history"
+): Promise<"deposit"> {
+  return "deposit";
+}
 
 export async function ensureDepositDefaultIfColumnExists(
   db: KnexWithTable,
@@ -160,20 +131,13 @@ export async function prepareTrustRegistrySnapshotRowForInsert(
   if (!cols.has("corporation") && (await db.schema.hasColumn("trust_registry_snapshot", "corporation"))) {
     cols.add("corporation");
   }
-  if (!cols.has("controller") && (await db.schema.hasColumn("trust_registry_snapshot", "controller"))) {
-    cols.add("controller");
-  }
   const { trRow, rawLedger } = opts;
   const raw = rawLedger as Record<string, unknown> | undefined;
-  const participant = firstNonEmptyString(
-    [trRow, raw],
-    ["corporation", "controller", "Corporation", "Controller"]
-  );
+  const participant = firstNonEmptyString([trRow, raw], ["corporation"]);
   const didStr = String(trRow.did ?? "").trim();
   const pStr = participant ?? didStr;
 
   if (cols.has("corporation")) next.corporation = pStr;
-  if (cols.has("controller")) next.controller = pStr;
 
   await ensureDepositDefaultIfColumnExists(db, "trust_registry_snapshot", next, trRow.deposit);
 

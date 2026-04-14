@@ -13,7 +13,7 @@ const hasColumns = async (knex: Knex, table: string, columns: string[]): Promise
 };
 
 const LIVE_INDEX_NAME = "idx_permissions_did_schema_type_modified_id";
-const LIVE_GRANTEE_QUERY_INDEX_NAME = "idx_permissions_grantee_schema_type_vp_validator_modified_id";
+const LIVE_GRANTEE_QUERY_INDEX_NAME = "idx_permissions_corporation_schema_type_vp_validator_modified_id";
 const LEGACY_LIVE_INDEX_NAMES = [
   "idx_permissions_did_type_schema_modified_id",
   "idx_permissions_did_type_schema_modified",
@@ -31,8 +31,8 @@ const HISTORY_VALIDATOR_HEIGHT_PERMISSION_IDX = "idx_permission_history_validato
 const PERM_SESSION_HISTORY_RANKING_IDX = "idx_permission_session_history_session_height_created_id_desc";
 const CS_HISTORY_RANKING_IDX = "idx_credential_schema_history_schema_height_created_id_desc";
 const TR_HISTORY_RANKING_IDX = "idx_trust_registry_history_tr_height_created_id_desc";
-const TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX = "idx_td_history_account_height_created_id_desc";
-const PH_GRANTEE_SCHEMA_HEIGHT_CREATED_IDX = "idx_permission_history_grantee_schema_height_created_id_desc";
+const TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX = "idx_td_history_corporation_height_created_id_desc";
+const PH_GRANTEE_SCHEMA_HEIGHT_CREATED_IDX = "idx_permission_history_corporation_schema_height_created_id_desc";
 const CS_LIVE_TR_ARCHIVED_MODIFIED_IDX = "idx_cs_tr_archived_modified_id";
 const CS_LIVE_MODES_MODIFIED_IDX = "idx_cs_modes_modified_id";
 const CS_LIVE_PARTICIPANTS_IDX = "idx_cs_participants_id";
@@ -41,7 +41,7 @@ const CS_LIVE_ISSUED_IDX = "idx_cs_issued_id";
 const CS_LIVE_VERIFIED_IDX = "idx_cs_verified_id";
 const CS_LIVE_ECO_SLASH_EVENTS_IDX = "idx_cs_eco_slash_events_id";
 const CS_LIVE_NET_SLASH_EVENTS_IDX = "idx_cs_net_slash_events_id";
-const TR_LIVE_CTRL_ARCHIVED_MODIFIED_IDX = "idx_tr_controller_archived_modified_id";
+const TR_LIVE_CTRL_ARCHIVED_MODIFIED_IDX = "idx_tr_corporation_archived_modified_id";
 const TR_LIVE_PARTICIPANTS_IDX = "idx_tr_participants_id";
 const TR_LIVE_ACTIVE_SCHEMAS_IDX = "idx_tr_active_schemas_id";
 const TR_LIVE_WEIGHT_IDX = "idx_tr_weight_id";
@@ -72,7 +72,7 @@ const LEGACY_REDUNDANT_HISTORY_INDEXES = [
 export async function up(knex: Knex): Promise<void> {
   const pg = isPostgres(knex);
   const liveColumns = ["did", "schema_id", "type", "modified", "id"];
-  const liveGranteeQueryColumns = ["grantee", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
+  const liveGranteeQueryColumns = ["corporation", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const listFiltersSortColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const activeListFiltersColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id", "slashed", "repaid"];
   const historyColumns = ["did", "schema_id", "type", "height", "modified", "created_at", "id"];
@@ -80,22 +80,22 @@ export async function up(knex: Knex): Promise<void> {
   const historyLatestColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id"];
   const historyLatestActiveColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id", "slashed", "repaid"];
   const liveActiveDidColumns = ["did", "schema_id", "type", "modified", "id", "slashed", "repaid"];
-  const historyByGranteeColumns = ["grantee", "height", "permission_id", "created_at", "id"];
+  const historyByGranteeColumns = ["corporation", "height", "permission_id", "created_at", "id"];
   const historyByValidatorColumns = ["validator_perm_id", "height", "permission_id", "created_at", "id"];
   const sessionHistoryRankingColumns = ["session_id", "height", "created_at", "id"];
   const csHistoryRankingColumns = ["credential_schema_id", "height", "created_at", "id"];
   const trHistoryRankingColumns = ["tr_id", "height", "created_at", "id"];
-  const tdHistoryRankingColumns = ["account", "height", "created_at", "id"];
-  const historyGranteeSchemaColumns = ["grantee", "schema_id", "height", "created_at", "id"];
+  const tdHistoryRankingColumns = ["corporation", "height", "created_at", "id"];
+  const historyGranteeSchemaColumns = ["corporation", "schema_id", "height", "created_at", "id"];
   const csTrArchivedModifiedColumns = ["tr_id", "archived", "modified", "id"];
-  const csModesColumns = ["issuer_perm_management_mode", "verifier_perm_management_mode", "modified", "id"];
+  const csModesColumns = ["issuer_onboarding_mode", "verifier_onboarding_mode", "modified", "id"];
   const csParticipantsColumns = ["participants", "id"];
   const csWeightColumns = ["weight", "id"];
   const csIssuedColumns = ["issued", "id"];
   const csVerifiedColumns = ["verified", "id"];
   const csEcoSlashColumns = ["ecosystem_slash_events", "id"];
   const csNetSlashColumns = ["network_slash_events", "id"];
-  const trCtrlArchivedModifiedColumns = ["controller", "archived", "modified", "id"];
+  const trCtrlArchivedModifiedColumns = ["corporation", "archived", "modified", "id"];
   const trParticipantsColumns = ["participants", "id"];
   const trActiveSchemasColumns = ["active_schemas", "id"];
   const trWeightColumns = ["weight", "id"];
@@ -106,7 +106,7 @@ export async function up(knex: Knex): Promise<void> {
   const gmLookupColumns = ["block_height", "computed_at"];
   const permSessionsModifiedColumns = ["modified", "id"];
   const permSessionHistorySessionHeightModifiedColumns = ["session_id", "height", "modified", "created_at", "id"];
-  const trHistoryControllerHeightModifiedColumns = ["controller", "height", "modified", "tr_id", "created_at", "id"];
+  const trHistoryControllerHeightModifiedColumns = ["corporation", "height", "modified", "tr_id", "created_at", "id"];
   const gfvHistoryTrHeightColumns = ["tr_id", "height", "created_at", "id"];
   const gfvHistoryTrVersionHeightColumns = ["tr_id", "version", "height", "created_at", "id"];
   const gfdHistoryGfvTrHeightColumns = ["gfv_id", "tr_id", "height", "created_at", "id"];
@@ -185,7 +185,7 @@ export async function up(knex: Knex): Promise<void> {
       if (hasLiveGranteeQueryColumns) {
         await knex.raw(`
           CREATE INDEX CONCURRENTLY IF NOT EXISTS ${LIVE_GRANTEE_QUERY_INDEX_NAME}
-          ON permissions (grantee, schema_id, type, vp_state, validator_perm_id, modified ASC, id DESC)
+          ON permissions (corporation, schema_id, type, vp_state, validator_perm_id, modified ASC, id DESC)
         `);
       }
       if (hasListFiltersSortColumns) {
@@ -238,7 +238,7 @@ export async function up(knex: Knex): Promise<void> {
     if (hasHistoryByGranteeColumns) {
       await knex.raw(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${HISTORY_GRANTEE_HEIGHT_PERMISSION_IDX}
-        ON permission_history (grantee, height DESC, permission_id, created_at DESC, id DESC)
+        ON permission_history (corporation, height DESC, permission_id, created_at DESC, id DESC)
       `);
     }
     if (hasHistoryByValidatorColumns) {
@@ -268,13 +268,13 @@ export async function up(knex: Knex): Promise<void> {
     if (hasTdHistoryRankingColumns) {
       await knex.raw(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX}
-        ON trust_deposit_history (account, height DESC, created_at DESC, id DESC)
+        ON trust_deposit_history (corporation, height DESC, created_at DESC, id DESC)
       `);
     }
     if (hasHistoryGranteeSchemaColumns) {
       await knex.raw(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${PH_GRANTEE_SCHEMA_HEIGHT_CREATED_IDX}
-        ON permission_history (grantee, schema_id, height DESC, created_at DESC, id DESC)
+        ON permission_history (corporation, schema_id, height DESC, created_at DESC, id DESC)
       `);
     }
     if (hasCsTrArchivedModifiedColumns) {
@@ -286,7 +286,7 @@ export async function up(knex: Knex): Promise<void> {
     if (hasCsModesColumns) {
       await knex.raw(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${CS_LIVE_MODES_MODIFIED_IDX}
-        ON credential_schemas (issuer_perm_management_mode, verifier_perm_management_mode, modified DESC, id DESC)
+        ON credential_schemas (issuer_onboarding_mode, verifier_onboarding_mode, modified DESC, id DESC)
       `);
     }
     if (hasCsParticipantsColumns) await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${CS_LIVE_PARTICIPANTS_IDX} ON credential_schemas (participants, id DESC)`);
@@ -298,7 +298,7 @@ export async function up(knex: Knex): Promise<void> {
     if (hasTrCtrlArchivedModifiedColumns) {
       await knex.raw(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_LIVE_CTRL_ARCHIVED_MODIFIED_IDX}
-        ON trust_registry (controller, archived, modified DESC, id DESC)
+        ON trust_registry (corporation, archived, modified DESC, id DESC)
       `);
     }
     if (hasTrParticipantsColumns) await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_LIVE_PARTICIPANTS_IDX} ON trust_registry (participants, id DESC)`);
@@ -329,7 +329,7 @@ export async function up(knex: Knex): Promise<void> {
     if (hasTrHistoryControllerHeightModifiedColumns) {
       await knex.raw(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_HISTORY_CONTROLLER_HEIGHT_MODIFIED_TR_IDX}
-        ON trust_registry_history (controller, height DESC, modified DESC, tr_id, created_at DESC, id DESC)
+        ON trust_registry_history (corporation, height DESC, modified DESC, tr_id, created_at DESC, id DESC)
       `);
     }
     if (hasGfvHistoryTrHeightColumns) {
@@ -483,18 +483,18 @@ export async function up(knex: Knex): Promise<void> {
 export async function down(knex: Knex): Promise<void> {
   const pg = isPostgres(knex);
   const liveColumns = ["did", "schema_id", "type", "modified", "id"];
-  const liveGranteeQueryColumns = ["grantee", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
+  const liveGranteeQueryColumns = ["corporation", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const listFiltersSortColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const historyColumns = ["did", "schema_id", "type", "height", "modified", "created_at", "id"];
   const historyRankingColumns = ["permission_id", "height", "created_at", "id"];
   const historyLatestColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id"];
   const liveActiveDidDropColumns = ["did", "schema_id", "type", "modified", "id"];
-  const historyByGranteeColumns = ["grantee", "height", "permission_id", "created_at", "id"];
+  const historyByGranteeColumns = ["corporation", "height", "permission_id", "created_at", "id"];
   const historyByValidatorColumns = ["validator_perm_id", "height", "permission_id", "created_at", "id"];
   const sessionHistoryRankingColumns = ["session_id", "height", "created_at", "id"];
   const csHistoryRankingColumns = ["credential_schema_id", "height", "created_at", "id"];
   const trHistoryRankingColumns = ["tr_id", "height", "created_at", "id"];
-  const tdHistoryRankingColumns = ["account", "height", "created_at", "id"];
+  const tdHistoryRankingColumns = ["corporation", "height", "created_at", "id"];
   const statsEntityGranularityIdTimeColumns = ["entity_type", "granularity", "entity_id", "timestamp"];
   const statsGlobalGranularityTimeColumns = ["entity_type", "granularity", "timestamp"];
 

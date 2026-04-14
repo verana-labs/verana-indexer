@@ -95,13 +95,12 @@ describe("AccountReputationService", () => {
             .mockImplementationOnce(() => ({
                 where: jest.fn(() => ({
                     first: jest.fn().mockResolvedValue({
-                        amount: "50",
+                        deposit: "50",
                         slashed_deposit: "10",
                         repaid_deposit: "5",
                         slash_count: 2,
                         last_slashed: "t1",
                         last_repaid: "t2",
-                        last_repaid_by: "actor2",
                     })
                 })),
             }))

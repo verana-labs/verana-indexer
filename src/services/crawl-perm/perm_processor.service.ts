@@ -60,7 +60,7 @@ export default class PermProcessorService extends BullableService {
       const priority = (type: string | undefined) => {
         switch (type) {
           case VeranaPermissionMessageTypes.CreateRootPermission:
-          case VeranaPermissionMessageTypes.CreatePermission:
+          case VeranaPermissionMessageTypes.SelfCreatePermission:
             return 1;
           case VeranaPermissionMessageTypes.AdjustPermission:
           case VeranaPermissionMessageTypes.RevokePermission:
@@ -114,7 +114,7 @@ export default class PermProcessorService extends BullableService {
         // (avoids sequence collisions and makes replays idempotent).
         if (
           (msg.type === VeranaPermissionMessageTypes.CreateRootPermission
-            || msg.type === VeranaPermissionMessageTypes.CreatePermission)
+            || msg.type === VeranaPermissionMessageTypes.SelfCreatePermission)
           && (payload as any)?.id == null
         ) {
           const impacted = extractImpactedPermissionIds(msg as PermissionMessagePayload);
@@ -141,8 +141,8 @@ export default class PermProcessorService extends BullableService {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.CreatePermission:
-            result = await this.broker.call("permIngest.handleMsgCreatePermission", {
+          case VeranaPermissionMessageTypes.SelfCreatePermission:
+            result = await this.broker.call("permIngest.handleMsgSelfCreatePermission", {
               data: payload,
             });
             break;

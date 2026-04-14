@@ -26,7 +26,7 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
   [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
-  [VeranaPermissionMessageTypes.CreatePermission]: "CreatePermission",
+  [VeranaPermissionMessageTypes.SelfCreatePermission]: "SelfCreatePermission",
   [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
   [VeranaPermissionMessageTypes.RenewPermissionVP]: "RenewPermissionVP",
   [VeranaPermissionMessageTypes.RevokePermission]: "RevokePermission",

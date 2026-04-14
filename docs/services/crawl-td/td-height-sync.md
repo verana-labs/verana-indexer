@@ -40,7 +40,6 @@ When disabled, the indexer uses the legacy event and message processor paths.
 
 - `/verana.td.v1.MsgAdjustTrustDeposit`
 - `/verana.td.v1.MsgReclaimTrustDepositYield`
-- `/verana.td.v1.MsgReclaimTrustDeposit`
 - `/verana.td.v1.MsgSlashTrustDeposit`
 - `/verana.td.v1.MsgRepaySlashedTrustDeposit`
 - `/verana.td.v1.MsgBurnEcosystemSlashedTrustDeposit`
@@ -53,7 +52,6 @@ The chain emits these event types for the TD module (see `TrustDepositEventType`
 - `slash_trust_deposit`
 - `repay_slashed_trust_deposit`
 - `reclaim_trust_deposit_yield`
-- `reclaim_trust_deposit`
 - `adjust_trust_deposit`
 - `yield_distribution`
 - `yield_transfer`

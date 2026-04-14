@@ -159,7 +159,7 @@ When you need to re-process all blocks from the beginning (e.g., after schema ch
 ### How it works
 
 1. A **pre-upgrade Helm hook Job** runs `pnpm reindex:prepare`, which:
-   - Drops module tables (transaction, accounts, DIDs, etc.)
+   - Drops module tables (transaction, accounts, etc.)
    - Resets all service checkpoints to 0
    - Runs migrations to recreate tables
    - Resets ID sequences

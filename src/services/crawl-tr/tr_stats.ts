@@ -122,7 +122,7 @@ export async function calculateIssuedVerifiedForSchema(
 export async function calculateSlashStatsForSchema(
     schemaId: number,
     permissionIds: Set<number>,
-    trController: string | null,
+    _trController: string | null,
     blockHeight?: number
 ): Promise<{
     ecosystem_slash_events: number;
@@ -159,7 +159,7 @@ export async function calculateSlashStatsForSchema(
             .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -168,7 +168,7 @@ export async function calculateSlashStatsForSchema(
             .whereIn("permission_id", permissionIdArray)
             .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-            .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -193,7 +193,7 @@ export async function calculateSlashStatsForSchema(
         prevSlashedDeposits.set(permIdStr, currentSlashed);
 
         const isEcosystemPermission = event.type === "ECOSYSTEM";
-        const isSlashedByEcosystemGov = trController && event.slashed_by === trController;
+        const isSlashedByEcosystemGov = false;
 
         if (isEcosystemPermission) {
             networkSlashEvents++;

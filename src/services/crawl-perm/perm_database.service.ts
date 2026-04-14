@@ -186,10 +186,12 @@ function normalizeValidationState(value: unknown): string {
     if (
       normalized === "VALIDATION_STATE_UNSPECIFIED" ||
       normalized === "PENDING" ||
-      normalized === "VALIDATED" ||
-      normalized === "TERMINATED"
+      normalized === "VALIDATED"
     ) {
       return normalized;
+    }
+    if (normalized === "TERMINATED" || normalized === "TERMINATION_REQUESTED") {
+      return "VALIDATED";
     }
   }
 
@@ -199,7 +201,7 @@ function normalizeValidationState(value: unknown): string {
     case 2: return "VALIDATED";
     case 3:
     case 4:
-      return "TERMINATED";
+      return "VALIDATED";
     case 0:
     default:
       return "VALIDATION_STATE_UNSPECIFIED";
@@ -722,13 +724,7 @@ export default class PermIngestService extends Service {
     const schemaId = Number(ledgerPermission.schema_id ?? ledgerPermission.schemaId);
     const nowIso = new Date().toISOString();
 
-    const corporation =
-      ledgerPermission.corporation ??
-      ledgerPermission.grantee ??
-      ledgerPermission.authority ??
-      ledgerPermission.created_by ??
-      ledgerPermission.createdBy ??
-      "";
+    const corporation = String(ledgerPermission.corporation ?? "").trim();
 
     return {
       id,
@@ -757,11 +753,7 @@ export default class PermIngestService extends Service {
       vp_current_fees: Number(ledgerPermission.vp_current_fees ?? ledgerPermission.vpCurrentFees ?? 0),
       vp_current_deposit: Number(ledgerPermission.vp_current_deposit ?? ledgerPermission.vpCurrentDeposit ?? 0),
       vp_summary_digest:
-        ledgerPermission.vp_summary_digest ??
-        ledgerPermission.vpSummaryDigest ??
-        ledgerPermission.vp_summary_digest_sri ??
-        ledgerPermission.vpSummaryDigestSri ??
-        null,
+        ledgerPermission.vp_summary_digest ?? ledgerPermission.vpSummaryDigest ?? null,
       issuance_fee_discount: Number(
         ledgerPermission.issuance_fee_discount ?? ledgerPermission.issuanceFeeDiscount ?? 0
       ),
@@ -769,15 +761,8 @@ export default class PermIngestService extends Service {
         ledgerPermission.verification_fee_discount ?? ledgerPermission.verificationFeeDiscount ?? 0
       ),
       vs_operator: ledgerPermission.vs_operator ?? ledgerPermission.vsOperator ?? null,
-      adjusted: toIsoOrNull(
-        ledgerPermission.adjusted ?? ledgerPermission.adjustedAt ?? ledgerPermission.extended
-      ),
-      adjusted_by:
-        ledgerPermission.adjusted_by ??
-        ledgerPermission.adjustedBy ??
-        ledgerPermission.extended_by ??
-        ledgerPermission.extendedBy ??
-        null,
+      adjusted: toIsoOrNull(ledgerPermission.adjusted ?? ledgerPermission.adjustedAt),
+      adjusted_by: ledgerPermission.adjusted_by ?? ledgerPermission.adjustedBy ?? null,
       vs_operator_authz_enabled: Boolean(
         ledgerPermission.vs_operator_authz_enabled ?? ledgerPermission.vsOperatorAuthzEnabled ?? false
       ),
@@ -1203,10 +1188,7 @@ export default class PermIngestService extends Service {
 
       const mappedSession: any = {
         id,
-        corporation:
-          ledgerSession?.corporation ??
-          ledgerSession?.controller ??
-          null,
+        corporation: ledgerSession?.corporation ?? null,
         vs_operator: ledgerSession?.vs_operator ?? ledgerSession?.vsOperator ?? null,
         agent_perm_id: Number(ledgerSession?.agent_perm_id ?? ledgerSession?.agentPermId ?? 0) || 0,
         wallet_agent_perm_id: Number(ledgerSession?.wallet_agent_perm_id ?? ledgerSession?.walletAgentPermId ?? 0) || 0,
@@ -1486,11 +1468,11 @@ export default class PermIngestService extends Service {
       schema_id: Number(record.schema_id ?? record.schemaId ?? 0) || 0,
       type: normalizePermissionType(record.type),
       did: record.did ?? null,
-      corporation: record.corporation ?? record.grantee ?? null,
+      corporation: record.corporation ?? null,
       created: this.normalizeComparableTimestamp(record.created),
       modified: this.normalizeComparableTimestamp(record.modified),
-      adjusted: this.normalizeComparableTimestamp(record.adjusted ?? record.extended),
-      adjusted_by: record.adjusted_by ?? record.adjustedBy ?? record.extended_by ?? record.extendedBy ?? null,
+      adjusted: this.normalizeComparableTimestamp(record.adjusted),
+      adjusted_by: record.adjusted_by ?? record.adjustedBy ?? null,
       slashed: this.normalizeComparableTimestamp(record.slashed),
       repaid: this.normalizeComparableTimestamp(record.repaid),
       effective_from: this.normalizeComparableTimestamp(record.effective_from ?? record.effectiveFrom),
@@ -1534,7 +1516,7 @@ export default class PermIngestService extends Service {
 
     return {
       id: String(record.id ?? record.session_id ?? ""),
-      corporation: record.corporation ?? record.controller ?? null,
+      corporation: record.corporation ?? null,
       vs_operator: record.vs_operator ?? record.vsOperator ?? null,
       agent_perm_id: Number(record.agent_perm_id ?? record.agentPermId ?? 0) || 0,
       wallet_agent_perm_id: Number(record.wallet_agent_perm_id ?? record.walletAgentPermId ?? 0) || 0,
@@ -2399,11 +2381,7 @@ export default class PermIngestService extends Service {
         vp_current_fees: 0,
         vp_current_deposit: 0,
         vp_validator_deposit: Number(newVpValidatorDeposit),
-        vp_summary_digest:
-          msg.vp_summary_digest ??
-          (msg as any).vp_summary_digest_sri ??
-          perm.vp_summary_digest ??
-          null,
+        vp_summary_digest: msg.vp_summary_digest ?? perm.vp_summary_digest ?? null,
         vp_exp: vpExp,
         effective_until: effectiveUntil,
         modified: now,
@@ -2654,10 +2632,11 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Creator is not corporation" };
       }
 
-      const newVpState = perm.vp_exp ? "VALIDATED" : "TERMINATED";
+      // v4-draft13 removed TERMINATED; treat "no vp_exp" as validated-without-exp for legacy rows.
+      const newVpState = "VALIDATED";
 
       const vpValidatorDeposit =
-        newVpState === "TERMINATED" ? "0" : perm.vp_validator_deposit;
+        perm.vp_validator_deposit;
 
       // Calculate expire_soon for the updated permission
       const updatedPermData = {

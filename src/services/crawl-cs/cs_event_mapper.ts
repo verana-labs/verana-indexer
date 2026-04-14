@@ -104,8 +104,8 @@ export function parseCredentialSchemaEvent(
     issuer_validation_validity_period: num(getAttr(attributeMap, "issuer_validation_validity_period")),
     verifier_validation_validity_period: num(getAttr(attributeMap, "verifier_validation_validity_period")),
     holder_validation_validity_period: num(getAttr(attributeMap, "holder_validation_validity_period")),
-    issuer_onboarding_mode: getAttr(attributeMap, "issuer_onboarding_mode") || getAttr(attributeMap, "issuer_perm_management_mode"),
-    verifier_onboarding_mode: getAttr(attributeMap, "verifier_onboarding_mode") || getAttr(attributeMap, "verifier_perm_management_mode"),
+    issuer_onboarding_mode: getAttr(attributeMap, "issuer_onboarding_mode"),
+    verifier_onboarding_mode: getAttr(attributeMap, "verifier_onboarding_mode"),
     archived: isArchived ? modified : null,
     modified,
   };

@@ -5,7 +5,7 @@ export type GranteeAction = CorporationAction;
 export type ValidatorAction = "VP_SET_VALIDATED" | "PERM_REVOKE" | "PERM_ADJUST" | "PERM_SLASH";
 
 export type PermissionType = "ISSUER_GRANTOR" | "ISSUER" | "VERIFIER_GRANTOR" | "VERIFIER" | "HOLDER" | "ECOSYSTEM";
-export type ValidationState = "VALIDATION_STATE_UNSPECIFIED" | "PENDING" | "VALIDATED" | "TERMINATED" | null;
+export type ValidationState = "VALIDATION_STATE_UNSPECIFIED" | "PENDING" | "VALIDATED" | null;
 export type SchemaMode = "GRANTOR_VALIDATION" | "OPEN" | "ECOSYSTEM";
 
 export interface PermissionData {
@@ -128,13 +128,13 @@ function normalizeVpState(value: unknown): ValidationState {
     if (upper === "VALIDATION_STATE_UNSPECIFIED" || upper === "UNSPECIFIED") return "VALIDATION_STATE_UNSPECIFIED";
     if (upper === "PENDING") return "PENDING";
     if (upper === "VALIDATED") return "VALIDATED";
-    if (upper === "TERMINATED") return "TERMINATED";
+    if (upper === "TERMINATED" || upper === "TERMINATION_REQUESTED") return "VALIDATED";
     return null;
   }
   const n = Number(value);
   if (n === 1) return "PENDING";
   if (n === 2) return "VALIDATED";
-  if (n === 3 || n === 4) return "TERMINATED";
+  if (n === 3 || n === 4) return "VALIDATED";
   return "VALIDATION_STATE_UNSPECIFIED";
 }
 

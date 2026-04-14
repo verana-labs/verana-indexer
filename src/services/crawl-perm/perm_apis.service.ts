@@ -166,6 +166,7 @@ export default class PermAPIService extends BullableService {
       corporation: row.corporation ?? null,
       vs_operator: row.vs_operator ?? null,
       agent_perm_id: Number(row.agent_perm_id ?? 0) || 0,
+      wallet_agent_perm_id: Number(row.wallet_agent_perm_id ?? 0) || 0,
       session_records: sessionRecords,
       created: row.created ?? null,
       modified: row.modified ?? null,

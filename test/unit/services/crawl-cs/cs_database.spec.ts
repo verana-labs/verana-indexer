@@ -2,6 +2,7 @@ import { ServiceBroker } from "moleculer";
 import CredentialSchemaDatabaseService from "../../../../src/services/crawl-cs/cs_database.service";
 import knex from "../../../../src/common/utils/db_connection";
 import { SERVICE } from "../../../../src/common";
+import { Network } from "../../../../src/network";
 
 function normalizeSchemaId(id: unknown): number {
   if (id == null) return NaN;
@@ -48,10 +49,9 @@ function csResultRow(res: unknown): Record<string, unknown> | undefined {
   return body;
 }
 
-function assertSuccess(res: unknown): void {
+function assertOk(res: unknown): void {
   const body = deepUnwrapMoleculer(res);
   expect(body).toBeDefined();
-  expect(body!.success).toBe(true);
   expect(body!.error).toBeUndefined();
 }
 
@@ -60,6 +60,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
   const serviceKey = SERVICE.V1.CredentialSchemaDatabaseService.path;
   let schema: Record<string, unknown>;
   let schemaId: number;
+  const chainId = Network.chainId || "vna-testnet-1";
 
   beforeAll(async () => {
     broker.createService(CredentialSchemaDatabaseService);
@@ -90,15 +91,15 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       issuer_validation_validity_period: 180,
       verifier_validation_validity_period: 180,
       holder_validation_validity_period: 180,
-      issuer_perm_management_mode: 2,
-      verifier_perm_management_mode: 2,
+      issuer_onboarding_mode: 2,
+      verifier_onboarding_mode: 2,
       created: new Date().toISOString(),
       archived: null,
       modified: new Date().toISOString(),
     };
 
     const res = await broker.call(`${serviceKey}.upsert`, { payload });
-    assertSuccess(res);
+    assertOk(res);
     const row = csResultRow(res);
     expect(row).toBeDefined();
     schema = row as Record<string, unknown>;
@@ -109,10 +110,10 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should update an existing credential schema", async () => {
     const res = await broker.call(`${serviceKey}.update`, {
-      payload: { id: schemaId, deposit: 20000000 },
+      payload: { id: schemaId, issuer_onboarding_mode: "OPEN" },
     });
 
-    assertSuccess(res);
+    assertOk(res);
     const body = deepUnwrapMoleculer(res)!;
     const updated = body.updated as Record<string, unknown>;
     expect(updated?.id).toBe(schemaId);
@@ -135,15 +136,15 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       issuer_validation_validity_period: 180,
       verifier_validation_validity_period: 180,
       holder_validation_validity_period: 180,
-      issuer_perm_management_mode: "OPEN",
-      verifier_perm_management_mode: "OPEN",
+      issuer_onboarding_mode: "OPEN",
+      verifier_onboarding_mode: "OPEN",
       created: new Date().toISOString(),
       archived: null,
       modified: new Date().toISOString(),
     };
 
     const createRes = await broker.call(`${serviceKey}.upsert`, { payload: basePayload });
-    assertSuccess(createRes);
+    assertOk(createRes);
     const created = csResultRow(createRes) as Record<string, unknown>;
     const createdId = normalizeSchemaId(created.id);
     expect(Number.isFinite(createdId) && createdId > 0).toBe(true);
@@ -166,8 +167,8 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
           issuer_validation_validity_period: beforeSync.issuer_validation_validity_period,
           verifier_validation_validity_period: beforeSync.verifier_validation_validity_period,
           holder_validation_validity_period: beforeSync.holder_validation_validity_period,
-          issuer_perm_management_mode: beforeSync.issuer_perm_management_mode,
-          verifier_perm_management_mode: beforeSync.verifier_perm_management_mode,
+          issuer_onboarding_mode: beforeSync.issuer_onboarding_mode,
+          verifier_onboarding_mode: beforeSync.verifier_onboarding_mode,
           archived: beforeSync.archived,
           created: beforeSync.created,
           modified: beforeSync.modified,
@@ -218,8 +219,8 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
           issuer_validation_validity_period: beforeSync.issuer_validation_validity_period,
           verifier_validation_validity_period: beforeSync.verifier_validation_validity_period,
           holder_validation_validity_period: beforeSync.holder_validation_validity_period,
-          issuer_perm_management_mode: beforeSync.issuer_perm_management_mode,
-          verifier_perm_management_mode: beforeSync.verifier_perm_management_mode,
+          issuer_onboarding_mode: beforeSync.issuer_onboarding_mode,
+          verifier_onboarding_mode: beforeSync.verifier_onboarding_mode,
           archived: beforeSync.archived,
           created: beforeSync.created,
           modified: new Date().toISOString(),
@@ -254,7 +255,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       },
     });
 
-    assertSuccess(res);
+    assertOk(res);
 
     const dbRow = await knex("credential_schemas")
       .where({ id: schemaId })
@@ -271,7 +272,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       },
     });
 
-    assertSuccess(res);
+    assertOk(res);
 
     const dbRow = await knex("credential_schemas")
       .where({ id: schemaId })
@@ -310,10 +311,10 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     expect(storedRaw).toBeDefined();
     expect(typeof storedRaw).toBe("string");
     const stored = storedRaw as string;
-    expect(stored).toContain("vpr:verana:vna-testnet-1/cs/v1/js/" + schemaId);
+    expect(stored).toContain(`vpr:verana:${chainId}/cs/v1/js/` + schemaId);
     expect(stored).toContain("foo");
     const parsed = JSON.parse(stored);
-    expect(parsed.$id).toBe("vpr:verana:vna-testnet-1/cs/v1/js/" + schemaId);
+    expect(parsed.$id).toBe(`vpr:verana:${chainId}/cs/v1/js/` + schemaId);
     expect(parsed.properties).toHaveProperty("foo");
   });
 

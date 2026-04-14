@@ -24,8 +24,8 @@ export interface LedgerCredentialSchemaResponse {
     issuer_validation_validity_period?: number;
     verifier_validation_validity_period?: number;
     holder_validation_validity_period?: number;
-    issuer_perm_management_mode?: string;
-    verifier_perm_management_mode?: string;
+    issuer_onboarding_mode?: string;
+    verifier_onboarding_mode?: string;
     holder_onboarding_mode?: string | null;
     pricing_asset_type?: string | null;
     pricing_asset?: string | null;

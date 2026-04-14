@@ -33,7 +33,7 @@ function ledgerHasKey(obj: unknown, key: string): boolean {
 export default class TrustRegistryDatabaseService extends BaseService {
     private trHistoryColumnExistsCache = new Map<string, boolean>();
     private trHistoryColumnsCache: Set<string> | null = null;
-    private trustRegistryParticipantColumn: "corporation" | "controller" | null = null;
+    private trustRegistryParticipantColumn: "corporation" | null = null;
     private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
         "id",
         "modified",
@@ -59,7 +59,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         super(broker);
     }
 
-    private async getTrustRegistryParticipantColumn(db: Knex | Knex.Transaction): Promise<"corporation" | "controller"> {
+    private async getTrustRegistryParticipantColumn(db: Knex | Knex.Transaction): Promise<"corporation"> {
         if (this.trustRegistryParticipantColumn) return this.trustRegistryParticipantColumn;
         const col = await resolveTrustRegistryParticipantColumn(db);
         this.trustRegistryParticipantColumn = col;
@@ -133,12 +133,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         ? Number((raw as any).active_version ?? (raw as any).activeVersion ?? 0) || 0
                         : Number(existingTr?.active_version ?? 0) || 0;
 
-                const corporationOrController =
+                const corporationValue =
                     ledgerHasKey(rawObj, "corporation")
                         ? ((raw as any).corporation ?? null)
-                        : ledgerHasKey(rawObj, "controller")
-                          ? ((raw as any).controller ?? null)
-                          : ((existingTr as any)?.corporation ?? (existingTr as any)?.controller ?? null);
+                        : ((existingTr as any)?.corporation ?? null);
 
                 const basePayload: Record<string, unknown> = {
                     did: ledgerHasKey(rawObj, "did") ? ((raw as any).did ?? null) : (existingTr?.did ?? null),
@@ -158,7 +156,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     active_version: activeVersionFromLedger,
                     height: blockHeightNum,
                 };
-                basePayload[participantCol] = corporationOrController;
+                basePayload[participantCol] = corporationValue;
 
                 // skip changing height (avoids 23505). Do NOT use try/catch — Postgres aborts the txn on error (25P02).
                 if (existingTr) {
@@ -2078,10 +2076,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
         const controllerIds = controllerRows.map((r: { id: number }) => r.id);
 
         const permPart = await resolvePermissionsParticipantColumn(knex);
-        const granteeSchemaIds = await knex("permissions")
+        const corpSchemaIds = await knex("permissions")
             .where(permPart, account)
             .distinct("schema_id");
-        const schemaIds = granteeSchemaIds
+        const schemaIds = corpSchemaIds
             .map((r: { schema_id: string }) => {
                 const id = r.schema_id ? parseFloat(r.schema_id) : null;
                 return id !== null && !Number.isNaN(id) ? id : null;
@@ -2093,9 +2091,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
         const trIdRows = await knex("credential_schemas")
             .whereIn("id", schemaIds)
             .distinct("tr_id");
-        const granteeTrIds = trIdRows.map((r: { tr_id: number }) => r.tr_id);
+        const corpTrIds = trIdRows.map((r: { tr_id: number }) => r.tr_id);
 
-        return [...new Set([...controllerIds, ...granteeTrIds])];
+        return [...new Set([...controllerIds, ...corpTrIds])];
     }
 
 
@@ -2108,11 +2106,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
         const controllerTrIds = [...new Set(trHistoryRows.map((r: { tr_id: number }) => r.tr_id))];
 
         const permHistPart = await resolvePermissionHistoryParticipantColumn(knex);
-        const granteePermRows = await knex("permission_history")
+        const corpPermRows = await knex("permission_history")
             .where("height", "<=", blockHeight)
             .where(permHistPart, account)
             .distinct("schema_id");
-        const schemaIds = granteePermRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
+        const schemaIds = corpPermRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
         if (schemaIds.length === 0) {
             return controllerTrIds;
         }
@@ -2124,9 +2122,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
             .whereIn("credential_schema_id", schemaIds)
             .as("ranked");
         const latestCsh = await knex.from(cshSub).where("rn", 1).select("tr_id");
-        const granteeTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
+        const corpTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
 
-        return [...new Set([...controllerTrIds, ...granteeTrIds])];
+        return [...new Set([...controllerTrIds, ...corpTrIds])];
     }
 
     @Action()

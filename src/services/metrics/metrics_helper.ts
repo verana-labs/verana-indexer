@@ -542,10 +542,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       },
       asOfTime
     );
-    const corp =
-      (historyRecord as { corporation?: string; grantee?: string; controller?: string }).corporation ??
-      (historyRecord as { grantee?: string }).grantee ??
-      (historyRecord as { controller?: string }).controller;
+    const corp = (historyRecord as { corporation?: string }).corporation;
     if (permState === "ACTIVE" && corp) {
       allParticipantsSet.add(corp);
       if (historyRecord.type === "ECOSYSTEM") participantsEcosystemSet.add(corp);

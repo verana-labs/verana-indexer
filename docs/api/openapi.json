@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Verana Indexer API",
-    "description": "REST API for the Verana indexer: trust registries (TR), credential schemas (CS), permissions, trust deposits (TD), metrics, and indexer meta.\n\nAligned with **VPR v4** terminology (e.g. corporation, deposit, schema authorization policies). Indexer endpoints under `/verana/indexer/v1` expose block height and a changes feed. Other modules may use the `At-Block-Height` header for historical state; when omitted, responses reflect the latest indexed state.\n\nThe machine-readable spec is served at `/openapi.json` (this file). Interactive docs are at `/` (Swagger UI).",
+    "description": "REST API for the Verana indexer: trust registries (TR), credential schemas (CS), permissions, trust deposits (TD), metrics, and indexer meta.",
     "version": "1.2.1"
   },
   "servers": [
@@ -489,16 +489,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by corporation (VPR v4 [MOD-TR-QRY-2]); aliases legacy controller param"
-          },
-          {
-            "name": "controller",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Legacy name for corporation filter (same behavior if corporation is omitted)"
+            "description": "Filter by corporation (VPR v4 — TR ownership)"
           },
           {
             "name": "min_active_schemas",
@@ -527,7 +518,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Account (e.g. verana8127329). Filter TRs where account is controller or grantee."
+            "description": "Participant account. TRs where this account is TR corporation or holds an active permission on a schema in the TR."
           },
           {
             "name": "min_participants",
@@ -1233,32 +1224,22 @@
             "description": "Filter by active status. If true, returns only active schemas (archived is null). If false or omitted, returns all schemas (both active and archived). Active/inactive is determined by the archived field."
           },
           {
-            "name": "issuer_perm_management_mode",
+            "name": "issuer_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "enum": [
-                "OPEN",
-                "ECOSYSTEM",
-                "GRANTOR_VALIDATION"
-              ]
+              "type": "string"
             },
-            "description": "Filter by issuer permission management mode"
+            "description": "Filter by issuer onboarding mode (VPR v4 IssuerVerifierOnboardingMode). Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
           },
           {
-            "name": "verifier_perm_management_mode",
+            "name": "verifier_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "enum": [
-                "OPEN",
-                "ECOSYSTEM",
-                "GRANTOR_VALIDATION"
-              ]
+              "type": "string"
             },
-            "description": "Filter by verifier permission management mode"
+            "description": "Filter by verifier onboarding mode (VPR v4 IssuerVerifierOnboardingMode). Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
           },
           {
             "name": "response_max_size",
@@ -1288,7 +1269,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Account (e.g. verana8127329). Filter schemas where account is controller (via TR) or grantee."
+            "description": "Participant account. Schemas whose TR corporation matches or where the account holds an active permission."
           },
           {
             "name": "min_participants",
@@ -1584,107 +1565,6 @@
         }
       }
     },
-    "/verana/cs/v1/sap/get/{id}": {
-      "get": {
-        "tags": [
-          "Credential Schema"
-        ],
-        "summary": "Get Schema Authorization Policy by id",
-        "description": "Return a single schema authorization policy (SAP) row by primary key. VPR v4 table: `schema_authorization_policies`.",
-        "operationId": "getSchemaAuthorizationPolicy",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            },
-            "description": "SAP primary key"
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Schema authorization policy",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SchemaAuthorizationPolicyResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SAP not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
-    "/verana/cs/v1/sap/list": {
-      "get": {
-        "tags": [
-          "Credential Schema"
-        ],
-        "summary": "List Schema Authorization Policies",
-        "description": "List SAP rows, optionally filtered by credential schema and role.",
-        "operationId": "listSchemaAuthorizationPolicies",
-        "parameters": [
-          {
-            "name": "schema_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            },
-            "description": "Filter by credential schema id"
-          },
-          {
-            "name": "role",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by policy role"
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of schema authorization policies",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SchemaAuthorizationPolicyListResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
     "/verana/cs/v1/history/{id}": {
       "get": {
         "tags": [
@@ -1765,7 +1645,6 @@
                         "issued": 0,
                         "weight": 0,
                         "created": "2025-10-02T17:23:55.515Z",
-                        "deposit": 10000000,
                         "modified": "2025-10-02T17:23:55.515Z",
                         "verified": 0,
                         "description": "ExampleCredential using JsonSchema",
@@ -1775,10 +1654,14 @@
                         "ecosystem_slash_events": 0,
                         "network_slashed_amount": 0,
                         "ecosystem_slashed_amount": 0,
-                        "issuer_perm_management_mode": "OPEN",
+                        "issuer_onboarding_mode": "OPEN",
                         "network_slashed_amount_repaid": 0,
-                        "verifier_perm_management_mode": "OPEN",
+                        "verifier_onboarding_mode": "OPEN",
                         "ecosystem_slashed_amount_repaid": 0,
+                        "holder_onboarding_mode": "OPEN",
+                        "pricing_asset_type": "NATIVE",
+                        "pricing_asset": "uvna",
+                        "digest_algorithm": "sha256",
                         "holder_validation_validity_period": 0,
                         "issuer_validation_validity_period": 0,
                         "verifier_validation_validity_period": 0,
@@ -1930,22 +1813,13 @@
         "operationId": "listPermissions",
         "parameters": [
           {
-            "name": "grantee",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by grantee account (VPR query name; same filter as corporation)"
-          },
-          {
             "name": "corporation",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "Filter by corporation (permission owner) account — VPR v4 name; aliases grantee column"
+            "description": "Filter by corporation (permission owner) account (VPR v4 [MOD-PERM-QRY-1])"
           },
           {
             "name": "did",
@@ -2440,21 +2314,16 @@
                               "schema_id": 2,
                               "type": "VERIFIER",
                               "did": null,
-                              "grantee": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
-                              "created_by": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                              "corporation": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
                               "created": "2025-10-03T12:30:43.431Z",
                               "modified": "2025-10-03T12:30:43.431Z",
-                              "extended": null,
-                              "extended_by": null,
+                              "adjusted": null,
+                              "adjusted_by": null,
                               "slashed": null,
-                              "slashed_by": null,
                               "repaid": null,
-                              "repaid_by": null,
                               "effective_from": null,
                               "effective_until": null,
                               "revoked": null,
-                              "revoked_by": null,
-                              "country": "GB",
                               "validation_fees": 0,
                               "issuance_fees": 0,
                               "verification_fees": 0,
@@ -2466,13 +2335,12 @@
                               "vp_last_state_change": "2025-10-03T12:30:43.431Z",
                               "vp_current_fees": 5000000,
                               "vp_current_deposit": 1000000,
-                              "vp_summary_digest_sri": null,
+                              "vp_summary_digest": null,
                               "vp_exp": null,
                               "vp_validator_deposit": 0,
-                              "vp_term_requested": null,
                               "perm_state": "INACTIVE",
-                              "grantee_available_actions": [
-                                "PERM_EXTEND",
+                              "corporation_available_actions": [
+                                "PERM_ADJUST",
                                 "PERM_REVOKE"
                               ],
                               "validator_available_actions": [],
@@ -2746,13 +2614,12 @@
                         "type": "ECOSYSTEM",
                         "issued": 0,
                         "created": "2025-10-03T11:59:38.834Z",
-                        "deposit": 0,
-                        "grantee": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "corporation": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "vs_operator": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
                         "modified": "2025-10-03T11:59:38.834Z",
                         "verified": 0,
                         "vp_state": "VALIDATION_STATE_UNSPECIFIED",
                         "schema_id": 2,
-                        "created_by": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
                         "issuance_fees": 5,
                         "effective_from": "2025-10-03T11:59:49.805Z",
                         "repaid_deposit": 0,
@@ -2832,7 +2699,7 @@
                       "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
                       "msg": "CreateOrUpdatePermissionSession",
                       "changes": {
-                        "authz": [
+                        "session_records": [
                           {
                             "issuer_perm_id": 25,
                             "verifier_perm_id": null,
@@ -2841,7 +2708,8 @@
                         ],
                         "created": "2025-10-27T16:55:04.593Z",
                         "modified": "2025-10-27T16:55:04.593Z",
-                        "controller": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
+                        "corporation": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
+                        "vs_operator": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
                         "agent_perm_id": 25,
                         "wallet_agent_perm_id": 25
                       },
@@ -3644,11 +3512,6 @@
             "format": "date-time",
             "nullable": true
           },
-          "deposit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Trust registry deposit"
-          },
           "aka": {
             "type": "string",
             "nullable": true
@@ -3818,8 +3681,9 @@
               "did": {
                 "type": "string"
               },
-              "controller": {
-                "type": "string"
+              "corporation": {
+                "type": "string",
+                "description": "TR ownership (VPR v4)"
               },
               "created": {
                 "type": "string",
@@ -3833,11 +3697,6 @@
                 "type": "string",
                 "format": "date-time",
                 "nullable": true
-              },
-              "deposit": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Trust registry deposit"
               },
               "aka": {
                 "type": "string",
@@ -3923,9 +3782,6 @@
             "type": "string",
             "description": "The exact JSON Schema document as stored from the blockchain (preserves formatting for SRI digest verification). Returned as-is; do not parse or re-serialize."
           },
-          "deposit": {
-            "type": "integer"
-          },
           "issuer_grantor_validation_validity_period": {
             "type": "integer"
           },
@@ -3941,29 +3797,13 @@
           "holder_validation_validity_period": {
             "type": "integer"
           },
-          "issuer_perm_management_mode": {
-            "type": "string",
-            "enum": [
-              "OPEN",
-              "ECOSYSTEM",
-              "GRANTOR_VALIDATION"
-            ]
-          },
-          "verifier_perm_management_mode": {
-            "type": "string",
-            "enum": [
-              "OPEN",
-              "ECOSYSTEM",
-              "GRANTOR_VALIDATION"
-            ]
-          },
           "issuer_onboarding_mode": {
             "type": "string",
-            "description": "VPR v4 name for issuer_perm_management_mode (e.g. GRANTOR_VALIDATION_PROCESS)."
+            "description": "VPR v4 IssuerVerifierOnboardingMode (e.g. GRANTOR_VALIDATION_PROCESS, OPEN, MODE_UNSPECIFIED)."
           },
           "verifier_onboarding_mode": {
             "type": "string",
-            "description": "VPR v4 name for verifier_perm_management_mode (e.g. ECOSYSTEM_VALIDATION_PROCESS)."
+            "description": "VPR v4 IssuerVerifierOnboardingMode (e.g. ECOSYSTEM_VALIDATION_PROCESS, OPEN, MODE_UNSPECIFIED)."
           },
           "holder_onboarding_mode": {
             "type": "string",
@@ -4129,7 +3969,7 @@
             ],
             "description": "The current state of the permission, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
           },
-          "grantee_available_actions": {
+          "corporation_available_actions": {
             "type": "array",
             "items": {
               "type": "string",
@@ -4137,11 +3977,11 @@
                 "VP_RENEW",
                 "VP_CANCEL",
                 "PERM_REVOKE",
-                "PERM_EXTEND",
+                "PERM_ADJUST",
                 "PERM_REPAY"
               ]
             },
-            "description": "List of actions available to the grantee for this permission"
+            "description": "Actions available to the permission corporation (VPR v4)"
           },
           "validator_available_actions": {
             "type": "array",
@@ -4150,11 +3990,11 @@
               "enum": [
                 "VP_SET_VALIDATED",
                 "PERM_REVOKE",
-                "PERM_EXTEND",
+                "PERM_ADJUST",
                 "PERM_SLASH"
               ]
             },
-            "description": "List of actions available to the validator for this permission"
+            "description": "Actions available to the validator (VPR v4)"
           },
           "weight": {
             "type": "integer",
@@ -4260,9 +4100,6 @@
             "type": "number",
             "description": "0–1 discount factor (VPR v4)."
           },
-          "created_by": {
-            "type": "string"
-          },
           "created": {
             "type": "string",
             "format": "date-time"
@@ -4276,17 +4113,9 @@
             "format": "date-time",
             "nullable": true
           },
-          "slashed_by": {
-            "type": "string",
-            "nullable": true
-          },
           "repaid": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
-          },
-          "repaid_by": {
-            "type": "string",
             "nullable": true
           },
           "effective_from": {
@@ -4302,14 +4131,6 @@
           "revoked": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
-          },
-          "revoked_by": {
-            "type": "string",
-            "nullable": true
-          },
-          "country": {
-            "type": "string",
             "nullable": true
           },
           "validation_fees": {
@@ -4354,9 +4175,10 @@
           "vp_current_deposit": {
             "type": "integer"
           },
-          "vp_summary_digest_sri": {
+          "vp_summary_digest": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "VP summary digest (VPR v4; replaces vp_summary_digest_sri)"
           },
           "vp_exp": {
             "type": "string",
@@ -4365,11 +4187,6 @@
           },
           "vp_validator_deposit": {
             "type": "integer"
-          },
-          "vp_term_requested": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
           },
           "participants_ecosystem": {
             "type": "integer"
@@ -4478,8 +4295,9 @@
           "type": {
             "type": "string"
           },
-          "grantee": {
-            "type": "string"
+          "corporation": {
+            "type": "string",
+            "description": "Permission corporation at this history point (VPR v4)"
           },
           "event_type": {
             "type": "string"
@@ -4516,8 +4334,14 @@
             "type": "string",
             "format": "uuid"
           },
-          "controller": {
-            "type": "string"
+          "corporation": {
+            "type": "string",
+            "description": "Session corporation (VPR v4)"
+          },
+          "vs_operator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verifiable service operator (VPR v4)"
           },
           "agent_perm_id": {
             "type": "integer"
@@ -4525,20 +4349,16 @@
           "wallet_agent_perm_id": {
             "type": "integer"
           },
-          "authz": {
+          "session_records": {
             "type": "array",
+            "description": "PermissionSessionRecord[] (VPR v4; replaces legacy authz tuple array)",
             "items": {
               "type": "object",
               "properties": {
-                "issuer_perm_id": {
-                  "type": "integer"
-                },
-                "verifier_perm_id": {
-                  "type": "integer"
-                },
-                "wallet_agent_perm_id": {
-                  "type": "integer"
-                }
+                "created": { "type": "string", "format": "date-time" },
+                "issuer_perm_id": { "type": "integer", "nullable": true },
+                "verifier_perm_id": { "type": "integer", "nullable": true },
+                "wallet_agent_perm_id": { "type": "integer" }
               }
             }
           },
@@ -4584,8 +4404,12 @@
           "height": {
             "type": "integer"
           },
-          "controller": {
+          "corporation": {
             "type": "string"
+          },
+          "vs_operator": {
+            "type": "string",
+            "nullable": true
           },
           "agent_perm_id": {
             "type": "integer"
@@ -4593,11 +4417,9 @@
           "wallet_agent_perm_id": {
             "type": "integer"
           },
-          "authz": {
+          "session_records": {
             "type": "array",
-            "items": {
-              "type": "object"
-            }
+            "items": { "type": "object" }
           },
           "changes": {
             "type": "object",
@@ -4760,82 +4582,6 @@
             "$ref": "#/components/schemas/TrustDeposit"
           }
         }
-      },
-      "SchemaAuthorizationPolicy": {
-        "type": "object",
-        "description": "Row from schema_authorization_policies (VPR v4 SAP)",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "schema_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "version": {
-            "type": "integer"
-          },
-          "role": {
-            "type": "string"
-          },
-          "url": {
-            "type": "string"
-          },
-          "digest_sri": {
-            "type": "string"
-          },
-          "effective_from": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "effective_until": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "revoked": {
-            "type": "boolean"
-          },
-          "height": {
-            "type": "integer",
-            "nullable": true
-          },
-          "tx_hash": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "SchemaAuthorizationPolicyResponse": {
-        "type": "object",
-        "properties": {
-          "schema_authorization_policy": {
-            "$ref": "#/components/schemas/SchemaAuthorizationPolicy"
-          }
-        },
-        "required": [
-          "schema_authorization_policy"
-        ]
-      },
-      "SchemaAuthorizationPolicyListResponse": {
-        "type": "object",
-        "properties": {
-          "schema_authorization_policies": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SchemaAuthorizationPolicy"
-            }
-          }
-        },
-        "required": [
-          "schema_authorization_policies"
-        ]
       },
       "TrustDepositParamsResponse": {
         "type": "object",

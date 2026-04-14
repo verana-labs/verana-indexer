@@ -5,11 +5,10 @@ export async function up(knex: Knex): Promise<void> {
     table.bigIncrements("id").primary();
     table.bigInteger("tr_id").notNullable();
     table.string("did").notNullable();
-    table.string("controller").notNullable();
+    table.string("corporation").notNullable();
     table.timestamp("created").notNullable();
     table.timestamp("modified").notNullable();
     table.timestamp("archived").nullable();
-    table.specificType("deposit", "NUMERIC(38,0)").notNullable();
     table.string("aka").nullable();
     table.string("language", 2).notNullable();
     table.integer("active_version").nullable();

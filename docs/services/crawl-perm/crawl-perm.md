@@ -80,7 +80,7 @@ Acts as a **message processor** that receives messages from external sources (li
             data: payload,
           });
           break;
-        case PermissionMessageTypes.CreatePermission:
+        case PermissionMessageTypes.SelfCreatePermission:
           await this.broker.call("permIngest.handleMsgCreatePermission", {
             data: payload,
           });

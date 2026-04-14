@@ -5,15 +5,12 @@ export enum VeranaCredentialSchemaMessageTypes {
   CreateCredentialSchemaLegacy = "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
   UpdateCredentialSchema = "/verana.cs.v1.MsgUpdateCredentialSchema",
   ArchiveCredentialSchema = "/verana.cs.v1.MsgArchiveCredentialSchema",
-  CreateSchemaAuthorizationPolicyDraft = "/verana.cs.v1.MsgCreateSchemaAuthorizationPolicyDraft",
-  ActivateSchemaAuthorizationPolicyVersion = "/verana.cs.v1.MsgActivateSchemaAuthorizationPolicyVersion",
-  RevokeSchemaAuthorizationPolicyVersion = "/verana.cs.v1.MsgRevokeSchemaAuthorizationPolicyVersion",
 }
 
 export enum VeranaPermissionMessageTypes {
   UpdateParams = "/verana.perm.v1.MsgUpdateParams",
   CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
-  CreatePermission = "/verana.perm.v1.MsgCreatePermission",
+  SelfCreatePermission = "/verana.perm.v1.MsgSelfCreatePermission",
   StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
   RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
   RevokePermission = "/verana.perm.v1.MsgRevokePermission",
@@ -29,7 +26,6 @@ export enum VeranaTrustDepositMessageTypes {
   UpdateParams = "/verana.td.v1.MsgUpdateParams",
   AdjustTrustDeposit = "/verana.td.v1.MsgAdjustTrustDeposit",
   ReclaimYield = "/verana.td.v1.MsgReclaimTrustDepositYield",
-  ReclaimDeposit = "/verana.td.v1.MsgReclaimTrustDeposit",
   RepaySlashed = "/verana.td.v1.MsgRepaySlashedTrustDeposit",
   SlashTrustDeposit = "/verana.td.v1.MsgSlashTrustDeposit",
   BurnEcosystemSlashedTrustDeposit = "/verana.td.v1.MsgBurnEcosystemSlashedTrustDeposit",

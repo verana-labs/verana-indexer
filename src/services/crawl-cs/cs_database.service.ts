@@ -106,76 +106,34 @@ async function stripCsV4OptionalFields(
 }
 
 async function alignCredentialSchemaRowToInstalledColumns(
+  _db: KnexSchemaLike,
+  _table: "credential_schemas" | "credential_schema_history",
+  row: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = { ...row };
+  // V4 naming: issuer_onboarding_mode / verifier_onboarding_mode.
+  // Keep accepting legacy payload keys, but never try to persist them.
+  delete out.issuer_perm_management_mode;
+  delete out.verifier_perm_management_mode;
+  return out;
+}
+
+async function filterRowToExistingColumns(
   db: KnexSchemaLike,
   table: "credential_schemas" | "credential_schema_history",
   row: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const out: Record<string, unknown> = { ...row };
-  const hasIssuerV4 = await db.schema.hasColumn(table, "issuer_onboarding_mode");
-  const hasIssuerV3 = await db.schema.hasColumn(table, "issuer_perm_management_mode");
-  if (hasIssuerV4 && !hasIssuerV3 && "issuer_perm_management_mode" in out) {
-    const r = out as {
-      issuer_onboarding_mode?: unknown;
-      issuer_perm_management_mode?: unknown;
-    };
-    if (r.issuer_onboarding_mode === undefined) {
-      r.issuer_onboarding_mode = r.issuer_perm_management_mode;
-    }
-    delete r.issuer_perm_management_mode;
+  const kdb = db as unknown as { (t: string): { columnInfo: () => Promise<Record<string, unknown>> } };
+  const info = await kdb(table).columnInfo();
+  const columns = new Set(Object.keys(info || {}));
+  const filtered: Record<string, unknown> = {};
+  for (const k of Object.keys(row)) {
+    if (!columns.has(k)) continue;
+    const val = row[k];
+    if (val === undefined) continue;
+    filtered[k] = val;
   }
-  if (!hasIssuerV4 && hasIssuerV3 && "issuer_onboarding_mode" in out) {
-    const r = out as {
-      issuer_onboarding_mode?: unknown;
-      issuer_perm_management_mode?: unknown;
-    };
-    r.issuer_perm_management_mode = r.issuer_onboarding_mode;
-    delete r.issuer_onboarding_mode;
-  }
-  if (hasIssuerV4 && hasIssuerV3) {
-    const r = out as {
-      issuer_onboarding_mode?: unknown;
-      issuer_perm_management_mode?: unknown;
-    };
-    if (r.issuer_onboarding_mode !== undefined && r.issuer_perm_management_mode !== undefined) {
-      delete r.issuer_perm_management_mode;
-    } else if (r.issuer_onboarding_mode === undefined && r.issuer_perm_management_mode !== undefined) {
-      r.issuer_onboarding_mode = r.issuer_perm_management_mode;
-      delete r.issuer_perm_management_mode;
-    }
-  }
-  const hasVerifierV4 = await db.schema.hasColumn(table, "verifier_onboarding_mode");
-  const hasVerifierV3 = await db.schema.hasColumn(table, "verifier_perm_management_mode");
-  if (hasVerifierV4 && !hasVerifierV3 && "verifier_perm_management_mode" in out) {
-    const r = out as {
-      verifier_onboarding_mode?: unknown;
-      verifier_perm_management_mode?: unknown;
-    };
-    if (r.verifier_onboarding_mode === undefined) {
-      r.verifier_onboarding_mode = r.verifier_perm_management_mode;
-    }
-    delete r.verifier_perm_management_mode;
-  }
-  if (!hasVerifierV4 && hasVerifierV3 && "verifier_onboarding_mode" in out) {
-    const r = out as {
-      verifier_onboarding_mode?: unknown;
-      verifier_perm_management_mode?: unknown;
-    };
-    r.verifier_perm_management_mode = r.verifier_onboarding_mode;
-    delete r.verifier_onboarding_mode;
-  }
-  if (hasVerifierV4 && hasVerifierV3) {
-    const r = out as {
-      verifier_onboarding_mode?: unknown;
-      verifier_perm_management_mode?: unknown;
-    };
-    if (r.verifier_onboarding_mode !== undefined && r.verifier_perm_management_mode !== undefined) {
-      delete r.verifier_perm_management_mode;
-    } else if (r.verifier_onboarding_mode === undefined && r.verifier_perm_management_mode !== undefined) {
-      r.verifier_onboarding_mode = r.verifier_perm_management_mode;
-      delete r.verifier_perm_management_mode;
-    }
-  }
-  return out;
+  return filtered;
 }
 
 async function prepareCredentialSchemaHistoryRowForInsert(
@@ -678,10 +636,8 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
     issuer_validation_validity_period: row.issuer_validation_validity_period || 0,
     verifier_validation_validity_period: row.verifier_validation_validity_period || 0,
     holder_validation_validity_period: row.holder_validation_validity_period || 0,
-    issuer_onboarding_mode:
-      row.issuer_onboarding_mode ?? (row as { issuer_perm_management_mode?: unknown }).issuer_perm_management_mode ?? null,
-    verifier_onboarding_mode:
-      row.verifier_onboarding_mode ?? (row as { verifier_perm_management_mode?: unknown }).verifier_perm_management_mode ?? null,
+    issuer_onboarding_mode: row.issuer_onboarding_mode ?? null,
+    verifier_onboarding_mode: row.verifier_onboarding_mode ?? null,
     holder_onboarding_mode: (row as any).holder_onboarding_mode ?? null,
     pricing_asset_type: (row as any).pricing_asset_type ?? null,
     pricing_asset: (row as any).pricing_asset ?? null,
@@ -766,9 +722,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             "credential_schemas",
             updatesAligned
           );
+          const updatesFiltered = await filterRowToExistingColumns(trx, "credential_schemas", updatesForDb);
           const [updated] = await trx("credential_schemas")
             .where({ id: existingSchema.id })
-            .update(updatesForDb)
+            .update(updatesFiltered)
             .returning("*");
           
           if (!updated || updated.id !== existingSchema.id) {
@@ -796,14 +753,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             "credential_schemas",
             insertAligned
           );
+          const insertFiltered = await filterRowToExistingColumns(trx, "credential_schemas", insertForDb);
           await ensureDepositDefaultIfColumnExists(
             trx,
             "credential_schemas",
-            insertForDb,
+            insertFiltered,
             (insertPayload as Record<string, unknown>).deposit
           );
           const [inserted] = await trx("credential_schemas")
-            .insert(insertForDb)
+            .insert(insertFiltered)
             .returning("*");
           finalRecord = inserted;
           if (rawSchemaString && inserted.id != null) {
@@ -973,9 +931,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         "credential_schemas",
         updatesAligned
       );
+      const updatesFiltered = await filterRowToExistingColumns(knex, "credential_schemas", updatesForDb);
+      if (Object.keys(updatesFiltered).length === 0) {
+        return ApiResponder.error(ctx, "No valid fields to update", 400);
+      }
       let [updated] = await knex("credential_schemas")
         .where({ id: existing.id })
-        .update(updatesForDb)
+        .update(updatesFiltered)
         .returning("*");
 
       try {
@@ -1209,8 +1171,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         issuer_validation_validity_period: Number(schema.issuer_validation_validity_period ?? 0),
         verifier_validation_validity_period: Number(schema.verifier_validation_validity_period ?? 0),
         holder_validation_validity_period: Number(schema.holder_validation_validity_period ?? 0),
-        issuer_onboarding_mode: String(schema.issuer_onboarding_mode ?? schema.issuerOnboardingMode ?? schema.issuer_perm_management_mode ?? schema.issuerPermManagementMode ?? "MODE_UNSPECIFIED"),
-        verifier_onboarding_mode: String(schema.verifier_onboarding_mode ?? schema.verifierOnboardingMode ?? schema.verifier_perm_management_mode ?? schema.verifierPermManagementMode ?? "MODE_UNSPECIFIED"),
+        issuer_onboarding_mode: String(schema.issuer_onboarding_mode ?? schema.issuerOnboardingMode ?? "MODE_UNSPECIFIED"),
+        verifier_onboarding_mode: String(schema.verifier_onboarding_mode ?? schema.verifierOnboardingMode ?? "MODE_UNSPECIFIED"),
         holder_onboarding_mode:
           schema.holder_onboarding_mode != null || schema.holderOnboardingMode != null
             ? String(schema.holder_onboarding_mode ?? schema.holderOnboardingMode ?? "")
@@ -2342,12 +2304,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         : (await knex("credential_schemas").whereIn("tr_id", controllerTrIds).select("id")).map((r: { id: number }) => r.id);
 
     const permPart = await resolvePermissionsParticipantColumn(knex);
-    const granteeRows = await knex("permissions").where(permPart, account).distinct("schema_id");
-    const schemaIdsFromGrantee = granteeRows
+    const corpRows = await knex("permissions").where(permPart, account).distinct("schema_id");
+    const schemaIdsFromCorp = corpRows
       .map((r: { schema_id: string }) => (r.schema_id != null ? parseFloat(r.schema_id) : null))
       .filter((id): id is number => id != null && !Number.isNaN(id));
 
-    return [...new Set([...schemaIdsFromController, ...schemaIdsFromGrantee])];
+    return [...new Set([...schemaIdsFromController, ...schemaIdsFromCorp])];
   }
 
   private async getCredentialSchemaIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
@@ -2374,50 +2336,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     }
 
     const permHistPart = await resolvePermissionHistoryParticipantColumn(knex);
-    const granteePermRows = await knex("permission_history")
+    const corpPermRows = await knex("permission_history")
       .where("height", "<=", blockHeight)
       .where(permHistPart, account)
       .distinct("schema_id");
-    const schemaIdsFromGrantee = granteePermRows
+    const schemaIdsFromCorp = corpPermRows
       .map((r: { schema_id: number }) => r.schema_id)
       .filter((id): id is number => id != null);
 
-    return [...new Set([...schemaIdsFromController, ...schemaIdsFromGrantee])];
+    return [...new Set([...schemaIdsFromController, ...schemaIdsFromCorp])];
   }
 
-  @Action({
-    name: "getSchemaAuthorizationPolicy",
-    params: { id: { type: "number", integer: true, positive: true } },
-  })
-  async getSchemaAuthorizationPolicy(ctx: Context<{ id: number }>) {
-    const row = await knex("schema_authorization_policies")
-      .where({ id: ctx.params.id })
-      .first();
-    if (!row) {
-      return ApiResponder.error(ctx, "SchemaAuthorizationPolicy not found", 404);
-    }
-    return ApiResponder.success(ctx, { schema_authorization_policy: row }, 200);
-  }
-
-  @Action({
-    name: "listSchemaAuthorizationPolicies",
-    params: {
-      schema_id: { type: "number", integer: true, positive: true, optional: true },
-      role: { type: "string", optional: true },
-    },
-  })
-  async listSchemaAuthorizationPolicies(ctx: Context<{
-    schema_id?: number;
-    role?: string;
-  }>) {
-    let q = knex("schema_authorization_policies").select("*");
-    if (ctx.params.schema_id) {
-      q = q.where("schema_id", ctx.params.schema_id);
-    }
-    if (ctx.params.role) {
-      q = q.where("role", ctx.params.role);
-    }
-    const rows = await q.orderBy("schema_id", "asc").orderBy("version", "asc");
-    return ApiResponder.success(ctx, { schema_authorization_policies: rows }, 200);
-  }
 }

@@ -79,8 +79,12 @@ sequenceDiagram
 | `issuer_validation_validity_period`           | int            | Issuer validity period             |
 | `verifier_validation_validity_period`         | int            | Verifier validity period           |
 | `holder_validation_validity_period`           | int            | Holder validity period             |
-| `issuer_perm_management_mode`                 | string            | Issuer permission mode             |
-| `verifier_perm_management_mode`               | string            | Verifier permission mode           |
+| `issuer_onboarding_mode`                      | string            | Issuer onboarding mode (VPR v4)    |
+| `verifier_onboarding_mode`                    | string            | Verifier onboarding mode (VPR v4)  |
+| `holder_onboarding_mode`                      | string            | Holder onboarding mode (VPR v4)    |
+| `pricing_asset_type`                          | string            | Pricing asset type                 |
+| `pricing_asset`                               | string            | Pricing asset                      |
+| `digest_algorithm`                            | string            | Digest algorithm                   |
 | `archived`                                    | timestamp/null | Archive timestamp (`null` = active) |
 | `is_active`                                   | boolean        | Derived activation state (`archived == null`) |
 | `created`                                     | timestamp      | Created timestamp                  |
@@ -134,7 +138,7 @@ Keeps **full history of changes** to schemas.
 
 * List schemas with filters:
 
-  * `tr_id`, `modified_after`, `only_active`, `issuer_perm_management_mode`, `verifier_perm_management_mode`.
+  * `tr_id`, `modified_after`, `only_active`, `issuer_onboarding_mode`, `verifier_onboarding_mode`, `holder_onboarding_mode`.
 * Supports pagination via `response_max_size`.
 
 ### 6. `JsonSchema`
@@ -179,8 +183,9 @@ Defined in `module_params`:
   "issuer_validation_validity_period": 3600,
   "verifier_validation_validity_period": 3600,
   "holder_validation_validity_period": 3600,
-  "issuer_perm_management_mode": "OPEN",
-  "verifier_perm_management_mode":"OPEN"
+  "issuer_onboarding_mode": "OPEN",
+  "verifier_onboarding_mode": "OPEN",
+  "holder_onboarding_mode": "OPEN"
 }
 ```
 

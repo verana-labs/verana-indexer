@@ -585,16 +585,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list credential schemas - with issuer_perm_management_mode', async () => {
+      itIf('should list credential schemas - with issuer_onboarding_mode', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
-          issuer_perm_management_mode: '2',
+          issuer_onboarding_mode: '2',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list credential schemas - with verifier_perm_management_mode', async () => {
+      itIf('should list credential schemas - with verifier_onboarding_mode', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
-          verifier_perm_management_mode: '2',
+          verifier_onboarding_mode: '2',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -663,8 +663,8 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
           participant: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
           only_active: true,
-          issuer_perm_management_mode: '2',
-          verifier_perm_management_mode: '2',
+          issuer_onboarding_mode: '2',
+          verifier_onboarding_mode: '2',
           sort: 'modified',
           min_participants: 1,
           max_participants: 100,
@@ -733,9 +733,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with grantee', async () => {
+      itIf('should list permissions - with corporation', async () => {
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          grantee: SAMPLE_ACCOUNT,
+          corporation: SAMPLE_ACCOUNT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -900,7 +900,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps();
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
           schema_id: SAMPLE_SCHEMA_ID,
-          grantee: SAMPLE_ACCOUNT,
+          corporation: SAMPLE_ACCOUNT,
           did: SAMPLE_DID,
           perm_state: 'ACTIVE',
           type: 'ISSUER',
