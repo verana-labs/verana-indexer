@@ -217,7 +217,7 @@ export default class CrawlGenesisService extends BullableService {
     try {
       const accountsInDb = await Account.query().findOne({});
       if (accountsInDb) {
-        this.logger.error('DB already contains some accounts');
+        this.logger.warn('DB already contains some accounts; skipping genesis account import');
         done = true;
       }
     } catch (error: any) {

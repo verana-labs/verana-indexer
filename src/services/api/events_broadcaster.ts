@@ -219,22 +219,36 @@ export class EventsBroadcaster {
     });
   }
 
-  broadcastBlockProcessed(height: number, timestamp: Date | string): void {
+  broadcastBlockIndexed(height: number, timestamp: Date | string): void {
     if (this.wsClients.size === 0) {
       return;
     }
 
     const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
-    // Format timestamp as ISO 8601 with 'Z' designator (without milliseconds)
     const isoString = eventTimestamp.toISOString();
-    const timestampFormatted = isoString.replace(/\.\d{3}Z$/, 'Z');
-    
-    const eventData = {
-      type: "block-processed",
+    const timestampFormatted = isoString.replace(/\.\d{3}Z$/, "Z");
+
+    this.broadcastMessage({
+      type: "block-indexed",
       height,
-      timestamp: timestampFormatted
-    };
-    this.broadcastMessage(eventData);
+      timestamp: timestampFormatted,
+    });
+  }
+
+  broadcastBlockResolved(height: number, timestamp: Date | string): void {
+    if (this.wsClients.size === 0) {
+      return;
+    }
+
+    const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    const isoString = eventTimestamp.toISOString();
+    const timestampFormatted = isoString.replace(/\.\d{3}Z$/, "Z");
+
+    this.broadcastMessage({
+      type: "block-resolved",
+      height,
+      timestamp: timestampFormatted,
+    });
   }
 
 

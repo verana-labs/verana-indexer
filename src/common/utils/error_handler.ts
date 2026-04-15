@@ -100,8 +100,15 @@ export function analyzeError(error: any): ErrorInfo {
 
   const isNonCritical = errorMessage.toLowerCase().includes('non-critical') ||
     errorMessage.toLowerCase().includes('service will continue');
+
+  const isMoleculerRequestTimeout =
+    error?.type === 'REQUEST_TIMEOUT' ||
+    error?.name === 'RequestTimeoutError';
+
   const shouldStopIndexer =
-    !isNonCritical && (
+    !isNonCritical &&
+    !isMoleculerRequestTimeout &&
+    (
       isNetworkError ||
       isServerError ||
       isTimeoutError ||
@@ -203,6 +210,23 @@ export async function handleErrorGracefully(
       logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
     } else {
       console.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`);
+      console.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+    }
+    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);
+    return true;
+  }
+
+  if (
+    !isNonCritical &&
+    !stopCrawlingOnly &&
+    (error?.type === 'REQUEST_TIMEOUT' || error?.name === 'RequestTimeoutError')
+  ) {
+    const enhancedError = createEnhancedError(error, context);
+    if (logger.error) {
+      logger.error(`Moleculer request timeout in ${serviceName}: ${errorMessage}`);
+      logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+    } else {
+      console.error(`Moleculer request timeout in ${serviceName}: ${errorMessage}`);
       console.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
     }
     await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);

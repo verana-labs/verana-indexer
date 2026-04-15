@@ -21,7 +21,7 @@ import {
 } from '../../common';
 import { indexerStatusManager } from '../manager/indexer_status.manager';
 import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
-import { getDbQueryTimeoutMs } from '../../common/utils/db_query_helper';
+import { getDbQueryTimeoutMs, getHeavyBrokerCallTimeoutMs } from '../../common/utils/db_query_helper';
 import { triggerGC } from '../../common/utils/health_check';
 import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier, getRecommendedConcurrency } from '../../common/utils/crawl_speed_config';
 import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
@@ -228,6 +228,8 @@ export default class CrawlTxService extends BullableService {
           config.handleTransaction.key
         );
 
+      const txBoundaryTimeoutMs = getDbQueryTimeoutMs(300000);
+
       // Get last processed transaction ID from checkpoint height
       // Checkpoint now stores actual block height, so we need to find the last transaction ID at that height
       let lastProcessedTxId = 0;
@@ -237,6 +239,7 @@ export default class CrawlTxService extends BullableService {
           .select('id')
           .where('height', '<=', blockCheckpoint.height)
           .orderBy('id', 'desc')
+          .timeout(txBoundaryTimeoutMs)
           .first();
         lastProcessedTxId = txAtHeight?.id || 0;
       }
@@ -250,6 +253,7 @@ export default class CrawlTxService extends BullableService {
       const maxTxId = await Transaction.query()
         .where('height', '<=', crawlTxCheckpoint?.height || endBlock)
         .max('id as max_id')
+        .timeout(txBoundaryTimeoutMs)
         .first() as any;
       
       const maxAvailableTxId = maxTxId?.max_id || 0;
@@ -277,16 +281,16 @@ export default class CrawlTxService extends BullableService {
           this.logger.info(` [HANDLE_TRANSACTION] No new transactions, advanced checkpoint from ${previousHeight} to ${crawlTxHeight}`);
           try {
             await this.broker.call(
-              `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
+              `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`,
               {
                 height: crawlTxHeight,
                 timestamp: blockCheckpoint.updated_at.toISOString(),
               }
             );
-            this.logger.debug(` [HANDLE_TRANSACTION] Emitted block-processed event for height ${crawlTxHeight} (no-tx advance)`);
+            this.logger.debug(` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${crawlTxHeight} (no-tx advance)`);
           } catch (error) {
             this.logger.warn(
-              `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed for height ${crawlTxHeight}:`,
+              `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed for height ${crawlTxHeight}:`,
               error
             );
           }
@@ -390,18 +394,18 @@ export default class CrawlTxService extends BullableService {
             // Broadcast websocket event for processed block
             try {
               await this.broker.call(
-                `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockProcessed`,
+                `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`,
                 {
                   height: blockHeight,
                   timestamp: new Date().toISOString(),
                 }
               );
               this.logger.debug(
-                ` [HANDLE_TRANSACTION] Emitted block-processed event for height ${blockHeight}`
+                ` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${blockHeight}`
               );
             } catch (error) {
               this.logger.warn(
-                `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-processed event for height ${blockHeight}:`,
+                `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed event for height ${blockHeight}:`,
                 error
               );
             }
@@ -1830,6 +1834,7 @@ export default class CrawlTxService extends BullableService {
         await this.broker.call(
           `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
           { permissionMessages: batch },
+          { timeout: getHeavyBrokerCallTimeoutMs() },
         );
         if (i + permissionBatchSize < permissionMessages.length) {
           const { delay } = await import('../../common/utils/db_query_helper');

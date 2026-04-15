@@ -127,8 +127,8 @@ describe("EventsBroadcaster", () => {
     }, 15000);
   });
 
-  describe("Block Processed Events", () => {
-    it("should broadcast block-processed events to all connected clients", (done) => {
+  describe("Block indexed events", () => {
+    it("should broadcast block-indexed events to all connected clients", (done) => {
       const ws1 = new WebSocket(WS_URL);
       const ws2 = new WebSocket(WS_URL);
       const receivedMessages: any[] = [];
@@ -137,7 +137,7 @@ describe("EventsBroadcaster", () => {
       const checkDone = () => {
         if (bothConnected && receivedMessages.length === 2) {
           receivedMessages.forEach((msg) => {
-            expect(msg.type).toBe("block-processed");
+            expect(msg.type).toBe("block-indexed");
             expect(msg.height).toBe(123456);
             expect(msg.timestamp).toBeDefined();
           });
@@ -150,13 +150,13 @@ describe("EventsBroadcaster", () => {
       ws1.on("open", () => {
         ws2.on("open", () => {
           bothConnected = true;
-          broadcaster.broadcastBlockProcessed(123456, new Date());
+          broadcaster.broadcastBlockIndexed(123456, new Date());
         });
       });
 
       ws1.on("message", (data) => {
         const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
+        if (message.type === "block-indexed") {
           receivedMessages.push(message);
           checkDone();
         }
@@ -164,7 +164,7 @@ describe("EventsBroadcaster", () => {
 
       ws2.on("message", (data) => {
         const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
+        if (message.type === "block-indexed") {
           receivedMessages.push(message);
           checkDone();
         }
@@ -178,27 +178,27 @@ describe("EventsBroadcaster", () => {
       const ws = new WebSocket(WS_URL);
       const testTimestamp = new Date("2025-01-15T10:30:00.000Z");
       const expectedFormat = "2025-01-15T10:30:00Z";
-      let blockProcessedReceived = false;
+      let blockIndexedReceived = false;
 
       ws.on("open", () => {
-        broadcaster.broadcastBlockProcessed(789012, testTimestamp);
+        broadcaster.broadcastBlockIndexed(789012, testTimestamp);
       });
 
       ws.on("message", (data) => {
         const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
+        if (message.type === "block-indexed") {
           expect(message.timestamp).toBe(expectedFormat);
           expect(new Date(message.timestamp).getTime()).toBe(testTimestamp.getTime());
-          blockProcessedReceived = true;
+          blockIndexedReceived = true;
           ws.close();
         }
       });
 
       ws.on("close", () => {
-        if (blockProcessedReceived) {
+        if (blockIndexedReceived) {
           done();
         } else {
-          done(new Error("Block processed message not received"));
+          done(new Error("Block indexed message not received"));
         }
       });
 
@@ -211,32 +211,61 @@ describe("EventsBroadcaster", () => {
       const ws = new WebSocket(WS_URL);
       const testTimestamp = "2025-01-15T10:30:00.000Z";
       const expectedFormat = "2025-01-15T10:30:00Z";
-      let blockProcessedReceived = false;
+      let blockIndexedReceived = false;
 
       ws.on("open", () => {
-        broadcaster.broadcastBlockProcessed(345678, testTimestamp);
+        broadcaster.broadcastBlockIndexed(345678, testTimestamp);
       });
 
       ws.on("message", (data) => {
         const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
+        if (message.type === "block-indexed") {
           expect(message.timestamp).toBe(expectedFormat);
-          blockProcessedReceived = true;
+          blockIndexedReceived = true;
           ws.close();
         }
       });
 
       ws.on("close", () => {
-        if (blockProcessedReceived) {
+        if (blockIndexedReceived) {
           done();
         } else {
-          done(new Error("Block processed message not received"));
+          done(new Error("Block indexed message not received"));
         }
       });
 
       ws.on("error", (error) => {
         done(error);
       });
+    }, 10000);
+
+    it("should broadcast block-resolved events", (done) => {
+      const ws = new WebSocket(WS_URL);
+      let received = false;
+
+      ws.on("open", () => {
+        broadcaster.broadcastBlockResolved(999001, new Date("2025-06-01T12:00:00.000Z"));
+      });
+
+      ws.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-resolved") {
+          expect(message.height).toBe(999001);
+          expect(message.timestamp).toBeDefined();
+          received = true;
+          ws.close();
+        }
+      });
+
+      ws.on("close", () => {
+        if (received) {
+          done();
+        } else {
+          done(new Error("block-resolved not received"));
+        }
+      });
+
+      ws.on("error", (error) => done(error));
     }, 10000);
   });
 
@@ -321,20 +350,20 @@ describe("EventsBroadcaster", () => {
   });
 
   describe("Real-time Event Flow", () => {
-    it("should receive multiple block-processed events in sequence", (done) => {
+    it("should receive multiple block-indexed events in sequence", (done) => {
       const ws = new WebSocket(WS_URL);
       const receivedHeights: number[] = [];
       const expectedHeights = [100, 101, 102];
 
       ws.on("open", () => {
-        setTimeout(() => broadcaster.broadcastBlockProcessed(100, new Date()), 100);
-        setTimeout(() => broadcaster.broadcastBlockProcessed(101, new Date()), 200);
-        setTimeout(() => broadcaster.broadcastBlockProcessed(102, new Date()), 300);
+        setTimeout(() => broadcaster.broadcastBlockIndexed(100, new Date()), 100);
+        setTimeout(() => broadcaster.broadcastBlockIndexed(101, new Date()), 200);
+        setTimeout(() => broadcaster.broadcastBlockIndexed(102, new Date()), 300);
       });
 
       ws.on("message", (data) => {
         const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
+        if (message.type === "block-indexed") {
           receivedHeights.push(message.height);
           if (receivedHeights.length === expectedHeights.length) {
             expect(receivedHeights).toEqual(expectedHeights);

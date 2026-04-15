@@ -19,6 +19,17 @@ export function getDbQueryTimeoutMs(fallback: number = DEFAULT_QUERY_TIMEOUT): n
   return fallback;
 }
 
+
+export function getHeavyBrokerCallTimeoutMs(): number {
+  const override = parseInt(String(process.env.HEAVY_BROKER_CALL_TIMEOUT_MS ?? ''), 10);
+  if (Number.isFinite(override) && override > 0) {
+    return override;
+  }
+  const req = parseInt(String(process.env.REQUEST_TIMEOUT ?? ''), 10);
+  const base = Number.isFinite(req) && req > 0 ? req : 300000;
+  return Math.max(base * 2, 600000);
+}
+
 export function isStatementTimeoutError(error: any): boolean {
   const errorCode = error?.code;
   const errorMessage = (error?.message || String(error) || '').toLowerCase();

@@ -468,7 +468,7 @@ For detailed information about the reindexing process, architecture, and trouble
 
 ## Real-Time Event API (WebSocket)
 
-The Verana Indexer provides a **WebSocket** endpoint that broadcasts real-time notifications when blocks are processed. This eliminates the need for polling and enables frontend applications to react immediately when new data becomes available.
+The Verana Indexer provides a **WebSocket** endpoint that broadcasts real-time notifications when blocks finish **indexing** (transaction pipeline) and when blocks finish **trust resolution** (a separate, slower pipeline). This eliminates the need for polling and lets clients refresh at the right time.
 
 ### Endpoint
 
@@ -484,23 +484,38 @@ When a frontend application submits a transaction to the blockchain (e.g., creat
 1. Frontend submits transaction to blockchain (e.g., `MsgAddDID`)
 2. Frontend receives transaction hash and block height from blockchain
 3. Frontend subscribes to indexer events endpoint
-4. When indexer processes the block, frontend receives notification
+4. When the indexer finishes indexing that block, the frontend receives a `block-indexed` notification (trust data may arrive later via `block-resolved` when trust resolution is enabled)
 5. Frontend queries indexer API to get updated data (e.g., `/verana/dd/v1/list`)
 
 ### Message Format
 
-All messages are JSON strings with the following structure:
+Messages are JSON strings. The `type` field distinguishes the pipeline stage:
+
+**Block indexed** (transaction / indexer pipeline completed for that height):
 
 ```json
 {
-  "type": "block-processed",
+  "type": "block-indexed",
   "height": 123456,
   "timestamp": "2025-01-15T10:30:00Z"
 }
 ```
 
-**Event Type:**
-- `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height.
+**Block resolved** (trust resolver finished materializing that height; emitted when trust resolution is enabled and has caught up):
+
+```json
+{
+  "type": "block-resolved",
+  "height": 123456,
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+**Event types:**
+- `block-indexed` — Sent when the indexer has finished processing the block for standard indexed data. Use this to refresh DID, credentials, etc.
+- `block-resolved` — Sent when trust-resolution work for that block height is complete. Use this to refresh trust-related views when that feature is enabled.
+
+> **Breaking change:** Clients that listened for `block-processed` must switch to `block-indexed` (and optionally `block-resolved`).
 
 ### Quick Test
 
@@ -514,18 +529,18 @@ node --import=tsx test/manual/test-websocket.ts
 You should see:
 ```
 ✅ Connected to Verana Indexer Events WebSocket
-Waiting for block-processed events...
+Waiting for block-indexed / block-resolved events...
 ```
 
-When a block is processed, you'll see:
+When events arrive, you'll see payloads such as:
 ```
 📦 Received event: {
-  "type": "block-processed",
+  "type": "block-indexed",
   "height": 123456,
   "timestamp": "2025-01-15T10:30:00Z"
 }
 
-🎉 New block processed! Height: 123456, Time: 2025-01-15T10:30:00Z
+🎉 Block indexed (tx pipeline). Height: 123456, Time: 2025-01-15T10:30:00Z
 ```
 
 ### Usage
@@ -541,12 +556,15 @@ ws.onopen = () => {
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
   
-  if (data.type === 'block-processed') {
-    console.log(`Block ${data.height} processed at ${data.timestamp}`);
-    
+  if (data.type === 'block-indexed') {
+    console.log(`Block ${data.height} indexed at ${data.timestamp}`);
     if (data.height >= expectedBlockHeight) {
-      fetchUpdatedData();
+      fetchIndexedData();
     }
+  }
+  if (data.type === 'block-resolved') {
+    console.log(`Block ${data.height} trust-resolved at ${data.timestamp}`);
+    fetchTrustData();
   }
 };
 

@@ -61,6 +61,7 @@ const TABLES_TO_DROP = [
   "account",
   "permission_scheduled_flips",
   "entity_participant_changes",
+  "trust_results",
 ];
 
 const SEQUENCES_TO_RESET = [
@@ -563,6 +564,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   "20260202020000_create_global_metrics": ["global_metrics"],
   "20260317000000_add_permission_flips": ["permission_scheduled_flips", "permissions"],
   "partition-transaction-table": ["transaction"],
+  "20260402000000_create_trust_results": ["trust_results"],
   "transaction_message_partition": ["transaction_message"]
 };
 
@@ -580,6 +582,7 @@ const ALTER_MIGRATIONS = [
   "20260218000000_credential_schema_json_schema_to_text",
   "20260226000000_add_permissions_lookup_index_for_perm_list",
   "20260317000000_add_permission_flips",
+  "20260402000000_create_trust_results",
 ];
 
 async function runMigrations(db: Knex): Promise<void> {
@@ -795,8 +798,8 @@ async function runMigrations(db: Knex): Promise<void> {
     try {
       console.log("  Ensuring base transaction tables exist before running migrations...");
       await recreateTransactionTables(db);
-      console.log("  Base transaction tables verified/created (if needed).");
-      
+      console.log("  Base transaction tables verified/created (if needed).");      
+
       const [, pendingBefore] = await db.migrate.list();
       if (pendingBefore && pendingBefore.length > 0) {
         console.log(`   Found ${pendingBefore.length} pending migration(s) to run`);

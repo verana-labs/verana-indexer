@@ -16,11 +16,11 @@ class DefaultValue {
 
   static readonly DEFAULT_WORKER_OPTION: WorkerOptions = {
     concurrency: 1,
-    // Give long-running jobs enough time to finish without losing the lock
-    lockDuration:  300000,
-    lockRenewTime:  60000,
-    stalledInterval:  30000,
-    maxStalledCount:  1,
+        // Give long-running jobs enough time to finish without losing the lock
+    lockDuration: 900000,
+    lockRenewTime: 90000,
+    stalledInterval: 60000,
+    maxStalledCount: 3,
   };
 
   static readonly DEFAULT_JOB_OTION: JobOption = {
@@ -110,8 +110,11 @@ export class BullQueueProvider implements QueueProvider {
 
   worker.on('error', (err: Error) => {
     const msg = err?.message ?? String(err);
-    if (typeof msg === 'string' && msg.includes('Missing key for job')) {
-      this.log('warn', 'BullMQ job key already removed (repeat/delayed):', msg);
+    if (
+      typeof msg === 'string' &&
+      (msg.includes('Missing key for job') || msg.includes('Missing lock for job'))
+    ) {
+      this.log('warn', 'BullMQ repeat/delayed job race (key/lock):', msg);
     } else {
       this.log('error', `worker ${opt.queueName} error:`, err);
     }

@@ -161,12 +161,32 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
 
         try {
           let spec: any = null;
+          const TRUST_PATHS = [
+            "/verana/trust/v1/resolve",
+            "/verana/trust/v1/issuer-authorization",
+            "/verana/trust/v1/verifier-authorization",
+            "/verana/trust/v1/ecosystem-participant",
+            "/verana/trust/v1/refresh",
+          ];
           
           if (fs.existsSync(localPath)) {
             const data = await fs.promises.readFile(localPath, "utf8");
             spec = JSON.parse(data);
+            const hasTrustPaths =
+              spec?.paths &&
+              TRUST_PATHS.some((p) => Object.prototype.hasOwnProperty.call(spec.paths, p));
+
+            if (!hasTrustPaths) {
+              spec = null;
+            }
           } else {
             // Fallback to service-generated spec
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const svc: any = this as any;
+            spec = svc?.settings?.openapi ?? svc?.schema?.openapi ?? null;
+          }
+
+          if (!spec) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const svc: any = this as any;
             spec = svc?.settings?.openapi ?? svc?.schema?.openapi ?? null;
