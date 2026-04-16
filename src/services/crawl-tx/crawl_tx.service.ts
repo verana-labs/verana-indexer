@@ -54,6 +54,8 @@ import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/c
 import { extractTrustRegistryIdsFromEvents } from "../../modules/tr-height-sync/tr_height_sync_helpers";
 import { applyScheduledPermissionFlipsForBlock } from "../crawl-perm/perm_flip_processor";
 
+const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000);
+
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
   version: 1,
@@ -228,8 +230,6 @@ export default class CrawlTxService extends BullableService {
           config.handleTransaction.key
         );
 
-      const txBoundaryTimeoutMs = getDbQueryTimeoutMs(300000);
-
       // Get last processed transaction ID from checkpoint height
       // Checkpoint now stores actual block height, so we need to find the last transaction ID at that height
       let lastProcessedTxId = 0;
@@ -239,7 +239,7 @@ export default class CrawlTxService extends BullableService {
           .select('id')
           .where('height', '<=', blockCheckpoint.height)
           .orderBy('id', 'desc')
-          .timeout(txBoundaryTimeoutMs)
+          .timeout(TX_BOUNDARY_TIMEOUT_MS)
           .first();
         lastProcessedTxId = txAtHeight?.id || 0;
       }
@@ -253,7 +253,7 @@ export default class CrawlTxService extends BullableService {
       const maxTxId = await Transaction.query()
         .where('height', '<=', crawlTxCheckpoint?.height || endBlock)
         .max('id as max_id')
-        .timeout(txBoundaryTimeoutMs)
+        .timeout(TX_BOUNDARY_TIMEOUT_MS)
         .first() as any;
       
       const maxAvailableTxId = maxTxId?.max_id || 0;

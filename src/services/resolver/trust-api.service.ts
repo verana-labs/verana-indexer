@@ -1,6 +1,6 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
-import { PermissionType, verifyPermissions } from "@verana-labs/verre";
+import { ECS, PermissionType, verifyPermissions } from "@verana-labs/verre";
 import { createHash } from "node:crypto";
 import BaseService from "../../base/base.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
@@ -19,8 +19,8 @@ import {
   resolveTrustForDidAtHeight,
 } from "./trust-resolve";
 
-function isDidParam(did: unknown): did is string {
-  return typeof did === "string" && did.startsWith("did:");
+function isDidParam(did: string): did is string {
+  return did.startsWith("did:");
 }
 
 type PermissionChainLink = {
@@ -51,6 +51,16 @@ type Q1Credential = {
   permissionChain?: Array<Record<string, unknown>>;
   digestAlgorithm?: string;
 };
+
+const RESOLVE_RESULT_STATUS_BY_OUTCOME: Record<string, { trustStatus: string; production: boolean }> = {
+  verified: { trustStatus: "TRUSTED", production: true },
+  "verified-test": { trustStatus: "PARTIAL", production: false },
+};
+
+const ECS_SERVICE_KEY = ECS?.SERVICE ?? "ecs-service";
+const ECS_ORG_KEY = ECS?.ORG ?? "ecs-org";
+const ECS_PERSONA_KEY = ECS?.PERSONA ?? "ecs-persona";
+const ECS_USER_AGENT_KEY = ECS?.USER_AGENT ?? "ecs-user-agent";
 
 function computeSri(algorithm: string, canonicalJson: string): string {
   const alg = algorithm.trim().toLowerCase();
@@ -238,10 +248,10 @@ export class TrustApiService extends BaseService {
       (typeof (c.schema as any)?.jsonSchema === "string" && (c.schema as any).jsonSchema) ||
       "";
     const n = vtjscId.toLowerCase();
-    if (n.includes("ecs-service")) return "ECS-SERVICE";
-    if (n.includes("ecs-org")) return "ECS-ORG";
-    if (n.includes("ecs-persona")) return "ECS-PERSONA";
-    if (n.includes("ecs-ua") || n.includes("ecs-user-agent")) return "ECS-UA";
+    if (n.includes(ECS_SERVICE_KEY)) return "ECS-SERVICE";
+    if (n.includes(ECS_ORG_KEY)) return "ECS-ORG";
+    if (n.includes(ECS_PERSONA_KEY)) return "ECS-PERSONA";
+    if (n.includes("ecs-ua") || n.includes(ECS_USER_AGENT_KEY)) return "ECS-UA";
     return null;
   }
 
@@ -398,11 +408,11 @@ export class TrustApiService extends BaseService {
     if (!resolveResult || typeof resolveResult !== "object" || (resolveResult as any).error) {
       return { trustStatus: "UNTRUSTED", production: false };
     }
-    const verified = Boolean((resolveResult as any).verified);
-    const outcome = (resolveResult as any).outcome;
+    const { verified, outcome } = resolveResult as { verified?: unknown; outcome?: unknown };
     if (!verified) return { trustStatus: "UNTRUSTED", production: false };
-    if (outcome === "verified") return { trustStatus: "TRUSTED", production: true };
-    if (outcome === "verified-test") return { trustStatus: "PARTIAL", production: false };
+    if (typeof outcome === "string" && RESOLVE_RESULT_STATUS_BY_OUTCOME[outcome]) {
+      return RESOLVE_RESULT_STATUS_BY_OUTCOME[outcome];
+    }
     return { trustStatus: "UNTRUSTED", production: false };
   }
 
