@@ -57,10 +57,30 @@ const RESOLVE_RESULT_STATUS_BY_OUTCOME: Record<string, { trustStatus: string; pr
   "verified-test": { trustStatus: "PARTIAL", production: false },
 };
 
-const ECS_SERVICE_KEY = ECS?.SERVICE ?? "ecs-service";
-const ECS_ORG_KEY = ECS?.ORG ?? "ecs-org";
-const ECS_PERSONA_KEY = ECS?.PERSONA ?? "ecs-persona";
-const ECS_USER_AGENT_KEY = ECS?.USER_AGENT ?? "ecs-user-agent";
+const normalizeEcsKey = (value: string): string => value.trim().toLowerCase();
+const VERRE_ECS = ECS ?? {
+  SERVICE: "ecs-service",
+  ORG: "ecs-org",
+  PERSONA: "ecs-persona",
+  USER_AGENT: "ecs-user-agent",
+};
+const ECS_BY_NORMALIZED: Record<string, string> = {
+  [normalizeEcsKey(VERRE_ECS.SERVICE)]: VERRE_ECS.SERVICE,
+  [normalizeEcsKey(VERRE_ECS.ORG)]: VERRE_ECS.ORG,
+  [normalizeEcsKey(VERRE_ECS.PERSONA)]: VERRE_ECS.PERSONA,
+  [normalizeEcsKey(VERRE_ECS.USER_AGENT)]: VERRE_ECS.USER_AGENT,
+};
+
+function detectEcsFromVtjscId(vtjscId: string): string | null {
+  const normalized = normalizeEcsKey(vtjscId);
+  if (ECS_BY_NORMALIZED[normalized]) return ECS_BY_NORMALIZED[normalized];
+
+  const tokens = normalized.split(/[^a-z0-9-]+/).filter(Boolean);
+  for (const token of tokens) {
+    if (ECS_BY_NORMALIZED[token]) return ECS_BY_NORMALIZED[token];
+  }
+  return null;
+}
 
 function computeSri(algorithm: string, canonicalJson: string): string {
   const alg = algorithm.trim().toLowerCase();
@@ -247,11 +267,11 @@ export class TrustApiService extends BaseService {
       (typeof c.vtjscId === "string" && c.vtjscId) ||
       (typeof (c.schema as any)?.jsonSchema === "string" && (c.schema as any).jsonSchema) ||
       "";
-    const n = vtjscId.toLowerCase();
-    if (n.includes(ECS_SERVICE_KEY)) return "ECS-SERVICE";
-    if (n.includes(ECS_ORG_KEY)) return "ECS-ORG";
-    if (n.includes(ECS_PERSONA_KEY)) return "ECS-PERSONA";
-    if (n.includes("ecs-ua") || n.includes(ECS_USER_AGENT_KEY)) return "ECS-UA";
+    const ecsType = detectEcsFromVtjscId(vtjscId);
+    if (ecsType === VERRE_ECS.SERVICE) return "ECS-SERVICE";
+    if (ecsType === VERRE_ECS.ORG) return "ECS-ORG";
+    if (ecsType === VERRE_ECS.PERSONA) return "ECS-PERSONA";
+    if (ecsType === VERRE_ECS.USER_AGENT) return "ECS-UA";
     return null;
   }
 
