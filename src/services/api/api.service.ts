@@ -402,7 +402,7 @@ function createRoute(
         "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
         "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
       }),
-      createRoute("/verana/trust/v1", {
+      createRoute("/verana/resolver/v1", {
         "GET resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolve`,
         "GET issuer-authorization": `${SERVICE.V1.TrustV1ApiService.path}.issuerAuthorization`,
         "GET verifier-authorization": `${SERVICE.V1.TrustV1ApiService.path}.verifierAuthorization`,

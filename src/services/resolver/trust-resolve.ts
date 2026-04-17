@@ -11,6 +11,10 @@ import { applySpeedToBatchSize, applySpeedToDelay, getRecommendedConcurrency } f
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import config from "../../config.json" with { type: "json" };
 import { DbDerefCache } from "./db-cache";
+import {
+  defaultVprRegistriesFromEnv,
+  readBoolFromEnv,
+} from "./trust-resolve.helpers";
 
 export type ResolverTierConfig = {
   millisecondPoll?: number;
@@ -37,39 +41,6 @@ export type ResolverRuntimeConfig = {
   freshStart?: ResolverTierConfig;
   reindexing?: ResolverTierConfig;
 };
-
-function readBoolFromEnv(keys: string[]): boolean | null {
-  for (const k of keys) {
-    const raw = (process.env[k] ?? "").trim().toLowerCase();
-    if (!raw) continue;
-    if (raw === "true" || raw === "1" || raw === "yes" || raw === "on") return true;
-    if (raw === "false" || raw === "0" || raw === "no" || raw === "off") return false;
-  }
-  return null;
-}
-
-function guessProductionFromChainId(chainId: string): boolean {
-  const s = chainId.toLowerCase();
-  if (s.includes("devnet") || s.includes("testnet") || s.includes("local") || s.includes("test")) return false;
-  return true;
-}
-
-function defaultVprRegistriesFromEnv(): VerifiablePublicRegistry[] {
-  const chainId = (process.env.CHAIN_ID ?? "").trim();
-  if (!chainId) return [];
-  const id = `vpr:verana:${chainId}`;
-  return [{ id, baseUrls: [], production: guessProductionFromChainId(chainId) }];
-}
-
-function readPositiveIntFromEnv(keys: string[]): number | null {
-  for (const k of keys) {
-    const raw = (process.env[k] ?? "").trim();
-    if (!raw) continue;
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return Math.floor(n);
-  }
-  return null;
-}
 
 export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
   const c = config as unknown as { resolver?: ResolverRuntimeConfig; trustResolve?: ResolverRuntimeConfig };
@@ -116,27 +87,6 @@ export function getDeclaredPollObjectCachingRetryDays(): number | null {
   const c = Number(cfg?.pollObjectCachingRetryDays);
   if (Number.isFinite(c) && c > 0) return Math.floor(c);
   return null;
-}
-
-function parseVprRegistriesJson(raw: string | undefined | null): VerifiablePublicRegistry[] {
-  const s = (raw ?? "").trim();
-  if (!s) return [];
-  try {
-    const parsed = JSON.parse(s) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((value) => {
-      if (!value || typeof value !== "object") return false;
-      const o = value as Record<string, unknown>;
-      return (
-        typeof o.id === "string" &&
-        Array.isArray(o.baseUrls) &&
-        o.baseUrls.every((u) => typeof u === "string") &&
-        typeof o.production === "boolean"
-      );
-    }) as VerifiablePublicRegistry[];
-  } catch {
-    return [];
-  }
 }
 
 export function getVerreTrustEvaluationCallOptions(): {
@@ -696,4 +646,3 @@ export function extractQ1CredentialArrays(resolveResult: unknown): {
   const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : [];
   return { credentials, failedCredentials };
 }
-
