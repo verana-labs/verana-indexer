@@ -140,7 +140,7 @@
       "didResolveConcurrency": 12,
       "maxDidsPerTrustBlock": 800
     },
-    "indexerApiBaseUrl": null,
+    "useEmbeddedRegistryAdapter": true,
     "disableDigestSriVerification": false,
     "txPrefilterEnabled": true,
     "verifiablePublicRegistries": [],

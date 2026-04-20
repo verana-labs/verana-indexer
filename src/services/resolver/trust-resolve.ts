@@ -15,6 +15,7 @@ import {
   defaultVprRegistriesFromEnv,
   readBoolFromEnv,
 } from "./trust-resolve.helpers";
+import { attachRegistryAdapters } from "./verre-registry-adapter";
 
 export type ResolverTierConfig = {
   millisecondPoll?: number;
@@ -28,8 +29,8 @@ export type ResolverRuntimeConfig = {
   millisecondPoll?: number;
   millisecondCrawl?: number;
   blocksPerCall?: number;
-  indexerApiBaseUrl?: string | null;
   verifiablePublicRegistries?: VerifiablePublicRegistry[];
+  useEmbeddedRegistryAdapter?: boolean;
   disableDigestSriVerification?: boolean;
   trustEvaluationTtlSeconds?: number;
   dereferenceCacheTtlSeconds?: number;
@@ -58,6 +59,7 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     millisecondPoll: next?.millisecondPoll ?? next?.millisecondCrawl ?? legacy?.millisecondCrawl,
     blocksPerCall: next?.blocksPerCall ?? legacy?.blocksPerCall,
     verifiablePublicRegistries: next?.verifiablePublicRegistries,
+    useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
     trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
     dereferenceCacheTtlSeconds: next?.dereferenceCacheTtlSeconds ?? legacy?.dereferenceCacheTtlSeconds,
@@ -99,23 +101,8 @@ export function getVerreTrustEvaluationCallOptions(): {
       ? cfg.verifiablePublicRegistries
       : defaultVprRegistriesFromEnv();
 
-  const baseUrlOverride =
-    (typeof cfg?.indexerApiBaseUrl === "string" ? cfg.indexerApiBaseUrl.trim() : "") ||
-    null;
-
-  const devFallbackBase =
-    baseUrlOverride ??
-    (() => {
-      const port = (process.env.PORT ?? "").trim();
-      if (!port) return null;
-      return `http://127.0.0.1:${port}/verana`;
-    })();
-
-  const registries = registriesRaw.map((r) => {
-    const baseUrls = Array.isArray(r.baseUrls) ? r.baseUrls.filter((u) => typeof u === "string" && u.trim() !== "") : [];
-    if (baseUrls.length > 0) return r;
-    if (devFallbackBase) return { ...r, baseUrls: [devFallbackBase] };
-    return r;
+  const registries = attachRegistryAdapters(registriesRaw, {
+    enabled: cfg?.useEmbeddedRegistryAdapter !== false,
   });
 
   return {
