@@ -5,6 +5,9 @@ export enum VeranaCredentialSchemaMessageTypes {
   CreateCredentialSchemaLegacy = "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
   UpdateCredentialSchema = "/verana.cs.v1.MsgUpdateCredentialSchema",
   ArchiveCredentialSchema = "/verana.cs.v1.MsgArchiveCredentialSchema",
+  CreateSchemaAuthorizationPolicy = "/verana.cs.v1.MsgCreateSchemaAuthorizationPolicy",
+  IncreaseActiveSchemaAuthorizationPolicyVersion = "/verana.cs.v1.MsgIncreaseActiveSchemaAuthorizationPolicyVersion",
+  RevokeSchemaAuthorizationPolicy = "/verana.cs.v1.MsgRevokeSchemaAuthorizationPolicy",
 }
 
 export enum VeranaPermissionMessageTypes {
@@ -41,6 +44,12 @@ export enum VeranaTrustRegistryMessageTypes {
   IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }
 
+export enum VeranaDelegationMessageTypes {
+  UpdateParams = "/verana.de.v1.MsgUpdateParams",
+  GrantOperatorAuthorization = "/verana.de.v1.MsgGrantOperatorAuthorization",
+  RevokeOperatorAuthorization = "/verana.de.v1.MsgRevokeOperatorAuthorization",
+}
+
 export enum UpdateParamsMessageTypes {
   CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
   PERMISSION = "/verana.perm.v1.MsgUpdateParams",
@@ -65,6 +74,7 @@ export const ALL_KNOWN_VERANA_MESSAGE_TYPES = new Set<string>([
   ...Object.values(VeranaPermissionMessageTypes),
   ...Object.values(VeranaTrustDepositMessageTypes),
   ...Object.values(VeranaTrustRegistryMessageTypes),
+  ...Object.values(VeranaDelegationMessageTypes),
   ...Object.values(CosmosStakingMessageTypes),
   ...Object.values(CosmosSlashingMessageTypes),
 ]);
@@ -100,6 +110,10 @@ export function isPermissionMessageType(messageType: string): boolean {
 
 export function isTrustDepositMessageType(messageType: string): boolean {
   return Object.values(VeranaTrustDepositMessageTypes).includes(messageType as VeranaTrustDepositMessageTypes);
+}
+
+export function isDelegationMessageType(messageType: string): boolean {
+  return Object.values(VeranaDelegationMessageTypes).includes(messageType as VeranaDelegationMessageTypes);
 }
 
 export function isUpdateParamsMessageType(messageType: string): boolean {

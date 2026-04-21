@@ -180,6 +180,16 @@ function normalizePermissionType(value: unknown): string {
   }
 }
 
+function pickMessageValue(msg: Record<string, any>, snake: string, camel: string) {
+  return msg[snake] ?? msg[camel];
+}
+
+function extractPermissionType(msg: Record<string, any>, fallback: string | number = "ECOSYSTEM") {
+  return mapPermissionType(
+    msg.permission_type ?? msg.permissionType ?? msg.type ?? fallback
+  );
+}
+
 function normalizeValidationState(value: unknown): string {
   if (typeof value === "string") {
     const normalized = value.toUpperCase();
@@ -1631,12 +1641,15 @@ export default class PermIngestService extends Service {
 
       const creator = requireController(msg, `PERM CREATE_ROOT ${schemaId}`);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
-      const effectiveFrom = msg.effective_from ? formatTimestamp(msg.effective_from) : null;
-      const effectiveUntil = msg.effective_until ? formatTimestamp(msg.effective_until) : null;
+      const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
+      const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
+      const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
+      const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
+      const permissionType = extractPermissionType(msg as any, "ECOSYSTEM");
 
       // Calculate expire_soon for the new permission
       const newPermData = {
-        type: "ECOSYSTEM",
+        type: permissionType,
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
@@ -1655,15 +1668,18 @@ export default class PermIngestService extends Service {
 
       const insertData: any = {
         schema_id: schemaId,
-        type: "ECOSYSTEM",
+        type: permissionType,
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
         corporation: creator,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
-        validation_fees: Number((msg as any).validation_fees ?? 0),
-        issuance_fees: Number((msg as any).issuance_fees ?? 0),
-        verification_fees: Number((msg as any).verification_fees ?? 0),
+        validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
+        issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
+        verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
+        vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
+        adjusted: timestamp,
+        adjusted_by: creator,
         deposit: 0,
         modified: timestamp,
         created: timestamp,
@@ -1681,6 +1697,7 @@ export default class PermIngestService extends Service {
       }
 
       let insertedPermission: any = null;
+      await this.ensurePermV4Columns(knex);
       await knex.transaction(async (trx) => {
         const existing = hasValidMsgId
           ? await trx("permissions").where({ id: msgIdNum }).first()
@@ -1755,17 +1772,25 @@ export default class PermIngestService extends Service {
   private async handleCreatePermission(msg: MsgCreatePermission & { height?: number }) {
     try {
       this.logger.info(`🔐 handleCreatePermission called with msg:`, JSON.stringify(msg, null, 2));
-      const schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
+      let schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
+      const explicitValidatorPermId = (msg as any).validatorPermId ?? (msg as any).validator_perm_id ?? null;
+      let validatorPermFromMessage: any = null;
+      if (!schemaId && explicitValidatorPermId) {
+        validatorPermFromMessage = await knex("permissions")
+          .where({ id: explicitValidatorPermId })
+          .first();
+        schemaId = validatorPermFromMessage?.schema_id ?? null;
+      }
       this.logger.info(`🔐 Extracted schemaId: ${schemaId}`);
       if (!schemaId) {
         this.logger.warn(
-          "Missing schema_id in MsgCreatePermission, skipping insert. Msg keys:", Object.keys(msg)
+          "Missing schema_id and could not infer it from validator_perm_id in MsgCreatePermission, skipping insert. Msg keys:", Object.keys(msg)
         );
         return;
 
       }
 
-      const type = mapPermissionType((msg as any).type);
+      const type = extractPermissionType(msg as any, (msg as any).type);
 
       const ecosystemPerm = await knex("permissions")
         .where({ schema_id: schemaId, type: "ECOSYSTEM" })
@@ -1779,8 +1804,10 @@ export default class PermIngestService extends Service {
 
       const creator = requireController(msg, `PERM CREATE ${schemaId}`);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
-      const effectiveFrom = msg.effective_from ? formatTimestamp(msg.effective_from) : null;
-      const effectiveUntil = msg.effective_until ? formatTimestamp(msg.effective_until) : null;
+      const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
+      const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
+      const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
+      const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
       const height = Number((msg as any)?.height) || 0;
 
       // Calculate expire_soon for the new permission
@@ -1809,11 +1836,17 @@ export default class PermIngestService extends Service {
         corporation: creator,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
-        verification_fees: Number((msg as any).verification_fees ?? 0),
-        validation_fees: 0,
-        issuance_fees: 0,
+        verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
+        validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
+        issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
         deposit: 0,
-        validator_perm_id: ecosystemPerm?.id ?? null,
+        validator_perm_id: explicitValidatorPermId ?? ecosystemPerm?.id ?? null,
+        vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
+        vs_operator_authz_enabled: pickMessageValue(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled") ?? null,
+        vs_operator_authz_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit") ?? null,
+        vs_operator_authz_with_feegrant: pickMessageValue(msg as any, "vs_operator_authz_with_feegrant", "vsOperatorAuthzWithFeegrant") ?? null,
+        vs_operator_authz_fee_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit") ?? null,
+        vs_operator_authz_spend_period: pickMessageValue(msg as any, "vs_operator_authz_spend_period", "vsOperatorAuthzSpendPeriod") ?? null,
         modified: timestamp,
         created: timestamp,
       };
@@ -1830,6 +1863,7 @@ export default class PermIngestService extends Service {
       }
 
       let permission: any = null;
+      await this.ensurePermV4Columns(knex);
       await knex.transaction(async (trx) => {
         const existing = hasValidMsgId
           ? await trx("permissions").where({ id: msgIdNum }).first()
@@ -1917,7 +1951,7 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not found" };
       }
 
-      const caller = msg.creator;
+      const caller = extractController(msg as unknown as Record<string, unknown>);
 
       let authorized = false;
       if (applicantPerm.validator_perm_id) {
@@ -2024,16 +2058,17 @@ export default class PermIngestService extends Service {
 
   private async handleStartPermissionVP(msg: MsgStartPermissionVP & { height?: number }) {
     try {
-      const typeStr = getPermissionTypeString(msg);
+      const typeStr = extractPermissionType(msg as any, getPermissionTypeString(msg));
       const now = formatTimestamp(msg.timestamp);
+      const validatorPermId = (msg as any).validatorPermId ?? (msg as any).validator_perm_id;
 
       const perm = await knex("permissions")
-        .where({ id: msg.validator_perm_id })
+        .where({ id: validatorPermId })
         .first();
 
       if (!perm) {
         this.logger.warn(
-          `Permission ${msg.validator_perm_id} not found, skipping VP start`
+          `Permission ${validatorPermId} not found, skipping VP start`
         );
         return;
       }
@@ -2067,9 +2102,11 @@ export default class PermIngestService extends Service {
             : 0;
       }
 
-      const creator = requireController(msg, `PERM START_VP ${msg.validator_perm_id}`);
-      const effectiveFrom = msg.effective_from ? formatTimestamp(msg.effective_from) : null;
-      const effectiveUntil = msg.effective_until ? formatTimestamp(msg.effective_until) : null;
+      const creator = requireController(msg, `PERM START_VP ${validatorPermId}`);
+      const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
+      const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
+      const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
+      const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
       const height = Number((msg as any)?.height) || 0;
 
       // Calculate expire_soon for the new permission (PENDING state means not active, so null)
@@ -2095,17 +2132,23 @@ export default class PermIngestService extends Service {
         corporation: creator,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
-        verification_fees: Number((msg as any).verification_fees ?? 0),
-        validation_fees: 0, 
-        issuance_fees: 0, 
+        verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
+        validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
+        issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
         deposit: Number(validationTDDenom),
         vp_current_deposit: Number(validationTDDenom),
         vp_current_fees: Number(validationFeesDenom), 
-        validator_perm_id: msg.validator_perm_id,
+        validator_perm_id: validatorPermId,
         vp_state: "PENDING",
         vp_last_state_change: now,
         vp_validator_deposit: 0, 
         vp_summary_digest: null,
+        vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
+        vs_operator_authz_enabled: pickMessageValue(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled") ?? null,
+        vs_operator_authz_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit") ?? null,
+        vs_operator_authz_with_feegrant: pickMessageValue(msg as any, "vs_operator_authz_with_feegrant", "vsOperatorAuthzWithFeegrant") ?? null,
+        vs_operator_authz_fee_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit") ?? null,
+        vs_operator_authz_spend_period: pickMessageValue(msg as any, "vs_operator_authz_spend_period", "vsOperatorAuthzSpendPeriod") ?? null,
         modified: now,
         created: now, 
       };
@@ -2491,12 +2534,13 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not found" };
       }
 
+      const caller = extractController(msg as unknown as Record<string, unknown>);
       if (
-        msg.creator &&
+        caller &&
         applicantPerm.corporation &&
-        msg.creator !== applicantPerm.corporation
+        caller !== applicantPerm.corporation
       ) {
-        this.logger.warn(`Caller ${msg.creator} is not the permission corporation`);
+        this.logger.warn(`Caller ${caller} is not the permission corporation`);
         return { success: false, reason: "Caller is not corporation" };
       }
 
@@ -2627,8 +2671,9 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not pending" };
       }
 
-      if (msg.creator && perm.corporation && msg.creator !== perm.corporation) {
-        this.logger.warn(`Creator ${msg.creator} is not permission corporation`);
+      const caller = extractController(msg as unknown as Record<string, unknown>);
+      if (caller && perm.corporation && caller !== perm.corporation) {
+        this.logger.warn(`Creator ${caller} is not permission corporation`);
         return { success: false, reason: "Creator is not corporation" };
       }
 
@@ -2712,7 +2757,8 @@ export default class PermIngestService extends Service {
     msg: MsgSlashPermissionTrustDeposit & { height?: number }
   ) {
     try {
-      if (!msg.id || msg.amount == null) {
+      const slashAmount = (msg as any).amount ?? (msg as any).deposit;
+      if (!msg.id || slashAmount == null) {
         this.logger.warn("Missing mandatory parameter: id or amount");
         return { success: false, reason: "Missing mandatory parameter" };
       }
@@ -2723,9 +2769,9 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Invalid permission ID" };
       }
 
-      const amountNum = Number(msg.amount);
+      const amountNum = Number(slashAmount);
       if (Number.isNaN(amountNum) || amountNum <= 0) {
-        this.logger.warn(`Invalid amount: ${msg.amount}`);
+        this.logger.warn(`Invalid amount: ${slashAmount}`);
         return { success: false, reason: "Invalid amount" };
       }
 
@@ -2744,7 +2790,7 @@ export default class PermIngestService extends Service {
       }
 
       let isAuthorized = false;
-      const caller = msg.creator;
+      const caller = extractController(msg as unknown as Record<string, unknown>);
 
       let validatorPerm = perm;
       while (validatorPerm && validatorPerm.validator_perm_id) {
@@ -3020,7 +3066,7 @@ export default class PermIngestService extends Service {
       let trController: string | null = null;
       let classificationReason = '';
 
-      const repayer = msg.creator ?? extractController(msg as unknown as Record<string, unknown>) ?? null;
+      const repayer = extractController(msg as unknown as Record<string, unknown>);
 
       if (isEcosystemPermission) {
         isEcosystemSlash = true;
@@ -3069,9 +3115,12 @@ export default class PermIngestService extends Service {
       }
 
       await knex.transaction(async (trx) => {
-        const creator = requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
+        requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
         const currentDeposit = BigInt(perm.deposit || "0");
-        const repaidAmount = BigInt(slashedDeposit);
+        const requestedRepayAmount = (msg as any).amount ?? (msg as any).deposit;
+        const repaidAmount = requestedRepayAmount == null
+          ? BigInt(slashedDeposit)
+          : BigInt(String(requestedRepayAmount));
         const newDeposit = currentDeposit + repaidAmount;
 
         // Calculate expire_soon for repaid permission (may become active again)
@@ -3085,7 +3134,7 @@ export default class PermIngestService extends Service {
 
         const updateData: any = {
           repaid: now,
-          repaid_deposit: Number(slashedDeposit),
+          repaid_deposit: Number(repaidAmount),
           deposit: Number(newDeposit),
           modified: now,
         };
@@ -3114,7 +3163,7 @@ export default class PermIngestService extends Service {
             isEcosystemSlash,
             isNetworkSlash,
             0, // No new slash, just repayment
-            Number(slashedDeposit)
+            Number(repaidAmount)
           );
         } catch (statsErr: any) {
           this.logger.warn(`Failed to update slash statistics for repay: ${statsErr?.message || statsErr}`);
@@ -3180,7 +3229,7 @@ export default class PermIngestService extends Service {
       }
 
       this.logger.info(
-        `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${msg.creator}`
+        `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${repayer}`
       );
 
       return { success: true };
@@ -3719,7 +3768,7 @@ export default class PermIngestService extends Service {
       };
 
       const vsOp =
-        (msg as any).vs_operator ?? (msg as any).vsOperator ?? existing?.vs_operator ?? null;
+        (msg as any).vs_operator ?? (msg as any).vsOperator ?? (msg as any).operator ?? existing?.vs_operator ?? null;
 
       if (!existing) {
         const creator = requireController(msg, `PERM SESSION ${msg.id}`);

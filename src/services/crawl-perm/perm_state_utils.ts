@@ -168,8 +168,7 @@ export function calculateCorporationAvailableActions(
       } else if (permState === "SLASHED") {
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "TERMINATED") {
-        } else if (vpState === "VALIDATED" && !isVpExpired) {
+        if (vpState === "VALIDATED" && !isVpExpired) {
           if (isValidatorActive) {
             actions.add("VP_RENEW");
           }
@@ -202,8 +201,7 @@ export function calculateCorporationAvailableActions(
       } else if (permState === "SLASHED") {
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "TERMINATED") {
-        } else if (vpState === "VALIDATED" && !isVpExpired) {
+        if (vpState === "VALIDATED" && !isVpExpired) {
           if (isValidatorActive) {
             actions.add("VP_RENEW");
           }
@@ -233,8 +231,7 @@ export function calculateCorporationAvailableActions(
     } else if (permState === "SLASHED") {
       actions.add("PERM_REPAY");
     } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-      if (vpState === "TERMINATED") {
-      } else if (vpState === "VALIDATED" && !isVpExpired) {
+      if (vpState === "VALIDATED" && !isVpExpired) {
         if (isValidatorActive) {
           actions.add("VP_RENEW");
         }

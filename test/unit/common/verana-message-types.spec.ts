@@ -5,12 +5,14 @@ import {
   VeranaPermissionMessageTypes,
   VeranaTrustDepositMessageTypes,
   VeranaTrustRegistryMessageTypes,
+  VeranaDelegationMessageTypes,
   isKnownVeranaMessageType,
   isVeranaMessageType,
   isTrustRegistryMessageType,
   isCredentialSchemaMessageType,
   isPermissionMessageType,
   isTrustDepositMessageType,
+  isDelegationMessageType,
   isUpdateParamsMessageType,
   getAllKnownMessageTypes,
   shouldSkipUnknownMessages,
@@ -27,6 +29,7 @@ describe("verana-message-types", () => {
     it("should have correct VeranaCredentialSchemaMessageTypes values", () => {
       expect(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema).toBe("/verana.cs.v1.MsgCreateCredentialSchema");
       expect(VeranaCredentialSchemaMessageTypes.UpdateParams).toBe("/verana.cs.v1.MsgUpdateParams");
+      expect(VeranaCredentialSchemaMessageTypes.CreateSchemaAuthorizationPolicy).toBe("/verana.cs.v1.MsgCreateSchemaAuthorizationPolicy");
     });
 
     it("should have correct VeranaPermissionMessageTypes values", () => {
@@ -42,6 +45,12 @@ describe("verana-message-types", () => {
     it("should have correct VeranaTrustRegistryMessageTypes values", () => {
       expect(VeranaTrustRegistryMessageTypes.CreateTrustRegistry).toBe("/verana.tr.v1.MsgCreateTrustRegistry");
       expect(VeranaTrustRegistryMessageTypes.UpdateParams).toBe("/verana.tr.v1.MsgUpdateParams");
+    });
+
+    it("should have correct VeranaDelegationMessageTypes values", () => {
+      expect(VeranaDelegationMessageTypes.GrantOperatorAuthorization).toBe("/verana.de.v1.MsgGrantOperatorAuthorization");
+      expect(VeranaDelegationMessageTypes.RevokeOperatorAuthorization).toBe("/verana.de.v1.MsgRevokeOperatorAuthorization");
+      expect(VeranaDelegationMessageTypes.UpdateParams).toBe("/verana.de.v1.MsgUpdateParams");
     });
   });
 
@@ -61,6 +70,7 @@ describe("verana-message-types", () => {
     it("should return true for known Verana message types", () => {
       expect(isKnownVeranaMessageType(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema)).toBe(true);
       expect(isKnownVeranaMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(true);
+      expect(isKnownVeranaMessageType(VeranaDelegationMessageTypes.GrantOperatorAuthorization)).toBe(true);
     });
 
     it("should return false for unknown message types", () => {
@@ -91,6 +101,11 @@ describe("verana-message-types", () => {
     it("isTrustDepositMessageType should work correctly", () => {
       expect(isTrustDepositMessageType(VeranaTrustDepositMessageTypes.ReclaimYield)).toBe(true);
       expect(isTrustDepositMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(false);
+    });
+
+    it("isDelegationMessageType should work correctly", () => {
+      expect(isDelegationMessageType(VeranaDelegationMessageTypes.GrantOperatorAuthorization)).toBe(true);
+      expect(isDelegationMessageType(VeranaPermissionMessageTypes.CreateRootPermission)).toBe(false);
     });
 
     it("isUpdateParamsMessageType should work correctly", () => {

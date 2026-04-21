@@ -227,6 +227,9 @@ export default class TrustDepositMessageProcessorService extends BullableService
       case VeranaTrustDepositMessageTypes.RepaySlashed:
         return this.repaySlashed(content, ts, params, trx, blockHeight);
 
+      case VeranaTrustDepositMessageTypes.SlashTrustDeposit:
+        return this.slashTrustDeposit(content, ts, blockHeight);
+
       default:
         this.logger.warn(`[TrustDeposit] Unknown message type: ${type}`);
         return true;
@@ -287,7 +290,7 @@ export default class TrustDepositMessageProcessorService extends BullableService
   private async repaySlashed(content: any, ts: string, params: any, trx: any, height: number) {
     try {
       const account = requireController(content, "TrustDeposit REPAY_SLASHED");
-      const amount = toBigIntSafe(content.amount);
+      const amount = toBigIntSafe(content.deposit ?? content.amount);
       if (amount <= BigInt(0)) this.logger.warn("Amount must be > 0");
 
       const td = await TrustDeposit.query(trx).findOne({ corporation: account });
@@ -335,6 +338,33 @@ export default class TrustDepositMessageProcessorService extends BullableService
       const errorMessage = error?.message || String(error);
       this.logger.error(
         `[TrustDeposit] ❌ Slashed deposit repay failed: ${errorMessage}`
+      );
+      throw error;
+    }
+  }
+
+  private async slashTrustDeposit(content: any, ts: string, height: number) {
+    try {
+      const account = requireController(content, "TrustDeposit SLASH");
+      const amount = toBigIntSafe(content.deposit ?? content.amount);
+      if (amount <= BigInt(0)) {
+        this.logger.warn("[TrustDeposit] Slash deposit must be > 0");
+        return;
+      }
+
+      await this.broker.call(
+        `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_trust_deposit`,
+        {
+          account,
+          slashed: amount.toString(),
+          lastSlashed: ts,
+          height,
+        }
+      );
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      this.logger.error(
+        `[TrustDeposit] ❌ Slash failed: ${errorMessage}`
       );
       throw error;
     }

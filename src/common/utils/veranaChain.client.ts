@@ -1,7 +1,7 @@
 import { TsProtoGeneratedType } from '@cosmjs/proto-signing';
 import { MsgArchiveCredentialSchema, MsgCreateCredentialSchema, MsgUpdateCredentialSchema, MsgUpdateParams as MsgUpdateParamsCS } from "@verana-labs/verana-types/codec/verana/cs/v1/tx";
 import { MsgCancelPermissionVPLastRequest, MsgCreateOrUpdatePermissionSession, MsgSelfCreatePermission, MsgCreateRootPermission, MsgRenewPermissionVP, MsgRepayPermissionSlashedTrustDeposit as MsgRepayPermissionSlashedTrustDepositPerm, MsgRevokePermission, MsgSetPermissionVPToValidated, MsgSlashPermissionTrustDeposit, MsgStartPermissionVP, MsgUpdateParams as MsgUpdateParamsPerm ,MsgAdjustPermission} from '@verana-labs/verana-types/codec/verana/perm/v1/tx';
-import { MsgReclaimTrustDepositYield, MsgRepaySlashedTrustDeposit, MsgUpdateParams } from '@verana-labs/verana-types/codec/verana/td/v1/tx';
+import { MsgReclaimTrustDepositYield, MsgRepaySlashedTrustDeposit, MsgSlashTrustDeposit, MsgUpdateParams } from '@verana-labs/verana-types/codec/verana/td/v1/tx';
 import { MsgAddGovernanceFrameworkDocument, MsgArchiveTrustRegistry, MsgCreateTrustRegistry, MsgIncreaseActiveGovernanceFrameworkVersion, MsgUpdateTrustRegistry, MsgUpdateParams as MsgUpdateParamsTR } from '@verana-labs/verana-types/codec/verana/tr/v1/tx';
 import {
   VeranaCredentialSchemaMessageTypes,
@@ -14,6 +14,7 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
    // verana.td.v1
     [VeranaTrustDepositMessageTypes.ReclaimYield, MsgReclaimTrustDepositYield],
     [VeranaTrustDepositMessageTypes.RepaySlashed, MsgRepaySlashedTrustDeposit],
+    [VeranaTrustDepositMessageTypes.SlashTrustDeposit, MsgSlashTrustDeposit],
     [VeranaTrustDepositMessageTypes.UpdateParams, MsgUpdateParams],
     // verana.tr.v1
     [VeranaTrustRegistryMessageTypes.CreateTrustRegistry, MsgCreateTrustRegistry],
