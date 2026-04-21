@@ -72,6 +72,109 @@
         }
       }
     },
+    "/verana/indexer/v1/events": {
+      "get": {
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "List indexer transaction events",
+        "description": "Replay persisted trust registry, credential schema, and permission indexer events after a block height. Use the did query parameter to return only events related to a DID.",
+        "operationId": "listIndexerEvents",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^did:[a-z0-9]+:.+"
+            },
+            "description": "DID to replay events for. Only rows persisted for this DID are returned."
+          },
+          {
+            "name": "after_block_height",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Return events with blockHeight greater than this value."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "description": "Maximum number of events to return."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indexer transaction events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IndexerTransactionEvent"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "afterBlockHeight": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["events", "count", "afterBlockHeight"]
+                },
+                "example": {
+                  "events": [
+                    {
+                      "type": "indexer-event",
+                      "eventType": "StartPermissionVP",
+                      "did": "did:web:agent.example",
+                      "blockHeight": 1794801,
+                      "txHash": "A1B2C3",
+                      "timestamp": "2025-12-17T04:43:12Z",
+                      "payload": {
+                        "module": "permission",
+                        "action": "StartPermissionVP",
+                        "messageType": "/verana.perm.v1.MsgStartPermissionVP",
+                        "txIndex": 0,
+                        "messageIndex": 0,
+                        "sender": "did:web:agent.example",
+                        "relatedDids": ["did:web:agent.example"],
+                        "entityType": "Permission",
+                        "entityId": "42"
+                      }
+                    }
+                  ],
+                  "count": 1,
+                  "afterBlockHeight": 1794800
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
     "/verana/indexer/v1/version": {
       "get": {
         "tags": [
@@ -3791,6 +3894,77 @@
           }
         }
       },
+      "IndexerTransactionEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["indexer-event"]
+          },
+          "eventType": {
+            "type": "string",
+            "description": "Transaction action name, such as CreateNewTrustRegistry, UpdateCredentialSchema, or StartPermissionVP."
+          },
+          "did": {
+            "type": "string"
+          },
+          "blockHeight": {
+            "type": "integer"
+          },
+          "txHash": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "enum": ["trust-registry", "credential-schema", "permission"]
+              },
+              "action": {
+                "type": "string"
+              },
+              "messageType": {
+                "type": "string"
+              },
+              "txIndex": {
+                "type": "integer"
+              },
+              "messageIndex": {
+                "type": "integer"
+              },
+              "sender": {
+                "type": "string"
+              },
+              "relatedDids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "entityType": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "type",
+          "eventType",
+          "did",
+          "blockHeight",
+          "txHash",
+          "timestamp",
+          "payload"
+        ]
+      },
       "DID": {
         "type": "object",
         "properties": {
@@ -5860,7 +6034,7 @@
       "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
     },
     {
-      "description": "## Real-Time Event (WebSocket)\n\n**Endpoint URLs:**\n- Local: `ws://localhost:3001/verana/indexer/v1/events`\n- Devnet: `wss://idx.devnet.verana.network/verana/indexer/v1/events`\n- Testnet: `wss://idx.testnet.verana.network/verana/indexer/v1/events`\n\n**Message Format:**\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**Event Type:** `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height (ISO 8601 format with 'Z' designator).\n\n**Example:**\n```javascript\nconst ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  if (data.type === 'block-processed') {\n    console.log(`Block ${data.height} processed`);\n    // Now safe to query indexer API for updated data\n  }\n};\n```"
+      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-processed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `blockHeight`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"eventType\": \"StartPermissionVP\",\n  \"did\": \"did:web:agent.example\",\n  \"blockHeight\": 123456,\n  \"txHash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"permission\",\n    \"action\": \"StartPermissionVP\",\n    \"messageType\": \"/verana.perm.v1.MsgStartPermissionVP\",\n    \"txIndex\": 0,\n    \"messageIndex\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"relatedDids\": [\"did:web:agent.example\"],\n    \"entityType\": \"Permission\",\n    \"entityId\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `eventType`, `did`, `blockHeight`, `txHash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
     }
   ]
 }

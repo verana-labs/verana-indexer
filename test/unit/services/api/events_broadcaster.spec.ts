@@ -1,6 +1,88 @@
-import { EventsBroadcaster } from "../../../../src/services/api/events_broadcaster";
 import { createServer, Server } from "http";
 import { WebSocket } from "ws";
+import { EventsBroadcaster } from "../../../../src/services/api/events_broadcaster";
+import type { IndexerEventRecord } from "../../../../src/services/api/indexer_events_query";
+
+function waitForMessage(ws: WebSocket, predicate: (message: any) => boolean, timeoutMs = 1500): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      ws.off("message", onMessage);
+      reject(new Error("Timed out waiting for WebSocket message"));
+    }, timeoutMs);
+
+    const onMessage = (data: WebSocket.RawData) => {
+      const message = JSON.parse(data.toString());
+      if (!predicate(message)) return;
+      clearTimeout(timeout);
+      ws.off("message", onMessage);
+      resolve(message);
+    };
+
+    ws.on("message", onMessage);
+  });
+}
+
+function waitForOpen(ws: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+}
+
+function waitForClose(ws: WebSocket): Promise<{ code: number; reason: string }> {
+  return new Promise((resolve) => {
+    ws.once("close", (code, reason) => {
+      resolve({ code, reason: reason.toString() });
+    });
+  });
+}
+
+function waitForCondition(predicate: () => boolean, timeoutMs = 1500): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (predicate()) {
+        resolve();
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error("Timed out waiting for condition"));
+        return;
+      }
+      setTimeout(check, 25);
+    };
+    check();
+  });
+}
+
+function closeSocket(ws: WebSocket): void {
+  if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+    ws.close();
+  }
+}
+
+function makeEvent(did: string, overrides: Partial<IndexerEventRecord> = {}): IndexerEventRecord {
+  return {
+    type: "indexer-event",
+    eventType: "StartPermissionVP",
+    did,
+    blockHeight: 123456,
+    txHash: "ABC123",
+    timestamp: "2025-01-15T10:30:00Z",
+    payload: {
+      module: "permission",
+      action: "StartPermissionVP",
+      messageType: "/verana.perm.v1.MsgStartPermissionVP",
+      txIndex: 0,
+      messageIndex: 0,
+      sender: did,
+      relatedDids: [did],
+      entityType: "Permission",
+      entityId: "42",
+    },
+    ...overrides,
+  };
+}
 
 describe("EventsBroadcaster", () => {
   let broadcaster: EventsBroadcaster;
@@ -8,372 +90,198 @@ describe("EventsBroadcaster", () => {
   const TEST_PORT = 9999;
   const WS_URL = `ws://localhost:${TEST_PORT}/verana/indexer/v1/events`;
 
-  beforeAll(() => {
-    broadcaster = new EventsBroadcaster();
+  beforeAll((done) => {
     httpServer = createServer();
-    broadcaster.initialize(httpServer);
-    httpServer.listen(TEST_PORT);
+    httpServer.listen(TEST_PORT, done);
   });
 
   afterAll((done) => {
+    broadcaster?.close();
+    httpServer.close(() => done());
+  });
+
+  beforeEach(() => {
+    broadcaster?.close();
+    broadcaster = new EventsBroadcaster();
+    broadcaster.setLogger({ info: () => {}, warn: () => {}, error: () => {} });
+    broadcaster.initialize(httpServer);
+  });
+
+  afterEach(() => {
     broadcaster.close();
-    setTimeout(() => {
-      httpServer.close(() => {
-        done();
-      });
-    }, 100);
   });
 
-  beforeEach((done) => {
-    if (broadcaster) {
-      broadcaster.close();
-    }
-    setTimeout(() => {
-      broadcaster = new EventsBroadcaster();
-      broadcaster.initialize(httpServer);
-      setTimeout(() => {
-        done();
-      }, 150);
-    }, 200);
+  it("accepts WebSocket connections and sends a connected message", async () => {
+    const ws = new WebSocket(WS_URL);
+    await waitForOpen(ws);
+
+    const message = await waitForMessage(ws, (msg) => msg.type === "connected");
+    expect(message).toMatchObject({
+      type: "connected",
+      message: "Connected to Verana Indexer Events",
+    });
+    expect(Object.prototype.hasOwnProperty.call(message, "blockHeight")).toBe(true);
+    expect(message.did).toBeUndefined();
+    expect(broadcaster.getWSClientCount()).toBe(1);
+
+    closeSocket(ws);
+    await waitForClose(ws);
+    await waitForCondition(() => broadcaster.getWSClientCount() === 0);
+    expect(broadcaster.getWSClientCount()).toBe(0);
   });
 
-  describe("WebSocket Connection", () => {
-    it("should accept WebSocket connections", (done) => {
-      const ws = new WebSocket(WS_URL);
+  it("rejects an invalid DID query", async () => {
+    const ws = new WebSocket(`${WS_URL}?did=${encodeURIComponent("not-a-did")}`);
+    const close = await waitForClose(ws);
 
-      ws.on("open", () => {
-        expect(broadcaster.getWSClientCount()).toBe(1);
-        ws.close();
-      });
-
-      ws.on("close", () => {
-        setTimeout(() => {
-          expect(broadcaster.getWSClientCount()).toBe(0);
-          done();
-        }, 100);
-      });
-
-      ws.on("error", (error) => {
-        done(error);
-      });
-    }, 10000);
-
-    it("should send welcome message on connection", (done) => {
-      const ws = new WebSocket(WS_URL);
-      let welcomeReceived = false;
-
-      ws.on("open", () => {
-        setTimeout(() => {
-          if (!welcomeReceived) {
-            ws.close();
-            done(new Error("Welcome message not received"));
-          }
-        }, 1000);
-      });
-
-      ws.on("message", (data) => {
-        try {
-          const message = JSON.parse(data.toString());
-          expect(message.type).toBe("connected");
-          expect(message.message).toBe("Connected to Verana Indexer Events");
-          welcomeReceived = true;
-          ws.close();
-        } catch (error) {
-          done(error);
-        }
-      });
-
-      ws.on("close", () => {
-        if (welcomeReceived) {
-          done();
-        }
-      });
-
-      ws.on("error", (error) => {
-        done(error);
-      });
-    }, 10000);
-
-    it("should handle multiple concurrent connections", (done) => {
-      const clients: WebSocket[] = [];
-      const clientCount = 3;
-      let connectedCount = 0;
-
-      for (let i = 0; i < clientCount; i++) {
-        const ws = new WebSocket(WS_URL);
-        clients.push(ws);
-
-        ws.on("open", () => {
-          connectedCount++;
-          if (connectedCount === clientCount) {
-            expect(broadcaster.getWSClientCount()).toBe(clientCount);
-            clients.forEach((client) => client.close());
-          }
-        });
-
-        ws.on("close", () => {
-          if (clients.every((c) => c.readyState === WebSocket.CLOSED)) {
-            setTimeout(() => {
-              expect(broadcaster.getWSClientCount()).toBe(0);
-              done();
-            }, 200);
-          }
-        });
-
-        ws.on("error", (error) => {
-          done(error);
-        });
-      }
-    }, 15000);
+    expect(close.code).toBe(1008);
+    expect(close.reason).toBe("Invalid did query parameter");
+    expect(broadcaster.getWSClientCount()).toBe(0);
   });
 
-  describe("Block Processed Events", () => {
-    it("should broadcast block-processed events to all connected clients", (done) => {
-      const ws1 = new WebSocket(WS_URL);
-      const ws2 = new WebSocket(WS_URL);
-      const receivedMessages: any[] = [];
-      let bothConnected = false;
+  it("includes did and blockHeight in DID room connected messages", async () => {
+    const did = "did:web:agent.example";
+    const ws = new WebSocket(`${WS_URL}?did=${encodeURIComponent(did)}`);
+    await waitForOpen(ws);
 
-      const checkDone = () => {
-        if (bothConnected && receivedMessages.length === 2) {
-          receivedMessages.forEach((msg) => {
-            expect(msg.type).toBe("block-processed");
-            expect(msg.height).toBe(123456);
-            expect(msg.timestamp).toBeDefined();
-          });
-          ws1.close();
-          ws2.close();
-          done();
-        }
-      };
+    const message = await waitForMessage(ws, (msg) => msg.type === "connected");
+    expect(message.did).toBe(did);
+    expect(Object.prototype.hasOwnProperty.call(message, "blockHeight")).toBe(true);
 
-      ws1.on("open", () => {
-        ws2.on("open", () => {
-          bothConnected = true;
-          broadcaster.broadcastBlockProcessed(123456, new Date());
-        });
-      });
-
-      ws1.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
-          receivedMessages.push(message);
-          checkDone();
-        }
-      });
-
-      ws2.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
-          receivedMessages.push(message);
-          checkDone();
-        }
-      });
-
-      ws1.on("error", (error) => done(error));
-      ws2.on("error", (error) => done(error));
-    }, 10000);
-
-    it("should format timestamp correctly", (done) => {
-      const ws = new WebSocket(WS_URL);
-      const testTimestamp = new Date("2025-01-15T10:30:00.000Z");
-      const expectedFormat = "2025-01-15T10:30:00Z";
-      let blockProcessedReceived = false;
-
-      ws.on("open", () => {
-        broadcaster.broadcastBlockProcessed(789012, testTimestamp);
-      });
-
-      ws.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
-          expect(message.timestamp).toBe(expectedFormat);
-          expect(new Date(message.timestamp).getTime()).toBe(testTimestamp.getTime());
-          blockProcessedReceived = true;
-          ws.close();
-        }
-      });
-
-      ws.on("close", () => {
-        if (blockProcessedReceived) {
-          done();
-        } else {
-          done(new Error("Block processed message not received"));
-        }
-      });
-
-      ws.on("error", (error) => {
-        done(error);
-      });
-    }, 10000);
-
-    it("should handle string timestamps", (done) => {
-      const ws = new WebSocket(WS_URL);
-      const testTimestamp = "2025-01-15T10:30:00.000Z";
-      const expectedFormat = "2025-01-15T10:30:00Z";
-      let blockProcessedReceived = false;
-
-      ws.on("open", () => {
-        broadcaster.broadcastBlockProcessed(345678, testTimestamp);
-      });
-
-      ws.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
-          expect(message.timestamp).toBe(expectedFormat);
-          blockProcessedReceived = true;
-          ws.close();
-        }
-      });
-
-      ws.on("close", () => {
-        if (blockProcessedReceived) {
-          done();
-        } else {
-          done(new Error("Block processed message not received"));
-        }
-      });
-
-      ws.on("error", (error) => {
-        done(error);
-      });
-    }, 10000);
+    closeSocket(ws);
   });
 
-  describe("Client Management", () => {
-    it("should track client count correctly", (done) => {
-      expect(broadcaster.getWSClientCount()).toBe(0);
+  it("delivers persisted indexer events only to matching DID subscribers", async () => {
+    const did = "did:web:agent.example";
+    const otherDid = "did:web:other.example";
+    const wsMatch = new WebSocket(`${WS_URL}?did=${encodeURIComponent(did)}`);
+    const wsOther = new WebSocket(`${WS_URL}?did=${encodeURIComponent(otherDid)}`);
+    await Promise.all([waitForOpen(wsMatch), waitForOpen(wsOther)]);
+    await Promise.all([
+      waitForMessage(wsMatch, (msg) => msg.type === "connected"),
+      waitForMessage(wsOther, (msg) => msg.type === "connected"),
+    ]);
 
-      const ws1 = new WebSocket(WS_URL);
-      const ws2 = new WebSocket(WS_URL);
-      let ws1Open = false;
-      let ws2Open = false;
-      let ws1Closed = false;
-      let ws2Closed = false;
+    const matchPromise = waitForMessage(wsMatch, (msg) => msg.type === "indexer-event");
+    let otherReceived = false;
+    wsOther.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "indexer-event") otherReceived = true;
+    });
 
-      const checkBothOpen = () => {
-        if (ws1Open && ws2Open) {
-          setTimeout(() => {
-            const count = broadcaster.getWSClientCount();
-            expect(count).toBe(2);
-            ws1.close();
-            ws2.close();
-          }, 100);
-        }
-      };
+    broadcaster.broadcastIndexerEvent(makeEvent(did));
+    const received = await matchPromise;
+    await new Promise((resolve) => {
+      setTimeout(resolve, 200);
+    });
 
-      const checkBothClosed = () => {
-        if (ws1Closed && ws2Closed) {
-          setTimeout(() => {
-            expect(broadcaster.getWSClientCount()).toBe(0);
-            done();
-          }, 200);
-        }
-      };
+    expect(received.did).toBe(did);
+    expect(received.eventType).toBe("StartPermissionVP");
+    expect(otherReceived).toBe(false);
 
-      ws1.on("open", () => {
-        ws1Open = true;
-        setTimeout(() => {
-          const count = broadcaster.getWSClientCount();
-          expect(count).toBeGreaterThanOrEqual(1);
-        }, 50);
-        checkBothOpen();
-      });
-
-      ws2.on("open", () => {
-        ws2Open = true;
-        checkBothOpen();
-      });
-
-      ws1.on("close", () => {
-        ws1Closed = true;
-        checkBothClosed();
-      });
-
-      ws2.on("close", () => {
-        ws2Closed = true;
-        checkBothClosed();
-      });
-
-      ws1.on("error", (error) => done(error));
-      ws2.on("error", (error) => done(error));
-    }, 15000);
-
-    it("should cleanup disconnected clients", (done) => {
-      const ws = new WebSocket(WS_URL);
-
-      ws.on("open", () => {
-        expect(broadcaster.getWSClientCount()).toBe(1);
-        ws.close();
-      });
-
-      ws.on("close", () => {
-        setTimeout(() => {
-          expect(broadcaster.getWSClientCount()).toBe(0);
-          done();
-        }, 200);
-      });
-
-      ws.on("error", (error) => {
-        done(error);
-      });
-    }, 10000);
+    closeSocket(wsMatch);
+    closeSocket(wsOther);
   });
 
-  describe("Real-time Event Flow", () => {
-    it("should receive multiple block-processed events in sequence", (done) => {
-      const ws = new WebSocket(WS_URL);
-      const receivedHeights: number[] = [];
-      const expectedHeights = [100, 101, 102];
+  it("delivers multi-DID events to each relevant DID subscriber", async () => {
+    const didA = "did:web:agent-a.example";
+    const didB = "did:web:agent-b.example";
+    const wsA = new WebSocket(`${WS_URL}?did=${encodeURIComponent(didA)}`);
+    const wsB = new WebSocket(`${WS_URL}?did=${encodeURIComponent(didB)}`);
+    await Promise.all([waitForOpen(wsA), waitForOpen(wsB)]);
+    await Promise.all([
+      waitForMessage(wsA, (msg) => msg.type === "connected"),
+      waitForMessage(wsB, (msg) => msg.type === "connected"),
+    ]);
 
-      ws.on("open", () => {
-        setTimeout(() => broadcaster.broadcastBlockProcessed(100, new Date()), 100);
-        setTimeout(() => broadcaster.broadcastBlockProcessed(101, new Date()), 200);
-        setTimeout(() => broadcaster.broadcastBlockProcessed(102, new Date()), 300);
-      });
+    const eventA = makeEvent(didA, {
+      payload: { ...makeEvent(didA).payload, relatedDids: [didA, didB] },
+    });
+    const eventB = makeEvent(didB, {
+      txHash: eventA.txHash,
+      payload: { ...eventA.payload, relatedDids: [didA, didB] },
+    });
 
-      ws.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-processed") {
-          receivedHeights.push(message.height);
-          if (receivedHeights.length === expectedHeights.length) {
-            expect(receivedHeights).toEqual(expectedHeights);
-            ws.close();
-          }
-        }
-      });
+    const messageA = waitForMessage(wsA, (msg) => msg.type === "indexer-event");
+    const messageB = waitForMessage(wsB, (msg) => msg.type === "indexer-event");
+    broadcaster.broadcastIndexerEvent(eventA);
+    broadcaster.broadcastIndexerEvent(eventB);
 
-      ws.on("close", () => {
-        if (receivedHeights.length === expectedHeights.length) {
-          done();
-        } else {
-          done(new Error(`Expected ${expectedHeights.length} events, got ${receivedHeights.length}`));
-        }
-      });
+    await expect(messageA).resolves.toMatchObject({ did: didA, payload: { relatedDids: [didA, didB] } });
+    await expect(messageB).resolves.toMatchObject({ did: didB, payload: { relatedDids: [didA, didB] } });
 
-      ws.on("error", (error) => {
-        done(error);
-      });
-    }, 10000);
+    closeSocket(wsA);
+    closeSocket(wsB);
   });
 
-  describe("Error Handling", () => {
-    it("should handle client errors gracefully", (done) => {
-      const ws = new WebSocket(WS_URL);
+  it("broadcasts legacy block-processed events to global subscribers only", async () => {
+    const ws = new WebSocket(WS_URL);
+    const didWs = new WebSocket(`${WS_URL}?did=${encodeURIComponent("did:web:agent.example")}`);
+    await waitForOpen(ws);
+    await waitForOpen(didWs);
+    await waitForMessage(ws, (msg) => msg.type === "connected");
+    await waitForMessage(didWs, (msg) => msg.type === "connected");
 
-      ws.on("open", () => {
-        expect(broadcaster.getWSClientCount()).toBe(1);
-        ws.terminate();
-      });
+    const blockProcessed = waitForMessage(ws, (msg) => msg.type === "block-processed");
+    let didRoomReceivedBlockProcessed = false;
+    didWs.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "block-processed") didRoomReceivedBlockProcessed = true;
+    });
 
-      ws.on("error", () => {
-      });
+    broadcaster.broadcastBlockProcessed(123456, new Date("2025-01-15T10:30:00.000Z"));
+    const message = await blockProcessed;
+    expect(Object.keys(message)).toEqual(["type", "height", "timestamp"]);
+    expect(message).toMatchObject({
+      type: "block-processed",
+      height: 123456,
+      timestamp: "2025-01-15T10:30:00Z",
+    });
 
-      setTimeout(() => {
-        expect(broadcaster.getWSClientCount()).toBe(0);
-        done();
-      }, 500);
-    }, 10000);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 200);
+    });
+    expect(didRoomReceivedBlockProcessed).toBe(false);
+
+    closeSocket(ws);
+    closeSocket(didWs);
+  });
+
+  it("does not send DID indexer events to global subscribers", async () => {
+    const ws = new WebSocket(WS_URL);
+    await waitForOpen(ws);
+    await waitForMessage(ws, (msg) => msg.type === "connected");
+
+    let receivedIndexerEvent = false;
+    ws.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "indexer-event") receivedIndexerEvent = true;
+    });
+
+    broadcaster.broadcastIndexerEvent(makeEvent("did:web:agent.example"));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 200);
+    });
+
+    expect(receivedIndexerEvent).toBe(false);
+    closeSocket(ws);
+  });
+
+  it("cleans up clients on close and error/terminate", async () => {
+    const wsClose = new WebSocket(`${WS_URL}?did=${encodeURIComponent("did:web:close.example")}`);
+    await waitForOpen(wsClose);
+    expect(broadcaster.getWSClientCount()).toBe(1);
+    closeSocket(wsClose);
+    await waitForClose(wsClose);
+    await waitForCondition(() => broadcaster.getWSClientCount() === 0);
+    expect(broadcaster.getWSClientCount()).toBe(0);
+
+    const wsTerminate = new WebSocket(`${WS_URL}?did=${encodeURIComponent("did:web:error.example")}`);
+    await waitForOpen(wsTerminate);
+    expect(broadcaster.getWSClientCount()).toBe(1);
+    wsTerminate.terminate();
+    await waitForClose(wsTerminate);
+    await waitForCondition(() => broadcaster.getWSClientCount() === 0);
+    expect(broadcaster.getWSClientCount()).toBe(0);
   });
 });
-

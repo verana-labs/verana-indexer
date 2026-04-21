@@ -1,85 +1,128 @@
+import { IncomingMessage, Server } from "http";
 import { WebSocket, WebSocketServer } from "ws";
-import { Server } from "http";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
+import type { IndexerEventRecord } from "./indexer_events_query";
 
-function isTemporaryError(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  const lowerMessage = errorMessage.toLowerCase();
-  return lowerMessage.includes('timeout') ||
-         lowerMessage.includes('exceeded') ||
-         lowerMessage.includes('timed out') ||
-         lowerMessage.includes('econnrefused') ||
-         lowerMessage.includes('etimedout') ||
-         lowerMessage.includes('econaborted') ||
-         lowerMessage.includes('network') ||
-         lowerMessage.includes('connection') ||
-         lowerMessage.includes('non-critical') ||
-         lowerMessage.includes('service will continue');
-}
+type Logger = {
+  info?: (...args: any[]) => void;
+  warn?: (...args: any[]) => void;
+  error?: (...args: any[]) => void;
+};
+
+type ClientDidParseResult = {
+  did?: string;
+  invalidDid?: string;
+};
+
+type IndexerStatusMessage = {
+  indexerStatus: "running" | "stopped";
+  crawlingStatus: "active" | "stopped";
+  stoppedAt?: string;
+  stoppedReason?: string;
+  lastError?: {
+    message: string;
+    timestamp: string;
+    service?: string;
+  };
+};
 
 function isUnknownMessageError(errorMessage: string): boolean {
   if (!errorMessage) return false;
-  return errorMessage.includes('Unknown Verana message types') ||
-         errorMessage.includes('UNKNOWN VERANA MESSAGE TYPES');
+  return errorMessage.includes("Unknown Verana message types") ||
+    errorMessage.includes("UNKNOWN VERANA MESSAGE TYPES");
+}
+
+export function isValidDid(value: unknown): value is string {
+  return typeof value === "string" && /^did:[a-z0-9]+:.+/i.test(value.trim());
+}
+
+function toIsoSeconds(value: Date = new Date()): string {
+  return value.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 export class EventsBroadcaster {
   private wss: WebSocketServer | null = null;
   private wsClients: Set<WebSocket> = new Set();
   private clientAlive: Map<WebSocket, boolean> = new Map();
+  private clientDids: Map<WebSocket, string> = new Map();
+  private didRooms: Map<string, Set<WebSocket>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
   private readonly MAX_CLIENTS = 10000;
   private readonly PING_INTERVAL = 30000;
-  private logger: {
-    info?: (...args: any[]) => void;
-    warn?: (...args: any[]) => void;
-    error?: (...args: any[]) => void;
-  } = console;
+  private logger: Logger = console;
 
-  setLogger(logger: {
-    info?: (...args: any[]) => void;
-    warn?: (...args: any[]) => void;
-    error?: (...args: any[]) => void;
-  }): void {
+  setLogger(logger: Logger): void {
     this.logger = logger;
   }
 
   private logInfo(...args: any[]): void {
-    if (this.logger.info) {
-      this.logger.info(...args);
-    } else {
-      console.log(...args);
-    }
+    if (this.logger.info) this.logger.info(...args);
+    else console.log(...args);
   }
 
   private logWarn(...args: any[]): void {
-    if (this.logger.warn) {
-      this.logger.warn(...args);
-    } else {
-      console.warn(...args);
-    }
+    if (this.logger.warn) this.logger.warn(...args);
+    else console.warn(...args);
   }
 
   private logError(...args: any[]): void {
-    if (this.logger.error) {
-      this.logger.error(...args);
-    } else {
-      console.error(...args);
+    if (this.logger.error) this.logger.error(...args);
+    else console.error(...args);
+  }
+
+  private parseClientDid(req: IncomingMessage): ClientDidParseResult {
+    const host = req.headers.host || "localhost";
+    const url = new URL(req.url || "/verana/indexer/v1/events", `http://${host}`);
+    const did = (url.searchParams.get("did") || "").trim();
+    if (!did) return {};
+    return isValidDid(did) ? { did } : { invalidDid: did };
+  }
+
+  private addToRoom(ws: WebSocket, did: string): void {
+    let room = this.didRooms.get(did);
+    if (!room) {
+      room = new Set<WebSocket>();
+      this.didRooms.set(did, room);
+    }
+    room.add(ws);
+  }
+
+  private removeFromRoom(ws: WebSocket, did: string): void {
+    const room = this.didRooms.get(did);
+    if (!room) return;
+    room.delete(ws);
+    if (room.size === 0) this.didRooms.delete(did);
+  }
+
+  private cleanupClient(ws: WebSocket): void {
+    const did = this.clientDids.get(ws);
+    if (did) this.removeFromRoom(ws, did);
+
+    const hadClient = this.wsClients.delete(ws);
+    this.clientAlive.delete(ws);
+    this.clientDids.delete(ws);
+
+    if (hadClient) {
+      this.logInfo(`[EventsBroadcaster] WebSocket client disconnected. Total clients: ${this.wsClients.size}`);
     }
   }
 
- 
-  private getCurrentIndexerStatus(): {
-    indexerStatus: "running" | "stopped";
-    crawlingStatus: "active" | "stopped";
-    stoppedAt?: string;
-    stoppedReason?: string;
-    lastError?: {
-      message: string;
-      timestamp: string;
-      service?: string;
-    };
-  } {
+  private sendJson(ws: WebSocket, eventData: Record<string, unknown>): boolean {
+    if (ws.readyState !== WebSocket.OPEN) {
+      this.cleanupClient(ws);
+      return false;
+    }
+
+    try {
+      ws.send(JSON.stringify(eventData), { compress: false });
+      return true;
+    } catch {
+      this.cleanupClient(ws);
+      return false;
+    }
+  }
+
+  private getCurrentIndexerStatus(): IndexerStatusMessage {
     const status = indexerStatusManager.getStatus();
     return {
       indexerStatus: status.isRunning ? "running" : "stopped",
@@ -94,12 +137,13 @@ export class EventsBroadcaster {
     indexerStatusManager.setStatusChangeCallback((status) => {
       this.broadcastIndexerStatus(status);
     });
+
     if (this.wss) {
       this.logWarn("[EventsBroadcaster] WebSocket server already initialized");
       return;
     }
 
-    this.wss = new WebSocketServer({ 
+    this.wss = new WebSocketServer({
       server,
       path: "/verana/indexer/v1/events",
       perMessageDeflate: false,
@@ -110,74 +154,76 @@ export class EventsBroadcaster {
           return false;
         }
         return true;
-      }
+      },
     });
 
-    this.wss.on("connection", (ws: WebSocket) => {
+    this.wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
       if (this.wsClients.size >= this.MAX_CLIENTS) {
         ws.close(1013, "Server overloaded");
         return;
       }
 
+      const { did, invalidDid } = this.parseClientDid(req);
+      if (invalidDid) {
+        ws.close(1008, "Invalid did query parameter");
+        return;
+      }
+
       this.wsClients.add(ws);
       this.clientAlive.set(ws, true);
+      if (did) {
+        this.clientDids.set(ws, did);
+        this.addToRoom(ws, did);
+      }
 
       this.logInfo(`[EventsBroadcaster] New WebSocket client connected. Total clients: ${this.wsClients.size}`);
 
+      ws.on("close", () => this.cleanupClient(ws));
+      ws.on("error", (error) => {
+        this.logError("[EventsBroadcaster] WebSocket error:", error);
+        this.cleanupClient(ws);
+      });
+      ws.on("pong", () => {
+        this.clientAlive.set(ws, true);
+      });
+
       try {
-        const status = this.getCurrentIndexerStatus();
-        const connectionMessage: any = {
+        const [status, detailedStatus] = await Promise.all([
+          Promise.resolve(this.getCurrentIndexerStatus()),
+          indexerStatusManager.getDetailedStatus().catch(() => null),
+        ]);
+
+        const connectionMessage: Record<string, unknown> = {
           type: "connected",
           message: "Connected to Verana Indexer Events",
           indexerStatus: status.indexerStatus,
           crawlingStatus: status.crawlingStatus,
-          timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+          blockHeight: detailedStatus?.lastProcessedBlock ?? null,
+          timestamp: toIsoSeconds(),
         };
-        
+        if (did) connectionMessage.did = did;
+
         if (status.crawlingStatus === "stopped") {
-          if (status.stoppedAt) {
-            connectionMessage.stoppedAt = status.stoppedAt;
-          }
-          const errorMessage = status.lastError?.message || status.stoppedReason || '';
-          const isUnknown = isUnknownMessageError(errorMessage);
-          
-          if (isUnknown) {
-            if (status.stoppedReason) {
-              connectionMessage.stoppedReason = status.stoppedReason;
-            }
+          if (status.stoppedAt) connectionMessage.stoppedAt = status.stoppedAt;
+
+          const errorMessage = status.lastError?.message || status.stoppedReason || "";
+          if (isUnknownMessageError(errorMessage)) {
+            if (status.stoppedReason) connectionMessage.stoppedReason = status.stoppedReason;
             if (status.lastError) {
               connectionMessage.lastError = {
                 message: status.lastError.message,
                 timestamp: status.lastError.timestamp,
-                service: status.lastError.service
+                service: status.lastError.service,
               };
             }
           }
         }
-        
-        ws.send(JSON.stringify(connectionMessage), { compress: false });
+
+        this.sendJson(ws, connectionMessage);
       } catch (error) {
         this.logError("[EventsBroadcaster] Error sending welcome message:", error);
-        this.wsClients.delete(ws);
-        this.clientAlive.delete(ws);
-        return;
+        this.cleanupClient(ws);
       }
-
-      const cleanup = () => {
-        this.wsClients.delete(ws);
-        this.clientAlive.delete(ws);
-        this.logInfo(`[EventsBroadcaster] WebSocket client disconnected. Total clients: ${this.wsClients.size}`);
-      };
-
-      ws.on("close", cleanup);
-      ws.on("error", (error) => {
-        this.logError("[EventsBroadcaster] WebSocket error:", error);
-        cleanup();
-      });
-
-      ws.on("pong", () => {
-        this.clientAlive.set(ws, true);
-      });
     });
 
     this.wss.on("error", (error) => {
@@ -192,90 +238,65 @@ export class EventsBroadcaster {
   }
 
   private pingClients(): void {
-    const deadClients: WebSocket[] = [];
-    
+    const staleClients: WebSocket[] = [];
+
     this.wsClients.forEach((ws) => {
       const isAlive = this.clientAlive.get(ws);
       if (isAlive === false) {
-        deadClients.push(ws);
+        staleClients.push(ws);
         return;
       }
+
       this.clientAlive.set(ws, false);
       try {
         ws.ping();
-      } catch (error) {
-        deadClients.push(ws);
+      } catch {
+        staleClients.push(ws);
       }
     });
 
-    deadClients.forEach((ws) => {
+    staleClients.forEach((ws) => {
       try {
         ws.terminate();
-      } catch (error) {
-        // Ignore termination errors
+      } catch {
+        // Best effort cleanup.
       }
-      this.wsClients.delete(ws);
-      this.clientAlive.delete(ws);
+      this.cleanupClient(ws);
     });
+  }
+
+  broadcastIndexerEvent(event: IndexerEventRecord): void {
+    this.broadcastToDid(event.did, event as unknown as Record<string, unknown>);
   }
 
   broadcastBlockProcessed(height: number, timestamp: Date | string): void {
-    if (this.wsClients.size === 0) {
-      return;
-    }
-
     const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
-    // Format timestamp as ISO 8601 with 'Z' designator (without milliseconds)
-    const isoString = eventTimestamp.toISOString();
-    const timestampFormatted = isoString.replace(/\.\d{3}Z$/, 'Z');
-    
-    const eventData = {
+    this.broadcastToGlobalClients({
       type: "block-processed",
       height,
-      timestamp: timestampFormatted
-    };
-    this.broadcastMessage(eventData);
+      timestamp: toIsoSeconds(eventTimestamp),
+    });
   }
 
+  broadcastIndexerStatus(status: IndexerStatusMessage): void {
+    if (this.wsClients.size === 0) return;
 
-  broadcastIndexerStatus(status: {
-    indexerStatus: "running" | "stopped";
-    crawlingStatus: "active" | "stopped";
-    stoppedAt?: string;
-    stoppedReason?: string;
-    lastError?: {
-      message: string;
-      timestamp: string;
-      service?: string;
-    };
-  }): void {
-    if (this.wsClients.size === 0) {
-      return;
-    }
-
-    const errorMessage = status.lastError?.message || status.stoppedReason || '';
-    const isUnknown = isUnknownMessageError(errorMessage);
-
-    const eventData: any = {
+    const errorMessage = status.lastError?.message || status.stoppedReason || "";
+    const eventData: Record<string, unknown> = {
       type: "indexer-status",
       indexerStatus: status.indexerStatus,
       crawlingStatus: status.crawlingStatus,
-      timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+      timestamp: toIsoSeconds(),
     };
 
-    if (status.stoppedAt) {
-      eventData.stoppedAt = status.stoppedAt;
-    }
-
-    if (isUnknown) {
-      if (status.stoppedReason) {
-        eventData.stoppedReason = status.stoppedReason;
-      }
+    if (status.stoppedAt) eventData.stoppedAt = status.stoppedAt;
+    if (isUnknownMessageError(errorMessage)) {
+      if (status.stoppedReason) eventData.stoppedReason = status.stoppedReason;
       if (status.lastError) {
         eventData.lastError = {
           message: status.lastError.message,
           timestamp: status.lastError.timestamp,
-          service: status.lastError.service
+          service: status.lastError.service,
         };
       }
     }
@@ -283,38 +304,40 @@ export class EventsBroadcaster {
     this.broadcastMessage(eventData);
   }
 
- 
-  private broadcastMessage(eventData: Record<string, any>): void {
-    if (this.wsClients.size === 0) {
-      return;
-    }
-
-    const message = JSON.stringify(eventData);
-    const deadClients: WebSocket[] = [];
+  private broadcastMessage(eventData: Record<string, unknown>): void {
     let sentCount = 0;
-    
     this.wsClients.forEach((ws) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(message, { compress: false });
-          sentCount++;
-        } catch (error) {
-          deadClients.push(ws);
-        }
-      } else {
-        deadClients.push(ws);
-      }
+      if (this.sendJson(ws, eventData)) sentCount++;
     });
-
-    if (deadClients.length > 0) {
-      deadClients.forEach((ws) => {
-        this.wsClients.delete(ws);
-        this.clientAlive.delete(ws);
-      });
-    }
 
     if (sentCount > 0) {
       this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} WebSocket client(s)`);
+    }
+  }
+
+  private broadcastToGlobalClients(eventData: Record<string, unknown>): void {
+    let sentCount = 0;
+    this.wsClients.forEach((ws) => {
+      if (this.clientDids.has(ws)) return;
+      if (this.sendJson(ws, eventData)) sentCount++;
+    });
+
+    if (sentCount > 0) {
+      this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} global WebSocket client(s)`);
+    }
+  }
+
+  private broadcastToDid(did: string, eventData: Record<string, unknown>): void {
+    const room = this.didRooms.get(did);
+    if (!room || room.size === 0) return;
+
+    let sentCount = 0;
+    Array.from(room).forEach((ws) => {
+      if (this.sendJson(ws, eventData)) sentCount++;
+    });
+
+    if (sentCount > 0) {
+      this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.eventType || eventData.type} to ${sentCount} DID subscriber(s)`);
     }
   }
 
@@ -335,13 +358,15 @@ export class EventsBroadcaster {
         } else {
           ws.terminate();
         }
-      } catch (error) {
-        // Ignore close errors
+      } catch {
+        // Best effort close.
       }
     });
-    
+
     this.wsClients.clear();
     this.clientAlive.clear();
+    this.clientDids.clear();
+    this.didRooms.clear();
 
     if (this.wss) {
       this.wss.close(() => {
