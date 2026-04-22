@@ -57,27 +57,27 @@ const RESOLVE_RESULT_STATUS_BY_OUTCOME: Record<string, { trustStatus: string; pr
   "verified-test": { trustStatus: "PARTIAL", production: false },
 };
 
-const normalizeEcsKey = (value: string): string => value.trim().toLowerCase();
 const VERRE_ECS = ECS ?? {
   SERVICE: "ecs-service",
   ORG: "ecs-org",
   PERSONA: "ecs-persona",
   USER_AGENT: "ecs-user-agent",
 };
-const ECS_BY_NORMALIZED: Record<string, string> = {
-  [normalizeEcsKey(VERRE_ECS.SERVICE)]: VERRE_ECS.SERVICE,
-  [normalizeEcsKey(VERRE_ECS.ORG)]: VERRE_ECS.ORG,
-  [normalizeEcsKey(VERRE_ECS.PERSONA)]: VERRE_ECS.PERSONA,
-  [normalizeEcsKey(VERRE_ECS.USER_AGENT)]: VERRE_ECS.USER_AGENT,
+const ecsLookupKey = (value: string): string => value.trim().toLowerCase();
+const ECS_BY_LOOKUP_KEY: Record<string, string> = {
+  [ecsLookupKey(VERRE_ECS.SERVICE)]: VERRE_ECS.SERVICE,
+  [ecsLookupKey(VERRE_ECS.ORG)]: VERRE_ECS.ORG,
+  [ecsLookupKey(VERRE_ECS.PERSONA)]: VERRE_ECS.PERSONA,
+  [ecsLookupKey(VERRE_ECS.USER_AGENT)]: VERRE_ECS.USER_AGENT,
 };
 
 function detectEcsFromVtjscId(vtjscId: string): string | null {
-  const normalized = normalizeEcsKey(vtjscId);
-  if (ECS_BY_NORMALIZED[normalized]) return ECS_BY_NORMALIZED[normalized];
+  const normalized = ecsLookupKey(vtjscId);
+  if (ECS_BY_LOOKUP_KEY[normalized]) return ECS_BY_LOOKUP_KEY[normalized];
 
   const tokens = normalized.split(/[^a-z0-9-]+/).filter(Boolean);
   for (const token of tokens) {
-    if (ECS_BY_NORMALIZED[token]) return ECS_BY_NORMALIZED[token];
+    if (ECS_BY_LOOKUP_KEY[token]) return ECS_BY_LOOKUP_KEY[token];
   }
   return null;
 }

@@ -22,34 +22,3 @@ export function defaultVprRegistriesFromEnv(): VerifiablePublicRegistry[] {
   const id = `vpr:verana:${chainId}`;
   return [{ id, baseUrls: [], production: guessProductionFromChainId(chainId) }];
 }
-
-export function readPositiveIntFromEnv(keys: string[]): number | null {
-  for (const k of keys) {
-    const raw = (process.env[k] ?? "").trim();
-    if (!raw) continue;
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return Math.floor(n);
-  }
-  return null;
-}
-
-export function parseVprRegistriesJson(raw: string | undefined | null): VerifiablePublicRegistry[] {
-  const s = (raw ?? "").trim();
-  if (!s) return [];
-  try {
-    const parsed = JSON.parse(s) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((value) => {
-      if (!value || typeof value !== "object") return false;
-      const o = value as Record<string, unknown>;
-      return (
-        typeof o.id === "string" &&
-        Array.isArray(o.baseUrls) &&
-        o.baseUrls.every((u) => typeof u === "string") &&
-        typeof o.production === "boolean"
-      );
-    }) as VerifiablePublicRegistry[];
-  } catch {
-    return [];
-  }
-}
