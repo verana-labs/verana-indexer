@@ -210,7 +210,7 @@ export class TrustApiService extends BaseService {
       this.logger.warn(`Failed to query trust_registry_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
     }
 
-    return null;
+    return ApiResponder.error(ctx, "DID not found", 404);
   }
 
   private async getLastProcessedTrustBlockHeight(): Promise<number> {
@@ -440,7 +440,7 @@ export class TrustApiService extends BaseService {
     const key = `${did}@${height}`;
     const cached = this.trustedVsAtHeight.get(key);
     if (cached !== undefined) return cached;
-    if (visited.has(key)) return true;
+    if (visited.has(key)) return false;
     visited.add(key);
     const row = await getTrustResultLatestByDidAtOrBeforeHeight(did, height);
     if (!row) {
@@ -451,7 +451,7 @@ export class TrustApiService extends BaseService {
       did,
       resolveResult: row.resolve_result,
       evaluatedAtBlock: row.height,
-      createdAt: row.created_at,
+      createdAt: row.evaluated_at ?? row.created_at,
       trustTtlSeconds: getTrustEvaluationTtlSeconds(),
     });
     const ok = summary.trustStatus === "TRUSTED" || summary.trustStatus === "PARTIAL";
@@ -528,16 +528,17 @@ export class TrustApiService extends BaseService {
     const row = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
     if (!row) return ApiResponder.error(ctx, `No trust evaluation found for DID: ${did}`, 404);
 
+    const evaluatedAtSource = row.evaluated_at ?? row.created_at;
     const summary = buildTrustSummaryFromStoredRow({
       did,
       resolveResult: row.resolve_result,
       evaluatedAtBlock: row.height,
-      createdAt: row.created_at,
+      createdAt: evaluatedAtSource,
       trustTtlSeconds: getTrustEvaluationTtlSeconds(),
     });
 
     if (detailRaw === "full") {
-      const evaluatedAtIso = row.created_at != null ? new Date(row.created_at as Date | string).toISOString() : summary.evaluatedAt;
+      const evaluatedAtIso = evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluatedAt;
       const { credentials: rawCreds, failedCredentials } = extractQ1CredentialArrays(row.resolve_result);
       const credentials = (rawCreds as unknown[])
         .map((c) => this.normalizeQ1Credential(c, did))
@@ -888,7 +889,7 @@ export class TrustApiService extends BaseService {
     const meta = this.brokerMeta(evaluatedAtBlock);
     const evaluatedAt = new Date().toISOString();
 
-    const trRow = await knex("trust_registries").select("id", "aka").where({ did: ecosystemDid }).first();
+    const trRow = await knex("trust_registry").select("id", "aka").where({ did: ecosystemDid }).first();
     if (!trRow) {
       return ApiResponder.success(
         ctx,

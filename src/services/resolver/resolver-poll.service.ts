@@ -87,7 +87,7 @@ const ResolverPollService = {
         await markReattemptableAttempt(rid);
 
         if (String(item.resource_type) !== "did-evaluation") continue;
-        const m = /^did:(.+)@(\d+)$/.exec(rid);
+        const m = /^(did:.+)@(\d+)$/.exec(rid);
         if (!m) continue;
         const did = m[1];
         const height = Number(m[2]);

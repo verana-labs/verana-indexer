@@ -4075,7 +4075,7 @@
       },
       "TrustQ1Full": {
         "type": "object",
-        "description": "`detail=full` response: adds `credentials` and `failedCredentials`. Raw JSON: GET /verana/resolver/v1/refresh.",
+        "description": "`detail=full` response: adds `credentials` and `failedCredentials`. Raw JSON: POST /verana/resolver/v1/refresh.",
         "required": ["did", "trustStatus", "production", "evaluatedAt", "evaluatedAtBlock", "credentials", "failedCredentials"],
         "properties": {
           "did": { "type": "string" },

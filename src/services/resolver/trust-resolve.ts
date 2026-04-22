@@ -483,7 +483,7 @@ export async function resolveTrustForDidAtHeight(
     (derefTtlSeconds > 0 ? new DbDerefCache(derefTtlSeconds * 1000) : new InMemoryCache(5 * 60 * 1000));
   const cfg = getResolverRuntimeConfig();
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0;
-  const resourceId = `did:${did}@${blockHeight}`;
+  const resourceId = `${did}@${blockHeight}`;
 
   try {
     const result = (await resolveDID(did, {
@@ -596,7 +596,7 @@ export function buildTrustSummaryFromStoredRow(args: {
       evaluatedAtBlock: args.evaluatedAtBlock,
     };
     if (trustTtlSeconds > 0) {
-      base.expiresAt = new Date(Date.now() + trustTtlSeconds * 1000).toISOString();
+      base.expiresAt = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString();
     }
     return base;
   }
