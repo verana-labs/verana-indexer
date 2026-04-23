@@ -34,8 +34,8 @@ describe("🧪 PermProcessorService", () => {
       name: "permIngest",
       actions: {
         handleMsgCreateRootPermission: spyCreateRootPermission,
-        handleMsgCreatePermission: spyCreatePermission,
-        handleMsgExtendPermission: jest.fn(() => ({ saved: true })),
+        handleMsgSelfCreatePermission: spyCreatePermission,
+        handleMsgAdjustPermission: jest.fn(() => ({ saved: true })),
         handleMsgRevokePermission: jest.fn(() => ({ saved: true })),
         handleMsgStartPermissionVP: jest.fn(() => ({ saved: true })),
         handleMsgSetPermissionVPToValidated: jest.fn(() => ({ saved: true })),
@@ -99,12 +99,12 @@ describe("🧪 PermProcessorService", () => {
     const messages = [
       {
         type: PermissionMessageTypes.CreateRootPermission,
-        content: { "@type": "someType", id: "perm1", controller: "acc1" },
+        content: { "@type": "someType", id: "perm1", corporation: "acc1" },
         timestamp: "2025-10-08T10:00:00Z",
       },
       {
         type: PermissionMessageTypes.SelfCreatePermission,
-        content: { "@type": "someType", id: "perm2", controller: "acc2" },
+        content: { "@type": "someType", id: "perm2", corporation: "acc2" },
         timestamp: "2025-10-08T11:00:00Z",
       },
     ];
@@ -117,13 +117,13 @@ describe("🧪 PermProcessorService", () => {
     // ✅ Check first spy call
     const ctxRoot = spyCreateRootPermission.mock.calls[0][0];
     expect(ctxRoot.params.data.id).toBe("perm1");
-    expect(ctxRoot.params.data.controller).toBe("acc1");
+    expect(ctxRoot.params.data.corporation).toBe("acc1");
     expect(ctxRoot.params.data).toHaveProperty("timestamp");
 
     // ✅ Check second spy call
     const ctxPerm = spyCreatePermission.mock.calls[0][0];
     expect(ctxPerm.params.data.id).toBe("perm2");
-    expect(ctxPerm.params.data.controller).toBe("acc2");
+    expect(ctxPerm.params.data.corporation).toBe("acc2");
     expect(ctxPerm.params.data).toHaveProperty("timestamp");
   });
 

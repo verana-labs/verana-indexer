@@ -82,7 +82,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("handleMsgCreatePermission", () => {
+  describe("handleMsgSelfCreatePermission", () => {
     it("should insert new permission if root ecosystem exists", async () => {
       (knex.where as jest.Mock).mockReturnValueOnce({
         first: jest.fn().mockResolvedValue({ id: 1 }),

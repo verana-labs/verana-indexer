@@ -157,6 +157,7 @@ function normalizePermissionType(value: unknown): string {
   if (typeof value === "string") {
     const normalized = value.toUpperCase();
     if (
+      normalized === "UNSPECIFIED" ||
       normalized === "ISSUER" ||
       normalized === "VERIFIER" ||
       normalized === "ISSUER_GRANTOR" ||
@@ -170,13 +171,14 @@ function normalizePermissionType(value: unknown): string {
 
   const numeric = Number(value);
   switch (numeric) {
+    case 0: return "UNSPECIFIED";
     case 1: return "ISSUER";
     case 2: return "VERIFIER";
     case 3: return "ISSUER_GRANTOR";
     case 4: return "VERIFIER_GRANTOR";
     case 5: return "ECOSYSTEM";
     case 6: return "HOLDER";
-    default: return "ECOSYSTEM";
+    default: return "UNSPECIFIED";
   }
 }
 
@@ -184,7 +186,7 @@ function pickMessageValue(msg: Record<string, any>, snake: string, camel: string
   return msg[snake] ?? msg[camel];
 }
 
-function extractPermissionType(msg: Record<string, any>, fallback: string | number = "ECOSYSTEM") {
+function extractPermissionType(msg: Record<string, any>, fallback: string | number = "UNSPECIFIED") {
   return mapPermissionType(
     msg.permission_type ?? msg.permissionType ?? msg.type ?? fallback
   );
@@ -482,6 +484,7 @@ export default class PermIngestService extends Service {
     if (perm.revoked) return null;
     if (perm.slashed && !perm.repaid) return null;
     if (perm.vp_state !== 'VALIDATED' && perm.type !== 'ECOSYSTEM') return null;
+    if (perm.type === "UNSPECIFIED") return null;
 
     if (!effectiveUntil) {
       return false;
@@ -516,7 +519,7 @@ export default class PermIngestService extends Service {
           handler: async (ctx) =>
             this.handleCreateRootPermission(ctx.params.data),
         },
-        handleMsgCreatePermission: {
+        handleMsgSelfCreatePermission: {
           params: { data: "object" },
           handler: async (ctx) => this.handleCreatePermission(ctx.params.data),
         },

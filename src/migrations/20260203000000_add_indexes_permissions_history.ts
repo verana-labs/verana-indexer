@@ -9,8 +9,6 @@ export async function up(knex: Knex): Promise<void> {
       await knex.raw(
         `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_permissions_corporation ON permissions (corporation)`
       );
-    } else if (await knex.schema.hasColumn("permissions", "grantee")) {
-      await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_permissions_grantee ON permissions (grantee)`);
     }
     if (await knex.schema.hasColumn("permissions", "validator_perm_id")) {
       await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_permissions_validator_perm_id ON permissions (validator_perm_id)`);
@@ -25,8 +23,6 @@ export async function up(knex: Knex): Promise<void> {
       await knex.raw(
         `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_permission_history_corporation_height_desc ON permission_history (corporation, height DESC)`
       );
-    } else if (await knex.schema.hasColumn("permission_history", "grantee") && await knex.schema.hasColumn("permission_history", "height")) {
-      await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_permission_history_grantee_height_desc ON permission_history (grantee, height DESC)`);
     }
     if (await knex.schema.hasColumn("permission_sessions", "id")) {
       await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_permission_sessions_id ON permission_sessions (id)`);
@@ -58,25 +54,21 @@ export async function down(knex: Knex): Promise<void> {
   const client = (knex.client.config && (knex.client.config.client || "")).toString();
   if (client.includes("pg")) {
     await knex.raw(`DROP INDEX IF EXISTS idx_permissions_corporation`);
-    await knex.raw(`DROP INDEX IF EXISTS idx_permissions_grantee`);
     await knex.raw(`DROP INDEX IF EXISTS idx_permissions_validator_perm_id`);
     await knex.raw(`DROP INDEX IF EXISTS idx_permission_history_permission_height_desc`);
     await knex.raw(`DROP INDEX IF EXISTS idx_permission_history_schema_height_desc`);
     await knex.raw(`DROP INDEX IF EXISTS idx_permission_history_corporation_height_desc`);
-    await knex.raw(`DROP INDEX IF EXISTS idx_permission_history_grantee_height_desc`);
     await knex.raw(`DROP INDEX IF EXISTS idx_permission_sessions_id`);
     await knex.raw(`DROP INDEX IF EXISTS idx_permission_sessions_session_id`);
   } else {
     await knex.schema.table("permissions", (table) => {
       table.dropIndex(["corporation"], "idx_permissions_corporation");
-      table.dropIndex(["grantee"], "idx_permissions_grantee");
       table.dropIndex(["validator_perm_id"], "idx_permissions_validator_perm_id");
     });
     await knex.schema.table("permission_history", (table) => {
       table.dropIndex(["permission_id", "height"], "idx_permission_history_permission_height");
       table.dropIndex(["schema_id", "height"], "idx_permission_history_schema_height");
       table.dropIndex(["corporation", "height"], "idx_permission_history_corporation_height");
-      table.dropIndex(["grantee", "height"], "idx_permission_history_grantee_height");
     });
     await knex.schema.table("permission_sessions", (table) => {
       table.dropIndex(["id"], "idx_permission_sessions_id");

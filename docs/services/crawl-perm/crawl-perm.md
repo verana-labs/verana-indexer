@@ -81,12 +81,12 @@ Acts as a **message processor** that receives messages from external sources (li
           });
           break;
         case PermissionMessageTypes.SelfCreatePermission:
-          await this.broker.call("permIngest.handleMsgCreatePermission", {
+          await this.broker.call("permIngest.handleMsgSelfCreatePermission", {
             data: payload,
           });
           break;
         case PermissionMessageTypes.ExtendPermission:
-          await this.broker.call("permIngest.handleMsgExtendPermission", {
+          await this.broker.call("permIngest.handleMsgAdjustPermission", {
             data: payload,
           });
           break;
@@ -149,8 +149,8 @@ Responsible for **directly interacting with the database** to manage permissions
 **Actions include:**
 
 * `handleMsgCreateRootPermission`
-* `handleMsgCreatePermission`
-* `handleMsgExtendPermission`
+* `handleMsgSelfCreatePermission`
+* `handleMsgAdjustPermission`
 * `handleMsgRevokePermission`
 * `handleMsgStartPermissionVP`
 * `handleMsgSetPermissionVPToValidated`
@@ -232,7 +232,7 @@ flowchart TD
   A[Blockchain / Client Message] --> B[PermProcessorService]
   B --> C{Message Type}
   C -->|CreateRootPermission| D[handleMsgCreateRootPermission]
-  C -->|CreatePermission| E[handleMsgCreatePermission]
+  C -->|CreatePermission| E[handleMsgSelfCreatePermission]
   C -->|CreateOrUpdatePermissionSession| F[handleMsgCreateOrUpdatePermissionSession]
   F --> G[permission_sessions Table]
   D --> H[permissions Table]

@@ -5,6 +5,7 @@ import type _PermissionSession from './permission_session';
 
 export type PermissionType =
     | 'ECOSYSTEM'
+    | 'UNSPECIFIED'
     | 'ISSUER_GRANTOR'
     | 'VERIFIER_GRANTOR'
     | 'ISSUER'
@@ -80,7 +81,7 @@ export default class Permission extends BaseModel {
                 schema_id: { type: 'integer' },
                 type: {
                     type: 'string',
-                    enum: ['ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER']
+                    enum: ['UNSPECIFIED', 'ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER']
                 },
                 did: { type: 'string', maxLength: 255 },
                 corporation: { type: 'string', maxLength: 255 },

@@ -4,7 +4,7 @@ export type CorporationAction = "VP_RENEW" | "VP_CANCEL" | "PERM_REVOKE" | "PERM
 export type GranteeAction = CorporationAction;
 export type ValidatorAction = "VP_SET_VALIDATED" | "PERM_REVOKE" | "PERM_ADJUST" | "PERM_SLASH";
 
-export type PermissionType = "ISSUER_GRANTOR" | "ISSUER" | "VERIFIER_GRANTOR" | "VERIFIER" | "HOLDER" | "ECOSYSTEM";
+export type PermissionType = "UNSPECIFIED" | "ISSUER_GRANTOR" | "ISSUER" | "VERIFIER_GRANTOR" | "VERIFIER" | "HOLDER" | "ECOSYSTEM";
 export type ValidationState = "VALIDATION_STATE_UNSPECIFIED" | "PENDING" | "VALIDATED" | null;
 export type SchemaMode = "GRANTOR_VALIDATION" | "OPEN" | "ECOSYSTEM";
 
@@ -103,6 +103,7 @@ function normalizePermissionType(value: unknown): PermissionType {
   if (typeof value === "string") {
     const upper = value.toUpperCase();
     if (
+      upper === "UNSPECIFIED" ||
       upper === "ISSUER" || upper === "VERIFIER" || upper === "ISSUER_GRANTOR" ||
       upper === "VERIFIER_GRANTOR" || upper === "ECOSYSTEM" || upper === "HOLDER"
     ) {
@@ -111,13 +112,14 @@ function normalizePermissionType(value: unknown): PermissionType {
   }
   const n = Number(value);
   switch (n) {
+    case 0: return "UNSPECIFIED";
     case 1: return "ISSUER";
     case 2: return "VERIFIER";
     case 3: return "ISSUER_GRANTOR";
     case 4: return "VERIFIER_GRANTOR";
     case 5: return "ECOSYSTEM";
     case 6: return "HOLDER";
-    default: return "ECOSYSTEM";
+    default: return "UNSPECIFIED";
   }
 }
 

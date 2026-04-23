@@ -13,7 +13,7 @@ const hasColumns = async (knex: Knex, table: string, columns: string[]): Promise
 };
 
 const LIVE_INDEX_NAME = "idx_permissions_did_schema_type_modified_id";
-const LIVE_GRANTEE_QUERY_INDEX_NAME = "idx_permissions_corporation_schema_type_vp_validator_modified_id";
+const LIVE_CORPORATION_QUERY_INDEX_NAME = "idx_permissions_corporation_schema_type_vp_validator_modified_id";
 const LEGACY_LIVE_INDEX_NAMES = [
   "idx_permissions_did_type_schema_modified_id",
   "idx_permissions_did_type_schema_modified",
@@ -26,13 +26,13 @@ const LIST_FILTERS_SORT_ACTIVE_INDEX = "idx_permissions_active_schema_type_vp_va
 const HISTORY_LATEST_DID_SCHEMA_TYPE_IDX = "idx_permission_history_did_schema_type_permission_height_desc";
 const HISTORY_LATEST_ACTIVE_DID_SCHEMA_TYPE_IDX = "idx_permission_history_did_schema_type_active_permission_height_desc";
 const LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX = "idx_permissions_did_schema_type_active_modified_id";
-const HISTORY_GRANTEE_HEIGHT_PERMISSION_IDX = "idx_permission_history_grantee_height_permission_created_id_desc";
+const HISTORY_CORPORATION_HEIGHT_PERMISSION_IDX = "idx_permission_history_corporation_height_permission_created_id_desc";
 const HISTORY_VALIDATOR_HEIGHT_PERMISSION_IDX = "idx_permission_history_validator_height_permission_created_id_desc";
 const PERM_SESSION_HISTORY_RANKING_IDX = "idx_permission_session_history_session_height_created_id_desc";
 const CS_HISTORY_RANKING_IDX = "idx_credential_schema_history_schema_height_created_id_desc";
 const TR_HISTORY_RANKING_IDX = "idx_trust_registry_history_tr_height_created_id_desc";
-const TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX = "idx_td_history_corporation_height_created_id_desc";
-const PH_GRANTEE_SCHEMA_HEIGHT_CREATED_IDX = "idx_permission_history_corporation_schema_height_created_id_desc";
+const TD_HISTORY_CORPORATION_HEIGHT_CREATED_IDX = "idx_td_history_corporation_height_created_id_desc";
+const PH_CORPORATION_SCHEMA_HEIGHT_CREATED_IDX = "idx_permission_history_corporation_schema_height_created_id_desc";
 const CS_LIVE_TR_ARCHIVED_MODIFIED_IDX = "idx_cs_tr_archived_modified_id";
 const CS_LIVE_MODES_MODIFIED_IDX = "idx_cs_modes_modified_id";
 const CS_LIVE_PARTICIPANTS_IDX = "idx_cs_participants_id";
@@ -41,7 +41,7 @@ const CS_LIVE_ISSUED_IDX = "idx_cs_issued_id";
 const CS_LIVE_VERIFIED_IDX = "idx_cs_verified_id";
 const CS_LIVE_ECO_SLASH_EVENTS_IDX = "idx_cs_eco_slash_events_id";
 const CS_LIVE_NET_SLASH_EVENTS_IDX = "idx_cs_net_slash_events_id";
-const TR_LIVE_CTRL_ARCHIVED_MODIFIED_IDX = "idx_tr_corporation_archived_modified_id";
+const TR_LIVE_CORPORATION_ARCHIVED_MODIFIED_IDX = "idx_tr_corporation_archived_modified_id";
 const TR_LIVE_PARTICIPANTS_IDX = "idx_tr_participants_id";
 const TR_LIVE_ACTIVE_SCHEMAS_IDX = "idx_tr_active_schemas_id";
 const TR_LIVE_WEIGHT_IDX = "idx_tr_weight_id";
@@ -52,7 +52,7 @@ const TR_LIVE_NET_SLASH_EVENTS_IDX = "idx_tr_net_slash_events_id";
 const GM_BLOCK_HEIGHT_COMPUTED_AT_IDX = "idx_global_metrics_block_height_computed_at_desc";
 const PERM_SESSIONS_MODIFIED_ID_IDX = "idx_permission_sessions_modified_id_desc";
 const PERM_SESSION_HISTORY_SESSION_HEIGHT_MODIFIED_IDX = "idx_permission_session_history_session_height_modified_created_id_desc";
-const TR_HISTORY_CONTROLLER_HEIGHT_MODIFIED_TR_IDX = "idx_tr_history_controller_height_modified_tr_created_id_desc";
+const TR_HISTORY_CORPORATION_HEIGHT_MODIFIED_TR_IDX = "idx_tr_history_corporation_height_modified_tr_created_id_desc";
 const GFV_HISTORY_TR_HEIGHT_CREATED_ID_IDX = "idx_gfv_history_tr_height_created_id_desc";
 const GFV_HISTORY_TR_VERSION_HEIGHT_CREATED_ID_IDX = "idx_gfv_history_tr_version_height_created_id_desc";
 const GFD_HISTORY_GFV_TR_HEIGHT_CREATED_ID_IDX = "idx_gfd_history_gfv_tr_height_created_id_desc";
@@ -72,7 +72,7 @@ const LEGACY_REDUNDANT_HISTORY_INDEXES = [
 export async function up(knex: Knex): Promise<void> {
   const pg = isPostgres(knex);
   const liveColumns = ["did", "schema_id", "type", "modified", "id"];
-  const liveGranteeQueryColumns = ["corporation", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
+  const liveCorporationQueryColumns = ["corporation", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const listFiltersSortColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const activeListFiltersColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id", "slashed", "repaid"];
   const historyColumns = ["did", "schema_id", "type", "height", "modified", "created_at", "id"];
@@ -80,13 +80,13 @@ export async function up(knex: Knex): Promise<void> {
   const historyLatestColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id"];
   const historyLatestActiveColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id", "slashed", "repaid"];
   const liveActiveDidColumns = ["did", "schema_id", "type", "modified", "id", "slashed", "repaid"];
-  const historyByGranteeColumns = ["corporation", "height", "permission_id", "created_at", "id"];
+  const historyByCorporationColumns = ["corporation", "height", "permission_id", "created_at", "id"];
   const historyByValidatorColumns = ["validator_perm_id", "height", "permission_id", "created_at", "id"];
   const sessionHistoryRankingColumns = ["session_id", "height", "created_at", "id"];
   const csHistoryRankingColumns = ["credential_schema_id", "height", "created_at", "id"];
   const trHistoryRankingColumns = ["tr_id", "height", "created_at", "id"];
   const tdHistoryRankingColumns = ["corporation", "height", "created_at", "id"];
-  const historyGranteeSchemaColumns = ["corporation", "schema_id", "height", "created_at", "id"];
+  const historyCorporationSchemaColumns = ["corporation", "schema_id", "height", "created_at", "id"];
   const csTrArchivedModifiedColumns = ["tr_id", "archived", "modified", "id"];
   const csModesColumns = ["issuer_onboarding_mode", "verifier_onboarding_mode", "modified", "id"];
   const csParticipantsColumns = ["participants", "id"];
@@ -95,7 +95,7 @@ export async function up(knex: Knex): Promise<void> {
   const csVerifiedColumns = ["verified", "id"];
   const csEcoSlashColumns = ["ecosystem_slash_events", "id"];
   const csNetSlashColumns = ["network_slash_events", "id"];
-  const trCtrlArchivedModifiedColumns = ["corporation", "archived", "modified", "id"];
+  const trCorporationArchivedModifiedColumns = ["corporation", "archived", "modified", "id"];
   const trParticipantsColumns = ["participants", "id"];
   const trActiveSchemasColumns = ["active_schemas", "id"];
   const trWeightColumns = ["weight", "id"];
@@ -106,7 +106,7 @@ export async function up(knex: Knex): Promise<void> {
   const gmLookupColumns = ["block_height", "computed_at"];
   const permSessionsModifiedColumns = ["modified", "id"];
   const permSessionHistorySessionHeightModifiedColumns = ["session_id", "height", "modified", "created_at", "id"];
-  const trHistoryControllerHeightModifiedColumns = ["corporation", "height", "modified", "tr_id", "created_at", "id"];
+  const trHistoryCorporationHeightModifiedColumns = ["corporation", "height", "modified", "tr_id", "created_at", "id"];
   const gfvHistoryTrHeightColumns = ["tr_id", "height", "created_at", "id"];
   const gfvHistoryTrVersionHeightColumns = ["tr_id", "version", "height", "created_at", "id"];
   const gfdHistoryGfvTrHeightColumns = ["gfv_id", "tr_id", "height", "created_at", "id"];
@@ -119,9 +119,9 @@ export async function up(knex: Knex): Promise<void> {
   const statsEntityGranularityIdTimeColumns = ["entity_type", "granularity", "entity_id", "timestamp"];
   const statsGlobalGranularityTimeColumns = ["entity_type", "granularity", "timestamp"];
 
-  const [hasLiveColumns, hasLiveGranteeQueryColumns, hasListFiltersSortColumns, hasActiveListFiltersColumns, hasHistoryColumns, hasHistoryRankingColumns, hasHistoryLatestColumns, hasHistoryLatestActiveColumns, hasLiveActiveDidColumns, hasHistoryByGranteeColumns, hasHistoryByValidatorColumns, hasSessionHistoryRankingColumns, hasCsHistoryRankingColumns, hasTrHistoryRankingColumns, hasTdHistoryRankingColumns, hasHistoryGranteeSchemaColumns, hasCsTrArchivedModifiedColumns, hasCsModesColumns, hasCsParticipantsColumns, hasCsWeightColumns, hasCsIssuedColumns, hasCsVerifiedColumns, hasCsEcoSlashColumns, hasCsNetSlashColumns, hasTrCtrlArchivedModifiedColumns, hasTrParticipantsColumns, hasTrActiveSchemasColumns, hasTrWeightColumns, hasTrIssuedColumns, hasTrVerifiedColumns, hasTrEcoSlashColumns, hasTrNetSlashColumns, hasGlobalMetricsLookupColumns, hasPermSessionsModifiedColumns, hasPermSessionHistorySessionHeightModifiedColumns, hasTrHistoryControllerHeightModifiedColumns, hasGfvHistoryTrHeightColumns, hasGfvHistoryTrVersionHeightColumns, hasGfdHistoryGfvTrHeightColumns, hasGfdHistoryTrHeightColumns, hasModuleParamsHistoryModuleHeightColumns, hasPermissionsCountryColumns, hasPhSchemaPermissionHeightColumns, hasCshTrSchemaHeightColumns, hasPhSchemaEventHeightPermissionColumns, hasStatsEntityGranularityIdTimeColumns, hasStatsGlobalGranularityTimeColumns] = await Promise.all([
+  const [hasLiveColumns, hasLiveCorporationQueryColumns, hasListFiltersSortColumns, hasActiveListFiltersColumns, hasHistoryColumns, hasHistoryRankingColumns, hasHistoryLatestColumns, hasHistoryLatestActiveColumns, hasLiveActiveDidColumns, hasHistoryByCorporationColumns, hasHistoryByValidatorColumns, hasSessionHistoryRankingColumns, hasCsHistoryRankingColumns, hasTrHistoryRankingColumns, hasTdHistoryRankingColumns, hasHistoryCorporationSchemaColumns, hasCsTrArchivedModifiedColumns, hasCsModesColumns, hasCsParticipantsColumns, hasCsWeightColumns, hasCsIssuedColumns, hasCsVerifiedColumns, hasCsEcoSlashColumns, hasCsNetSlashColumns, hasTrCorporationArchivedModifiedColumns, hasTrParticipantsColumns, hasTrActiveSchemasColumns, hasTrWeightColumns, hasTrIssuedColumns, hasTrVerifiedColumns, hasTrEcoSlashColumns, hasTrNetSlashColumns, hasGlobalMetricsLookupColumns, hasPermSessionsModifiedColumns, hasPermSessionHistorySessionHeightModifiedColumns, hasTrHistoryCorporationHeightModifiedColumns, hasGfvHistoryTrHeightColumns, hasGfvHistoryTrVersionHeightColumns, hasGfdHistoryGfvTrHeightColumns, hasGfdHistoryTrHeightColumns, hasModuleParamsHistoryModuleHeightColumns, hasPermissionsCountryColumns, hasPhSchemaPermissionHeightColumns, hasCshTrSchemaHeightColumns, hasPhSchemaEventHeightPermissionColumns, hasStatsEntityGranularityIdTimeColumns, hasStatsGlobalGranularityTimeColumns] = await Promise.all([
     hasColumns(knex, "permissions", liveColumns),
-    hasColumns(knex, "permissions", liveGranteeQueryColumns),
+    hasColumns(knex, "permissions", liveCorporationQueryColumns),
     hasColumns(knex, "permissions", listFiltersSortColumns),
     hasColumns(knex, "permissions", activeListFiltersColumns),
     hasColumns(knex, "permission_history", historyColumns),
@@ -129,13 +129,13 @@ export async function up(knex: Knex): Promise<void> {
     hasColumns(knex, "permission_history", historyLatestColumns),
     hasColumns(knex, "permission_history", historyLatestActiveColumns),
     hasColumns(knex, "permissions", liveActiveDidColumns),
-    hasColumns(knex, "permission_history", historyByGranteeColumns),
+    hasColumns(knex, "permission_history", historyByCorporationColumns),
     hasColumns(knex, "permission_history", historyByValidatorColumns),
     hasColumns(knex, "permission_session_history", sessionHistoryRankingColumns),
     hasColumns(knex, "credential_schema_history", csHistoryRankingColumns),
     hasColumns(knex, "trust_registry_history", trHistoryRankingColumns),
     hasColumns(knex, "trust_deposit_history", tdHistoryRankingColumns),
-    hasColumns(knex, "permission_history", historyGranteeSchemaColumns),
+    hasColumns(knex, "permission_history", historyCorporationSchemaColumns),
     hasColumns(knex, "credential_schemas", csTrArchivedModifiedColumns),
     hasColumns(knex, "credential_schemas", csModesColumns),
     hasColumns(knex, "credential_schemas", csParticipantsColumns),
@@ -144,7 +144,7 @@ export async function up(knex: Knex): Promise<void> {
     hasColumns(knex, "credential_schemas", csVerifiedColumns),
     hasColumns(knex, "credential_schemas", csEcoSlashColumns),
     hasColumns(knex, "credential_schemas", csNetSlashColumns),
-    hasColumns(knex, "trust_registry", trCtrlArchivedModifiedColumns),
+    hasColumns(knex, "trust_registry", trCorporationArchivedModifiedColumns),
     hasColumns(knex, "trust_registry", trParticipantsColumns),
     hasColumns(knex, "trust_registry", trActiveSchemasColumns),
     hasColumns(knex, "trust_registry", trWeightColumns),
@@ -155,7 +155,7 @@ export async function up(knex: Knex): Promise<void> {
     hasColumns(knex, "global_metrics", gmLookupColumns),
     hasColumns(knex, "permission_sessions", permSessionsModifiedColumns),
     hasColumns(knex, "permission_session_history", permSessionHistorySessionHeightModifiedColumns),
-    hasColumns(knex, "trust_registry_history", trHistoryControllerHeightModifiedColumns),
+    hasColumns(knex, "trust_registry_history", trHistoryCorporationHeightModifiedColumns),
     hasColumns(knex, "governance_framework_version_history", gfvHistoryTrHeightColumns),
     hasColumns(knex, "governance_framework_version_history", gfvHistoryTrVersionHeightColumns),
     hasColumns(knex, "governance_framework_document_history", gfdHistoryGfvTrHeightColumns),
@@ -182,9 +182,9 @@ export async function up(knex: Knex): Promise<void> {
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ${LIVE_INDEX_NAME}
         ON permissions (did, schema_id, type, modified DESC, id DESC)
       `);
-      if (hasLiveGranteeQueryColumns) {
+      if (hasLiveCorporationQueryColumns) {
         await knex.raw(`
-          CREATE INDEX CONCURRENTLY IF NOT EXISTS ${LIVE_GRANTEE_QUERY_INDEX_NAME}
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS ${LIVE_CORPORATION_QUERY_INDEX_NAME}
           ON permissions (corporation, schema_id, type, vp_state, validator_perm_id, modified ASC, id DESC)
         `);
       }
@@ -235,9 +235,9 @@ export async function up(knex: Knex): Promise<void> {
         WHERE slashed IS NULL AND repaid IS NULL
       `);
     }
-    if (hasHistoryByGranteeColumns) {
+    if (hasHistoryByCorporationColumns) {
       await knex.raw(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${HISTORY_GRANTEE_HEIGHT_PERMISSION_IDX}
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${HISTORY_CORPORATION_HEIGHT_PERMISSION_IDX}
         ON permission_history (corporation, height DESC, permission_id, created_at DESC, id DESC)
       `);
     }
@@ -267,13 +267,13 @@ export async function up(knex: Knex): Promise<void> {
     }
     if (hasTdHistoryRankingColumns) {
       await knex.raw(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX}
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TD_HISTORY_CORPORATION_HEIGHT_CREATED_IDX}
         ON trust_deposit_history (corporation, height DESC, created_at DESC, id DESC)
       `);
     }
-    if (hasHistoryGranteeSchemaColumns) {
+    if (hasHistoryCorporationSchemaColumns) {
       await knex.raw(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${PH_GRANTEE_SCHEMA_HEIGHT_CREATED_IDX}
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${PH_CORPORATION_SCHEMA_HEIGHT_CREATED_IDX}
         ON permission_history (corporation, schema_id, height DESC, created_at DESC, id DESC)
       `);
     }
@@ -295,9 +295,9 @@ export async function up(knex: Knex): Promise<void> {
     if (hasCsVerifiedColumns) await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${CS_LIVE_VERIFIED_IDX} ON credential_schemas (verified, id DESC)`);
     if (hasCsEcoSlashColumns) await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${CS_LIVE_ECO_SLASH_EVENTS_IDX} ON credential_schemas (ecosystem_slash_events, id DESC)`);
     if (hasCsNetSlashColumns) await knex.raw(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${CS_LIVE_NET_SLASH_EVENTS_IDX} ON credential_schemas (network_slash_events, id DESC)`);
-    if (hasTrCtrlArchivedModifiedColumns) {
+    if (hasTrCorporationArchivedModifiedColumns) {
       await knex.raw(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_LIVE_CTRL_ARCHIVED_MODIFIED_IDX}
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_LIVE_CORPORATION_ARCHIVED_MODIFIED_IDX}
         ON trust_registry (corporation, archived, modified DESC, id DESC)
       `);
     }
@@ -326,9 +326,9 @@ export async function up(knex: Knex): Promise<void> {
         ON permission_session_history (session_id, height DESC, modified DESC, created_at DESC, id DESC)
       `);
     }
-    if (hasTrHistoryControllerHeightModifiedColumns) {
+    if (hasTrHistoryCorporationHeightModifiedColumns) {
       await knex.raw(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_HISTORY_CONTROLLER_HEIGHT_MODIFIED_TR_IDX}
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS ${TR_HISTORY_CORPORATION_HEIGHT_MODIFIED_TR_IDX}
         ON trust_registry_history (corporation, height DESC, modified DESC, tr_id, created_at DESC, id DESC)
       `);
     }
@@ -407,9 +407,9 @@ export async function up(knex: Knex): Promise<void> {
       table.index(liveColumns, LIVE_INDEX_NAME);
     });
   }
-  if (hasLiveGranteeQueryColumns) {
+  if (hasLiveCorporationQueryColumns) {
     await knex.schema.table("permissions", (table) => {
-      table.index(liveGranteeQueryColumns, LIVE_GRANTEE_QUERY_INDEX_NAME);
+      table.index(liveCorporationQueryColumns, LIVE_CORPORATION_QUERY_INDEX_NAME);
     });
   }
   if (hasListFiltersSortColumns) {
@@ -438,9 +438,9 @@ export async function up(knex: Knex): Promise<void> {
       table.index(["did", "schema_id", "type", "modified", "id"], LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX);
     });
   }
-  if (hasHistoryByGranteeColumns) {
+  if (hasHistoryByCorporationColumns) {
     await knex.schema.table("permission_history", (table) => {
-      table.index(historyByGranteeColumns, HISTORY_GRANTEE_HEIGHT_PERMISSION_IDX);
+      table.index(historyByCorporationColumns, HISTORY_CORPORATION_HEIGHT_PERMISSION_IDX);
     });
   }
   if (hasHistoryByValidatorColumns) {
@@ -465,7 +465,7 @@ export async function up(knex: Knex): Promise<void> {
   }
   if (hasTdHistoryRankingColumns) {
     await knex.schema.table("trust_deposit_history", (table) => {
-      table.index(tdHistoryRankingColumns, TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX);
+      table.index(tdHistoryRankingColumns, TD_HISTORY_CORPORATION_HEIGHT_CREATED_IDX);
     });
   }
   if (hasStatsEntityGranularityIdTimeColumns) {
@@ -483,13 +483,13 @@ export async function up(knex: Knex): Promise<void> {
 export async function down(knex: Knex): Promise<void> {
   const pg = isPostgres(knex);
   const liveColumns = ["did", "schema_id", "type", "modified", "id"];
-  const liveGranteeQueryColumns = ["corporation", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
+  const liveCorporationQueryColumns = ["corporation", "schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const listFiltersSortColumns = ["schema_id", "type", "vp_state", "validator_perm_id", "modified", "id"];
   const historyColumns = ["did", "schema_id", "type", "height", "modified", "created_at", "id"];
   const historyRankingColumns = ["permission_id", "height", "created_at", "id"];
   const historyLatestColumns = ["did", "schema_id", "type", "permission_id", "height", "created_at", "id"];
   const liveActiveDidDropColumns = ["did", "schema_id", "type", "modified", "id"];
-  const historyByGranteeColumns = ["corporation", "height", "permission_id", "created_at", "id"];
+  const historyByCorporationColumns = ["corporation", "height", "permission_id", "created_at", "id"];
   const historyByValidatorColumns = ["validator_perm_id", "height", "permission_id", "created_at", "id"];
   const sessionHistoryRankingColumns = ["session_id", "height", "created_at", "id"];
   const csHistoryRankingColumns = ["credential_schema_id", "height", "created_at", "id"];
@@ -501,7 +501,7 @@ export async function down(knex: Knex): Promise<void> {
   if (pg) {
     for (const indexName of [
       LIVE_INDEX_NAME,
-      LIVE_GRANTEE_QUERY_INDEX_NAME,
+      LIVE_CORPORATION_QUERY_INDEX_NAME,
       LIST_FILTERS_SORT_INDEX,
       LIST_FILTERS_SORT_ACTIVE_INDEX,
       HISTORY_LATEST_DID_SCHEMA_TYPE_IDX,
@@ -511,13 +511,13 @@ export async function down(knex: Knex): Promise<void> {
       ...LEGACY_REDUNDANT_HISTORY_INDEXES,
       HISTORY_INDEX_NAME,
       HISTORY_RANKING_INDEX_NAME,
-      HISTORY_GRANTEE_HEIGHT_PERMISSION_IDX,
+      HISTORY_CORPORATION_HEIGHT_PERMISSION_IDX,
       HISTORY_VALIDATOR_HEIGHT_PERMISSION_IDX,
       PERM_SESSION_HISTORY_RANKING_IDX,
       CS_HISTORY_RANKING_IDX,
       TR_HISTORY_RANKING_IDX,
-      TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX,
-      PH_GRANTEE_SCHEMA_HEIGHT_CREATED_IDX,
+      TD_HISTORY_CORPORATION_HEIGHT_CREATED_IDX,
+      PH_CORPORATION_SCHEMA_HEIGHT_CREATED_IDX,
       CS_LIVE_TR_ARCHIVED_MODIFIED_IDX,
       CS_LIVE_MODES_MODIFIED_IDX,
       CS_LIVE_PARTICIPANTS_IDX,
@@ -526,7 +526,7 @@ export async function down(knex: Knex): Promise<void> {
       CS_LIVE_VERIFIED_IDX,
       CS_LIVE_ECO_SLASH_EVENTS_IDX,
       CS_LIVE_NET_SLASH_EVENTS_IDX,
-      TR_LIVE_CTRL_ARCHIVED_MODIFIED_IDX,
+      TR_LIVE_CORPORATION_ARCHIVED_MODIFIED_IDX,
       TR_LIVE_PARTICIPANTS_IDX,
       TR_LIVE_ACTIVE_SCHEMAS_IDX,
       TR_LIVE_WEIGHT_IDX,
@@ -537,7 +537,7 @@ export async function down(knex: Knex): Promise<void> {
       GM_BLOCK_HEIGHT_COMPUTED_AT_IDX,
       PERM_SESSIONS_MODIFIED_ID_IDX,
       PERM_SESSION_HISTORY_SESSION_HEIGHT_MODIFIED_IDX,
-      TR_HISTORY_CONTROLLER_HEIGHT_MODIFIED_TR_IDX,
+      TR_HISTORY_CORPORATION_HEIGHT_MODIFIED_TR_IDX,
       GFV_HISTORY_TR_HEIGHT_CREATED_ID_IDX,
       GFV_HISTORY_TR_VERSION_HEIGHT_CREATED_ID_IDX,
       GFD_HISTORY_GFV_TR_HEIGHT_CREATED_ID_IDX,
@@ -555,15 +555,15 @@ export async function down(knex: Knex): Promise<void> {
     return;
   }
 
-  const [hasLiveColumns, hasLiveGranteeQueryColumns, hasListFiltersSortColumns, hasHistoryColumns, hasHistoryRankingColumns, hasHistoryLatestColumns, hasLiveActiveDidColumns, hasHistoryByGranteeColumns, hasHistoryByValidatorColumns, hasSessionHistoryRankingColumns, hasCsHistoryRankingColumns, hasTrHistoryRankingColumns, hasTdHistoryRankingColumns, hasStatsEntityGranularityIdTimeColumns, hasStatsGlobalGranularityTimeColumns] = await Promise.all([
+  const [hasLiveColumns, hasLiveCorporationQueryColumns, hasListFiltersSortColumns, hasHistoryColumns, hasHistoryRankingColumns, hasHistoryLatestColumns, hasLiveActiveDidColumns, hasHistoryByCorporationColumns, hasHistoryByValidatorColumns, hasSessionHistoryRankingColumns, hasCsHistoryRankingColumns, hasTrHistoryRankingColumns, hasTdHistoryRankingColumns, hasStatsEntityGranularityIdTimeColumns, hasStatsGlobalGranularityTimeColumns] = await Promise.all([
     hasColumns(knex, "permissions", liveColumns),
-    hasColumns(knex, "permissions", liveGranteeQueryColumns),
+    hasColumns(knex, "permissions", liveCorporationQueryColumns),
     hasColumns(knex, "permissions", listFiltersSortColumns),
     hasColumns(knex, "permission_history", historyColumns),
     hasColumns(knex, "permission_history", historyRankingColumns),
     hasColumns(knex, "permission_history", historyLatestColumns),
     hasColumns(knex, "permissions", liveActiveDidDropColumns),
-    hasColumns(knex, "permission_history", historyByGranteeColumns),
+    hasColumns(knex, "permission_history", historyByCorporationColumns),
     hasColumns(knex, "permission_history", historyByValidatorColumns),
     hasColumns(knex, "permission_session_history", sessionHistoryRankingColumns),
     hasColumns(knex, "credential_schema_history", csHistoryRankingColumns),
@@ -578,9 +578,9 @@ export async function down(knex: Knex): Promise<void> {
       table.dropIndex(liveColumns, LIVE_INDEX_NAME);
     });
   }
-  if (hasLiveGranteeQueryColumns) {
+  if (hasLiveCorporationQueryColumns) {
     await knex.schema.table("permissions", (table) => {
-      table.dropIndex(liveGranteeQueryColumns, LIVE_GRANTEE_QUERY_INDEX_NAME);
+      table.dropIndex(liveCorporationQueryColumns, LIVE_CORPORATION_QUERY_INDEX_NAME);
     });
   }
   if (hasListFiltersSortColumns) {
@@ -610,9 +610,9 @@ export async function down(knex: Knex): Promise<void> {
       table.dropIndex(liveActiveDidDropColumns, LIVE_ACTIVE_DID_SCHEMA_TYPE_IDX);
     });
   }
-  if (hasHistoryByGranteeColumns) {
+  if (hasHistoryByCorporationColumns) {
     await knex.schema.table("permission_history", (table) => {
-      table.dropIndex(historyByGranteeColumns, HISTORY_GRANTEE_HEIGHT_PERMISSION_IDX);
+      table.dropIndex(historyByCorporationColumns, HISTORY_CORPORATION_HEIGHT_PERMISSION_IDX);
     });
   }
   if (hasHistoryByValidatorColumns) {
@@ -637,7 +637,7 @@ export async function down(knex: Knex): Promise<void> {
   }
   if (hasTdHistoryRankingColumns) {
     await knex.schema.table("trust_deposit_history", (table) => {
-      table.dropIndex(tdHistoryRankingColumns, TD_HISTORY_ACCOUNT_HEIGHT_CREATED_IDX);
+      table.dropIndex(tdHistoryRankingColumns, TD_HISTORY_CORPORATION_HEIGHT_CREATED_IDX);
     });
   }
   if (hasStatsEntityGranularityIdTimeColumns) {
