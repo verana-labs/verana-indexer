@@ -25,22 +25,32 @@ export default class IndexerEventsService extends BaseService {
   public async broadcastBlockProcessed(ctx: Context<{ height: number; timestamp?: string }>) {
     const { height, timestamp } = ctx.params;
     const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
-    
+
+    let eventsNotified = 0;
     try {
       const events = await persistIndexerEventsForBlock(height);
       events.forEach((event) => eventsBroadcaster.broadcastIndexerEvent(event));
-      eventsBroadcaster.broadcastBlockProcessed(height, eventTimestamp);
-      
+      eventsNotified = events.length;
       return {
         success: true,
         clientsNotified: eventsBroadcaster.getWSClientCount(),
-        eventsNotified: events.length,
+        eventsNotified,
         height,
         timestamp: eventTimestamp.toISOString(),
       };
     } catch (error) {
       this.logger.error("[IndexerEventsService] Error broadcasting block processed:", error);
-      throw error;
+      return {
+        success: false,
+        clientsNotified: eventsBroadcaster.getWSClientCount(),
+        eventsNotified,
+        height,
+        timestamp: eventTimestamp.toISOString(),
+        error: (error as any)?.message ?? String(error),
+      };
+    } finally {
+      // Keep legacy heartbeat even if persistence fails.
+      eventsBroadcaster.broadcastBlockProcessed(height, eventTimestamp);
     }
   }
 

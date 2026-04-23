@@ -146,9 +146,46 @@ const TABLE_COLUMNS_TTL_MS = 10 * 60 * 1000;
 const tableColumnsCache = new Map<string, { expiresAt: number; value: Promise<Set<string>> }>();
 
 const DID_QUERY_CACHE_TTL_MS = 60 * 1000;
-const permissionSnapshotCache = new Map<string, { expiresAt: number; value: Promise<any> }>();
-const credentialSchemaSnapshotCache = new Map<string, { expiresAt: number; value: Promise<any> }>();
-const trustRegistrySnapshotCache = new Map<string, { expiresAt: number; value: Promise<any> }>();
+const CACHE_MAX_ENTRIES = 5000;
+
+class ExpiringBoundedMap<K, V extends { expiresAt: number }> extends Map<K, V> {
+  constructor(private readonly maxEntries: number) {
+    super();
+  }
+
+  private pruneExpired(now = Date.now()): void {
+    for (const [key, entry] of super.entries()) {
+      if (entry.expiresAt <= now) {
+        super.delete(key);
+      }
+    }
+  }
+
+  override get(key: K): V | undefined {
+    const entry = super.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now()) {
+      super.delete(key);
+      return undefined;
+    }
+    return entry;
+  }
+
+  override set(key: K, value: V): this {
+    this.pruneExpired();
+    super.set(key, value);
+    while (this.size > this.maxEntries) {
+      const oldestKey = this.keys().next().value as K | undefined;
+      if (oldestKey === undefined) break;
+      super.delete(oldestKey);
+    }
+    return this;
+  }
+}
+
+const permissionSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
+const credentialSchemaSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
+const trustRegistrySnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
 
 function toIsoSeconds(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
@@ -397,6 +434,7 @@ async function buildIndexerTxEvents(args: {
   afterBlockHeight?: number;
   blockHeight?: number;
   limit?: number;
+  offset?: number;
 }): Promise<IndexerTxEvent[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 100))));
   const query = knex("transaction_message as tm")
@@ -421,14 +459,24 @@ async function buildIndexerTxEvents(args: {
     .limit(limit);
 
   applyBlockHeightFilter(query, args, "tx.height");
+  if (Number.isInteger(args.offset) && Number(args.offset) > 0) {
+    query.offset(Number(args.offset));
+  }
 
   const rows = (await query) as EventRow[];
   return (await Promise.all(rows.map((row) => toIndexerEvent(row)))).filter(Boolean) as IndexerTxEvent[];
 }
 
 export async function persistIndexerEventsForBlock(blockHeight: number): Promise<IndexerEventRecord[]> {
-  const txEvents = await buildIndexerTxEvents({ blockHeight, limit: 500 });
-  const rows = txEvents.flatMap(toEventRows);
+  const rows: Array<Record<string, unknown>> = [];
+  const pageSize = 500;
+  let offset = 0;
+  while (true) {
+    const txEvents = await buildIndexerTxEvents({ blockHeight, limit: pageSize, offset });
+    rows.push(...txEvents.flatMap(toEventRows));
+    if (txEvents.length < pageSize) break;
+    offset += pageSize;
+  }
   let insertedIds: number[] = [];
 
   if (rows.length > 0) {
@@ -443,7 +491,15 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   }
 
   if (insertedIds.length === 0) return [];
-  return listIndexerEvents({ ids: insertedIds, limit: 500 });
+
+  const results: IndexerEventRecord[] = [];
+  const chunkSize = 500;
+  for (let i = 0; i < insertedIds.length; i += chunkSize) {
+    const chunk = insertedIds.slice(i, i + chunkSize);
+    const rows = await listIndexerEvents({ ids: chunk, limit: chunk.length });
+    results.push(...rows);
+  }
+  return results;
 }
 
 export async function listIndexerEvents(args: {
