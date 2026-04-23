@@ -2,7 +2,8 @@ import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended"
 import { Context, Errors, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
-import { eventsBroadcaster, isValidDid } from "./events_broadcaster";
+import { eventsBroadcaster } from "./events_broadcaster";
+import { isValidDid } from "./api_shared";
 import { listIndexerEvents, persistIndexerEventsForBlock } from "./indexer_events_query";
 
 @Service({

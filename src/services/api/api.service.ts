@@ -10,6 +10,7 @@ import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 import { eventsBroadcaster } from "./events_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
+import { isUnknownMessageError } from "./api_shared";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 const REQUEST_ACCEPTED_NS = Symbol("requestAcceptedNs");
@@ -131,12 +132,6 @@ async function parseAtBlockHeight(
   ctx.meta.$headers = ctx.meta.$headers || {};
   ctx.meta.$headers["at-block-height"] = String(parsedHeight);
   ctx.meta.$headers["At-Block-Height"] = String(parsedHeight);
-}
-
-function isUnknownMessageError(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  return errorMessage.includes('Unknown Verana message types') ||
-         errorMessage.includes('UNKNOWN VERANA MESSAGE TYPES');
 }
 
 async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {

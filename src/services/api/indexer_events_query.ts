@@ -4,6 +4,7 @@ import {
   VeranaPermissionMessageTypes,
   VeranaTrustRegistryMessageTypes,
 } from "../../common/verana-message-types";
+import { applyBlockHeightFilter, isValidDid } from "./api_shared";
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
@@ -140,7 +141,14 @@ const EVENT_META: Record<string, EventMeta> = {
 };
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
-const tableColumnsCache = new Map<string, Promise<Set<string>>>();
+
+const TABLE_COLUMNS_TTL_MS = 10 * 60 * 1000;
+const tableColumnsCache = new Map<string, { expiresAt: number; value: Promise<Set<string>> }>();
+
+const DID_QUERY_CACHE_TTL_MS = 60 * 1000;
+const permissionSnapshotCache = new Map<string, { expiresAt: number; value: Promise<any> }>();
+const credentialSchemaSnapshotCache = new Map<string, { expiresAt: number; value: Promise<any> }>();
+const trustRegistrySnapshotCache = new Map<string, { expiresAt: number; value: Promise<any> }>();
 
 function toIsoSeconds(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
@@ -148,7 +156,7 @@ function toIsoSeconds(value: Date | string): string {
 }
 
 function isDid(value: unknown): value is string {
-  return typeof value === "string" && value.startsWith("did:");
+  return isValidDid(value);
 }
 
 function addDid(out: Set<string>, value: unknown): void {
@@ -181,14 +189,15 @@ function readNumber(content: unknown, keys: string[]): number | null {
 }
 
 async function getTableColumns(tableName: string): Promise<Set<string>> {
-  let columns = tableColumnsCache.get(tableName);
-  if (!columns) {
-    columns = knex(tableName)
-      .columnInfo()
-      .then((info) => new Set(Object.keys(info)));
-    tableColumnsCache.set(tableName, columns);
-  }
-  return columns;
+  const now = Date.now();
+  const cached = tableColumnsCache.get(tableName);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  const value = knex(tableName)
+    .columnInfo()
+    .then((info) => new Set(Object.keys(info)));
+  tableColumnsCache.set(tableName, { expiresAt: now + TABLE_COLUMNS_TTL_MS, value });
+  return value;
 }
 
 async function existingColumns(tableName: string, columns: string[]): Promise<string[]> {
@@ -198,15 +207,27 @@ async function existingColumns(tableName: string, columns: string[]): Promise<st
 
 async function addTrustRegistryDids(trId: number | null, height: number, dids: Set<string>): Promise<void> {
   if (!trId) return;
+  const now = Date.now();
+  const cacheKey = `${trId}:${height}`;
+  const cached = trustRegistrySnapshotCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    const row = await cached.value;
+    addDid(dids, (row as any)?.did);
+    addDid(dids, (row as any)?.controller);
+    return;
+  }
   const columns = await existingColumns("trust_registry_history", ["did", "controller"]);
   if (columns.length === 0) return;
 
-  const row = await knex("trust_registry_history")
+  const value = knex("trust_registry_history")
     .select(columns)
     .where("tr_id", trId)
     .where("height", "<=", height)
     .orderBy("height", "desc")
     .first();
+  trustRegistrySnapshotCache.set(cacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value });
+
+  const row = await value;
   addDid(dids, (row as any)?.did);
   addDid(dids, (row as any)?.controller);
 }
@@ -215,6 +236,9 @@ async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<strin
   if (meta.module === "permission") {
     const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
     if (!permissionId) return undefined;
+    const now = Date.now();
+    const permCacheKey = `${permissionId}:${row.block_height}`;
+    const cachedPerm = permissionSnapshotCache.get(permCacheKey);
     const columns = await existingColumns("permission_history", [
       "permission_id",
       "did",
@@ -226,12 +250,19 @@ async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<strin
       "repaid_by",
       "schema_id",
     ]);
-    const perm = await knex("permission_history")
-      .select(columns)
-      .where("permission_id", permissionId)
-      .where("height", "<=", row.block_height)
-      .orderBy("height", "desc")
-      .first();
+    const permPromise =
+      cachedPerm && cachedPerm.expiresAt > now
+        ? cachedPerm.value
+        : knex("permission_history")
+          .select(columns)
+          .where("permission_id", permissionId)
+          .where("height", "<=", row.block_height)
+          .orderBy("height", "desc")
+          .first();
+    if (!cachedPerm || cachedPerm.expiresAt <= now) {
+      permissionSnapshotCache.set(permCacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value: permPromise });
+    }
+    const perm = await permPromise;
     addDid(dids, (perm as any)?.did);
     addDid(dids, (perm as any)?.grantee);
     addDid(dids, (perm as any)?.created_by);
@@ -241,12 +272,21 @@ async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<strin
     addDid(dids, (perm as any)?.repaid_by);
     const schemaId = Number((perm as any)?.schema_id);
     if (Number.isInteger(schemaId) && schemaId > 0) {
-      const cs = await knex("credential_schema_history")
-        .select("tr_id")
-        .where("credential_schema_id", schemaId)
-        .where("height", "<=", row.block_height)
-        .orderBy("height", "desc")
-        .first();
+      const csCacheKey = `${schemaId}:${row.block_height}`;
+      const cachedCs = credentialSchemaSnapshotCache.get(csCacheKey);
+      const csPromise =
+        cachedCs && cachedCs.expiresAt > now
+          ? cachedCs.value
+          : knex("credential_schema_history")
+            .select("tr_id")
+            .where("credential_schema_id", schemaId)
+            .where("height", "<=", row.block_height)
+            .orderBy("height", "desc")
+            .first();
+      if (!cachedCs || cachedCs.expiresAt <= now) {
+        credentialSchemaSnapshotCache.set(csCacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value: csPromise });
+      }
+      const cs = await csPromise;
       await addTrustRegistryDids(Number((cs as any)?.tr_id) || null, row.block_height, dids);
     }
     return String(permissionId);
@@ -380,11 +420,7 @@ async function buildIndexerTxEvents(args: {
     .orderBy("tm.index", "asc")
     .limit(limit);
 
-  if (Number.isInteger(args.blockHeight)) {
-    query.andWhere("tx.height", Number(args.blockHeight));
-  } else if (Number.isInteger(args.afterBlockHeight)) {
-    query.andWhere("tx.height", ">", Number(args.afterBlockHeight));
-  }
+  applyBlockHeightFilter(query, args, "tx.height");
 
   const rows = (await query) as EventRow[];
   return (await Promise.all(rows.map((row) => toIndexerEvent(row)))).filter(Boolean) as IndexerTxEvent[];
@@ -443,11 +479,7 @@ export async function listIndexerEvents(args: {
 
   if (args.ids) query.whereIn("id", args.ids);
   if (args.did) query.where("did", args.did);
-  if (Number.isInteger(args.blockHeight)) {
-    query.andWhere("block_height", Number(args.blockHeight));
-  } else if (Number.isInteger(args.afterBlockHeight)) {
-    query.andWhere("block_height", ">", Number(args.afterBlockHeight));
-  }
+  applyBlockHeightFilter(query, args, "block_height");
 
   const rows = (await query) as Array<Record<string, any>>;
   return rows.map(fromStoredRow);

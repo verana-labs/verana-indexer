@@ -2,12 +2,7 @@ import { IncomingMessage, Server } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import type { IndexerEventRecord } from "./indexer_events_query";
-
-type Logger = {
-  info?: (...args: any[]) => void;
-  warn?: (...args: any[]) => void;
-  error?: (...args: any[]) => void;
-};
+import { createLogger, isUnknownMessageError, isValidDid, type LoggerLike } from "./api_shared";
 
 type ClientDidParseResult = {
   did?: string;
@@ -26,16 +21,6 @@ type IndexerStatusMessage = {
   };
 };
 
-function isUnknownMessageError(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  return errorMessage.includes("Unknown Verana message types") ||
-    errorMessage.includes("UNKNOWN VERANA MESSAGE TYPES");
-}
-
-export function isValidDid(value: unknown): value is string {
-  return typeof value === "string" && /^did:[a-z0-9]+:.+/i.test(value.trim());
-}
-
 function toIsoSeconds(value: Date = new Date()): string {
   return value.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -49,25 +34,10 @@ export class EventsBroadcaster {
   private pingInterval: NodeJS.Timeout | null = null;
   private readonly MAX_CLIENTS = 10000;
   private readonly PING_INTERVAL = 30000;
-  private logger: Logger = console;
+  private logger = createLogger(console);
 
-  setLogger(logger: Logger): void {
-    this.logger = logger;
-  }
-
-  private logInfo(...args: any[]): void {
-    if (this.logger.info) this.logger.info(...args);
-    else console.log(...args);
-  }
-
-  private logWarn(...args: any[]): void {
-    if (this.logger.warn) this.logger.warn(...args);
-    else console.warn(...args);
-  }
-
-  private logError(...args: any[]): void {
-    if (this.logger.error) this.logger.error(...args);
-    else console.error(...args);
+  setLogger(logger: LoggerLike): void {
+    this.logger = createLogger(logger);
   }
 
   private parseClientDid(req: IncomingMessage): ClientDidParseResult {
@@ -103,7 +73,7 @@ export class EventsBroadcaster {
     this.clientDids.delete(ws);
 
     if (hadClient) {
-      this.logInfo(`[EventsBroadcaster] WebSocket client disconnected. Total clients: ${this.wsClients.size}`);
+      this.logger.info(`[EventsBroadcaster] WebSocket client disconnected. Total clients: ${this.wsClients.size}`);
     }
   }
 
@@ -139,7 +109,7 @@ export class EventsBroadcaster {
     });
 
     if (this.wss) {
-      this.logWarn("[EventsBroadcaster] WebSocket server already initialized");
+      this.logger.warn("[EventsBroadcaster] WebSocket server already initialized");
       return;
     }
 
@@ -150,7 +120,7 @@ export class EventsBroadcaster {
       maxPayload: 1024,
       verifyClient: () => {
         if (this.wsClients.size >= this.MAX_CLIENTS) {
-          this.logWarn(`[EventsBroadcaster] Max clients reached (${this.MAX_CLIENTS}), rejecting connection`);
+          this.logger.warn(`[EventsBroadcaster] Max clients reached (${this.MAX_CLIENTS}), rejecting connection`);
           return false;
         }
         return true;
@@ -176,11 +146,11 @@ export class EventsBroadcaster {
         this.addToRoom(ws, did);
       }
 
-      this.logInfo(`[EventsBroadcaster] New WebSocket client connected. Total clients: ${this.wsClients.size}`);
+      this.logger.info(`[EventsBroadcaster] New WebSocket client connected. Total clients: ${this.wsClients.size}`);
 
       ws.on("close", () => this.cleanupClient(ws));
       ws.on("error", (error) => {
-        this.logError("[EventsBroadcaster] WebSocket error:", error);
+        this.logger.error("[EventsBroadcaster] WebSocket error:", error);
         this.cleanupClient(ws);
       });
       ws.on("pong", () => {
@@ -221,20 +191,20 @@ export class EventsBroadcaster {
 
         this.sendJson(ws, connectionMessage);
       } catch (error) {
-        this.logError("[EventsBroadcaster] Error sending welcome message:", error);
+        this.logger.error("[EventsBroadcaster] Error sending welcome message:", error);
         this.cleanupClient(ws);
       }
     });
 
     this.wss.on("error", (error) => {
-      this.logError("[EventsBroadcaster] WebSocketServer error:", error);
+      this.logger.error("[EventsBroadcaster] WebSocketServer error:", error);
     });
 
     this.pingInterval = setInterval(() => {
       this.pingClients();
     }, this.PING_INTERVAL);
 
-    this.logInfo("[EventsBroadcaster] WebSocket server initialized on /verana/indexer/v1/events");
+    this.logger.info("[EventsBroadcaster] WebSocket server initialized on /verana/indexer/v1/events");
   }
 
   private pingClients(): void {
@@ -311,7 +281,7 @@ export class EventsBroadcaster {
     });
 
     if (sentCount > 0) {
-      this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} WebSocket client(s)`);
+      this.logger.info(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} WebSocket client(s)`);
     }
   }
 
@@ -323,7 +293,7 @@ export class EventsBroadcaster {
     });
 
     if (sentCount > 0) {
-      this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} global WebSocket client(s)`);
+      this.logger.info(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} global WebSocket client(s)`);
     }
   }
 
@@ -337,7 +307,7 @@ export class EventsBroadcaster {
     });
 
     if (sentCount > 0) {
-      this.logInfo(`[EventsBroadcaster] Broadcasted ${eventData.eventType || eventData.type} to ${sentCount} DID subscriber(s)`);
+      this.logger.info(`[EventsBroadcaster] Broadcasted ${eventData.eventType || eventData.type} to ${sentCount} DID subscriber(s)`);
     }
   }
 
@@ -370,7 +340,7 @@ export class EventsBroadcaster {
 
     if (this.wss) {
       this.wss.close(() => {
-        this.logInfo("[EventsBroadcaster] WebSocket server closed");
+        this.logger.info("[EventsBroadcaster] WebSocket server closed");
       });
       this.wss = null;
     }
