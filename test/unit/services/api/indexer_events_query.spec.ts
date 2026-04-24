@@ -93,8 +93,8 @@ describe("indexer_events_query", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       did,
-      blockHeight: baseHeight + 1,
-      txHash: `tx-${runId}-after`,
+      block_height: baseHeight + 1,
+      tx_hash: `tx-${runId}-after`,
       type: "indexer-event",
     });
   });
@@ -108,7 +108,7 @@ describe("indexer_events_query", () => {
     await persistIndexerEventsForBlock(baseHeight + 10);
 
     const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 9, limit: 10 });
-    expect(events.map((event) => event.txHash)).toEqual([
+    expect(events.map((event) => event.tx_hash)).toEqual([
       `tx-${runId}-order-1a`,
       `tx-${runId}-order-1b`,
       `tx-${runId}-order-2`,
