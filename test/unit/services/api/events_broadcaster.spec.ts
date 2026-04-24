@@ -64,21 +64,21 @@ function closeSocket(ws: WebSocket): void {
 function makeEvent(did: string, overrides: Partial<IndexerEventRecord> = {}): IndexerEventRecord {
   return {
     type: "indexer-event",
-    eventType: "StartPermissionVP",
+    event_type: "StartPermissionVP",
     did,
-    blockHeight: 123456,
-    txHash: "ABC123",
+    block_height: 123456,
+    tx_hash: "ABC123",
     timestamp: "2025-01-15T10:30:00Z",
     payload: {
       module: "permission",
       action: "StartPermissionVP",
-      messageType: "/verana.perm.v1.MsgStartPermissionVP",
-      txIndex: 0,
-      messageIndex: 0,
+      message_type: "/verana.perm.v1.MsgStartPermissionVP",
+      tx_index: 0,
+      message_index: 0,
       sender: did,
-      relatedDids: [did],
-      entityType: "Permission",
-      entityId: "42",
+      related_dids: [did],
+      entity_type: "Permission",
+      entity_id: "42",
     },
     ...overrides,
   };
@@ -120,7 +120,7 @@ describe("EventsBroadcaster", () => {
       type: "connected",
       message: "Connected to Verana Indexer Events",
     });
-    expect(Object.prototype.hasOwnProperty.call(message, "blockHeight")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(message, "block_height")).toBe(true);
     expect(message.did).toBeUndefined();
     expect(broadcaster.getWSClientCount()).toBe(1);
 
@@ -139,14 +139,14 @@ describe("EventsBroadcaster", () => {
     expect(broadcaster.getWSClientCount()).toBe(0);
   });
 
-  it("includes did and blockHeight in DID room connected messages", async () => {
+  it("includes did and block_height in DID room connected messages", async () => {
     const did = "did:web:agent.example";
     const ws = new WebSocket(`${WS_URL}?did=${encodeURIComponent(did)}`);
     await waitForOpen(ws);
 
     const message = await waitForMessage(ws, (msg) => msg.type === "connected");
     expect(message.did).toBe(did);
-    expect(Object.prototype.hasOwnProperty.call(message, "blockHeight")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(message, "block_height")).toBe(true);
 
     closeSocket(ws);
   });
@@ -176,7 +176,7 @@ describe("EventsBroadcaster", () => {
     });
 
     expect(received.did).toBe(did);
-    expect(received.eventType).toBe("StartPermissionVP");
+    expect(received.event_type).toBe("StartPermissionVP");
     expect(otherReceived).toBe(false);
 
     closeSocket(wsMatch);
@@ -195,11 +195,11 @@ describe("EventsBroadcaster", () => {
     ]);
 
     const eventA = makeEvent(didA, {
-      payload: { ...makeEvent(didA).payload, relatedDids: [didA, didB] },
+      payload: { ...makeEvent(didA).payload, related_dids: [didA, didB] },
     });
     const eventB = makeEvent(didB, {
-      txHash: eventA.txHash,
-      payload: { ...eventA.payload, relatedDids: [didA, didB] },
+      tx_hash: eventA.tx_hash,
+      payload: { ...eventA.payload, related_dids: [didA, didB] },
     });
 
     const messageA = waitForMessage(wsA, (msg) => msg.type === "indexer-event");
@@ -207,8 +207,8 @@ describe("EventsBroadcaster", () => {
     broadcaster.broadcastIndexerEvent(eventA);
     broadcaster.broadcastIndexerEvent(eventB);
 
-    await expect(messageA).resolves.toMatchObject({ did: didA, payload: { relatedDids: [didA, didB] } });
-    await expect(messageB).resolves.toMatchObject({ did: didB, payload: { relatedDids: [didA, didB] } });
+    await expect(messageA).resolves.toMatchObject({ did: didA, payload: { related_dids: [didA, didB] } });
+    await expect(messageB).resolves.toMatchObject({ did: didB, payload: { related_dids: [didA, didB] } });
 
     closeSocket(wsA);
     closeSocket(wsB);

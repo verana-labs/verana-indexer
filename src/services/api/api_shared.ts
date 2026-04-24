@@ -38,3 +38,8 @@ export function applyBlockHeightFilter(
   return query;
 }
 
+export function toIsoSeconds(value: Date | string = new Date()): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+

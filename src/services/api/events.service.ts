@@ -3,7 +3,6 @@ import { Context, Errors, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
 import { eventsBroadcaster } from "./events_broadcaster";
-import { isValidDid } from "./api_shared";
 import { listIndexerEvents, persistIndexerEventsForBlock } from "./indexer_events_query";
 
 @Service({
@@ -26,15 +25,13 @@ export default class IndexerEventsService extends BaseService {
     const { height, timestamp } = ctx.params;
     const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
 
-    let eventsNotified = 0;
     try {
       const events = await persistIndexerEventsForBlock(height);
       events.forEach((event) => eventsBroadcaster.broadcastIndexerEvent(event));
-      eventsNotified = events.length;
       return {
         success: true,
         clientsNotified: eventsBroadcaster.getWSClientCount(),
-        eventsNotified,
+        eventsNotified: events.length,
         height,
         timestamp: eventTimestamp.toISOString(),
       };
@@ -43,7 +40,7 @@ export default class IndexerEventsService extends BaseService {
       return {
         success: false,
         clientsNotified: eventsBroadcaster.getWSClientCount(),
-        eventsNotified,
+        eventsNotified: 0,
         height,
         timestamp: eventTimestamp.toISOString(),
         error: (error as any)?.message ?? String(error),
@@ -67,20 +64,25 @@ export default class IndexerEventsService extends BaseService {
     after_block_height?: number;
     limit?: number;
   }>) {
-    if (!isValidDid(ctx.params.did)) {
-      throw new Errors.MoleculerClientError("Invalid did query parameter", 400, "INVALID_DID");
-    }
-
     const afterBlockHeight = ctx.params.after_block_height ?? 0;
-    const events = await listIndexerEvents({
-      afterBlockHeight,
-      did: ctx.params.did,
-      limit: ctx.params.limit,
-    });
-    return {
-      events,
-      count: events.length,
-      afterBlockHeight,
-    };
+    try {
+      const events = await listIndexerEvents({
+        afterBlockHeight,
+        did: ctx.params.did,
+        limit: ctx.params.limit,
+      });
+      return {
+        events,
+        count: events.length,
+        after_block_height: afterBlockHeight,
+      };
+    } catch (error) {
+      this.logger.error("[IndexerEventsService] Error listing indexer events:", error);
+      throw new Errors.MoleculerError(
+        "Failed to list indexer events",
+        500,
+        "INDEXER_EVENTS_QUERY_FAILED"
+      );
+    }
   }
 }

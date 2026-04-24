@@ -100,7 +100,7 @@
               "minimum": 0,
               "default": 0
             },
-            "description": "Return events with blockHeight greater than this value."
+            "description": "Return events with block_height greater than this value."
           },
           {
             "name": "limit",
@@ -132,36 +132,36 @@
                     "count": {
                       "type": "integer"
                     },
-                    "afterBlockHeight": {
+                    "after_block_height": {
                       "type": "integer"
                     }
                   },
-                  "required": ["events", "count", "afterBlockHeight"]
+                  "required": ["events", "count", "after_block_height"]
                 },
                 "example": {
                   "events": [
                     {
                       "type": "indexer-event",
-                      "eventType": "StartPermissionVP",
+                      "event_type": "StartPermissionVP",
                       "did": "did:web:agent.example",
-                      "blockHeight": 1794801,
-                      "txHash": "A1B2C3",
+                      "block_height": 1794801,
+                      "tx_hash": "A1B2C3",
                       "timestamp": "2025-12-17T04:43:12Z",
                       "payload": {
                         "module": "permission",
                         "action": "StartPermissionVP",
-                        "messageType": "/verana.perm.v1.MsgStartPermissionVP",
-                        "txIndex": 0,
-                        "messageIndex": 0,
+                        "message_type": "/verana.perm.v1.MsgStartPermissionVP",
+                        "tx_index": 0,
+                        "message_index": 0,
                         "sender": "did:web:agent.example",
-                        "relatedDids": ["did:web:agent.example"],
-                        "entityType": "Permission",
-                        "entityId": "42"
+                        "related_dids": ["did:web:agent.example"],
+                        "entity_type": "Permission",
+                        "entity_id": "42"
                       }
                     }
                   ],
                   "count": 1,
-                  "afterBlockHeight": 1794800
+                  "after_block_height": 1794800
                 }
               }
             }
@@ -3897,25 +3897,21 @@
       "IndexerTransactionEvent": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "integer",
-            "description": "Database id of the persisted indexer event."
-          },
           "type": {
             "type": "string",
             "enum": ["indexer-event"]
           },
-          "eventType": {
+          "event_type": {
             "type": "string",
             "description": "Transaction action name, such as CreateNewTrustRegistry, UpdateCredentialSchema, or StartPermissionVP."
           },
           "did": {
             "type": "string"
           },
-          "blockHeight": {
+          "block_height": {
             "type": "integer"
           },
-          "txHash": {
+          "tx_hash": {
             "type": "string"
           },
           "timestamp": {
@@ -3932,28 +3928,28 @@
               "action": {
                 "type": "string"
               },
-              "messageType": {
+              "message_type": {
                 "type": "string"
               },
-              "txIndex": {
+              "tx_index": {
                 "type": "integer"
               },
-              "messageIndex": {
+              "message_index": {
                 "type": "integer"
               },
               "sender": {
                 "type": "string"
               },
-              "relatedDids": {
+              "related_dids": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
-              "entityType": {
+              "entity_type": {
                 "type": "string"
               },
-              "entityId": {
+              "entity_id": {
                 "type": "string"
               }
             }
@@ -3961,10 +3957,10 @@
         },
         "required": [
           "type",
-          "eventType",
+          "event_type",
           "did",
-          "blockHeight",
-          "txHash",
+          "block_height",
+          "tx_hash",
           "timestamp",
           "payload"
         ]
@@ -6038,7 +6034,7 @@
       "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
     },
     {
-      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-processed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `blockHeight`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"eventType\": \"StartPermissionVP\",\n  \"did\": \"did:web:agent.example\",\n  \"blockHeight\": 123456,\n  \"txHash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"permission\",\n    \"action\": \"StartPermissionVP\",\n    \"messageType\": \"/verana.perm.v1.MsgStartPermissionVP\",\n    \"txIndex\": 0,\n    \"messageIndex\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"relatedDids\": [\"did:web:agent.example\"],\n    \"entityType\": \"Permission\",\n    \"entityId\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `eventType`, `did`, `blockHeight`, `txHash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
+      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-processed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartPermissionVP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"permission\",\n    \"action\": \"StartPermissionVP\",\n    \"message_type\": \"/verana.perm.v1.MsgStartPermissionVP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Permission\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
     }
   ]
 }

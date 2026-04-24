@@ -4,7 +4,7 @@ import {
   VeranaPermissionMessageTypes,
   VeranaTrustRegistryMessageTypes,
 } from "../../common/verana-message-types";
-import { applyBlockHeightFilter, isValidDid } from "./api_shared";
+import { applyBlockHeightFilter, isValidDid, toIsoSeconds } from "./api_shared";
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
@@ -23,23 +23,22 @@ export type IndexerTxEvent = {
 };
 
 export type IndexerEventRecord = {
-  id?: number;
   type: "indexer-event";
-  eventType: string;
+  event_type: string;
   did: string;
-  blockHeight: number;
-  txHash: string;
+  block_height: number;
+  tx_hash: string;
   timestamp: string;
   payload: {
     module: IndexerTxEvent["module"];
     action: string;
-    messageType: string;
-    txIndex: number;
-    messageIndex: number;
+    message_type: string;
+    tx_index: number;
+    message_index: number;
     sender: string;
-    relatedDids: string[];
-    entityType?: string;
-    entityId?: string;
+    related_dids: string[];
+    entity_type?: string;
+    entity_id?: string;
   };
 };
 
@@ -162,6 +161,7 @@ class ExpiringBoundedMap<K, V extends { expiresAt: number }> extends Map<K, V> {
   }
 
   override get(key: K): V | undefined {
+    this.pruneExpired();
     const entry = super.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt <= Date.now()) {
@@ -187,21 +187,12 @@ const permissionSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: numb
 const credentialSchemaSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
 const trustRegistrySnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
 
-function toIsoSeconds(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value);
-  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-
-function isDid(value: unknown): value is string {
-  return isValidDid(value);
-}
-
 function addDid(out: Set<string>, value: unknown): void {
-  if (isDid(value)) out.add(value);
+  if (isValidDid(value)) out.add(value);
 }
 
 function collectDids(value: unknown, out: Set<string>): void {
-  if (isDid(value)) {
+  if (isValidDid(value)) {
     out.add(value);
     return;
   }
@@ -396,36 +387,40 @@ function toEventRows(event: IndexerTxEvent): Array<Record<string, unknown>> {
     payload: {
       module: event.module,
       action: event.action,
-      messageType: event.messageType,
-      txIndex: event.txIndex,
-      messageIndex: event.messageIndex,
+      message_type: event.messageType,
+      tx_index: event.txIndex,
+      message_index: event.messageIndex,
       sender: event.sender,
-      relatedDids: event.relatedDids,
-      entityType: event.entityType,
-      entityId: event.entityId,
+      related_dids: event.relatedDids,
+      entity_type: event.entityType,
+      entity_id: event.entityId,
     },
   }));
 }
 
 function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
   return {
-    id: Number(row.id),
     type: "indexer-event",
-    eventType: String(row.event_type),
+    event_type: String(row.event_type),
     did: String(row.did),
-    blockHeight: Number(row.block_height),
-    txHash: String(row.tx_hash),
+    block_height: Number(row.block_height),
+    tx_hash: String(row.tx_hash),
     timestamp: toIsoSeconds(row.timestamp),
     payload: {
       module: row.payload?.module ?? row.module,
       action: row.payload?.action ?? row.event_type,
-      messageType: row.payload?.messageType ?? row.message_type,
-      txIndex: Number(row.payload?.txIndex ?? row.tx_index ?? 0),
-      messageIndex: Number(row.payload?.messageIndex ?? row.message_index ?? 0),
+      // Backward compatible: accept old camelCase payload keys.
+      message_type: row.payload?.message_type ?? row.payload?.messageType ?? row.message_type,
+      tx_index: Number(row.payload?.tx_index ?? row.payload?.txIndex ?? row.tx_index ?? 0),
+      message_index: Number(row.payload?.message_index ?? row.payload?.messageIndex ?? row.message_index ?? 0),
       sender: String(row.payload?.sender ?? ""),
-      relatedDids: Array.isArray(row.payload?.relatedDids) ? row.payload.relatedDids : [String(row.did)],
-      entityType: row.payload?.entityType ?? row.entity_type ?? undefined,
-      entityId: row.payload?.entityId ?? row.entity_id ?? undefined,
+      related_dids: Array.isArray(row.payload?.related_dids)
+        ? row.payload.related_dids
+        : Array.isArray(row.payload?.relatedDids)
+          ? row.payload.relatedDids
+          : [String(row.did)],
+      entity_type: row.payload?.entity_type ?? row.payload?.entityType ?? row.entity_type ?? undefined,
+      entity_id: row.payload?.entity_id ?? row.payload?.entityId ?? row.entity_id ?? undefined,
     },
   };
 }

@@ -2,7 +2,7 @@ import { IncomingMessage, Server } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import type { IndexerEventRecord } from "./indexer_events_query";
-import { createLogger, isUnknownMessageError, isValidDid, type LoggerLike } from "./api_shared";
+import { createLogger, isUnknownMessageError, isValidDid, toIsoSeconds, type LoggerLike } from "./api_shared";
 
 type ClientDidParseResult = {
   did?: string;
@@ -20,10 +20,6 @@ type IndexerStatusMessage = {
     service?: string;
   };
 };
-
-function toIsoSeconds(value: Date = new Date()): string {
-  return value.toISOString().replace(/\.\d{3}Z$/, "Z");
-}
 
 export class EventsBroadcaster {
   private wss: WebSocketServer | null = null;
@@ -159,7 +155,7 @@ export class EventsBroadcaster {
 
       try {
         const [status, detailedStatus] = await Promise.all([
-          Promise.resolve(this.getCurrentIndexerStatus()),
+          this.getCurrentIndexerStatus(),
           indexerStatusManager.getDetailedStatus().catch(() => null),
         ]);
 
@@ -168,7 +164,7 @@ export class EventsBroadcaster {
           message: "Connected to Verana Indexer Events",
           indexerStatus: status.indexerStatus,
           crawlingStatus: status.crawlingStatus,
-          blockHeight: detailedStatus?.lastProcessedBlock ?? null,
+          block_height: detailedStatus?.lastProcessedBlock ?? null,
           timestamp: toIsoSeconds(),
         };
         if (did) connectionMessage.did = did;
@@ -307,7 +303,11 @@ export class EventsBroadcaster {
     });
 
     if (sentCount > 0) {
-      this.logger.info(`[EventsBroadcaster] Broadcasted ${eventData.eventType || eventData.type} to ${sentCount} DID subscriber(s)`);
+      const label =
+        typeof (eventData as any).event_type === "string"
+          ? (eventData as any).event_type
+          : String((eventData as any).type ?? "unknown");
+      this.logger.info(`[EventsBroadcaster] Broadcasted ${label} to ${sentCount} DID subscriber(s)`);
     }
   }
 
