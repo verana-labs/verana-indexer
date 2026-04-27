@@ -10,6 +10,7 @@ import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 import { eventsBroadcaster } from "./events_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
+import { isUnknownMessageError } from "./api_shared";
 
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
 const REQUEST_ACCEPTED_NS = Symbol("requestAcceptedNs");
@@ -131,12 +132,6 @@ async function parseAtBlockHeight(
   ctx.meta.$headers = ctx.meta.$headers || {};
   ctx.meta.$headers["at-block-height"] = String(parsedHeight);
   ctx.meta.$headers["At-Block-Height"] = String(parsedHeight);
-}
-
-function isUnknownMessageError(errorMessage: string): boolean {
-  if (!errorMessage) return false;
-  return errorMessage.includes('Unknown Verana message types') ||
-         errorMessage.includes('UNKNOWN VERANA MESSAGE TYPES');
 }
 
 async function attachHeaders(ctx: Context<any, any>, res: ServerResponse) {
@@ -403,6 +398,7 @@ function createRoute(
         "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
       }),
       createRoute("/verana/resolver/v1", {
+        "GET block-height": `${SERVICE.V1.TrustV1ApiService.path}.blockHeight`,
         "GET resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolve`,
         "GET issuer-authorization": `${SERVICE.V1.TrustV1ApiService.path}.issuerAuthorization`,
         "GET verifier-authorization": `${SERVICE.V1.TrustV1ApiService.path}.verifierAuthorization`,
@@ -415,6 +411,7 @@ function createRoute(
       createRoute("/verana/indexer/v1", {
         "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
+        "GET events": `${SERVICE.V1.IndexerEventsService.path}.listEvents`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getDetailedStatus`,
         "GET errors/download": `v1.LogsService.downloadErrors`,

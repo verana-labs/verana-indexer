@@ -56,7 +56,11 @@
                       "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
                     }
                   },
-                    "required": ["type", "height", "timestamp"]
+                  "required": [
+                    "type",
+                    "height",
+                    "timestamp"
+                  ]
                 },
                 "example": {
                   "type": "block-indexed",
@@ -72,227 +76,111 @@
         }
       }
     },
-    "/verana/resolver/v1/resolve": {
+    "/verana/indexer/v1/events": {
       "get": {
         "tags": [
-          "Resolver"
+          "Indexer"
         ],
-        "summary": "Resolve trust for a DID",
-        "description": "Returns the cached trust evaluation result for a DID. Use `detail=full` for the complete evaluation tree. `at` is an optional ISO 8601 datetime or block height for point-in-time queries (capped to the last processed trust block).",
-        "operationId": "trustResolve",
+        "summary": "List indexer transaction events",
+        "description": "Replay persisted trust registry, credential schema, and permission indexer events after a block height. Use the did query parameter to return only events related to a DID.",
+        "operationId": "listIndexerEvents",
         "parameters": [
           {
             "name": "did",
             "in": "query",
             "required": true,
-            "description": "DID (`did:`…)",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "detail",
-            "in": "query",
-            "required": false,
-            "description": "Level of detail: `summary` or `full`.",
             "schema": {
               "type": "string",
-              "enum": ["summary", "full"],
-              "default": "full"
-            }
+              "pattern": "^did:[a-z0-9]+:.+"
+            },
+            "description": "DID to replay events for. Only rows persisted for this DID are returned."
           },
           {
-            "name": "at",
+            "name": "after_block_height",
             "in": "query",
             "required": false,
-            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
             "schema": {
-              "type": "string"
-            }
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Return events with block_height greater than this value."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "description": "Maximum number of events to return."
           }
         ],
         "responses": {
           "200": {
-            "description": "OK — body is `TrustQ1Summary` or `TrustQ1Full` per `detail`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    { "$ref": "#/components/schemas/TrustQ1Summary" },
-                    { "$ref": "#/components/schemas/TrustQ1Full" }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No trust row for this DID at the effective height",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/verana/resolver/v1/issuer-authorization": {
-      "get": {
-        "tags": [
-          "Resolver"
-        ],
-        "summary": "Issuer authorization (VTJSC)",
-        "description": "Verifies whether a DID holds an active ISSUER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
-        "operationId": "trustIssuerAuthorization",
-        "parameters": [
-          { "name": "did", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "vtjscId", "in": "query", "required": true, "description": "VTJSC (JSON Schema ID) of the credential.", "schema": { "type": "string" } },
-          { "name": "at", "in": "query", "required": false, "description": "Optional ISO 8601 datetime or block height for point-in-time query.", "schema": { "type": "string" } },
-          { "name": "sessionId", "in": "query", "required": false, "description": "Optional PermissionSession ID for fee payment.", "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrustQ2IssuerAuthorization"
-                }
-              }
-            }
-          },
-          "402": {
-            "description": "Payment required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrustQ2Issuer402"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown VTJSC or schema",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/verana/resolver/v1/verifier-authorization": {
-      "get": {
-        "tags": [
-          "Resolver"
-        ],
-        "summary": "Verifier authorization (VTJSC)",
-        "description": "Verifies whether a DID holds an active VERIFIER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
-        "operationId": "trustVerifierAuthorization",
-        "parameters": [
-          { "name": "did", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "vtjscId", "in": "query", "required": true, "description": "VTJSC (JSON Schema ID) of the credential.", "schema": { "type": "string" } },
-          { "name": "at", "in": "query", "required": false, "description": "Optional ISO 8601 datetime or block height for point-in-time query.", "schema": { "type": "string" } },
-          { "name": "sessionId", "in": "query", "required": false, "description": "Optional PermissionSession ID for fee payment.", "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrustQ3VerifierAuthorization"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown VTJSC or schema",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/verana/resolver/v1/ecosystem-participant": {
-      "get": {
-        "tags": [
-          "Resolver"
-        ],
-        "summary": "Ecosystem participant",
-        "description": "Returns all active permissions a DID holds within a specific ecosystem (Trust Registry).",
-        "operationId": "trustEcosystemParticipant",
-        "parameters": [
-          { "name": "did", "in": "query", "required": true, "schema": { "type": "string" } },
-          { "name": "ecosystemDid", "in": "query", "required": true, "description": "Ecosystem DID (Trust Registry owner).", "schema": { "type": "string" } },
-          { "name": "at", "in": "query", "required": false, "description": "Optional ISO 8601 datetime or block height for point-in-time query.", "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrustQ4EcosystemParticipant"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown ecosystem DID",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/verana/resolver/v1/refresh": {
-      "post": {
-        "tags": [
-          "Resolver"
-        ],
-        "summary": "Refresh trust evaluation",
-        "description": "Forces DID resolution + VP dereferencing + trust evaluation, bypassing TTL behavior. The response reflects only the last processed trust block (lastProcessedBlock).",
-        "operationId": "trustRefresh",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "did": { "type": "string" }
-                },
-                "required": ["did"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK — refresh triggered",
+            "description": "Indexer transaction events",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "did": { "type": "string" },
-                    "result": { "type": "string", "enum": ["ok"] }
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IndexerTransactionEvent"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "after_block_height": {
+                      "type": "integer"
+                    }
                   },
-                  "required": ["did", "result"]
+                  "required": [
+                    "events",
+                    "count",
+                    "after_block_height"
+                  ]
+                },
+                "example": {
+                  "events": [
+                    {
+                      "type": "indexer-event",
+                      "event_type": "StartPermissionVP",
+                      "did": "did:web:agent.example",
+                      "block_height": 1794801,
+                      "tx_hash": "A1B2C3",
+                      "timestamp": "2025-12-17T04:43:12Z",
+                      "payload": {
+                        "module": "permission",
+                        "action": "StartPermissionVP",
+                        "message_type": "/verana.perm.v1.MsgStartPermissionVP",
+                        "tx_index": 0,
+                        "message_index": 0,
+                        "sender": "did:web:agent.example",
+                        "related_dids": [
+                          "did:web:agent.example"
+                        ],
+                        "entity_type": "Permission",
+                        "entity_id": "42"
+                      }
+                    }
+                  ],
+                  "count": 1,
+                  "after_block_height": 1794800
                 }
               }
             }
           },
-          "412": {
-            "description": "Trust resolver has not finished the current indexed height yet (lastProcessedBlock is behind)."
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
           }
         }
       }
@@ -1300,7 +1188,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1803,7 +1691,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "participant",
@@ -2522,7 +2410,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "min_participants",
@@ -3677,11 +3565,11 @@
                 },
                 "example": {
                   "params": {
-                      "trust_deposit_rate": 0.200000000000000000,
-                      "user_agent_reward_rate": 0.200000000000000000,
-                      "trust_deposit_share_value": 1.000000000000000000,
-                      "wallet_user_agent_reward_rate": 0.200000000000000000,
-                      "trust_deposit_reclaim_burn_rate": 0.600000000000000000
+                    "trust_deposit_rate": 0.2,
+                    "user_agent_reward_rate": 0.2,
+                    "trust_deposit_share_value": 1,
+                    "wallet_user_agent_reward_rate": 0.2,
+                    "trust_deposit_reclaim_burn_rate": 0.6
                   }
                 }
               }
@@ -3979,6 +3867,449 @@
           }
         }
       }
+    },
+    "/verana/resolver/v1/resolve": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Resolve trust for a DID",
+        "description": "Returns the cached trust evaluation result for a DID. Use `detail=full` for the complete evaluation tree. `at` is an optional ISO 8601 datetime or block height for point-in-time queries (capped to the last processed trust block).",
+        "operationId": "trustResolve",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "description": "DID (`did:`…)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "detail",
+            "in": "query",
+            "required": false,
+            "description": "Level of detail: `summary` or `full`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "full"
+              ],
+              "default": "full"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — body is `TrustQ1Summary` or `TrustQ1Full` per `detail`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TrustQ1Summary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TrustQ1Full"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No trust row for this DID at the effective height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/issuer-authorization": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Issuer authorization (VTJSC)",
+        "description": "Verifies whether a DID holds an active ISSUER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
+        "operationId": "trustIssuerAuthorization",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vtjscId",
+            "in": "query",
+            "required": true,
+            "description": "VTJSC (JSON Schema ID) of the credential.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "description": "Optional PermissionSession ID for fee payment.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ2IssuerAuthorization"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ2Issuer402"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown VTJSC or schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/verifier-authorization": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Verifier authorization (VTJSC)",
+        "description": "Verifies whether a DID holds an active VERIFIER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
+        "operationId": "trustVerifierAuthorization",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vtjscId",
+            "in": "query",
+            "required": true,
+            "description": "VTJSC (JSON Schema ID) of the credential.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "description": "Optional PermissionSession ID for fee payment.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ3VerifierAuthorization"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown VTJSC or schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/ecosystem-participant": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Ecosystem participant",
+        "description": "Returns all active permissions a DID holds within a specific ecosystem (Trust Registry).",
+        "operationId": "trustEcosystemParticipant",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ecosystemDid",
+            "in": "query",
+            "required": true,
+            "description": "Ecosystem DID (Trust Registry owner).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ4EcosystemParticipant"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown ecosystem DID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/refresh": {
+      "post": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Refresh trust evaluation",
+        "description": "Forces DID resolution + VP dereferencing + trust evaluation, bypassing TTL behavior. The response reflects only the last processed trust block (lastProcessedBlock).",
+        "operationId": "trustRefresh",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "did": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "did"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — refresh triggered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "did": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "did",
+                    "result"
+                  ]
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Trust resolver has not finished the current indexed height yet (lastProcessedBlock is behind)."
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/block-height": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Get trust-resolved block height",
+        "description": "Return the latest block height that has been fully processed by the trust resolver pipeline.",
+        "operationId": "getResolvedBlockHeight",
+        "responses": {
+          "200": {
+            "description": "Current trust-resolved block height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "Response type identifier",
+                      "example": "block-resolved"
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "The latest block height that has been fully processed by the indexer"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "height",
+                    "timestamp"
+                  ]
+                },
+                "example": {
+                  "type": "block-resolved",
+                  "height": 1794800,
+                  "timestamp": "2025-12-17T04:42:55Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/trust/v1/block-height": {
+      "get": {
+        "tags": [
+          "Trust"
+        ],
+        "summary": "Get trust-resolved block height",
+        "description": "Return the latest block height that has been fully processed by the trust resolver pipeline.",
+        "operationId": "getTrustV1ResolvedBlockHeight",
+        "responses": {
+          "200": {
+            "description": "Current trust-resolved block height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "Response type identifier",
+                      "example": "block-resolved"
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "The latest block height that has been fully processed by the indexer"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "height",
+                    "timestamp"
+                  ]
+                },
+                "example": {
+                  "type": "block-resolved",
+                  "height": 1794800,
+                  "timestamp": "2025-12-17T04:42:55Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4016,168 +4347,82 @@
           }
         }
       },
-      "TrustHealthEmbedded": {
+      "IndexerTransactionEvent": {
         "type": "object",
-        "description": "Trust checkpoint, indexer height, lag, poll interval, TTL fields, VPR base URL.",
-        "required": [
-          "status",
-          "lastProcessedBlock",
-          "trustPipelineMode",
-          "vprIndexerBaseUrl",
-          "dereferenceCacheTtlSeconds",
-          "pollObjectCachingRetryDays"
-        ],
         "properties": {
-          "status": { "type": "string", "example": "ok" },
-          "lastProcessedBlock": { "type": "integer", "minimum": 0 },
-          "indexerBlockHeight": { "type": ["integer", "null"], "minimum": 0 },
-          "blockLag": { "type": ["integer", "null"], "minimum": 0 },
-          "instanceRole": { "type": "string", "example": "embedded" },
-          "trustPipelineMode": {
+          "type": {
             "type": "string",
-            "enum": ["verre_bundle"],
-            "description": "Trust evaluation runs inside Verre (`resolveDID`)."
+            "enum": [
+              "indexer-event"
+            ]
           },
-          "vprIndexerBaseUrl": {
+          "event_type": {
             "type": "string",
-            "format": "uri",
-            "description": "Indexer `/verana` base URL used for VPR-backed HTTP calls."
+            "description": "Transaction action name, such as CreateNewTrustRegistry, UpdateCredentialSchema, or StartPermissionVP."
           },
-          "postgresConnected": { "type": "boolean" },
-          "redisConnected": { "type": ["boolean", "null"] },
-          "trustEvaluationTtlSeconds": { "type": "integer", "description": "Trust TTL (seconds); drives `expiresAt` hints on resolve." },
-          "dereferenceCacheTtlSeconds": {
-            "type": ["integer", "null"],
-            "minimum": 1,
-            "description": "Declared object cache TTL (seconds), or null."
+          "did": {
+            "type": "string"
           },
-          "pollObjectCachingRetryDays": {
-            "type": ["integer", "null"],
-            "minimum": 1,
-            "description": "Declared retry window (days), or null."
+          "block_height": {
+            "type": "integer"
           },
-          "pollIntervalMs": { "type": ["integer", "null"], "description": "Resolver poll interval (ms)." }
-        }
-      },
-      "TrustQ1Summary": {
-        "type": "object",
-        "description": "`detail=summary` response.",
-        "additionalProperties": false,
-        "required": ["did", "trustStatus", "production", "evaluatedAt", "evaluatedAtBlock"],
-        "properties": {
-          "did": { "type": "string" },
-          "trustStatus": { "type": "string", "description": "TRUSTED | UNTRUSTED | PARTIAL" },
-          "production": { "type": "boolean" },
-          "evaluatedAt": { "type": "string", "format": "date-time" },
-          "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
-          "expiresAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "TrustQ1Full": {
-        "type": "object",
-        "description": "`detail=full` response: adds `credentials` and `failedCredentials`. Raw JSON: POST /verana/resolver/v1/refresh.",
-        "required": ["did", "trustStatus", "production", "evaluatedAt", "evaluatedAtBlock", "credentials", "failedCredentials"],
-        "properties": {
-          "did": { "type": "string" },
-          "trustStatus": { "type": "string", "description": "TRUSTED | UNTRUSTED | PARTIAL" },
-          "production": { "type": "boolean" },
-          "evaluatedAt": { "type": "string", "format": "date-time" },
-          "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "credentials": {
-            "type": "array",
-            "description": "Valid credential entries from stored evaluation.",
-            "items": { "type": "object" }
+          "tx_hash": {
+            "type": "string"
           },
-          "failedCredentials": { "type": "array", "items": { "type": "object" } }
-        },
-        "additionalProperties": false
-      },
-      "TrustPermissionChainLink": {
-        "type": "object",
-        "properties": {
-          "permissionId": { "type": "integer" },
-          "type": { "type": "string" },
-          "did": { "type": ["string", "null"] },
-          "deposit": { "type": "string" },
-          "permState": { "type": "string" },
-          "effectiveFrom": { "type": ["string", "null"] },
-          "effectiveUntil": { "type": ["string", "null"] }
-        }
-      },
-      "TrustQ2IssuerAuthorization": {
-        "type": "object",
-        "properties": {
-          "did": { "type": "string" },
-          "vtjscId": { "type": "string" },
-          "authorized": { "type": "boolean" },
-          "evaluatedAt": { "type": "string", "format": "date-time" },
-          "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
-          "reason": { "type": "string" },
-          "permission": { "type": ["object", "null"] },
-          "fees": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
             "type": "object",
-            "description": "When `required` is true, includes `paid` after session validation; amounts are **uvna** strings."
-          },
-          "permissionChain": { "type": "array", "items": { "$ref": "#/components/schemas/TrustPermissionChainLink" } },
-          "session": { "type": "object" }
-        }
-      },
-      "TrustQ2Issuer402": {
-        "type": "object",
-        "properties": {
-          "authorized": { "type": "boolean", "example": false },
-          "did": { "type": "string" },
-          "vtjscId": { "type": "string" },
-          "evaluatedAt": { "type": "string", "format": "date-time" },
-          "evaluatedAtBlock": { "type": "integer" },
-          "reason": { "type": "string" },
-          "fees": { "type": "object" }
-        }
-      },
-      "TrustQ3VerifierAuthorization": {
-        "type": "object",
-        "properties": {
-          "did": { "type": "string" },
-          "vtjscId": { "type": "string" },
-          "authorized": { "type": "boolean", "description": "Permission + Verre; see `fees.paid` for Layer 2." },
-          "evaluatedAt": { "type": "string", "format": "date-time" },
-          "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
-          "reason": { "type": "string" },
-          "permission": { "type": ["object", "null"] },
-          "fees": { "type": "object" },
-          "permissionChain": { "type": "array", "items": { "$ref": "#/components/schemas/TrustPermissionChainLink" } },
-          "session": { "type": "object" }
-        }
-      },
-      "TrustQ4EcosystemParticipant": {
-        "type": "object",
-        "required": ["did", "ecosystemDid", "isParticipant", "evaluatedAt", "evaluatedAtBlock", "permissions"],
-        "properties": {
-          "did": { "type": "string" },
-          "ecosystemDid": { "type": "string" },
-          "ecosystemAka": { "type": "string" },
-          "isParticipant": { "type": "boolean" },
-          "evaluatedAt": { "type": "string", "format": "date-time" },
-          "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "permissionId": { "type": "integer" },
-                "did": { "type": "string" },
-                "type": { "type": "string" },
-                "schemaId": { "type": "integer" },
-                "vtjscId": { "type": ["string", "null"] },
-                "deposit": {},
-                "permState": {},
-                "effectiveFrom": {},
-                "effectiveUntil": {}
+            "properties": {
+              "module": {
+                "type": "string",
+                "enum": [
+                  "trust-registry",
+                  "credential-schema",
+                  "permission"
+                ]
+              },
+              "action": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "string"
+              },
+              "tx_index": {
+                "type": "integer"
+              },
+              "message_index": {
+                "type": "integer"
+              },
+              "sender": {
+                "type": "string"
+              },
+              "related_dids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "entity_type": {
+                "type": "string"
+              },
+              "entity_id": {
+                "type": "string"
               }
             }
           }
-        }
+        },
+        "required": [
+          "type",
+          "event_type",
+          "did",
+          "block_height",
+          "tx_hash",
+          "timestamp",
+          "payload"
+        ]
       },
       "DID": {
         "type": "object",
@@ -5395,31 +5640,31 @@
                 "type": "number",
                 "format": "decimal",
                 "description": "Trust deposit interest rate",
-                  "example": 0.200000000000000000
+                "example": 0.2
               },
               "user_agent_reward_rate": {
                 "type": "number",
                 "format": "decimal",
                 "description": "User agent reward rate",
-                  "example": 0.200000000000000000
+                "example": 0.2
               },
               "trust_deposit_share_value": {
                 "type": "number",
                 "format": "decimal",
                 "description": "Value of each trust deposit share",
-                  "example": 1.000000000000000000
+                "example": 1
               },
               "wallet_user_agent_reward_rate": {
                 "type": "number",
                 "format": "decimal",
                 "description": "Wallet user agent reward rate",
-                  "example": 0.200000000000000000
+                "example": 0.2
               },
               "trust_deposit_reclaim_burn_rate": {
                 "type": "number",
                 "format": "decimal",
                 "description": "Burn rate for reclaimed trust deposits",
-                  "example": 0.600000000000000000
+                "example": 0.6
               }
             }
           }
@@ -6178,6 +6423,395 @@
             "type": "integer"
           }
         }
+      },
+      "TrustHealthEmbedded": {
+        "type": "object",
+        "description": "Trust checkpoint, indexer height, lag, poll interval, TTL fields, VPR base URL.",
+        "required": [
+          "status",
+          "lastProcessedBlock",
+          "trustPipelineMode",
+          "vprIndexerBaseUrl",
+          "dereferenceCacheTtlSeconds",
+          "pollObjectCachingRetryDays"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "lastProcessedBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "indexerBlockHeight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "blockLag": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "instanceRole": {
+            "type": "string",
+            "example": "embedded"
+          },
+          "trustPipelineMode": {
+            "type": "string",
+            "enum": [
+              "verre_bundle"
+            ],
+            "description": "Trust evaluation runs inside Verre (`resolveDID`)."
+          },
+          "vprIndexerBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Indexer `/verana` base URL used for VPR-backed HTTP calls."
+          },
+          "postgresConnected": {
+            "type": "boolean"
+          },
+          "redisConnected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "trustEvaluationTtlSeconds": {
+            "type": "integer",
+            "description": "Trust TTL (seconds); drives `expiresAt` hints on resolve."
+          },
+          "dereferenceCacheTtlSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Declared object cache TTL (seconds), or null."
+          },
+          "pollObjectCachingRetryDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Declared retry window (days), or null."
+          },
+          "pollIntervalMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Resolver poll interval (ms)."
+          }
+        }
+      },
+      "TrustQ1Summary": {
+        "type": "object",
+        "description": "`detail=summary` response.",
+        "additionalProperties": false,
+        "required": [
+          "did",
+          "trustStatus",
+          "production",
+          "evaluatedAt",
+          "evaluatedAtBlock"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "trustStatus": {
+            "type": "string",
+            "description": "TRUSTED | UNTRUSTED | PARTIAL"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TrustQ1Full": {
+        "type": "object",
+        "description": "`detail=full` response: adds `credentials` and `failedCredentials`. Raw JSON: POST /verana/resolver/v1/refresh.",
+        "required": [
+          "did",
+          "trustStatus",
+          "production",
+          "evaluatedAt",
+          "evaluatedAtBlock",
+          "credentials",
+          "failedCredentials"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "trustStatus": {
+            "type": "string",
+            "description": "TRUSTED | UNTRUSTED | PARTIAL"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credentials": {
+            "type": "array",
+            "description": "Valid credential entries from stored evaluation.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "failedCredentials": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TrustPermissionChainLink": {
+        "type": "object",
+        "properties": {
+          "permissionId": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "did": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deposit": {
+            "type": "string"
+          },
+          "permState": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TrustQ2IssuerAuthorization": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "vtjscId": {
+            "type": "string"
+          },
+          "authorized": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "permission": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "fees": {
+            "type": "object",
+            "description": "When `required` is true, includes `paid` after session validation; amounts are **uvna** strings."
+          },
+          "permissionChain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustPermissionChainLink"
+            }
+          },
+          "session": {
+            "type": "object"
+          }
+        }
+      },
+      "TrustQ2Issuer402": {
+        "type": "object",
+        "properties": {
+          "authorized": {
+            "type": "boolean",
+            "example": false
+          },
+          "did": {
+            "type": "string"
+          },
+          "vtjscId": {
+            "type": "string"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "fees": {
+            "type": "object"
+          }
+        }
+      },
+      "TrustQ3VerifierAuthorization": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "vtjscId": {
+            "type": "string"
+          },
+          "authorized": {
+            "type": "boolean",
+            "description": "Permission + Verre; see `fees.paid` for Layer 2."
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "permission": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "fees": {
+            "type": "object"
+          },
+          "permissionChain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustPermissionChainLink"
+            }
+          },
+          "session": {
+            "type": "object"
+          }
+        }
+      },
+      "TrustQ4EcosystemParticipant": {
+        "type": "object",
+        "required": [
+          "did",
+          "ecosystemDid",
+          "isParticipant",
+          "evaluatedAt",
+          "evaluatedAtBlock",
+          "permissions"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "ecosystemDid": {
+            "type": "string"
+          },
+          "ecosystemAka": {
+            "type": "string"
+          },
+          "isParticipant": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "permissionId": {
+                  "type": "integer"
+                },
+                "did": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "schemaId": {
+                  "type": "integer"
+                },
+                "vtjscId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deposit": {},
+                "permState": {},
+                "effectiveFrom": {},
+                "effectiveUntil": {}
+              }
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -6241,6 +6875,10 @@
       "description": "Indexer state and changes tracking operations"
     },
     {
+      "name": "Resolver",
+      "description": "Resolver: resolve, issuer/verifier checks, ecosystem participant, refresh."
+    },
+    {
       "name": "Metrics"
     },
     {
@@ -6248,11 +6886,7 @@
       "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
     },
     {
-      "name": "Resolver",
-      "description": "Resolver: resolve, issuer/verifier checks, ecosystem participant, refresh."
-    },
-    {
-      "description": "## Real-Time Events (WebSocket)\n\n**Endpoint URLs:**\n- Local: `ws://localhost:3001/verana/indexer/v1/events`\n- Devnet: `wss://idx.devnet.verana.network/verana/indexer/v1/events`\n- Testnet: `wss://idx.testnet.verana.network/verana/indexer/v1/events`\n\n**After indexing (tx pipeline committed for that height):**\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**After trust resolver materialization (separate job; see issue #216):**\n```json\n{\n  \"type\": \"block-resolved\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**Example:**\n```javascript\nconst ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  if (data.type === 'block-indexed') {\n    console.log(`Block ${data.height} indexed — safe to query indexer APIs`);\n  }\n  if (data.type === 'block-resolved') {\n    console.log(`Block ${data.height} trust-resolver materialization done`);\n  }\n};\n```"
+      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartPermissionVP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"permission\",\n    \"action\": \"StartPermissionVP\",\n    \"message_type\": \"/verana.perm.v1.MsgStartPermissionVP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Permission\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
     }
   ]
 }

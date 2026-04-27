@@ -62,6 +62,7 @@ const TABLES_TO_DROP = [
   "permission_scheduled_flips",
   "entity_participant_changes",
   "trust_results",
+  "indexer_events",
 ];
 
 const SEQUENCES_TO_RESET = [
@@ -91,6 +92,7 @@ const SEQUENCES_TO_RESET = [
   "daily_statistics_id_seq",
   "account_id_seq",
   "stats_id_seq",
+  "indexer_events_id_seq",
 ];
 
 async function waitForDatabase(config: Knex.Config, maxRetries = 30, delayMs = 2000): Promise<void> {
@@ -563,6 +565,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   "20260126000001_create_did_history": ["did_history"],
   "20260202020000_create_global_metrics": ["global_metrics"],
   "20260317000000_add_permission_flips": ["permission_scheduled_flips", "permissions"],
+  "20260420000000_create_indexer_events": ["indexer_events"],
   "partition-transaction-table": ["transaction"],
   "20260402000000_create_trust_results": ["trust_results"],
   "transaction_message_partition": ["transaction_message"]
@@ -654,7 +657,8 @@ async function runMigrations(db: Knex): Promise<void> {
       "20250115000000_add_permission_new_attributes",
       "20260305000000_add_participant_role_counters",
       "20260126000000_add_trust_registry_statistics",
-      "20260126000002_add_credential_schema_statistics"
+      "20260126000002_add_credential_schema_statistics",
+      "20260420000000_create_indexer_events"
     ];
     
     const transactionPartitionMigrationNames = [

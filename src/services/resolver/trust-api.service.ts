@@ -219,6 +219,38 @@ export class TrustApiService extends BaseService {
     return Number.isFinite(h) && h >= 0 ? Math.trunc(h) : 0;
   }
 
+  @Action({
+    name: "blockHeight",
+  })
+  public async blockHeight(ctx: Context) {
+    const checkpoint = await BlockCheckpoint.query().where("job_name", BULL_JOB_NAME.HANDLE_TRUST_RESOLVE).first();
+
+    if (!checkpoint) {
+      return ApiResponder.success(
+        ctx,
+        {
+          type: "block-resolved",
+          height: 0,
+          timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        },
+        200
+      );
+    }
+
+    const updatedAt = checkpoint.updated_at instanceof Date ? checkpoint.updated_at : new Date(checkpoint.updated_at as any);
+    const timestamp = updatedAt.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+    return ApiResponder.success(
+      ctx,
+      {
+        type: "block-resolved",
+        height: Number(checkpoint.height ?? 0),
+        timestamp,
+      },
+      200
+    );
+  }
+
   private async clampQueryBlockHeight(requested?: number): Promise<number> {
     const lastTrust = await this.getLastProcessedTrustBlockHeight();
     if (typeof requested === "number" && Number.isInteger(requested) && requested >= 0) {
