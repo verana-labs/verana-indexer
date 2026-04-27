@@ -74,7 +74,6 @@ export default class IndexerStatusService extends BaseService {
       last_error: status?.lastError
         ? {
             message: status.lastError.message,
-            stack: status.lastError.stack,
             timestamp: status.lastError.timestamp,
             service: status.lastError.service,
           }

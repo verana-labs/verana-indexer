@@ -193,7 +193,6 @@ export async function calculateSlashStatsForSchema(
         prevSlashedDeposits.set(permIdStr, currentSlashed);
 
         const isEcosystemPermission = event.type === "ECOSYSTEM";
-        const isSlashedByEcosystemGov = false;
 
         if (isEcosystemPermission) {
             networkSlashEvents++;
@@ -206,7 +205,7 @@ export async function calculateSlashStatsForSchema(
                 networkSlashedAmountRepaid += incrementalRepaid;
             }
             prevRepaidDeposits.set(permIdStr, repaid);
-        } else if (isSlashedByEcosystemGov) {
+        } else {
             ecosystemSlashEvents++;
             ecosystemSlashedAmount += incrementalSlashed;
 
@@ -216,9 +215,6 @@ export async function calculateSlashStatsForSchema(
             if (incrementalRepaid > 0) {
                 ecosystemSlashedAmountRepaid += incrementalRepaid;
             }
-            prevRepaidDeposits.set(permIdStr, repaid);
-        } else {
-            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
             prevRepaidDeposits.set(permIdStr, repaid);
         }
     }

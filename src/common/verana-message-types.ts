@@ -134,8 +134,12 @@ export function isDelegationMessageType(messageType: string): boolean {
   return Object.values(VeranaDelegationMessageTypes).includes(messageType as VeranaDelegationMessageTypes);
 }
 
-export function isDidMessageType(messageType: string): boolean {
+export function isDigitalIdentityMessageType(messageType: string): boolean {
   return Object.values(VeranaDiMessageTypes).includes(messageType as VeranaDiMessageTypes);
+}
+
+export function isDidMessageType(messageType: string): boolean {
+  return isDigitalIdentityMessageType(messageType);
 }
 
 export function isExchangeRateMessageType(messageType: string): boolean {
