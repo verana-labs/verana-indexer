@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.0](https://github.com/verana-labs/verana-indexer/compare/v1.2.1...v1.3.0) (2026-04-27)
+
+
+### Features
+
+* implement active participants state model with scheduled flips and counters ([#211](https://github.com/verana-labs/verana-indexer/issues/211)) ([484b1cb](https://github.com/verana-labs/verana-indexer/commit/484b1cb52651d5ab22dcdf0e68c83c450211f466))
+* implement DID-based event system for WebSocket and VS Agent integration ([#223](https://github.com/verana-labs/verana-indexer/issues/223)) ([4b4cabb](https://github.com/verana-labs/verana-indexer/commit/4b4cabbe1b8acbfcbf1f946cd8a4d9c3f0b0419d))
+* merge trust resolver into indexer ([#221](https://github.com/verana-labs/verana-indexer/issues/221)) ([69e5864](https://github.com/verana-labs/verana-indexer/commit/69e5864a34c0d6699be8a92ce6d46e08e16fa775))
+* pause crawling on database timeout and pool exhaustion ([#213](https://github.com/verana-labs/verana-indexer/issues/213)) ([ed3ce1d](https://github.com/verana-labs/verana-indexer/commit/ed3ce1d1b82fab34ecc58d946bb039ef86937563))
+* update pending tasks vp_state filtering conditions ([#209](https://github.com/verana-labs/verana-indexer/issues/209)) ([1f5e41e](https://github.com/verana-labs/verana-indexer/commit/1f5e41ed4ad99b9fdbd87512e71e25098dc94155))
+
+
+### Bug Fixes
+
+* add some guards in reindex startup to prevent unrecoverable errors ([#208](https://github.com/verana-labs/verana-indexer/issues/208)) ([c338d08](https://github.com/verana-labs/verana-indexer/commit/c338d0869e22caec935650a804cb0fce2bd71428))
+* correct weight aggregation for total trust deposits ([#215](https://github.com/verana-labs/verana-indexer/issues/215)) ([b3133c4](https://github.com/verana-labs/verana-indexer/commit/b3133c4767b7b1e6144bc7b887eaede15df93939))
+* start mode detection consuming lot of time ([7d923da](https://github.com/verana-labs/verana-indexer/commit/7d923dabbe8805789f6e7780ad28e57d23686453))
+
 ## [1.2.1](https://github.com/verana-labs/verana-indexer/compare/v1.2.0...v1.2.1) (2026-03-25)
 
 
