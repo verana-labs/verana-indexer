@@ -15,39 +15,65 @@ export default class IndexerEventsService extends BaseService {
   }
 
   @Action({
-    name: "broadcastBlockProcessed",
+    name: "broadcastBlockIndexed",
     params: {
       height: { type: "number", integer: true, positive: true, convert: true },
       timestamp: { type: "string", optional: true, convert: true },
     },
   })
-  public async broadcastBlockProcessed(ctx: Context<{ height: number; timestamp?: string }>) {
+  public async broadcastBlockIndexed(ctx: Context<{ height: number; timestamp?: string }>) {
+    const { height, timestamp } = ctx.params;
+    const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
+    let events: Awaited<ReturnType<typeof persistIndexerEventsForBlock>> = [];
+
+    try {
+      events = await persistIndexerEventsForBlock(height);
+      events.forEach((event) => eventsBroadcaster.broadcastIndexerEvent(event));
+    } catch (error) {
+      this.logger.error("[IndexerEventsService] Error persisting/broadcasting indexer events:", error);
+    } finally {
+      eventsBroadcaster.broadcastBlockProcessed(height, eventTimestamp);
+    }
+
+    try {
+      eventsBroadcaster.broadcastBlockIndexed(height, eventTimestamp);
+    } catch (error) {
+      this.logger.error("[IndexerEventsService] Error broadcasting block-indexed:", error);
+      throw error;
+    }
+
+    return {
+      success: true,
+      clientsNotified: eventsBroadcaster.getWSClientCount(),
+      eventsNotified: events.length,
+      height,
+      timestamp: eventTimestamp.toISOString(),
+    };
+  }
+
+  @Action({
+    name: "broadcastBlockResolved",
+    params: {
+      height: { type: "number", integer: true, positive: true, convert: true },
+      timestamp: { type: "string", optional: true, convert: true },
+    },
+  })
+  public async broadcastBlockResolved(ctx: Context<{ height: number; timestamp?: string }>) {
     const { height, timestamp } = ctx.params;
     const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
 
     try {
-      const events = await persistIndexerEventsForBlock(height);
-      events.forEach((event) => eventsBroadcaster.broadcastIndexerEvent(event));
+      eventsBroadcaster.broadcastBlockResolved(height, eventTimestamp);
+
       return {
         success: true,
         clientsNotified: eventsBroadcaster.getWSClientCount(),
-        eventsNotified: events.length,
         height,
         timestamp: eventTimestamp.toISOString(),
       };
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error broadcasting block processed:", error);
-      return {
-        success: false,
-        clientsNotified: eventsBroadcaster.getWSClientCount(),
-        eventsNotified: 0,
-        height,
-        timestamp: eventTimestamp.toISOString(),
-        error: (error as any)?.message ?? String(error),
-      };
-    } finally {
-      // Keep legacy heartbeat even if persistence fails.
-      eventsBroadcaster.broadcastBlockProcessed(height, eventTimestamp);
+      this.logger.error("[IndexerEventsService] Error broadcasting block-resolved:", error);
+      throw error;
     }
   }
 

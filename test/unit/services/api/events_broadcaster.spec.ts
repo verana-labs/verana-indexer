@@ -139,6 +139,148 @@ describe("EventsBroadcaster", () => {
     expect(broadcaster.getWSClientCount()).toBe(0);
   });
 
+  describe("Block indexed events", () => {
+    it("should broadcast block-indexed events to all connected clients", (done) => {
+      const ws1 = new WebSocket(WS_URL);
+      const ws2 = new WebSocket(WS_URL);
+      const receivedMessages: any[] = [];
+      let bothConnected = false;
+
+      const checkDone = () => {
+        if (bothConnected && receivedMessages.length === 2) {
+          receivedMessages.forEach((msg) => {
+            expect(msg.type).toBe("block-indexed");
+            expect(msg.height).toBe(123456);
+            expect(msg.timestamp).toBeDefined();
+          });
+          ws1.close();
+          ws2.close();
+          done();
+        }
+      };
+
+      ws1.on("open", () => {
+        ws2.on("open", () => {
+          bothConnected = true;
+          broadcaster.broadcastBlockIndexed(123456, new Date());
+        });
+      });
+
+      ws1.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-indexed") {
+          receivedMessages.push(message);
+          checkDone();
+        }
+      });
+
+      ws2.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-indexed") {
+          receivedMessages.push(message);
+          checkDone();
+        }
+      });
+
+      ws1.on("error", (error) => done(error));
+      ws2.on("error", (error) => done(error));
+    }, 10000);
+
+    it("should format timestamp correctly", (done) => {
+      const ws = new WebSocket(WS_URL);
+      const testTimestamp = new Date("2025-01-15T10:30:00.000Z");
+      const expectedFormat = "2025-01-15T10:30:00Z";
+      let blockIndexedReceived = false;
+
+      ws.on("open", () => {
+        broadcaster.broadcastBlockIndexed(789012, testTimestamp);
+      });
+
+      ws.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-indexed") {
+          expect(message.timestamp).toBe(expectedFormat);
+          expect(new Date(message.timestamp).getTime()).toBe(testTimestamp.getTime());
+          blockIndexedReceived = true;
+          ws.close();
+        }
+      });
+
+      ws.on("close", () => {
+        if (blockIndexedReceived) {
+          done();
+        } else {
+          done(new Error("Block indexed message not received"));
+        }
+      });
+
+      ws.on("error", (error) => {
+        done(error);
+      });
+    }, 10000);
+
+    it("should handle string timestamps", (done) => {
+      const ws = new WebSocket(WS_URL);
+      const testTimestamp = "2025-01-15T10:30:00.000Z";
+      const expectedFormat = "2025-01-15T10:30:00Z";
+      let blockIndexedReceived = false;
+
+      ws.on("open", () => {
+        broadcaster.broadcastBlockIndexed(345678, testTimestamp);
+      });
+
+      ws.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-indexed") {
+          expect(message.timestamp).toBe(expectedFormat);
+          blockIndexedReceived = true;
+          ws.close();
+        }
+      });
+
+      ws.on("close", () => {
+        if (blockIndexedReceived) {
+          done();
+        } else {
+          done(new Error("Block indexed message not received"));
+        }
+      });
+
+      ws.on("error", (error) => {
+        done(error);
+      });
+    }, 10000);
+
+    it("should broadcast block-resolved events", (done) => {
+      const ws = new WebSocket(WS_URL);
+      let received = false;
+
+      ws.on("open", () => {
+        broadcaster.broadcastBlockResolved(999001, new Date("2025-06-01T12:00:00.000Z"));
+      });
+
+      ws.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-resolved") {
+          expect(message.height).toBe(999001);
+          expect(message.timestamp).toBeDefined();
+          received = true;
+          ws.close();
+        }
+      });
+
+      ws.on("close", () => {
+        if (received) {
+          done();
+        } else {
+          done(new Error("block-resolved not received"));
+        }
+      });
+
+      ws.on("error", (error) => done(error));
+    }, 10000);
+  });
+
   it("includes did and block_height in DID room connected messages", async () => {
     const did = "did:web:agent.example";
     const ws = new WebSocket(`${WS_URL}?did=${encodeURIComponent(did)}`);
@@ -183,6 +325,43 @@ describe("EventsBroadcaster", () => {
     closeSocket(wsOther);
   });
 
+  describe("Real-time Event Flow", () => {
+    it("should receive multiple block-indexed events in sequence", (done) => {
+      const ws = new WebSocket(WS_URL);
+      const receivedHeights: number[] = [];
+      const expectedHeights = [100, 101, 102];
+
+      ws.on("open", () => {
+        setTimeout(() => broadcaster.broadcastBlockIndexed(100, new Date()), 100);
+        setTimeout(() => broadcaster.broadcastBlockIndexed(101, new Date()), 200);
+        setTimeout(() => broadcaster.broadcastBlockIndexed(102, new Date()), 300);
+      });
+
+      ws.on("message", (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.type === "block-indexed") {
+          receivedHeights.push(message.height);
+          if (receivedHeights.length === expectedHeights.length) {
+            expect(receivedHeights).toEqual(expectedHeights);
+            ws.close();
+          }
+        }
+      });
+
+      ws.on("close", () => {
+        if (receivedHeights.length === expectedHeights.length) {
+          done();
+        } else {
+          done(new Error(`Expected ${expectedHeights.length} events, got ${receivedHeights.length}`));
+        }
+      });
+
+      ws.on("error", (error) => {
+        done(error);
+      });
+    }, 10000);
+  });
+
   it("delivers multi-DID events to each relevant DID subscriber", async () => {
     const didA = "did:web:agent-a.example";
     const didB = "did:web:agent-b.example";
@@ -214,7 +393,7 @@ describe("EventsBroadcaster", () => {
     closeSocket(wsB);
   });
 
-  it("broadcasts legacy block-processed events to global subscribers only", async () => {
+  it("broadcasts legacy block-indexed events to global subscribers only", async () => {
     const ws = new WebSocket(WS_URL);
     const didWs = new WebSocket(`${WS_URL}?did=${encodeURIComponent("did:web:agent.example")}`);
     await waitForOpen(ws);
@@ -222,18 +401,18 @@ describe("EventsBroadcaster", () => {
     await waitForMessage(ws, (msg) => msg.type === "connected");
     await waitForMessage(didWs, (msg) => msg.type === "connected");
 
-    const blockProcessed = waitForMessage(ws, (msg) => msg.type === "block-processed");
+    const blockProcessed = waitForMessage(ws, (msg) => msg.type === "block-indexed");
     let didRoomReceivedBlockProcessed = false;
     didWs.on("message", (data) => {
       const message = JSON.parse(data.toString());
-      if (message.type === "block-processed") didRoomReceivedBlockProcessed = true;
+      if (message.type === "block-indexed") didRoomReceivedBlockProcessed = true;
     });
 
     broadcaster.broadcastBlockProcessed(123456, new Date("2025-01-15T10:30:00.000Z"));
     const message = await blockProcessed;
     expect(Object.keys(message)).toEqual(["type", "height", "timestamp"]);
     expect(message).toMatchObject({
-      type: "block-processed",
+      type: "block-indexed",
       height: 123456,
       timestamp: "2025-01-15T10:30:00Z",
     });
@@ -244,6 +423,60 @@ describe("EventsBroadcaster", () => {
     expect(didRoomReceivedBlockProcessed).toBe(false);
 
     closeSocket(ws);
+    closeSocket(didWs);
+  });
+
+  it("does not send block-indexed to DID room subscribers", async () => {
+    const globalWs = new WebSocket(WS_URL);
+    const didWs = new WebSocket(`${WS_URL}?did=${encodeURIComponent("did:web:agent.example")}`);
+    await Promise.all([waitForOpen(globalWs), waitForOpen(didWs)]);
+    await Promise.all([
+      waitForMessage(globalWs, (msg) => msg.type === "connected"),
+      waitForMessage(didWs, (msg) => msg.type === "connected"),
+    ]);
+
+    const globalPromise = waitForMessage(globalWs, (msg) => msg.type === "block-indexed");
+    let didRoomReceived = false;
+    didWs.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "block-indexed") didRoomReceived = true;
+    });
+
+    broadcaster.broadcastBlockIndexed(123456, new Date("2025-01-15T10:30:00.000Z"));
+    const message = await globalPromise;
+    expect(message.type).toBe("block-indexed");
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(didRoomReceived).toBe(false);
+
+    closeSocket(globalWs);
+    closeSocket(didWs);
+  });
+
+  it("does not send block-resolved to DID room subscribers", async () => {
+    const globalWs = new WebSocket(WS_URL);
+    const didWs = new WebSocket(`${WS_URL}?did=${encodeURIComponent("did:web:agent.example")}`);
+    await Promise.all([waitForOpen(globalWs), waitForOpen(didWs)]);
+    await Promise.all([
+      waitForMessage(globalWs, (msg) => msg.type === "connected"),
+      waitForMessage(didWs, (msg) => msg.type === "connected"),
+    ]);
+
+    const globalPromise = waitForMessage(globalWs, (msg) => msg.type === "block-resolved");
+    let didRoomReceived = false;
+    didWs.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "block-resolved") didRoomReceived = true;
+    });
+
+    broadcaster.broadcastBlockResolved(123456, new Date("2025-01-15T10:30:00.000Z"));
+    const message = await globalPromise;
+    expect(message.type).toBe("block-resolved");
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(didRoomReceived).toBe(false);
+
+    closeSocket(globalWs);
     closeSocket(didWs);
   });
 

@@ -165,7 +165,9 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
           if (fs.existsSync(localPath)) {
             const data = await fs.promises.readFile(localPath, "utf8");
             spec = JSON.parse(data);
-          } else {
+          }
+
+          if (!spec) {
             // Fallback to service-generated spec
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const svc: any = this as any;

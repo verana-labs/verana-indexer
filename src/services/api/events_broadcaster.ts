@@ -238,9 +238,41 @@ export class EventsBroadcaster {
   broadcastBlockProcessed(height: number, timestamp: Date | string): void {
     const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
     this.broadcastToGlobalClients({
-      type: "block-processed",
+      type: "block-indexed",
       height,
       timestamp: toIsoSeconds(eventTimestamp),
+    });
+  }
+
+  broadcastBlockIndexed(height: number, timestamp: Date | string): void {
+    if (this.wsClients.size === 0) {
+      return;
+    }
+
+    const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    const isoString = eventTimestamp.toISOString();
+    const timestampFormatted = isoString.replace(/\.\d{3}Z$/, "Z");
+
+    this.broadcastToGlobalClients({
+      type: "block-indexed",
+      height,
+      timestamp: timestampFormatted,
+    });
+  }
+
+  broadcastBlockResolved(height: number, timestamp: Date | string): void {
+    if (this.wsClients.size === 0) {
+      return;
+    }
+
+    const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    const isoString = eventTimestamp.toISOString();
+    const timestampFormatted = isoString.replace(/\.\d{3}Z$/, "Z");
+
+    this.broadcastToGlobalClients({
+      type: "block-resolved",
+      height,
+      timestamp: timestampFormatted,
     });
   }
 
@@ -267,7 +299,7 @@ export class EventsBroadcaster {
       }
     }
 
-    this.broadcastMessage(eventData);
+    this.broadcastToGlobalClients(eventData);
   }
 
   private broadcastMessage(eventData: Record<string, unknown>): void {

@@ -223,7 +223,7 @@ export default class IndexerMetaService extends BaseService {
       return ApiResponder.success(
         ctx,
         {
-          type: "block-processed",
+          type: "block-indexed",
           height: 0,
           timestamp: new Date().toISOString(),
         },
@@ -241,7 +241,7 @@ export default class IndexerMetaService extends BaseService {
     return ApiResponder.success(
       ctx,
       {
-        type: "block-processed",
+        type: "block-indexed",
         height: checkpoint.height,
         timestamp,
       },

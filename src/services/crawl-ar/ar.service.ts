@@ -617,7 +617,10 @@ export default class CrawlNewAccountsService extends BullableService {
                 return null;
             }
 
-            const account = await Account.query(knex).findOne({ address });
+            const account = await Account.query(knex)
+              .where({ address })
+              .timeout(getDbQueryTimeoutMs())
+              .first();
             if (account && this.accountCache.size < this.cacheSize) {
                 this.accountCache.set(address, account);
             }
@@ -662,7 +665,8 @@ export default class CrawlNewAccountsService extends BullableService {
                     spendable_balances: updatedBalances,
                     updated_at: new Date().toISOString(),
                 })
-                .where({ address });
+                .where({ address })
+                .timeout(getDbQueryTimeoutMs());
 
             this.accountCache.delete(address);
         } catch (err: unknown) {
@@ -710,7 +714,8 @@ export default class CrawlNewAccountsService extends BullableService {
                     spendable_balances: newBalances,
                     updated_at: new Date().toISOString(),
                 })
-                .where({ address });
+                .where({ address })
+                .timeout(getDbQueryTimeoutMs());
 
             this.accountCache.delete(address);
         } catch (err: unknown) {

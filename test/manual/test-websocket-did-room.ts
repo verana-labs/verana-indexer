@@ -4,10 +4,10 @@ import WebSocket from "ws";
 
 type IndexerEventMessage = {
   type: "indexer-event";
-  eventType: string;
+  event_type: string;
   did: string;
-  blockHeight: number;
-  txHash: string;
+  block_height: number;
+  tx_hash: string;
   timestamp: string;
   payload: Record<string, unknown>;
 };
@@ -15,7 +15,7 @@ type IndexerEventMessage = {
 type ConnectedMessage = {
   type: "connected";
   did?: string;
-  blockHeight?: number | null;
+  block_height?: number | null;
   timestamp: string;
 };
 
@@ -49,12 +49,15 @@ ws.on("message", async (data: WebSocket.Data) => {
   console.log("Received:", JSON.stringify(message, null, 2));
 
   if (message.type === "connected") {
-    const connectedAt = Number(message.blockHeight ?? afterBlockHeight);
+    const connectedAt = Number(
+      (message as ConnectedMessage).block_height ?? afterBlockHeight
+    );
     await replayMissedEvents(afterBlockHeight || connectedAt);
   }
 
   if (message.type === "indexer-event") {
-    console.log(`DID event ${message.eventType} at block ${message.blockHeight}`);
+    const ev = message as IndexerEventMessage;
+    console.log(`DID event ${ev.event_type} at block ${ev.block_height}`);
   }
 });
 
@@ -70,4 +73,3 @@ process.on("SIGINT", () => {
   ws.close();
   process.exit(0);
 });
-

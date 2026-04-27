@@ -243,7 +243,11 @@ function createOnError() {
     err: any
   ) {
     try {
-      const status = err.code || err.status || 500;
+      const rawStatus = err.status ?? err.code ?? 500;
+      const status =
+        typeof rawStatus === "number" && Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599
+          ? rawStatus
+          : 500;
       const errorMessage = err.message || err.error || "Internal Server Error";
       const errorType = err.type || err.name || "UNKNOWN_ERROR";
 
@@ -392,6 +396,14 @@ function createRoute(
         "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
         "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
+      }),
+      createRoute("/verana/resolver/v1", {
+        "GET block-height": `${SERVICE.V1.TrustV1ApiService.path}.blockHeight`,
+        "GET resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolve`,
+        "GET issuer-authorization": `${SERVICE.V1.TrustV1ApiService.path}.issuerAuthorization`,
+        "GET verifier-authorization": `${SERVICE.V1.TrustV1ApiService.path}.verifierAuthorization`,
+        "GET ecosystem-participant": `${SERVICE.V1.TrustV1ApiService.path}.ecosystemParticipant`,
+        "POST refresh": `${SERVICE.V1.TrustV1ApiService.path}.refresh`,
       }),
       createRoute("/mx/v1", {
         "GET reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
