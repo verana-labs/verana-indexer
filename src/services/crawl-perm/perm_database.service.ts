@@ -17,7 +17,7 @@ import {
   getPermissionTypeString,
   MsgCancelPermissionVPLastRequest,
   MsgCreateOrUpdatePermissionSession,
-  MsgCreatePermission,
+  MsgSelfCreatePermission,
   MsgCreateRootPermission,
   MsgAdjustPermission,
   MsgRenewPermissionVP,
@@ -75,7 +75,6 @@ const PERMISSION_HISTORY_FIELDS = [
   "expire_soon",
   "vs_operator",
   "adjusted",
-  "adjusted_by",
   "vs_operator_authz_enabled",
   "vs_operator_authz_spend_limit",
   "vs_operator_authz_with_feegrant",
@@ -105,7 +104,6 @@ const PERMISSION_SESSION_HISTORY_FIELDS = [
 const PERMISSION_HISTORY_V4_FIELDS = [
   "vs_operator",
   "adjusted",
-  "adjusted_by",
   "vs_operator_authz_enabled",
   "vs_operator_authz_spend_limit",
   "vs_operator_authz_with_feegrant",
@@ -186,6 +184,24 @@ function pickMessageValue(msg: Record<string, any>, snake: string, camel: string
   return msg[snake] ?? msg[camel];
 }
 
+function pickMessageBool(msg: Record<string, any>, snake: string, camel: string, fallback = false): boolean {
+  const raw = pickMessageValue(msg, snake, camel);
+  if (raw === true) return true;
+  if (raw === false) return false;
+  if (typeof raw === "string") {
+    const v = raw.trim().toLowerCase();
+    if (v === "true") return true;
+    if (v === "false") return false;
+    if (v === "1") return true;
+    if (v === "0") return false;
+  }
+  if (typeof raw === "number") {
+    if (raw === 1) return true;
+    if (raw === 0) return false;
+  }
+  return fallback;
+}
+
 function extractPermissionType(msg: Record<string, any>, fallback: string | number = "UNSPECIFIED") {
   return mapPermissionType(
     msg.permission_type ?? msg.permissionType ?? msg.type ?? fallback
@@ -203,7 +219,7 @@ function normalizeValidationState(value: unknown): string {
       return normalized;
     }
     if (normalized === "TERMINATED" || normalized === "TERMINATION_REQUESTED") {
-      return "VALIDATED";
+      return "TERMINATED";
     }
   }
 
@@ -211,9 +227,8 @@ function normalizeValidationState(value: unknown): string {
   switch (numeric) {
     case 1: return "PENDING";
     case 2: return "VALIDATED";
-    case 3:
-    case 4:
-      return "VALIDATED";
+    case 3: return "TERMINATED";
+    case 4: return "VALIDATED";
     case 0:
     default:
       return "VALIDATION_STATE_UNSPECIFIED";
@@ -237,6 +252,59 @@ function jsonbColumnValue(value: unknown): string | object | null {
     }
   }
   return value as object;
+}
+
+function normalizeDenomAmountArrayForDb(value: unknown): unknown {
+  if (value === null) return null;
+  if (value === undefined) return [];
+  if (typeof value === "string") {
+    try {
+      return normalizeDenomAmountArrayForDb(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(value)) return value;
+  return [];
+}
+
+let permissionsInsertSavepointSeq = 0;
+function nextPermissionsInsertSavepoint(): string {
+  permissionsInsertSavepointSeq += 1;
+  return `perm_insert_sp_${permissionsInsertSavepointSeq}`;
+}
+
+async function healPermissionsIdSequence(trx: any): Promise<void> {
+  await trx.raw(`
+    SELECT setval(pg_get_serial_sequence('permissions','id'),
+      GREATEST((SELECT COALESCE(MAX(id), 1) FROM permissions), 1)
+    )
+  `);
+}
+
+async function insertPermissionsWithSequenceHeal<T = any>(
+  trx: any,
+  insertData: any
+): Promise<T> {
+  const sp = nextPermissionsInsertSavepoint();
+  await trx.raw(`SAVEPOINT ${sp}`);
+  try {
+    const [row] = await trx("permissions").insert(insertData).returning("*");
+    await trx.raw(`RELEASE SAVEPOINT ${sp}`);
+    return row as T;
+  } catch (err: any) {
+    const code = err?.code ?? err?.nativeError?.code;
+    if (code !== "23505") {
+      throw err;
+    }
+
+    // Clear the failed statement so we can continue in the same transaction.
+    await trx.raw(`ROLLBACK TO SAVEPOINT ${sp}`);
+    await healPermissionsIdSequence(trx);
+    const [row] = await trx("permissions").insert(insertData).returning("*");
+    await trx.raw(`RELEASE SAVEPOINT ${sp}`);
+    return row as T;
+  }
 }
 
 const permissionHistoryColumnExistsCache: Record<string, boolean> = {};
@@ -324,7 +392,7 @@ async function pickPermissionSnapshot(record: any) {
       const v = record[field];
       snapshot[field] = v !== null && v !== undefined ? Number(v) : 0;
     } else if (field === "vs_operator_authz_spend_limit" || field === "vs_operator_authz_fee_spend_limit") {
-      snapshot[field] = jsonbColumnValue(record[field]);
+      snapshot[field] = normalizeDenomAmountArrayForDb(record[field]);
     } else if (field === "vs_operator_authz_enabled" || field === "vs_operator_authz_with_feegrant") {
       snapshot[field] = Boolean(record[field]);
     } else if (field === "adjusted") {
@@ -687,7 +755,6 @@ export default class PermIngestService extends Service {
         .update({
           effective_until: effectiveUntil ?? previous.effective_until ?? null,
           adjusted: ts,
-          adjusted_by: adjustedBy ?? previous.adjusted_by ?? null,
           modified: ts ?? previous.modified ?? null,
         });
 
@@ -775,17 +842,16 @@ export default class PermIngestService extends Service {
       ),
       vs_operator: ledgerPermission.vs_operator ?? ledgerPermission.vsOperator ?? null,
       adjusted: toIsoOrNull(ledgerPermission.adjusted ?? ledgerPermission.adjustedAt),
-      adjusted_by: ledgerPermission.adjusted_by ?? ledgerPermission.adjustedBy ?? null,
       vs_operator_authz_enabled: Boolean(
         ledgerPermission.vs_operator_authz_enabled ?? ledgerPermission.vsOperatorAuthzEnabled ?? false
       ),
-      vs_operator_authz_spend_limit: jsonbColumnValue(
+      vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
         ledgerPermission.vs_operator_authz_spend_limit ?? ledgerPermission.vsOperatorAuthzSpendLimit
       ),
       vs_operator_authz_with_feegrant: Boolean(
         ledgerPermission.vs_operator_authz_with_feegrant ?? ledgerPermission.vsOperatorAuthzWithFeegrant ?? false
       ),
-      vs_operator_authz_fee_spend_limit: jsonbColumnValue(
+      vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
         ledgerPermission.vs_operator_authz_fee_spend_limit ?? ledgerPermission.vsOperatorAuthzFeeSpendLimit
       ),
       vs_operator_authz_spend_period:
@@ -803,7 +869,6 @@ export default class PermIngestService extends Service {
       ALTER TABLE IF EXISTS permissions
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
-        ADD COLUMN IF NOT EXISTS adjusted_by text,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
@@ -815,7 +880,6 @@ export default class PermIngestService extends Service {
       ALTER TABLE IF EXISTS permission_history
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
-        ADD COLUMN IF NOT EXISTS adjusted_by text,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
@@ -1485,7 +1549,6 @@ export default class PermIngestService extends Service {
       created: this.normalizeComparableTimestamp(record.created),
       modified: this.normalizeComparableTimestamp(record.modified),
       adjusted: this.normalizeComparableTimestamp(record.adjusted),
-      adjusted_by: record.adjusted_by ?? record.adjustedBy ?? null,
       slashed: this.normalizeComparableTimestamp(record.slashed),
       repaid: this.normalizeComparableTimestamp(record.repaid),
       effective_from: this.normalizeComparableTimestamp(record.effective_from ?? record.effectiveFrom),
@@ -1666,7 +1729,7 @@ export default class PermIngestService extends Service {
 
       this.logger.info(`[handleCreateRootPermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
-      const msgIdNum = Number((msg as any)?.id);
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
       const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
 
       const insertData: any = {
@@ -1682,7 +1745,6 @@ export default class PermIngestService extends Service {
         verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
         vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
         adjusted: timestamp,
-        adjusted_by: creator,
         deposit: 0,
         modified: timestamp,
         created: timestamp,
@@ -1711,9 +1773,12 @@ export default class PermIngestService extends Service {
           insertedPermission = await trx("permissions").where({ id: msgIdNum }).first();
         } else {
           try {
-            [insertedPermission] = await trx("permissions")
-              .insert(insertData)
-              .returning("*");
+            const q = trx("permissions").insert(insertData);
+            if (hasValidMsgId) {
+              [insertedPermission] = await q.onConflict("id").merge(insertData).returning("*");
+            } else {
+              insertedPermission = await insertPermissionsWithSequenceHeal(trx, insertData);
+            }
           } catch (insertError: any) {
             if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
               this.logger.warn(
@@ -1721,9 +1786,12 @@ export default class PermIngestService extends Service {
               );
               this.permissionsColumnExistsCache = null;
               delete insertData.expire_soon;
-              [insertedPermission] = await trx("permissions")
-                .insert(insertData)
-                .returning("*");
+              const q = trx("permissions").insert(insertData);
+              if (hasValidMsgId) {
+                [insertedPermission] = await q.onConflict("id").merge(insertData).returning("*");
+              } else {
+                insertedPermission = await insertPermissionsWithSequenceHeal(trx, insertData);
+              }
             } else {
               throw insertError;
             }
@@ -1772,7 +1840,7 @@ export default class PermIngestService extends Service {
     }
   }
 
-  private async handleCreatePermission(msg: MsgCreatePermission & { height?: number }) {
+  private async handleCreatePermission(msg: MsgSelfCreatePermission & { height?: number }) {
     try {
       this.logger.info(`🔐 handleCreatePermission called with msg:`, JSON.stringify(msg, null, 2));
       let schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
@@ -1787,7 +1855,7 @@ export default class PermIngestService extends Service {
       this.logger.info(`🔐 Extracted schemaId: ${schemaId}`);
       if (!schemaId) {
         this.logger.warn(
-          "Missing schema_id and could not infer it from validator_perm_id in MsgCreatePermission, skipping insert. Msg keys:", Object.keys(msg)
+          "Missing schema_id and could not infer it from validator_perm_id in MsgSelfCreatePermission, skipping insert. Msg keys:", Object.keys(msg)
         );
         return;
 
@@ -1828,7 +1896,7 @@ export default class PermIngestService extends Service {
 
       this.logger.info(`[handleCreatePermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
-      const msgIdNum = Number((msg as any)?.id);
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
       const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
 
       const insertData: any = {
@@ -1845,10 +1913,19 @@ export default class PermIngestService extends Service {
         deposit: 0,
         validator_perm_id: explicitValidatorPermId ?? ecosystemPerm?.id ?? null,
         vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
-        vs_operator_authz_enabled: pickMessageValue(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled") ?? null,
-        vs_operator_authz_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit") ?? null,
-        vs_operator_authz_with_feegrant: pickMessageValue(msg as any, "vs_operator_authz_with_feegrant", "vsOperatorAuthzWithFeegrant") ?? null,
-        vs_operator_authz_fee_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit") ?? null,
+        vs_operator_authz_enabled: pickMessageBool(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled", false),
+        vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit")
+        ),
+        vs_operator_authz_with_feegrant: pickMessageBool(
+          msg as any,
+          "vs_operator_authz_with_feegrant",
+          "vsOperatorAuthzWithFeegrant",
+          false
+        ),
+        vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit")
+        ),
         vs_operator_authz_spend_period: pickMessageValue(msg as any, "vs_operator_authz_spend_period", "vsOperatorAuthzSpendPeriod") ?? null,
         modified: timestamp,
         created: timestamp,
@@ -1877,20 +1954,25 @@ export default class PermIngestService extends Service {
           permission = await trx("permissions").where({ id: msgIdNum }).first();
         } else {
           try {
-            [permission] = await trx("permissions")
-              .insert(insertData)
-              .returning("*");
+            const q = trx("permissions").insert(insertData);
+            if (hasValidMsgId) {
+              [permission] = await q.onConflict("id").merge(insertData).returning("*");
+            } else {
+              permission = await insertPermissionsWithSequenceHeal(trx, insertData);
+            }
           } catch (insertError: any) {
-            // If error is about missing column, clear cache and retry without expire_soon
             if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
               this.logger.warn(
                 `[handleCreatePermission] expire_soon column error detected, clearing cache and retrying without expire_soon`
               );
               this.permissionsColumnExistsCache = null;
               delete insertData.expire_soon;
-              [permission] = await trx("permissions")
-                .insert(insertData)
-                .returning("*");
+              const q = trx("permissions").insert(insertData);
+              if (hasValidMsgId) {
+                [permission] = await q.onConflict("id").merge(insertData).returning("*");
+              } else {
+                permission = await insertPermissionsWithSequenceHeal(trx, insertData);
+              }
             } else {
               throw insertError;
             }
@@ -2147,10 +2229,19 @@ export default class PermIngestService extends Service {
         vp_validator_deposit: 0, 
         vp_summary_digest: null,
         vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
-        vs_operator_authz_enabled: pickMessageValue(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled") ?? null,
-        vs_operator_authz_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit") ?? null,
-        vs_operator_authz_with_feegrant: pickMessageValue(msg as any, "vs_operator_authz_with_feegrant", "vsOperatorAuthzWithFeegrant") ?? null,
-        vs_operator_authz_fee_spend_limit: pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit") ?? null,
+        vs_operator_authz_enabled: pickMessageBool(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled", false),
+        vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit")
+        ),
+        vs_operator_authz_with_feegrant: pickMessageBool(
+          msg as any,
+          "vs_operator_authz_with_feegrant",
+          "vsOperatorAuthzWithFeegrant",
+          false
+        ),
+        vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit")
+        ),
         vs_operator_authz_spend_period: pickMessageValue(msg as any, "vs_operator_authz_spend_period", "vsOperatorAuthzSpendPeriod") ?? null,
         modified: now,
         created: now, 

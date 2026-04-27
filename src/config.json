@@ -122,6 +122,32 @@
       "millisecondCrawl": 2000
     }
   },
+  "resolver": {
+    "enabled": true,
+    "millisecondPoll": 3000,
+    "blocksPerCall": 200,
+    "didResolveConcurrency": 6,
+    "maxDidsPerTrustBlock": 500,
+    "freshStart": {
+      "millisecondPoll": 4000,
+      "blocksPerCall": 40,
+      "didResolveConcurrency": 6,
+      "maxDidsPerTrustBlock": 300
+    },
+    "reindexing": {
+      "millisecondPoll": 250,
+      "blocksPerCall": 200,
+      "didResolveConcurrency": 12,
+      "maxDidsPerTrustBlock": 800
+    },
+    "useEmbeddedRegistryAdapter": true,
+    "disableDigestSriVerification": false,
+    "txPrefilterEnabled": true,
+    "verifiablePublicRegistries": [],
+    "trustEvaluationTtlSeconds": 3600,
+    "dereferenceCacheTtlSeconds": 86400,
+    "pollObjectCachingRetryDays": 7
+  },
   "crawlSigningInfo": {
     "millisecondCrawl": null,
     "patternCrawl": "0 */1 * * * *",

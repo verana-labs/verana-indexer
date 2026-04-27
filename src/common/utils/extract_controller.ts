@@ -13,7 +13,7 @@ export function extractController(
     message.creator ??
     message.sender;
 
-  if (controller && typeof controller === "string" && controller.trim()) {
+  if (controller && typeof controller === 'string' && controller.trim()) {
     return controller.trim();
   }
 

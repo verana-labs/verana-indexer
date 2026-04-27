@@ -878,6 +878,12 @@ export default class PermAPIService extends BullableService {
     return "VALIDATION_STATE_UNSPECIFIED";
   }
 
+  private normalizeDenomAmountArray(value: unknown): unknown {
+    if (value === null) return null;
+    if (Array.isArray(value)) return value;
+    return [];
+  }
+
   private normalizePermissionRow(perm: any): any {
     let normalized: any = {
       ...perm,
@@ -916,6 +922,9 @@ export default class PermAPIService extends BullableService {
     };
 
     normalized = normalizePermissionEmptyStringsToNull(normalized);
+
+    normalized.vs_operator_authz_spend_limit = this.normalizeDenomAmountArray(normalized.vs_operator_authz_spend_limit);
+    normalized.vs_operator_authz_fee_spend_limit = this.normalizeDenomAmountArray(normalized.vs_operator_authz_fee_spend_limit);
 
     return mapPermissionApiFields(normalized as Record<string, unknown>) as any;
   }
@@ -958,7 +967,6 @@ export default class PermAPIService extends BullableService {
             "ph.vp_validator_deposit",
             "ph.vs_operator",
             "ph.adjusted",
-            "ph.adjusted_by",
             "ph.vs_operator_authz_enabled",
             "ph.vs_operator_authz_spend_limit",
             "ph.vs_operator_authz_with_feegrant",
@@ -1020,7 +1028,6 @@ export default class PermAPIService extends BullableService {
             "ph.vp_validator_deposit",
             "ph.vs_operator",
             "ph.adjusted",
-            "ph.adjusted_by",
             "ph.vs_operator_authz_enabled",
             "ph.vs_operator_authz_spend_limit",
             "ph.vs_operator_authz_with_feegrant",
@@ -1090,7 +1097,6 @@ export default class PermAPIService extends BullableService {
         "vp_validator_deposit",
         "vs_operator",
         "adjusted",
-        "adjusted_by",
         "vs_operator_authz_enabled",
         "vs_operator_authz_spend_limit",
         "vs_operator_authz_with_feegrant",
@@ -1311,9 +1317,14 @@ export default class PermAPIService extends BullableService {
       network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
       expire_soon: expireSoon,
     };
-    return mapPermissionApiFields(
-      normalizePermissionEmptyStringsToNull(enriched) as Record<string, unknown>
-    ) as any;
+    const normalized = normalizePermissionEmptyStringsToNull(enriched) as Record<string, unknown>;
+    (normalized as any).vs_operator_authz_spend_limit = this.normalizeDenomAmountArray(
+      (normalized as any).vs_operator_authz_spend_limit
+    );
+    (normalized as any).vs_operator_authz_fee_spend_limit = this.normalizeDenomAmountArray(
+      (normalized as any).vs_operator_authz_fee_spend_limit
+    );
+    return mapPermissionApiFields(normalized) as any;
   }
 
   /**
@@ -1486,7 +1497,6 @@ export default class PermAPIService extends BullableService {
           "ph.vp_validator_deposit",
           "ph.vs_operator",
           "ph.adjusted",
-          "ph.adjusted_by",
           "ph.vs_operator_authz_enabled",
           "ph.vs_operator_authz_spend_limit",
           "ph.vs_operator_authz_with_feegrant",
@@ -1669,11 +1679,10 @@ export default class PermAPIService extends BullableService {
             vp_validator_deposit: historyRecord.vp_validator_deposit != null ? Number(historyRecord.vp_validator_deposit) : 0,
             vs_operator: historyRecord.vs_operator ?? null,
             adjusted: historyRecord.adjusted ?? null,
-            adjusted_by: historyRecord.adjusted_by ?? null,
             vs_operator_authz_enabled: historyRecord.vs_operator_authz_enabled ?? undefined,
-            vs_operator_authz_spend_limit: historyRecord.vs_operator_authz_spend_limit ?? undefined,
+            vs_operator_authz_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_spend_limit),
             vs_operator_authz_with_feegrant: historyRecord.vs_operator_authz_with_feegrant ?? undefined,
-            vs_operator_authz_fee_spend_limit: historyRecord.vs_operator_authz_fee_spend_limit ?? undefined,
+            vs_operator_authz_fee_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_fee_spend_limit),
             vs_operator_authz_spend_period: historyRecord.vs_operator_authz_spend_period ?? undefined,
             issuance_fee_discount:
               historyRecord.issuance_fee_discount != null ? Number(historyRecord.issuance_fee_discount) : 0,
@@ -1789,7 +1798,6 @@ export default class PermAPIService extends BullableService {
         "vp_validator_deposit",
         "vs_operator",
         "adjusted",
-        "adjusted_by",
         "vs_operator_authz_enabled",
         "vs_operator_authz_spend_limit",
         "vs_operator_authz_with_feegrant",
@@ -2035,7 +2043,6 @@ export default class PermAPIService extends BullableService {
           "vp_validator_deposit",
           "vs_operator",
           "adjusted",
-          "adjusted_by",
           "vs_operator_authz_enabled",
           "vs_operator_authz_spend_limit",
           "vs_operator_authz_with_feegrant",
@@ -2101,11 +2108,10 @@ export default class PermAPIService extends BullableService {
           vp_validator_deposit: historyRecord.vp_validator_deposit != null ? Number(historyRecord.vp_validator_deposit) : 0,
           vs_operator: historyRecord.vs_operator ?? null,
           adjusted: historyRecord.adjusted ?? null,
-          adjusted_by: historyRecord.adjusted_by ?? null,
           vs_operator_authz_enabled: historyRecord.vs_operator_authz_enabled ?? undefined,
-          vs_operator_authz_spend_limit: historyRecord.vs_operator_authz_spend_limit ?? undefined,
+          vs_operator_authz_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_spend_limit),
           vs_operator_authz_with_feegrant: historyRecord.vs_operator_authz_with_feegrant ?? undefined,
-          vs_operator_authz_fee_spend_limit: historyRecord.vs_operator_authz_fee_spend_limit ?? undefined,
+          vs_operator_authz_fee_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_fee_spend_limit),
           vs_operator_authz_spend_period: historyRecord.vs_operator_authz_spend_period ?? undefined,
           created: historyRecord.created,
           modified: historyRecord.modified,
@@ -2661,7 +2667,6 @@ export default class PermAPIService extends BullableService {
         "vp_validator_deposit",
         "vs_operator",
         "adjusted",
-        "adjusted_by",
         "vs_operator_authz_enabled",
         "vs_operator_authz_spend_limit",
         "vs_operator_authz_with_feegrant",
@@ -2721,7 +2726,6 @@ export default class PermAPIService extends BullableService {
             "ph.vp_validator_deposit",
             "ph.vs_operator",
             "ph.adjusted",
-            "ph.adjusted_by",
             "ph.vs_operator_authz_enabled",
             "ph.vs_operator_authz_spend_limit",
             "ph.vs_operator_authz_with_feegrant",

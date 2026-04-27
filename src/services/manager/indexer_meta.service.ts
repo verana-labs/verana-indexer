@@ -167,18 +167,18 @@ export default class IndexerMetaService extends BaseService {
         : null;
 
       const networkInfo = {
-        chainId: nodeInfo?.default_node_info?.network || Network.chainId || "unknown",
-        rpcEndpoint: Network.RPC || "unknown",
-        lcdEndpoint: Network.LCD || "unknown",
-        cosmosSdkVersion: nodeInfo?.application_version?.cosmos_sdk_version || "unknown",
-        nodeVersion: nodeInfo?.application_version?.version || "unknown",
-        appName: "verana-indexer",
+        chain_id: nodeInfo?.default_node_info?.network || Network.chainId || "unknown",
+        rpc_endpoint: Network.RPC || "unknown",
+        lcd_endpoint: Network.LCD || "unknown",
+        cosmos_sdk_version: nodeInfo?.application_version?.cosmos_sdk_version || "unknown",
+        node_version: nodeInfo?.application_version?.version || "unknown",
+        app_name: "verana-indexer",
       };
 
       return ApiResponder.success(
         ctx,
         {
-          appVersion: getIndexerVersion(),
+          app_version: getIndexerVersion(),
           environment: {
             network: networkInfo,
           },
@@ -189,15 +189,15 @@ export default class IndexerMetaService extends BaseService {
       return ApiResponder.success(
         ctx,
         {
-          appVersion: getIndexerVersion(),
+          app_version: getIndexerVersion(),
           environment: {
             network: {
-              chainId: Network.chainId || "unknown",
-              rpcEndpoint: Network.RPC || "unknown",
-              lcdEndpoint: Network.LCD || "unknown",
-              cosmosSdkVersion: "unknown",
-              nodeVersion: "unknown",
-              appName: "verana-indexer",
+              chain_id: Network.chainId || "unknown",
+              rpc_endpoint: Network.RPC || "unknown",
+              lcd_endpoint: Network.LCD || "unknown",
+              cosmos_sdk_version: "unknown",
+              node_version: "unknown",
+              app_name: "verana-indexer",
             },
           },
         },
@@ -216,7 +216,7 @@ export default class IndexerMetaService extends BaseService {
       return ApiResponder.success(
         ctx,
         {
-          type: "block-processed",
+          type: "block-indexed",
           height: 0,
           timestamp: new Date().toISOString(),
         },
@@ -234,7 +234,7 @@ export default class IndexerMetaService extends BaseService {
     return ApiResponder.success(
       ctx,
       {
-        type: "block-processed",
+        type: "block-indexed",
         height: checkpoint.height,
         timestamp,
       },

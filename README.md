@@ -466,93 +466,114 @@ For detailed information about the reindexing process, architecture, and trouble
 
 ## Real-Time Event API (WebSocket)
 
-The Verana Indexer provides a **WebSocket** endpoint that broadcasts real-time notifications when blocks are processed. This eliminates the need for polling and enables frontend applications to react immediately when new data becomes available.
+The Verana Indexer exposes a single **WebSocket** path that supports two concerns at once: **trust-resolver pipeline signals** (`block-indexed` and `block-resolved`), and an optional **DID-scoped stream** plus HTTP replay for persisted indexer events.
 
-### Endpoint
+**Base URL:** `ws://localhost:3001/verana/indexer/v1/events` (WebSocket only — use a WebSocket client, not a plain HTTP GET).
 
-**WebSocket:** `ws://localhost:3001/verana/indexer/v1/events`
+### Global stream (no `did` query)
 
-> **Note:** This is a WebSocket endpoint, not an HTTP endpoint. Connect using a WebSocket client, not a regular HTTP GET request.
+After `connected`, global subscribers (clients that did **not** pass `did=`) receive:
 
-### Use Case
+2. **`block-indexed`** — transaction / indexer pipeline finished for that height; refresh DID directory, credentials, modules, etc.
+3. **`block-resolved`** — trust resolver finished materializing that height (when trust resolution is enabled and has caught up).
 
-When a frontend application submits a transaction to the blockchain (e.g., updating a trust registry or permission), it needs to know when the indexer has processed that transaction's block so it can refresh its data. Instead of polling the indexer every few seconds, the application can subscribe to the events endpoint and receive immediate notifications.
-
-**Example Flow:**
-1. Frontend submits transaction to the chain (e.g., a Verana module message)
-2. Frontend receives transaction hash and block height from the blockchain
-3. Frontend subscribes to indexer events endpoint
-4. When the indexer processes the block, the frontend receives a notification
-5. Frontend queries indexer APIs for updated data (e.g., `/verana/tr/v1/list` or `/verana/cs/v1/list`)
-
-### Message Format
-
-All messages are JSON strings with the following structure:
 
 ```json
 {
-  "type": "block-processed",
+  "type": "block-indexed",
   "height": 123456,
   "timestamp": "2025-01-15T10:30:00Z"
 }
 ```
 
-**Event Type:**
-- `block-processed` - Sent whenever a new block is successfully processed by the indexer. The `height` field contains the latest processed block height.
+```json
+{
+  "type": "block-resolved",
+  "height": 123456,
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
 
-### Quick Test
+### DID room (`?did=<DID>`)
 
-**Test the WebSocket connection:**
+Connect with `ws://localhost:3001/verana/indexer/v1/events?did=<URL-encoded-DID>`. The first message is `connected` and includes `did` and `block_height`. Persisted transaction-level events for that DID are pushed live as `indexer-event` messages (same snake_case fields as the HTTP replay API).
+
+```json
+{
+  "type": "connected",
+  "did": "did:web:agent.example",
+  "block_height": 123456,
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+```json
+{
+  "type": "indexer-event",
+  "event_type": "StartPermissionVP",
+  "did": "did:web:agent.example",
+  "block_height": 123457,
+  "tx_hash": "A1B2C3",
+  "timestamp": "2025-01-15T10:31:00Z",
+  "payload": {
+    "module": "permission",
+    "action": "StartPermissionVP",
+    "message_type": "/verana.perm.v1.MsgStartPermissionVP",
+    "related_dids": ["did:web:agent.example"]
+  }
+}
+```
+
+Replay missed DID events over HTTP:
 
 ```bash
-# Run the test script (make sure indexer is running first)
+curl "http://localhost:3001/verana/indexer/v1/events?did=did:web:agent.example&after_block_height=123456&limit=100"
+```
+
+Manual checks:
+
+```bash
 node --import=tsx test/manual/test-websocket.ts
+DID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts
 ```
 
-You should see:
-```
-✅ Connected to Verana Indexer Events WebSocket
-Waiting for block-processed events...
-```
+### Client examples
 
-When a block is processed, you'll see:
-```
-📦 Received event: {
-  "type": "block-processed",
-  "height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
-}
-
-🎉 New block processed! Height: 123456, Time: 2025-01-15T10:30:00Z
-```
-
-### Usage
-
+**Global listener (indexing + trust stages):**
 
 ```javascript
-const ws = new WebSocket('wss://idx.testnet.verana.network/verana/indexer/v1/events');
-
-ws.onopen = () => {
-  console.log('Connected to Verana Indexer Events');
-};
+const ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
-  
-  if (data.type === 'block-processed') {
-    console.log(`Block ${data.height} processed at ${data.timestamp}`);
-    
-    if (data.height >= expectedBlockHeight) {
-      fetchUpdatedData();
-    }
+  if (data.type === 'block-indexed') {
+    console.log(`Block ${data.height} indexed at ${data.timestamp}`);
+    fetchIndexedData();
+  }
+  if (data.type === 'block-resolved') {
+    console.log(`Block ${data.height} trust-resolved at ${data.timestamp}`);
+    fetchTrustData();
   }
 };
+```
 
-ws.onerror = (error) => {
-  console.error('WebSocket error:', error);
-};
+**DID room + replay:**
 
-ws.onclose = () => {
-  console.log('WebSocket connection closed');
+```javascript
+const did = 'did:web:agent.example';
+let lastSeenBlockHeight = 0;
+const ws = new WebSocket(`wss://idx.testnet.verana.network/verana/indexer/v1/events?did=${encodeURIComponent(did)}`);
+
+ws.onmessage = async (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === 'connected') {
+    await fetch(`/verana/indexer/v1/events?did=${encodeURIComponent(did)}&after_block_height=${lastSeenBlockHeight}`);
+  }
+
+  if (data.type === 'indexer-event') {
+    console.log(data.event_type, data.block_height, data.payload);
+    lastSeenBlockHeight = Math.max(lastSeenBlockHeight, data.block_height);
+  }
 };
 ```

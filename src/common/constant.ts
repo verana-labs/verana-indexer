@@ -114,6 +114,7 @@ export const BULL_JOB_NAME = {
   CHECKPOINT_UPDATE_DELEGATOR: "job:checkpoint_update_delegator",
   SNAPSHOT_GLOBAL_METRICS: "job:snapshot-global-metrics",
   CALCULATE_STATS: "calculate:stats",
+  HANDLE_TRUST_RESOLVE: "handle:trust-resolve",
 };
 
 export enum ModulesParamsNamesTypes {
@@ -190,6 +191,14 @@ export const SERVICE = {
     TrustDepositApiService: {
       key: "TrustDepositApiService",
       path: "v1.TrustDepositApiService",
+    },
+    ResolverPollService: {
+      key: "ResolverPollService",
+      path: "v1.ResolverPollService",
+    },
+    TrustV1ApiService: {
+      key: "TrustV1ApiService",
+      path: "v1.TrustV1ApiService",
     },
     CrawlTrustDepositService: {
       key: "CrawlTrustDepositService",

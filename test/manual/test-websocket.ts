@@ -2,8 +2,14 @@
 
 import WebSocket from 'ws';
 
-interface BlockProcessedEvent {
-  type: 'block-processed';
+interface BlockIndexedEvent {
+  type: 'block-indexed';
+  height: number;
+  timestamp: string;
+}
+
+interface BlockResolvedEvent {
+  type: 'block-resolved';
   height: number;
   timestamp: string;
 }
@@ -13,13 +19,13 @@ interface ConnectedEvent {
   message: string;
 }
 
-type EventMessage = BlockProcessedEvent | ConnectedEvent;
+type EventMessage = BlockIndexedEvent | BlockResolvedEvent | ConnectedEvent;
 
 const ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');
 
 ws.on('open', () => {
   console.log('✅ Connected to Verana Indexer Events WebSocket');
-  console.log('Waiting for block-processed events...\n');
+  console.log('Waiting for block-indexed / block-resolved events...\n');
 });
 
 ws.on('message', (data: WebSocket.Data) => {
@@ -27,8 +33,11 @@ ws.on('message', (data: WebSocket.Data) => {
     const event: EventMessage = JSON.parse(data.toString()) as EventMessage;
     console.log('📦 Received event:', JSON.stringify(event, null, 2));
     
-    if (event.type === 'block-processed') {
-      console.log(`\n🎉 New block processed! Height: ${event.height}, Time: ${event.timestamp}\n`);
+    if (event.type === 'block-indexed') {
+      console.log(`\n Block indexed (tx pipeline). Height: ${event.height}, Time: ${event.timestamp}\n`);
+    }
+    if (event.type === 'block-resolved') {
+      console.log(`\n Block trust-resolved. Height: ${event.height}, Time: ${event.timestamp}\n`);
     }
   } catch (error) {
     console.error('❌ Error parsing message:', error);

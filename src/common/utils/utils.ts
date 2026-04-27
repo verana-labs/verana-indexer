@@ -283,10 +283,11 @@ export function mapPermissionType(input: string | number): string {
   }
 }
 
-export const PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS = ["adjusted_by"] as const;
 
 export function normalizePermissionEmptyStringsToNull(obj: Record<string, any>): Record<string, any> {
   if (!obj || typeof obj !== "object") return obj;
+
+  const PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS: string[] = [];
 
   const normalized: Record<string, any> = { ...obj };
   for (const key of PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS) {

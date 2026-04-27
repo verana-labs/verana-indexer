@@ -321,7 +321,7 @@
 | ---------------- | --------------------------------------------------------------------------- |
 | `id`             | Primary key of the trust registry record                                    |
 | `did`            | Decentralized Identifier (DID) string associated with the trust registry    |
-| `corporation`    | Corporation (group) that controls this trust registry (VPR v4)              |
+| `corporation`    | Corporation  that controls this trust registry               |
 | `created`        | Creation date/time of the trust registry record                             |
 | `modified`       | Last modification date/time of the trust registry record                    |
 | `archived`       | Date/time when the trust registry was archived (nullable, if ever archived) |
@@ -382,9 +382,9 @@
 | `issuer_validation_validity_period`           | Validity period for issuer validation                                  |
 | `verifier_validation_validity_period`         | Validity period for verifier validation                                |
 | `holder_validation_validity_period`           | Validity period for holder validation                                  |
-| `issuer_onboarding_mode`                      | Issuer onboarding mode (VPR v4)                                      |
-| `verifier_onboarding_mode`                    | Verifier onboarding mode (VPR v4)                                      |
-| `holder_onboarding_mode`                      | Holder onboarding mode (VPR v4)                                        |
+| `issuer_onboarding_mode`                      | Issuer onboarding mode                                       |
+| `verifier_onboarding_mode`                    | Verifier onboarding mode                                       |
+| `holder_onboarding_mode`                      | Holder onboarding mode                                         |
 | `pricing_asset_type`                          | Pricing asset type                                                     |
 | `pricing_asset`                               | Pricing asset identifier                                               |
 | `digest_algorithm`                            | Digest algorithm for schema canonicalization                           |
@@ -408,10 +408,10 @@
 | `schema_id`             | Reference to `credential_schemas.id`                                                         |
 | `type`                  | Permission type (ECOSYSTEM / ISSUER_GRANTOR / VERIFIER_GRANTOR / ISSUER / VERIFIER / HOLDER) |
 | `did`                   | Optional DID associated with this permission                                                 |
-| `corporation`           | Corporation (account) owning this permission (VPR v4)                                        |
+| `corporation`           | Corporation (account) owning this permission                                         |
 | `vs_operator`           | Validator-side operator address                                                              |
 | `created`               | Permission creation timestamp                                                                |
-| `adjusted`              | Last adjustment timestamp (VPR v4; replaces legacy extend fields)                            |
+| `adjusted`              | Last adjustment timestamp                             |
 | `slashed`               | Timestamp when slashed (optional)                                                            |
 | `repaid`                | Timestamp when repaid (optional)                                                             |
 | `effective_from`        | Effective start date of permission (optional)                                                |
@@ -424,7 +424,7 @@
 | `vp_validator_deposit`  | Validator deposit amount                                                                     |
 | `vp_current_fees`       | Current fees for validation                                                                  |
 | `vp_current_deposit`    | Current deposit for validation                                                               |
-| `vp_summary_digest`     | VP summary digest (VPR v4)                                                                   |
+| `vp_summary_digest`     | VP summary digest                                                                    |
 | `vs_operator_authz_enabled` | Whether VS operator authorization is enabled                                               |
 | `vs_operator_authz_spend_limit` | Spend limit for VS operator authz                                                     |
 | `vs_operator_authz_with_feegrant` | Fee grant flag for VS operator authz                                                  |
@@ -452,11 +452,11 @@
 | Column                 | Description                                                                                         |
 | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | `id`                   | Primary key of the permission session                                                               |
-| `corporation`          | Corporation account (VPR v4)                                                                      |
+| `corporation`          | Corporation account                                                                       |
 | `vs_operator`          | Validator-side operator address                                                                   |
 | `agent_perm_id`        | Reference to agent permission ID                                                                    |
 | `wallet_agent_perm_id` | Reference to wallet agent permission ID                                                             |
-| `session_records`      | JSON array of session records (VPR v4; replaces legacy `authz` tuples)                              |
+| `session_records`      | JSON array of session records (replaces legacy `authz` tuples)                              |
 | `created`              | Creation timestamp                                                                                  |
 | `modified`             | Last modified timestamp                                                                             |
 
@@ -465,9 +465,9 @@
 | Column            | Description                                               |
 | ----------------- | --------------------------------------------------------- |
 | `id`              | Table's identity (primary key)                            |
-| `corporation`     | Corporation (group) owning this trust deposit (VPR v4)    |
+| `corporation`     | Corporation  owning this trust deposit     |
 | `share`           | Total share amount currently held                         |
-| `deposit`         | Total trust deposit amount (native denom)                 |
+| `deposit`         | Total trust deposit amount                  |
 | `claimable`       | Amount that can currently be claimed                      |
 | `slashed_deposit` | Total amount slashed from this trust deposit              |
 | `repaid_deposit`  | Total amount repaid to this trust deposit after slash     |

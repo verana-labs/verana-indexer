@@ -31,7 +31,7 @@
                     "type": {
                       "type": "string",
                       "description": "Response type identifier",
-                      "example": "block-processed"
+                      "example": "block-indexed"
                     },
                     "height": {
                       "type": "integer",
@@ -44,15 +44,128 @@
                       "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
                     }
                   },
-                    "required": ["type", "height", "timestamp"]
+                  "required": [
+                    "type",
+                    "height",
+                    "timestamp"
+                  ]
                 },
                 "example": {
-                  "type": "block-processed",
+                  "type": "block-indexed",
                   "height": 1794800,
                   "timestamp": "2025-12-17T04:42:55Z"
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/indexer/v1/events": {
+      "get": {
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "List indexer transaction events",
+        "description": "Replay persisted trust registry, credential schema, and permission indexer events after a block height. Use the did query parameter to return only events related to a DID.",
+        "operationId": "listIndexerEvents",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^did:[a-z0-9]+:.+"
+            },
+            "description": "DID to replay events for. Only rows persisted for this DID are returned."
+          },
+          {
+            "name": "after_block_height",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Return events with block_height greater than this value."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "description": "Maximum number of events to return."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indexer transaction events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IndexerTransactionEvent"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "after_block_height": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "count",
+                    "after_block_height"
+                  ]
+                },
+                "example": {
+                  "events": [
+                    {
+                      "type": "indexer-event",
+                      "event_type": "StartPermissionVP",
+                      "did": "did:web:agent.example",
+                      "block_height": 1794801,
+                      "tx_hash": "A1B2C3",
+                      "timestamp": "2025-12-17T04:43:12Z",
+                      "payload": {
+                        "module": "permission",
+                        "action": "StartPermissionVP",
+                        "message_type": "/verana.perm.v1.MsgStartPermissionVP",
+                        "tx_index": 0,
+                        "message_index": 0,
+                        "sender": "did:web:agent.example",
+                        "related_dids": [
+                          "did:web:agent.example"
+                        ],
+                        "entity_type": "Permission",
+                        "entity_id": "42"
+                      }
+                    }
+                  ],
+                  "count": 1,
+                  "after_block_height": 1794800
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -76,7 +189,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "appVersion": {
+                    "app_version": {
                       "type": "string",
                       "example": "v1.0.0-dev.31"
                     },
@@ -86,27 +199,27 @@
                         "network": {
                           "type": "object",
                           "properties": {
-                            "chainId": {
+                            "chain_id": {
                               "type": "string",
                               "example": "vna-mainnet-1"
                             },
-                            "rpcEndpoint": {
+                            "rpc_endpoint": {
                               "type": "string",
                               "example": "https://rpc.example.org"
                             },
-                            "lcdEndpoint": {
+                            "lcd_endpoint": {
                               "type": "string",
                               "example": "https://api.example.org"
                             },
-                            "cosmosSdkVersion": {
+                            "cosmos_sdk_version": {
                               "type": "string",
                               "example": "0.46.0"
                             },
-                            "nodeVersion": {
+                            "node_version": {
                               "type": "string",
                               "example": "v0.1.0"
                             },
-                            "appName": {
+                            "app_name": {
                               "type": "string",
                               "example": "verana-indexer"
                             }
@@ -117,15 +230,15 @@
                   }
                 },
                 "example": {
-                  "appVersion": "v1.0.0-dev.31",
+                  "app_version": "v1.0.0-dev.31",
                   "environment": {
                     "network": {
-                      "chainId": "vna-mainnet-1",
-                      "rpcEndpoint": "https://rpc.example.org",
-                      "lcdEndpoint": "https://api.example.org",
-                      "cosmosSdkVersion": "0.46.0",
-                      "nodeVersion": "v0.1.0",
-                      "appName": "verana-indexer"
+                      "chain_id": "vna-mainnet-1",
+                      "rpc_endpoint": "https://rpc.example.org",
+                      "lcd_endpoint": "https://api.example.org",
+                      "cosmos_sdk_version": "0.46.0",
+                      "node_version": "v0.1.0",
+                      "app_name": "verana-indexer"
                     }
                   }
                 }
@@ -154,28 +267,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "isRunning": {
+                    "is_running": {
                       "type": "boolean",
                       "description": "Whether the indexer service is running. If false, all APIs will return 503.",
                       "example": true
                     },
-                    "isCrawling": {
+                    "is_crawling": {
                       "type": "boolean",
                       "description": "Whether the indexer is actively crawling new blocks and transactions. If false, APIs remain available but no new data is being indexed.",
                       "example": false
                     },
-                    "stoppedAt": {
+                    "stopped_at": {
                       "type": "string",
                       "format": "date-time",
                       "description": "ISO 8601 timestamp when the indexer or crawling stopped (if applicable)",
                       "example": "2024-01-15T10:30:00Z"
                     },
-                    "stoppedReason": {
+                    "stopped_reason": {
                       "type": "string",
                       "description": "Human-readable reason why crawling or the indexer stopped (if applicable)",
                       "example": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available."
                     },
-                    "lastError": {
+                    "last_error": {
                       "type": "object",
                       "description": "Details about the last error that caused crawling or indexer to stop (if applicable)",
                       "properties": {
@@ -204,16 +317,16 @@
                     }
                   },
                   "required": [
-                    "isRunning",
-                    "isCrawling"
+                    "is_running",
+                    "is_crawling"
                   ]
                 },
                 "example": {
-                  "isRunning": true,
-                  "isCrawling": false,
-                  "stoppedAt": "2024-01-15T10:30:00Z",
-                  "stoppedReason": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available.",
-                  "lastError": {
+                  "is_running": true,
+                  "is_crawling": false,
+                  "stopped_at": "2024-01-15T10:30:00Z",
+                  "stopped_reason": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available.",
+                  "last_error": {
                     "message": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission",
                     "timestamp": "2024-01-15T10:30:00Z",
                     "service": "crawl-tx"
@@ -489,7 +602,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by corporation (VPR v4 — TR ownership)"
+            "description": "Filter by corporation account"
           },
           {
             "name": "min_active_schemas",
@@ -767,7 +880,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1230,7 +1343,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by issuer onboarding mode (VPR v4 IssuerVerifierOnboardingMode). Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
+            "description": "Filter by issuer onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
           },
           {
             "name": "verifier_onboarding_mode",
@@ -1239,7 +1352,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by verifier onboarding mode (VPR v4 IssuerVerifierOnboardingMode). Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
+            "description": "Filter by verifier onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
           },
           {
             "name": "response_max_size",
@@ -1260,7 +1373,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "participant",
@@ -1819,7 +1932,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by corporation (permission owner) account (VPR v4 [MOD-PERM-QRY-1])"
+            "description": "Filter by corporation (permission owner) account "
           },
           {
             "name": "did",
@@ -1982,7 +2095,7 @@
             "schema": {
               "type": "string"
             },
-              "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "min_participants",
@@ -2317,8 +2430,6 @@
                               "corporation": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
                               "created": "2025-10-03T12:30:43.431Z",
                               "modified": "2025-10-03T12:30:43.431Z",
-                              "adjusted": null,
-                              "adjusted_by": null,
                               "slashed": null,
                               "repaid": null,
                               "effective_from": null,
@@ -3047,7 +3158,7 @@
           "TrustDeposit"
         ],
         "summary": "Get Trust Deposit by corporation",
-        "description": "Retrieve trust deposit information for a specific corporation address (VPR v4; formerly account).",
+        "description": "Retrieve trust deposit information for a specific corporation address .",
         "operationId": "getTrustDepositByCorporation",
         "parameters": [
           {
@@ -3057,7 +3168,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Corporation (bech32) address for the trust deposit"
+            "description": "Corporation  address for the trust deposit"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3130,11 +3241,11 @@
                 },
                 "example": {
                   "params": {
-                      "trust_deposit_rate": 0.200000000000000000,
-                      "user_agent_reward_rate": 0.200000000000000000,
-                      "trust_deposit_share_value": 1.000000000000000000,
-                      "wallet_user_agent_reward_rate": 0.200000000000000000,
-                      "trust_deposit_reclaim_burn_rate": 0.600000000000000000
+                    "trust_deposit_rate": 0.2,
+                    "user_agent_reward_rate": 0.2,
+                    "trust_deposit_share_value": 1,
+                    "wallet_user_agent_reward_rate": 0.2,
+                    "trust_deposit_reclaim_burn_rate": 0.6
                   }
                 }
               }
@@ -3162,7 +3273,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Corporation (bech32) address to retrieve trust deposit history for"
+            "description": "Corporation  address to retrieve trust deposit history for"
           },
           {
             "name": "response_max_size",
@@ -3431,6 +3542,397 @@
           }
         }
       }
+    },
+    "/verana/resolver/v1/resolve": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Resolve trust for a DID",
+        "description": "Returns the cached trust evaluation result for a DID. Use `detail=full` for the complete evaluation tree. `at` is an optional ISO 8601 datetime or block height for point-in-time queries (capped to the last processed trust block).",
+        "operationId": "trustResolve",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "description": "DID (`did:`…)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "detail",
+            "in": "query",
+            "required": false,
+            "description": "Level of detail: `summary` or `full`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "full"
+              ],
+              "default": "full"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — body is `TrustQ1Summary` or `TrustQ1Full` per `detail`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TrustQ1Summary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TrustQ1Full"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No trust row for this DID at the effective height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/issuer-authorization": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Issuer authorization (VTJSC)",
+        "description": "Verifies whether a DID holds an active ISSUER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
+        "operationId": "trustIssuerAuthorization",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vtjscId",
+            "in": "query",
+            "required": true,
+            "description": "VTJSC (JSON Schema ID) of the credential.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "description": "Optional PermissionSession ID for fee payment.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ2IssuerAuthorization"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ2Issuer402"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown VTJSC or schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/verifier-authorization": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Verifier authorization (VTJSC)",
+        "description": "Verifies whether a DID holds an active VERIFIER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
+        "operationId": "trustVerifierAuthorization",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vtjscId",
+            "in": "query",
+            "required": true,
+            "description": "VTJSC (JSON Schema ID) of the credential.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "description": "Optional PermissionSession ID for fee payment.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ3VerifierAuthorization"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown VTJSC or schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/ecosystem-participant": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Ecosystem participant",
+        "description": "Returns all active permissions a DID holds within a specific ecosystem (Trust Registry).",
+        "operationId": "trustEcosystemParticipant",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ecosystemDid",
+            "in": "query",
+            "required": true,
+            "description": "Ecosystem DID (Trust Registry owner).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustQ4EcosystemParticipant"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown ecosystem DID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/refresh": {
+      "post": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Refresh trust evaluation",
+        "description": "Forces DID resolution + VP dereferencing + trust evaluation, bypassing TTL behavior. The response reflects only the last processed trust block (lastProcessedBlock).",
+        "operationId": "trustRefresh",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "did": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "did"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — refresh triggered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "did": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "did",
+                    "result"
+                  ]
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Trust resolver has not finished the current indexed height yet (lastProcessedBlock is behind)."
+          }
+        }
+      }
+    },
+    "/verana/resolver/v1/block-height": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "Get trust-resolved block height",
+        "description": "Return the latest block height that has been fully processed by the trust resolver pipeline.",
+        "operationId": "getResolvedBlockHeight",
+        "responses": {
+          "200": {
+            "description": "Current trust-resolved block height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "Response type identifier",
+                      "example": "block-resolved"
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "The latest block height that has been fully processed by the indexer"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "height",
+                    "timestamp"
+                  ]
+                },
+                "example": {
+                  "type": "block-resolved",
+                  "height": 1794800,
+                  "timestamp": "2025-12-17T04:42:55Z"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3468,6 +3970,189 @@
           }
         }
       },
+      "IndexerTransactionEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "indexer-event"
+            ]
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Transaction action name, such as CreateNewTrustRegistry, UpdateCredentialSchema, or StartPermissionVP."
+          },
+          "did": {
+            "type": "string"
+          },
+          "block_height": {
+            "type": "integer"
+          },
+          "tx_hash": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "enum": [
+                  "trust-registry",
+                  "credential-schema",
+                  "permission"
+                ]
+              },
+              "action": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "string"
+              },
+              "tx_index": {
+                "type": "integer"
+              },
+              "message_index": {
+                "type": "integer"
+              },
+              "sender": {
+                "type": "string"
+              },
+              "related_dids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "entity_type": {
+                "type": "string"
+              },
+              "entity_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "type",
+          "event_type",
+          "did",
+          "block_height",
+          "tx_hash",
+          "timestamp",
+          "payload"
+        ]
+      },
+      "DID": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "string",
+            "description": "Decentralized Identifier"
+          },
+          "controller": {
+            "type": "string",
+            "description": "Controller account address"
+          },
+          "deposit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Deposit amount"
+          },
+          "exp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiration date"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation date"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last modification date"
+          }
+        }
+      },
+      "DIDResponse": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "$ref": "#/components/schemas/DID"
+          }
+        }
+      },
+      "DIDListResponse": {
+        "type": "object",
+        "properties": {
+          "dids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DID"
+            }
+          }
+        }
+      },
+      "DIDHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "did": {
+                  "type": "string"
+                },
+                "years": {
+                  "type": "integer"
+                },
+                "controller": {
+                  "type": "string"
+                },
+                "deposit": {
+                  "type": "integer"
+                },
+                "exp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "changes": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "DIDParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "did_directory_grace_period": {
+                "type": "number",
+                "format": "decimal"
+              },
+              "did_directory_trust_deposit": {
+                "type": "number",
+                "format": "decimal"
+              }
+            }
+          }
+        }
+      },
       "TrustRegistryParamsResponse": {
         "type": "object",
         "properties": {
@@ -3496,8 +4181,7 @@
             "type": "string"
           },
           "corporation": {
-            "type": "string",
-            "description": "Group that controls this trust registry (VPR v4)"
+            "type": "string"
           },
           "created": {
             "type": "string",
@@ -3682,8 +4366,7 @@
                 "type": "string"
               },
               "corporation": {
-                "type": "string",
-                "description": "TR ownership (VPR v4)"
+                "type": "string"
               },
               "created": {
                 "type": "string",
@@ -3798,32 +4481,26 @@
             "type": "integer"
           },
           "issuer_onboarding_mode": {
-            "type": "string",
-            "description": "VPR v4 IssuerVerifierOnboardingMode (e.g. GRANTOR_VALIDATION_PROCESS, OPEN, MODE_UNSPECIFIED)."
+            "type": "string"
           },
           "verifier_onboarding_mode": {
-            "type": "string",
-            "description": "VPR v4 IssuerVerifierOnboardingMode (e.g. ECOSYSTEM_VALIDATION_PROCESS, OPEN, MODE_UNSPECIFIED)."
+            "type": "string"
           },
           "holder_onboarding_mode": {
             "type": "string",
-            "nullable": true,
-            "description": "VPR v4 HolderOnboardingMode (e.g. ISSUER_VALIDATION_PROCESS, PERMISSIONLESS)."
+            "nullable": true
           },
           "pricing_asset_type": {
             "type": "string",
-            "nullable": true,
-            "description": "VPR v4 PricingAssetType (TU, COIN, FIAT)."
+            "nullable": true
           },
           "pricing_asset": {
             "type": "string",
-            "nullable": true,
-            "description": "VPR v4 pricing asset identifier (e.g. tu, uvna, ISO-4217 for FIAT)."
+            "nullable": true
           },
           "digest_algorithm": {
             "type": "string",
-            "nullable": true,
-            "description": "VPR v4 digest algorithm for credentials under this schema (per Verifiable Trust spec)."
+            "nullable": true
           },
           "archived": {
             "type": "string",
@@ -3981,7 +4658,7 @@
                 "PERM_REPAY"
               ]
             },
-            "description": "Actions available to the permission corporation (VPR v4)"
+            "description": "Actions available to the permission corporation "
           },
           "validator_available_actions": {
             "type": "array",
@@ -3994,7 +4671,7 @@
                 "PERM_SLASH"
               ]
             },
-            "description": "Actions available to the validator (VPR v4)"
+            "description": "Actions available to the validator "
           },
           "weight": {
             "type": "integer",
@@ -4056,49 +4733,86 @@
           },
           "corporation": {
             "type": "string",
-            "description": "Corporation (group) that owns this permission (VPR v4)"
+            "description": "Corporation  that owns this permission "
           },
           "vs_operator": {
             "type": "string",
             "nullable": true,
-            "description": "Verifiable service operator account (VPR v4)."
+            "description": "Verifiable service operator account ."
           },
           "adjusted": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Last permission adjustment time (VPR v4)."
-          },
-          "adjusted_by": {
-            "type": "string",
-            "nullable": true,
-            "description": "Account that last adjusted the permission (indexer extension when present in store)."
+            "description": "Last permission adjustment time ."
           },
           "vs_operator_authz_enabled": {
             "type": "boolean"
           },
           "vs_operator_authz_spend_limit": {
-            "nullable": true,
-            "description": "DenomAmount[] as JSON (VPR v4)."
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "denom",
+                    "amount"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "denom": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "vs_operator_authz_with_feegrant": {
             "type": "boolean"
           },
           "vs_operator_authz_fee_spend_limit": {
-            "nullable": true,
-            "description": "DenomAmount[] as JSON (VPR v4)."
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "denom",
+                    "amount"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "denom": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "vs_operator_authz_spend_period": {
             "type": "string",
             "nullable": true
           },
           "issuance_fee_discount": {
-            "type": "number",
-            "description": "0–1 discount factor (VPR v4)."
+            "type": "number"
           },
           "verification_fee_discount": {
-            "type": "number",
-            "description": "0–1 discount factor (VPR v4)."
+            "type": "number"
           },
           "created": {
             "type": "string",
@@ -4178,7 +4892,7 @@
           "vp_summary_digest": {
             "type": "string",
             "nullable": true,
-            "description": "VP summary digest (VPR v4; replaces vp_summary_digest_sri)"
+            "description": "VP summary digest"
           },
           "vp_exp": {
             "type": "string",
@@ -4297,7 +5011,7 @@
           },
           "corporation": {
             "type": "string",
-            "description": "Permission corporation at this history point (VPR v4)"
+            "description": "Permission corporation at this history point "
           },
           "event_type": {
             "type": "string"
@@ -4336,12 +5050,12 @@
           },
           "corporation": {
             "type": "string",
-            "description": "Session corporation (VPR v4)"
+            "description": "Session corporation "
           },
           "vs_operator": {
             "type": "string",
             "nullable": true,
-            "description": "Verifiable service operator (VPR v4)"
+            "description": "Verifiable service operator "
           },
           "agent_perm_id": {
             "type": "integer"
@@ -4351,7 +5065,7 @@
           },
           "session_records": {
             "type": "array",
-            "description": "PermissionSessionRecord[] (VPR v4; replaces legacy authz tuple array)",
+            "description": "PermissionSessionRecord[] ",
             "items": {
               "type": "object",
               "properties": {
@@ -4458,11 +5172,11 @@
         "properties": {
           "corporation": {
             "type": "string",
-            "description": "Corporation (group) key for this trust deposit (VPR v4)"
+            "description": "Corporation  key for this trust deposit "
           },
          "deposit": {
             "type": "integer",
-            "description": "Amount of deposit in native denom (VPR v4)"
+            "description": "Amount of deposit in native denom "
           },
           "share": {
             "type": "integer",
@@ -4593,31 +5307,31 @@
                 "type": "number",
                 "format": "decimal",
                 "description": "Trust deposit interest rate",
-                  "example": 0.200000000000000000
+                "example": 0.2
               },
               "user_agent_reward_rate": {
                 "type": "number",
                 "format": "decimal",
                 "description": "User agent reward rate",
-                  "example": 0.200000000000000000
+                "example": 0.2
               },
               "trust_deposit_share_value": {
                 "type": "number",
                 "format": "decimal",
                 "description": "Value of each trust deposit share",
-                  "example": 1.000000000000000000
+                "example": 1
               },
               "wallet_user_agent_reward_rate": {
                 "type": "number",
                 "format": "decimal",
                 "description": "Wallet user agent reward rate",
-                  "example": 0.200000000000000000
+                "example": 0.2
               },
               "trust_deposit_reclaim_burn_rate": {
                 "type": "number",
                 "format": "decimal",
                 "description": "Burn rate for reclaimed trust deposits",
-                  "example": 0.600000000000000000
+                "example": 0.6
               }
             }
           }
@@ -4632,7 +5346,7 @@
           },
           "corporation": {
             "type": "string",
-            "description": "Corporation (bech32) address (VPR v4)"
+            "description": "Corporation  address "
           },
           "share": {
             "type": "integer",
@@ -4640,7 +5354,7 @@
           },
           "deposit": {
             "type": "integer",
-            "description": "Deposit amount at this point (VPR v4)"
+            "description": "Deposit amount at this point "
           },
           "claimable": {
             "type": "integer",
@@ -5372,6 +6086,395 @@
             "type": "integer"
           }
         }
+      },
+      "TrustHealthEmbedded": {
+        "type": "object",
+        "description": "Trust checkpoint, indexer height, lag, poll interval, TTL fields, VPR base URL.",
+        "required": [
+          "status",
+          "lastProcessedBlock",
+          "trustPipelineMode",
+          "vprIndexerBaseUrl",
+          "dereferenceCacheTtlSeconds",
+          "pollObjectCachingRetryDays"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "lastProcessedBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "indexerBlockHeight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "blockLag": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "instanceRole": {
+            "type": "string",
+            "example": "embedded"
+          },
+          "trustPipelineMode": {
+            "type": "string",
+            "enum": [
+              "verre_bundle"
+            ],
+            "description": "Trust evaluation runs inside Verre (`resolveDID`)."
+          },
+          "vprIndexerBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Indexer `/verana` base URL used for VPR-backed HTTP calls."
+          },
+          "postgresConnected": {
+            "type": "boolean"
+          },
+          "redisConnected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "trustEvaluationTtlSeconds": {
+            "type": "integer",
+            "description": "Trust TTL (seconds); drives `expiresAt` hints on resolve."
+          },
+          "dereferenceCacheTtlSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Declared object cache TTL (seconds), or null."
+          },
+          "pollObjectCachingRetryDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Declared retry window (days), or null."
+          },
+          "pollIntervalMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Resolver poll interval (ms)."
+          }
+        }
+      },
+      "TrustQ1Summary": {
+        "type": "object",
+        "description": "`detail=summary` response.",
+        "additionalProperties": false,
+        "required": [
+          "did",
+          "trustStatus",
+          "production",
+          "evaluatedAt",
+          "evaluatedAtBlock"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "trustStatus": {
+            "type": "string",
+            "description": "TRUSTED | UNTRUSTED | PARTIAL"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TrustQ1Full": {
+        "type": "object",
+        "description": "`detail=full` response: adds `credentials` and `failedCredentials`. Raw JSON: POST /verana/resolver/v1/refresh.",
+        "required": [
+          "did",
+          "trustStatus",
+          "production",
+          "evaluatedAt",
+          "evaluatedAtBlock",
+          "credentials",
+          "failedCredentials"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "trustStatus": {
+            "type": "string",
+            "description": "TRUSTED | UNTRUSTED | PARTIAL"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credentials": {
+            "type": "array",
+            "description": "Valid credential entries from stored evaluation.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "failedCredentials": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TrustPermissionChainLink": {
+        "type": "object",
+        "properties": {
+          "permissionId": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "did": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deposit": {
+            "type": "string"
+          },
+          "permState": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TrustQ2IssuerAuthorization": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "vtjscId": {
+            "type": "string"
+          },
+          "authorized": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "permission": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "fees": {
+            "type": "object",
+            "description": "When `required` is true, includes `paid` after session validation; amounts are **uvna** strings."
+          },
+          "permissionChain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustPermissionChainLink"
+            }
+          },
+          "session": {
+            "type": "object"
+          }
+        }
+      },
+      "TrustQ2Issuer402": {
+        "type": "object",
+        "properties": {
+          "authorized": {
+            "type": "boolean",
+            "example": false
+          },
+          "did": {
+            "type": "string"
+          },
+          "vtjscId": {
+            "type": "string"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "fees": {
+            "type": "object"
+          }
+        }
+      },
+      "TrustQ3VerifierAuthorization": {
+        "type": "object",
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "vtjscId": {
+            "type": "string"
+          },
+          "authorized": {
+            "type": "boolean",
+            "description": "Permission + Verre; see `fees.paid` for Layer 2."
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "permission": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "fees": {
+            "type": "object"
+          },
+          "permissionChain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustPermissionChainLink"
+            }
+          },
+          "session": {
+            "type": "object"
+          }
+        }
+      },
+      "TrustQ4EcosystemParticipant": {
+        "type": "object",
+        "required": [
+          "did",
+          "ecosystemDid",
+          "isParticipant",
+          "evaluatedAt",
+          "evaluatedAtBlock",
+          "permissions"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "ecosystemDid": {
+            "type": "string"
+          },
+          "ecosystemAka": {
+            "type": "string"
+          },
+          "isParticipant": {
+            "type": "boolean"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evaluatedAtBlock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "permissionId": {
+                  "type": "integer"
+                },
+                "did": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "schemaId": {
+                  "type": "integer"
+                },
+                "vtjscId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deposit": {},
+                "permState": {},
+                "effectiveFrom": {},
+                "effectiveUntil": {}
+              }
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -5431,6 +6534,10 @@
       "description": "Indexer state and changes tracking operations"
     },
     {
+      "name": "Resolver",
+      "description": "Resolver: resolve, issuer/verifier checks, ecosystem participant, refresh."
+    },
+    {
       "name": "Metrics"
     },
     {
@@ -5438,7 +6545,7 @@
       "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
     },
     {
-      "description": "## Real-Time Event (WebSocket)\n\n**Endpoint URL:** `ws(s)://<host>/verana/indexer/v1/events`\n\n**Message Format:**\n```json\n{\n  \"type\": \"block-processed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\n\n**Event Type:** `block-processed` - Sent whenever a new block is successfully processed by the indexer."
+      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartPermissionVP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"permission\",\n    \"action\": \"StartPermissionVP\",\n    \"message_type\": \"/verana.perm.v1.MsgStartPermissionVP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Permission\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
     }
   ]
 }

@@ -10,7 +10,6 @@ const CS_V4 = [
 const PERM_V4 = [
   "vs_operator",
   "adjusted",
-  "adjusted_by",
   "vs_operator_authz_enabled",
   "vs_operator_authz_spend_limit",
   "vs_operator_authz_with_feegrant",
@@ -66,9 +65,7 @@ async function addPermV4ColumnsIfMissing(knex: Knex, table: string): Promise<voi
         t.text("vs_operator").nullable();
       } else if (col === "adjusted") {
         t.timestamp("adjusted", { useTz: true }).nullable();
-      } else if (col === "adjusted_by") {
-        t.text("adjusted_by").nullable();
-      } else if (col === "vs_operator_authz_enabled") {
+   } else if (col === "vs_operator_authz_enabled") {
         t.boolean("vs_operator_authz_enabled").notNullable().defaultTo(false);
       } else if (col === "vs_operator_authz_spend_limit") {
         t.jsonb("vs_operator_authz_spend_limit").nullable();
@@ -134,18 +131,32 @@ export async function up(knex: Knex): Promise<void> {
   await dropColumnIfExists(knex, "credential_schemas", "deposit");
   await dropColumnIfExists(knex, "credential_schema_history", "deposit");
 
-  // Move "extended" -> "adjusted" when applicable.
   if (await hasTable(knex, "permissions")) {
     const hasExtended = await hasColumn(knex, "permissions", "extended");
     const hasExtendedBy = await hasColumn(knex, "permissions", "extended_by");
     const hasAdjusted = await hasColumn(knex, "permissions", "adjusted");
-    const hasAdjustedBy = await hasColumn(knex, "permissions", "adjusted_by");
-    if (hasExtended && hasExtendedBy && hasAdjusted && hasAdjustedBy) {
+    if (hasExtended && hasExtendedBy && hasAdjusted ) {
       await knex.raw(`
         UPDATE permissions
-        SET adjusted = COALESCE(adjusted, extended),
-            adjusted_by = COALESCE(adjusted_by, extended_by)
+        SET adjusted = COALESCE(adjusted, extended)
         WHERE extended IS NOT NULL OR extended_by IS NOT NULL
+      `);
+    }
+
+    const hasSpend = await hasColumn(knex, "permissions", "vs_operator_authz_spend_limit");
+    if (hasSpend) {
+      await knex.raw(`
+        UPDATE permissions
+        SET vs_operator_authz_spend_limit = '[]'::jsonb
+        WHERE vs_operator_authz_spend_limit = '{}'::jsonb
+      `);
+    }
+    const hasFeeSpend = await hasColumn(knex, "permissions", "vs_operator_authz_fee_spend_limit");
+    if (hasFeeSpend) {
+      await knex.raw(`
+        UPDATE permissions
+        SET vs_operator_authz_fee_spend_limit = '[]'::jsonb
+        WHERE vs_operator_authz_fee_spend_limit = '{}'::jsonb
       `);
     }
   }
@@ -153,13 +164,28 @@ export async function up(knex: Knex): Promise<void> {
     const hasExtended = await hasColumn(knex, "permission_history", "extended");
     const hasExtendedBy = await hasColumn(knex, "permission_history", "extended_by");
     const hasAdjusted = await hasColumn(knex, "permission_history", "adjusted");
-    const hasAdjustedBy = await hasColumn(knex, "permission_history", "adjusted_by");
-    if (hasExtended && hasExtendedBy && hasAdjusted && hasAdjustedBy) {
+    if (hasExtended && hasExtendedBy && hasAdjusted) {
       await knex.raw(`
         UPDATE permission_history
-        SET adjusted = COALESCE(adjusted, extended),
-            adjusted_by = COALESCE(adjusted_by, extended_by)
+        SET adjusted = COALESCE(adjusted, extended)
         WHERE extended IS NOT NULL OR extended_by IS NOT NULL
+      `);
+    }
+
+    const hasSpend = await hasColumn(knex, "permission_history", "vs_operator_authz_spend_limit");
+    if (hasSpend) {
+      await knex.raw(`
+        UPDATE permission_history
+        SET vs_operator_authz_spend_limit = '[]'::jsonb
+        WHERE vs_operator_authz_spend_limit = '{}'::jsonb
+      `);
+    }
+    const hasFeeSpend = await hasColumn(knex, "permission_history", "vs_operator_authz_fee_spend_limit");
+    if (hasFeeSpend) {
+      await knex.raw(`
+        UPDATE permission_history
+        SET vs_operator_authz_fee_spend_limit = '[]'::jsonb
+        WHERE vs_operator_authz_fee_spend_limit = '{}'::jsonb
       `);
     }
   }

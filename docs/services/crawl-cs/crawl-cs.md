@@ -79,9 +79,9 @@ sequenceDiagram
 | `issuer_validation_validity_period`           | int            | Issuer validity period             |
 | `verifier_validation_validity_period`         | int            | Verifier validity period           |
 | `holder_validation_validity_period`           | int            | Holder validity period             |
-| `issuer_onboarding_mode`                      | string            | Issuer onboarding mode (VPR v4)    |
-| `verifier_onboarding_mode`                    | string            | Verifier onboarding mode (VPR v4)  |
-| `holder_onboarding_mode`                      | string            | Holder onboarding mode (VPR v4)    |
+| `issuer_onboarding_mode`                      | string            | Issuer onboarding mode     |
+| `verifier_onboarding_mode`                    | string            | Verifier onboarding mode   |
+| `holder_onboarding_mode`                      | string            | Holder onboarding mode     |
 | `pricing_asset_type`                          | string            | Pricing asset type                 |
 | `pricing_asset`                               | string            | Pricing asset                      |
 | `digest_algorithm`                            | string            | Digest algorithm                   |

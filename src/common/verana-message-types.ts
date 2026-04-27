@@ -44,10 +44,22 @@ export enum VeranaTrustRegistryMessageTypes {
   IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }
 
+export enum VeranaDiMessageTypes {
+  UpdateParams = "/verana.di.v1.MsgUpdateParams",
+  StoreDigest = "/verana.di.v1.MsgStoreDigest",
+}
+
 export enum VeranaDelegationMessageTypes {
   UpdateParams = "/verana.de.v1.MsgUpdateParams",
   GrantOperatorAuthorization = "/verana.de.v1.MsgGrantOperatorAuthorization",
   RevokeOperatorAuthorization = "/verana.de.v1.MsgRevokeOperatorAuthorization",
+}
+
+export enum VeranaExchangeRateMessageTypes {
+  UpdateParams = "/verana.xr.v1.MsgUpdateParams",
+  CreateExchangeRate = "/verana.xr.v1.MsgCreateExchangeRate",
+  UpdateExchangeRate = "/verana.xr.v1.MsgUpdateExchangeRate",
+  SetExchangeRateState = "/verana.xr.v1.MsgSetExchangeRateState",
 }
 
 export enum UpdateParamsMessageTypes {
@@ -55,7 +67,11 @@ export enum UpdateParamsMessageTypes {
   PERMISSION = "/verana.perm.v1.MsgUpdateParams",
   TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
   TRUST_REGISTRY = "/verana.tr.v1.MsgUpdateParams",
+  DIGITAL_IDENTITY = "/verana.di.v1.MsgUpdateParams",
+  DELEGATION = "/verana.de.v1.MsgUpdateParams",
+  EXCHANGE_RATE = "/verana.xr.v1.MsgUpdateParams",
 }
+
 export enum CosmosStakingMessageTypes {
   CreateValidator = "/cosmos.staking.v1beta1.MsgCreateValidator",
   EditValidator = "/cosmos.staking.v1beta1.MsgEditValidator",
@@ -74,7 +90,9 @@ export const ALL_KNOWN_VERANA_MESSAGE_TYPES = new Set<string>([
   ...Object.values(VeranaPermissionMessageTypes),
   ...Object.values(VeranaTrustDepositMessageTypes),
   ...Object.values(VeranaTrustRegistryMessageTypes),
+  ...Object.values(VeranaDiMessageTypes),
   ...Object.values(VeranaDelegationMessageTypes),
+  ...Object.values(VeranaExchangeRateMessageTypes),
   ...Object.values(CosmosStakingMessageTypes),
   ...Object.values(CosmosSlashingMessageTypes),
 ]);
@@ -116,9 +134,20 @@ export function isDelegationMessageType(messageType: string): boolean {
   return Object.values(VeranaDelegationMessageTypes).includes(messageType as VeranaDelegationMessageTypes);
 }
 
+export function isDidMessageType(messageType: string): boolean {
+  return Object.values(VeranaDiMessageTypes).includes(messageType as VeranaDiMessageTypes);
+}
+
+export function isExchangeRateMessageType(messageType: string): boolean {
+  return Object.values(VeranaExchangeRateMessageTypes).includes(messageType as VeranaExchangeRateMessageTypes);
+}
+
 export function isUpdateParamsMessageType(messageType: string): boolean {
   return messageType === VeranaCredentialSchemaMessageTypes.UpdateParams ||
          messageType === VeranaPermissionMessageTypes.UpdateParams ||
          messageType === VeranaTrustDepositMessageTypes.UpdateParams ||
-         messageType === VeranaTrustRegistryMessageTypes.UpdateParams;
+         messageType === VeranaTrustRegistryMessageTypes.UpdateParams ||
+         messageType === VeranaDiMessageTypes.UpdateParams ||
+         messageType === VeranaDelegationMessageTypes.UpdateParams ||
+         messageType === VeranaExchangeRateMessageTypes.UpdateParams;
 }

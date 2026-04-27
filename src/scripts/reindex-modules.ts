@@ -59,6 +59,8 @@ const TABLES_TO_DROP = [
   "account",
   "permission_scheduled_flips",
   "entity_participant_changes",
+  "trust_results",
+  "indexer_events",
 ];
 
 const SEQUENCES_TO_RESET = [
@@ -86,6 +88,7 @@ const SEQUENCES_TO_RESET = [
   "daily_statistics_id_seq",
   "account_id_seq",
   "stats_id_seq",
+  "indexer_events_id_seq",
 ];
 
 async function waitForDatabase(config: Knex.Config, maxRetries = 30, delayMs = 2000): Promise<void> {
@@ -556,7 +559,9 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   "20251125000003_create_module_params_history": ["module_params_history"],
   "20260202020000_create_global_metrics": ["global_metrics"],
   "20260317000000_add_permission_flips": ["permission_scheduled_flips", "permissions"],
+  "20260420000000_create_indexer_events": ["indexer_events"],
   "partition-transaction-table": ["transaction"],
+  "20260402000000_create_trust_results": ["trust_results"],
   "transaction_message_partition": ["transaction_message"]
 };
 
@@ -575,6 +580,7 @@ const ALTER_MIGRATIONS = [
   "20260226000000_add_permissions_lookup_index_for_perm_list",
   "20260317000000_add_permission_flips",
   "20260414120000_vpr_v4_tr_cs_perm_td_combined",
+  "20260402000000_create_trust_results",
 ];
 
 async function runMigrations(db: Knex): Promise<void> {
@@ -644,7 +650,8 @@ async function runMigrations(db: Knex): Promise<void> {
       "20250115000000_add_permission_new_attributes",
       "20260305000000_add_participant_role_counters",
       "20260126000000_add_trust_registry_statistics",
-      "20260126000002_add_credential_schema_statistics"
+      "20260126000002_add_credential_schema_statistics",
+      "20260420000000_create_indexer_events"
     ];
     
     const transactionPartitionMigrationNames = [
@@ -788,8 +795,8 @@ async function runMigrations(db: Knex): Promise<void> {
     try {
       console.log("  Ensuring base transaction tables exist before running migrations...");
       await recreateTransactionTables(db);
-      console.log("  Base transaction tables verified/created (if needed).");
-      
+      console.log("  Base transaction tables verified/created (if needed).");      
+
       const [, pendingBefore] = await db.migrate.list();
       if (pendingBefore && pendingBefore.length > 0) {
         console.log(`   Found ${pendingBefore.length} pending migration(s) to run`);

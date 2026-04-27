@@ -153,7 +153,6 @@ export function extractStartPermissionVpNewPermissionId(
     if (notValidator.length === 1) return notValidator[0];
   }
 
-  // Fallback: attribute keys like `msg_permission_id` (contains `permission_id`, not `validator_*`)
   const looseFromEvents: number[] = [];
   if (Array.isArray(msg.txEvents)) {
     for (const event of msg.txEvents) {

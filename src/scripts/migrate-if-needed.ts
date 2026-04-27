@@ -92,6 +92,7 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
       "trust_registry",
       "credential_schemas",
       "permissions",
+      "trust_results"
     ];
     
     const missingCriticalTables: string[] = [];
@@ -203,6 +204,20 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
         }
 
         console.log(`  Running migrations using Knex migrate.latest()...`);
+        const trustResultsExists = await db.schema.hasTable("trust_results");
+        if (!trustResultsExists && migrationsTableExists) {
+          try {
+            const deleted = await db("knex_migrations")
+              .where("name", "like", "%create_trust_results%")
+              .delete();
+            if (deleted > 0) {
+              console.log(`  Cleared ${deleted} trust_results migration record(s) to re-apply.`);
+            }
+          } catch (e) {
+            console.warn("  Failed to clear trust_results migration record; continuing:", e);
+          }
+        }
+
         await db.migrate.latest();
         console.log("Migrations finished successfully.");
       }

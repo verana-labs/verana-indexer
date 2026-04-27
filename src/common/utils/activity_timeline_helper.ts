@@ -391,6 +391,24 @@ export async function buildActivityTimeline(
       changes = filterChangedValues(changes);
     }
 
+    if (changes && typeof changes === "object") {
+      const normalizeDenomAmountArray = (value: any) => {
+        if (value === null) return null;
+        if (Array.isArray(value)) return value;
+        return [];
+      };
+      if (Object.prototype.hasOwnProperty.call(changes, "vs_operator_authz_spend_limit")) {
+        (changes as any).vs_operator_authz_spend_limit = normalizeDenomAmountArray(
+          (changes as any).vs_operator_authz_spend_limit
+        );
+      }
+      if (Object.prototype.hasOwnProperty.call(changes, "vs_operator_authz_fee_spend_limit")) {
+        (changes as any).vs_operator_authz_fee_spend_limit = normalizeDenomAmountArray(
+          (changes as any).vs_operator_authz_fee_spend_limit
+        );
+      }
+    }
+
     if (changes && Object.prototype.hasOwnProperty.call(changes, "height")) {
       delete changes.height;
       if (!wasComputedFromRecord) {

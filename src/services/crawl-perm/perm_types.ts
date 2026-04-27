@@ -51,6 +51,11 @@ export interface MsgCreateRootPermission {
   vs_operator?: string;
   vsOperator?: string;
 }
+
+export type DenomAmount = {
+  denom: string;
+  amount: string;
+};
 export interface MsgStartPermissionVP {
   creator?: string;
   corporation?: string;
@@ -76,14 +81,14 @@ export interface MsgStartPermissionVP {
   vsOperator?: string;
   vs_operator_authz_enabled?: boolean;
   vsOperatorAuthzEnabled?: boolean;
-  vs_operator_authz_spend_limit?: number | string;
-  vsOperatorAuthzSpendLimit?: number | string;
+  vs_operator_authz_spend_limit?: DenomAmount[] | null;
+  vsOperatorAuthzSpendLimit?: DenomAmount[] | null;
   vs_operator_authz_with_feegrant?: boolean;
   vsOperatorAuthzWithFeegrant?: boolean;
-  vs_operator_authz_fee_spend_limit?: number | string;
-  vsOperatorAuthzFeeSpendLimit?: number | string;
-  vs_operator_authz_spend_period?: number | string;
-  vsOperatorAuthzSpendPeriod?: number | string;
+  vs_operator_authz_fee_spend_limit?: DenomAmount[] | null;
+  vsOperatorAuthzFeeSpendLimit?: DenomAmount[] | null;
+  vs_operator_authz_spend_period?: string | null;
+  vsOperatorAuthzSpendPeriod?: string | null;
 }
 export interface MsgSlashPermissionTrustDeposit {
   timestamp?: Date | undefined;
@@ -137,7 +142,7 @@ export interface MsgAdjustPermission {
   effectiveUntil?: Date | undefined;
   timestamp?: Date | undefined;
 }
-export interface MsgCreatePermission {
+export interface MsgSelfCreatePermission {
   creator?: string;
   corporation?: string;
   operator?: string;
@@ -164,14 +169,14 @@ export interface MsgCreatePermission {
   vsOperator?: string;
   vs_operator_authz_enabled?: boolean;
   vsOperatorAuthzEnabled?: boolean;
-  vs_operator_authz_spend_limit?: number | string;
-  vsOperatorAuthzSpendLimit?: number | string;
+  vs_operator_authz_spend_limit?: DenomAmount[] | null;
+  vsOperatorAuthzSpendLimit?: DenomAmount[] | null;
   vs_operator_authz_with_feegrant?: boolean;
   vsOperatorAuthzWithFeegrant?: boolean;
-  vs_operator_authz_fee_spend_limit?: number | string;
-  vsOperatorAuthzFeeSpendLimit?: number | string;
-  vs_operator_authz_spend_period?: number | string;
-  vsOperatorAuthzSpendPeriod?: number | string;
+  vs_operator_authz_fee_spend_limit?: DenomAmount[] | null;
+  vsOperatorAuthzFeeSpendLimit?: DenomAmount[] | null;
+  vs_operator_authz_spend_period?: string | null;
+  vsOperatorAuthzSpendPeriod?: string | null;
 }
 export interface MsgCreateOrUpdatePermissionSession {
   timestamp?: Date | undefined;

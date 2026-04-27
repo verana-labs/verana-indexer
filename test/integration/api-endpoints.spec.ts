@@ -194,6 +194,12 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       expect(response.status).toBeLessThan(500);
     });
 
+    itIf('should get resolver block height - basic', async () => {
+      const response = await testEndpoint('GET', '/verana/resolver/v1/block-height');
+      expect(response.status).not.toBeGreaterThanOrEqual(500);
+      expect(response.status).toBeLessThan(500);
+    });
+
     itIf('should get version - basic', async () => {
       const response = await testEndpoint('GET', '/verana/indexer/v1/version');
       expect(response.status).not.toBeGreaterThanOrEqual(500);

@@ -109,9 +109,7 @@ export default class PermProcessorService extends BullableService {
         };
         delete payload["@type"];
 
-        // Some v4 tx messages don't include the created permission id in the message body.
-        // When available in tx events, inject it so the DB layer can upsert by on-chain id
-        // (avoids sequence collisions and makes replays idempotent).
+       
         if (
           (msg.type === VeranaPermissionMessageTypes.CreateRootPermission
             || msg.type === VeranaPermissionMessageTypes.SelfCreatePermission)

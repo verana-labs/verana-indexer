@@ -37,7 +37,6 @@ export async function up(knex: Knex): Promise<void> {
       table.timestamp("created").defaultTo(knex.fn.now());
       table.timestamp("modified").defaultTo(knex.fn.now());
       table.timestamp("adjusted").nullable();
-      table.string("adjusted_by", 255).nullable();
       table.timestamp("slashed").nullable();
       table.timestamp("repaid").nullable();
       table.timestamp("effective_from").nullable();

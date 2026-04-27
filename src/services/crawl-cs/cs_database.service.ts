@@ -111,8 +111,6 @@ async function alignCredentialSchemaRowToInstalledColumns(
   row: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };
-  // V4 naming: issuer_onboarding_mode / verifier_onboarding_mode.
-  // Keep accepting legacy payload keys, but never try to persist them.
   delete out.issuer_perm_management_mode;
   delete out.verifier_perm_management_mode;
   return out;

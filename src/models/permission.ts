@@ -14,6 +14,11 @@ export type PermissionType =
 
 export type ValidationState = 'VALIDATION_STATE_UNSPECIFIED' | 'PENDING' | 'VALIDATED' | 'TERMINATED';
 
+export type DenomAmount = {
+    denom: string;
+    amount: string;
+};
+
 export default class Permission extends BaseModel {
     static tableName = 'permissions';
 
@@ -47,11 +52,10 @@ export default class Permission extends BaseModel {
     vp_summary_digest?: string;
     vs_operator?: string | null;
     adjusted?: Date | string | null;
-    adjusted_by?: string | null;
     vs_operator_authz_enabled?: boolean;
-    vs_operator_authz_spend_limit?: unknown;
+    vs_operator_authz_spend_limit?: DenomAmount[] | null;
     vs_operator_authz_with_feegrant?: boolean;
-    vs_operator_authz_fee_spend_limit?: unknown;
+    vs_operator_authz_fee_spend_limit?: DenomAmount[] | null;
     vs_operator_authz_spend_period?: string | null;
     expire_soon?: boolean | null;
     participants?: number;
@@ -98,7 +102,6 @@ export default class Permission extends BaseModel {
                 created: { type: 'string' },
                 modified: { type: 'string' },
                 adjusted: { type: ['string', 'null'] },
-                adjusted_by: { type: ['string', 'null'] },
                 slashed: { type: ['string', 'null'] },
                 repaid: { type: ['string', 'null'] },
                 effective_from: { type: ['string', 'null'] },
@@ -113,9 +116,41 @@ export default class Permission extends BaseModel {
                 vp_summary_digest: { type: 'string', maxLength: 512 },
                 vs_operator: { type: ['string', 'null'] },
                 vs_operator_authz_enabled: { type: ['boolean', 'null'] },
-                vs_operator_authz_spend_limit: { type: ['object', 'array', 'null'] },
+                vs_operator_authz_spend_limit: {
+                    anyOf: [
+                        {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                required: ['denom', 'amount'],
+                                additionalProperties: false,
+                                properties: {
+                                    denom: { type: 'string' },
+                                    amount: { type: 'string' }
+                                }
+                            }
+                        },
+                        { type: 'null' }
+                    ]
+                },
                 vs_operator_authz_with_feegrant: { type: ['boolean', 'null'] },
-                vs_operator_authz_fee_spend_limit: { type: ['object', 'array', 'null'] },
+                vs_operator_authz_fee_spend_limit: {
+                    anyOf: [
+                        {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                required: ['denom', 'amount'],
+                                additionalProperties: false,
+                                properties: {
+                                    denom: { type: 'string' },
+                                    amount: { type: 'string' }
+                                }
+                            }
+                        },
+                        { type: 'null' }
+                    ]
+                },
                 vs_operator_authz_spend_period: { type: ['string', 'null'] },
                 expire_soon: { type: ['boolean', 'null'] },
                 participants: { type: 'integer' },
