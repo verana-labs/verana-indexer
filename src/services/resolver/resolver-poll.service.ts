@@ -23,8 +23,9 @@ const ResolverPollService = {
   name: SERVICE.V1.ResolverPollService.key,
   version: 1,
 
-  created(this: { pollTimer?: ReturnType<typeof setInterval> }) {
+  created(this: { pollTimer?: ReturnType<typeof setInterval>; pollInFlight?: boolean }) {
     this.pollTimer = undefined;
+    this.pollInFlight = false;
   },
 
   methods: {
@@ -234,7 +235,11 @@ const ResolverPollService = {
         `blocks/batch=${tuning.blocksPerCall} conc=${tuning.didConcurrency} maxDids=${tuning.maxDidsPerBlock}`
     );
     this.pollTimer = setInterval(() => {
-      this.pollOnce().catch((err: unknown) => this.logger.warn("[RESOLVER] pollOnce failed:", err));
+      if (this.pollInFlight) return;
+      this.pollInFlight = true;
+      this.pollOnce()
+        .catch((err: unknown) => this.logger.warn("[RESOLVER] pollOnce failed:", err))
+        .finally(() => { this.pollInFlight = false; });
     }, tuning.pollIntervalMs);
   },
 
