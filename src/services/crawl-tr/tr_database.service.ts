@@ -10,6 +10,7 @@ import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
+import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from "../resolver/trust-data-enrichment";
 
 function ledgerHasKey(obj: unknown, key: string): boolean {
     return typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
@@ -45,6 +46,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
     public constructor(public broker: ServiceBroker) {
         super(broker);
+    }
+
+    private async enrichDidItemsWithTrustData<T>(items: T, mode: TrustDataMode, blockHeight?: number): Promise<T> {
+        return enrichTrustDataDeep(items, mode, blockHeight);
     }
 
     private valuesEquivalent(left: unknown, right: unknown): boolean {
@@ -1111,9 +1116,15 @@ export default class TrustRegistryDatabaseService extends BaseService {
         tr_id: number;
         active_gf_only?: string | boolean;
         preferred_language?: string;
+        trustData?: string;
     }>) {
         try {
             const { tr_id: trId, preferred_language: preferredLanguage } = ctx.params;
+            const trustDataModeParsed = parseTrustDataMode((ctx.params as any).trustData);
+            if (!trustDataModeParsed.ok) {
+                return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+            }
+            const trustDataMode = trustDataModeParsed.mode;
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
             const blockHeight = (ctx.meta as any)?.blockHeight;
@@ -1177,7 +1188,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         network_slashed_amount: Number(snapshot.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
                     };
-                    return ApiResponder.success(ctx, { trust_registry: trustRegistry }, 200);
+                    const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
+                        [trustRegistry],
+                        trustDataMode,
+                        blockHeight
+                    );
+                    return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
                 }
                 const tr = await knex("trust_registry").where({ id: trId }).first();
                 if (!tr) {
@@ -1224,39 +1240,43 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }));
                 }
                 const t = tr as any;
-                return ApiResponder.success(ctx, {
-                    trust_registry: {
-                        id: tr.id,
-                        did: tr.did,
-                        controller: tr.controller,
-                        created: tr.created,
-                        modified: tr.modified,
-                        archived: tr.archived,
-                        deposit: Number(tr.deposit ?? 0),
-                        aka: tr.aka,
-                        language: tr.language,
-                        active_version: tr.active_version,
-                        versions,
-                        participants: Number(t.participants ?? 0),
-                        participants_ecosystem: Number(t.participants_ecosystem ?? 0),
-                        participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
-                        participants_issuer: Number(t.participants_issuer ?? 0),
-                        participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
-                        participants_verifier: Number(t.participants_verifier ?? 0),
-                        participants_holder: Number(t.participants_holder ?? 0),
-                        active_schemas: Number(t.active_schemas ?? 0),
-                        archived_schemas: Number(t.archived_schemas ?? 0),
-                        weight: Number(t.weight ?? 0),
-                        issued: Number(t.issued ?? 0),
-                        verified: Number(t.verified ?? 0),
-                        ecosystem_slash_events: Number(t.ecosystem_slash_events ?? 0),
-                        ecosystem_slashed_amount: Number(t.ecosystem_slashed_amount ?? 0),
-                        ecosystem_slashed_amount_repaid: Number(t.ecosystem_slashed_amount_repaid ?? 0),
-                        network_slash_events: Number(t.network_slash_events ?? 0),
-                        network_slashed_amount: Number(t.network_slashed_amount ?? 0),
-                        network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
-                    },
-                }, 200);
+                const trustRegistry = {
+                    id: tr.id,
+                    did: tr.did,
+                    controller: tr.controller,
+                    created: tr.created,
+                    modified: tr.modified,
+                    archived: tr.archived,
+                    deposit: Number(tr.deposit ?? 0),
+                    aka: tr.aka,
+                    language: tr.language,
+                    active_version: tr.active_version,
+                    versions,
+                    participants: Number(t.participants ?? 0),
+                    participants_ecosystem: Number(t.participants_ecosystem ?? 0),
+                    participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
+                    participants_issuer: Number(t.participants_issuer ?? 0),
+                    participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
+                    participants_verifier: Number(t.participants_verifier ?? 0),
+                    participants_holder: Number(t.participants_holder ?? 0),
+                    active_schemas: Number(t.active_schemas ?? 0),
+                    archived_schemas: Number(t.archived_schemas ?? 0),
+                    weight: Number(t.weight ?? 0),
+                    issued: Number(t.issued ?? 0),
+                    verified: Number(t.verified ?? 0),
+                    ecosystem_slash_events: Number(t.ecosystem_slash_events ?? 0),
+                    ecosystem_slashed_amount: Number(t.ecosystem_slashed_amount ?? 0),
+                    ecosystem_slashed_amount_repaid: Number(t.ecosystem_slashed_amount_repaid ?? 0),
+                    network_slash_events: Number(t.network_slash_events ?? 0),
+                    network_slashed_amount: Number(t.network_slashed_amount ?? 0),
+                    network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
+                };
+                const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
+                    [trustRegistry],
+                    trustDataMode,
+                    blockHeight
+                );
+                return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
             }
 
             if (typeof blockHeight === "number") {
@@ -1285,39 +1305,43 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             }));
                         }
                         const s = snapshot as any;
-                        return ApiResponder.success(ctx, {
-                            trust_registry: {
-                                id: s.tr_id,
-                                did: s.did,
-                                controller: s.controller,
-                                created: s.created,
-                                modified: s.modified,
-                                archived: s.archived,
-                                deposit: Number(s.deposit ?? 0),
-                                aka: s.aka,
-                                language: s.language,
-                                active_version: s.active_version,
-                                versions,
-                                participants: Number(s.participants ?? 0),
-                                participants_ecosystem: Number(s.participants_ecosystem ?? 0),
-                                participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
-                                participants_issuer: Number(s.participants_issuer ?? 0),
-                                participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
-                                participants_verifier: Number(s.participants_verifier ?? 0),
-                                participants_holder: Number(s.participants_holder ?? 0),
-                                active_schemas: Number(s.active_schemas ?? 0),
-                                archived_schemas: Number(s.archived_schemas ?? 0),
-                                weight: Number(s.weight ?? 0),
-                                issued: Number(s.issued ?? 0),
-                                verified: Number(s.verified ?? 0),
-                                ecosystem_slash_events: Number(s.ecosystem_slash_events ?? 0),
-                                ecosystem_slashed_amount: Number(s.ecosystem_slashed_amount ?? 0),
-                                ecosystem_slashed_amount_repaid: Number(s.ecosystem_slashed_amount_repaid ?? 0),
-                                network_slash_events: Number(s.network_slash_events ?? 0),
-                                network_slashed_amount: Number(s.network_slashed_amount ?? 0),
-                                network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
-                            },
-                        }, 200);
+                        const trustRegistry = {
+                            id: s.tr_id,
+                            did: s.did,
+                            controller: s.controller,
+                            created: s.created,
+                            modified: s.modified,
+                            archived: s.archived,
+                            deposit: Number(s.deposit ?? 0),
+                            aka: s.aka,
+                            language: s.language,
+                            active_version: s.active_version,
+                            versions,
+                            participants: Number(s.participants ?? 0),
+                            participants_ecosystem: Number(s.participants_ecosystem ?? 0),
+                            participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
+                            participants_issuer: Number(s.participants_issuer ?? 0),
+                            participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
+                            participants_verifier: Number(s.participants_verifier ?? 0),
+                            participants_holder: Number(s.participants_holder ?? 0),
+                            active_schemas: Number(s.active_schemas ?? 0),
+                            archived_schemas: Number(s.archived_schemas ?? 0),
+                            weight: Number(s.weight ?? 0),
+                            issued: Number(s.issued ?? 0),
+                            verified: Number(s.verified ?? 0),
+                            ecosystem_slash_events: Number(s.ecosystem_slash_events ?? 0),
+                            ecosystem_slashed_amount: Number(s.ecosystem_slashed_amount ?? 0),
+                            ecosystem_slashed_amount_repaid: Number(s.ecosystem_slashed_amount_repaid ?? 0),
+                            network_slash_events: Number(s.network_slash_events ?? 0),
+                            network_slashed_amount: Number(s.network_slashed_amount ?? 0),
+                            network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
+                        };
+                        const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
+                            [trustRegistry],
+                            trustDataMode,
+                            blockHeight
+                        );
+                        return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
                     }
                 }
 
@@ -1367,7 +1391,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
                 };
 
-                return ApiResponder.success(ctx, { trust_registry: trustRegistry }, 200);
+                const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
+                    [trustRegistry],
+                    trustDataMode,
+                    blockHeight
+                );
+                return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
             }
 
             const registry = await TrustRegistry.query()
@@ -1404,32 +1433,36 @@ export default class TrustRegistryDatabaseService extends BaseService {
             delete (plain as any).height;
 
             const p = plain as any;
-            return ApiResponder.success(ctx, {
-                trust_registry: {
-                    ...plain,
-                    id: plain.id,
-                    deposit: plain.deposit ?? 0,
-                    versions,
-                    participants: Number(p.participants ?? 0),
-                    participants_ecosystem: Number(p.participants_ecosystem ?? 0),
-                    participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
-                    participants_issuer: Number(p.participants_issuer ?? 0),
-                    participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
-                    participants_verifier: Number(p.participants_verifier ?? 0),
-                    participants_holder: Number(p.participants_holder ?? 0),
-                    active_schemas: Number(p.active_schemas ?? 0),
-                    archived_schemas: Number(p.archived_schemas ?? 0),
-                    weight: Number(p.weight ?? 0),
-                    issued: Number(p.issued ?? 0),
-                    verified: Number(p.verified ?? 0),
-                    ecosystem_slash_events: Number(p.ecosystem_slash_events ?? 0),
-                    ecosystem_slashed_amount: Number(p.ecosystem_slashed_amount ?? 0),
-                    ecosystem_slashed_amount_repaid: Number(p.ecosystem_slashed_amount_repaid ?? 0),
-                    network_slash_events: Number(p.network_slash_events ?? 0),
-                    network_slashed_amount: Number(p.network_slashed_amount ?? 0),
-                    network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
-                },
-            }, 200);
+            const trustRegistry = {
+                ...plain,
+                id: plain.id,
+                deposit: plain.deposit ?? 0,
+                versions,
+                participants: Number(p.participants ?? 0),
+                participants_ecosystem: Number(p.participants_ecosystem ?? 0),
+                participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
+                participants_issuer: Number(p.participants_issuer ?? 0),
+                participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
+                participants_verifier: Number(p.participants_verifier ?? 0),
+                participants_holder: Number(p.participants_holder ?? 0),
+                active_schemas: Number(p.active_schemas ?? 0),
+                archived_schemas: Number(p.archived_schemas ?? 0),
+                weight: Number(p.weight ?? 0),
+                issued: Number(p.issued ?? 0),
+                verified: Number(p.verified ?? 0),
+                ecosystem_slash_events: Number(p.ecosystem_slash_events ?? 0),
+                ecosystem_slashed_amount: Number(p.ecosystem_slashed_amount ?? 0),
+                ecosystem_slashed_amount_repaid: Number(p.ecosystem_slashed_amount_repaid ?? 0),
+                network_slash_events: Number(p.network_slash_events ?? 0),
+                network_slashed_amount: Number(p.network_slashed_amount ?? 0),
+                network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
+            };
+            const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
+                [trustRegistry],
+                trustDataMode,
+                blockHeight
+            );
+            return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
@@ -1471,6 +1504,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
             max_ecosystem_slash_events: { type: "number", optional: true },
             min_network_slash_events: { type: "number", optional: true },
             max_network_slash_events: { type: "number", optional: true },
+            trustData: { type: "string", optional: true },
         },
     })
     public async listTrustRegistries(ctx: Context<{
@@ -1508,6 +1542,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         max_ecosystem_slash_events?: number;
         min_network_slash_events?: number;
         max_network_slash_events?: number;
+        trustData?: string;
     }>) {
         try {
             const {
@@ -1544,7 +1579,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 max_ecosystem_slash_events: maxEcosystemSlashEvents,
                 min_network_slash_events: minNetworkSlashEvents,
                 max_network_slash_events: maxNetworkSlashEvents,
+                trustData,
             } = ctx.params;
+            const trustDataModeParsed = parseTrustDataMode(trustData);
+            if (!trustDataModeParsed.ok) {
+                return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+            }
+            const trustDataMode = trustDataModeParsed.mode;
 
             const participantValidation = validateParticipantParam(participant, "participant");
             if (!participantValidation.valid) {
@@ -1693,7 +1734,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     });
                     const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters);
                     const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
-                    return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
+                    const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
+                        sortedRegistries,
+                        trustDataMode,
+                        blockHeight
+                    );
+                    return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
                 }
 
                 let participantTrIds: number[] | undefined;
@@ -1800,7 +1846,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                 const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
 
-                return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
+                const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
+                    sortedRegistries,
+                    trustDataMode,
+                    blockHeight
+                );
+                return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
             }
 
             const useHeightSyncListLive =
@@ -1924,7 +1975,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 });
                 const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters);
                 const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize);
-                return ApiResponder.success(ctx, { trust_registries: sortedBatch }, 200);
+                const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
+                    sortedBatch,
+                    trustDataMode,
+                    blockHeight
+                );
+                return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
             }
 
             let query = TrustRegistry.query();
@@ -2039,7 +2095,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 ? registriesWithStats.slice(0, responseMaxSize)
                 : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
-            return ApiResponder.success(ctx, { trust_registries: sortedRegistries }, 200);
+            const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
+                sortedRegistries,
+                trustDataMode,
+                blockHeight
+            );
+            return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }

@@ -97,3 +97,23 @@ You can view the **complete Trust Registry History module** here:
 [📖 Trust Registry History Module – Developer Guide](./crawl-tr-history.md)
 
 This link provides **visual ER diagrams, change tracking flows, and architecture overviews** for historical data.
+
+---
+
+## API: `trustData` Enrichment
+
+Trust Registry API methods support optional trust enrichment using query parameter `trustData`:
+
+- `GET /verana/tr/v1/get/{id}`
+- `GET /verana/tr/v1/list`
+
+Allowed values:
+
+- `null` (default): no trust enrichment
+- `summary`: attach trust summary payload
+- `full`: attach full trust payload
+
+Behavior:
+
+- For each returned object that includes `did`, a sibling field `trustData` is added at the same level.
+- `trustData` is `null` when disabled/unavailable.

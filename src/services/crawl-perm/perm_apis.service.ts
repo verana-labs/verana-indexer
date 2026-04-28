@@ -14,6 +14,7 @@ import { getModuleParams } from "../../common/utils/params_service";
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 import { mapPermissionType, normalizePermissionEmptyStringsToNull } from "../../common/utils/utils";
+import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from "../resolver/trust-data-enrichment";
 import {
   calculatePermState,
   calculateGranteeAvailableActions,
@@ -58,6 +59,10 @@ export default class PermAPIService extends BullableService {
 
   constructor(broker: ServiceBroker) {
     super(broker);
+  }
+
+  private async enrichDidItemsWithTrustData<T>(items: T, mode: TrustDataMode, blockHeight?: number): Promise<T> {
+    return enrichTrustDataDeep(items, mode, blockHeight);
   }
 
   private async getMetricColumnAvailability(tableName: "permissions" | "permission_history"): Promise<{
@@ -1358,6 +1363,7 @@ export default class PermAPIService extends BullableService {
       max_ecosystem_slash_events: { type: "number", integer: true, optional: true },
       min_network_slash_events: { type: "number", integer: true, optional: true },
       max_network_slash_events: { type: "number", integer: true, optional: true },
+      trustData: { type: "string", optional: true },
     },
   })
   async listPermissions(ctx: Context<any>) {
@@ -1382,6 +1388,11 @@ export default class PermAPIService extends BullableService {
         type: typeVpValidation.type,
         vp_state: typeVpValidation.vp_state,
       };
+      const trustDataModeParsed = parseTrustDataMode(normalizedParams.trustData);
+      if (!trustDataModeParsed.ok) {
+        return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+      }
+      const trustDataMode = trustDataModeParsed.mode;
 
       const blockHeight = getBlockHeight(ctx);
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
@@ -1745,7 +1756,12 @@ export default class PermAPIService extends BullableService {
         }
         filteredPermissions = filteredPermissions.slice(0, limit);
 
-        return ApiResponder.success(ctx, { permissions: filteredPermissions }, 200);
+        const permissionsWithTrustData = await this.enrichDidItemsWithTrustData(
+          filteredPermissions,
+          trustDataMode,
+          blockHeight
+        );
+        return ApiResponder.success(ctx, { permissions: permissionsWithTrustData }, 200);
       }
 
       const baseColumns = [
@@ -1930,7 +1946,12 @@ export default class PermAPIService extends BullableService {
         });
       }
       finalResults = finalResults.slice(0, limit);
-      const responsePayload = { permissions: finalResults };
+      const permissionsWithTrustData = await this.enrichDidItemsWithTrustData(
+        finalResults,
+        trustDataMode,
+        blockHeight
+      );
+      const responsePayload = { permissions: permissionsWithTrustData };
       return ApiResponder.success(ctx, responsePayload, 200);
     } catch (err: any) {
       const errMessage = err?.message || String(err);
@@ -1970,12 +1991,18 @@ export default class PermAPIService extends BullableService {
     rest: "GET get/:id",
     params: {
       id: { type: "number", integer: true },
+      trustData: { type: "string", optional: true },
     },
   })
-  async getPermission(ctx: Context<{ id: number }>) {
+  async getPermission(ctx: Context<{ id: number; trustData?: string }>) {
     try {
       const id = ctx.params.id;
       const blockHeight = getBlockHeight(ctx);
+      const trustDataModeParsed = parseTrustDataMode((ctx.params as any).trustData);
+      if (!trustDataModeParsed.ok) {
+        return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+      }
+      const trustDataMode = trustDataModeParsed.mode;
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight);
 
       // If AtBlockHeight is provided, query historical state
@@ -2098,7 +2125,12 @@ export default class PermAPIService extends BullableService {
           { lightweightDerivedStats: historyHasAllDerivedColumns }
         );
 
-        return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
+        const [permissionWithTrustData] = await this.enrichDidItemsWithTrustData(
+          [enrichedPermission],
+          trustDataMode,
+          blockHeight
+        );
+        return ApiResponder.success(ctx, { permission: permissionWithTrustData }, 200);
       }
 
       const permission = await knex("permissions").where("id", Number(id)).first();
@@ -2119,7 +2151,12 @@ export default class PermAPIService extends BullableService {
         { lightweightDerivedStats: liveHasAllDerivedColumns }
       );
 
-      return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
+      const [permissionWithTrustData] = await this.enrichDidItemsWithTrustData(
+        [enrichedPermission],
+        trustDataMode,
+        blockHeight
+      );
+      return ApiResponder.success(ctx, { permission: permissionWithTrustData }, 200);
     } catch (err: any) {
       this.logger.error("Error in getPermission:", err);
       return ApiResponder.error(ctx, "Failed to get permission", 500);
@@ -2511,11 +2548,17 @@ export default class PermAPIService extends BullableService {
       account: { type: "string" },
       response_max_size: { type: "number", optional: true, default: 64 },
       sort: { type: "string", optional: true },
+      trustData: { type: "string", optional: true },
     },
   })
-  async pendingFlat(ctx: Context<{ account: string; response_max_size?: number; sort?: string }>) {
+  async pendingFlat(ctx: Context<{ account: string; response_max_size?: number; sort?: string; trustData?: string }>) {
     try {
       const p = ctx.params as any;
+      const trustDataModeParsed = parseTrustDataMode(p.trustData);
+      if (!trustDataModeParsed.ok) {
+        return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+      }
+      const trustDataMode = trustDataModeParsed.mode;
       const accountValidation = validateRequiredAccountParam(p.account, "account");
       if (!accountValidation.valid) {
         return ApiResponder.error(ctx, accountValidation.error, 400);
@@ -2740,6 +2783,11 @@ export default class PermAPIService extends BullableService {
         defaultAttribute: "modified",
         defaultDirection: "desc",
       });
+      const permissionsWithTrustData = await this.enrichDidItemsWithTrustData(
+        sortedFiltered,
+        trustDataMode,
+        useHistory ? blockHeight : undefined
+      );
       const schemaIds = Array.from(new Set(sortedFiltered.map((r: any) => Number(r.schema_id))));
       const schemas = schemaIds.length > 0
         ? await knex("credential_schemas").whereIn("id", schemaIds).select("id", "tr_id", "json_schema", "title", "description", "participants")
@@ -2803,7 +2851,7 @@ export default class PermAPIService extends BullableService {
         trMap.set(Number(tr.id), { id: Number(tr.id), did: tr.did, aka: tr.aka, credential_schemas: [], pending_tasks: 0, participants: tr.participants ?? 0 });
       }
       const csMap = new Map<number, any>();
-      for (const perm of sortedFiltered) {
+      for (const perm of permissionsWithTrustData) {
         const schemaId = perm.schema_id;
         const csInfo = schemaMap.get(schemaId) || { tr_id: null, title: undefined, description: undefined };
         if (!csMap.has(schemaId)) {
@@ -2894,8 +2942,12 @@ export default class PermAPIService extends BullableService {
           credential_schemas: tr.credential_schemas,
         }))
         .sort((a: any, b: any) => (b.participants || 0) - (a.participants || 0));
-
-      return ApiResponder.success(ctx, { trust_registries: trustRegistries.slice(0, limit) }, 200);
+      const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
+        trustRegistries.slice(0, limit),
+        trustDataMode,
+        useHistory ? blockHeight : undefined
+      );
+      return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
     } catch (err: any) {
       this.logger.error("Error in pendingFlat:", err);
       return ApiResponder.error(ctx, `Failed to get pending tasks: ${err?.message || err}`, 500);

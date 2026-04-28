@@ -811,6 +811,20 @@
             "description": "Preferred language for document content"
           },
           {
+            "name": "trustData",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "null",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Trust data enrichment mode for DID-bearing objects: null (default), summary, or full."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
@@ -1189,6 +1203,20 @@
               "type": "string"
             },
             "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+          },
+          {
+            "name": "trustData",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "null",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Trust data enrichment mode for DID-bearing objects: null (default), summary, or full."
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2143,6 +2171,20 @@
             "description": "The Permission ID to retrieve"
           },
           {
+            "name": "trustData",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "null",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Trust data enrichment mode for DID-bearing objects: null (default), summary, or full."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
@@ -2647,6 +2689,20 @@
             "description": "Maximum accepted number of network slash events (exclusive). "
           },
           {
+            "name": "trustData",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "null",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Trust data enrichment mode for DID-bearing objects: null (default), summary, or full."
+          },
+          {
             "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
@@ -2708,6 +2764,20 @@
               "type": "string"
             },
             "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+          },
+          {
+            "name": "trustData",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "null",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Trust data enrichment mode for DID-bearing objects: null (default), summary, or full."
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -4656,14 +4726,20 @@
           "participants_verifier_grantor": {
             "type": "integer"
           },
-          "participants_verifier": {
-            "type": "integer"
-          },
-          "participants_holder": {
-            "type": "integer"
+            "participants_verifier": {
+              "type": "integer"
+            },
+            "participants_holder": {
+              "type": "integer"
+            },
+            "trustData": {
+              "type": "object",
+              "nullable": true,
+              "additionalProperties": true,
+              "description": "Resolved trust payload for the DID at the same level as did. Null when trustData=null or trust resolution is unavailable."
+            }
           }
-        }
-      },
+        },
       "TrustRegistryVersion": {
         "type": "object",
         "properties": {
@@ -4951,14 +5027,20 @@
           "participants_verifier_grantor": {
             "type": "integer"
           },
-          "participants_verifier": {
-            "type": "integer"
-          },
-          "participants_holder": {
-            "type": "integer"
+            "participants_verifier": {
+              "type": "integer"
+            },
+            "participants_holder": {
+              "type": "integer"
+            },
+            "trustData": {
+              "type": "object",
+              "nullable": true,
+              "additionalProperties": true,
+              "description": "Resolved trust payload for the DID at the same level as did. Null when trustData=null or trust resolution is unavailable."
+            }
           }
-        }
-      },
+        },
       "CredentialSchemaResponse": {
         "type": "object",
         "properties": {
@@ -5294,14 +5376,20 @@
           "participants": {
             "type": "integer"
           },
-          "credential_schemas": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CredentialSchemaPending"
+            "credential_schemas": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CredentialSchemaPending"
+              }
+            },
+            "trustData": {
+              "type": "object",
+              "nullable": true,
+              "additionalProperties": true,
+              "description": "Resolved trust payload for the DID at the same level as did. Null when trustData=null or trust resolution is unavailable."
             }
           }
-        }
-      },
+        },
       "CredentialSchemaPending": {
         "type": "object",
         "properties": {
