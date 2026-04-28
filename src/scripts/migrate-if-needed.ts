@@ -391,13 +391,7 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
                   }
                 } else {
                   console.log("  Clearing ALTER migrations that might be causing issues...");
-                  const alterMigrations = [
-                    "20251124120000_add_height_to_credential_schema_history",
-                    "20251210000000_add_permission_statistics",
-                    "20250115000000_add_permission_new_attributes",
-                    "20260126000000_add_trust_registry_statistics",
-                    "20260126000002_add_credential_schema_statistics"
-                  ];
+                  const alterMigrations: string[] = [];
                   
                   for (const migName of alterMigrations) {
                     try {

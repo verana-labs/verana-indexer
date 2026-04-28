@@ -40,6 +40,9 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger("height").notNullable();
     table.jsonb("changes").nullable();
     table.timestamp("created_at").defaultTo(knex.fn.now());
+
+    table.index(["tr_id"]);
+    table.index(["height"], "trust_registry_history_height_idx");
   });
 
   await knex.schema.createTable("governance_framework_version_history", (table) => {
@@ -52,6 +55,9 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger("height").notNullable();
     table.jsonb("changes").nullable();
     table.timestamp("created_at").defaultTo(knex.fn.now());
+
+    table.index(["tr_id"]);
+    table.index(["height"], "governance_framework_version_history_height_idx");
   });
 
   await knex.schema.createTable("governance_framework_document_history", (table) => {
@@ -66,6 +72,10 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger("height").notNullable();
     table.jsonb("changes").nullable();
     table.timestamp("created_at").defaultTo(knex.fn.now());
+
+    table.index(["tr_id"]);
+    table.index(["gfv_id"]);
+    table.index(["height"], "governance_framework_document_history_height_idx");
   });
 }
 

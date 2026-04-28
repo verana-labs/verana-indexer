@@ -119,8 +119,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       schemaMessageParams.txResponse
     );
       if (
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema
       ) {
         await this.createSchema(ctx, schemaMessage);
       } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema) {

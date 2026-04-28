@@ -7,6 +7,12 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp("computed_at").notNullable().defaultTo(knex.fn.now());
 
     table.bigInteger("participants").notNullable().defaultTo(0);
+    table.bigInteger("participants_ecosystem").notNullable().defaultTo(0);
+    table.bigInteger("participants_issuer_grantor").notNullable().defaultTo(0);
+    table.bigInteger("participants_issuer").notNullable().defaultTo(0);
+    table.bigInteger("participants_verifier_grantor").notNullable().defaultTo(0);
+    table.bigInteger("participants_verifier").notNullable().defaultTo(0);
+    table.bigInteger("participants_holder").notNullable().defaultTo(0);
     table.integer("active_trust_registries").notNullable().defaultTo(0);
     table.integer("archived_trust_registries").notNullable().defaultTo(0);
     table.integer("active_schemas").notNullable().defaultTo(0);

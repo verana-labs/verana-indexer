@@ -1758,7 +1758,7 @@ export default class PermIngestService extends Service {
         insertData.expire_soon = expireSoon;
         this.logger.info(`[handleCreateRootPermission] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleCreateRootPermission] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
+        this.logger.warn(`[handleCreateRootPermission] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
       let insertedPermission: any = null;
@@ -1939,7 +1939,7 @@ export default class PermIngestService extends Service {
         insertData.expire_soon = expireSoon;
         this.logger.info(`[handleCreatePermission] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleCreatePermission] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
+        this.logger.warn(`[handleCreatePermission] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
       let permission: any = null;
@@ -2255,7 +2255,7 @@ export default class PermIngestService extends Service {
         Entry.expire_soon = expireSoon;
         this.logger.info(`[handleStartPermissionVP] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleStartPermissionVP] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
+        this.logger.warn(`[handleStartPermissionVP] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
       await this.ensurePermV4Columns(knex);

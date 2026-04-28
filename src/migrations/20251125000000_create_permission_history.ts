@@ -8,6 +8,7 @@ export async function up(knex: Knex): Promise<void> {
     table.specificType("type", "permission_type").notNullable();
     table.string("did", 255).nullable();
     table.string("corporation", 255).notNullable();
+    table.text("vs_operator").nullable();
     table.timestamp("created").nullable();
     table.timestamp("modified").nullable();
     table.timestamp("adjusted").nullable();
@@ -43,6 +44,13 @@ export async function up(knex: Knex): Promise<void> {
     table.specificType("issuance_fee_discount", "NUMERIC(38,0)").notNullable().defaultTo(0);
     table.specificType("verification_fee_discount", "NUMERIC(38,0)").notNullable().defaultTo(0);
     table.boolean("expire_soon").nullable();
+
+    table.boolean("vs_operator_authz_enabled").notNullable().defaultTo(false);
+    table.jsonb("vs_operator_authz_spend_limit").nullable();
+    table.boolean("vs_operator_authz_with_feegrant").notNullable().defaultTo(false);
+    table.jsonb("vs_operator_authz_fee_spend_limit").nullable();
+    table.text("vs_operator_authz_spend_period").nullable();
+
     table.string("event_type").notNullable();
     table.integer("height").notNullable();
     table.jsonb("changes").nullable();
@@ -51,6 +59,10 @@ export async function up(knex: Knex): Promise<void> {
     table.index(["permission_id"]);
     table.index(["height"]);
     table.index(["event_type"]);
+
+    table.index(["schema_id", "height"], "idx_permission_history_schema_height_desc");
+    table.index(["corporation", "height"], "idx_permission_history_corporation_height_desc");
+    table.index(["permission_id", "height"], "idx_permission_history_permission_height_desc");
   });
 }
 

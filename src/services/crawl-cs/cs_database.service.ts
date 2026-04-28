@@ -2267,7 +2267,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           historyTable: "credential_schema_history",
           idField: "credential_schema_id",
           entityId: id,
-          msgTypePrefixes: ["/verana.cs.v1", "/veranablockchain.credentialschema"],
+          msgTypePrefixes: ["/verana.cs.v1"],
         },
         {
           responseMaxSize,

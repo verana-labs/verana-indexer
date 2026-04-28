@@ -7,7 +7,6 @@ const HEIGHT_HEADER = "x-cosmos-block-height";
 
 const CS_MESSAGE_TYPES = new Set<string>([
   VeranaCredentialSchemaMessageTypes.CreateCredentialSchema,
-  VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy,
   VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema,
   VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema,
   VeranaCredentialSchemaMessageTypes.UpdateParams,

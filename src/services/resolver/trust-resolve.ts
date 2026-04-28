@@ -181,13 +181,9 @@ export async function findHeightsWithTrustModuleMessages(fromExclusive: number, 
       AND t.height <= ?
       AND t.code = 0
       AND (
-        tm.type LIKE '/verana.dd%'
-        OR tm.type LIKE '/verana.tr%'
+        tm.type LIKE '/verana.tr%'
         OR tm.type LIKE '/verana.cs%'
         OR tm.type LIKE '/verana.perm%'
-        OR tm.type LIKE '/veranablockchain.diddirectory%'
-        OR tm.type LIKE '/veranablockchain.trustregistry%'
-        OR tm.type LIKE '/veranablockchain.credentialschema%'
       )
     ORDER BY t.height ASC
     `,

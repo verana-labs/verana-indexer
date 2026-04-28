@@ -12,6 +12,30 @@ export async function up(knex: Knex): Promise<void> {
     table.string("language", 2).notNullable();
     table.integer("active_version").nullable();
     table.bigInteger("height").notNullable().unique();
+
+    table.bigInteger("participants").notNullable().defaultTo(0);
+    table.bigInteger("participants_ecosystem").notNullable().defaultTo(0);
+    table.bigInteger("participants_issuer_grantor").notNullable().defaultTo(0);
+    table.bigInteger("participants_issuer").notNullable().defaultTo(0);
+    table.bigInteger("participants_verifier_grantor").notNullable().defaultTo(0);
+    table.bigInteger("participants_verifier").notNullable().defaultTo(0);
+    table.bigInteger("participants_holder").notNullable().defaultTo(0);
+
+    table.bigInteger("active_schemas").notNullable().defaultTo(0);
+    table.bigInteger("archived_schemas").notNullable().defaultTo(0);
+    table.specificType("weight", "NUMERIC(38,0)").notNullable().defaultTo(0);
+    table.specificType("issued", "NUMERIC(38,0)").notNullable().defaultTo(0);
+    table.specificType("verified", "NUMERIC(38,0)").notNullable().defaultTo(0);
+    table.bigInteger("ecosystem_slash_events").notNullable().defaultTo(0);
+    table.specificType("ecosystem_slashed_amount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+    table.specificType("ecosystem_slashed_amount_repaid", "NUMERIC(38,0)").notNullable().defaultTo(0);
+    table.bigInteger("network_slash_events").notNullable().defaultTo(0);
+    table.specificType("network_slashed_amount", "NUMERIC(38,0)").notNullable().defaultTo(0);
+    table.specificType("network_slashed_amount_repaid", "NUMERIC(38,0)").notNullable().defaultTo(0);
+
+    table.index(["corporation"], "idx_tr_corporation_archived_modified_id");
+    table.index(["archived"]);
+    table.index(["modified"]);
   });
 
   await knex.schema.createTable("governance_framework_version", (table) => {
@@ -19,7 +43,7 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger("tr_id").notNullable();
     table.timestamp("created").notNullable();
     table.integer("version").notNullable();
-    table.timestamp("active_since").notNullable();
+    table.timestamp("active_since").nullable();
 
     table
       .foreign("tr_id")
@@ -44,7 +68,6 @@ export async function up(knex: Knex): Promise<void> {
       .inTable("governance_framework_version")
       .onDelete("CASCADE");
 
-    table.unique(["gfv_id", "url"], "gfd_gfvid_url_unique");
   });
 }
 

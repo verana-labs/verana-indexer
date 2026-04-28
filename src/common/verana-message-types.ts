@@ -2,7 +2,6 @@
 export enum VeranaCredentialSchemaMessageTypes {
   UpdateParams = "/verana.cs.v1.MsgUpdateParams",
   CreateCredentialSchema = "/verana.cs.v1.MsgCreateCredentialSchema",
-  CreateCredentialSchemaLegacy = "/veranablockchain.credentialschema.MsgCreateCredentialSchema",
   UpdateCredentialSchema = "/verana.cs.v1.MsgUpdateCredentialSchema",
   ArchiveCredentialSchema = "/verana.cs.v1.MsgArchiveCredentialSchema",
   CreateSchemaAuthorizationPolicy = "/verana.cs.v1.MsgCreateSchemaAuthorizationPolicy",
@@ -37,7 +36,6 @@ export enum VeranaTrustDepositMessageTypes {
 export enum VeranaTrustRegistryMessageTypes {
   UpdateParams = "/verana.tr.v1.MsgUpdateParams",
   CreateTrustRegistry = "/verana.tr.v1.MsgCreateTrustRegistry",
-  CreateTrustRegistryLegacy = "/veranablockchain.trustregistry.MsgCreateTrustRegistry",
   UpdateTrustRegistry = "/verana.tr.v1.MsgUpdateTrustRegistry",
   ArchiveTrustRegistry = "/verana.tr.v1.MsgArchiveTrustRegistry",
   AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",

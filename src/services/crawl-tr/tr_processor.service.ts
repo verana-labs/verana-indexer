@@ -169,8 +169,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         processed = true;
       } else {
         if (
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
+          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry
         ) {
           await this.processCreateTR(processedTR);
           processed = true;

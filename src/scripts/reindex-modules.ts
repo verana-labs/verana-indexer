@@ -566,20 +566,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
 };
 
 const ALTER_MIGRATIONS = [
-  "20251124120000_add_height_to_credential_schema_history",
-  "20251125113000_add_height_indexes_to_history_tables",
-  "20251210000000_add_permission_statistics",
-  "20250115000000_add_permission_new_attributes",
-  "20260305000000_add_participant_role_counters",
-  "20260126000000_add_trust_registry_statistics",
-  "20260126000002_add_credential_schema_statistics",
-  "20260130000004_alter_gfv_combined",
-  "20260202000000_add_title_description_to_credential_schema",
-  "20260203000000_add_indexes_permissions_history",
-  "20260218000000_credential_schema_json_schema_to_text",
   "20260226000000_add_permissions_lookup_index_for_perm_list",
-  "20260317000000_add_permission_flips",
-  "20260414120000_vpr_v4_tr_cs_perm_td_combined",
   "20260402000000_create_trust_results",
 ];
 
