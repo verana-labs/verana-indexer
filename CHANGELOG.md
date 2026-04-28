@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/verana-labs/verana-indexer/compare/v1.3.0...v1.3.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* prevent reentrancy in resolver poll service ([0c0ee68](https://github.com/verana-labs/verana-indexer/commit/0c0ee6869b570964a145b0bef10817e8c97f7e9b))
+
 ## [1.3.0](https://github.com/verana-labs/verana-indexer/compare/v1.2.1...v1.3.0) (2026-04-27)
 
 
