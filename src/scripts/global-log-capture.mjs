@@ -142,12 +142,6 @@ function safeStringify(arg) {
         );
       }
 
-      errorLogger.error(
-        {
-          reason: reason instanceof Error ? reason.message : safeStringify(reason),
-        },
-        "unhandledRejection"
-      );
     } catch (_) {}
 
     originalConsole.error("Unhandled Promise Rejection:", reason);

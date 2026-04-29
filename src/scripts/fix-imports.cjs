@@ -65,6 +65,41 @@ function withJsExtension(importPath) {
   return normalizeJsExtension(`${importPath}.js`);
 }
 
+function normalizeVeranaTypesImport(match, importPath) {
+  if (!importPath.startsWith("@verana-labs/verana-types/")) {
+    return null;
+  }
+
+  const normalizedImportPath = importPath.replace(/(?:\.js)+$/u, "");
+  if (normalizedImportPath !== importPath) {
+    return {
+      match: match.replace(importPath, normalizedImportPath),
+      modified: true,
+    };
+  }
+
+  return { match, modified: false };
+}
+
+function normalizeAlreadyJsImport(match, importPath) {
+  if (importPath.endsWith(".json")) {
+    return { match, modified: false };
+  }
+
+  if (importPath.endsWith(".js")) {
+    const normalizedImportPath = normalizeJsExtension(importPath);
+    if (normalizedImportPath !== importPath) {
+      return {
+        match: match.replace(importPath, normalizedImportPath),
+        modified: true,
+      };
+    }
+    return { match, modified: false };
+  }
+
+  return null;
+}
+
 // Fix imports/exports in a single file
 function fixImportsInFile(filePath) {
   try {
@@ -81,9 +116,16 @@ function fixImportsInFile(filePath) {
     content = content.replace(
       importExportRegex,
       (match, keyword, importPath) => {
-        // Skip if already .js or .json
-        if (importPath.endsWith(".js") || importPath.endsWith(".json")) {
-          return match;
+        const normalizedVeranaTypesImport = normalizeVeranaTypesImport(match, importPath);
+        if (normalizedVeranaTypesImport) {
+          modified = modified || normalizedVeranaTypesImport.modified;
+          return normalizedVeranaTypesImport.match;
+        }
+
+        const normalizedAlreadyJsImport = normalizeAlreadyJsImport(match, importPath);
+        if (normalizedAlreadyJsImport) {
+          modified = modified || normalizedAlreadyJsImport.modified;
+          return normalizedAlreadyJsImport.match;
         }
 
         // Handle known packages
@@ -104,10 +146,6 @@ function fixImportsInFile(filePath) {
           } else {
             return match.replace(importPath, withJsExtension(importPath));
           }
-        }
-        if (importPath.startsWith("@verana-labs/verana-types/")) {
-          modified = true;
-          return match.replace(importPath, withJsExtension(importPath));
         }
         return match; // leave other imports untouched
       }
@@ -117,9 +155,16 @@ function fixImportsInFile(filePath) {
     content = content.replace(
       dynamicImportRegex,
       (match, importPath) => {
-        // Skip if already .js or .json
-        if (importPath.endsWith(".js") || importPath.endsWith(".json")) {
-          return match;
+        const normalizedVeranaTypesImport = normalizeVeranaTypesImport(match, importPath);
+        if (normalizedVeranaTypesImport) {
+          modified = modified || normalizedVeranaTypesImport.modified;
+          return normalizedVeranaTypesImport.match;
+        }
+
+        const normalizedAlreadyJsImport = normalizeAlreadyJsImport(match, importPath);
+        if (normalizedAlreadyJsImport) {
+          modified = modified || normalizedAlreadyJsImport.modified;
+          return normalizedAlreadyJsImport.match;
         }
 
         // Handle known packages
@@ -140,10 +185,6 @@ function fixImportsInFile(filePath) {
           } else {
             return match.replace(importPath, withJsExtension(importPath));
           }
-        }
-        if (importPath.startsWith("@verana-labs/verana-types/")) {
-          modified = true;
-          return match.replace(importPath, withJsExtension(importPath));
         }
         return match; // leave other imports untouched
       }
