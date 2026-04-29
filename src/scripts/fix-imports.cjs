@@ -57,6 +57,14 @@ function needsJsExtension(importPath) {
   return false;
 }
 
+function normalizeJsExtension(importPath) {
+  return importPath.replace(/(?:\.js)+$/u, ".js");
+}
+
+function withJsExtension(importPath) {
+  return normalizeJsExtension(`${importPath}.js`);
+}
+
 // Fix imports/exports in a single file
 function fixImportsInFile(filePath) {
   try {
@@ -83,23 +91,23 @@ function fixImportsInFile(filePath) {
         if (jsExtType) {
           modified = true;
           if (jsExtType === "index") {
-            return match.replace(importPath, `${importPath}/index.js`);
+            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
           }
-          return match.replace(importPath, `${importPath}.js`);
+          return match.replace(importPath, withJsExtension(importPath));
         }
 
         // Handle relative imports (./ or ../)
         if (importPath.startsWith("./") || importPath.startsWith("../")) {
           modified = true;
           if (isDirectory(fileDir, importPath)) {
-            return match.replace(importPath, `${importPath}/index.js`);
+            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
           } else {
-            return match.replace(importPath, `${importPath}.js`);
+            return match.replace(importPath, withJsExtension(importPath));
           }
         }
         if (importPath.startsWith("@verana-labs/verana-types/")) {
           modified = true;
-          return match.replace(importPath, `${importPath}.js`);
+          return match.replace(importPath, withJsExtension(importPath));
         }
         return match; // leave other imports untouched
       }
@@ -119,23 +127,23 @@ function fixImportsInFile(filePath) {
         if (jsExtType) {
           modified = true;
           if (jsExtType === "index") {
-            return match.replace(importPath, `${importPath}/index.js`);
+            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
           }
-          return match.replace(importPath, `${importPath}.js`);
+          return match.replace(importPath, withJsExtension(importPath));
         }
 
         // Handle relative imports (./ or ../)
         if (importPath.startsWith("./") || importPath.startsWith("../")) {
           modified = true;
           if (isDirectory(fileDir, importPath)) {
-            return match.replace(importPath, `${importPath}/index.js`);
+            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
           } else {
-            return match.replace(importPath, `${importPath}.js`);
+            return match.replace(importPath, withJsExtension(importPath));
           }
         }
         if (importPath.startsWith("@verana-labs/verana-types/")) {
           modified = true;
-          return match.replace(importPath, `${importPath}.js`);
+          return match.replace(importPath, withJsExtension(importPath));
         }
         return match; // leave other imports untouched
       }

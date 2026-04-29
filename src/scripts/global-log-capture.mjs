@@ -45,7 +45,8 @@ if (!shouldLogToFile) {
 
   const errorDestination = pino.destination({
     dest: errorFilePath,
-    sync: false,
+    // Use sync destination to avoid SonicBoom readiness race at process shutdown.
+    sync: true,
   });
 
   const errorLogger = pino(
@@ -108,20 +109,13 @@ function safeStringify(arg) {
 
   process.on("uncaughtException", (err) => {
     try {
-      const finalLogger = pino.final(errorLogger, (_err, final) => {
-        try {
-          final.fatal(
-            {
-              message: err && err.message,
-              stack: err && err.stack,
-            },
-            "uncaughtException"
-          );
-        } catch (_) {
-          // swallow
-        }
-      });
-      finalLogger(err);
+      errorLogger.fatal(
+        {
+          message: err && err.message,
+          stack: err && err.stack,
+        },
+        "uncaughtException"
+      );
     } catch (_) {}
 
     originalConsole.error(err);
@@ -148,17 +142,12 @@ function safeStringify(arg) {
         );
       }
 
-      const finalLogger = pino.final(errorLogger, (_err, final) => {
-        try {
-          final.error(
-            {
-              reason: reason instanceof Error ? reason.message : safeStringify(reason),
-            },
-            "unhandledRejection - final flush"
-          );
-        } catch (_) {}
-      });
-      finalLogger(reason instanceof Error ? reason : new Error(String(reason)));
+      errorLogger.error(
+        {
+          reason: reason instanceof Error ? reason.message : safeStringify(reason),
+        },
+        "unhandledRejection"
+      );
     } catch (_) {}
 
     originalConsole.error("Unhandled Promise Rejection:", reason);
