@@ -13,10 +13,11 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSo
 import { getModuleParams } from "../../common/utils/params_service";
 import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
+import { mapPermissionApiFields } from "../../common/vpr-v4-mapping";
 import { mapPermissionType, normalizePermissionEmptyStringsToNull } from "../../common/utils/utils";
 import {
   calculatePermState,
-  calculateGranteeAvailableActions,
+  calculateCorporationAvailableActions,
   calculateValidatorAvailableActions,
   pendingFlatMatchesVpPendingWithEligiblePermState,
   PENDING_FLAT_VALIDATOR_PARENT_TYPES,
@@ -119,8 +120,8 @@ export default class PermAPIService extends BullableService {
 
         if (schemaHistory) {
           return {
-            issuer_perm_management_mode: schemaHistory.issuer_perm_management_mode || null,
-            verifier_perm_management_mode: schemaHistory.verifier_perm_management_mode || null,
+            issuer_onboarding_mode: (schemaHistory as any).issuer_onboarding_mode ?? null,
+            verifier_onboarding_mode: (schemaHistory as any).verifier_onboarding_mode ?? null,
           };
         }
       } catch (error: any) {
@@ -133,8 +134,8 @@ export default class PermAPIService extends BullableService {
       .first();
 
     const schema: SchemaData = {
-      issuer_perm_management_mode: schemaMain?.issuer_perm_management_mode || null,
-      verifier_perm_management_mode: schemaMain?.verifier_perm_management_mode || null,
+      issuer_onboarding_mode: (schemaMain as any)?.issuer_onboarding_mode ?? null,
+      verifier_onboarding_mode: (schemaMain as any)?.verifier_onboarding_mode ?? null,
     };
 
     return schema;
@@ -147,31 +148,26 @@ export default class PermAPIService extends BullableService {
   private normalizePermissionSessionRow(row: any): any {
     if (!row) return row;
 
-    let authz: any[] = [];
+    let sessionRecords: any[] = [];
     try {
-      if (typeof row.authz === "string") {
-        authz = JSON.parse(row.authz || "[]");
-      } else if (Array.isArray(row.authz)) {
-        authz = row.authz;
+      if (typeof row.session_records === "string") {
+        sessionRecords = JSON.parse(row.session_records || "[]");
+      } else if (Array.isArray(row.session_records)) {
+        sessionRecords = row.session_records;
       } else {
-        authz = [];
+        sessionRecords = [];
       }
     } catch {
-      authz = [];
+      sessionRecords = [];
     }
-
-    const mappedAuthz = authz.map((entry: any) => ({
-      executor_perm_id: Number(entry?.executor_perm_id ?? 0) || 0,
-      beneficiary_perm_id: Number(entry?.beneficiary_perm_id ?? 0) || 0,
-      wallet_agent_perm_id: Number(entry?.wallet_agent_perm_id ?? 0) || 0,
-    }));
 
     return {
       id: row.id ?? row.session_id,
-      controller: row.controller ?? null,
+      corporation: row.corporation ?? null,
+      vs_operator: row.vs_operator ?? null,
       agent_perm_id: Number(row.agent_perm_id ?? 0) || 0,
       wallet_agent_perm_id: Number(row.wallet_agent_perm_id ?? 0) || 0,
-      authz: mappedAuthz,
+      session_records: sessionRecords,
       created: row.created ?? null,
       modified: row.modified ?? null,
     };
@@ -243,7 +239,7 @@ export default class PermAPIService extends BullableService {
     if (limit > 32) return false;
 
     const disallowedKeys = [
-      "grantee",
+      "corporation",
       "perm_id",
       "validator_perm_id",
       "perm_state",
@@ -252,7 +248,6 @@ export default class PermAPIService extends BullableService {
       "only_slashed",
       "only_repaid",
       "modified_after",
-      "country",
       "vp_state",
       "when",
       "min_participants",
@@ -313,7 +308,7 @@ export default class PermAPIService extends BullableService {
   private applyBaseListFiltersToQuery(
     query: any,
     params: any,
-    granteeFilter: string | undefined,
+    corporationFilter: string | undefined,
     modifiedAfterIso: string | undefined,
     whenIso: string | undefined,
     onlyValid: boolean,
@@ -326,7 +321,7 @@ export default class PermAPIService extends BullableService {
     const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name);
 
     if (params.schema_id !== undefined) query.where(col("schema_id"), Number(params.schema_id));
-    if (granteeFilter) query.where(col("grantee"), granteeFilter);
+    if (corporationFilter) query.where(col("corporation"), corporationFilter);
     if (params.did) query.where(col("did"), params.did);
     if (params.perm_id !== undefined) query.where(col(permissionIdColumn), Number(params.perm_id));
     if (params.validator_perm_id !== undefined) {
@@ -337,7 +332,6 @@ export default class PermAPIService extends BullableService {
       }
     }
     if (params.type) query.where(col("type"), params.type);
-    if (params.country) query.where(col("country"), params.country);
     if (params.vp_state) query.where(col("vp_state"), params.vp_state);
     if (modifiedAfterIso) query.where(col("modified"), ">", modifiedAfterIso);
     if (whenIso) query.where(col("modified"), "<=", whenIso);
@@ -717,8 +711,8 @@ export default class PermAPIService extends BullableService {
       const rankedSchemas = knex("credential_schema_history as csh")
         .select(
           "csh.credential_schema_id",
-          "csh.issuer_perm_management_mode",
-          "csh.verifier_perm_management_mode",
+          "csh.issuer_onboarding_mode",
+          "csh.verifier_onboarding_mode",
           knex.raw(
             `ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC) as rn`
           )
@@ -729,14 +723,14 @@ export default class PermAPIService extends BullableService {
 
       const historicalModes = await knex
         .from(rankedSchemas)
-        .select("credential_schema_id", "issuer_perm_management_mode", "verifier_perm_management_mode")
+        .select("credential_schema_id", "issuer_onboarding_mode", "verifier_onboarding_mode")
         .where("rn", 1);
 
       for (const row of historicalModes) {
         const schemaId = Number(row.credential_schema_id);
         modeMap.set(schemaId, {
-          issuer_perm_management_mode: row.issuer_perm_management_mode || null,
-          verifier_perm_management_mode: row.verifier_perm_management_mode || null,
+          issuer_onboarding_mode: (row as any).issuer_onboarding_mode || null,
+          verifier_onboarding_mode: (row as any).verifier_onboarding_mode || null,
         });
       }
 
@@ -744,13 +738,13 @@ export default class PermAPIService extends BullableService {
       if (missingSchemaIds.length > 0) {
         const fallbackRows = await knex("credential_schemas")
           .whereIn("id", missingSchemaIds)
-          .select("id", "issuer_perm_management_mode", "verifier_perm_management_mode");
+          .select("id", "issuer_onboarding_mode", "verifier_onboarding_mode");
 
         for (const row of fallbackRows) {
           const schemaId = Number(row.id);
           modeMap.set(schemaId, {
-            issuer_perm_management_mode: row.issuer_perm_management_mode || null,
-            verifier_perm_management_mode: row.verifier_perm_management_mode || null,
+            issuer_onboarding_mode: (row as any).issuer_onboarding_mode || null,
+            verifier_onboarding_mode: (row as any).verifier_onboarding_mode || null,
           });
         }
       }
@@ -760,13 +754,13 @@ export default class PermAPIService extends BullableService {
 
     const schemaRows = await knex("credential_schemas")
       .whereIn("id", schemaIds)
-      .select("id", "issuer_perm_management_mode", "verifier_perm_management_mode");
+      .select("id", "issuer_onboarding_mode", "verifier_onboarding_mode");
 
     for (const row of schemaRows) {
       const schemaId = Number(row.id);
       modeMap.set(schemaId, {
-        issuer_perm_management_mode: row.issuer_perm_management_mode || null,
-        verifier_perm_management_mode: row.verifier_perm_management_mode || null,
+        issuer_onboarding_mode: (row as any).issuer_onboarding_mode || null,
+        verifier_onboarding_mode: (row as any).verifier_onboarding_mode || null,
       });
     }
 
@@ -884,6 +878,12 @@ export default class PermAPIService extends BullableService {
     return "VALIDATION_STATE_UNSPECIFIED";
   }
 
+  private normalizeDenomAmountArray(value: unknown): unknown {
+    if (value === null) return null;
+    if (Array.isArray(value)) return value;
+    return [];
+  }
+
   private normalizePermissionRow(perm: any): any {
     let normalized: any = {
       ...perm,
@@ -917,11 +917,16 @@ export default class PermAPIService extends BullableService {
       network_slash_events: perm.network_slash_events != null ? Number(perm.network_slash_events) : 0,
       network_slashed_amount: perm.network_slashed_amount != null ? Number(perm.network_slashed_amount) : 0,
       network_slashed_amount_repaid: perm.network_slashed_amount_repaid != null ? Number(perm.network_slashed_amount_repaid) : 0,
+      issuance_fee_discount: perm.issuance_fee_discount != null ? Number(perm.issuance_fee_discount) : 0,
+      verification_fee_discount: perm.verification_fee_discount != null ? Number(perm.verification_fee_discount) : 0,
     };
 
     normalized = normalizePermissionEmptyStringsToNull(normalized);
 
-    return normalized;
+    normalized.vs_operator_authz_spend_limit = this.normalizeDenomAmountArray(normalized.vs_operator_authz_spend_limit);
+    normalized.vs_operator_authz_fee_spend_limit = this.normalizeDenomAmountArray(normalized.vs_operator_authz_fee_spend_limit);
+
+    return mapPermissionApiFields(normalized as Record<string, unknown>) as any;
   }
 
   private async getPermissionsByIdsMap(permissionIds: number[], blockHeight?: number): Promise<Map<number, any>> {
@@ -938,21 +943,14 @@ export default class PermAPIService extends BullableService {
           .select([
             "ph.permission_id as id",
             "ph.schema_id",
-            "ph.grantee",
+            "ph.corporation",
             "ph.did",
-            "ph.created_by",
             "ph.validator_perm_id",
             "ph.type",
-            "ph.country",
             "ph.vp_state",
             "ph.revoked",
-            "ph.revoked_by",
             "ph.slashed",
-            "ph.slashed_by",
             "ph.repaid",
-            "ph.repaid_by",
-            "ph.extended",
-            "ph.extended_by",
             "ph.effective_from",
             "ph.effective_until",
             "ph.validation_fees",
@@ -964,10 +962,18 @@ export default class PermAPIService extends BullableService {
             "ph.vp_last_state_change",
             "ph.vp_current_fees",
             "ph.vp_current_deposit",
-            "ph.vp_summary_digest_sri",
+            "ph.vp_summary_digest",
             "ph.vp_exp",
             "ph.vp_validator_deposit",
-            "ph.vp_term_requested",
+            "ph.vs_operator",
+            "ph.adjusted",
+            "ph.vs_operator_authz_enabled",
+            "ph.vs_operator_authz_spend_limit",
+            "ph.vs_operator_authz_with_feegrant",
+            "ph.vs_operator_authz_fee_spend_limit",
+            "ph.vs_operator_authz_spend_period",
+            "ph.issuance_fee_discount",
+            "ph.verification_fee_discount",
             "ph.weight",
             "ph.issued",
             "ph.verified",
@@ -998,21 +1004,14 @@ export default class PermAPIService extends BullableService {
           .select([
             "ph.permission_id as id",
             "ph.schema_id",
-            "ph.grantee",
+            "ph.corporation",
             "ph.did",
-            "ph.created_by",
             "ph.validator_perm_id",
             "ph.type",
-            "ph.country",
             "ph.vp_state",
             "ph.revoked",
-            "ph.revoked_by",
             "ph.slashed",
-            "ph.slashed_by",
             "ph.repaid",
-            "ph.repaid_by",
-            "ph.extended",
-            "ph.extended_by",
             "ph.effective_from",
             "ph.effective_until",
             "ph.validation_fees",
@@ -1024,10 +1023,18 @@ export default class PermAPIService extends BullableService {
             "ph.vp_last_state_change",
             "ph.vp_current_fees",
             "ph.vp_current_deposit",
-            "ph.vp_summary_digest_sri",
+            "ph.vp_summary_digest",
             "ph.vp_exp",
             "ph.vp_validator_deposit",
-            "ph.vp_term_requested",
+            "ph.vs_operator",
+            "ph.adjusted",
+            "ph.vs_operator_authz_enabled",
+            "ph.vs_operator_authz_spend_limit",
+            "ph.vs_operator_authz_with_feegrant",
+            "ph.vs_operator_authz_fee_spend_limit",
+            "ph.vs_operator_authz_spend_period",
+            "ph.issuance_fee_discount",
+            "ph.verification_fee_discount",
             "ph.weight",
             "ph.issued",
             "ph.verified",
@@ -1066,21 +1073,14 @@ export default class PermAPIService extends BullableService {
       .select([
         "id",
         "schema_id",
-        "grantee",
+        "corporation",
         "did",
-        "created_by",
         "validator_perm_id",
         "type",
-        "country",
         "vp_state",
         "revoked",
-        "revoked_by",
         "slashed",
-        "slashed_by",
         "repaid",
-        "repaid_by",
-        "extended",
-        "extended_by",
         "effective_from",
         "effective_until",
         "validation_fees",
@@ -1092,10 +1092,18 @@ export default class PermAPIService extends BullableService {
         "vp_last_state_change",
         "vp_current_fees",
         "vp_current_deposit",
-        "vp_summary_digest_sri",
+        "vp_summary_digest",
         "vp_exp",
         "vp_validator_deposit",
-        "vp_term_requested",
+        "vs_operator",
+        "adjusted",
+        "vs_operator_authz_enabled",
+        "vs_operator_authz_spend_limit",
+        "vs_operator_authz_with_feegrant",
+        "vs_operator_authz_fee_spend_limit",
+        "vs_operator_authz_spend_period",
+        "issuance_fee_discount",
+        "verification_fee_discount",
         "weight",
         "issued",
         "verified",
@@ -1205,7 +1213,7 @@ export default class PermAPIService extends BullableService {
       now
     );
 
-    const granteeActions = calculateGranteeAvailableActions(
+    const corporationActions = calculateCorporationAvailableActions(
       {
         repaid: perm.repaid,
         slashed: perm.slashed,
@@ -1277,7 +1285,7 @@ export default class PermAPIService extends BullableService {
     const enriched: any = {
       ...perm,
       perm_state: permState,
-      grantee_available_actions: granteeActions,
+      corporation_available_actions: corporationActions,
       validator_available_actions: validatorActions,
       id: Number(perm.id),
       schema_id: Number(perm.schema_id),
@@ -1309,7 +1317,14 @@ export default class PermAPIService extends BullableService {
       network_slashed_amount_repaid: slashStats.network_slashed_amount_repaid,
       expire_soon: expireSoon,
     };
-    return normalizePermissionEmptyStringsToNull(enriched);
+    const normalized = normalizePermissionEmptyStringsToNull(enriched) as Record<string, unknown>;
+    (normalized as any).vs_operator_authz_spend_limit = this.normalizeDenomAmountArray(
+      (normalized as any).vs_operator_authz_spend_limit
+    );
+    (normalized as any).vs_operator_authz_fee_spend_limit = this.normalizeDenomAmountArray(
+      (normalized as any).vs_operator_authz_fee_spend_limit
+    );
+    return mapPermissionApiFields(normalized) as any;
   }
 
   /**
@@ -1319,7 +1334,7 @@ export default class PermAPIService extends BullableService {
     rest: "GET list",
     params: {
       schema_id: { type: "number", integer: true, optional: true },
-      grantee: { type: "string", optional: true },
+      corporation: { type: "string", optional: true },
       did: { type: "string", optional: true },
       perm_id: { type: "number", integer: true, optional: true },
       validator_perm_id: { type: "number", integer: true, optional: true },
@@ -1329,7 +1344,6 @@ export default class PermAPIService extends BullableService {
       only_slashed: { type: "any", optional: true },
       only_repaid: { type: "any", optional: true },
       modified_after: { type: "string", optional: true },
-      country: { type: "string", optional: true },
       vp_state: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
       when: { type: "string", optional: true },
@@ -1367,11 +1381,14 @@ export default class PermAPIService extends BullableService {
 
     try {
       const p = ctx.params;
-      const granteeValidation = validateParticipantParam(p.grantee, "grantee");
-      if (!granteeValidation.valid) {
-        return ApiResponder.error(ctx, granteeValidation.error, 400);
+      const corporationValidation = validateParticipantParam(
+        p.corporation,
+        "corporation"
+      );
+      if (!corporationValidation.valid) {
+        return ApiResponder.error(ctx, corporationValidation.error, 400);
       }
-      const granteeFilter = granteeValidation.value;
+      const corporationFilter = corporationValidation.value;
 
       const typeVpValidation = this.normalizeAndValidateTypeAndVpState(p);
       if (!typeVpValidation.ok) {
@@ -1456,21 +1473,14 @@ export default class PermAPIService extends BullableService {
         const historyColumns: any[] = [
           "ph.permission_id as id",
           "ph.schema_id",
-          "ph.grantee",
+          "ph.corporation",
           "ph.did",
-          "ph.created_by",
           "ph.validator_perm_id",
           "ph.type",
-          "ph.country",
           "ph.vp_state",
           "ph.revoked",
-          "ph.revoked_by",
           "ph.slashed",
-          "ph.slashed_by",
           "ph.repaid",
-          "ph.repaid_by",
-          "ph.extended",
-          "ph.extended_by",
           "ph.effective_from",
           "ph.effective_until",
           "ph.validation_fees",
@@ -1482,10 +1492,18 @@ export default class PermAPIService extends BullableService {
           "ph.vp_last_state_change",
           "ph.vp_current_fees",
           "ph.vp_current_deposit",
-          "ph.vp_summary_digest_sri",
+          "ph.vp_summary_digest",
           "ph.vp_exp",
           "ph.vp_validator_deposit",
-          "ph.vp_term_requested",
+          "ph.vs_operator",
+          "ph.adjusted",
+          "ph.vs_operator_authz_enabled",
+          "ph.vs_operator_authz_spend_limit",
+          "ph.vs_operator_authz_with_feegrant",
+          "ph.vs_operator_authz_fee_spend_limit",
+          "ph.vs_operator_authz_spend_period",
+          "ph.issuance_fee_discount",
+          "ph.verification_fee_discount",
           "ph.created",
           "ph.modified",
         ];
@@ -1525,7 +1543,7 @@ export default class PermAPIService extends BullableService {
               this.applyBaseListFiltersToQuery(
                 qb,
                 normalizedParams,
-                granteeFilter,
+                corporationFilter,
                 modifiedAfterIso,
                 whenIso,
                 onlyValid,
@@ -1572,7 +1590,7 @@ export default class PermAPIService extends BullableService {
               this.applyBaseListFiltersToQuery(
                 qb,
                 normalizedParams,
-                granteeFilter,
+                corporationFilter,
                 modifiedAfterIso,
                 whenIso,
                 onlyValid,
@@ -1637,21 +1655,14 @@ export default class PermAPIService extends BullableService {
           const permission: any = {
             id: Number(historyRecord.id),
             schema_id: Number(historyRecord.schema_id),
-            grantee: historyRecord.grantee,
+            corporation: historyRecord.corporation,
             did: historyRecord.did,
-            created_by: historyRecord.created_by,
             validator_perm_id: historyRecord.validator_perm_id ? Number(historyRecord.validator_perm_id) : null,
             type: historyRecord.type !== undefined && historyRecord.type !== null ? mapPermissionType(historyRecord.type) : historyRecord.type,
-            country: historyRecord.country,
             vp_state: this.normalizeVpStateForResponse(historyRecord.vp_state) ?? historyRecord.vp_state,
             revoked: historyRecord.revoked,
-            revoked_by: historyRecord.revoked_by,
             slashed: historyRecord.slashed,
-            slashed_by: historyRecord.slashed_by,
             repaid: historyRecord.repaid,
-            repaid_by: historyRecord.repaid_by,
-            extended: historyRecord.extended,
-            extended_by: historyRecord.extended_by,
             effective_from: historyRecord.effective_from,
             effective_until: historyRecord.effective_until,
             validation_fees: historyRecord.validation_fees != null ? Number(historyRecord.validation_fees) : 0,
@@ -1663,10 +1674,20 @@ export default class PermAPIService extends BullableService {
             vp_last_state_change: historyRecord.vp_last_state_change,
             vp_current_fees: historyRecord.vp_current_fees != null ? Number(historyRecord.vp_current_fees) : 0,
             vp_current_deposit: historyRecord.vp_current_deposit != null ? Number(historyRecord.vp_current_deposit) : 0,
-            vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
+            vp_summary_digest: historyRecord.vp_summary_digest,
             vp_exp: historyRecord.vp_exp,
             vp_validator_deposit: historyRecord.vp_validator_deposit != null ? Number(historyRecord.vp_validator_deposit) : 0,
-            vp_term_requested: historyRecord.vp_term_requested,
+            vs_operator: historyRecord.vs_operator ?? null,
+            adjusted: historyRecord.adjusted ?? null,
+            vs_operator_authz_enabled: historyRecord.vs_operator_authz_enabled ?? undefined,
+            vs_operator_authz_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_spend_limit),
+            vs_operator_authz_with_feegrant: historyRecord.vs_operator_authz_with_feegrant ?? undefined,
+            vs_operator_authz_fee_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_fee_spend_limit),
+            vs_operator_authz_spend_period: historyRecord.vs_operator_authz_spend_period ?? undefined,
+            issuance_fee_discount:
+              historyRecord.issuance_fee_discount != null ? Number(historyRecord.issuance_fee_discount) : 0,
+            verification_fee_discount:
+              historyRecord.verification_fee_discount != null ? Number(historyRecord.verification_fee_discount) : 0,
             created: historyRecord.created,
             modified: historyRecord.modified,
           };
@@ -1753,21 +1774,14 @@ export default class PermAPIService extends BullableService {
         "schema_id",
         "type",
         "did",
-        "grantee",
-        "created_by",
+        "corporation",
         "created",
         "modified",
-        "extended",
-        "extended_by",
         "slashed",
-        "slashed_by",
         "repaid",
-        "repaid_by",
         "effective_from",
         "effective_until",
         "revoked",
-        "revoked_by",
-        "country",
         "validation_fees",
         "issuance_fees",
         "verification_fees",
@@ -1779,10 +1793,18 @@ export default class PermAPIService extends BullableService {
         "vp_last_state_change",
         "vp_current_fees",
         "vp_current_deposit",
-        "vp_summary_digest_sri",
+        "vp_summary_digest",
         "vp_exp",
         "vp_validator_deposit",
-        "vp_term_requested",
+        "vs_operator",
+        "adjusted",
+        "vs_operator_authz_enabled",
+        "vs_operator_authz_spend_limit",
+        "vs_operator_authz_with_feegrant",
+        "vs_operator_authz_fee_spend_limit",
+        "vs_operator_authz_spend_period",
+        "issuance_fee_discount",
+        "verification_fee_discount",
       ];
 
       const {
@@ -1838,7 +1860,7 @@ export default class PermAPIService extends BullableService {
       this.applyBaseListFiltersToQuery(
         query,
         normalizedParams,
-        granteeFilter,
+        corporationFilter,
         modifiedAfterIso,
         whenIso,
         onlyValid,
@@ -1995,12 +2017,41 @@ export default class PermAPIService extends BullableService {
           && hasEcosystemSlashEventsColumn;
 
         const selectColumns: any[] = [
-          "permission_id", "schema_id", "grantee", "did", "created_by", "validator_perm_id",
-          "type", "country", "vp_state", "revoked", "revoked_by", "slashed", "slashed_by",
-          "repaid", "repaid_by", "extended", "extended_by", "effective_from", "effective_until",
-          "validation_fees", "issuance_fees", "verification_fees", "deposit", "slashed_deposit",
-          "repaid_deposit", "vp_last_state_change", "vp_current_fees", "vp_current_deposit", "vp_summary_digest_sri",
-          "vp_exp", "vp_validator_deposit", "vp_term_requested", "created", "modified",
+          "permission_id",
+          "schema_id",
+          "corporation",
+          "did",
+          "validator_perm_id",
+          "type",
+          "vp_state",
+          "revoked",
+          "slashed",
+          "repaid",
+          "effective_from",
+          "effective_until",
+          "validation_fees",
+          "issuance_fees",
+          "verification_fees",
+          "deposit",
+          "slashed_deposit",
+          "repaid_deposit",
+          "vp_last_state_change",
+          "vp_current_fees",
+          "vp_current_deposit",
+          "vp_summary_digest",
+          "vp_exp",
+          "vp_validator_deposit",
+          "vs_operator",
+          "adjusted",
+          "vs_operator_authz_enabled",
+          "vs_operator_authz_spend_limit",
+          "vs_operator_authz_with_feegrant",
+          "vs_operator_authz_fee_spend_limit",
+          "vs_operator_authz_spend_period",
+          "issuance_fee_discount",
+          "verification_fee_discount",
+          "created",
+          "modified",
         ];
         if (hasExpireSoonColumn) selectColumns.push("expire_soon");
         if (hasIssuedColumn) selectColumns.push(knex.raw("COALESCE(issued, 0) as issued"));
@@ -2033,21 +2084,14 @@ export default class PermAPIService extends BullableService {
         const historicalPermission: any = {
           id: Number(historyRecord.permission_id),
           schema_id: Number(historyRecord.schema_id),
-          grantee: historyRecord.grantee,
+          corporation: historyRecord.corporation,
           did: historyRecord.did,
-          created_by: historyRecord.created_by,
           validator_perm_id: historyRecord.validator_perm_id ? Number(historyRecord.validator_perm_id) : null,
           type: historyRecord.type !== undefined && historyRecord.type !== null ? mapPermissionType(historyRecord.type) : historyRecord.type,
-          country: historyRecord.country,
           vp_state: this.normalizeVpStateForResponse(historyRecord.vp_state) ?? historyRecord.vp_state,
           revoked: historyRecord.revoked,
-          revoked_by: historyRecord.revoked_by,
           slashed: historyRecord.slashed,
-          slashed_by: historyRecord.slashed_by,
           repaid: historyRecord.repaid,
-          repaid_by: historyRecord.repaid_by,
-          extended: historyRecord.extended,
-          extended_by: historyRecord.extended_by,
           effective_from: historyRecord.effective_from,
           effective_until: historyRecord.effective_until,
           validation_fees: historyRecord.validation_fees != null ? Number(historyRecord.validation_fees) : 0,
@@ -2059,12 +2103,22 @@ export default class PermAPIService extends BullableService {
           vp_last_state_change: historyRecord.vp_last_state_change,
           vp_current_fees: historyRecord.vp_current_fees != null ? Number(historyRecord.vp_current_fees) : 0,
           vp_current_deposit: historyRecord.vp_current_deposit != null ? Number(historyRecord.vp_current_deposit) : 0,
-          vp_summary_digest_sri: historyRecord.vp_summary_digest_sri,
+          vp_summary_digest: historyRecord.vp_summary_digest,
           vp_exp: historyRecord.vp_exp,
           vp_validator_deposit: historyRecord.vp_validator_deposit != null ? Number(historyRecord.vp_validator_deposit) : 0,
-          vp_term_requested: historyRecord.vp_term_requested,
+          vs_operator: historyRecord.vs_operator ?? null,
+          adjusted: historyRecord.adjusted ?? null,
+          vs_operator_authz_enabled: historyRecord.vs_operator_authz_enabled ?? undefined,
+          vs_operator_authz_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_spend_limit),
+          vs_operator_authz_with_feegrant: historyRecord.vs_operator_authz_with_feegrant ?? undefined,
+          vs_operator_authz_fee_spend_limit: this.normalizeDenomAmountArray(historyRecord.vs_operator_authz_fee_spend_limit),
+          vs_operator_authz_spend_period: historyRecord.vs_operator_authz_spend_period ?? undefined,
           created: historyRecord.created,
           modified: historyRecord.modified,
+          issuance_fee_discount:
+            historyRecord.issuance_fee_discount != null ? Number(historyRecord.issuance_fee_discount) : 0,
+          verification_fee_discount:
+            historyRecord.verification_fee_discount != null ? Number(historyRecord.verification_fee_discount) : 0,
         };
         
         if (hasIssuedColumn) {
@@ -2098,7 +2152,9 @@ export default class PermAPIService extends BullableService {
           { lightweightDerivedStats: historyHasAllDerivedColumns }
         );
 
-        return ApiResponder.success(ctx, { permission: enrichedPermission }, 200);
+        return ApiResponder.success(ctx, {
+          permission: enrichedPermission,
+        }, 200);
       }
 
       const permission = await knex("permissions").where("id", Number(id)).first();
@@ -2441,10 +2497,10 @@ export default class PermAPIService extends BullableService {
             .distinctOn("psh.session_id")
             .select(
               "psh.session_id as id",
-              "psh.controller",
+              "psh.corporation",
+              "psh.vs_operator",
               "psh.agent_perm_id",
-              "psh.wallet_agent_perm_id",
-              "psh.authz",
+              "psh.session_records",
               "psh.created",
               "psh.modified"
             )
@@ -2459,10 +2515,10 @@ export default class PermAPIService extends BullableService {
           const ranked = knex("permission_session_history as psh")
             .select(
               "psh.session_id as id",
-              "psh.controller",
+              "psh.corporation",
+              "psh.vs_operator",
               "psh.agent_perm_id",
-              "psh.wallet_agent_perm_id",
-              "psh.authz",
+              "psh.session_records",
               "psh.created",
               "psh.modified",
               knex.raw("ROW_NUMBER() OVER (PARTITION BY psh.session_id ORDER BY psh.height DESC, psh.created_at DESC, psh.id DESC) as rn")
@@ -2508,15 +2564,20 @@ export default class PermAPIService extends BullableService {
   @Action({
     rest: "GET pending/flat",
     params: {
-      account: { type: "string" },
+      account: { type: "string", optional: true },
+      corporation: { type: "string", optional: true },
       response_max_size: { type: "number", optional: true, default: 64 },
       sort: { type: "string", optional: true },
     },
   })
-  async pendingFlat(ctx: Context<{ account: string; response_max_size?: number; sort?: string }>) {
+  async pendingFlat(ctx: Context<{ account?: string; corporation?: string; response_max_size?: number; sort?: string }>) {
     try {
       const p = ctx.params as any;
-      const accountValidation = validateRequiredAccountParam(p.account, "account");
+      const participantRaw =
+        (typeof p.corporation === "string" && p.corporation.trim() !== "" ? p.corporation : undefined)
+        ?? (typeof p.account === "string" && p.account.trim() !== "" ? p.account : undefined);
+      const participantLabel = typeof p.corporation === "string" && p.corporation.trim() !== "" ? "corporation" : "account";
+      const accountValidation = validateRequiredAccountParam(participantRaw, participantLabel);
       if (!accountValidation.valid) {
         return ApiResponder.error(ctx, accountValidation.error, 400);
       }
@@ -2550,7 +2611,7 @@ export default class PermAPIService extends BullableService {
             )
           )
           .whereRaw("height <= ?", [Number(blockHeight)])
-          .andWhere("grantee", account)
+          .andWhere("corporation", account)
           .whereIn("type", validatorParentTypeList)
           .as("ranked_parent");
 
@@ -2567,7 +2628,7 @@ export default class PermAPIService extends BullableService {
 
       const validatorParentIdsSubquery = knex("permissions")
         .select("id")
-        .where("grantee", account)
+        .where("corporation", account)
         .whereIn("type", validatorParentTypeList);
 
       if (!useHistory) {
@@ -2582,21 +2643,14 @@ export default class PermAPIService extends BullableService {
         "schema_id",
         "type",
         "did",
-        "grantee",
-        "created_by",
+        "corporation",
         "created",
         "modified",
-        "extended",
-        "extended_by",
         "slashed",
-        "slashed_by",
         "repaid",
-        "repaid_by",
         "effective_from",
         "effective_until",
         "revoked",
-        "revoked_by",
-        "country",
         "validation_fees",
         "issuance_fees",
         "verification_fees",
@@ -2608,10 +2662,18 @@ export default class PermAPIService extends BullableService {
         "vp_last_state_change",
         "vp_current_fees",
         "vp_current_deposit",
-        "vp_summary_digest_sri",
+        "vp_summary_digest",
         "vp_exp",
         "vp_validator_deposit",
-        "vp_term_requested",
+        "vs_operator",
+        "adjusted",
+        "vs_operator_authz_enabled",
+        "vs_operator_authz_spend_limit",
+        "vs_operator_authz_with_feegrant",
+        "vs_operator_authz_fee_spend_limit",
+        "vs_operator_authz_spend_period",
+        "issuance_fee_discount",
+        "verification_fee_discount",
       ];
 
       let permissionsAtHeight: any[] = [];
@@ -2625,7 +2687,7 @@ export default class PermAPIService extends BullableService {
           )
           .whereRaw("height <= ?", [Number(blockHeight)])
           .where((qb) => {
-            qb.where("grantee", account);
+            qb.where("corporation", account);
             qb.orWhereIn("validator_perm_id", parentIdsAtHeightSubquery!.clone());
           })
           .as("ranked");
@@ -2640,21 +2702,14 @@ export default class PermAPIService extends BullableService {
           .select(
             "ph.permission_id",
             "ph.schema_id",
-            "ph.grantee",
+            "ph.corporation",
             "ph.did",
-            "ph.created_by",
             "ph.validator_perm_id",
             "ph.type",
-            "ph.country",
             "ph.vp_state",
             "ph.revoked",
-            "ph.revoked_by",
             "ph.slashed",
-            "ph.slashed_by",
             "ph.repaid",
-            "ph.repaid_by",
-            "ph.extended",
-            "ph.extended_by",
             "ph.effective_from",
             "ph.effective_until",
             "ph.validation_fees",
@@ -2666,10 +2721,18 @@ export default class PermAPIService extends BullableService {
             "ph.vp_last_state_change",
             "ph.vp_current_fees",
             "ph.vp_current_deposit",
-            "ph.vp_summary_digest_sri",
+            "ph.vp_summary_digest",
             "ph.vp_exp",
             "ph.vp_validator_deposit",
-            "ph.vp_term_requested",
+            "ph.vs_operator",
+            "ph.adjusted",
+            "ph.vs_operator_authz_enabled",
+            "ph.vs_operator_authz_spend_limit",
+            "ph.vs_operator_authz_with_feegrant",
+            "ph.vs_operator_authz_fee_spend_limit",
+            "ph.vs_operator_authz_spend_period",
+            "ph.issuance_fee_discount",
+            "ph.verification_fee_discount",
             "ph.created",
             "ph.modified"
           )
@@ -2692,7 +2755,7 @@ export default class PermAPIService extends BullableService {
         const rows = await knex("permissions")
           .select(baseColumns)
           .where((qb) => {
-            qb.where("grantee", account);
+            qb.where("corporation", account);
             qb.orWhereIn("validator_perm_id", validatorParentIdsSubquery.clone());
           })
           .limit(fetchLimit);
@@ -2708,7 +2771,7 @@ export default class PermAPIService extends BullableService {
 
       const enriched = await this.batchEnrichPermissions(permissionsAtHeight, useHistory ? blockHeight : undefined, now, 50);
       const filtered = enriched.filter((perm: any) => {
-        if (perm.grantee === account) {
+        if (perm.corporation === account) {
           if (pendingFlatMatchesVpPendingWithEligiblePermState(perm)) return true;
           if (perm.perm_state === "SLASHED") return true;
           if (perm.perm_state === "ACTIVE" && perm.expire_soon === true) return true;

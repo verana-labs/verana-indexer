@@ -74,13 +74,20 @@ describe("🧪 TrustDepositMessageProcessorService", () => {
     (TrustDeposit.query as any).mockReturnValue({
       findOne: jest.fn().mockResolvedValue({
         id: 1,
-        account: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-        amount: 1000,
+        corporation: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+        deposit: 1000,
         share: 10,
         slashed_deposit: 0,
         slash_count: 0,
       }),
-      patchAndFetchById: jest.fn().mockResolvedValue({}),
+      patchAndFetchById: jest.fn().mockResolvedValue({
+        id: 1,
+        corporation: "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+        deposit: 900,
+        share: 10,
+        slashed_deposit: 100,
+        slash_count: 1,
+      }),
     });
 
     const res = await broker.call(

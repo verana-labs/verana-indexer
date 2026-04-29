@@ -8,11 +8,10 @@ export class TrustRegistryHistory extends BaseModel {
   id!: number;
   tr_id!: number;
   did!: string;
-  controller!: string;
+  corporation!: string;
   created!: Date;
   modified!: Date;
   archived?: Date | null;
-  deposit!: number;
   aka?: string | null;
   language!: string;
   active_version?: number | null;

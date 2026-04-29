@@ -23,13 +23,13 @@ export default class IndexerStatusService extends BaseService {
   @Action()
   public async getStatus(ctx: Context): Promise<any> {
     const status = indexerStatusManager.getStatus();
-    return ApiResponder.success(ctx, status, 200);
+    return ApiResponder.success(ctx, this.toPublicStatus(status), 200);
   }
 
   @Action({ name: "getDetailedStatus" })
   public async getDetailedStatus(ctx: Context): Promise<any> {
     const status = await indexerStatusManager.getDetailedStatus();
-    return ApiResponder.success(ctx, status, 200);
+    return ApiResponder.success(ctx, this.toPublicStatus(status), 200);
   }
 
   @Action()
@@ -38,7 +38,7 @@ export default class IndexerStatusService extends BaseService {
     await indexerStatusManager.stopIndexer(error, service);
     return ApiResponder.success(
       ctx,
-      { message: "Indexer stopped successfully", status: indexerStatusManager.getStatus() },
+      { message: "Indexer stopped successfully", status: this.toPublicStatus(indexerStatusManager.getStatus()) },
       200
     );
   }
@@ -48,7 +48,7 @@ export default class IndexerStatusService extends BaseService {
     await indexerStatusManager.resumeIndexer();
     return ApiResponder.success(
       ctx,
-      { message: "Indexer resumed successfully", status: indexerStatusManager.getStatus() },
+      { message: "Indexer resumed successfully", status: this.toPublicStatus(indexerStatusManager.getStatus()) },
       200
     );
   }
@@ -57,7 +57,28 @@ export default class IndexerStatusService extends BaseService {
   public async isRunning(ctx: Context): Promise<any> {
     const isRunning = indexerStatusManager.isIndexerRunning();
     const isCrawling = indexerStatusManager.isCrawlingActive();
-    return ApiResponder.success(ctx, { isRunning, isCrawling }, 200);
+    return ApiResponder.success(ctx, { is_running: isRunning, is_crawling: isCrawling }, 200);
+  }
+
+  private toPublicStatus(status: any) {
+    return {
+      is_running: Boolean(status?.isRunning),
+      is_crawling: Boolean(status?.isCrawling),
+      stopped_at: status?.stoppedAt,
+      stopped_reason: status?.stoppedReason,
+      last_processed_block:
+        status?.lastProcessedBlock != null ? Number(status.lastProcessedBlock) : undefined,
+      blockchain_api_healthy:
+        typeof status?.blockchainApiHealthy === "boolean" ? status.blockchainApiHealthy : undefined,
+      blockchain_api_last_check_at: status?.blockchainApiLastCheckAt,
+      last_error: status?.lastError
+        ? {
+            message: status.lastError.message,
+            timestamp: status.lastError.timestamp,
+            service: status.lastError.service,
+          }
+        : undefined,
+    };
   }
 }
 

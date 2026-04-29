@@ -360,12 +360,6 @@ function createRoute(
     port: process.env.PORT || 3001,
 
     routes: [
-      createRoute("/verana/dd/v1", {
-        "GET get/:did": `${SERVICE.V1.DidDatabaseService.path}.getSingleDid`,
-        "GET list": `${SERVICE.V1.DidDatabaseService.path}.getDidList`,
-        "GET history/:did": `${SERVICE.V1.DidHistoryService.path}.getByDid`,
-        "GET params": `${SERVICE.V1.DidDatabaseService.path}.getDidParams`,
-      }),
       createRoute("/verana/cs/v1", {
         "GET get/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
         "GET history/:id": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
@@ -393,9 +387,9 @@ function createRoute(
         "GET all": `${SERVICE.V1.MetricsApiService.path}.getAll`,
       }),
       createRoute("/verana/td/v1", {
-        "GET get/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
+        "GET get/:corporation": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
-        "GET history/:account": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
+        "GET history/:corporation": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
       }),
       createRoute("/verana/resolver/v1", {
         "GET block-height": `${SERVICE.V1.TrustV1ApiService.path}.blockHeight`,

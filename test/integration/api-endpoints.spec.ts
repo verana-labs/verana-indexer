@@ -311,212 +311,6 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     });
   });
 
-  describe('DID Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/dd/v1/get/:did', () => {
-      itIf('should get single DID - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/get/${SAMPLE_DID}`);
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get single DID - with At-Block-Height header', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/get/${SAMPLE_DID}`, {}, {
-          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should handle invalid DID format gracefully', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/get/invalid-did-format');
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-    });
-
-    describe('GET /verana/dd/v1/list - ALL PARAMETERS', () => {
-      itIf('should list DIDs - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list');
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with response_max_size at minimum (1)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          response_max_size: 1,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with response_max_size at maximum (1024)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          response_max_size: 1024,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with response_max_size at default (64)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          response_max_size: 64,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with account filter', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          account: SAMPLE_ACCOUNT,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with modified filter (ISO 8601)', async () => {
-        const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          modified: timestamps.from,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with over_grace filter (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          over_grace: true,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with over_grace filter (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          over_grace: false,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with expired filter (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          expired: true,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with expired filter (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          expired: false,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          sort: 'modified',
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with ALL filters combined', async () => {
-        const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          response_max_size: 50,
-          account: SAMPLE_ACCOUNT,
-          modified: timestamps.from,
-          over_grace: false,
-          expired: false,
-          sort: 'modified',
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - validation: response_max_size exceeds max (1024)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          response_max_size: 2000,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - validation: response_max_size below minimum (0)', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {
-          response_max_size: 0,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should list DIDs - with At-Block-Height header', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/list', {}, {
-          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-    });
-
-    describe('GET /verana/dd/v1/params', () => {
-      itIf('should get DID params - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/params');
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID params - with At-Block-Height header', async () => {
-        const response = await testEndpoint('GET', '/verana/dd/v1/params', {}, {
-          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-    });
-
-    describe('GET /verana/dd/v1/history/:did - ALL PARAMETERS', () => {
-      itIf('should get DID history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`);
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - with response_max_size at minimum (1)', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {
-          response_max_size: 1,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - with response_max_size at maximum (1000)', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {
-          response_max_size: 1000,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - with response_max_size at default (64)', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {
-          response_max_size: 64,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - with transaction_timestamp_older_than', async () => {
-        const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {
-          transaction_timestamp_older_than: timestamps.lastWeek,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - with ALL parameters', async () => {
-        const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {
-          response_max_size: 50,
-          transaction_timestamp_older_than: timestamps.lastWeek,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - with At-Block-Height header', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {}, {
-          'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get DID history - validation: response_max_size exceeds max', async () => {
-        const response = await testEndpoint('GET', `/verana/dd/v1/history/${SAMPLE_DID}`, {
-          response_max_size: 2000,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-    });
-  });
-
   describe('Trust Registry Endpoints - All Parameters Tested', () => {
     describe('GET /verana/tr/v1/get/:tr_id', () => {
       itIf('should get trust registry - basic', async () => {
@@ -797,16 +591,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list credential schemas - with issuer_perm_management_mode', async () => {
+      itIf('should list credential schemas - with issuer_onboarding_mode', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
-          issuer_perm_management_mode: '2',
+          issuer_onboarding_mode: '2',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list credential schemas - with verifier_perm_management_mode', async () => {
+      itIf('should list credential schemas - with verifier_onboarding_mode', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
-          verifier_perm_management_mode: '2',
+          verifier_onboarding_mode: '2',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -875,8 +669,8 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
           participant: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
           only_active: true,
-          issuer_perm_management_mode: '2',
-          verifier_perm_management_mode: '2',
+          issuer_onboarding_mode: '2',
+          verifier_onboarding_mode: '2',
           sort: 'modified',
           min_participants: 1,
           max_participants: 100,
@@ -945,9 +739,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with grantee', async () => {
+      itIf('should list permissions - with corporation', async () => {
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          grantee: SAMPLE_ACCOUNT,
+          corporation: SAMPLE_ACCOUNT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -1112,7 +906,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps();
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
           schema_id: SAMPLE_SCHEMA_ID,
-          grantee: SAMPLE_ACCOUNT,
+          corporation: SAMPLE_ACCOUNT,
           did: SAMPLE_DID,
           perm_state: 'ACTIVE',
           type: 'ISSUER',
@@ -1320,7 +1114,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   });
 
   describe('Trust Deposit Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/td/v1/get/:account', () => {
+    describe('GET /verana/td/v1/get/:corporation', () => {
       itIf('should get trust deposit - basic', async () => {
         const response = await testEndpoint('GET', `/verana/td/v1/get/${SAMPLE_ACCOUNT}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
@@ -1346,7 +1140,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
     });
 
-    describe('GET /verana/td/v1/history/:account - ALL PARAMETERS', () => {
+    describe('GET /verana/td/v1/history/:corporation - ALL PARAMETERS', () => {
       itIf('should get TD history - basic (defaults)', async () => {
         const response = await testEndpoint('GET', `/verana/td/v1/history/${SAMPLE_ACCOUNT}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
@@ -1780,7 +1574,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     });
 
     itIf('should return consistent error format for 404 errors', async () => {
-      const response = await testEndpoint('GET', '/verana/dd/v1/get/nonexistent-did-12345');
+      const response = await testEndpoint('GET', '/verana/cs/v1/get/999999999');
       if (response.status === 404) {
         expect(response.data).toBeDefined();
         expect(response.data.error || response.data.message).toBeDefined();

@@ -61,36 +61,41 @@ export default class AccountReputationService extends BullableService {
       }
     })();
 
-    let td: { amount: number; slashed_deposit: number; repaid_deposit: number; slash_count: number; last_slashed: any; last_repaid: any; last_repaid_by: any } | null;
+    let td: {
+      amount: number;
+      slashed_deposit: number;
+      repaid_deposit: number;
+      slash_count: number;
+      last_slashed: any;
+      last_repaid: any;
+    } | null;
     if (typeof blockHeight === "number") {
       const tdHistory = await knex("trust_deposit_history")
-        .where({ account })
+        .where("corporation", account)
         .where("height", "<=", blockHeight)
         .orderBy("height", "desc")
         .orderBy("created_at", "desc")
         .first();
       td = tdHistory
         ? {
-            amount: tdHistory.amount != null ? Number(tdHistory.amount) : 0,
+            amount: tdHistory.deposit != null ? Number(tdHistory.deposit) : 0,
             slashed_deposit: tdHistory.slashed_deposit != null ? Number(tdHistory.slashed_deposit) : 0,
             repaid_deposit: tdHistory.repaid_deposit != null ? Number(tdHistory.repaid_deposit) : 0,
             slash_count: tdHistory.slash_count != null ? Number(tdHistory.slash_count) : 0,
             last_slashed: tdHistory.last_slashed,
             last_repaid: tdHistory.last_repaid,
-            last_repaid_by: tdHistory.last_repaid_by,
           }
         : null;
     } else {
-      const tdRow = await knex("trust_deposits").where({ account }).first();
+      const tdRow = await knex("trust_deposits").where("corporation", account).first();
       td = tdRow
         ? {
-            amount: tdRow.amount != null ? Number(tdRow.amount) : 0,
+            amount: tdRow.deposit != null ? Number(tdRow.deposit) : 0,
             slashed_deposit: tdRow.slashed_deposit != null ? Number(tdRow.slashed_deposit) : 0,
             repaid_deposit: tdRow.repaid_deposit != null ? Number(tdRow.repaid_deposit) : 0,
             slash_count: tdRow.slash_count != null ? Number(tdRow.slash_count) : 0,
             last_slashed: tdRow.last_slashed,
             last_repaid: tdRow.last_repaid,
-            last_repaid_by: tdRow.last_repaid_by,
           }
         : null;
     }
@@ -105,16 +110,10 @@ export default class AccountReputationService extends BullableService {
     if (includeSlashDetails) {
       if (typeof blockHeight === "number") {
         const detailRows = await knex("trust_deposit_history")
-          .where({ account })
+          .where("corporation", account)
           .where("height", "<=", blockHeight)
           .where((qb) => qb.whereNotNull("last_slashed").orWhereNotNull("last_repaid"))
-          .select(
-            "slashed_deposit",
-            "last_slashed",
-            "repaid_deposit",
-            "last_repaid",
-            "last_repaid_by"
-          )
+          .select("slashed_deposit", "last_slashed", "repaid_deposit", "last_repaid")
           .orderBy("height", "desc")
           .orderBy("created_at", "desc");
         slashDetails = detailRows
@@ -129,7 +128,7 @@ export default class AccountReputationService extends BullableService {
           .map((row: any) => ({
             repaid_amount: row.repaid_deposit,
             repaid_ts: row.last_repaid,
-            repaid_by: row.last_repaid_by,
+            repaid_by: account,
           }));
       } else if (td) {
         if (td.last_slashed) {
@@ -143,7 +142,7 @@ export default class AccountReputationService extends BullableService {
           repayDetails = [{
             repaid_amount: td.repaid_deposit,
             repaid_ts: td.last_repaid,
-            repaid_by: td.last_repaid_by,
+            repaid_by: account,
           }];
         }
       }
@@ -167,7 +166,7 @@ export default class AccountReputationService extends BullableService {
             "ph.slashed_deposit",
             "ph.repaid_deposit"
           )
-          .where("ph.grantee", account)
+          .where("ph.corporation", account)
           .where("ph.height", "<=", blockHeight)
           .modify((qb) => {
             if (schemaId) qb.where("ph.schema_id", schemaId);
@@ -191,7 +190,7 @@ export default class AccountReputationService extends BullableService {
             "ph.repaid_deposit",
             knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
           )
-          .where("ph.grantee", account)
+          .where("ph.corporation", account)
           .where("ph.height", "<=", blockHeight)
           .modify((qb) => {
             if (schemaId) qb.where("ph.schema_id", schemaId);
@@ -290,7 +289,7 @@ export default class AccountReputationService extends BullableService {
       let permissionsQuery = knex("permissions as p")
         .leftJoin("credential_schemas as cs", "p.schema_id", "cs.id")
         .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
-        .where("p.grantee", account);
+        .where("p.corporation", account);
 
       if (trId) permissionsQuery = permissionsQuery.andWhere("cs.tr_id", String(trId));
       if (schemaId) permissionsQuery = permissionsQuery.andWhere("cs.id", schemaId);

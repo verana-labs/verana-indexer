@@ -68,7 +68,7 @@
     "@tendermint/amino-js": "^0.6.2",
     "@types/parse-uri": "^1.0.2",
     "@types/swagger-ui-dist": "3.30.6",
-    "@verana-labs/verana-types": "0.9.4",
+    "@verana-labs/verana-types": "0.10.1-dev.11",
     "@verana-labs/verre": "0.2.6",
     "ajv-formats": "^2.1.1",
     "axios": "^1.12.2",

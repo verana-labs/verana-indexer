@@ -15,6 +15,7 @@ import { requireController } from "../../common/utils/extract_controller";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
+import { finalizeTrustRegistryHistoryInsert } from "../../common/utils/installed_table_columns";
 import { getTrustRegistry } from "../../modules/tr-height-sync/tr_height_sync_helpers";
 
 type ChangeRecord = Record<string, any>;
@@ -168,8 +169,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         processed = true;
       } else {
         if (
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry ||
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy
+          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry
         ) {
           await this.processCreateTR(processedTR);
           processed = true;
@@ -408,11 +408,10 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     const historyPayload: any = {
       tr_id: trId,
       did: newData.did,
-      controller: newData.controller,
+      corporation: newData.corporation,
       created: newData.created,
       modified: newData.modified,
       archived: newData.archived ?? null,
-      deposit: Number(newData.deposit ?? 0),
       aka: newData.aka ?? null,
       language: newData.language,
       active_version: newData.active_version ?? null,
@@ -441,22 +440,11 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     };
 
     const historyColumns = await this.getTrustRegistryHistoryColumns(trx);
-    const reservedColumns = new Set([
-      "id",
-      "tr_id",
-      "event_type",
-      "height",
-      "changes",
-      "created_at",
-    ]);
-    for (const column of historyColumns) {
-      if (reservedColumns.has(column) || Object.prototype.hasOwnProperty.call(historyPayload, column)) {
-        continue;
-      }
-      if (Object.prototype.hasOwnProperty.call(newData, column)) {
-        historyPayload[column] = (newData as any)[column];
-      }
-    }
+    const rowForInsert = finalizeTrustRegistryHistoryInsert(
+      historyColumns,
+      historyPayload,
+      newData
+    ) as Record<string, any>;
 
     try {
       const existingSameEvent = await trx("trust_registry_history")
@@ -469,14 +457,14 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         .first();
       if (existingSameEvent) {
         const existingChanges = existingSameEvent.changes ? String(existingSameEvent.changes) : null;
-        const nextChanges = historyPayload.changes ? String(historyPayload.changes) : null;
+        const nextChanges = rowForInsert.changes ? String(rowForInsert.changes) : null;
         if (existingChanges === nextChanges) {
           this.logger.debug(`Skipping duplicate TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
           return;
         }
       }
 
-      await trx("trust_registry_history").insert(historyPayload);
+      await trx("trust_registry_history").insert(rowForInsert);
       this.logger.debug(` Recorded TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
     } catch (insertErr: any) {
       this.logger.error(`❌ Failed to insert TR history for tr_id=${trId}: ${insertErr?.message || String(insertErr)}`);
@@ -735,7 +723,6 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       if (message.did !== undefined) updateData.did = message.did;
       if (message.aka !== undefined) updateData.aka = message.aka;
       if (message.language !== undefined) updateData.language = message.language;
-      if (message.deposit !== undefined) updateData.deposit = message.deposit;
       if (message.height !== undefined) updateData.height = message.height;
       updateData.modified = formatTimestamp(message.timestamp);
 
@@ -775,25 +762,6 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
     const trx = await knex.transaction();
     try {
-      const params = await trx("module_params")
-        .where({ module: ModulesParamsNamesTypes?.TR })
-        .first();
-      if (!params) {
-        const errorMsg = "❌ TR module_params not found! Cannot create TrustRegistry.";
-        this.logger.error(errorMsg);
-        await trx.rollback();
-        throw new Error(errorMsg);
-      }
-
-      const parsedParams =
-        typeof params.params === "string"
-          ? JSON.parse(params.params)
-          : params.params;
-      const trustDepositDenom =
-        parsedParams?.params?.trust_registry_trust_deposit || 0;
-      const trustUnitPrice = parsedParams?.params?.trust_unit_price || 1;
-      const deposit = (trustDepositDenom || 0) * (trustUnitPrice || 1);
-
       const timestamp = formatTimestamp(message.timestamp);
       const blockHeight = message.height || 0;
 
@@ -804,7 +772,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         .first();
 
       let tr;
-      const controller = requireController(message, `TR ${message.did}`);
+      const corporation = requireController(message, `TR ${message.did}`);
       const isReindexing = !!existingTR;
 
       if (isReindexing) {
@@ -813,11 +781,10 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           .where({ id: existingTR.id })
           .update({
             did: message.did,
-            controller: controller,
+            corporation,
             modified: timestamp,
             aka: message.aka,
             language: message.language,
-            deposit,
             height: blockHeight, 
           })
           .returning("*");
@@ -826,14 +793,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         [tr] = await trx("trust_registry")
           .insert({
             did: message.did,
-            controller: controller,
+            corporation,
             created: timestamp,
             modified: timestamp,
             aka: message.aka,
             language: message.language,
             height: blockHeight,
             active_version: 1,
-            deposit,
           })
           .returning("*");
       }

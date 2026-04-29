@@ -4,10 +4,11 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("permission_session_history", (table) => {
     table.increments("id").primary();
     table.string("session_id", 255).notNullable();
-    table.string("controller", 255).notNullable();
+    table.string("corporation", 255).notNullable();
     table.string("agent_perm_id", 50).notNullable();
     table.string("wallet_agent_perm_id", 50).notNullable();
-    table.jsonb("authz").notNullable().defaultTo("[]");
+    table.jsonb("session_records").notNullable().defaultTo("[]");
+    table.text("vs_operator").nullable();
     table.timestamp("created").nullable();
     table.timestamp("modified").nullable();
     table.string("event_type").notNullable();

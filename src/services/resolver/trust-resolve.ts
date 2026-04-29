@@ -181,13 +181,9 @@ export async function findHeightsWithTrustModuleMessages(fromExclusive: number, 
       AND t.height <= ?
       AND t.code = 0
       AND (
-        tm.type LIKE '/verana.dd%'
-        OR tm.type LIKE '/verana.tr%'
+        tm.type LIKE '/verana.tr%'
         OR tm.type LIKE '/verana.cs%'
         OR tm.type LIKE '/verana.perm%'
-        OR tm.type LIKE '/veranablockchain.diddirectory%'
-        OR tm.type LIKE '/veranablockchain.trustregistry%'
-        OR tm.type LIKE '/veranablockchain.credentialschema%'
       )
     ORDER BY t.height ASC
     `,
@@ -306,21 +302,9 @@ async function runPool<T>(items: T[], concurrency: number, fn: (item: T) => Prom
 
 const IMPACTED_DIDS_SQL = `
   SELECT DISTINCT d FROM (
-    SELECT did AS d FROM did_history WHERE height = ? AND is_deleted = false
-    UNION ALL
-    SELECT did AS d FROM dids WHERE height = ? AND is_deleted = false
-    UNION ALL
-    SELECT controller AS d FROM dids WHERE height = ? AND is_deleted = false AND controller IS NOT NULL
-    UNION ALL
     SELECT did AS d FROM trust_registry_history WHERE height = ?
     UNION ALL
-    SELECT controller AS d FROM trust_registry_history WHERE height = ? AND controller IS NOT NULL
-    UNION ALL
-    SELECT did AS d FROM permission_history WHERE height = ?
-    UNION ALL
-    SELECT grantee AS d FROM permission_history WHERE height = ? AND grantee IS NOT NULL
-    UNION ALL
-    SELECT created_by AS d FROM permission_history WHERE height = ? AND created_by IS NOT NULL
+    SELECT did AS d FROM permission_history WHERE height = ? AND did IS NOT NULL
   ) AS x
   WHERE d LIKE 'did:%'
   LIMIT ?
@@ -461,7 +445,7 @@ function snapshotFromError(message: string): TrustRoleSnapshot {
 
 async function getImpactedDids(blockHeight: number, limit: number): Promise<string[]> {
   const h = blockHeight;
-  const res = await knex.raw(IMPACTED_DIDS_SQL, [h, h, h, h, h, h, h, h, limit]);
+  const res = await knex.raw(IMPACTED_DIDS_SQL, [h, h, limit]);
   const rows = (res as { rows?: Array<{ d?: string }> }).rows ?? [];
   const out: string[] = [];
   for (const row of rows) {

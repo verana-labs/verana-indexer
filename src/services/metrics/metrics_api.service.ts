@@ -408,7 +408,7 @@ export default class MetricsApiService extends BaseService {
           .distinctOn("ph.permission_id")
           .select(
             "ph.permission_id",
-            "ph.grantee",
+            "ph.corporation",
             "ph.type",
             "ph.repaid",
             "ph.slashed",
@@ -425,7 +425,7 @@ export default class MetricsApiService extends BaseService {
         : knex("permission_history as ph")
           .select(
             "ph.permission_id",
-            "ph.grantee",
+            "ph.corporation",
             "ph.type",
             "ph.repaid",
             "ph.slashed",
@@ -442,7 +442,7 @@ export default class MetricsApiService extends BaseService {
         .modify((qb) => {
           if (!IS_PG_CLIENT) qb.where("rn", 1);
         })
-        .whereNotNull("grantee")
+        .whereNotNull("corporation")
         .whereNull("repaid")
         .whereNull("slashed")
         .where((qb) => qb.whereNull("revoked").orWhere("revoked", ">=", nowIso))
@@ -456,25 +456,25 @@ export default class MetricsApiService extends BaseService {
         participantsAgg = await activePermBaseQuery
           .clone()
           .select(
-            knex.raw("COUNT(DISTINCT grantee) as participants"),
-            knex.raw("COUNT(DISTINCT grantee) FILTER (WHERE type = 'ECOSYSTEM') as participants_ecosystem"),
-            knex.raw("COUNT(DISTINCT grantee) FILTER (WHERE type = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
-            knex.raw("COUNT(DISTINCT grantee) FILTER (WHERE type = 'ISSUER') as participants_issuer"),
-            knex.raw("COUNT(DISTINCT grantee) FILTER (WHERE type = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
-            knex.raw("COUNT(DISTINCT grantee) FILTER (WHERE type = 'VERIFIER') as participants_verifier"),
-            knex.raw("COUNT(DISTINCT grantee) FILTER (WHERE type = 'HOLDER') as participants_holder")
+            knex.raw("COUNT(DISTINCT corporation) as participants"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ECOSYSTEM') as participants_ecosystem"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ISSUER') as participants_issuer"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'VERIFIER') as participants_verifier"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'HOLDER') as participants_holder")
           )
           .first();
       } else {
         participantsAgg = await activePermBaseQuery
           .clone()
-          .countDistinct("grantee as participants")
+          .countDistinct("corporation as participants")
           .first();
         participantsByTypeAgg = await activePermBaseQuery
           .clone()
           .groupBy("type")
           .select("type")
-          .countDistinct("grantee as participants");
+          .countDistinct("corporation as participants");
       }
 
       const participantsByType = {

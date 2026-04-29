@@ -87,12 +87,18 @@ function makeEvent(did: string, overrides: Partial<IndexerEventRecord> = {}): In
 describe("EventsBroadcaster", () => {
   let broadcaster: EventsBroadcaster;
   let httpServer: Server;
-  const TEST_PORT = 9999;
-  const WS_URL = `ws://localhost:${TEST_PORT}/verana/indexer/v1/events`;
+  let TEST_PORT = 0;
+  let WS_URL = "";
 
   beforeAll((done) => {
     httpServer = createServer();
-    httpServer.listen(TEST_PORT, done);
+    httpServer.listen(0, () => {
+      const addr = httpServer.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      TEST_PORT = port;
+      WS_URL = `ws://localhost:${TEST_PORT}/verana/indexer/v1/events`;
+      done();
+    });
   });
 
   afterAll((done) => {

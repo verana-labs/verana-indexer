@@ -76,7 +76,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       .where({ did: "did:example:insert" })
       .first();
     expect(tr).toBeDefined();
-    expect(tr.controller).toBe("creator_test");
+    expect(tr.corporation).toBe("creator_test");
 
     const gfv = await knex("governance_framework_version")
       .where({ tr_id: tr.id })
@@ -116,13 +116,12 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     const [trId] = await knex("trust_registry")
       .insert({
         did: "did:example:update",
-        controller: "creator_update",
+        corporation: "creator_update",
         created: timestamp,
         modified: timestamp,
         aka: "Old TR",
         language: "en",
         height: 500,
-        deposit: 1000,
         active_version: 1,
       })
       .returning("id");
@@ -152,7 +151,6 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(updatedTR).toBeDefined();
     expect(updatedTR.aka).toBe("Updated TR");
     expect(updatedTR.language).toBe("fr");
-    expect(updatedTR.deposit).toBe(2000);
     expect(updatedTR.height).toBe(501);
 
     const trHistory = await knex("trust_registry_history")
@@ -166,7 +164,6 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
         : trHistory.changes;
     expect(changes).toHaveProperty("aka");
     expect(changes).toHaveProperty("language");
-    expect(changes).toHaveProperty("deposit");
     expect(changes).toHaveProperty("height");
   });
 
@@ -177,13 +174,12 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     const [trId] = await knex("trust_registry")
       .insert({
         did: "did:example:archive",
-        controller: "creator_archive",
+        corporation: "creator_archive",
         created: timestamp,
         modified: timestamp,
         aka: "TR Archive",
         language: "en",
         height: 700,
-        deposit: 1000,
         active_version: 1,
       })
       .returning("id");

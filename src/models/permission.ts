@@ -5,6 +5,7 @@ import type _PermissionSession from './permission_session';
 
 export type PermissionType =
     | 'ECOSYSTEM'
+    | 'UNSPECIFIED'
     | 'ISSUER_GRANTOR'
     | 'VERIFIER_GRANTOR'
     | 'ISSUER'
@@ -13,6 +14,11 @@ export type PermissionType =
 
 export type ValidationState = 'VALIDATION_STATE_UNSPECIFIED' | 'PENDING' | 'VALIDATED' | 'TERMINATED';
 
+export type DenomAmount = {
+    denom: string;
+    amount: string;
+};
+
 export default class Permission extends BaseModel {
     static tableName = 'permissions';
 
@@ -20,27 +26,22 @@ export default class Permission extends BaseModel {
     schema_id!: number;
     type!: PermissionType;
     did?: string;
-    grantee!: string; 
+    corporation!: string;
     created!: Date;
-    created_by!: string;
-    extended?: Date | null;
-    extended_by?: string;
     slashed?: Date | null;
-    slashed_by?: string;
     repaid?: Date | null;
-    repaid_by?: string;
     effective_from?: Date | null;
     effective_until?: Date | null;
     modified!: Date;
     validation_fees!: number;
     issuance_fees!: number;
     verification_fees!: number;
+    issuance_fee_discount?: number;
+    verification_fee_discount?: number;
     deposit!: number;
     slashed_deposit!: number;
     repaid_deposit!: number;
     revoked?: Date | null;
-    revoked_by?: string;
-    country?: string; // ISO 3166 alpha-2
     validator_perm_id?: number | null; // Can be null for ECOSYSTEM permissions
     vp_state?: ValidationState;
     vp_exp?: Date | null;
@@ -48,8 +49,14 @@ export default class Permission extends BaseModel {
     vp_validator_deposit!: number;
     vp_current_fees!: number;
     vp_current_deposit!: number;
-    vp_summary_digest_sri?: string;
-    vp_term_requested?: string | null;
+    vp_summary_digest?: string;
+    vs_operator?: string | null;
+    adjusted?: Date | string | null;
+    vs_operator_authz_enabled?: boolean;
+    vs_operator_authz_spend_limit?: DenomAmount[] | null;
+    vs_operator_authz_with_feegrant?: boolean;
+    vs_operator_authz_fee_spend_limit?: DenomAmount[] | null;
+    vs_operator_authz_spend_period?: string | null;
     expire_soon?: boolean | null;
     participants?: number;
     participants_ecosystem?: number;
@@ -71,19 +78,17 @@ export default class Permission extends BaseModel {
     static get jsonSchema() {
         return {
             type: 'object',
-            required: ['id', 'schema_id', 'type', 'grantee', 'created_by', 'created', 'modified'],
+            required: ['id', 'schema_id', 'type', 'corporation', 'created', 'modified'],
             additionalProperties: false,
             properties: {
                 id: { type: 'integer' },
                 schema_id: { type: 'integer' },
                 type: {
                     type: 'string',
-                    enum: ['ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER']
+                    enum: ['UNSPECIFIED', 'ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER']
                 },
                 did: { type: 'string', maxLength: 255 },
-                grantee: { type: 'string', maxLength: 255 },
-                created_by: { type: 'string', maxLength: 255 },
-                country: { type: 'string', maxLength: 2 },
+                corporation: { type: 'string', maxLength: 255 },
                 validation_fees: { type: 'integer' },
                 issuance_fees: { type: 'integer' },
                 verification_fees: { type: 'integer' },
@@ -96,7 +101,7 @@ export default class Permission extends BaseModel {
                 validator_perm_id: { type: ['integer', 'null'] },
                 created: { type: 'string' },
                 modified: { type: 'string' },
-                extended: { type: ['string', 'null'] },
+                adjusted: { type: ['string', 'null'] },
                 slashed: { type: ['string', 'null'] },
                 repaid: { type: ['string', 'null'] },
                 effective_from: { type: ['string', 'null'] },
@@ -104,16 +109,49 @@ export default class Permission extends BaseModel {
                 revoked: { type: ['string', 'null'] },
                 vp_exp: { type: ['string', 'null'] },
                 vp_last_state_change: { type: ['string', 'null'] },
-                vp_term_requested: { type: ['string', 'null'] },
                 vp_state: {
                     type: 'string',
                     enum: ['VALIDATION_STATE_UNSPECIFIED', 'PENDING', 'VALIDATED', 'TERMINATED']
                 },
-                vp_summary_digest_sri: { type: 'string', maxLength: 512 },
-                revoked_by: { type: 'string', maxLength: 255 },
-                slashed_by: { type: 'string', maxLength: 255 },
-                repaid_by: { type: 'string', maxLength: 255 },
-                extended_by: { type: 'string', maxLength: 255 },
+                vp_summary_digest: { type: 'string', maxLength: 512 },
+                vs_operator: { type: ['string', 'null'] },
+                vs_operator_authz_enabled: { type: ['boolean', 'null'] },
+                vs_operator_authz_spend_limit: {
+                    anyOf: [
+                        {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                required: ['denom', 'amount'],
+                                additionalProperties: false,
+                                properties: {
+                                    denom: { type: 'string' },
+                                    amount: { type: 'string' }
+                                }
+                            }
+                        },
+                        { type: 'null' }
+                    ]
+                },
+                vs_operator_authz_with_feegrant: { type: ['boolean', 'null'] },
+                vs_operator_authz_fee_spend_limit: {
+                    anyOf: [
+                        {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                required: ['denom', 'amount'],
+                                additionalProperties: false,
+                                properties: {
+                                    denom: { type: 'string' },
+                                    amount: { type: 'string' }
+                                }
+                            }
+                        },
+                        { type: 'null' }
+                    ]
+                },
+                vs_operator_authz_spend_period: { type: ['string', 'null'] },
                 expire_soon: { type: ['boolean', 'null'] },
                 participants: { type: 'integer' },
                 participants_ecosystem: { type: 'integer' },

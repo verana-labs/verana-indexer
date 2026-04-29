@@ -7,6 +7,7 @@ import { DEFAULT_PREFIX } from "../../base/bullable.service";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { checkDatabaseHealth, getBlockchainHealthMonitorStatus } from "../../common/utils/health_check";
 import knex from "../../common/utils/db_connection";
+import type { IndexerStatusEvent } from "./indexer_status.events";
 
 const Config = new ConfigClass();
 
@@ -26,17 +27,7 @@ export interface IndexerStatus {
   blockchainApiLastCheckAt?: string;
 }
 
-type StatusChangeCallback = (status: {
-  indexerStatus: "running" | "stopped";
-  crawlingStatus: "active" | "stopped";
-  stoppedAt?: string;
-  stoppedReason?: string;
-  lastError?: {
-    message: string;
-    timestamp: string;
-    service?: string;
-  };
-}) => void;
+type StatusChangeCallback = (status: IndexerStatusEvent) => void;
 
 class IndexerStatusManager {
   private static instance: IndexerStatusManager;
@@ -84,11 +75,17 @@ class IndexerStatusManager {
   private notifyStatusChange(): void {
     if (this.statusChangeCallback) {
       Promise.resolve(this.statusChangeCallback({
-        indexerStatus: this.status.isRunning ? "running" : "stopped",
-        crawlingStatus: this.status.isCrawling ? "active" : "stopped",
-        stoppedAt: this.status.stoppedAt,
-        stoppedReason: this.status.stoppedReason,
-        lastError: this.status.lastError,
+        indexer_status: this.status.isRunning ? "running" : "stopped",
+        crawling_status: this.status.isCrawling ? "active" : "stopped",
+        stopped_at: this.status.stoppedAt,
+        stopped_reason: this.status.stoppedReason,
+        last_error: this.status.lastError
+          ? {
+              message: this.status.lastError.message,
+              timestamp: this.status.lastError.timestamp,
+              service: this.status.lastError.service,
+            }
+          : undefined,
       })).catch((err) => {
         if (this.logger) {
           this.logger.error("Error in status change callback:", err);

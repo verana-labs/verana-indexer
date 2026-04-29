@@ -7,11 +7,10 @@ export class TrustRegistry extends BaseModel {
 
   id!: number;
   did!: string;
-  controller!: string;
+  corporation!: string;
   created!: Date;
   modified!: Date;
   archived?: string | null;
-  deposit!: number;
   aka?: string;
   language!: string; 
   active_version?: number;

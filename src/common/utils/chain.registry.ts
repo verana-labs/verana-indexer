@@ -110,21 +110,30 @@ export default class ChainRegistry {
         } else {
           decodedValue = new Uint8Array();
         }
-        const decoded: Record<string, unknown> = msgType.toJSON(
-          this.registry.decode({
-            typeUrl: typedMsg.typeUrl,
-            value: decodedValue,
-          } as { typeUrl: string; value: Uint8Array })
-        ) as Record<string, unknown>;
-        Object.keys(decoded).forEach((key) => {
-          const value = decoded[key];
-          if (value && typeof value === 'object' && value !== null && 'typeUrl' in value) {
-            const resultRecursive = this.decodeMsg(value as MessageWithTypeUrl);
-            result[key] = resultRecursive;
-          } else {
-            result[key] = decoded[key];
-          }
-        });
+        try {
+          const decoded: Record<string, unknown> = msgType.toJSON(
+            this.registry.decode({
+              typeUrl: typedMsg.typeUrl,
+              value: decodedValue,
+            } as { typeUrl: string; value: Uint8Array })
+          ) as Record<string, unknown>;
+          Object.keys(decoded).forEach((key) => {
+            const value = decoded[key];
+            if (value && typeof value === 'object' && value !== null && 'typeUrl' in value) {
+              const resultRecursive = this.decodeMsg(value as MessageWithTypeUrl);
+              result[key] = resultRecursive;
+            } else {
+              result[key] = decoded[key];
+            }
+          });
+        } catch (err: any) {
+          this._logger.error(
+            "Failed to decode message; returning raw value",
+            typedMsg.typeUrl,
+            err?.message ?? err
+          );
+          result.value = toBase64(decodedValue);
+        }
       }
 
       if (

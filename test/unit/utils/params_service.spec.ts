@@ -53,18 +53,18 @@ describe("params_service", () => {
       const mockParams = { params: { key: "value" } };
       (ModuleParams.query as jest.Mock).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          module: ModulesParamsNamesTypes.DD,
+          module: ModulesParamsNamesTypes.CS,
           params: JSON.stringify(mockParams),
         }),
       });
 
-      const result = await getModuleParams(ModulesParamsNamesTypes.DD);
+      const result = await getModuleParams(ModulesParamsNamesTypes.CS);
       expect(result).toEqual({ params: { key: "value" } });
     });
 
     it("should fetch historical module params at block height", async () => {
       const mockHistoryRecord = {
-        module: ModulesParamsNamesTypes.DD,
+        module: ModulesParamsNamesTypes.CS,
         params: JSON.stringify({ params: { key: "value" } }),
         height: 1000,
       };
@@ -75,7 +75,7 @@ describe("params_service", () => {
         first: jest.fn().mockResolvedValue(mockHistoryRecord),
       });
 
-      const result = await getModuleParams(ModulesParamsNamesTypes.DD, 1000);
+      const result = await getModuleParams(ModulesParamsNamesTypes.CS, 1000);
       expect(result).toEqual({ params: { key: "value" } });
     });
 
@@ -84,7 +84,7 @@ describe("params_service", () => {
         findOne: jest.fn().mockResolvedValue(null),
       });
 
-      const result = await getModuleParams(ModulesParamsNamesTypes.DD);
+      const result = await getModuleParams(ModulesParamsNamesTypes.CS);
       expect(result).toBeNull();
     });
 
@@ -92,13 +92,13 @@ describe("params_service", () => {
       const mockParams = { params: { key: "value" } };
       (ModuleParams.query as jest.Mock).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          module: ModulesParamsNamesTypes.DD,
+          module: ModulesParamsNamesTypes.CS,
           params: JSON.stringify(mockParams),
         }),
       });
 
-      const result1 = await getModuleParams(ModulesParamsNamesTypes.DD);
-      const result2 = await getModuleParams(ModulesParamsNamesTypes.DD);
+      const result1 = await getModuleParams(ModulesParamsNamesTypes.CS);
+      const result2 = await getModuleParams(ModulesParamsNamesTypes.CS);
 
       expect(result1).toEqual({ params: { key: "value" } });
       expect(result2).toEqual({ params: { key: "value" } });
@@ -111,7 +111,7 @@ describe("params_service", () => {
       const mockParams = { params: { key: "value" } };
       (ModuleParams.query as jest.Mock).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          module: ModulesParamsNamesTypes.DD,
+          module: ModulesParamsNamesTypes.CS,
           params: JSON.stringify(mockParams),
         }),
       });
@@ -120,7 +120,7 @@ describe("params_service", () => {
         meta: {},
       } as Context;
 
-      const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
+      const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.CS, MODULE_DISPLAY_NAMES.CREDENTIAL_SCHEMA);
       expect(ctx.meta.$statusCode).toBe(200);
       expect(result).toEqual({ params: { key: "value" } });
     });
@@ -134,15 +134,15 @@ describe("params_service", () => {
         meta: {},
       } as Context;
 
-      const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
+      const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.CS, MODULE_DISPLAY_NAMES.CREDENTIAL_SCHEMA);
       expect(ctx.meta.$statusCode).toBe(404);
       expect(result.code).toBe(404);
-      expect(result.error).toBe("Module parameters not found: diddirectory");
+      expect(result.error).toBe("Module parameters not found: credentialschema");
     });
 
     it("should handle blockHeight from meta", async () => {
       const mockHistoryRecord = {
-        module: ModulesParamsNamesTypes.DD,
+        module: ModulesParamsNamesTypes.CS,
         params: JSON.stringify({ params: { key: "value" } }),
         height: 1000,
       };
@@ -157,7 +157,7 @@ describe("params_service", () => {
         meta: { blockHeight: 1000 },
       } as Context;
 
-      const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.DD, MODULE_DISPLAY_NAMES.DID_DIRECTORY);
+      const result = await getModuleParamsAction(ctx, ModulesParamsNamesTypes.CS, MODULE_DISPLAY_NAMES.CREDENTIAL_SCHEMA);
       expect(ctx.meta.$statusCode).toBe(200);
       expect(result).toEqual({ params: { key: "value" } });
     });
@@ -168,15 +168,15 @@ describe("params_service", () => {
       const mockParams = { params: { key: "value" } };
       (ModuleParams.query as jest.Mock).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          module: ModulesParamsNamesTypes.DD,
+          module: ModulesParamsNamesTypes.CS,
           params: JSON.stringify(mockParams),
         }),
       });
 
-      await getModuleParams(ModulesParamsNamesTypes.DD);
-      clearParamsCache(ModulesParamsNamesTypes.DD);
+      await getModuleParams(ModulesParamsNamesTypes.CS);
+      clearParamsCache(ModulesParamsNamesTypes.CS);
       
-      await getModuleParams(ModulesParamsNamesTypes.DD);
+      await getModuleParams(ModulesParamsNamesTypes.CS);
       expect(ModuleParams.query).toHaveBeenCalledTimes(2);
     });
 
@@ -184,15 +184,15 @@ describe("params_service", () => {
       const mockParams = { params: { key: "value" } };
       (ModuleParams.query as jest.Mock).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          module: ModulesParamsNamesTypes.DD,
+          module: ModulesParamsNamesTypes.CS,
           params: JSON.stringify(mockParams),
         }),
       });
 
-      await getModuleParams(ModulesParamsNamesTypes.DD);
+      await getModuleParams(ModulesParamsNamesTypes.CS);
       clearParamsCache();
       
-      await getModuleParams(ModulesParamsNamesTypes.DD);
+      await getModuleParams(ModulesParamsNamesTypes.CS);
       expect(ModuleParams.query).toHaveBeenCalledTimes(2);
     });
   });
