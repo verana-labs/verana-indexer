@@ -208,10 +208,6 @@ export const SERVICE = {
       key: "TrustRegistryMessageProcessorService",
       path: "v1.TrustRegistryMessageProcessorService",
     },
-    AccountReputationService: {
-      key: 'AccountReputationService',
-      path: 'v1.AccountReputationService',
-    },
     TrustRegistryHistoryService: {
       key: "TrustRegistryHistoryService",
       path: "v1.TrustRegistryHistoryService",

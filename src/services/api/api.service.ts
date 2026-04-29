@@ -399,9 +399,6 @@ function createRoute(
         "GET ecosystem-participant": `${SERVICE.V1.TrustV1ApiService.path}.ecosystemParticipant`,
         "POST refresh": `${SERVICE.V1.TrustV1ApiService.path}.refresh`,
       }),
-      createRoute("/mx/v1", {
-        "GET reputation": `${SERVICE.V1.AccountReputationService.path}.getAccountReputation`,
-      }),
       createRoute("/verana/indexer/v1", {
         "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
