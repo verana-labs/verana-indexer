@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-04-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* 
+
+### Features
+
+* add support for v4 verifiable transactions in indexer ([#220](https://github.com/verana-labs/verana-indexer/issues/220)) ([11083fc](https://github.com/verana-labs/verana-indexer/commit/11083fc0d69058ac3a3baa9abba8bab01f74f2a0))
+* remove mx reputation module ([#237](https://github.com/verana-labs/verana-indexer/issues/237)) ([2769445](https://github.com/verana-labs/verana-indexer/commit/2769445d4adf22edbfc8cc4914a1edb17f447533))
+
+
+### Bug Fixes
+
+* verana-types import path (.js.js) causing startup failure ([#236](https://github.com/verana-labs/verana-indexer/issues/236)) ([c1cee21](https://github.com/verana-labs/verana-indexer/commit/c1cee21f2b34566bd29da396c78b3a19bf9a5952))
+
 ## [1.3.1](https://github.com/verana-labs/verana-indexer/compare/v1.3.0...v1.3.1) (2026-04-28)
 
 
