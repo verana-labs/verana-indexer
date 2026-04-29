@@ -95,7 +95,6 @@ A list of services is shown below:
 - [**crawl-perm**](./docs/services/crawl-perm/crawl-perm.md): Crawl all permissions related to Trust Registry and Credential Schema transactions, and synchronize their current state in the database.
 - [**crawl-perm height-sync refactor**](./docs/services/crawl-perm/crawl-perm.md#permission-height-sync-refactor): Height-based Permission synchronization path (ledger-backed Permission sync with runtime verification).
 - [**crawl-td**](./docs/services/crawl-td/crawl-td.md):This service is responsible for crawling and indexing all Trust Deposit states in the database to keep the data up to date.
-- [**crawl-ar**](./docs/services/crawl-ar/crawl-ar.md): Crawl all blockchain accounts, get their Account Reputation, and save it to the DB.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
 ## Database schema

@@ -1,4 +1,4 @@
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosResponse, AxiosError } from 'axios';
 import { spawnSync } from "child_process";
 
 function getBaseUrl(): string {
@@ -1166,67 +1166,6 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const response = await testEndpoint('GET', `/verana/td/v1/history/${SAMPLE_ACCOUNT}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-    });
-  });
-
-  describe('Account Reputation Endpoints - All Parameters Tested', () => {
-    describe('GET /mx/v1/reputation - ALL PARAMETERS', () => {
-      itIf('should get account reputation - with required account', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation', {
-          account: SAMPLE_ACCOUNT,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get account reputation - validation: missing account (should fail)', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation');
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-        if (response.status === 400) {
-          expect(response.data?.error || response.data?.message).toContain('account');
-        }
-      });
-
-      itIf('should get account reputation - with tr_id filter', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation', {
-          account: SAMPLE_ACCOUNT,
-          tr_id: SAMPLE_TR_ID,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get account reputation - with schema_id filter', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation', {
-          account: SAMPLE_ACCOUNT,
-          schema_id: SAMPLE_SCHEMA_ID,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get account reputation - with include_slash_details (true)', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation', {
-          account: SAMPLE_ACCOUNT,
-          include_slash_details: true,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get account reputation - with include_slash_details (false)', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation', {
-          account: SAMPLE_ACCOUNT,
-          include_slash_details: false,
-        });
-        expect(response.status).not.toBeGreaterThanOrEqual(500);
-      });
-
-      itIf('should get account reputation - with ALL filters', async () => {
-        const response = await testEndpoint('GET', '/mx/v1/reputation', {
-          account: SAMPLE_ACCOUNT,
-          tr_id: SAMPLE_TR_ID,
-          schema_id: SAMPLE_SCHEMA_ID,
-          include_slash_details: true,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
