@@ -31,7 +31,7 @@ flowchart LR
     subgraph INDEXER["Verana Indexer"]
         API["API Gateway"]
         CRAWLERS["Crawler Services<br/>(block, tx, account, etc.)"]
-        PROCESSORS["Verana Processors<br/>(TR, CS, Perm, TD, AR)"]
+        PROCESSORS["Verana Processors<br/>(TR, CS, Perm, TD)"]
         DB_SERVICES["Database Services<br/>(Query APIs)"]
     end
 
