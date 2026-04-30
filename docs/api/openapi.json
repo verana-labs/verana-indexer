@@ -173,6 +173,128 @@
         }
       }
     },
+    "/verana/indexer/v1/snapshot": {
+      "get": {
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "Get DID-linked object snapshot at block height",
+        "description": "Return the current indexed state for all objects linked to the given DID. The block_height parameter is accepted and echoed back, and is used for filtering on current tables where height columns exist (height <= block_height). This endpoint does not query history tables.",
+        "operationId": "getIndexerSnapshot",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^did:[a-z0-9]+:.+"
+            },
+            "description": "DID to fetch the snapshot for."
+          },
+          {
+            "name": "block_height",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Snapshot block height. Accepted for client bootstrap compatibility and applied where current tables support filtering (height <= block_height). This endpoint does not query history tables."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "did": {
+                      "type": "string",
+                      "example": "did:example"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 123
+                    },
+                    "trust_registries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "schemas": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      },
+                      "description": "Credential schemas linked to the DID."
+                    },
+                    "permissions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "count": {
+                      "type": "object",
+                      "properties": {
+                        "trust_registries": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "schemas": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "permissions": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "trust_registries",
+                        "schemas",
+                        "permissions"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "did",
+                    "block_height",
+                    "trust_registries",
+                    "schemas",
+                    "permissions",
+                    "count"
+                  ]
+                },
+                "example": {
+                  "did": "did:example",
+                  "block_height": 123,
+                  "trust_registries": [],
+                  "schemas": [],
+                  "permissions": [],
+                  "count": {
+                    "trust_registries": 0,
+                    "schemas": 0,
+                    "permissions": 0
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/indexer/v1/version": {
       "get": {
         "tags": [
