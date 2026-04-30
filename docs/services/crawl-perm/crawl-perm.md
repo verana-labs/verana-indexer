@@ -298,9 +298,9 @@ flowchart TD
 
 ---
 
-## API: `trustData` Enrichment
+## API: `trust_data` Enrichment
 
-Permission API methods support optional trust enrichment using query parameter `trustData`:
+Permission API methods support optional trust enrichment using query parameter `trust_data`:
 
 - `GET /verana/perm/v1/get/{id}`
 - `GET /verana/perm/v1/list`
@@ -314,7 +314,7 @@ Allowed values:
 
 Behavior:
 
-- For each returned object that includes `did`, a sibling field `trustData` is added at the same level.
+- For each returned object that includes `did`, a sibling field `trust_data` is added at the same level.
 - In `pending/flat`, this applies to nested permission rows and trust registry rows that include `did`.
 
 ---

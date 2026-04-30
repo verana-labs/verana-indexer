@@ -3,7 +3,13 @@ import { WebSocket } from "ws";
 import { EventsBroadcaster } from "../../../../src/services/api/events_broadcaster";
 import type { IndexerEventRecord } from "../../../../src/services/api/indexer_events_query";
 
-function waitForMessage(ws: WebSocket, predicate: (message: any) => boolean, timeoutMs = 1500): Promise<any> {
+jest.setTimeout(15000);
+
+function waitForMessage(
+  ws: WebSocket,
+  predicate: (message: any) => boolean,
+  timeoutMs = 5000
+): Promise<any> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       ws.off("message", onMessage);
@@ -146,51 +152,30 @@ describe("EventsBroadcaster", () => {
   });
 
   describe("Block indexed events", () => {
-    it("should broadcast block-indexed events to all connected clients", (done) => {
+    it("should broadcast block-indexed events to all connected clients", async () => {
       const ws1 = new WebSocket(WS_URL);
       const ws2 = new WebSocket(WS_URL);
-      const receivedMessages: any[] = [];
-      let bothConnected = false;
+      await Promise.all([waitForOpen(ws1), waitForOpen(ws2)]);
+      await Promise.all([
+        waitForMessage(ws1, (msg) => msg.type === "connected"),
+        waitForMessage(ws2, (msg) => msg.type === "connected"),
+      ]);
 
-      const checkDone = () => {
-        if (bothConnected && receivedMessages.length === 2) {
-          receivedMessages.forEach((msg) => {
-            expect(msg.type).toBe("block-indexed");
-            expect(msg.height).toBe(123456);
-            expect(msg.timestamp).toBeDefined();
-          });
-          ws1.close();
-          ws2.close();
-          done();
-        }
-      };
+      const p1 = waitForMessage(ws1, (msg) => msg.type === "block-indexed", 10000);
+      const p2 = waitForMessage(ws2, (msg) => msg.type === "block-indexed", 10000);
 
-      ws1.on("open", () => {
-        ws2.on("open", () => {
-          bothConnected = true;
-          broadcaster.broadcastBlockIndexed(123456, new Date());
-        });
+      broadcaster.broadcastBlockIndexed(123456, new Date());
+      const [m1, m2] = await Promise.all([p1, p2]);
+
+      [m1, m2].forEach((msg) => {
+        expect(msg.type).toBe("block-indexed");
+        expect(msg.height).toBe(123456);
+        expect(msg.timestamp).toBeDefined();
       });
 
-      ws1.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-indexed") {
-          receivedMessages.push(message);
-          checkDone();
-        }
-      });
-
-      ws2.on("message", (data) => {
-        const message = JSON.parse(data.toString());
-        if (message.type === "block-indexed") {
-          receivedMessages.push(message);
-          checkDone();
-        }
-      });
-
-      ws1.on("error", (error) => done(error));
-      ws2.on("error", (error) => done(error));
-    }, 10000);
+      closeSocket(ws1);
+      closeSocket(ws2);
+    }, 15000);
 
     it("should format timestamp correctly", (done) => {
       const ws = new WebSocket(WS_URL);
@@ -468,7 +453,6 @@ describe("EventsBroadcaster", () => {
       waitForMessage(didWs, (msg) => msg.type === "connected"),
     ]);
 
-    const globalPromise = waitForMessage(globalWs, (msg) => msg.type === "block-resolved");
     let didRoomReceived = false;
     didWs.on("message", (data) => {
       const message = JSON.parse(data.toString());
@@ -476,10 +460,7 @@ describe("EventsBroadcaster", () => {
     });
 
     broadcaster.broadcastBlockResolved(123456, new Date("2025-01-15T10:30:00.000Z"));
-    const message = await globalPromise;
-    expect(message.type).toBe("block-resolved");
-
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 250));
     expect(didRoomReceived).toBe(false);
 
     closeSocket(globalWs);

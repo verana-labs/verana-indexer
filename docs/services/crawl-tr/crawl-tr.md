@@ -100,9 +100,9 @@ This link provides **visual ER diagrams, change tracking flows, and architecture
 
 ---
 
-## API: `trustData` Enrichment
+## API: `trust_data` Enrichment
 
-Trust Registry API methods support optional trust enrichment using query parameter `trustData`:
+Trust Registry API methods support optional trust enrichment using query parameter `trust_data`:
 
 - `GET /verana/tr/v1/get/{id}`
 - `GET /verana/tr/v1/list`
@@ -115,5 +115,5 @@ Allowed values:
 
 Behavior:
 
-- For each returned object that includes `did`, a sibling field `trustData` is added at the same level.
-- `trustData` is `null` when disabled/unavailable.
+- For each returned object that includes `did`, a sibling field `trust_data` is added at the same level.
+- `trust_data` is `null` when disabled/unavailable.

@@ -1,15 +1,13 @@
 import knex from "../../common/utils/db_connection";
-import config from "../../config.json" with { type: "json" };
+import {
+  buildTrustSummaryFromStoredRow,
+  extractQ1CredentialArrays,
+  getTrustEvaluationTtlSeconds,
+  type TrustSummaryPayload,
+} from "./trust-resolve";
 
 export type TrustDataMode = "none" | "summary" | "full";
-export type TrustSummaryPayload = {
-  did: string;
-  trustStatus: string;
-  production: boolean;
-  evaluatedAt: string;
-  evaluatedAtBlock: number;
-  expiresAt?: string;
-};
+export type { TrustSummaryPayload };
 
 type TrustRowLite = {
   did: string;
@@ -19,83 +17,8 @@ type TrustRowLite = {
   created_at?: unknown;
 };
 
-type ResolverRuntimeConfig = {
-  trustEvaluationTtlSeconds?: number;
-};
-
 function toIsoSeconds(d: Date): string {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-
-function getTrustEvaluationTtlSeconds(): number {
-  const c = config as unknown as { resolver?: ResolverRuntimeConfig; trustResolve?: ResolverRuntimeConfig };
-  const trustSeconds = Number(c?.resolver?.trustEvaluationTtlSeconds ?? c?.trustResolve?.trustEvaluationTtlSeconds ?? 3600);
-  return Number.isFinite(trustSeconds) && trustSeconds > 0 ? Math.floor(trustSeconds) : 3600;
-}
-
-function mapOutcomeToTrustStatus(verified: boolean, outcome: unknown): string {
-  if (!verified) return "UNTRUSTED";
-  if (outcome === "verified") return "TRUSTED";
-  if (outcome === "verified-test") return "PARTIAL";
-  return "UNTRUSTED";
-}
-
-function mapOutcomeToProduction(verified: boolean, outcome: unknown): boolean {
-  if (!verified) return false;
-  return outcome === "verified";
-}
-
-function buildTrustSummaryFromStoredRow(args: {
-  did: string;
-  resolveResult: unknown;
-  evaluatedAtBlock: number;
-  createdAt: Date | string | null | undefined;
-  trustTtlSeconds?: number;
-}): TrustSummaryPayload {
-  const evaluatedAt = args.createdAt != null ? new Date(args.createdAt as Date | string).toISOString() : new Date().toISOString();
-  const trustTtlSeconds = args.trustTtlSeconds ?? getTrustEvaluationTtlSeconds();
-
-  if (!args.resolveResult || typeof args.resolveResult !== "object" || (args.resolveResult as { error?: boolean }).error) {
-    const base: TrustSummaryPayload = {
-      did: args.did,
-      trustStatus: "UNTRUSTED",
-      production: false,
-      evaluatedAt,
-      evaluatedAtBlock: args.evaluatedAtBlock,
-    };
-    if (trustTtlSeconds > 0) {
-      base.expiresAt = new Date(Date.now() + trustTtlSeconds * 1000).toISOString();
-    }
-    return base;
-  }
-
-  const r = args.resolveResult as { verified?: boolean; outcome?: unknown };
-  const verified = Boolean(r.verified);
-  const outcome = r.outcome;
-  const summary: TrustSummaryPayload = {
-    did: args.did,
-    trustStatus: mapOutcomeToTrustStatus(verified, outcome),
-    production: mapOutcomeToProduction(verified, outcome),
-    evaluatedAt,
-    evaluatedAtBlock: args.evaluatedAtBlock,
-  };
-  if (trustTtlSeconds > 0) {
-    summary.expiresAt = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString();
-  }
-  return summary;
-}
-
-function extractQ1CredentialArrays(resolveResult: unknown): {
-  credentials: unknown[];
-  failedCredentials: unknown[];
-} {
-  if (!resolveResult || typeof resolveResult !== "object") {
-    return { credentials: [], failedCredentials: [] };
-  }
-  const r = resolveResult as Record<string, unknown>;
-  const credentials = Array.isArray(r.credentials) ? r.credentials : Array.isArray(r.validCredentials) ? r.validCredentials : [];
-  const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : [];
-  return { credentials, failedCredentials };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -112,7 +35,7 @@ export function parseTrustDataMode(raw: unknown): { ok: true; mode: TrustDataMod
   if (normalized === "null" || normalized === "none") return { ok: true, mode: "none" };
   if (normalized === "summary") return { ok: true, mode: "summary" };
   if (normalized === "full") return { ok: true, mode: "full" };
-  return { ok: false, message: 'Invalid "trustData". Allowed values: null, summary, full' };
+  return { ok: false, message: 'Invalid "trust_data". Allowed values: null, summary, full' };
 }
 
 function collectDidsDeep(value: unknown, dids: Set<string>, seen: WeakSet<object>): void {
@@ -144,15 +67,22 @@ async function fetchTrustResultsLatestByDid(dids: string[], blockHeight?: number
   if (uniq.length === 0) return out;
 
   const chunkSize = 500;
+  const isPg = String((knex as any)?.client?.config?.client || "").includes("pg");
   for (let i = 0; i < uniq.length; i += chunkSize) {
     const chunk = uniq.slice(i, i + chunkSize);
-    const q = knex("trust_results")
+    let q: any = knex("trust_results")
       .select(["did", "height", "resolve_result", "full_result_json", "created_at"])
-      .whereIn("did", chunk)
-      .orderBy("did", "asc")
-      .orderBy("height", "desc");
+      .whereIn("did", chunk);
     if (typeof blockHeight === "number" && Number.isFinite(blockHeight) && blockHeight >= 0) {
-      q.andWhere("height", "<=", Math.trunc(blockHeight));
+      q = q.andWhere("height", "<=", Math.trunc(blockHeight));
+    }
+    if (isPg) {
+      q = q
+        .distinctOn("did")
+        .orderBy("did", "asc")
+        .orderBy("height", "desc");
+    } else {
+      q = q.orderBy("did", "asc").orderBy("height", "desc");
     }
     const rows = (await q) as any[];
     for (const row of rows) {
@@ -190,19 +120,19 @@ function buildTrustPayload(row: TrustRowLite, mode: TrustDataMode): Record<strin
     return row.full_result_json as Record<string, unknown>;
   }
 
-  const evaluatedAtIso = row.created_at != null ? new Date(row.created_at as any).toISOString() : summary.evaluatedAt;
+  const evaluatedAtIso = row.created_at != null ? new Date(row.created_at as any).toISOString() : summary.evaluated_at;
   const { credentials, failedCredentials } = extractQ1CredentialArrays(row.resolve_result);
   const payload: Record<string, unknown> = {
     did: summary.did,
-    trustStatus: summary.trustStatus,
+    trust_status: summary.trust_status,
     production: summary.production,
-    evaluatedAt: evaluatedAtIso,
-    evaluatedAtBlock: row.height,
+    evaluated_at: evaluatedAtIso,
+    evaluated_at_block: row.height,
     credentials,
-    failedCredentials,
+    failed_credentials: failedCredentials,
   };
   if (trustTtlSeconds > 0) {
-    payload.expiresAt = toIsoSeconds(new Date(new Date(evaluatedAtIso).getTime() + trustTtlSeconds * 1000));
+    payload.expires_at = toIsoSeconds(new Date(new Date(evaluatedAtIso).getTime() + trustTtlSeconds * 1000));
   }
   return payload;
 }
@@ -236,20 +166,21 @@ function injectTrustDataDeep<T>(
     cloned[key] = injectTrustDataDeep(nested, mode, trustDataByDid, seen);
   }
 
-  if (Object.prototype.hasOwnProperty.call(record, "did")) {
-    const did = typeof record.did === "string" ? record.did : null;
-    cloned.trustData = did ? (trustDataByDid.get(did) ?? null) : null;
-    if (mode === "none") cloned.trustData = null;
+  const did = record.did;
+  if (mode !== "none" && typeof did === "string" && did.startsWith("did:")) {
+    const payload = trustDataByDid.get(did) ?? null;
+    cloned.trust_data = payload;
   }
 
   return cloned as T;
 }
 
 export async function enrichTrustDataDeep<T>(value: T, mode: TrustDataMode, blockHeight?: number): Promise<T> {
+  if (mode === "none") return value;
   const dids = new Set<string>();
   collectDidsDeep(value, dids, new WeakSet<object>());
 
-  const trustRowsByDid = mode === "none" ? new Map<string, TrustRowLite>() : await fetchTrustResultsLatestByDid(Array.from(dids), blockHeight);
+  const trustRowsByDid = await fetchTrustResultsLatestByDid(Array.from(dids), blockHeight);
   const trustDataByDid = new Map<string, Record<string, unknown> | null>();
   for (const did of dids) {
     const row = trustRowsByDid.get(did);
