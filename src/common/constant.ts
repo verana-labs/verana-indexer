@@ -224,6 +224,10 @@ export const SERVICE = {
       key: "IndexerEventsService",
       path: "v1.IndexerEventsService",
     },
+    IndexerSnapshotService: {
+      key: "IndexerSnapshotService",
+      path: "v1.IndexerSnapshotService",
+    },
     IndexerStatusService: {
       key: "IndexerStatusService",
       path: "v1.IndexerStatusService",
