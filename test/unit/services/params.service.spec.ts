@@ -2,7 +2,6 @@ import { ModulesParamsNamesTypes } from '../../../src/common/constant';
 import {
   UpdateParamsMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaDidMessageTypes,
   VeranaPermissionMessageTypes,
   VeranaTrustDepositMessageTypes,
   VeranaTrustRegistryMessageTypes,
@@ -22,12 +21,6 @@ describe('UpdateParams Message Processing', () => {
       expect(UpdateParamsMessageTypes.CREDENTIAL_SCHEMA).toBe('/verana.cs.v1.MsgUpdateParams');
       expect(VeranaCredentialSchemaMessageTypes.UpdateParams).toBe('/verana.cs.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.CS).toBe('cs');
-    });
-
-    it('should map DID_DIRECTORY to DD module', () => {
-      expect(UpdateParamsMessageTypes.DID_DIRECTORY).toBe('/verana.dd.v1.MsgUpdateParams');
-      expect(VeranaDidMessageTypes.UpdateParams).toBe('/verana.dd.v1.MsgUpdateParams');
-      expect(ModulesParamsNamesTypes.DD).toBe('dd');
     });
 
     it('should map PERMISSION to PERM module', () => {
@@ -105,18 +98,6 @@ describe('UpdateParams Message Processing', () => {
       expect(csParams).toHaveProperty('credential_schema_schema_max_size');
       expect(typeof csParams.credential_schema_trust_deposit).toBe('number');
       expect(typeof csParams.credential_schema_schema_max_size).toBe('number');
-    });
-
-    it('should validate DID Directory parameters structure', () => {
-      const ddParams = {
-        did_directory_trust_deposit: 500000,
-        did_directory_grace_period: 30
-      };
-
-      expect(ddParams).toHaveProperty('did_directory_trust_deposit');
-      expect(ddParams).toHaveProperty('did_directory_grace_period');
-      expect(typeof ddParams.did_directory_trust_deposit).toBe('number');
-      expect(typeof ddParams.did_directory_grace_period).toBe('number');
     });
 
     it('should validate Permission parameters structure', () => {
@@ -211,9 +192,6 @@ describe('UpdateParams Message Processing', () => {
         credential_schema_trust_deposit: 1000000,
         cs_unknown_param: 'unknown_cs',
 
-        did_directory_trust_deposit: 500000,
-        dd_future_param: 'future_dd',
-
         validation_term_requested_timeout_days: 7,
         perm_new_attribute: 'new_perm',
 
@@ -224,11 +202,9 @@ describe('UpdateParams Message Processing', () => {
         tr_future_attribute: 'future_tr'
       };
 
-      expect(Object.keys(mixedParams)).toHaveLength(10);
+      expect(Object.keys(mixedParams)).toHaveLength(8);
       expect(mixedParams).toHaveProperty('credential_schema_trust_deposit');
       expect(mixedParams).toHaveProperty('cs_unknown_param');
-      expect(mixedParams).toHaveProperty('did_directory_trust_deposit');
-      expect(mixedParams).toHaveProperty('dd_future_param');
       expect(mixedParams).toHaveProperty('validation_term_requested_timeout_days');
       expect(mixedParams).toHaveProperty('perm_new_attribute');
       expect(mixedParams).toHaveProperty('trust_deposit_rate');

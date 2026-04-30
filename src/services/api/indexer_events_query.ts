@@ -112,7 +112,7 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "SetPermissionVPToValidated",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.ExtendPermission]: {
+  [VeranaPermissionMessageTypes.AdjustPermission]: {
     module: "permission",
     action: "AdjustPermission",
     entityType: "Permission",

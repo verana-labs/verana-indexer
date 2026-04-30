@@ -2,16 +2,15 @@
 
 The **Verana Indexer** is a specialized blockchain indexing service built on the [Horoscope V2](https://github.com/aura-nw/horoscope-v2/) framework, designed **exclusively** for the **Verana** decentralized trust ecosystem.
 
-It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blockchains, but also plays a **critical role** in the **Verifiable Trust** architecture by enabling **DID discovery**, **verifiable credential verification**, and **trust resolution** for services and agents on the Verana network.
+It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blockchains, but also plays a **critical role** in the **Verifiable Trust** architecture by enabling **verifiable credential verification** and **trust resolution** for services and agents on the Verana network.
 
 ## Purpose & Scope
 
 While Horoscope V2 provides the base crawling and indexing capabilities, the Verana Indexer’s scope is broader:
 
-- **Verana-Exclusive Integration** – Adapted to Verana’s governance, trust registries, and DID directory.
-- **Real-Time DID Crawling & Updating** – Listens for DID-related blockchain events to keep an up-to-date registry of verifiable services (VS) and verifiable user agents (VUA).
+- **Verana-Exclusive Integration** – Adapted to Verana’s governance, trust registries, credential schemas, and permissions.
 - **Trust Resolution Support** – Integrates with the Trust Resolver to validate credentials and return concise Proof-of-Trust results.
-- **Service Discovery** – Feeds the DID Directory for indexing verifiable services, enabling fast search for wallets, applications, and other services.
+- **Indexed trust state** – Exposes trust registries, schemas, permissions, and deposits via HTTP APIs for wallets and applications.
 - **Off-chain Enriched Index** – Bridges minimal on-chain records with rich off-chain metadata for high-performance queries.
 
 ## Overview Architecture
@@ -32,7 +31,7 @@ flowchart LR
     subgraph INDEXER["Verana Indexer"]
         API["API Gateway"]
         CRAWLERS["Crawler Services<br/>(block, tx, account, etc.)"]
-        PROCESSORS["Verana Processors<br/>(DID, TR, CS, Perm, TD, AR)"]
+        PROCESSORS["Verana Processors<br/>(TR, CS, Perm, TD)"]
         DB_SERVICES["Database Services<br/>(Query APIs)"]
     end
 
@@ -90,14 +89,12 @@ A list of services is shown below:
 - [**crawl-proposal**](./docs/services/crawl-proposal/crawl-proposal.md): get proposal and its status
 - [**crawl-validator**](./docs/services/crawl-validator/crawl-validator.md): get validator and their power event, signing info
 - [**crawl-genesis**](./docs/services/crawl-genesis/crawl-genesis.md): get state from genesis chunk
-- [**crawl-dids**](./docs/services/crawl-did/crawl-did.md): Crawl and updates DIDs in real time by listening to blockchain events.
 - [**crawl-tr**](./docs/services/crawl-tr/crawl-tr.md): Crawl Trust Registry, governance frameworks, and track version changes.
 - [**crawl-cs**](./docs/services/crawl-cs//crawl-cs.md): Crawl all credential schema–related transactions and update their state in the database.
 - [**crawl-cs height-sync refactor**](./docs/services/crawl-cs/cs-height-sync.md): Height-based Credential Schema synchronization path (ledger-backed CS sync).
 - [**crawl-perm**](./docs/services/crawl-perm/crawl-perm.md): Crawl all permissions related to Trust Registry and Credential Schema transactions, and synchronize their current state in the database.
 - [**crawl-perm height-sync refactor**](./docs/services/crawl-perm/crawl-perm.md#permission-height-sync-refactor): Height-based Permission synchronization path (ledger-backed Permission sync with runtime verification).
 - [**crawl-td**](./docs/services/crawl-td/crawl-td.md):This service is responsible for crawling and indexing all Trust Deposit states in the database to keep the data up to date.
-- [**crawl-ar**](./docs/services/crawl-ar/crawl-ar.md): Crawl all blockchain accounts, get their Account Reputation, and save it to the DB.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
 ## Database schema
@@ -362,7 +359,7 @@ The `src/config.json` file contains chain-specific and job-specific configuratio
 - `networkDenom` - Native denomination (e.g., `uvna`)
 
 **Crawling Job Configuration:**
-Each service has its own configuration section (e.g., `crawlBlock`, `crawlTransaction`, `crawlDids`, etc.) that controls:
+Each service has its own configuration section (e.g., `crawlBlock`, `crawlTransaction`, etc.) that controls:
 - Crawling intervals and timing
 - Batch sizes and chunk sizes
 - Retry policies
@@ -428,7 +425,7 @@ Both scripts use optimized Node.js flags:
 ### Process Flow
 
 1. **Connect to database** (waits up to 60s)
-2. **Drop module tables** (tables including transaction, dids, trust_registry, trust_deposits, permissions, etc.)
+2. **Drop module tables** (tables including transaction, trust_registry, trust_deposits, permissions, etc.)
 3. **Clear checkpoints** (backs up migration checkpoints, sets crawl:block to highest block)
 4. **Run migrations** (recreates all tables)
 5. **Reset sequences** (IDs start from 1)

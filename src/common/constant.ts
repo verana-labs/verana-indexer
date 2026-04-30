@@ -121,7 +121,6 @@ export enum ModulesParamsNamesTypes {
   AUTH = "auth",
   BANK = "bank",
   CS = "cs",
-  DD = "dd",
   DISTRIBUTION = "distribution",
   GOV = "gov",
   MINT = "mint",
@@ -135,7 +134,6 @@ export enum ModulesParamsNamesTypes {
 }
 
 export const MODULE_DISPLAY_NAMES = {
-  DID_DIRECTORY: "diddirectory",
   TRUST_REGISTRY: "trustregistry",
   CREDENTIAL_SCHEMA: "credentialschema",
   TRUST_DEPOSIT: "trustdeposit",
@@ -178,10 +176,6 @@ export const TrustDepositEventAttributeKey = {
 
 export const SERVICE = {
   V1: {
-    DidMessageProcessorService: {
-      key: "DidMessageProcessorService",
-      path: "v1.DidMessageProcessorService",
-    },
     HANDLE_ACCOUNTS: {
       key: "HANDLE_ACCOUNTS",
       path: "v1.HANDLE_ACCOUNTS",
@@ -213,10 +207,6 @@ export const SERVICE = {
     TrustRegistryMessageProcessorService: {
       key: "TrustRegistryMessageProcessorService",
       path: "v1.TrustRegistryMessageProcessorService",
-    },
-    AccountReputationService: {
-      key: 'AccountReputationService',
-      path: 'v1.AccountReputationService',
     },
     TrustRegistryHistoryService: {
       key: "TrustRegistryHistoryService",
@@ -257,14 +247,6 @@ export const SERVICE = {
     PermAPIService: {
       key: "PermAPIService",
       path: "v1.PermAPIService",
-    },
-    DidHistoryService: {
-      key: "DidHistoryService",
-      path: "v1.DidHistoryService",
-    },
-    DidDatabaseService: {
-      key: "DidDatabaseService",
-      path: "v1.DidDatabaseService",
     },
     CredentialSchemaDatabaseService: {
       key: "CredentialSchemaDatabaseService",

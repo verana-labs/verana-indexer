@@ -13,7 +13,6 @@ type QueryState = {
 };
 
 const tableHeights: Record<string, number[]> = {
-  did_history: [100, 105, 120, 150],
   trust_registry_history: [150],
   governance_framework_version_history: [],
   governance_framework_document_history: [],
@@ -82,7 +81,7 @@ describe("IndexerMetaService next_change_at", () => {
 
   it("returns the minimum height strictly greater than block_height", async () => {
     const next = await service.getNextChangeAt(105);
-    expect(next).toBe(120);
+    expect(next).toBe(150);
 
     expect(queryStates.length).toBeGreaterThan(0);
     for (const q of queryStates) {

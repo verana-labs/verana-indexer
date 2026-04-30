@@ -3,23 +3,14 @@ import { WebSocket, WebSocketServer } from "ws";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import type { IndexerEventRecord } from "./indexer_events_query";
 import { createLogger, isUnknownMessageError, isValidDid, toIsoSeconds, type LoggerLike } from "./api_shared";
+import type { IndexerStatusEvent } from "../manager/indexer_status.events";
 
 type ClientDidParseResult = {
   did?: string;
   invalidDid?: string;
 };
 
-type IndexerStatusMessage = {
-  indexerStatus: "running" | "stopped";
-  crawlingStatus: "active" | "stopped";
-  stoppedAt?: string;
-  stoppedReason?: string;
-  lastError?: {
-    message: string;
-    timestamp: string;
-    service?: string;
-  };
-};
+type IndexerStatusMessage = IndexerStatusEvent;
 
 export class EventsBroadcaster {
   private wss: WebSocketServer | null = null;
@@ -91,11 +82,17 @@ export class EventsBroadcaster {
   private getCurrentIndexerStatus(): IndexerStatusMessage {
     const status = indexerStatusManager.getStatus();
     return {
-      indexerStatus: status.isRunning ? "running" : "stopped",
-      crawlingStatus: status.isCrawling ? "active" : "stopped",
-      stoppedAt: status.stoppedAt,
-      stoppedReason: status.stoppedReason,
-      lastError: status.lastError,
+      indexer_status: status.isRunning ? "running" : "stopped",
+      crawling_status: status.isCrawling ? "active" : "stopped",
+      stopped_at: status.stoppedAt,
+      stopped_reason: status.stoppedReason,
+      last_error: status.lastError
+        ? {
+            message: status.lastError.message,
+            timestamp: status.lastError.timestamp,
+            service: status.lastError.service,
+          }
+        : undefined,
     };
   }
 
@@ -162,26 +159,21 @@ export class EventsBroadcaster {
         const connectionMessage: Record<string, unknown> = {
           type: "connected",
           message: "Connected to Verana Indexer Events",
-          indexerStatus: status.indexerStatus,
-          crawlingStatus: status.crawlingStatus,
           block_height: detailedStatus?.lastProcessedBlock ?? null,
           timestamp: toIsoSeconds(),
         };
         if (did) connectionMessage.did = did;
 
-        if (status.crawlingStatus === "stopped") {
-          if (status.stoppedAt) connectionMessage.stoppedAt = status.stoppedAt;
+        connectionMessage.indexer_status = status.indexer_status;
+        connectionMessage.crawling_status = status.crawling_status;
 
-          const errorMessage = status.lastError?.message || status.stoppedReason || "";
+        if (status.crawling_status === "stopped") {
+          if (status.stopped_at) connectionMessage.stopped_at = status.stopped_at;
+
+          const errorMessage = status.last_error?.message || status.stopped_reason || "";
           if (isUnknownMessageError(errorMessage)) {
-            if (status.stoppedReason) connectionMessage.stoppedReason = status.stoppedReason;
-            if (status.lastError) {
-              connectionMessage.lastError = {
-                message: status.lastError.message,
-                timestamp: status.lastError.timestamp,
-                service: status.lastError.service,
-              };
-            }
+            if (status.stopped_reason) connectionMessage.stopped_reason = status.stopped_reason;
+            if (status.last_error) connectionMessage.last_error = status.last_error;
           }
         }
 
@@ -245,10 +237,6 @@ export class EventsBroadcaster {
   }
 
   broadcastBlockIndexed(height: number, timestamp: Date | string): void {
-    if (this.wsClients.size === 0) {
-      return;
-    }
-
     const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
     const isoString = eventTimestamp.toISOString();
     const timestampFormatted = isoString.replace(/\.\d{3}Z$/, "Z");
@@ -261,10 +249,6 @@ export class EventsBroadcaster {
   }
 
   broadcastBlockResolved(height: number, timestamp: Date | string): void {
-    if (this.wsClients.size === 0) {
-      return;
-    }
-
     const eventTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
     const isoString = eventTimestamp.toISOString();
     const timestampFormatted = isoString.replace(/\.\d{3}Z$/, "Z");
@@ -279,38 +263,21 @@ export class EventsBroadcaster {
   broadcastIndexerStatus(status: IndexerStatusMessage): void {
     if (this.wsClients.size === 0) return;
 
-    const errorMessage = status.lastError?.message || status.stoppedReason || "";
+    const errorMessage = status.last_error?.message || status.stopped_reason || "";
     const eventData: Record<string, unknown> = {
       type: "indexer-status",
-      indexerStatus: status.indexerStatus,
-      crawlingStatus: status.crawlingStatus,
+      indexer_status: status.indexer_status,
+      crawling_status: status.crawling_status,
       timestamp: toIsoSeconds(),
     };
 
-    if (status.stoppedAt) eventData.stoppedAt = status.stoppedAt;
+    if (status.stopped_at) eventData.stopped_at = status.stopped_at;
     if (isUnknownMessageError(errorMessage)) {
-      if (status.stoppedReason) eventData.stoppedReason = status.stoppedReason;
-      if (status.lastError) {
-        eventData.lastError = {
-          message: status.lastError.message,
-          timestamp: status.lastError.timestamp,
-          service: status.lastError.service,
-        };
-      }
+      if (status.stopped_reason) eventData.stopped_reason = status.stopped_reason;
+      if (status.last_error) eventData.last_error = status.last_error;
     }
 
     this.broadcastToGlobalClients(eventData);
-  }
-
-  private broadcastMessage(eventData: Record<string, unknown>): void {
-    let sentCount = 0;
-    this.wsClients.forEach((ws) => {
-      if (this.sendJson(ws, eventData)) sentCount++;
-    });
-
-    if (sentCount > 0) {
-      this.logger.info(`[EventsBroadcaster] Broadcasted ${eventData.type} to ${sentCount} WebSocket client(s)`);
-    }
   }
 
   private broadcastToGlobalClients(eventData: Record<string, unknown>): void {

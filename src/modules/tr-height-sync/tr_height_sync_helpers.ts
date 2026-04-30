@@ -52,7 +52,6 @@ export interface TrMessageLike {
 
 const TR_MESSAGE_TYPES = new Set<string>([
   VeranaTrustRegistryMessageTypes.CreateTrustRegistry,
-  VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy,
   VeranaTrustRegistryMessageTypes.UpdateTrustRegistry,
   VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry,
   VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc,

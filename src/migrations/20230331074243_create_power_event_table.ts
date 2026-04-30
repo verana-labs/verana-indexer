@@ -6,7 +6,6 @@ export async function up(knex: Knex): Promise<void> {
     table.increments();
     table.integer('tx_id').index().notNullable();
     table.integer('height').index().notNullable();
-    table.integer('delegator_id').index().notNullable();
     table.integer('validator_src_id').index();
     table.integer('validator_dst_id').index();
     table
@@ -20,7 +19,6 @@ export async function up(knex: Knex): Promise<void> {
     table.decimal('amount', 30, 0).notNullable();
     table.timestamp('time').notNullable();
     table.foreign('tx_id').references('transaction.id');
-    table.foreign('delegator_id').references('account.id');
     table.foreign('validator_src_id').references('validator.id');
     table.foreign('validator_dst_id').references('validator.id');
   });

@@ -18,6 +18,7 @@ export async function up(knex: Knex): Promise<void> {
     table.jsonb('tally').notNullable();
     table.jsonb('initial_deposit').notNullable();
     table.jsonb('total_deposit').notNullable();
+    table.jsonb('count_vote');
     table.float('turnout', 13, 10).notNullable();
     table.foreign('proposer_id').references('account.id');
   });

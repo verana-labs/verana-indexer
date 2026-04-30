@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import type { Knex } from "knex";
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
@@ -10,7 +11,17 @@ import { TrustRegistry } from "../../models/trust_registry";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
-import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from "../resolver/trust-data-enrichment";
+import { mapTrustRegistryApiFields } from "../../common/vpr-v4-mapping";
+import { enrichTrustDataDeep, parseTrustDataMode } from "../resolver/trust-data-enrichment";
+import {
+    ensureDepositDefaultIfColumnExists,
+    finalizeTrustRegistryHistoryInsert,
+    prepareTrustRegistrySnapshotRowForInsert,
+    resolvePermissionHistoryParticipantColumn,
+    resolvePermissionsParticipantColumn,
+    resolveTrustRegistryHistoryParticipantColumn,
+    resolveTrustRegistryParticipantColumn,
+} from "../../common/utils/installed_table_columns";
 
 function ledgerHasKey(obj: unknown, key: string): boolean {
     return typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
@@ -23,6 +34,7 @@ function ledgerHasKey(obj: unknown, key: string): boolean {
 export default class TrustRegistryDatabaseService extends BaseService {
     private trHistoryColumnExistsCache = new Map<string, boolean>();
     private trHistoryColumnsCache: Set<string> | null = null;
+    private trustRegistryParticipantColumn: "corporation" | null = null;
     private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
         "id",
         "modified",
@@ -48,8 +60,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
         super(broker);
     }
 
-    private async enrichDidItemsWithTrustData<T>(items: T, mode: TrustDataMode, blockHeight?: number): Promise<T> {
-        return enrichTrustDataDeep(items, mode, blockHeight);
+    private async getTrustRegistryParticipantColumn(db: Knex | Knex.Transaction): Promise<"corporation"> {
+        if (this.trustRegistryParticipantColumn) return this.trustRegistryParticipantColumn;
+        const col = await resolveTrustRegistryParticipantColumn(db);
+        this.trustRegistryParticipantColumn = col;
+        return col;
     }
 
     private valuesEquivalent(left: unknown, right: unknown): boolean {
@@ -112,17 +127,20 @@ export default class TrustRegistryDatabaseService extends BaseService {
             await knex.transaction(async (trx) => {
                 const existingTr = await trx("trust_registry").where({ id: trId }).first();
                 const rawObj = raw as Record<string, unknown>;
+                const participantCol = await this.getTrustRegistryParticipantColumn(trx);
 
                 const activeVersionFromLedger =
                     ledgerHasKey(rawObj, "active_version") || ledgerHasKey(rawObj, "activeVersion")
                         ? Number((raw as any).active_version ?? (raw as any).activeVersion ?? 0) || 0
                         : Number(existingTr?.active_version ?? 0) || 0;
 
-                const basePayload: any = {
+                const corporationValue =
+                    ledgerHasKey(rawObj, "corporation")
+                        ? ((raw as any).corporation ?? null)
+                        : ((existingTr as any)?.corporation ?? null);
+
+                const basePayload: Record<string, unknown> = {
                     did: ledgerHasKey(rawObj, "did") ? ((raw as any).did ?? null) : (existingTr?.did ?? null),
-                    controller: ledgerHasKey(rawObj, "controller")
-                        ? ((raw as any).controller ?? null)
-                        : (existingTr?.controller ?? null),
                     created: ledgerHasKey(rawObj, "created")
                         ? ((raw as any).created ?? null)
                         : (existingTr?.created ?? null),
@@ -132,9 +150,6 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     archived: ledgerHasKey(rawObj, "archived")
                         ? ((raw as any).archived ?? null)
                         : (existingTr?.archived ?? null),
-                    deposit: ledgerHasKey(rawObj, "deposit")
-                        ? Number((raw as any).deposit ?? 0)
-                        : Number(existingTr?.deposit ?? 0),
                     aka: ledgerHasKey(rawObj, "aka") ? ((raw as any).aka ?? null) : (existingTr?.aka ?? null),
                     language: ledgerHasKey(rawObj, "language")
                         ? ((raw as any).language ?? null)
@@ -142,6 +157,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     active_version: activeVersionFromLedger,
                     height: blockHeightNum,
                 };
+                basePayload[participantCol] = corporationValue;
 
                 // skip changing height (avoids 23505). Do NOT use try/catch — Postgres aborts the txn on error (25P02).
                 if (existingTr) {
@@ -171,11 +187,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                     await trx("trust_registry").where({ id: trId }).update(payloadForUpdate);
                 } else {
-                    await trx("trust_registry")
-                        .insert({
-                            id: trId,
-                            ...basePayload,
-                        });
+                    const insertRow: Record<string, unknown> = {
+                        id: trId,
+                        ...basePayload,
+                    };
+                    await ensureDepositDefaultIfColumnExists(trx, "trust_registry", insertRow, (raw as any).deposit ?? (existingTr as any)?.deposit);
+                    await trx("trust_registry").insert(insertRow);
                 }
                 const hasVersionsInLedger = ledgerHasKey(rawObj, "versions");
                 const versions: any[] | null = hasVersionsInLedger
@@ -533,11 +550,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             {
                                 tr_id: trId,
                                 did: updatedTr.did,
-                                controller: updatedTr.controller,
+                                corporation: updatedTr.corporation,
                                 created: updatedTr.created,
                                 modified: updatedTr.modified,
                                 archived: updatedTr.archived ?? null,
-                                deposit: Number(updatedTr.deposit ?? 0),
                                 aka: updatedTr.aka ?? null,
                                 language: updatedTr.language,
                                 active_version: updatedTr.active_version ?? null,
@@ -665,11 +681,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         height: blockHeightNum,
                         event_type: eventType,
                         did: updatedTr.did,
-                        controller: updatedTr.controller,
                         created: updatedTr.created,
                         modified: updatedTr.modified,
                         archived: updatedTr.archived ?? null,
-                        deposit: Number(updatedTr.deposit ?? 0),
                         aka: updatedTr.aka ?? null,
                         language: updatedTr.language,
                         active_version: updatedTr.active_version ?? null,
@@ -695,8 +709,16 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     if (versionsSnapshotJson !== null) {
                         insertPayload.versions_snapshot = knex.raw("?::jsonb", [versionsSnapshotJson]);
                     }
+                    const snapshotInsertRow = await prepareTrustRegistrySnapshotRowForInsert(
+                        knex,
+                        insertPayload as Record<string, unknown>,
+                        {
+                            trRow: updatedTr as Record<string, unknown>,
+                            rawLedger: raw as Record<string, unknown>,
+                        }
+                    );
                     const [snapshotRow] = await knex("trust_registry_snapshot")
-                        .insert(insertPayload)
+                        .insert(snapshotInsertRow)
                         .returning("id");
                     const nextSnapshotId = snapshotRow?.id;
                     if (nextSnapshotId) {
@@ -770,19 +792,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         trRow: Record<string, any>
     ): Promise<Record<string, any>> {
         const historyColumns = await this.getTrustRegistryHistoryColumns(trx);
-        const reservedColumns = new Set(["id", "tr_id", "event_type", "height", "changes", "created_at"]);
-        const nextPayload: Record<string, any> = { ...payload };
-
-        for (const column of historyColumns) {
-            if (reservedColumns.has(column) || Object.prototype.hasOwnProperty.call(nextPayload, column)) {
-                continue;
-            }
-            if (Object.prototype.hasOwnProperty.call(trRow, column)) {
-                nextPayload[column] = trRow[column];
-            }
-        }
-
-        return nextPayload;
+        return finalizeTrustRegistryHistoryInsert(historyColumns, payload, trRow) as Record<string, any>;
     }
 
     private usesDerivedMetricSort(sort?: string): boolean {
@@ -1160,11 +1170,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     const trustRegistry = {
                         id: snapshot.tr_id,
                         did: snapshot.did,
-                        controller: snapshot.controller,
+                        corporation: snapshot.corporation,
                         created: snapshot.created,
                         modified: snapshot.modified,
                         archived: snapshot.archived,
-                        deposit: Number(snapshot.deposit ?? 0),
                         aka: snapshot.aka,
                         language: snapshot.language,
                         active_version: snapshot.active_version,
@@ -1188,12 +1197,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         network_slashed_amount: Number(snapshot.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
                     };
-                    const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
-                        [trustRegistry],
-                        trustDataMode,
-                        blockHeight
-                    );
-                    return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
+                    const responsePayload = { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) };
+                    const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                    return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                 }
                 const tr = await knex("trust_registry").where({ id: trId }).first();
                 if (!tr) {
@@ -1240,43 +1246,40 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }));
                 }
                 const t = tr as any;
-                const trustRegistry = {
-                    id: tr.id,
-                    did: tr.did,
-                    controller: tr.controller,
-                    created: tr.created,
-                    modified: tr.modified,
-                    archived: tr.archived,
-                    deposit: Number(tr.deposit ?? 0),
-                    aka: tr.aka,
-                    language: tr.language,
-                    active_version: tr.active_version,
-                    versions,
-                    participants: Number(t.participants ?? 0),
-                    participants_ecosystem: Number(t.participants_ecosystem ?? 0),
-                    participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
-                    participants_issuer: Number(t.participants_issuer ?? 0),
-                    participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
-                    participants_verifier: Number(t.participants_verifier ?? 0),
-                    participants_holder: Number(t.participants_holder ?? 0),
-                    active_schemas: Number(t.active_schemas ?? 0),
-                    archived_schemas: Number(t.archived_schemas ?? 0),
-                    weight: Number(t.weight ?? 0),
-                    issued: Number(t.issued ?? 0),
-                    verified: Number(t.verified ?? 0),
-                    ecosystem_slash_events: Number(t.ecosystem_slash_events ?? 0),
-                    ecosystem_slashed_amount: Number(t.ecosystem_slashed_amount ?? 0),
-                    ecosystem_slashed_amount_repaid: Number(t.ecosystem_slashed_amount_repaid ?? 0),
-                    network_slash_events: Number(t.network_slash_events ?? 0),
-                    network_slashed_amount: Number(t.network_slashed_amount ?? 0),
-                    network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
+                const responsePayload = {
+                    trust_registry: mapTrustRegistryApiFields({
+                        id: tr.id,
+                        did: tr.did,
+                        corporation: tr.corporation,
+                        created: tr.created,
+                        modified: tr.modified,
+                        archived: tr.archived,
+                        aka: tr.aka,
+                        language: tr.language,
+                        active_version: tr.active_version,
+                        versions,
+                        participants: Number(t.participants ?? 0),
+                        participants_ecosystem: Number(t.participants_ecosystem ?? 0),
+                        participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
+                        participants_issuer: Number(t.participants_issuer ?? 0),
+                        participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
+                        participants_verifier: Number(t.participants_verifier ?? 0),
+                        participants_holder: Number(t.participants_holder ?? 0),
+                        active_schemas: Number(t.active_schemas ?? 0),
+                        archived_schemas: Number(t.archived_schemas ?? 0),
+                        weight: Number(t.weight ?? 0),
+                        issued: Number(t.issued ?? 0),
+                        verified: Number(t.verified ?? 0),
+                        ecosystem_slash_events: Number(t.ecosystem_slash_events ?? 0),
+                        ecosystem_slashed_amount: Number(t.ecosystem_slashed_amount ?? 0),
+                        ecosystem_slashed_amount_repaid: Number(t.ecosystem_slashed_amount_repaid ?? 0),
+                        network_slash_events: Number(t.network_slash_events ?? 0),
+                        network_slashed_amount: Number(t.network_slashed_amount ?? 0),
+                        network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
+                    } as Record<string, unknown>),
                 };
-                const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
-                    [trustRegistry],
-                    trustDataMode,
-                    blockHeight
-                );
-                return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
+                const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             if (typeof blockHeight === "number") {
@@ -1305,43 +1308,40 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             }));
                         }
                         const s = snapshot as any;
-                        const trustRegistry = {
-                            id: s.tr_id,
-                            did: s.did,
-                            controller: s.controller,
-                            created: s.created,
-                            modified: s.modified,
-                            archived: s.archived,
-                            deposit: Number(s.deposit ?? 0),
-                            aka: s.aka,
-                            language: s.language,
-                            active_version: s.active_version,
-                            versions,
-                            participants: Number(s.participants ?? 0),
-                            participants_ecosystem: Number(s.participants_ecosystem ?? 0),
-                            participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
-                            participants_issuer: Number(s.participants_issuer ?? 0),
-                            participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
-                            participants_verifier: Number(s.participants_verifier ?? 0),
-                            participants_holder: Number(s.participants_holder ?? 0),
-                            active_schemas: Number(s.active_schemas ?? 0),
-                            archived_schemas: Number(s.archived_schemas ?? 0),
-                            weight: Number(s.weight ?? 0),
-                            issued: Number(s.issued ?? 0),
-                            verified: Number(s.verified ?? 0),
-                            ecosystem_slash_events: Number(s.ecosystem_slash_events ?? 0),
-                            ecosystem_slashed_amount: Number(s.ecosystem_slashed_amount ?? 0),
-                            ecosystem_slashed_amount_repaid: Number(s.ecosystem_slashed_amount_repaid ?? 0),
-                            network_slash_events: Number(s.network_slash_events ?? 0),
-                            network_slashed_amount: Number(s.network_slashed_amount ?? 0),
-                            network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
+                        const responsePayload = {
+                            trust_registry: mapTrustRegistryApiFields({
+                                id: s.tr_id,
+                                did: s.did,
+                                corporation: s.corporation,
+                                created: s.created,
+                                modified: s.modified,
+                                archived: s.archived,
+                                aka: s.aka,
+                                language: s.language,
+                                active_version: s.active_version,
+                                versions,
+                                participants: Number(s.participants ?? 0),
+                                participants_ecosystem: Number(s.participants_ecosystem ?? 0),
+                                participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
+                                participants_issuer: Number(s.participants_issuer ?? 0),
+                                participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
+                                participants_verifier: Number(s.participants_verifier ?? 0),
+                                participants_holder: Number(s.participants_holder ?? 0),
+                                active_schemas: Number(s.active_schemas ?? 0),
+                                archived_schemas: Number(s.archived_schemas ?? 0),
+                                weight: Number(s.weight ?? 0),
+                                issued: Number(s.issued ?? 0),
+                                verified: Number(s.verified ?? 0),
+                                ecosystem_slash_events: Number(s.ecosystem_slash_events ?? 0),
+                                ecosystem_slashed_amount: Number(s.ecosystem_slashed_amount ?? 0),
+                                ecosystem_slashed_amount_repaid: Number(s.ecosystem_slashed_amount_repaid ?? 0),
+                                network_slash_events: Number(s.network_slash_events ?? 0),
+                                network_slashed_amount: Number(s.network_slashed_amount ?? 0),
+                                network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
+                            } as Record<string, unknown>),
                         };
-                        const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
-                            [trustRegistry],
-                            trustDataMode,
-                            blockHeight
-                        );
-                        return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
+                        const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                        return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                     }
                 }
 
@@ -1362,11 +1362,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 const trustRegistry = {
                     id: trHistory.tr_id,
                     did: trHistory.did,
-                    controller: trHistory.controller,
+                    corporation: trHistory.corporation,
                     created: trHistory.created,
                     modified: trHistory.modified,
                     archived: trHistory.archived,
-                    deposit: trHistory.deposit ?? 0,
                     aka: trHistory.aka,
                     language: trHistory.language,
                     active_version: trHistory.active_version,
@@ -1391,12 +1390,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
                 };
 
-                const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
-                    [trustRegistry],
-                    trustDataMode,
-                    blockHeight
-                );
-                return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
+                const responsePayload = { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) };
+                const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             const registry = await TrustRegistry.query()
@@ -1433,36 +1429,33 @@ export default class TrustRegistryDatabaseService extends BaseService {
             delete (plain as any).height;
 
             const p = plain as any;
-            const trustRegistry = {
-                ...plain,
-                id: plain.id,
-                deposit: plain.deposit ?? 0,
-                versions,
-                participants: Number(p.participants ?? 0),
-                participants_ecosystem: Number(p.participants_ecosystem ?? 0),
-                participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
-                participants_issuer: Number(p.participants_issuer ?? 0),
-                participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
-                participants_verifier: Number(p.participants_verifier ?? 0),
-                participants_holder: Number(p.participants_holder ?? 0),
-                active_schemas: Number(p.active_schemas ?? 0),
-                archived_schemas: Number(p.archived_schemas ?? 0),
-                weight: Number(p.weight ?? 0),
-                issued: Number(p.issued ?? 0),
-                verified: Number(p.verified ?? 0),
-                ecosystem_slash_events: Number(p.ecosystem_slash_events ?? 0),
-                ecosystem_slashed_amount: Number(p.ecosystem_slashed_amount ?? 0),
-                ecosystem_slashed_amount_repaid: Number(p.ecosystem_slashed_amount_repaid ?? 0),
-                network_slash_events: Number(p.network_slash_events ?? 0),
-                network_slashed_amount: Number(p.network_slashed_amount ?? 0),
-                network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
+            const responsePayload = {
+                trust_registry: mapTrustRegistryApiFields({
+                    ...plain,
+                    id: plain.id,
+                    versions,
+                    participants: Number(p.participants ?? 0),
+                    participants_ecosystem: Number(p.participants_ecosystem ?? 0),
+                    participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
+                    participants_issuer: Number(p.participants_issuer ?? 0),
+                    participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
+                    participants_verifier: Number(p.participants_verifier ?? 0),
+                    participants_holder: Number(p.participants_holder ?? 0),
+                    active_schemas: Number(p.active_schemas ?? 0),
+                    archived_schemas: Number(p.archived_schemas ?? 0),
+                    weight: Number(p.weight ?? 0),
+                    issued: Number(p.issued ?? 0),
+                    verified: Number(p.verified ?? 0),
+                    ecosystem_slash_events: Number(p.ecosystem_slash_events ?? 0),
+                    ecosystem_slashed_amount: Number(p.ecosystem_slashed_amount ?? 0),
+                    ecosystem_slashed_amount_repaid: Number(p.ecosystem_slashed_amount_repaid ?? 0),
+                    network_slash_events: Number(p.network_slash_events ?? 0),
+                    network_slashed_amount: Number(p.network_slashed_amount ?? 0),
+                    network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
+                } as Record<string, unknown>),
             };
-            const [trustRegistryWithTrustData] = await this.enrichDidItemsWithTrustData(
-                [trustRegistry],
-                trustDataMode,
-                blockHeight
-            );
-            return ApiResponder.success(ctx, { trust_registry: trustRegistryWithTrustData }, 200);
+            const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+            return ApiResponder.success(ctx, enrichedResponsePayload, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
@@ -1470,7 +1463,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
     @Action({
         params: {
-            controller: { type: "any", optional: true },
+            corporation: { type: "any", optional: true },
             participant: { type: "any", optional: true },
             modified_after: { type: "string", optional: true },
             only_active: { type: "any", optional: true },
@@ -1508,7 +1501,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         },
     })
     public async listTrustRegistries(ctx: Context<{
-        controller?: string;
+        corporation?: string;
         participant?: string;
         modified_after?: string;
         only_active?: string | boolean;
@@ -1546,7 +1539,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
     }>) {
         try {
             const {
-                controller,
+                corporation,
                 participant,
                 modified_after: modifiedAfter,
                 preferred_language: preferredLanguage,
@@ -1593,11 +1586,11 @@ export default class TrustRegistryDatabaseService extends BaseService {
             }
             const participantAccount = participantValidation.value;
 
-            const controllerValidation = validateParticipantParam(controller, "controller");
-            if (!controllerValidation.valid) {
-                return ApiResponder.error(ctx, controllerValidation.error, 400);
+            const corporationValidation = validateParticipantParam(corporation, "corporation");
+            if (!corporationValidation.valid) {
+                return ApiResponder.error(ctx, corporationValidation.error, 400);
             }
-            const controllerAccount = controllerValidation.value;
+            const corporationAccount = corporationValidation.value;
 
             try {
                 validateSortParameter(sort);
@@ -1667,7 +1660,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                     let snapshotBase = knex("trust_registry_snapshot")
                         .where("height", "<=", blockHeight);
-                    if (controllerAccount) snapshotBase = snapshotBase.where("controller", controllerAccount);
+                    if (corporationAccount) snapshotBase = snapshotBase.where("corporation", corporationAccount);
                     if (participantTrIds !== undefined) snapshotBase = snapshotBase.whereIn("tr_id", participantTrIds);
                     if (modifiedAfter) {
                         const ts = new Date(modifiedAfter);
@@ -1703,11 +1696,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         return {
                             id: row.tr_id,
                             did: row.did,
-                            controller: row.controller,
+                            corporation: row.corporation,
                             created: row.created,
                             modified: row.modified,
                             archived: row.archived,
-                            deposit: Number(row.deposit ?? 0),
                             aka: row.aka,
                             language: row.language,
                             active_version: row.active_version,
@@ -1734,12 +1726,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     });
                     const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters);
                     const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
-                    const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
-                        sortedRegistries,
-                        trustDataMode,
-                        blockHeight
-                    );
-                    return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
+                    const responsePayload = {
+                        trust_registries: sortedRegistries.map((r) =>
+                            mapTrustRegistryApiFields(r as Record<string, unknown>)
+                        ),
+                    };
+                    const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                    return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                 }
 
                 let participantTrIds: number[] | undefined;
@@ -1754,8 +1747,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     .select("*")
                     .where("height", "<=", blockHeight);
 
-                if (controllerAccount) {
-                    filteredSubquery = filteredSubquery.where("controller", controllerAccount);
+                if (corporationAccount) {
+                    filteredSubquery = filteredSubquery.where("corporation", corporationAccount);
                 }
                 if (participantTrIds !== undefined) {
                     filteredSubquery = filteredSubquery.whereIn("tr_id", participantTrIds);
@@ -1808,11 +1801,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         return {
                             id: trHistory.tr_id,
                             did: trHistory.did,
-                            controller: trHistory.controller,
+                            corporation: trHistory.corporation,
                             created: trHistory.created,
                             modified: trHistory.modified,
                             archived: trHistory.archived,
-                            deposit: trHistory.deposit,
                             aka: trHistory.aka,
                             language: trHistory.language,
                             active_version: trHistory.active_version,
@@ -1846,12 +1838,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                 const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
 
-                const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
-                    sortedRegistries,
-                    trustDataMode,
-                    blockHeight
-                );
-                return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
+                const responsePayload = {
+                    trust_registries: sortedRegistries.map((r) =>
+                        mapTrustRegistryApiFields(r as Record<string, unknown>)
+                    ),
+                };
+                const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             const useHeightSyncListLive =
@@ -1868,7 +1861,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }
                     batchQuery = batchQuery.whereIn("id", participantTrIds);
                 }
-                if (controllerAccount) batchQuery = batchQuery.where("controller", controllerAccount);
+                if (corporationAccount) batchQuery = batchQuery.where("corporation", corporationAccount);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants", minParticipants, maxParticipants);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
@@ -1944,11 +1937,10 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     return {
                         id: tr.id,
                         did: tr.did,
-                        controller: tr.controller,
+                        corporation: tr.corporation,
                         created: tr.created,
                         modified: tr.modified,
                         archived: tr.archived,
-                        deposit: Number(tr.deposit ?? 0),
                         aka: tr.aka,
                         language: tr.language,
                         active_version: tr.active_version,
@@ -1975,12 +1967,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 });
                 const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters);
                 const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize);
-                const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
-                    sortedBatch,
-                    trustDataMode,
-                    blockHeight
-                );
-                return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
+                const responsePayload = {
+                    trust_registries: sortedBatch.map((r) =>
+                        mapTrustRegistryApiFields(r as Record<string, unknown>)
+                    ),
+                };
+                const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             let query = TrustRegistry.query();
@@ -1992,8 +1985,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 }
                 query = query.where("id", "in", participantTrIds) as any;
             }
-            if (controllerAccount) {
-                query = query.where("controller", controllerAccount);
+            if (corporationAccount) {
+                query = query.where("corporation", corporationAccount);
             }
 
             query = query.withGraphFetched("governanceFrameworkVersions.documents") as any;
@@ -2095,12 +2088,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 ? registriesWithStats.slice(0, responseMaxSize)
                 : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
-            const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
-                sortedRegistries,
-                trustDataMode,
-                blockHeight
-            );
-            return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
+            const responsePayload = {
+                trust_registries: sortedRegistries.map((r) =>
+                    mapTrustRegistryApiFields(r as Record<string, unknown>)
+                ),
+            };
+            const enrichedResponsePayload = await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+            return ApiResponder.success(ctx, enrichedResponsePayload, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
@@ -2108,15 +2102,17 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
 
     private async getTrustRegistryIdsForParticipant(account: string): Promise<number[]> {
+        const trPart = await resolveTrustRegistryParticipantColumn(knex);
         const controllerRows = await knex("trust_registry")
-            .where("controller", account)
+            .where(trPart, account)
             .select("id");
         const controllerIds = controllerRows.map((r: { id: number }) => r.id);
 
-        const granteeSchemaIds = await knex("permissions")
-            .where("grantee", account)
+        const permPart = await resolvePermissionsParticipantColumn(knex);
+        const corpSchemaIds = await knex("permissions")
+            .where(permPart, account)
             .distinct("schema_id");
-        const schemaIds = granteeSchemaIds
+        const schemaIds = corpSchemaIds
             .map((r: { schema_id: string }) => {
                 const id = r.schema_id ? parseFloat(r.schema_id) : null;
                 return id !== null && !Number.isNaN(id) ? id : null;
@@ -2128,24 +2124,26 @@ export default class TrustRegistryDatabaseService extends BaseService {
         const trIdRows = await knex("credential_schemas")
             .whereIn("id", schemaIds)
             .distinct("tr_id");
-        const granteeTrIds = trIdRows.map((r: { tr_id: number }) => r.tr_id);
+        const corpTrIds = trIdRows.map((r: { tr_id: number }) => r.tr_id);
 
-        return [...new Set([...controllerIds, ...granteeTrIds])];
+        return [...new Set([...controllerIds, ...corpTrIds])];
     }
 
 
     private async getTrustRegistryIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
+        const trHistPart = await resolveTrustRegistryHistoryParticipantColumn(knex);
         const trHistoryRows = await knex("trust_registry_history")
             .where("height", "<=", blockHeight)
-            .where("controller", account)
+            .where(trHistPart, account)
             .select("tr_id");
         const controllerTrIds = [...new Set(trHistoryRows.map((r: { tr_id: number }) => r.tr_id))];
 
-        const granteePermRows = await knex("permission_history")
+        const permHistPart = await resolvePermissionHistoryParticipantColumn(knex);
+        const corpPermRows = await knex("permission_history")
             .where("height", "<=", blockHeight)
-            .where("grantee", account)
+            .where(permHistPart, account)
             .distinct("schema_id");
-        const schemaIds = granteePermRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
+        const schemaIds = corpPermRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
         if (schemaIds.length === 0) {
             return controllerTrIds;
         }
@@ -2157,9 +2155,9 @@ export default class TrustRegistryDatabaseService extends BaseService {
             .whereIn("credential_schema_id", schemaIds)
             .as("ranked");
         const latestCsh = await knex.from(cshSub).where("rn", 1).select("tr_id");
-        const granteeTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
+        const corpTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
 
-        return [...new Set([...controllerTrIds, ...granteeTrIds])];
+        return [...new Set([...controllerTrIds, ...corpTrIds])];
     }
 
     @Action()

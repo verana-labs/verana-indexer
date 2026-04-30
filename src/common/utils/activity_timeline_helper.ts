@@ -2,32 +2,25 @@ import knex from "./db_connection";
 import {
   VeranaTrustRegistryMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaDidMessageTypes,
   VeranaPermissionMessageTypes,
 } from "../verana-message-types";
 import { normalizePermissionEmptyStringsToNull } from "./utils";
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: "CreateTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.CreateTrustRegistryLegacy]: "CreateTrustRegistry",
   [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry]: "UpdateTrustRegistry",
   [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: "ArchiveTrustRegistry",
   [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: "AddGovernanceFrameworkDocument",
   [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion]: "IncreaseGovernanceFrameworkVersion",
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: "CreateCredentialSchema",
-  [VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy]: "CreateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
-  [VeranaDidMessageTypes.AddDid]: "AddDID",
-  [VeranaDidMessageTypes.RenewDid]: "RenewDID",
-  [VeranaDidMessageTypes.TouchDid]: "TouchDID",
-  [VeranaDidMessageTypes.RemoveDid]: "RemoveDID",
   [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
-  [VeranaPermissionMessageTypes.CreatePermission]: "CreatePermission",
+  [VeranaPermissionMessageTypes.SelfCreatePermission]: "SelfCreatePermission",
   [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
   [VeranaPermissionMessageTypes.RenewPermissionVP]: "RenewPermissionVP",
   [VeranaPermissionMessageTypes.RevokePermission]: "RevokePermission",
-  [VeranaPermissionMessageTypes.ExtendPermission]: "ExtendPermission",
+  [VeranaPermissionMessageTypes.AdjustPermission]: "AdjustPermission",
   [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: "SetPermissionVPToValidated",
   [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: "CreateOrUpdatePermissionSession",
   [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: "SlashPermissionTrustDeposit",
@@ -365,7 +358,22 @@ export async function buildActivityTimeline(
     
     if (!changes || Object.keys(changes).length === 0) {
       const computedChanges: Record<string, any> = {};
-      const excludeFields = ["id", "created_at", "event_type", "height", "changes", "msg_type", "sender", "timestamp", "activity_entity_type", "activity_entity_id"];
+      const baseExclude = [
+        "id",
+        "created_at",
+        "event_type",
+        "height",
+        "changes",
+        "msg_type",
+        "sender",
+        "timestamp",
+        "activity_entity_type",
+        "activity_entity_id",
+      ];
+      const excludeFields =
+        entityType === "CredentialSchema" || record.activity_entity_type === "CredentialSchema"
+          ? [...baseExclude, "is_active"]
+          : baseExclude;
       for (const [key, value] of Object.entries(record)) {
         if (!excludeFields.includes(key)) {
           if (key === "json_schema" && (entityType === "CredentialSchema" || record.activity_entity_type === "CredentialSchema")) {
@@ -379,6 +387,24 @@ export async function buildActivityTimeline(
       wasComputedFromRecord = true;
     } else {
       changes = filterChangedValues(changes);
+    }
+
+    if (changes && typeof changes === "object") {
+      const normalizeDenomAmountArray = (value: any) => {
+        if (value === null) return null;
+        if (Array.isArray(value)) return value;
+        return [];
+      };
+      if (Object.prototype.hasOwnProperty.call(changes, "vs_operator_authz_spend_limit")) {
+        (changes as any).vs_operator_authz_spend_limit = normalizeDenomAmountArray(
+          (changes as any).vs_operator_authz_spend_limit
+        );
+      }
+      if (Object.prototype.hasOwnProperty.call(changes, "vs_operator_authz_fee_spend_limit")) {
+        (changes as any).vs_operator_authz_fee_spend_limit = normalizeDenomAmountArray(
+          (changes as any).vs_operator_authz_fee_spend_limit
+        );
+      }
     }
 
     if (changes && Object.prototype.hasOwnProperty.call(changes, "height")) {
@@ -424,16 +450,6 @@ export async function buildActivityTimeline(
             }
           }
         }
-      } else if (activityEntityType === "DID") {
-        const numericFields = ["deposit", "years", "height"];
-        for (const field of numericFields) {
-          if (Object.prototype.hasOwnProperty.call(changes, field) && changes[field] != null) {
-            const n = Number(changes[field]);
-            if (!Number.isNaN(n)) {
-              changes[field] = n;
-            }
-          }
-        }
       } else if (activityEntityType === "TrustRegistry") {
         const numericFields = [
           "id",
@@ -468,6 +484,11 @@ export async function buildActivityTimeline(
           }
         }
       }
+    }
+
+    if (activityEntityType === "CredentialSchema" && changes && typeof changes === "object") {
+      delete (changes as Record<string, unknown>).is_active;
+      changes = filterChangedValues(changes);
     }
 
     if (activityEntityType === "TrustRegistry") {

@@ -1,26 +1,14 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.1.0",
   "info": {
     "title": "Verana Indexer API",
-    "description": "Comprehensive API for managing decentralized identifiers, trust registries, credential schemas, and permissions in the Verana ecosystem.\n\nIndexer endpoints (under /verana/indexer/v1) expose the current indexed block height and a changes feed that can be queried by block_height. Other module endpoints may accept the At-Block-Height header to query historical state; when omitted, they return the latest indexed state.",
-    "version": "1.0.0"
+    "description": "REST API for the Verana indexer: trust registries (TR), credential schemas (CS), permissions, trust deposits (TD), metrics, and indexer meta.",
+    "version": "1.2.1"
   },
   "servers": [
     {
       "url": "/",
       "description": "Current host"
-    },
-    {
-      "url": "https://idx.devnet.verana.network",
-      "description": "Devnet API server"
-    },
-    {
-      "url": "https://idx.testnet.verana.network",
-      "description": "Testnet API server"
-    },
-    {
-      "url": "http://localhost:3001",
-      "description": "Local development server"
     }
   ],
   "paths": {
@@ -201,7 +189,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "appVersion": {
+                    "app_version": {
                       "type": "string",
                       "example": "v1.0.0-dev.31"
                     },
@@ -211,27 +199,27 @@
                         "network": {
                           "type": "object",
                           "properties": {
-                            "chainId": {
+                            "chain_id": {
                               "type": "string",
-                              "example": "vna-testnet-1"
+                              "example": "vna-mainnet-1"
                             },
-                            "rpcEndpoint": {
+                            "rpc_endpoint": {
                               "type": "string",
-                              "example": "https://rpc.testnet.verana.network"
+                              "example": "https://rpc.example.org"
                             },
-                            "lcdEndpoint": {
+                            "lcd_endpoint": {
                               "type": "string",
-                              "example": "https://api.testnet.verana.network"
+                              "example": "https://api.example.org"
                             },
-                            "cosmosSdkVersion": {
+                            "cosmos_sdk_version": {
                               "type": "string",
                               "example": "0.46.0"
                             },
-                            "nodeVersion": {
+                            "node_version": {
                               "type": "string",
                               "example": "v0.1.0"
                             },
-                            "appName": {
+                            "app_name": {
                               "type": "string",
                               "example": "verana-indexer"
                             }
@@ -242,15 +230,15 @@
                   }
                 },
                 "example": {
-                  "appVersion": "v1.0.0-dev.31",
+                  "app_version": "v1.0.0-dev.31",
                   "environment": {
                     "network": {
-                      "chainId": "vna-testnet-1",
-                      "rpcEndpoint": "https://rpc.testnet.verana.network",
-                      "lcdEndpoint": "https://api.testnet.verana.network",
-                      "cosmosSdkVersion": "0.46.0",
-                      "nodeVersion": "v0.1.0",
-                      "appName": "verana-indexer"
+                      "chain_id": "vna-mainnet-1",
+                      "rpc_endpoint": "https://rpc.example.org",
+                      "lcd_endpoint": "https://api.example.org",
+                      "cosmos_sdk_version": "0.46.0",
+                      "node_version": "v0.1.0",
+                      "app_name": "verana-indexer"
                     }
                   }
                 }
@@ -279,28 +267,28 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "isRunning": {
+                    "is_running": {
                       "type": "boolean",
                       "description": "Whether the indexer service is running. If false, all APIs will return 503.",
                       "example": true
                     },
-                    "isCrawling": {
+                    "is_crawling": {
                       "type": "boolean",
                       "description": "Whether the indexer is actively crawling new blocks and transactions. If false, APIs remain available but no new data is being indexed.",
                       "example": false
                     },
-                    "stoppedAt": {
+                    "stopped_at": {
                       "type": "string",
                       "format": "date-time",
                       "description": "ISO 8601 timestamp when the indexer or crawling stopped (if applicable)",
                       "example": "2024-01-15T10:30:00Z"
                     },
-                    "stoppedReason": {
+                    "stopped_reason": {
                       "type": "string",
                       "description": "Human-readable reason why crawling or the indexer stopped (if applicable)",
                       "example": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available."
                     },
-                    "lastError": {
+                    "last_error": {
                       "type": "object",
                       "description": "Details about the last error that caused crawling or indexer to stop (if applicable)",
                       "properties": {
@@ -329,16 +317,16 @@
                     }
                   },
                   "required": [
-                    "isRunning",
-                    "isCrawling"
+                    "is_running",
+                    "is_crawling"
                   ]
                 },
                 "example": {
-                  "isRunning": true,
-                  "isCrawling": false,
-                  "stoppedAt": "2024-01-15T10:30:00Z",
-                  "stoppedReason": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available.",
-                  "lastError": {
+                  "is_running": true,
+                  "is_crawling": false,
+                  "stopped_at": "2024-01-15T10:30:00Z",
+                  "stopped_reason": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available.",
+                  "last_error": {
                     "message": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission",
                     "timestamp": "2024-01-15T10:30:00Z",
                     "service": "crawl-tx"
@@ -459,19 +447,13 @@
                     {
                       "timestamp": "2025-10-06T08:46:20.686Z",
                       "block_height": 63120,
-                      "entity_type": "DID",
-                      "entity_id": "did:Test:123",
-                      "msg": "AddDID",
+                      "entity_type": "TrustRegistry",
+                      "entity_id": "42",
+                      "msg": "CreateTrustRegistry",
                       "changes": {
-                        "did": "did:Test:123",
-                        "exp": "2026-10-06T08:46:20.686Z",
-                        "years": 1,
-                        "created": "2025-10-06T08:46:20.686Z",
-                        "deposit": 5000000,
-                        "modified": "2025-10-06T08:46:20.686Z",
-                        "controller": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-                        "event_type": "/verana.dd.v1.MsgAddDID",
-                        "is_deleted": false
+                        "tr_id": 42,
+                        "corporation": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+                        "event_type": "/verana.tr.v1.MsgCreateTrustRegistry"
                       },
                       "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
                     }
@@ -479,296 +461,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/verana/dd/v1/get/{did}": {
-      "get": {
-        "tags": [
-          "DID"
-        ],
-        "summary": "Get a DID",
-        "description": "Retrieve a specific Decentralized Identifier document by its DID",
-        "operationId": "getDID",
-        "parameters": [
-          {
-            "name": "did",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The Decentralized Identifier to retrieve"
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response with DID document",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DIDResponse"
-                },
-                "example": {
-                  "did": {
-                    "did": "did:Test:123",
-                    "controller": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-                    "deposit": 5000000,
-                    "exp": "2026-10-06T08:46:20.686Z",
-                    "created": "2025-10-06T08:46:20.686Z",
-                    "modified": "2025-10-06T08:46:20.686Z"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "DID not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "error": "DID not found: did:Test:123",
-                  "code": 404
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
-    "/verana/dd/v1/list": {
-      "get": {
-        "tags": [
-          "DID"
-        ],
-        "summary": "List DIDs",
-        "description": "Retrieve a paginated list of Decentralized Identifier documents with optional filtering",
-        "operationId": "listDID",
-        "parameters": [
-          {
-            "name": "response_max_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1024,
-              "default": 64
-            },
-            "description": "Maximum number of records to return"
-          },
-          {
-            "name": "account",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by controller account"
-          },
-          {
-            "name": "modified",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "description": "Filter by modification date"
-          },
-          {
-            "name": "over_grace",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            },
-            "description": "Filter by grace period status"
-          },
-          {
-            "name": "expired",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            },
-            "description": "Filter by expiration status"
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response with list of DIDs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DIDListResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
-    "/verana/dd/v1/params": {
-      "get": {
-        "tags": [
-          "DID"
-        ],
-        "summary": "Get DID parameters",
-        "description": "Retrieve current system parameters for DID directory",
-        "operationId": "getDIDParams",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response with DID parameters",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DIDParamsResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
-    "/verana/dd/v1/history/{did}": {
-      "get": {
-        "tags": [
-          "DID"
-        ],
-        "summary": "Get DID activity timeline",
-        "description": "Retrieve the activity timeline for a DID, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
-        "operationId": "getDIDHistory",
-        "parameters": [
-          {
-            "name": "did",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The Decentralized Identifier to retrieve history for"
-          },
-          {
-            "name": "response_max_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1000,
-              "default": 64
-            },
-            "description": "Maximum number of activity items to return (default: 64)"
-          },
-          {
-            "name": "transaction_timestamp_older_than",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response with DID activity timeline",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActivityTimelineResponse"
-                },
-                "example": {
-                  "entity_type": "DID",
-                  "entity_id": "did:Test:123",
-                  "activity": [
-                    {
-                      "timestamp": "2025-10-21T12:12:49.306Z",
-                      "block_height": 324079,
-                      "entity_type": "DID",
-                      "entity_id": "did:Test:123",
-                      "msg": "RenewDID",
-                      "changes": {
-                        "exp": "2027-10-06T08:46:20.686Z",
-                        "years": 2,
-                        "deposit": 10000000,
-                        "modified": "2025-10-21T12:12:49.306Z",
-                        "event_type": "/verana.dd.v1.MsgRenewDID"
-                      },
-                      "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                    },
-                    {
-                      "timestamp": "2025-10-06T08:46:20.686Z",
-                      "block_height": 63120,
-                      "entity_type": "DID",
-                      "entity_id": "did:Test:123",
-                      "msg": "AddDID",
-                      "changes": {
-                        "did": "did:Test:123",
-                        "exp": "2026-10-06T08:46:20.686Z",
-                        "years": 1,
-                        "created": "2025-10-06T08:46:20.686Z",
-                        "deposit": 5000000,
-                        "modified": "2025-10-06T08:46:20.686Z",
-                        "controller": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-                        "event_type": "/verana.dd.v1.MsgAddDID",
-                        "is_deleted": false
-                      },
-                      "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "DID history not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "error": "DID history not found: did:Test:123",
-                  "code": 404
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
           }
         }
       }
@@ -918,13 +610,13 @@
             "description": "Filter by active status. If true, returns only active trust registries (archived is null). If false, returns only archived trust registries (archived is not null). If omitted, returns all trust registries (both active and archived). Active/inactive is determined by the archived field (null for active, timestamp for archived)."
           },
           {
-            "name": "controller",
+            "name": "corporation",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "Filter by controller account"
+            "description": "Filter by corporation account"
           },
           {
             "name": "min_active_schemas",
@@ -953,7 +645,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Account (e.g. verana8127329). Filter TRs where account is controller or grantee."
+            "description": "Participant account. TRs where this account is TR corporation or holds an active permission on a schema in the TR."
           },
           {
             "name": "min_participants",
@@ -1673,32 +1365,22 @@
             "description": "Filter by active status. If true, returns only active schemas (archived is null). If false or omitted, returns all schemas (both active and archived). Active/inactive is determined by the archived field."
           },
           {
-            "name": "issuer_perm_management_mode",
+            "name": "issuer_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "enum": [
-                "OPEN",
-                "ECOSYSTEM",
-                "GRANTOR_VALIDATION"
-              ]
+              "type": "string"
             },
-            "description": "Filter by issuer permission management mode"
+            "description": "Filter by issuer onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
           },
           {
-            "name": "verifier_perm_management_mode",
+            "name": "verifier_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "enum": [
-                "OPEN",
-                "ECOSYSTEM",
-                "GRANTOR_VALIDATION"
-              ]
+              "type": "string"
             },
-            "description": "Filter by verifier permission management mode"
+            "description": "Filter by verifier onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
           },
           {
             "name": "response_max_size",
@@ -1728,7 +1410,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Account (e.g. verana8127329). Filter schemas where account is controller (via TR) or grantee."
+            "description": "Participant account. Schemas whose TR corporation matches or where the account holds an active permission."
           },
           {
             "name": "min_participants",
@@ -2104,7 +1786,6 @@
                         "issued": 0,
                         "weight": 0,
                         "created": "2025-10-02T17:23:55.515Z",
-                        "deposit": 10000000,
                         "modified": "2025-10-02T17:23:55.515Z",
                         "verified": 0,
                         "description": "ExampleCredential using JsonSchema",
@@ -2114,10 +1795,14 @@
                         "ecosystem_slash_events": 0,
                         "network_slashed_amount": 0,
                         "ecosystem_slashed_amount": 0,
-                        "issuer_perm_management_mode": "OPEN",
+                        "issuer_onboarding_mode": "OPEN",
                         "network_slashed_amount_repaid": 0,
-                        "verifier_perm_management_mode": "OPEN",
+                        "verifier_onboarding_mode": "OPEN",
                         "ecosystem_slashed_amount_repaid": 0,
+                        "holder_onboarding_mode": "OPEN",
+                        "pricing_asset_type": "NATIVE",
+                        "pricing_asset": "uvna",
+                        "digest_algorithm": "sha256",
                         "holder_validation_validity_period": 0,
                         "issuer_validation_validity_period": 0,
                         "verifier_validation_validity_period": 0,
@@ -2283,13 +1968,13 @@
         "operationId": "listPermissions",
         "parameters": [
           {
-            "name": "grantee",
+            "name": "corporation",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "Filter by grantee account"
+            "description": "Filter by corporation (permission owner) account "
           },
           {
             "name": "did",
@@ -2812,21 +2497,14 @@
                               "schema_id": 2,
                               "type": "VERIFIER",
                               "did": null,
-                              "grantee": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
-                              "created_by": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                              "corporation": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
                               "created": "2025-10-03T12:30:43.431Z",
                               "modified": "2025-10-03T12:30:43.431Z",
-                              "extended": null,
-                              "extended_by": null,
                               "slashed": null,
-                              "slashed_by": null,
                               "repaid": null,
-                              "repaid_by": null,
                               "effective_from": null,
                               "effective_until": null,
                               "revoked": null,
-                              "revoked_by": null,
-                              "country": "GB",
                               "validation_fees": 0,
                               "issuance_fees": 0,
                               "verification_fees": 0,
@@ -2838,13 +2516,12 @@
                               "vp_last_state_change": "2025-10-03T12:30:43.431Z",
                               "vp_current_fees": 5000000,
                               "vp_current_deposit": 1000000,
-                              "vp_summary_digest_sri": null,
+                              "vp_summary_digest": null,
                               "vp_exp": null,
                               "vp_validator_deposit": 0,
-                              "vp_term_requested": null,
                               "perm_state": "INACTIVE",
-                              "grantee_available_actions": [
-                                "PERM_EXTEND",
+                              "corporation_available_actions": [
+                                "PERM_ADJUST",
                                 "PERM_REVOKE"
                               ],
                               "validator_available_actions": [],
@@ -3118,13 +2795,12 @@
                         "type": "ECOSYSTEM",
                         "issued": 0,
                         "created": "2025-10-03T11:59:38.834Z",
-                        "deposit": 0,
-                        "grantee": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "corporation": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "vs_operator": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
                         "modified": "2025-10-03T11:59:38.834Z",
                         "verified": 0,
                         "vp_state": "VALIDATION_STATE_UNSPECIFIED",
                         "schema_id": 2,
-                        "created_by": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
                         "issuance_fees": 5,
                         "effective_from": "2025-10-03T11:59:49.805Z",
                         "repaid_deposit": 0,
@@ -3204,7 +2880,7 @@
                       "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
                       "msg": "CreateOrUpdatePermissionSession",
                       "changes": {
-                        "authz": [
+                        "session_records": [
                           {
                             "issuer_perm_id": 25,
                             "verifier_perm_id": null,
@@ -3213,7 +2889,8 @@
                         ],
                         "created": "2025-10-27T16:55:04.593Z",
                         "modified": "2025-10-27T16:55:04.593Z",
-                        "controller": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
+                        "corporation": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
+                        "vs_operator": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
                         "agent_perm_id": 25,
                         "wallet_agent_perm_id": 25
                       },
@@ -3545,23 +3222,23 @@
         }
       }
     },
-    "/verana/td/v1/get/{account}": {
+    "/verana/td/v1/get/{corporation}": {
       "get": {
         "tags": [
           "TrustDeposit"
         ],
-        "summary": "Get Trust Deposit by Account",
-        "description": "Retrieve trust deposit information for a specific account",
-        "operationId": "getTrustDepositByAccount",
+        "summary": "Get Trust Deposit by corporation",
+        "description": "Retrieve trust deposit information for a specific corporation address .",
+        "operationId": "getTrustDepositByCorporation",
         "parameters": [
           {
-            "name": "account",
+            "name": "corporation",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The account address to retrieve trust deposit for"
+            "description": "Corporation  address for the trust deposit"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3577,16 +3254,15 @@
                 },
                 "example": {
                   "trust_deposit": {
-                    "account": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                    "corporation": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
                     "share": 20000000,
-                    "amount": 20000000,
+                    "deposit": 20000000,
                     "claimable": 0,
                     "slashed_deposit": 0,
                     "repaid_deposit": 0,
                     "last_slashed": null,
                     "last_repaid": null,
-                    "slash_count": 0,
-                    "last_repaid_by": ""
+                    "slash_count": 0
                   }
                 }
               }
@@ -3600,7 +3276,7 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "Trust Deposit not found for account: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                  "error": "No trust deposit found for corporation: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
                   "code": 404
                 }
               }
@@ -3651,7 +3327,7 @@
         }
       }
     },
-    "/verana/td/v1/history/{account}": {
+    "/verana/td/v1/history/{corporation}": {
       "get": {
         "tags": [
           "TrustDeposit"
@@ -3661,13 +3337,13 @@
         "operationId": "getTrustDepositHistory",
         "parameters": [
           {
-            "name": "account",
+            "name": "corporation",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The account address to retrieve trust deposit history for"
+            "description": "Corporation  address to retrieve trust deposit history for"
           },
           {
             "name": "response_max_size",
@@ -3715,7 +3391,7 @@
                       "msg": "AdjustTrustDeposit",
                       "changes": {
                         "share": 81000000,
-                        "amount": 81000000
+                        "deposit": 81000000
                       }
                     },
                     {
@@ -3726,7 +3402,7 @@
                       "msg": "AdjustTrustDeposit",
                       "changes": {
                         "share": 80000000,
-                        "amount": 80000000
+                        "deposit": 80000000
                       }
                     },
                     {
@@ -3737,10 +3413,9 @@
                       "msg": "CreateTrustDeposit",
                       "changes": {
                         "share": 10000000,
-                        "amount": 10000000,
+                        "deposit": 10000000,
                         "claimable": 0,
                         "slash_count": 0,
-                        "last_repaid_by": "",
                         "repaid_deposit": 0,
                         "slashed_deposit": 0
                       }
@@ -3758,175 +3433,7 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "No trust deposit history found for account: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
-                  "code": 404
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
-    "/mx/v1/reputation": {
-      "get": {
-        "tags": [
-          "Account"
-        ],
-        "summary": "Get Account Reputation",
-        "description": "Retrieve comprehensive reputation information for a specific account including trust deposits, slashing history, and activity metrics across trust registries and credential schemas",
-        "operationId": "getAccountReputation",
-        "parameters": [
-          {
-            "name": "account",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The account address to retrieve reputation for"
-          },
-          {
-            "name": "tr_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            },
-            "description": "Filter by specific Trust Registry ID"
-          },
-          {
-            "name": "schema_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            },
-            "description": "Filter by specific Credential Schema ID"
-          },
-          {
-            "name": "include_slash_details",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            },
-            "description": "Include detailed slashing and repayment information"
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response with account reputation details",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountReputationResponse"
-                },
-                "example": {
-                  "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-                  "balance": "7000000000",
-                  "deposit": 65001050,
-                  "slashed": 1050,
-                  "repaid": 1001050,
-                  "slash_count": 6,
-                  "first_interaction_ts": null,
-                  "trust_registry_count": 1,
-                  "credential_schema_count": 1,
-                  "slashs": [
-                    {
-                      "slashed_amount": "1050",
-                      "slashed_ts": "2025-10-16T12:45:29.745Z",
-                      "slashed_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                    }
-                  ],
-                  "repayments": [
-                    {
-                      "repaid_amount": "1001050",
-                      "repaid_ts": "2025-10-16T13:47:44.071Z",
-                      "repaid_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                    }
-                  ],
-                  "trust_registries": [
-                    {
-                      "tr_id": 2,
-                      "tr_did": "did:test:1",
-                      "credential_schemas": [
-                        {
-                          "schema_id": 4,
-                          "deposit": 20000000,
-                          "slashed": 1050,
-                          "repaid": 1050,
-                          "slash_count": 1,
-                          "issued": 0,
-                          "verified": 0,
-                          "run_as_validator_vps": 0,
-                          "run_as_applicant_vps": 0,
-                          "issuer_perm_count": 1,
-                          "verifier_perm_count": 0,
-                          "issuer_grantor_perm_count": 0,
-                          "verifier_grantor_perm_count": 0,
-                          "ecosystem_perm_count": 1,
-                          "active_issuer_perm_count": 1,
-                          "active_verifier_perm_count": 0,
-                          "active_issuer_grantor_perm_count": 0,
-                          "active_verifier_grantor_perm_count": 0,
-                          "active_ecosystem_perm_count": 1,
-                          "slashs": [
-                            {
-                              "perm_id": 2,
-                              "schema_id": 4,
-                              "tr_id": 2,
-                              "slashed_ts": "2025-10-16T12:45:29.745Z",
-                              "slashed_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                            }
-                          ],
-                          "repayments": [
-                            {
-                              "perm_id": 2,
-                              "schema_id": 4,
-                              "tr_id": 2,
-                              "repaid_ts": "2025-10-16T12:46:01.406Z",
-                              "repaid_by": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request - Invalid parameters provided",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "error": "Missing required parameter: account",
-                  "code": 400
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Account not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "error": "Account not found: verana1nonexistentaddress",
+                  "error": "No trust deposit found for corporation: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
                   "code": 404
                 }
               }
@@ -4328,58 +3835,6 @@
           }
         }
       }
-    },
-    "/verana/trust/v1/block-height": {
-      "get": {
-        "tags": [
-          "Trust"
-        ],
-        "summary": "Get trust-resolved block height",
-        "description": "Return the latest block height that has been fully processed by the trust resolver pipeline.",
-        "operationId": "getTrustV1ResolvedBlockHeight",
-        "responses": {
-          "200": {
-            "description": "Current trust-resolved block height",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "description": "Response type identifier",
-                      "example": "block-resolved"
-                    },
-                    "height": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "The latest block height that has been fully processed by the indexer"
-                    },
-                    "timestamp": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "The timestamp when the checkpoint was last updated (ISO 8601 format without milliseconds)"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "height",
-                    "timestamp"
-                  ]
-                },
-                "example": {
-                  "type": "block-resolved",
-                  "height": 1794800,
-                  "timestamp": "2025-12-17T04:42:55Z"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
     }
   },
   "components": {
@@ -4627,7 +4082,7 @@
           "did": {
             "type": "string"
           },
-          "controller": {
+          "corporation": {
             "type": "string"
           },
           "created": {
@@ -4642,11 +4097,6 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
-          },
-          "deposit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Trust registry deposit"
           },
           "aka": {
             "type": "string",
@@ -4823,7 +4273,7 @@
               "did": {
                 "type": "string"
               },
-              "controller": {
+              "corporation": {
                 "type": "string"
               },
               "created": {
@@ -4838,11 +4288,6 @@
                 "type": "string",
                 "format": "date-time",
                 "nullable": true
-              },
-              "deposit": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Trust registry deposit"
               },
               "aka": {
                 "type": "string",
@@ -4928,9 +4373,6 @@
             "type": "string",
             "description": "The exact JSON Schema document as stored from the blockchain (preserves formatting for SRI digest verification). Returned as-is; do not parse or re-serialize."
           },
-          "deposit": {
-            "type": "integer"
-          },
           "issuer_grantor_validation_validity_period": {
             "type": "integer"
           },
@@ -4946,21 +4388,27 @@
           "holder_validation_validity_period": {
             "type": "integer"
           },
-          "issuer_perm_management_mode": {
-            "type": "string",
-            "enum": [
-              "OPEN",
-              "ECOSYSTEM",
-              "GRANTOR_VALIDATION"
-            ]
+          "issuer_onboarding_mode": {
+            "type": "string"
           },
-          "verifier_perm_management_mode": {
+          "verifier_onboarding_mode": {
+            "type": "string"
+          },
+          "holder_onboarding_mode": {
             "type": "string",
-            "enum": [
-              "OPEN",
-              "ECOSYSTEM",
-              "GRANTOR_VALIDATION"
-            ]
+            "nullable": true
+          },
+          "pricing_asset_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "pricing_asset": {
+            "type": "string",
+            "nullable": true
+          },
+          "digest_algorithm": {
+            "type": "string",
+            "nullable": true
           },
           "archived": {
             "type": "string",
@@ -5112,7 +4560,7 @@
             ],
             "description": "The current state of the permission, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
           },
-          "grantee_available_actions": {
+          "corporation_available_actions": {
             "type": "array",
             "items": {
               "type": "string",
@@ -5120,11 +4568,11 @@
                 "VP_RENEW",
                 "VP_CANCEL",
                 "PERM_REVOKE",
-                "PERM_EXTEND",
+                "PERM_ADJUST",
                 "PERM_REPAY"
               ]
             },
-            "description": "List of actions available to the grantee for this permission"
+            "description": "Actions available to the permission corporation "
           },
           "validator_available_actions": {
             "type": "array",
@@ -5133,11 +4581,11 @@
               "enum": [
                 "VP_SET_VALIDATED",
                 "PERM_REVOKE",
-                "PERM_EXTEND",
+                "PERM_ADJUST",
                 "PERM_SLASH"
               ]
             },
-            "description": "List of actions available to the validator for this permission"
+            "description": "Actions available to the validator "
           },
           "weight": {
             "type": "integer",
@@ -5187,18 +4635,98 @@
             "enum": [
               "ISSUER",
               "VERIFIER",
-              "ECOSYSTEM"
+              "ISSUER_GRANTOR",
+              "VERIFIER_GRANTOR",
+              "ECOSYSTEM",
+              "HOLDER"
             ]
           },
           "did": {
             "type": "string",
             "nullable": true
           },
-          "grantee": {
-            "type": "string"
+          "corporation": {
+            "type": "string",
+            "description": "Corporation  that owns this permission "
           },
-          "created_by": {
-            "type": "string"
+          "vs_operator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verifiable service operator account ."
+          },
+          "adjusted": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Last permission adjustment time ."
+          },
+          "vs_operator_authz_enabled": {
+            "type": "boolean"
+          },
+          "vs_operator_authz_spend_limit": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "denom",
+                    "amount"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "denom": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vs_operator_authz_with_feegrant": {
+            "type": "boolean"
+          },
+          "vs_operator_authz_fee_spend_limit": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "denom",
+                    "amount"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "denom": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vs_operator_authz_spend_period": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuance_fee_discount": {
+            "type": "number"
+          },
+          "verification_fee_discount": {
+            "type": "number"
           },
           "created": {
             "type": "string",
@@ -5208,31 +4736,14 @@
             "type": "string",
             "format": "date-time"
           },
-          "extended": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "extended_by": {
-            "type": "string",
-            "nullable": true
-          },
           "slashed": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "slashed_by": {
-            "type": "string",
-            "nullable": true
-          },
           "repaid": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
-          },
-          "repaid_by": {
-            "type": "string",
             "nullable": true
           },
           "effective_from": {
@@ -5248,14 +4759,6 @@
           "revoked": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
-          },
-          "revoked_by": {
-            "type": "string",
-            "nullable": true
-          },
-          "country": {
-            "type": "string",
             "nullable": true
           },
           "validation_fees": {
@@ -5300,9 +4803,10 @@
           "vp_current_deposit": {
             "type": "integer"
           },
-          "vp_summary_digest_sri": {
+          "vp_summary_digest": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "VP summary digest"
           },
           "vp_exp": {
             "type": "string",
@@ -5311,11 +4815,6 @@
           },
           "vp_validator_deposit": {
             "type": "integer"
-          },
-          "vp_term_requested": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
           },
           "participants_ecosystem": {
             "type": "integer"
@@ -5430,8 +4929,9 @@
           "type": {
             "type": "string"
           },
-          "grantee": {
-            "type": "string"
+          "corporation": {
+            "type": "string",
+            "description": "Permission corporation at this history point "
           },
           "event_type": {
             "type": "string"
@@ -5468,8 +4968,14 @@
             "type": "string",
             "format": "uuid"
           },
-          "controller": {
-            "type": "string"
+          "corporation": {
+            "type": "string",
+            "description": "Session corporation "
+          },
+          "vs_operator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verifiable service operator "
           },
           "agent_perm_id": {
             "type": "integer"
@@ -5477,20 +4983,16 @@
           "wallet_agent_perm_id": {
             "type": "integer"
           },
-          "authz": {
+          "session_records": {
             "type": "array",
+            "description": "PermissionSessionRecord[] ",
             "items": {
               "type": "object",
               "properties": {
-                "issuer_perm_id": {
-                  "type": "integer"
-                },
-                "verifier_perm_id": {
-                  "type": "integer"
-                },
-                "wallet_agent_perm_id": {
-                  "type": "integer"
-                }
+                "created": { "type": "string", "format": "date-time" },
+                "issuer_perm_id": { "type": "integer", "nullable": true },
+                "verifier_perm_id": { "type": "integer", "nullable": true },
+                "wallet_agent_perm_id": { "type": "integer" }
               }
             }
           },
@@ -5536,8 +5038,12 @@
           "height": {
             "type": "integer"
           },
-          "controller": {
+          "corporation": {
             "type": "string"
+          },
+          "vs_operator": {
+            "type": "string",
+            "nullable": true
           },
           "agent_perm_id": {
             "type": "integer"
@@ -5545,11 +5051,9 @@
           "wallet_agent_perm_id": {
             "type": "integer"
           },
-          "authz": {
+          "session_records": {
             "type": "array",
-            "items": {
-              "type": "object"
-            }
+            "items": { "type": "object" }
           },
           "changes": {
             "type": "object",
@@ -5586,17 +5090,17 @@
       "TrustDeposit": {
         "type": "object",
         "properties": {
-          "account": {
+          "corporation": {
             "type": "string",
-            "description": "Account address"
+            "description": "Corporation  key for this trust deposit "
+          },
+         "deposit": {
+            "type": "integer",
+            "description": "Amount of deposit in native denom "
           },
           "share": {
             "type": "integer",
-            "description": "Current share amount"
-          },
-          "amount": {
-            "type": "integer",
-            "description": "Total deposit amount"
+            "description": "Share of the module total deposit"
           },
           "claimable": {
             "type": "integer",
@@ -5625,10 +5129,6 @@
           "slash_count": {
             "type": "integer",
             "description": "Number of slash events"
-          },
-          "last_repaid_by": {
-            "type": "string",
-            "description": "Account that last performed repayment"
           }
         }
       },
@@ -5658,7 +5158,7 @@
           },
           "msg": {
             "type": "string",
-            "description": "Message/action type (e.g., RenewDID, AddDID, CreateTrustRegistry, AddGovernanceFrameworkDocument, CreateRootPermission, CreateOrUpdatePermissionSession, AdjustTrustDeposit, CreateTrustDeposit)"
+            "description": "Message/action type (e.g., CreateTrustRegistry, AddGovernanceFrameworkDocument, CreateRootPermission, CreateOrUpdatePermissionSession, AdjustTrustDeposit)"
           },
           "changes": {
             "type": "object",
@@ -5686,7 +5186,6 @@
               "CredentialSchema",
               "GovernanceFrameworkDocument",
               "GovernanceFrameworkVersion",
-              "DID",
               "Permission",
               "TrustDeposit",
               "PERMISSION_SESSION"
@@ -5765,17 +5264,17 @@
             "type": "integer",
             "description": "History record ID"
           },
-          "account": {
+          "corporation": {
             "type": "string",
-            "description": "Account address"
+            "description": "Corporation  address "
           },
           "share": {
             "type": "integer",
             "description": "Share amount at this point"
           },
-          "amount": {
+          "deposit": {
             "type": "integer",
-            "description": "Deposit amount at this point"
+            "description": "Deposit amount at this point "
           },
           "claimable": {
             "type": "integer",
@@ -5804,10 +5303,6 @@
           "slash_count": {
             "type": "integer",
             "description": "Slash count at this point"
-          },
-          "last_repaid_by": {
-            "type": "string",
-            "description": "Account that last repaid"
           },
           "event_type": {
             "type": "string",
@@ -5846,71 +5341,6 @@
             "items": {
               "$ref": "#/components/schemas/TrustDepositHistoryItem"
             }
-          }
-        }
-      },
-      "AccountReputationResponse": {
-        "type": "object",
-        "properties": {
-          "account": {
-            "type": "string",
-            "description": "Account address"
-          },
-          "balance": {
-            "type": "integer",
-            "description": "Current account balance"
-          },
-          "deposit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total deposited amount across all trust registries and schemas"
-          },
-          "slashed": {
-            "type": "integer",
-            "description": "Total slashed amount"
-          },
-          "repaid": {
-            "type": "integer",
-            "description": "Total repaid amount"
-          },
-          "slash_count": {
-            "type": "integer",
-            "description": "Total number of slash events"
-          },
-          "first_interaction_ts": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "First interaction timestamp"
-          },
-          "trust_registry_count": {
-            "type": "integer",
-            "description": "Number of trust registries owned"
-          },
-          "credential_schema_count": {
-            "type": "integer",
-            "description": "Number of credential schemas owned"
-          },
-          "slashs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SlashEvent"
-            },
-            "description": "Detailed slash events"
-          },
-          "repayments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RepaymentEvent"
-            },
-            "description": "Detailed repayment events"
-          },
-          "trust_registries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TrustRegistryReputation"
-            },
-            "description": "Reputation details per trust registry"
           }
         }
       },
@@ -6935,10 +6365,6 @@
   },
   "tags": [
     {
-      "name": "DID",
-      "description": "Decentralized Identifier operations"
-    },
-    {
       "name": "Trust Registry",
       "description": "Trust Registry management operations"
     },
@@ -6953,10 +6379,6 @@
     {
       "name": "TrustDeposit",
       "description": "Trust Deposit management and operations"
-    },
-    {
-      "name": "Account",
-      "description": "Account reputation and statistics operations"
     },
     {
       "name": "Indexer",

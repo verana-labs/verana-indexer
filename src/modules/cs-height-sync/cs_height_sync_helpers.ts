@@ -7,7 +7,6 @@ const HEIGHT_HEADER = "x-cosmos-block-height";
 
 const CS_MESSAGE_TYPES = new Set<string>([
   VeranaCredentialSchemaMessageTypes.CreateCredentialSchema,
-  VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy,
   VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema,
   VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema,
   VeranaCredentialSchemaMessageTypes.UpdateParams,
@@ -24,8 +23,12 @@ export interface LedgerCredentialSchemaResponse {
     issuer_validation_validity_period?: number;
     verifier_validation_validity_period?: number;
     holder_validation_validity_period?: number;
-    issuer_perm_management_mode?: string;
-    verifier_perm_management_mode?: string;
+    issuer_onboarding_mode?: string;
+    verifier_onboarding_mode?: string;
+    holder_onboarding_mode?: string | null;
+    pricing_asset_type?: string | null;
+    pricing_asset?: string | null;
+    digest_algorithm?: string | null;
     archived?: string | null;
     created?: string;
     modified?: string;
@@ -46,6 +49,28 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>;
 }
 
+
+export function normalizeCredentialSchemaV4LedgerFields(
+  schema: Record<string, unknown>
+): Record<string, unknown> {
+  const out = { ...schema };
+  const pair = (snake: string, camel: string) => {
+    const s = out[snake];
+    const c = out[camel];
+    if (s == null && c == null) return;
+    const raw = s != null && s !== "" ? s : c;
+    if (raw == null || raw === "") return;
+    const str = String(raw);
+    out[snake] = str;
+    out[camel] = str;
+  };
+  pair("holder_onboarding_mode", "holderOnboardingMode");
+  pair("pricing_asset_type", "pricingAssetType");
+  pair("pricing_asset", "pricingAsset");
+  pair("digest_algorithm", "digestAlgorithm");
+  return out;
+}
+
 function normalizeLedgerResponse(data: unknown): LedgerCredentialSchemaResponse | null {
   if (!data || typeof data !== "object") return null;
   const obj = data as Record<string, unknown>;
@@ -55,9 +80,25 @@ function normalizeLedgerResponse(data: unknown): LedgerCredentialSchemaResponse 
     obj.CredentialSchema ??
     obj.data;
   if (schema && typeof schema === "object") {
-    return { schema: schema as LedgerCredentialSchemaResponse["schema"] };
+    const s = schema as Record<string, unknown>;
+    const normalized = normalizeCredentialSchemaV4LedgerFields(s);
+    return { schema: normalized as LedgerCredentialSchemaResponse["schema"] };
+  }
+  if (obj.id != null && (obj.json_schema != null || obj.jsonSchema != null)) {
+    const normalized = normalizeCredentialSchemaV4LedgerFields(obj);
+    return { schema: normalized as LedgerCredentialSchemaResponse["schema"] };
   }
   return null;
+}
+
+function applyLedgerV4Normalization(
+  res: LedgerCredentialSchemaResponse | null | undefined
+): LedgerCredentialSchemaResponse | null | undefined {
+  if (!res?.schema || typeof res.schema !== "object") return res;
+  res.schema = normalizeCredentialSchemaV4LedgerFields(
+    res.schema as Record<string, unknown>
+  ) as LedgerCredentialSchemaResponse["schema"];
+  return res;
 }
 
 export function getLedgerBaseUrl(): string {
@@ -82,14 +123,18 @@ export async function getCredentialSchema(
     const res = await fetch(url, { headers });
     const data = res.ok ? await res.json().catch(() => null) : null;
     if (data) {
-      return normalizeLedgerResponse(data) ?? (data as LedgerCredentialSchemaResponse);
+      return applyLedgerV4Normalization(
+        normalizeLedgerResponse(data) ?? (data as LedgerCredentialSchemaResponse)
+      ) ?? null;
     }
 
     if (withHeight && (res.status >= 400 || res.status < 200)) {
       const fallback = await fetch(url);
       const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
       if (fallbackData) {
-        return normalizeLedgerResponse(fallbackData) ?? (fallbackData as LedgerCredentialSchemaResponse);
+        return applyLedgerV4Normalization(
+          normalizeLedgerResponse(fallbackData) ?? (fallbackData as LedgerCredentialSchemaResponse)
+        ) ?? null;
       }
     }
 
@@ -100,7 +145,9 @@ export async function getCredentialSchema(
         const fallback = await fetch(url);
         const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
         if (fallbackData) {
-          return normalizeLedgerResponse(fallbackData) ?? (fallbackData as LedgerCredentialSchemaResponse);
+          return applyLedgerV4Normalization(
+            normalizeLedgerResponse(fallbackData) ?? (fallbackData as LedgerCredentialSchemaResponse)
+          ) ?? null;
         }
       } catch {
         //

@@ -1,9 +1,10 @@
 export type PermState = "REPAID" | "SLASHED" | "REVOKED" | "EXPIRED" | "ACTIVE" | "FUTURE" | "INACTIVE";
 
-export type GranteeAction = "VP_RENEW" | "VP_CANCEL" | "PERM_REVOKE" | "PERM_EXTEND" | "PERM_REPAY";
-export type ValidatorAction = "VP_SET_VALIDATED" | "PERM_REVOKE" | "PERM_EXTEND" | "PERM_SLASH";
+export type CorporationAction = "VP_RENEW" | "VP_CANCEL" | "PERM_REVOKE" | "PERM_ADJUST" | "PERM_REPAY";
+export type GranteeAction = CorporationAction;
+export type ValidatorAction = "VP_SET_VALIDATED" | "PERM_REVOKE" | "PERM_ADJUST" | "PERM_SLASH";
 
-export type PermissionType = "ISSUER_GRANTOR" | "ISSUER" | "VERIFIER_GRANTOR" | "VERIFIER" | "HOLDER" | "ECOSYSTEM";
+export type PermissionType = "UNSPECIFIED" | "ISSUER_GRANTOR" | "ISSUER" | "VERIFIER_GRANTOR" | "VERIFIER" | "HOLDER" | "ECOSYSTEM";
 export type ValidationState = "VALIDATION_STATE_UNSPECIFIED" | "PENDING" | "VALIDATED" | "TERMINATED" | null;
 export type SchemaMode = "GRANTOR_VALIDATION" | "OPEN" | "ECOSYSTEM";
 
@@ -20,8 +21,8 @@ export interface PermissionData {
 }
 
 export interface SchemaData {
-  issuer_perm_management_mode?: string;
-  verifier_perm_management_mode?: string;
+  issuer_onboarding_mode?: string;
+  verifier_onboarding_mode?: string;
 }
 
 export const PENDING_FLAT_VP_PENDING_PERM_STATES: ReadonlySet<PermState> = new Set([
@@ -86,9 +87,15 @@ export function calculatePermState(perm: PermissionData, now: Date = new Date())
 function normalizeSchemaMode(mode?: string): SchemaMode {
   if (!mode) return "OPEN";
   const upper = mode.toUpperCase();
-  if (upper === "GRANTOR_VALIDATION" || upper === "GRANTOR") return "GRANTOR_VALIDATION";
+  if (
+    upper === "GRANTOR_VALIDATION"
+    || upper === "GRANTOR"
+    || upper === "GRANTOR_VALIDATION_PROCESS"
+  ) {
+    return "GRANTOR_VALIDATION";
+  }
   if (upper === "OPEN") return "OPEN";
-  if (upper === "ECOSYSTEM") return "ECOSYSTEM";
+  if (upper === "ECOSYSTEM" || upper === "ECOSYSTEM_VALIDATION_PROCESS") return "ECOSYSTEM";
   return "OPEN";
 }
 
@@ -96,6 +103,7 @@ function normalizePermissionType(value: unknown): PermissionType {
   if (typeof value === "string") {
     const upper = value.toUpperCase();
     if (
+      upper === "UNSPECIFIED" ||
       upper === "ISSUER" || upper === "VERIFIER" || upper === "ISSUER_GRANTOR" ||
       upper === "VERIFIER_GRANTOR" || upper === "ECOSYSTEM" || upper === "HOLDER"
     ) {
@@ -104,13 +112,14 @@ function normalizePermissionType(value: unknown): PermissionType {
   }
   const n = Number(value);
   switch (n) {
+    case 0: return "UNSPECIFIED";
     case 1: return "ISSUER";
     case 2: return "VERIFIER";
     case 3: return "ISSUER_GRANTOR";
     case 4: return "VERIFIER_GRANTOR";
     case 5: return "ECOSYSTEM";
     case 6: return "HOLDER";
-    default: return "ECOSYSTEM";
+    default: return "UNSPECIFIED";
   }
 }
 
@@ -121,7 +130,7 @@ function normalizeVpState(value: unknown): ValidationState {
     if (upper === "VALIDATION_STATE_UNSPECIFIED" || upper === "UNSPECIFIED") return "VALIDATION_STATE_UNSPECIFIED";
     if (upper === "PENDING") return "PENDING";
     if (upper === "VALIDATED") return "VALIDATED";
-    if (upper === "TERMINATED") return "TERMINATED";
+    if (upper === "TERMINATED" || upper === "TERMINATION_REQUESTED") return "TERMINATED";
     return null;
   }
   const n = Number(value);
@@ -139,18 +148,18 @@ function isVerifierType(type: PermissionType): boolean {
   return type === "VERIFIER_GRANTOR" || type === "VERIFIER";
 }
 
-export function calculateGranteeAvailableActions(
+export function calculateCorporationAvailableActions(
   perm: PermissionData,
   schema: SchemaData,
   validatorPermState?: PermState | null,
   now: Date = new Date()
-): GranteeAction[] {
-  const actions: Set<GranteeAction> = new Set();
+): CorporationAction[] {
+  const actions: Set<CorporationAction> = new Set();
   const type = normalizePermissionType(perm.type);
   const vpState = normalizeVpState(perm.vp_state);
   const permState = calculatePermState(perm, now);
-  const issuerMode = normalizeSchemaMode(schema.issuer_perm_management_mode);
-  const verifierMode = normalizeSchemaMode(schema.verifier_perm_management_mode);
+  const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode);
+  const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode);
   const vpExp = perm.vp_exp ? new Date(perm.vp_exp) : null;
   const isVpExpired = vpExp !== null && !Number.isNaN(vpExp.getTime()) && vpExp < now;
 
@@ -161,8 +170,7 @@ export function calculateGranteeAvailableActions(
       } else if (permState === "SLASHED") {
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "TERMINATED") {
-        } else if (vpState === "VALIDATED" && !isVpExpired) {
+        if (vpState === "VALIDATED" && !isVpExpired) {
           if (isValidatorActive) {
             actions.add("VP_RENEW");
           }
@@ -182,7 +190,7 @@ export function calculateGranteeAvailableActions(
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
         actions.add("PERM_REVOKE");
-        actions.add("PERM_EXTEND");
+        actions.add("PERM_ADJUST");
       }
     }
   }
@@ -195,8 +203,7 @@ export function calculateGranteeAvailableActions(
       } else if (permState === "SLASHED") {
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "TERMINATED") {
-        } else if (vpState === "VALIDATED" && !isVpExpired) {
+        if (vpState === "VALIDATED" && !isVpExpired) {
           if (isValidatorActive) {
             actions.add("VP_RENEW");
           }
@@ -216,7 +223,7 @@ export function calculateGranteeAvailableActions(
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
         actions.add("PERM_REVOKE");
-        actions.add("PERM_EXTEND");
+        actions.add("PERM_ADJUST");
       }
     }
   }
@@ -226,8 +233,7 @@ export function calculateGranteeAvailableActions(
     } else if (permState === "SLASHED") {
       actions.add("PERM_REPAY");
     } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-      if (vpState === "TERMINATED") {
-      } else if (vpState === "VALIDATED" && !isVpExpired) {
+      if (vpState === "VALIDATED" && !isVpExpired) {
         if (isValidatorActive) {
           actions.add("VP_RENEW");
         }
@@ -249,12 +255,14 @@ export function calculateGranteeAvailableActions(
       actions.add("PERM_REPAY");
     } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
       actions.add("PERM_REVOKE");
-      actions.add("PERM_EXTEND");
+      actions.add("PERM_ADJUST");
     }
   }
 
   return Array.from(actions).sort();
 }
+
+export const calculateGranteeAvailableActions = calculateCorporationAvailableActions;
 
 export function calculateValidatorAvailableActions(
   perm: PermissionData,
@@ -265,8 +273,8 @@ export function calculateValidatorAvailableActions(
   const type = normalizePermissionType(perm.type);
   const vpState = normalizeVpState(perm.vp_state);
   const permState = calculatePermState(perm, now);
-  const issuerMode = normalizeSchemaMode(schema.issuer_perm_management_mode);
-  const verifierMode = normalizeSchemaMode(schema.verifier_perm_management_mode);
+  const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode);
+  const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode);
   const vpExp = perm.vp_exp ? new Date(perm.vp_exp) : null;
   if (isIssuerType(type)) {
     if (issuerMode === "GRANTOR_VALIDATION" || issuerMode === "ECOSYSTEM") {
@@ -274,7 +282,7 @@ export function calculateValidatorAvailableActions(
       
       if (permState === "ACTIVE" || permState === "FUTURE") {
         actions.add("PERM_REVOKE");
-        actions.add("PERM_EXTEND");
+        actions.add("PERM_ADJUST");
       }
       
       if (permState === "ACTIVE" || permState === "FUTURE") {
@@ -298,7 +306,7 @@ export function calculateValidatorAvailableActions(
 
       if (permState === "ACTIVE" || permState === "FUTURE") {
         actions.add("PERM_REVOKE");
-        actions.add("PERM_EXTEND");
+        actions.add("PERM_ADJUST");
       }
 
       if (permState === "ACTIVE" || permState === "FUTURE") {
@@ -319,7 +327,7 @@ export function calculateValidatorAvailableActions(
     
     if (permState === "ACTIVE" || permState === "FUTURE") {
       actions.add("PERM_REVOKE");
-      actions.add("PERM_EXTEND");
+      actions.add("PERM_ADJUST");
     }
     
     if (permState === "ACTIVE" || permState === "FUTURE") {

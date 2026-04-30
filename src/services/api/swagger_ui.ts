@@ -95,70 +95,6 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
           return `${protocol}://${host}`;
         };
 
-        const getServers = (): Array<{ url: string; description: string }> => {
-          const currentUrl = getServerUrl();
-          const servers: Array<{ url: string; description: string }> = [];
-          const addedUrls = new Set<string>();
-          
-          const env = process.env.NODE_ENV || 'development';
-          let envDescription = 'Local development server';
-          
-          if (env === 'production') {
-            envDescription = 'Production API server';
-          } else if (env === 'test' || currentUrl.includes('testnet')) {
-            envDescription = 'Testnet API server';
-          } else if (currentUrl.includes('devnet')) {
-            envDescription = 'Devnet API server';
-          }
-          
-          servers.push({
-            url: currentUrl,
-            description: envDescription
-          });
-          addedUrls.add(currentUrl);
-          
-          if (process.env.DEVNET_API_URL && !addedUrls.has(process.env.DEVNET_API_URL)) {
-            servers.push({
-              url: process.env.DEVNET_API_URL,
-              description: 'Devnet API server'
-            });
-            addedUrls.add(process.env.DEVNET_API_URL);
-          }
-          
-          if (process.env.TESTNET_API_URL && !addedUrls.has(process.env.TESTNET_API_URL)) {
-            servers.push({
-              url: process.env.TESTNET_API_URL,
-              description: 'Testnet API server'
-            });
-            addedUrls.add(process.env.TESTNET_API_URL);
-          }
-          
-          if (env !== 'production') {
-            const defaultDevnet = 'https://idx.devnet.verana.network';
-            const defaultTestnet = 'https://idx.testnet.verana.network';
-            
-            if (!addedUrls.has(defaultDevnet) && 
-                !currentUrl.includes('devnet.verana.network')) {
-              servers.push({
-                url: defaultDevnet,
-                description: 'Devnet API server'
-              });
-              addedUrls.add(defaultDevnet);
-            }
-            
-            if (!addedUrls.has(defaultTestnet) && 
-                !currentUrl.includes('testnet.verana.network')) {
-              servers.push({
-                url: defaultTestnet,
-                description: 'Testnet API server'
-              });
-              addedUrls.add(defaultTestnet);
-            }
-          }
-          
-          return servers;
-        };
-
         try {
           let spec: any = null;
           
@@ -181,7 +117,12 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
             return;
           }
 
-          spec.servers = getServers();
+          spec.servers = [
+            {
+              url: getServerUrl(),
+              description: "Current host",
+            },
+          ];
 
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
           res.setHeader("Pragma", "no-cache");

@@ -64,10 +64,10 @@ export async function getTrustRegistryController(trId: number, blockHeight?: num
             .orderBy("height", "desc")
             .orderBy("created_at", "desc")
             .first();
-        return trHistory?.controller || null;
+        return trHistory?.corporation || null;
     }
     const tr = await TrustRegistry.query().findById(trId);
-    return tr?.controller || null;
+    return tr?.corporation || null;
 }
 
 export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
@@ -122,7 +122,7 @@ export async function calculateIssuedVerifiedForSchema(
 export async function calculateSlashStatsForSchema(
     schemaId: number,
     permissionIds: Set<number>,
-    trController: string | null,
+    _trController: string | null,
     blockHeight?: number
 ): Promise<{
     ecosystem_slash_events: number;
@@ -159,7 +159,7 @@ export async function calculateSlashStatsForSchema(
             .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -168,7 +168,7 @@ export async function calculateSlashStatsForSchema(
             .whereIn("permission_id", permissionIdArray)
             .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-            .select("permission_id", "slashed_by", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -193,7 +193,6 @@ export async function calculateSlashStatsForSchema(
         prevSlashedDeposits.set(permIdStr, currentSlashed);
 
         const isEcosystemPermission = event.type === "ECOSYSTEM";
-        const isSlashedByEcosystemGov = trController && event.slashed_by === trController;
 
         if (isEcosystemPermission) {
             networkSlashEvents++;
@@ -206,7 +205,7 @@ export async function calculateSlashStatsForSchema(
                 networkSlashedAmountRepaid += incrementalRepaid;
             }
             prevRepaidDeposits.set(permIdStr, repaid);
-        } else if (isSlashedByEcosystemGov) {
+        } else {
             ecosystemSlashEvents++;
             ecosystemSlashedAmount += incrementalSlashed;
 
@@ -216,9 +215,6 @@ export async function calculateSlashStatsForSchema(
             if (incrementalRepaid > 0) {
                 ecosystemSlashedAmountRepaid += incrementalRepaid;
             }
-            prevRepaidDeposits.set(permIdStr, repaid);
-        } else {
-            const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
             prevRepaidDeposits.set(permIdStr, repaid);
         }
     }

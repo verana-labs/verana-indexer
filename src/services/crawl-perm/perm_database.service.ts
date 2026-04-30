@@ -1,11 +1,12 @@
 import { Service, ServiceBroker } from "moleculer";
+import type { Knex } from "knex";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import knex from "../../common/utils/db_connection";
 import { SERVICE, ModulesParamsNamesTypes } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
 import { mapPermissionType } from "../../common/utils/utils";
-import { requireController } from "../../common/utils/extract_controller";
+import { extractController, requireController } from "../../common/utils/extract_controller";
 import { calculatePermState } from "./perm_state_utils";
 import { CS_STATS_FIELDS, statsToUpdateObject } from "../../common/utils/stats_fields";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
@@ -16,9 +17,9 @@ import {
   getPermissionTypeString,
   MsgCancelPermissionVPLastRequest,
   MsgCreateOrUpdatePermissionSession,
-  MsgCreatePermission,
+  MsgSelfCreatePermission,
   MsgCreateRootPermission,
-  MsgExtendPermission,
+  MsgAdjustPermission,
   MsgRenewPermissionVP,
   MsgRepayPermissionSlashedTrustDeposit,
   MsgRevokePermission,
@@ -31,21 +32,14 @@ const PERMISSION_HISTORY_FIELDS = [
   "schema_id",
   "type",
   "did",
-  "grantee",
-  "created_by",
+  "corporation",
   "created",
   "modified",
-  "extended",
-  "extended_by",
   "slashed",
-  "slashed_by",
   "repaid",
-  "repaid_by",
   "effective_from",
   "effective_until",
   "revoked",
-  "revoked_by",
-  "country",
   "validation_fees",
   "issuance_fees",
   "verification_fees",
@@ -71,15 +65,21 @@ const PERMISSION_HISTORY_FIELDS = [
   "network_slashed_amount_repaid",
   "vp_current_fees",
   "vp_current_deposit",
-  "vp_summary_digest_sri",
+  "vp_summary_digest",
   "vp_exp",
   "vp_validator_deposit",
-  "vp_term_requested",
   "issued",
   "verified",
   "issuance_fee_discount",
   "verification_fee_discount",
   "expire_soon",
+  "vs_operator",
+  "adjusted",
+  "vs_operator_authz_enabled",
+  "vs_operator_authz_spend_limit",
+  "vs_operator_authz_with_feegrant",
+  "vs_operator_authz_fee_spend_limit",
+  "vs_operator_authz_spend_period",
 ];
 
 const PARTICIPANT_ROLE_HISTORY_FIELDS = [
@@ -92,13 +92,24 @@ const PARTICIPANT_ROLE_HISTORY_FIELDS = [
 ] as const;
 
 const PERMISSION_SESSION_HISTORY_FIELDS = [
-  "controller",
+  "corporation",
+  "vs_operator",
   "agent_perm_id",
   "wallet_agent_perm_id",
-  "authz",
+  "session_records",
   "created",
   "modified",
 ];
+
+const PERMISSION_HISTORY_V4_FIELDS = [
+  "vs_operator",
+  "adjusted",
+  "vs_operator_authz_enabled",
+  "vs_operator_authz_spend_limit",
+  "vs_operator_authz_with_feegrant",
+  "vs_operator_authz_fee_spend_limit",
+  "vs_operator_authz_spend_period",
+] as const;
 
 function normalizeValue(value: any) {
   if (value === undefined) return null;
@@ -144,6 +155,7 @@ function normalizePermissionType(value: unknown): string {
   if (typeof value === "string") {
     const normalized = value.toUpperCase();
     if (
+      normalized === "UNSPECIFIED" ||
       normalized === "ISSUER" ||
       normalized === "VERIFIER" ||
       normalized === "ISSUER_GRANTOR" ||
@@ -157,14 +169,43 @@ function normalizePermissionType(value: unknown): string {
 
   const numeric = Number(value);
   switch (numeric) {
+    case 0: return "UNSPECIFIED";
     case 1: return "ISSUER";
     case 2: return "VERIFIER";
     case 3: return "ISSUER_GRANTOR";
     case 4: return "VERIFIER_GRANTOR";
     case 5: return "ECOSYSTEM";
     case 6: return "HOLDER";
-    default: return "ECOSYSTEM";
+    default: return "UNSPECIFIED";
   }
+}
+
+function pickMessageValue(msg: Record<string, any>, snake: string, camel: string) {
+  return msg[snake] ?? msg[camel];
+}
+
+function pickMessageBool(msg: Record<string, any>, snake: string, camel: string, fallback = false): boolean {
+  const raw = pickMessageValue(msg, snake, camel);
+  if (raw === true) return true;
+  if (raw === false) return false;
+  if (typeof raw === "string") {
+    const v = raw.trim().toLowerCase();
+    if (v === "true") return true;
+    if (v === "false") return false;
+    if (v === "1") return true;
+    if (v === "0") return false;
+  }
+  if (typeof raw === "number") {
+    if (raw === 1) return true;
+    if (raw === 0) return false;
+  }
+  return fallback;
+}
+
+function extractPermissionType(msg: Record<string, any>, fallback: string | number = "UNSPECIFIED") {
+  return mapPermissionType(
+    msg.permission_type ?? msg.permissionType ?? msg.type ?? fallback
+  );
 }
 
 function normalizeValidationState(value: unknown): string {
@@ -173,10 +214,12 @@ function normalizeValidationState(value: unknown): string {
     if (
       normalized === "VALIDATION_STATE_UNSPECIFIED" ||
       normalized === "PENDING" ||
-      normalized === "VALIDATED" ||
-      normalized === "TERMINATED"
+      normalized === "VALIDATED"
     ) {
       return normalized;
+    }
+    if (normalized === "TERMINATED" || normalized === "TERMINATION_REQUESTED") {
+      return "TERMINATED";
     }
   }
 
@@ -184,9 +227,8 @@ function normalizeValidationState(value: unknown): string {
   switch (numeric) {
     case 1: return "PENDING";
     case 2: return "VALIDATED";
-    case 3:
-    case 4:
-      return "TERMINATED";
+    case 3: return "TERMINATED";
+    case 4: return "VALIDATED";
     case 0:
     default:
       return "VALIDATION_STATE_UNSPECIFIED";
@@ -198,6 +240,71 @@ function toIsoOrNull(value: unknown): string | null {
   const d = new Date(String(value));
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+function jsonbColumnValue(value: unknown): string | object | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value as object;
+}
+
+function normalizeDenomAmountArrayForDb(value: unknown): unknown {
+  if (value === null) return null;
+  if (value === undefined) return [];
+  if (typeof value === "string") {
+    try {
+      return normalizeDenomAmountArrayForDb(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(value)) return value;
+  return [];
+}
+
+let permissionsInsertSavepointSeq = 0;
+function nextPermissionsInsertSavepoint(): string {
+  permissionsInsertSavepointSeq += 1;
+  return `perm_insert_sp_${permissionsInsertSavepointSeq}`;
+}
+
+async function healPermissionsIdSequence(trx: any): Promise<void> {
+  await trx.raw(`
+    SELECT setval(pg_get_serial_sequence('permissions','id'),
+      GREATEST((SELECT COALESCE(MAX(id), 1) FROM permissions), 1)
+    )
+  `);
+}
+
+async function insertPermissionsWithSequenceHeal<T = any>(
+  trx: any,
+  insertData: any
+): Promise<T> {
+  const sp = nextPermissionsInsertSavepoint();
+  await trx.raw(`SAVEPOINT ${sp}`);
+  try {
+    const [row] = await trx("permissions").insert(insertData).returning("*");
+    await trx.raw(`RELEASE SAVEPOINT ${sp}`);
+    return row as T;
+  } catch (err: any) {
+    const code = err?.code ?? err?.nativeError?.code;
+    if (code !== "23505") {
+      throw err;
+    }
+
+    // Clear the failed statement so we can continue in the same transaction.
+    await trx.raw(`ROLLBACK TO SAVEPOINT ${sp}`);
+    await healPermissionsIdSequence(trx);
+    const [row] = await trx("permissions").insert(insertData).returning("*");
+    await trx.raw(`RELEASE SAVEPOINT ${sp}`);
+    return row as T;
+  }
 }
 
 const permissionHistoryColumnExistsCache: Record<string, boolean> = {};
@@ -232,6 +339,7 @@ async function pickPermissionSnapshot(record: any) {
   const hasExpireSoonColumn = await checkPermissionHistoryColumnExists("expire_soon");
    const hasIssuanceDiscountColumn = await checkPermissionHistoryColumnExists("issuance_fee_discount");
    const hasVerificationDiscountColumn = await checkPermissionHistoryColumnExists("verification_fee_discount");
+  const hasV4PermColumns = await checkPermissionHistoryColumnExists("vs_operator");
 
   for (const field of PERMISSION_HISTORY_FIELDS) {
     if (field === "expire_soon" && !hasExpireSoonColumn) continue;
@@ -261,6 +369,9 @@ async function pickPermissionSnapshot(record: any) {
     if (field === "verification_fee_discount" && !hasVerificationDiscountColumn) {
       continue;
     }
+    if (!hasV4PermColumns && (PERMISSION_HISTORY_V4_FIELDS as readonly string[]).includes(field)) {
+      continue;
+    }
     if (field === "schema_id") {
       const schemaIdValue = record[field];
       snapshot[field] = schemaIdValue !== null && schemaIdValue !== undefined ? Number(schemaIdValue) : null;
@@ -280,6 +391,12 @@ async function pickPermissionSnapshot(record: any) {
     } else if (field === "issuance_fee_discount" || field === "verification_fee_discount") {
       const v = record[field];
       snapshot[field] = v !== null && v !== undefined ? Number(v) : 0;
+    } else if (field === "vs_operator_authz_spend_limit" || field === "vs_operator_authz_fee_spend_limit") {
+      snapshot[field] = normalizeDenomAmountArrayForDb(record[field]);
+    } else if (field === "vs_operator_authz_enabled" || field === "vs_operator_authz_with_feegrant") {
+      snapshot[field] = Boolean(record[field]);
+    } else if (field === "adjusted") {
+      snapshot[field] = toIsoOrNull(record[field]);
     } else {
       snapshot[field] = normalizeValue(record[field]);
     }
@@ -316,6 +433,7 @@ async function recordPermissionHistory(
   const hasExpireSoonColumn = await checkPermissionHistoryColumnExists("expire_soon");
   const hasIssuanceDiscountColumn = await checkPermissionHistoryColumnExists("issuance_fee_discount");
   const hasVerificationDiscountColumn = await checkPermissionHistoryColumnExists("verification_fee_discount");
+  const hasV4PermColumns = await checkPermissionHistoryColumnExists("vs_operator");
 
   const fieldsToUse = PERMISSION_HISTORY_FIELDS.filter(field => {
     if (field === "expire_soon" && !hasExpireSoonColumn) return false;
@@ -331,6 +449,7 @@ async function recordPermissionHistory(
     }
     if (field === "issuance_fee_discount" && !hasIssuanceDiscountColumn) return false;
     if (field === "verification_fee_discount" && !hasVerificationDiscountColumn) return false;
+    if (!hasV4PermColumns && (PERMISSION_HISTORY_V4_FIELDS as readonly string[]).includes(field)) return false;
     return true;
   });
 
@@ -356,14 +475,14 @@ function pickPermissionSessionSnapshot(record: any) {
     session_id: String(record.session_id ?? record.id ?? ""),
   };
   for (const field of PERMISSION_SESSION_HISTORY_FIELDS) {
-    if (field === "authz") {
-      const authz = record[field];
-      if (authz === null || authz === undefined) {
+    if (field === "session_records") {
+      const sr = record[field];
+      if (sr === null || sr === undefined) {
         snapshot[field] = null;
-      } else if (typeof authz === "string") {
-        snapshot[field] = authz;
+      } else if (typeof sr === "string") {
+        snapshot[field] = sr;
       } else {
-        snapshot[field] = JSON.stringify(authz);
+        snapshot[field] = JSON.stringify(sr);
       }
     } else {
       snapshot[field] = normalizeValue(record[field]);
@@ -433,6 +552,7 @@ export default class PermIngestService extends Service {
     if (perm.revoked) return null;
     if (perm.slashed && !perm.repaid) return null;
     if (perm.vp_state !== 'VALIDATED' && perm.type !== 'ECOSYSTEM') return null;
+    if (perm.type === "UNSPECIFIED") return null;
 
     if (!effectiveUntil) {
       return false;
@@ -467,13 +587,13 @@ export default class PermIngestService extends Service {
           handler: async (ctx) =>
             this.handleCreateRootPermission(ctx.params.data),
         },
-        handleMsgCreatePermission: {
+        handleMsgSelfCreatePermission: {
           params: { data: "object" },
           handler: async (ctx) => this.handleCreatePermission(ctx.params.data),
         },
-        handleMsgExtendPermission: {
+        handleMsgAdjustPermission: {
           params: { data: "object" },
-          handler: async (ctx) => this.handleExtendPermission(ctx.params.data),
+          handler: async (ctx) => this.handleAdjustPermission(ctx.params.data),
         },
         handleMsgRevokePermission: {
           params: { data: "object" },
@@ -579,32 +699,79 @@ export default class PermIngestService extends Service {
           handler: async (ctx) => this.rebuildPermissionStats(ctx.params.schema_id),
         },
         getPermission: {
-          params: { schema_id: "number", grantee: "string", type: "string" },
+          params: { schema_id: "number", corporation: "string", type: "string" },
           handler: async (ctx) => {
-            const { schema_id: schemaId, grantee, type } = ctx.params;
+            const { schema_id: schemaId, corporation, type } = ctx.params;
             return await knex("permissions")
-              .where({ schema_id: schemaId, grantee, type })
+              .where({ schema_id: schemaId, corporation, type })
               .first();
           },
         },
         listPermissions: {
           params: {
             schema_id: { type: "number", optional: true },
-            grantee: { type: "string", optional: true },
+            corporation: { type: "string", optional: true },
             type: { type: "string", optional: true },
           },
           handler: async (ctx) => {
             let query = knex("permissions");
             if (ctx.params.schema_id)
               query = query.where("schema_id", ctx.params.schema_id);
-            if (ctx.params.grantee)
-              query = query.where("grantee", ctx.params.grantee);
+            if (ctx.params.corporation)
+              query = query.where("corporation", ctx.params.corporation);
             if (ctx.params.type) query = query.where("type", ctx.params.type);
             return await query;
           },
         },
       },
     });
+  }
+
+  private async handleAdjustPermission(msg: MsgAdjustPermission & { height?: number }) {
+    const height = Number((msg as any)?.height) || 0;
+    const permId = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId ?? 0) || 0;
+    if (!Number.isInteger(permId) || permId <= 0) {
+      this.logger.warn(`[handleAdjustPermission] Invalid permission id: ${String((msg as any)?.id)}`);
+      return;
+    }
+
+    const ts = (msg as any)?.timestamp ? formatTimestamp((msg as any).timestamp) : null;
+    const effectiveUntilRaw = (msg as any)?.effective_until ?? (msg as any)?.effectiveUntil ?? null;
+    const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
+
+    try {
+      await this.ensurePermV4Columns(knex);
+
+      const previous = await knex("permissions").where({ id: permId }).first();
+      if (!previous) {
+        this.logger.warn(`[handleAdjustPermission] Permission id=${permId} not found; skipping`);
+        return;
+      }
+
+      const adjustedBy = extractController(msg as unknown as Record<string, unknown>) ?? null;
+
+      await knex("permissions")
+        .where({ id: permId })
+        .update({
+          effective_until: effectiveUntil ?? previous.effective_until ?? null,
+          adjusted: ts,
+          modified: ts ?? previous.modified ?? null,
+        });
+
+      const updated = await knex("permissions").where({ id: permId }).first();
+      try {
+        await recordPermissionHistory(knex, updated ?? { id: permId }, "ADJUST_PERMISSION", height, previous);
+      } catch (historyErr: any) {
+        this.logger.warn(
+          `[handleAdjustPermission] Failed to record permission history for id=${permId}: ${historyErr?.message || historyErr}`
+        );
+      }
+
+      await this.refreshSchemaAndTrustRegistryStats(previous.schema_id ?? updated?.schema_id, height);
+    } catch (err: any) {
+      this.logger.error("CRITICAL: Error in handleAdjustPermission:", err);
+      throw err;
+    }
   }
 
   private async refreshTrustRegistryStatsBySchemaId(
@@ -637,26 +804,21 @@ export default class PermIngestService extends Service {
     const schemaId = Number(ledgerPermission.schema_id ?? ledgerPermission.schemaId);
     const nowIso = new Date().toISOString();
 
+    const corporation = String(ledgerPermission.corporation ?? "").trim();
+
     return {
       id,
       schema_id: schemaId,
       type: normalizePermissionType(ledgerPermission.type),
       did: ledgerPermission.did ?? null,
-      grantee: ledgerPermission.grantee ?? null,
-      created_by: ledgerPermission.created_by ?? ledgerPermission.createdBy ?? ledgerPermission.grantee ?? null,
+      corporation,
       created: toIsoOrNull(ledgerPermission.created) ?? nowIso,
       modified: toIsoOrNull(ledgerPermission.modified) ?? nowIso,
-      extended: toIsoOrNull(ledgerPermission.extended),
-      extended_by: ledgerPermission.extended_by ?? ledgerPermission.extendedBy ?? null,
       slashed: toIsoOrNull(ledgerPermission.slashed),
-      slashed_by: ledgerPermission.slashed_by ?? ledgerPermission.slashedBy ?? null,
       repaid: toIsoOrNull(ledgerPermission.repaid),
-      repaid_by: ledgerPermission.repaid_by ?? ledgerPermission.repaidBy ?? null,
       effective_from: toIsoOrNull(ledgerPermission.effective_from ?? ledgerPermission.effectiveFrom),
       effective_until: toIsoOrNull(ledgerPermission.effective_until ?? ledgerPermission.effectiveUntil),
       revoked: toIsoOrNull(ledgerPermission.revoked),
-      revoked_by: ledgerPermission.revoked_by ?? ledgerPermission.revokedBy ?? null,
-      country: ledgerPermission.country ?? null,
       validation_fees: Number(ledgerPermission.validation_fees ?? ledgerPermission.validationFees ?? 0),
       issuance_fees: Number(ledgerPermission.issuance_fees ?? ledgerPermission.issuanceFees ?? 0),
       verification_fees: Number(ledgerPermission.verification_fees ?? ledgerPermission.verificationFees ?? 0),
@@ -670,9 +832,63 @@ export default class PermIngestService extends Service {
       vp_validator_deposit: Number(ledgerPermission.vp_validator_deposit ?? ledgerPermission.vpValidatorDeposit ?? 0),
       vp_current_fees: Number(ledgerPermission.vp_current_fees ?? ledgerPermission.vpCurrentFees ?? 0),
       vp_current_deposit: Number(ledgerPermission.vp_current_deposit ?? ledgerPermission.vpCurrentDeposit ?? 0),
-      vp_summary_digest_sri: ledgerPermission.vp_summary_digest_sri ?? ledgerPermission.vpSummaryDigestSri ?? null,
-      vp_term_requested: toIsoOrNull(ledgerPermission.vp_term_requested ?? ledgerPermission.vpTermRequested),
+      vp_summary_digest:
+        ledgerPermission.vp_summary_digest ?? ledgerPermission.vpSummaryDigest ?? null,
+      issuance_fee_discount: Number(
+        ledgerPermission.issuance_fee_discount ?? ledgerPermission.issuanceFeeDiscount ?? 0
+      ),
+      verification_fee_discount: Number(
+        ledgerPermission.verification_fee_discount ?? ledgerPermission.verificationFeeDiscount ?? 0
+      ),
+      vs_operator: ledgerPermission.vs_operator ?? ledgerPermission.vsOperator ?? null,
+      adjusted: toIsoOrNull(ledgerPermission.adjusted ?? ledgerPermission.adjustedAt),
+      vs_operator_authz_enabled: Boolean(
+        ledgerPermission.vs_operator_authz_enabled ?? ledgerPermission.vsOperatorAuthzEnabled ?? false
+      ),
+      vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
+        ledgerPermission.vs_operator_authz_spend_limit ?? ledgerPermission.vsOperatorAuthzSpendLimit
+      ),
+      vs_operator_authz_with_feegrant: Boolean(
+        ledgerPermission.vs_operator_authz_with_feegrant ?? ledgerPermission.vsOperatorAuthzWithFeegrant ?? false
+      ),
+      vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
+        ledgerPermission.vs_operator_authz_fee_spend_limit ?? ledgerPermission.vsOperatorAuthzFeeSpendLimit
+      ),
+      vs_operator_authz_spend_period:
+        ledgerPermission.vs_operator_authz_spend_period ??
+        ledgerPermission.vsOperatorAuthzSpendPeriod ??
+        null,
     };
+  }
+
+  private didEnsurePermV4Columns = false;
+  private async ensurePermV4Columns(db: Knex): Promise<void> {
+    if (this.didEnsurePermV4Columns) return;
+
+    await db.raw(`
+      ALTER TABLE IF EXISTS permissions
+        ADD COLUMN IF NOT EXISTS vs_operator text,
+        ADD COLUMN IF NOT EXISTS adjusted timestamptz,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_fee_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_period text;
+    `);
+
+    await db.raw(`
+      ALTER TABLE IF EXISTS permission_history
+        ADD COLUMN IF NOT EXISTS vs_operator text,
+        ADD COLUMN IF NOT EXISTS adjusted timestamptz,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_fee_spend_limit jsonb,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_period text;
+    `);
+
+    this.permissionsColumnExistsCache = null;
+    this.didEnsurePermV4Columns = true;
   }
 
   private async refreshSchemaAndTrustRegistryStats(
@@ -731,6 +947,8 @@ export default class PermIngestService extends Service {
     const effectiveHeight = Number(blockHeight) || 0;
     let finalPermission: any = null;
     let previousPermission: any = null;
+
+    await this.ensurePermV4Columns(knex);
 
     await knex.transaction(async (trx) => {
       previousPermission = await trx("permissions").where({ id: mapped.id }).first();
@@ -932,14 +1150,14 @@ export default class PermIngestService extends Service {
 
           if (isEcosystemPermission) {
             isEcosystemSlash = true;
-          } else if (permRow.schema_id && (permRow.slashed_by || ledgerPermission.slashed_by)) {
+          } else if (permRow.schema_id && ledgerPermission.slashed_by) {
             const schema = await trx("credential_schemas")
               .where({ id: permRow.schema_id })
               .first();
             if (schema?.tr_id) {
               const tr = await trx("trust_registry").where({ id: schema.tr_id }).first();
-              const slashedBy = permRow.slashed_by || ledgerPermission.slashed_by;
-              if (tr?.controller && slashedBy === tr.controller) {
+              const slashedBy = ledgerPermission.slashed_by;
+              if (tr?.corporation && slashedBy === tr.corporation) {
                 isEcosystemSlash = true;
               } else {
                 isNetworkSlash = true;
@@ -1006,12 +1224,29 @@ export default class PermIngestService extends Service {
     if (!id) return { success: false, reason: "Invalid permission session id from ledger" };
 
     const effectiveHeight = Number(blockHeight) || 0;
-    const authzRaw = Array.isArray(ledgerSession?.authz) ? ledgerSession.authz : [];
+    const recordsRaw = Array.isArray(ledgerSession?.session_records)
+      ? ledgerSession.session_records
+      : Array.isArray(ledgerSession?.sessionRecords)
+        ? ledgerSession.sessionRecords
+        : Array.isArray(ledgerSession?.authz)
+          ? ledgerSession.authz
+          : [];
 
-    const enrichedAuthz = await Promise.all(authzRaw.map(async (entry: any) => {
+    const enrichedAuthz = await Promise.all(recordsRaw.map(async (entry: any) => {
+      const directIssuer = entry?.issuer_perm_id ?? entry?.issuerPermId;
+      const directVerifier = entry?.verifier_perm_id ?? entry?.verifierPermId;
+      if (directIssuer != null || directVerifier != null) {
+        const walletAgentPermId =
+          Number(entry?.wallet_agent_perm_id ?? entry?.walletAgentPermId ?? ledgerSession?.wallet_agent_perm_id ?? 0) || 0;
+        return {
+          issuer_perm_id: directIssuer != null ? Number(directIssuer) : null,
+          verifier_perm_id: directVerifier != null ? Number(directVerifier) : null,
+          wallet_agent_perm_id: walletAgentPermId || null,
+        };
+      }
+
       const walletAgentPermId = Number(entry?.wallet_agent_perm_id ?? ledgerSession?.wallet_agent_perm_id ?? 0) || 0;
       const beneficiaryPermId = Number(entry?.beneficiary_perm_id ?? 0) || 0;
-      const executorPermId = Number(entry?.executor_perm_id ?? ledgerSession?.agent_perm_id ?? 0) || 0;
 
       let issuerPermId: number | null = null;
       let verifierPermId: number | null = null;
@@ -1022,21 +1257,29 @@ export default class PermIngestService extends Service {
       }
 
       return {
-        executor_perm_id: executorPermId || null,
-        beneficiary_perm_id: beneficiaryPermId || null,
-        wallet_agent_perm_id: walletAgentPermId || null,
         issuer_perm_id: issuerPermId,
         verifier_perm_id: verifierPermId,
+        wallet_agent_perm_id: walletAgentPermId || null,
       };
     }));
 
       const mappedSession: any = {
         id,
-        controller: ledgerSession?.controller ?? null,
+        corporation: ledgerSession?.corporation ?? null,
+        vs_operator: ledgerSession?.vs_operator ?? ledgerSession?.vsOperator ?? null,
         agent_perm_id: Number(ledgerSession?.agent_perm_id ?? ledgerSession?.agentPermId ?? 0) || 0,
         wallet_agent_perm_id: Number(ledgerSession?.wallet_agent_perm_id ?? ledgerSession?.walletAgentPermId ?? 0) || 0,
-        // Keep jsonb writes consistent with legacy paths to avoid pg array-literal coercion.
-        authz: JSON.stringify(enrichedAuthz),
+        session_records: JSON.stringify(
+          enrichedAuthz.map((e: any, i: number) => ({
+            created:
+              toIsoOrNull(recordsRaw[i]?.created) ??
+              toIsoOrNull(ledgerSession?.modified) ??
+              new Date().toISOString(),
+            issuer_perm_id: e.issuer_perm_id ?? null,
+            verifier_perm_id: e.verifier_perm_id ?? null,
+            wallet_agent_perm_id: e.wallet_agent_perm_id ?? null,
+          }))
+        ),
         created: toIsoOrNull(ledgerSession?.created) ?? new Date().toISOString(),
         modified: toIsoOrNull(ledgerSession?.modified) ?? new Date().toISOString(),
       };
@@ -1062,7 +1305,7 @@ export default class PermIngestService extends Service {
         previous ? pickPermissionSessionSnapshot(previous) : undefined
       );
 
-      const previousAuthzRaw = previous?.authz;
+      const previousAuthzRaw = previous?.session_records ?? previous?.authz;
       let previousAuthz: any[] = [];
       if (previousAuthzRaw) {
         try {
@@ -1186,14 +1429,15 @@ export default class PermIngestService extends Service {
 
         const issuedCounts = new Map<number, number>();
         const verifiedCounts = new Map<number, number>();
-        const sessionRows = await trx("permission_sessions").select("authz");
+        const sessionRows = await trx("permission_sessions").select("session_records");
         for (const row of sessionRows || []) {
           let authz: any[] = [];
           try {
-            if (typeof row.authz === "string") {
-              authz = JSON.parse(row.authz || "[]");
-            } else if (Array.isArray(row.authz)) {
-              authz = row.authz;
+            const raw = row.session_records ?? (row as any).authz;
+            if (typeof raw === "string") {
+              authz = JSON.parse(raw || "[]");
+            } else if (Array.isArray(raw)) {
+              authz = raw;
             }
           } catch {
             authz = [];
@@ -1301,16 +1545,12 @@ export default class PermIngestService extends Service {
       schema_id: Number(record.schema_id ?? record.schemaId ?? 0) || 0,
       type: normalizePermissionType(record.type),
       did: record.did ?? null,
-      grantee: record.grantee ?? null,
-      created_by: record.created_by ?? record.createdBy ?? null,
+      corporation: record.corporation ?? null,
       created: this.normalizeComparableTimestamp(record.created),
       modified: this.normalizeComparableTimestamp(record.modified),
-      extended: this.normalizeComparableTimestamp(record.extended),
-      extended_by: record.extended_by ?? record.extendedBy ?? null,
+      adjusted: this.normalizeComparableTimestamp(record.adjusted),
       slashed: this.normalizeComparableTimestamp(record.slashed),
-      slashed_by: record.slashed_by ?? record.slashedBy ?? null,
       repaid: this.normalizeComparableTimestamp(record.repaid),
-      repaid_by: record.repaid_by ?? record.repaidBy ?? null,
       effective_from: this.normalizeComparableTimestamp(record.effective_from ?? record.effectiveFrom),
       effective_until: this.normalizeComparableTimestamp(record.effective_until ?? record.effectiveUntil),
       validation_fees: Number(record.validation_fees ?? record.validationFees ?? 0),
@@ -1320,8 +1560,6 @@ export default class PermIngestService extends Service {
       slashed_deposit: Number(record.slashed_deposit ?? record.slashedDeposit ?? 0),
       repaid_deposit: Number(record.repaid_deposit ?? record.repaidDeposit ?? 0),
       revoked: this.normalizeComparableTimestamp(record.revoked),
-      revoked_by: record.revoked_by ?? record.revokedBy ?? null,
-      country: record.country ?? null,
       validator_perm_id: Number(record.validator_perm_id ?? record.validatorPermId ?? 0) || null,
       vp_state: normalizeValidationState(record.vp_state ?? record.vpState),
       vp_exp: this.normalizeComparableTimestamp(record.vp_exp ?? record.vpExp),
@@ -1329,30 +1567,36 @@ export default class PermIngestService extends Service {
       vp_validator_deposit: Number(record.vp_validator_deposit ?? record.vpValidatorDeposit ?? 0),
       vp_current_fees: Number(record.vp_current_fees ?? record.vpCurrentFees ?? 0),
       vp_current_deposit: Number(record.vp_current_deposit ?? record.vpCurrentDeposit ?? 0),
-      vp_summary_digest_sri: record.vp_summary_digest_sri ?? record.vpSummaryDigestSri ?? null,
-      vp_term_requested: this.normalizeComparableTimestamp(record.vp_term_requested ?? record.vpTermRequested),
+      vp_summary_digest:
+        record.vp_summary_digest ??
+        record.vpSummaryDigest ??
+        null,
     };
   }
 
   private normalizeComparablePermissionSessionRecord(record: Record<string, any> | null | undefined): Record<string, any> | null {
     if (!record) return null;
-    const authzRaw = Array.isArray(record.authz)
-      ? record.authz
-      : parseJson(record.authz) ?? [];
-    const authz = Array.isArray(authzRaw)
-      ? authzRaw.map((entry: any) => ({
-        executor_perm_id: Number(entry?.executor_perm_id ?? 0) || null,
-        beneficiary_perm_id: Number(entry?.beneficiary_perm_id ?? 0) || null,
-        wallet_agent_perm_id: Number(entry?.wallet_agent_perm_id ?? 0) || null,
-      })).sort((a: any, b: any) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+    const srRaw = Array.isArray(record.session_records)
+      ? record.session_records
+      : parseJson(record.session_records) ?? parseJson(record.authz) ?? [];
+    const sessionRecords = Array.isArray(srRaw)
+      ? srRaw
+          .map((entry: any) => ({
+            created: String(entry?.created ?? ""),
+            issuer_perm_id: Number(entry?.issuer_perm_id ?? 0) || null,
+            verifier_perm_id: Number(entry?.verifier_perm_id ?? 0) || null,
+            wallet_agent_perm_id: Number(entry?.wallet_agent_perm_id ?? 0) || null,
+          }))
+          .sort((a: any, b: any) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
       : [];
 
     return {
       id: String(record.id ?? record.session_id ?? ""),
-      controller: record.controller ?? null,
+      corporation: record.corporation ?? null,
+      vs_operator: record.vs_operator ?? record.vsOperator ?? null,
       agent_perm_id: Number(record.agent_perm_id ?? record.agentPermId ?? 0) || 0,
       wallet_agent_perm_id: Number(record.wallet_agent_perm_id ?? record.walletAgentPermId ?? 0) || 0,
-      authz,
+      session_records: sessionRecords,
       created: this.normalizeComparableTimestamp(record.created),
       modified: this.normalizeComparableTimestamp(record.modified),
     };
@@ -1463,12 +1707,15 @@ export default class PermIngestService extends Service {
 
       const creator = requireController(msg, `PERM CREATE_ROOT ${schemaId}`);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
-      const effectiveFrom = msg.effective_from ? formatTimestamp(msg.effective_from) : null;
-      const effectiveUntil = msg.effective_until ? formatTimestamp(msg.effective_until) : null;
+      const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
+      const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
+      const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
+      const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
+      const permissionType = extractPermissionType(msg as any, "ECOSYSTEM");
 
       // Calculate expire_soon for the new permission
       const newPermData = {
-        type: "ECOSYSTEM",
+        type: permissionType,
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
@@ -1482,48 +1729,75 @@ export default class PermIngestService extends Service {
 
       this.logger.info(`[handleCreateRootPermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
+
       const insertData: any = {
         schema_id: schemaId,
-        type: "ECOSYSTEM",
+        type: permissionType,
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
-        grantee: creator,
-        created_by: creator,
+        corporation: creator,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
-        country: msg.country ?? null,
-        validation_fees: Number((msg as any).validation_fees ?? 0),
-        issuance_fees: Number((msg as any).issuance_fees ?? 0),
-        verification_fees: Number((msg as any).verification_fees ?? 0),
+        validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
+        issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
+        verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
+        vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
+        adjusted: timestamp,
         deposit: 0,
         modified: timestamp,
         created: timestamp,
       };
 
+      if (hasValidMsgId) {
+        insertData.id = msgIdNum;
+      }
+
       if (hasExpireSoonColumn) {
         insertData.expire_soon = expireSoon;
         this.logger.info(`[handleCreateRootPermission] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleCreateRootPermission] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
+        this.logger.warn(`[handleCreateRootPermission] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
-      let insertedPermission;
-      try {
-        [insertedPermission] = await knex("permissions")
-          .insert(insertData)
-          .returning("*");
-      } catch (insertError: any) {
-        if (insertError?.code === '42703' && insertError?.message?.includes('expire_soon')) {
-          this.logger.warn(`[handleCreateRootPermission] expire_soon column error detected, clearing cache and retrying without expire_soon`);
-          this.permissionsColumnExistsCache = null;
-          delete insertData.expire_soon;
-          [insertedPermission] = await knex("permissions")
-            .insert(insertData)
-            .returning("*");
+      let insertedPermission: any = null;
+      await this.ensurePermV4Columns(knex);
+      await knex.transaction(async (trx) => {
+        const existing = hasValidMsgId
+          ? await trx("permissions").where({ id: msgIdNum }).first()
+          : null;
+
+        if (existing) {
+          await trx("permissions").where({ id: msgIdNum }).update(insertData);
+          insertedPermission = await trx("permissions").where({ id: msgIdNum }).first();
         } else {
-          throw insertError;
+          try {
+            const q = trx("permissions").insert(insertData);
+            if (hasValidMsgId) {
+              [insertedPermission] = await q.onConflict("id").merge(insertData).returning("*");
+            } else {
+              insertedPermission = await insertPermissionsWithSequenceHeal(trx, insertData);
+            }
+          } catch (insertError: any) {
+            if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
+              this.logger.warn(
+                `[handleCreateRootPermission] expire_soon column error detected, clearing cache and retrying without expire_soon`
+              );
+              this.permissionsColumnExistsCache = null;
+              delete insertData.expire_soon;
+              const q = trx("permissions").insert(insertData);
+              if (hasValidMsgId) {
+                [insertedPermission] = await q.onConflict("id").merge(insertData).returning("*");
+              } else {
+                insertedPermission = await insertPermissionsWithSequenceHeal(trx, insertData);
+              }
+            } else {
+              throw insertError;
+            }
+          }
         }
-      }
+      });
 
       if (!insertedPermission) {
         this.logger.error(
@@ -1566,20 +1840,28 @@ export default class PermIngestService extends Service {
     }
   }
 
-  private async handleCreatePermission(msg: MsgCreatePermission & { height?: number }) {
+  private async handleCreatePermission(msg: MsgSelfCreatePermission & { height?: number }) {
     try {
       this.logger.info(`🔐 handleCreatePermission called with msg:`, JSON.stringify(msg, null, 2));
-      const schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
+      let schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
+      const explicitValidatorPermId = (msg as any).validatorPermId ?? (msg as any).validator_perm_id ?? null;
+      let validatorPermFromMessage: any = null;
+      if (!schemaId && explicitValidatorPermId) {
+        validatorPermFromMessage = await knex("permissions")
+          .where({ id: explicitValidatorPermId })
+          .first();
+        schemaId = validatorPermFromMessage?.schema_id ?? null;
+      }
       this.logger.info(`🔐 Extracted schemaId: ${schemaId}`);
       if (!schemaId) {
         this.logger.warn(
-          "Missing schema_id in MsgCreatePermission, skipping insert. Msg keys:", Object.keys(msg)
+          "Missing schema_id and could not infer it from validator_perm_id in MsgSelfCreatePermission, skipping insert. Msg keys:", Object.keys(msg)
         );
         return;
 
       }
 
-      const type = mapPermissionType((msg as any).type);
+      const type = extractPermissionType(msg as any, (msg as any).type);
 
       const ecosystemPerm = await knex("permissions")
         .where({ schema_id: schemaId, type: "ECOSYSTEM" })
@@ -1593,8 +1875,10 @@ export default class PermIngestService extends Service {
 
       const creator = requireController(msg, `PERM CREATE ${schemaId}`);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
-      const effectiveFrom = msg.effective_from ? formatTimestamp(msg.effective_from) : null;
-      const effectiveUntil = msg.effective_until ? formatTimestamp(msg.effective_until) : null;
+      const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
+      const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
+      const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
+      const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
       const height = Number((msg as any)?.height) || 0;
 
       // Calculate expire_soon for the new permission
@@ -1612,50 +1896,89 @@ export default class PermIngestService extends Service {
 
       this.logger.info(`[handleCreatePermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
+
       const insertData: any = {
         schema_id: schemaId,
         type,
         vp_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
-        grantee: creator,
-        created_by: creator,
+        corporation: creator,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
-        country: msg.country ?? null,
-        verification_fees: Number((msg as any).verification_fees ?? 0),
-        validation_fees: 0,
-        issuance_fees: 0,
+        verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
+        validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
+        issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
         deposit: 0,
-        validator_perm_id: ecosystemPerm?.id ?? null,
+        validator_perm_id: explicitValidatorPermId ?? ecosystemPerm?.id ?? null,
+        vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
+        vs_operator_authz_enabled: pickMessageBool(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled", false),
+        vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit")
+        ),
+        vs_operator_authz_with_feegrant: pickMessageBool(
+          msg as any,
+          "vs_operator_authz_with_feegrant",
+          "vsOperatorAuthzWithFeegrant",
+          false
+        ),
+        vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit")
+        ),
+        vs_operator_authz_spend_period: pickMessageValue(msg as any, "vs_operator_authz_spend_period", "vsOperatorAuthzSpendPeriod") ?? null,
         modified: timestamp,
         created: timestamp,
       };
+
+      if (hasValidMsgId) {
+        insertData.id = msgIdNum;
+      }
 
       if (hasExpireSoonColumn) {
         insertData.expire_soon = expireSoon;
         this.logger.info(`[handleCreatePermission] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleCreatePermission] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
+        this.logger.warn(`[handleCreatePermission] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
-      let permission;
-      try {
-        [permission] = await knex("permissions")
-          .insert(insertData)
-          .returning("*");
-      } catch (insertError: any) {
-        // If error is about missing column, clear cache and retry without expire_soon
-        if (insertError?.code === '42703' && insertError?.message?.includes('expire_soon')) {
-          this.logger.warn(`[handleCreatePermission] expire_soon column error detected, clearing cache and retrying without expire_soon`);
-          this.permissionsColumnExistsCache = null;
-          delete insertData.expire_soon;
-          [permission] = await knex("permissions")
-            .insert(insertData)
-            .returning("*");
+      let permission: any = null;
+      await this.ensurePermV4Columns(knex);
+      await knex.transaction(async (trx) => {
+        const existing = hasValidMsgId
+          ? await trx("permissions").where({ id: msgIdNum }).first()
+          : null;
+
+        if (existing) {
+          await trx("permissions").where({ id: msgIdNum }).update(insertData);
+          permission = await trx("permissions").where({ id: msgIdNum }).first();
         } else {
-          throw insertError;
+          try {
+            const q = trx("permissions").insert(insertData);
+            if (hasValidMsgId) {
+              [permission] = await q.onConflict("id").merge(insertData).returning("*");
+            } else {
+              permission = await insertPermissionsWithSequenceHeal(trx, insertData);
+            }
+          } catch (insertError: any) {
+            if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
+              this.logger.warn(
+                `[handleCreatePermission] expire_soon column error detected, clearing cache and retrying without expire_soon`
+              );
+              this.permissionsColumnExistsCache = null;
+              delete insertData.expire_soon;
+              const q = trx("permissions").insert(insertData);
+              if (hasValidMsgId) {
+                [permission] = await q.onConflict("id").merge(insertData).returning("*");
+              } else {
+                permission = await insertPermissionsWithSequenceHeal(trx, insertData);
+              }
+            } else {
+              throw insertError;
+            }
+          }
         }
-      }
+      });
 
       if (!permission) {
         this.logger.error(
@@ -1696,160 +2019,6 @@ export default class PermIngestService extends Service {
 
     }
   }
-  private async handleExtendPermission(msg: MsgExtendPermission & { height?: number }) {
-    try {
-      if (!msg.id || !msg.effective_until) {
-        this.logger.warn("Missing mandatory parameter: id or effective_until");
-        return { success: false, reason: "Missing mandatory parameter" };
-      }
-
-      const idNum = Number(msg.id);
-      if (!Number.isInteger(idNum) || idNum <= 0) {
-        this.logger.warn(`Invalid id: ${msg.id}. Must be a valid uint64.`);
-        return { success: false, reason: "Invalid permission ID" };
-      }
-
-      const newEffectiveUntil = new Date(msg.effective_until);
-      if (Number.isNaN(newEffectiveUntil.getTime())) {
-        this.logger.warn(
-          `Invalid effective_until timestamp: ${msg.effective_until}`
-        );
-        return { success: false, reason: "Invalid effective_until timestamp" };
-      }
-
-      const applicantPerm = await knex("permissions")
-        .where({ id: msg.id })
-        .first();
-      if (!applicantPerm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
-      }
-
-      const currentEffectiveUntil = applicantPerm.effective_until
-        ? new Date(applicantPerm.effective_until)
-        : null;
-
-      if (currentEffectiveUntil && newEffectiveUntil <= currentEffectiveUntil) {
-        this.logger.warn(
-          `New effective_until ${newEffectiveUntil.toISOString()} must be greater than current ${currentEffectiveUntil.toISOString()}`
-        );
-        return {
-          success: false,
-          reason: "effective_until must be greater than current",
-        };
-      }
-
-      const caller = msg.creator;
-
-      if (
-        !applicantPerm.validator_perm_id &&
-        applicantPerm.type === "ECOSYSTEM"
-      ) {
-        if (caller !== applicantPerm.grantee) {
-          this.logger.warn("Only grantee can extend ECOSYSTEM permission");
-          return { success: false, reason: "Unauthorized caller" };
-        }
-      } else if (applicantPerm.validator_perm_id) {
-        const validatorPerm = await knex("permissions")
-          .where({ id: applicantPerm.validator_perm_id })
-          .first();
-
-        if (!validatorPerm) {
-          this.logger.warn(
-            `Validator permission ${applicantPerm.validator_perm_id} not found`
-          );
-          return { success: false, reason: "Validator permission not found" };
-        }
-
-        if (validatorPerm.type !== "ECOSYSTEM") {
-          this.logger.warn("Validator permission must be of type ECOSYSTEM");
-          return {
-            success: false,
-            reason: "Invalid validator permission type",
-          };
-        }
-
-        if (caller !== applicantPerm.grantee) {
-          this.logger.warn("Only grantee can extend self-created permission");
-          return { success: false, reason: "Unauthorized caller" };
-        }
-      } else {
-        this.logger.warn("Invalid permission structure");
-        return { success: false, reason: "Invalid permission structure" };
-      }
-
-      const now = formatTimestamp(msg.timestamp);
-      const height = Number((msg as any)?.height) || 0;
-      await knex.transaction(async (trx) => {
-        // Calculate expire_soon for the updated permission
-        const updatedPermData = {
-          ...applicantPerm,
-          effective_until: newEffectiveUntil.toISOString(),
-        };
-        const expireSoon = await this.calculateExpireSoon(updatedPermData, new Date(now), height);
-        const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
-
-        const updateData: any = {
-          effective_until: newEffectiveUntil.toISOString(),
-          extended: now,
-          modified: now,
-          extended_by: caller,
-        };
-
-        if (hasExpireSoonColumn) {
-          updateData.expire_soon = expireSoon;
-        }
-
-        const [updated] = await trx("permissions")
-          .where({ id: msg.id })
-          .update(updateData)
-          .returning("*");
-
-        if (!updated) {
-          this.logger.error(
-            `CRITICAL: Failed to extend permission ${msg.id} - update returned no record`
-          );
-
-        }
-
-        try {
-          await this.updateWeight(trx, Number(msg.id));
-          await this.updateParticipants(trx, Number(msg.id));
-        } catch (participantsErr: any) {
-          this.logger.warn(`Failed to update weight/participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
-        }
-
-        try {
-          await recordPermissionHistory(
-            trx,
-            updated,
-            "EXTEND_PERMISSION",
-            height,
-            applicantPerm
-          );
-        } catch (historyErr: any) {
-          this.logger.error(
-            "CRITICAL: Failed to record permission history for extend:",
-            historyErr
-          );
-
-        }
-      });
-
-      await this.refreshTrustRegistryStatsBySchemaId(applicantPerm?.schema_id, height);
-
-      this.logger.info(
-        `✅ Permission ${msg.id
-        } extended until ${newEffectiveUntil.toISOString()} by ${caller}`
-      );
-
-      return { success: true };
-    } catch (err: any) {
-      this.logger.error("CRITICAL: Error in handleExtendPermission:", err);
-      console.error("FATAL PERM EXTEND ERROR:", err);
-      return { success: false, reason: "Internal error extending permission" };
-    }
-  }
 
   private async handleRevokePermission(msg: MsgRevokePermission & { height?: number }) {
     try {
@@ -1867,7 +2036,7 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not found" };
       }
 
-      const caller = msg.creator;
+      const caller = extractController(msg as unknown as Record<string, unknown>);
 
       let authorized = false;
       if (applicantPerm.validator_perm_id) {
@@ -1877,7 +2046,7 @@ export default class PermIngestService extends Service {
             .where({ id: validatorPermId })
             .first();
           if (!validatorPerm) break;
-          if (validatorPerm.grantee === caller) {
+          if (validatorPerm.corporation === caller) {
             authorized = true;
             break;
           }
@@ -1893,14 +2062,14 @@ export default class PermIngestService extends Service {
           const tr = await knex("trust_registry")
             .where({ id: cs.tr_id })
             .first();
-          if (tr?.controller === caller) {
+          if (tr?.corporation === caller) {
             authorized = true;
           }
         }
       }
 
       if (!authorized) {
-        if (applicantPerm.grantee === caller) {
+        if (applicantPerm.corporation === caller) {
           authorized = true;
         }
       }
@@ -1917,7 +2086,6 @@ export default class PermIngestService extends Service {
 
         const updateData: any = {
           revoked: now,
-          revoked_by: caller,
           modified: now,
         };
 
@@ -1975,16 +2143,17 @@ export default class PermIngestService extends Service {
 
   private async handleStartPermissionVP(msg: MsgStartPermissionVP & { height?: number }) {
     try {
-      const typeStr = getPermissionTypeString(msg);
+      const typeStr = extractPermissionType(msg as any, getPermissionTypeString(msg));
       const now = formatTimestamp(msg.timestamp);
+      const validatorPermId = (msg as any).validatorPermId ?? (msg as any).validator_perm_id;
 
       const perm = await knex("permissions")
-        .where({ id: msg.validator_perm_id })
+        .where({ id: validatorPermId })
         .first();
 
       if (!perm) {
         this.logger.warn(
-          `Permission ${msg.validator_perm_id} not found, skipping VP start`
+          `Permission ${validatorPermId} not found, skipping VP start`
         );
         return;
       }
@@ -2018,9 +2187,11 @@ export default class PermIngestService extends Service {
             : 0;
       }
 
-      const creator = requireController(msg, `PERM START_VP ${msg.validator_perm_id}`);
-      const effectiveFrom = msg.effective_from ? formatTimestamp(msg.effective_from) : null;
-      const effectiveUntil = msg.effective_until ? formatTimestamp(msg.effective_until) : null;
+      const creator = requireController(msg, `PERM START_VP ${validatorPermId}`);
+      const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
+      const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
+      const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
+      const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
       const height = Number((msg as any)?.height) || 0;
 
       // Calculate expire_soon for the new permission (PENDING state means not active, so null)
@@ -2036,51 +2207,84 @@ export default class PermIngestService extends Service {
       const expireSoon = await this.calculateExpireSoon(newPermData, new Date(now), height);
       const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
 
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
+
       const Entry: any = {
         schema_id: perm?.schema_id,
         type: typeStr,
         did: msg.did,
-        grantee: creator,
-        created_by: creator,
+        corporation: creator,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
-        country: msg.country ?? null,
-        verification_fees: Number((msg as any).verification_fees ?? 0),
-        validation_fees: 0, 
-        issuance_fees: 0, 
+        verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
+        validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
+        issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
         deposit: Number(validationTDDenom),
         vp_current_deposit: Number(validationTDDenom),
         vp_current_fees: Number(validationFeesDenom), 
-        validator_perm_id: msg.validator_perm_id,
+        validator_perm_id: validatorPermId,
         vp_state: "PENDING",
         vp_last_state_change: now,
         vp_validator_deposit: 0, 
-        vp_summary_digest_sri: null,
-        vp_term_requested: null,
+        vp_summary_digest: null,
+        vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
+        vs_operator_authz_enabled: pickMessageBool(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled", false),
+        vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_spend_limit", "vsOperatorAuthzSpendLimit")
+        ),
+        vs_operator_authz_with_feegrant: pickMessageBool(
+          msg as any,
+          "vs_operator_authz_with_feegrant",
+          "vsOperatorAuthzWithFeegrant",
+          false
+        ),
+        vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
+          pickMessageValue(msg as any, "vs_operator_authz_fee_spend_limit", "vsOperatorAuthzFeeSpendLimit")
+        ),
+        vs_operator_authz_spend_period: pickMessageValue(msg as any, "vs_operator_authz_spend_period", "vsOperatorAuthzSpendPeriod") ?? null,
         modified: now,
         created: now, 
       };
+
+      if (hasValidMsgId) {
+        Entry.id = msgIdNum;
+      }
 
       if (hasExpireSoonColumn) {
         Entry.expire_soon = expireSoon;
         this.logger.info(`[handleStartPermissionVP] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleStartPermissionVP] expire_soon column does not exist, skipping. Run migration 20260128000000_add_permission_expire_soon.ts`);
+        this.logger.warn(`[handleStartPermissionVP] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
-      let newPermission;
-      try {
-        [newPermission] = await knex("permissions").insert(Entry).returning("*");
-      } catch (insertError: any) {
-        if (insertError?.code === '42703' && insertError?.message?.includes('expire_soon')) {
-          this.logger.warn(`[handleStartPermissionVP] expire_soon column error detected, clearing cache and retrying without expire_soon`);
-          this.permissionsColumnExistsCache = null;
-          delete Entry.expire_soon;
-          [newPermission] = await knex("permissions").insert(Entry).returning("*");
-        } else {
-          throw insertError;
+      await this.ensurePermV4Columns(knex);
+
+      let newPermission: any = null;
+      await knex.transaction(async (trx) => {
+        const existing = hasValidMsgId ? await trx("permissions").where({ id: msgIdNum }).first() : null;
+
+        if (existing) {
+          await trx("permissions").where({ id: msgIdNum }).update(Entry);
+          newPermission = await trx("permissions").where({ id: msgIdNum }).first();
+          return;
         }
-      }
+
+        try {
+          [newPermission] = await trx("permissions").insert(Entry).returning("*");
+        } catch (insertError: any) {
+          if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
+            this.logger.warn(
+              `[handleStartPermissionVP] expire_soon column error detected, clearing cache and retrying without expire_soon`
+            );
+            this.permissionsColumnExistsCache = null;
+            delete Entry.expire_soon;
+            [newPermission] = await trx("permissions").insert(Entry).returning("*");
+          } else {
+            throw insertError;
+          }
+        }
+      });
 
       if (!newPermission) {
         this.logger.error(
@@ -2228,11 +2432,6 @@ export default class PermIngestService extends Service {
 
       const isFirstValidation = !perm.effective_from;
 
-      if (msg.country && msg.country.length !== 2) {
-        this.logger.warn(`Invalid country code: ${msg.country}`);
-        return { success: false, reason: "Invalid country code" };
-      }
-
       if (
         msg.validation_fees < 0 ||
         msg.issuance_fees < 0 ||
@@ -2319,8 +2518,7 @@ export default class PermIngestService extends Service {
         vp_current_fees: 0,
         vp_current_deposit: 0,
         vp_validator_deposit: Number(newVpValidatorDeposit),
-        vp_summary_digest_sri:
-          msg.vp_summary_digest_sri ?? perm.vp_summary_digest_sri ?? null,
+        vp_summary_digest: msg.vp_summary_digest ?? perm.vp_summary_digest ?? null,
         vp_exp: vpExp,
         effective_until: effectiveUntil,
         modified: now,
@@ -2334,7 +2532,6 @@ export default class PermIngestService extends Service {
         entry.validation_fees = Number(msg.validation_fees ?? 0);
         entry.issuance_fees = Number(msg.issuance_fees ?? 0);
         entry.verification_fees = Number(msg.verification_fees ?? 0);
-        entry.country = msg.country ?? null;
         entry.effective_from = now;
         if ((msg as any).issuance_fee_discount !== undefined) {
           entry.issuance_fee_discount = Number((msg as any).issuance_fee_discount ?? 0);
@@ -2358,13 +2555,11 @@ export default class PermIngestService extends Service {
           (msg.verification_fees &&
             msg.verification_fees !== perm.verification_fees);
 
-        const countryChanged = msg.country && msg.country !== perm.country;
-
-        if (feesChanged || countryChanged) {
-          this.logger.warn("Cannot change fees or country during renewal");
+        if (feesChanged) {
+          this.logger.warn("Cannot change fees during renewal");
           return {
             success: false,
-            reason: "Cannot change fees/country on renewal",
+            reason: "Cannot change fees on renewal",
           };
         }
 
@@ -2433,13 +2628,14 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not found" };
       }
 
+      const caller = extractController(msg as unknown as Record<string, unknown>);
       if (
-        msg.creator &&
-        applicantPerm.grantee &&
-        msg.creator !== applicantPerm.grantee
+        caller &&
+        applicantPerm.corporation &&
+        caller !== applicantPerm.corporation
       ) {
-        this.logger.warn(`Caller ${msg.creator} is not the permission grantee`);
-        return { success: false, reason: "Caller is not grantee" };
+        this.logger.warn(`Caller ${caller} is not the permission corporation`);
+        return { success: false, reason: "Caller is not corporation" };
       }
 
       const validatorPerm = await knex("permissions")
@@ -2569,15 +2765,17 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Permission not pending" };
       }
 
-      if (msg.creator && perm.grantee && msg.creator !== perm.grantee) {
-        this.logger.warn(`Creator ${msg.creator} is not permission grantee`);
-        return { success: false, reason: "Creator is not grantee" };
+      const caller = extractController(msg as unknown as Record<string, unknown>);
+      if (caller && perm.corporation && caller !== perm.corporation) {
+        this.logger.warn(`Creator ${caller} is not permission corporation`);
+        return { success: false, reason: "Creator is not corporation" };
       }
 
-      const newVpState = perm.vp_exp ? "VALIDATED" : "TERMINATED";
+      // v4-draft13 removed TERMINATED; treat "no vp_exp" as validated-without-exp for legacy rows.
+      const newVpState = "VALIDATED";
 
       const vpValidatorDeposit =
-        newVpState === "TERMINATED" ? "0" : perm.vp_validator_deposit;
+        perm.vp_validator_deposit;
 
       // Calculate expire_soon for the updated permission
       const updatedPermData = {
@@ -2653,7 +2851,8 @@ export default class PermIngestService extends Service {
     msg: MsgSlashPermissionTrustDeposit & { height?: number }
   ) {
     try {
-      if (!msg.id || msg.amount == null) {
+      const slashAmount = (msg as any).amount ?? (msg as any).deposit;
+      if (!msg.id || slashAmount == null) {
         this.logger.warn("Missing mandatory parameter: id or amount");
         return { success: false, reason: "Missing mandatory parameter" };
       }
@@ -2664,9 +2863,9 @@ export default class PermIngestService extends Service {
         return { success: false, reason: "Invalid permission ID" };
       }
 
-      const amountNum = Number(msg.amount);
+      const amountNum = Number(slashAmount);
       if (Number.isNaN(amountNum) || amountNum <= 0) {
-        this.logger.warn(`Invalid amount: ${msg.amount}`);
+        this.logger.warn(`Invalid amount: ${slashAmount}`);
         return { success: false, reason: "Invalid amount" };
       }
 
@@ -2685,14 +2884,14 @@ export default class PermIngestService extends Service {
       }
 
       let isAuthorized = false;
-      const caller = msg.creator;
+      const caller = extractController(msg as unknown as Record<string, unknown>);
 
       let validatorPerm = perm;
       while (validatorPerm && validatorPerm.validator_perm_id) {
         validatorPerm = await knex("permissions")
           .where({ id: validatorPerm.validator_perm_id })
           .first();
-        if (validatorPerm && validatorPerm.grantee === caller) {
+        if (validatorPerm && validatorPerm.corporation === caller) {
           isAuthorized = true;
           break;
         }
@@ -2706,7 +2905,7 @@ export default class PermIngestService extends Service {
           const tr = await knex("trust_registry")
             .where({ id: schema.tr_id })
             .first();
-          if (tr && tr.controller === caller) {
+          if (tr && tr.corporation === caller) {
             isAuthorized = true;
           }
         }
@@ -2753,17 +2952,17 @@ export default class PermIngestService extends Service {
             classificationReason = `TR ${schema.tr_id} not found`;
             trController = null;
           } else {
-            trController = tr.controller || null;
+            trController = tr.corporation || null;
             if (!trController) {
-              this.logger.warn(`[Slash] Permission ${msg.id} TR ${schema.tr_id} exists but has no controller field`);
-              classificationReason = `TR ${schema.tr_id} has no controller`;
-            } else if (tr.controller === caller) {
+              this.logger.warn(`[Slash] Permission ${msg.id} TR ${schema.tr_id} exists but has no corporation field`);
+              classificationReason = `TR ${schema.tr_id} has no corporation`;
+            } else if (tr.corporation === caller) {
               isEcosystemSlash = true;
-              classificationReason = `Slashed by TR controller ${caller}`;
-              this.logger.info(`[Slash] Permission ${msg.id} slashed by TR controller ${caller} - marking as ecosystem slash`);
+              classificationReason = `Slashed by TR corporation ${caller}`;
+              this.logger.info(`[Slash] Permission ${msg.id} slashed by TR corporation ${caller} - marking as ecosystem slash`);
             } else {
-              this.logger.warn(`[Slash] Permission ${msg.id} slashed by ${caller} but TR controller is ${tr.controller} - no slash type determined`);
-              classificationReason = `Caller ${caller} != TR controller ${tr.controller}`;
+              this.logger.warn(`[Slash] Permission ${msg.id} slashed by ${caller} but TR corporation is ${tr.corporation} - no slash type determined`);
+              classificationReason = `Caller ${caller} != TR corporation ${tr.corporation}`;
             }
           }
         }
@@ -2793,7 +2992,6 @@ export default class PermIngestService extends Service {
 
         const updateData: any = {
           slashed: now,
-          slashed_by: caller,
           slashed_deposit: Number(prevSlashed + amountNum),
           deposit: Number(newDeposit),
           modified: now,
@@ -2865,12 +3063,12 @@ export default class PermIngestService extends Service {
 
       try {
         const schema = await knex("permissions").where({ id: msg.id }).first();
-        const account = schema?.grantee;
-        if (account) {
+        const corporation = schema?.corporation;
+        if (corporation) {
           await (this as any).broker.call(
             `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_perm_trust_deposit`,
             {
-              account,
+              corporation,
               amount: String(amountNum),
               ts: now,
             }
@@ -2962,10 +3160,12 @@ export default class PermIngestService extends Service {
       let trController: string | null = null;
       let classificationReason = '';
 
+      const repayer = extractController(msg as unknown as Record<string, unknown>);
+
       if (isEcosystemPermission) {
         isEcosystemSlash = true;
-        classificationReason = 'ECOSYSTEM permission type';
-      } else if (perm.slashed_by && perm.schema_id) {
+        classificationReason = "ECOSYSTEM permission type";
+      } else if (perm.schema_id) {
         const schema = await knex("credential_schemas")
           .where({ id: perm.schema_id })
           .first();
@@ -2986,30 +3186,35 @@ export default class PermIngestService extends Service {
             classificationReason = `TR ${schema.tr_id} not found`;
             trController = null;
           } else {
-            trController = tr.controller || null;
+            trController = tr.corporation || null;
             if (!trController) {
-              this.logger.warn(`[Repay] Permission ${msg.id} TR ${schema.tr_id} has no controller`);
-              classificationReason = `TR ${schema.tr_id} has no controller`;
-            } else if (tr.controller === perm.slashed_by) {
+              this.logger.warn(`[Repay] Permission ${msg.id} TR ${schema.tr_id} has no corporation`);
+              classificationReason = `TR ${schema.tr_id} has no corporation`;
+            } else if (repayer && tr.corporation === repayer) {
               isEcosystemSlash = true;
-              classificationReason = `Slashed by TR controller ${perm.slashed_by}`;
+              classificationReason = `Repay by TR corporation ${repayer}`;
             } else {
-              classificationReason = `Slashed by ${perm.slashed_by} != TR controller ${tr.controller}`;
+              classificationReason = `Repayer ${repayer || "unknown"} != TR corporation ${tr.corporation}`;
             }
           }
         }
       } else {
-        classificationReason = perm.slashed_by ? 'No schema_id' : 'No slashed_by';
+        classificationReason = "No schema_id";
       }
 
       if (!isEcosystemSlash && !isNetworkSlash) {
-        this.logger.error(`[Repay] CRITICAL: Could not classify repay for permission ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${perm.schema_id || 'N/A'}, Type: ${perm.type}, Slashed by: ${perm.slashed_by || 'N/A'}, TR Controller: ${trController || 'N/A'}`);
+        this.logger.error(
+          `[Repay] CRITICAL: Could not classify repay for permission ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${perm.schema_id || "N/A"}, Type: ${perm.type}, TR corporation: ${trController || "N/A"}`
+        );
       }
 
       await knex.transaction(async (trx) => {
-        const creator = requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
+        requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
         const currentDeposit = BigInt(perm.deposit || "0");
-        const repaidAmount = BigInt(slashedDeposit);
+        const requestedRepayAmount = (msg as any).amount ?? (msg as any).deposit;
+        const repaidAmount = requestedRepayAmount == null
+          ? BigInt(slashedDeposit)
+          : BigInt(String(requestedRepayAmount));
         const newDeposit = currentDeposit + repaidAmount;
 
         // Calculate expire_soon for repaid permission (may become active again)
@@ -3023,8 +3228,7 @@ export default class PermIngestService extends Service {
 
         const updateData: any = {
           repaid: now,
-          repaid_by: creator,
-          repaid_deposit: Number(slashedDeposit),
+          repaid_deposit: Number(repaidAmount),
           deposit: Number(newDeposit),
           modified: now,
         };
@@ -3053,7 +3257,7 @@ export default class PermIngestService extends Service {
             isEcosystemSlash,
             isNetworkSlash,
             0, // No new slash, just repayment
-            Number(slashedDeposit)
+            Number(repaidAmount)
           );
         } catch (statsErr: any) {
           this.logger.warn(`Failed to update slash statistics for repay: ${statsErr?.message || statsErr}`);
@@ -3119,7 +3323,7 @@ export default class PermIngestService extends Service {
       }
 
       this.logger.info(
-        `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${msg.creator}`
+        `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${repayer}`
       );
 
       return { success: true };
@@ -3629,38 +3833,55 @@ export default class PermIngestService extends Service {
         );
       }
 
+      const parseSessionRecordsLocal = (row: any): any[] => {
+        const raw = row?.session_records ?? row?.authz;
+        try {
+          if (typeof raw === "string") return JSON.parse(raw || "[]");
+          if (Array.isArray(raw)) return raw;
+        } catch {
+          /* ignore */
+        }
+        return [];
+      };
+
       const existing = await trx("permission_sessions")
         .where({ id: msg.id })
         .first();
       const previousSession = existing
         ? {
-          ...existing,
-          authz: parseJson(existing.authz),
-        }
+            ...existing,
+            session_records: parseSessionRecordsLocal(existing),
+          }
         : undefined;
-      const authzEntry = {
+
+      const recordEntry = {
+        created: now,
         issuer_perm_id: issuerPermId || null,
         verifier_perm_id: verifierPermId || null,
         wallet_agent_perm_id: walletAgentPermId,
       };
+
+      const vsOp =
+        (msg as any).vs_operator ?? (msg as any).vsOperator ?? (msg as any).operator ?? existing?.vs_operator ?? null;
 
       if (!existing) {
         const creator = requireController(msg, `PERM SESSION ${msg.id}`);
         const [session] = await trx("permission_sessions")
           .insert({
             id: msg.id,
-            controller: creator,
+            corporation: creator,
+            vs_operator: vsOp,
             agent_perm_id: agentPermId,
             wallet_agent_perm_id: walletAgentPermId,
-            authz: JSON.stringify([authzEntry]),
+            session_records: JSON.stringify([recordEntry]),
             created: now,
             modified: now,
           })
           .returning("*");
 
         const normalizedSession =
-          typeof session.authz === "string"
-            ? { ...session, authz: parseJson(session.authz) }
+          typeof session.session_records === "string"
+            ? { ...session, session_records: parseJson(session.session_records) }
             : session;
 
         await recordPermissionSessionHistory(
@@ -3695,26 +3916,21 @@ export default class PermIngestService extends Service {
           }
         }
       } else {
-        let existingAuthz: any[] = [];
-        try {
-          existingAuthz = JSON.parse(existing.authz || "[]");
-        } catch {
-          existingAuthz = [];
-        }
-
-        existingAuthz.push(authzEntry);
+        const existingRecords = parseSessionRecordsLocal(existing);
+        existingRecords.push(recordEntry);
 
         const [session] = await trx("permission_sessions")
           .where({ id: msg.id })
           .update({
-            authz: JSON.stringify(existingAuthz),
+            session_records: JSON.stringify(existingRecords),
+            vs_operator: vsOp,
             modified: now,
           })
           .returning("*");
 
         const normalizedSession =
-          typeof session.authz === "string"
-            ? { ...session, authz: parseJson(session.authz) }
+          typeof session.session_records === "string"
+            ? { ...session, session_records: parseJson(session.session_records) }
             : session;
 
         await recordPermissionSessionHistory(
@@ -3725,19 +3941,19 @@ export default class PermIngestService extends Service {
           previousSession
         );
 
-        const previousAuthz = previousSession?.authz || [];
+        const previousRecords = previousSession?.session_records || [];
         const previousIssuerPermIds = new Set(
-          previousAuthz.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
+          previousRecords.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
         );
         const previousVerifierPermIds = new Set(
-          previousAuthz.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
+          previousRecords.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
         );
 
         const newIssuerPermIds = new Set(
-          existingAuthz.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
+          existingRecords.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
         );
         const newVerifierPermIds = new Set(
-          existingAuthz.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
+          existingRecords.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
         );
 
         for (const issuerId of newIssuerPermIds) {

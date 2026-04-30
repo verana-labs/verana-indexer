@@ -10,6 +10,10 @@ import { MessageProcessorBase } from "../../common/utils/message_processor_base"
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import { runHeightSyncPerm } from "../../modules/perm-height-sync/perm_height_sync_service";
 import type { PermissionMessagePayload } from "../../modules/perm-height-sync/perm_height_sync_helpers";
+import {
+  extractImpactedPermissionIds,
+  extractStartPermissionVpNewPermissionId,
+} from "../../modules/perm-height-sync/perm_height_sync_helpers";
 
 
 @Service({
@@ -56,9 +60,9 @@ export default class PermProcessorService extends BullableService {
       const priority = (type: string | undefined) => {
         switch (type) {
           case VeranaPermissionMessageTypes.CreateRootPermission:
-          case VeranaPermissionMessageTypes.CreatePermission:
+          case VeranaPermissionMessageTypes.SelfCreatePermission:
             return 1;
-          case VeranaPermissionMessageTypes.ExtendPermission:
+          case VeranaPermissionMessageTypes.AdjustPermission:
           case VeranaPermissionMessageTypes.RevokePermission:
             return 2;
           case VeranaPermissionMessageTypes.StartPermissionVP:
@@ -86,8 +90,16 @@ export default class PermProcessorService extends BullableService {
         this.logger.info(` Processing Permission message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`);
         const useHeightSyncPerm = process.env.USE_HEIGHT_SYNC_PERM !== "false";
         if (useHeightSyncPerm) {
-          await runHeightSyncPerm(this.broker, [msg]);
-          continue;
+          const res = await runHeightSyncPerm(this.broker, [msg]);
+          const synced = (res as any)?.synced;
+          const attempted = (res as any)?.attempted;
+
+          if (typeof synced === "number" && synced > 0) {
+            continue;
+          }
+          this.logger.warn(
+            `[perm] Height-sync enabled but synced 0/${typeof attempted === "number" ? attempted : "?"}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? "unknown"}`
+          );
         }
 
         const payload = {
@@ -97,6 +109,29 @@ export default class PermProcessorService extends BullableService {
         };
         delete payload["@type"];
 
+       
+        if (
+          (msg.type === VeranaPermissionMessageTypes.CreateRootPermission
+            || msg.type === VeranaPermissionMessageTypes.SelfCreatePermission)
+          && (payload as any)?.id == null
+        ) {
+          const impacted = extractImpactedPermissionIds(msg as PermissionMessagePayload);
+          if (impacted.length === 1) {
+            (payload as any).id = impacted[0];
+          }
+        }
+        if (
+          msg.type === VeranaPermissionMessageTypes.StartPermissionVP
+          && (payload as any)?.id == null
+        ) {
+          const vpNewId = extractStartPermissionVpNewPermissionId(
+            msg as PermissionMessagePayload
+          );
+          if (vpNewId != null) {
+            (payload as any).id = vpNewId;
+          }
+        }
+
         let result: any;
         switch (msg.type) {
           case VeranaPermissionMessageTypes.CreateRootPermission:
@@ -104,13 +139,13 @@ export default class PermProcessorService extends BullableService {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.CreatePermission:
-            result = await this.broker.call("permIngest.handleMsgCreatePermission", {
+          case VeranaPermissionMessageTypes.SelfCreatePermission:
+            result = await this.broker.call("permIngest.handleMsgSelfCreatePermission", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.ExtendPermission:
-            result = await this.broker.call("permIngest.handleMsgExtendPermission", {
+          case VeranaPermissionMessageTypes.AdjustPermission:
+            result = await this.broker.call("permIngest.handleMsgAdjustPermission", {
               data: payload,
             });
             break;
@@ -186,12 +221,12 @@ export default class PermProcessorService extends BullableService {
 
   @Action({ name: "getPermission" })
   async getPermission(
-    ctx: Context<{ schema_id: number; grantee: string; type: string }>
+    ctx: Context<{ schema_id: number; corporation: string; type: string }>
   ) {
-    const { schema_id: schemaId, grantee, type } = ctx.params;
+    const { schema_id: schemaId, corporation, type } = ctx.params;
     const permission = await this.broker.call("permIngest.getPermission", {
       schema_id: schemaId,
-      grantee,
+      corporation,
       type,
     });
     return permission;
@@ -199,12 +234,12 @@ export default class PermProcessorService extends BullableService {
 
   @Action({ name: "listPermissions" })
   async listPermissions(
-    ctx: Context<{ schema_id?: number; grantee?: string; type?: string }>
+    ctx: Context<{ schema_id?: number; corporation?: string; type?: string }>
   ) {
-    const { schema_id: schemaId, grantee, type } = ctx.params;
+    const { schema_id: schemaId, corporation, type } = ctx.params;
     const permissions = await this.broker.call("permIngest.listPermissions", {
       schema_id: schemaId,
-      grantee,
+      corporation,
       type,
     });
     return permissions;

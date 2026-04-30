@@ -9,6 +9,12 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger("entity_id").nullable();
 
     table.bigInteger("cumulative_participants").defaultTo(0).notNullable();
+    table.bigInteger("cumulative_participants_ecosystem").defaultTo(0).notNullable();
+    table.bigInteger("cumulative_participants_issuer_grantor").defaultTo(0).notNullable();
+    table.bigInteger("cumulative_participants_issuer").defaultTo(0).notNullable();
+    table.bigInteger("cumulative_participants_verifier_grantor").defaultTo(0).notNullable();
+    table.bigInteger("cumulative_participants_verifier").defaultTo(0).notNullable();
+    table.bigInteger("cumulative_participants_holder").defaultTo(0).notNullable();
     table.bigInteger("cumulative_active_schemas").defaultTo(0).notNullable();
     table.bigInteger("cumulative_archived_schemas").defaultTo(0).notNullable();
     table.specificType("cumulative_weight", "NUMERIC(38,0)").notNullable().defaultTo(0);
@@ -22,6 +28,12 @@ export async function up(knex: Knex): Promise<void> {
     table.specificType("cumulative_network_slashed_amount_repaid", "NUMERIC(38,0)").defaultTo(0).notNullable();
 
     table.bigInteger("delta_participants").defaultTo(0).notNullable();
+    table.bigInteger("delta_participants_ecosystem").defaultTo(0).notNullable();
+    table.bigInteger("delta_participants_issuer_grantor").defaultTo(0).notNullable();
+    table.bigInteger("delta_participants_issuer").defaultTo(0).notNullable();
+    table.bigInteger("delta_participants_verifier_grantor").defaultTo(0).notNullable();
+    table.bigInteger("delta_participants_verifier").defaultTo(0).notNullable();
+    table.bigInteger("delta_participants_holder").defaultTo(0).notNullable();
     table.bigInteger("delta_active_schemas").defaultTo(0).notNullable();
     table.bigInteger("delta_archived_schemas").defaultTo(0).notNullable();
     table.specificType("delta_weight", "NUMERIC(38,0)").defaultTo(0).notNullable();

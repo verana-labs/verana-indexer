@@ -4,14 +4,11 @@ import {
 } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import {
-  ModulesParamsNamesTypes,
-  SERVICE,
-} from "../../common";
+import { SERVICE } from "../../common";
 import { VeranaCredentialSchemaMessageTypes } from "../../common/verana-message-types";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
-import { getModeString } from "./cs_types";
+import { getHolderOnboardingModeString, getModeString } from "./cs_types";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import { enrichSchemaMessageWithEvent } from "./cs_payload_helper";
@@ -45,6 +42,24 @@ function getValidityPeriod(fieldName: string, content: Record<string, unknown> |
   return extractOptionalUInt32(value);
 }
 
+function extractNullableStringFromContent(
+  content: Record<string, unknown>,
+  snake: string,
+  camel: string
+): string | null {
+  const v = content[snake] ?? content[camel];
+  if (v == null || v === "") return null;
+  return String(v);
+}
+
+function extractHolderOnboardingMode(content: Record<string, unknown>): string | null {
+  const raw = content.holder_onboarding_mode ?? content.holderOnboardingMode;
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  const n = Number(raw);
+  if (Number.isFinite(n)) return getHolderOnboardingModeString(n);
+  return null;
+}
+
 interface CredentialSchemaMessage {
   tr_id: number;
   id: number;
@@ -57,43 +72,14 @@ interface CredentialSchemaMessage {
   issuer_validation_validity_period: number;
   verifier_validation_validity_period: number;
   holder_validation_validity_period: number;
-  issuer_perm_management_mode: string;
-  verifier_perm_management_mode: string;
+  issuer_onboarding_mode: string;
+  verifier_onboarding_mode: string;
   timestamp?: string;
   creator?: string;
   archive?: string;
   "@type"?: string;
   height?: number;
   [key: string]: unknown;
-}
-
-async function calculateDeposit(): Promise<number> {
-  const csParamsRow = await knex("module_params")
-    .where({ module: ModulesParamsNamesTypes?.CS })
-    .first();
-  const trParamsRow = await knex("module_params")
-    .where({ module: ModulesParamsNamesTypes?.TR })
-    .first();
-
-  if (!csParamsRow || !trParamsRow) {
-    return 0;
-  }
-
-  const csParams =
-    typeof csParamsRow.params === "string"
-      ? JSON.parse(csParamsRow.params)
-      : csParamsRow.params;
-  const trParams =
-    typeof trParamsRow.params === "string"
-      ? JSON.parse(trParamsRow.params)
-      : trParamsRow.params;
-
-  const credentialSchemaTrustDeposit = Number(
-    csParams?.params?.credential_schema_trust_deposit || 0
-  );
-  const trustUnitPrice = Number(trParams?.params?.trust_unit_price || 1);
-
-  return credentialSchemaTrustDeposit * trustUnitPrice;
 }
 
 @Service({
@@ -127,22 +113,27 @@ export default class ProcessCredentialSchemaService extends BullableService {
       return { success: false, message: "No credential schemas" };
     }
 
-    const deposit = await calculateDeposit();
-
     const processMessage = async (schemaMessageParams: CredentialSchemaMessage) => {
       const schemaMessage = enrichSchemaMessageWithEvent(
       schemaMessageParams,
       schemaMessageParams.txResponse
     );
       if (
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema ||
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchemaLegacy
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema
       ) {
-        await this.createSchema(ctx, schemaMessage, deposit);
+        await this.createSchema(ctx, schemaMessage);
       } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema) {
-        await this.updateSchema(ctx, schemaMessage, deposit);
+        await this.updateSchema(ctx, schemaMessage);
       } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema) {
         await this.archiveSchema(ctx, schemaMessage);
+      } else if (
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateSchemaAuthorizationPolicy ||
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.IncreaseActiveSchemaAuthorizationPolicyVersion ||
+        schemaMessage.type === VeranaCredentialSchemaMessageTypes.RevokeSchemaAuthorizationPolicy
+      ) {
+        this.logger.info(
+          `[CredentialSchema] Schema authorization policy message observed (${schemaMessage.type}); no local projection table is defined yet.`
+        );
       }
     };
 
@@ -160,8 +151,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
   }
   private async createSchema(
     ctx: Context,
-    schemaMessage: CredentialSchemaMessage,
-    deposit: number
+    schemaMessage: CredentialSchemaMessage
   ) {
     try {
       const timestamp = formatTimestamp(schemaMessage.timestamp);
@@ -177,7 +167,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
       const payload: Record<string, any> = {
         tr_id: trId,
         json_schema: jsonSchemaForDb,
-        deposit: deposit ?? 0,
         created: timestamp ?? null,
         modified: timestamp ?? null,
         archived: null,
@@ -192,11 +181,27 @@ export default class ProcessCredentialSchemaService extends BullableService {
           getValidityPeriod('verifier_validation_validity_period', content, schemaMessage),
         holder_validation_validity_period:
           getValidityPeriod('holder_validation_validity_period', content, schemaMessage),
-        issuer_perm_management_mode: getModeString(
-          Number(content.issuer_perm_management_mode ?? content.issuerPermManagementMode ?? 0)
+        issuer_onboarding_mode: getModeString(
+          Number(content.issuer_onboarding_mode ?? content.issuerOnboardingMode ?? 0)
         ),
-        verifier_perm_management_mode: getModeString(
-          Number(content.verifier_perm_management_mode ?? content.verifierPermManagementMode ?? 0)
+        verifier_onboarding_mode: getModeString(
+          Number(content.verifier_onboarding_mode ?? content.verifierOnboardingMode ?? 0)
+        ),
+        holder_onboarding_mode: extractHolderOnboardingMode(content as Record<string, unknown>),
+        pricing_asset_type: extractNullableStringFromContent(
+          content as Record<string, unknown>,
+          "pricing_asset_type",
+          "pricingAssetType"
+        ),
+        pricing_asset: extractNullableStringFromContent(
+          content as Record<string, unknown>,
+          "pricing_asset",
+          "pricingAsset"
+        ),
+        digest_algorithm: extractNullableStringFromContent(
+          content as Record<string, unknown>,
+          "digest_algorithm",
+          "digestAlgorithm"
         ),
         height: schemaMessage.height ?? 0,
         blockchainSchemaId: blockchainSchemaId,
@@ -228,14 +233,12 @@ export default class ProcessCredentialSchemaService extends BullableService {
 
   private async updateSchema(
     ctx: Context,
-    schemaMessage: CredentialSchemaMessage,
-    deposit: number
+    schemaMessage: CredentialSchemaMessage
   ) {
     try {
       const content = schemaMessage.content ?? {};
       const payload: Record<string, any> = {
         id: schemaMessage.id ?? content.id,
-        deposit: Number(deposit),
         modified: formatTimestamp(schemaMessage.timestamp),
         height: schemaMessage.height ?? 0,
         issuer_grantor_validation_validity_period:
@@ -248,6 +251,22 @@ export default class ProcessCredentialSchemaService extends BullableService {
           getValidityPeriod('verifier_validation_validity_period', content, schemaMessage),
         holder_validation_validity_period:
           getValidityPeriod('holder_validation_validity_period', content, schemaMessage),
+        holder_onboarding_mode: extractHolderOnboardingMode(content as Record<string, unknown>),
+        pricing_asset_type: extractNullableStringFromContent(
+          content as Record<string, unknown>,
+          "pricing_asset_type",
+          "pricingAssetType"
+        ),
+        pricing_asset: extractNullableStringFromContent(
+          content as Record<string, unknown>,
+          "pricing_asset",
+          "pricingAsset"
+        ),
+        digest_algorithm: extractNullableStringFromContent(
+          content as Record<string, unknown>,
+          "digest_algorithm",
+          "digestAlgorithm"
+        ),
       };
 
       if (content.json_schema || content.jsonSchema) {
@@ -305,4 +324,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
       );
     }
   }
+
+
 }

@@ -2,6 +2,51 @@ import { ServiceBroker } from "moleculer";
 import CredentialSchemaDatabaseService from "../../../../src/services/crawl-cs/cs_database.service";
 import knex from "../../../../src/common/utils/db_connection";
 import { SERVICE } from "../../../../src/common";
+
+function normalizeSchemaId(id: unknown): number {
+  if (id == null) return NaN;
+  if (typeof id === "bigint") return Number(id);
+  const n = Number(id);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function deepUnwrapMoleculer(res: unknown): Record<string, unknown> | undefined {
+  let cur: unknown = res;
+  for (let depth = 0; depth < 12; depth++) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    const o = cur as Record<string, unknown>;
+    const terminal =
+      typeof o.success === "boolean" ||
+      typeof o.error === "string" ||
+      o.result !== undefined ||
+      o.updated !== undefined ||
+      o.schema !== undefined ||
+      Array.isArray(o.schemas) ||
+      o.entity_type !== undefined;
+    if (terminal) return o;
+    if ("data" in o && o.data != null && typeof o.data === "object") {
+      cur = o.data;
+      continue;
+    }
+    return o;
+  }
+  return undefined;
+}
+
+function assertOk(res: unknown): void {
+  const body = deepUnwrapMoleculer(res);
+  expect(body).toBeDefined();
+  expect(body!.error).toBeUndefined();
+}
+
+function unwrapRow(res: unknown): Record<string, unknown> | undefined {
+  const body = deepUnwrapMoleculer(res);
+  if (!body) return undefined;
+  const row = (body.updated ?? body.result ?? body.schema ?? body) as unknown;
+  if (row != null && typeof row === "object") return row as Record<string, unknown>;
+  return undefined;
+}
+
 describe("CredentialSchemaDatabaseService Tests", () => {
   const broker = new ServiceBroker({ logger: false });
   const serviceKey = SERVICE.V1.CredentialSchemaDatabaseService.path;
@@ -67,67 +112,67 @@ describe("CredentialSchemaDatabaseService Tests", () => {
       issuer_validation_validity_period: 180,
       verifier_validation_validity_period: 180,
       holder_validation_validity_period: 180,
-      issuer_perm_management_mode: 2,
-      verifier_perm_management_mode: 2,
+      issuer_onboarding_mode: 2,
+      verifier_onboarding_mode: 2,
       created: new Date().toISOString(),
       archived: null,
       modified: new Date().toISOString(),
     };
 
     const upsertRes = await broker.call(`${serviceKey}.upsert`, { payload });
-    schema = upsertRes.data?.result || upsertRes.result || upsertRes;
+    assertOk(upsertRes);
+    schema = unwrapRow(upsertRes);
 
-    expect(schema.tr_id).toBe(6);
+    expect(normalizeSchemaId(schema.tr_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
   it("should update a credential schema", async () => {
     const payload = {
-      id: schema?.id,
+      id: normalizeSchemaId(schema?.id),
       issuer_grantor_validation_validity_period: 1000,
       verifier_grantor_validation_validity_period: 1000,
       issuer_validation_validity_period: 1000,
       verifier_validation_validity_period: 1000,
       holder_validation_validity_period: 1000,
-      issuer_perm_management_mode: 1000,
-      verifier_perm_management_mode: 1000,
+      issuer_onboarding_mode: 1000,
+      verifier_onboarding_mode: 1000,
     };
 
     const upsertRes = await broker.call(`${serviceKey}.update`, { payload });
-    schema = upsertRes.data?.updated || upsertRes.updated || upsertRes;
-    expect(schema.tr_id).toBe(6);
+    assertOk(upsertRes);
+    schema = unwrapRow(upsertRes);
+    expect(normalizeSchemaId(schema.tr_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
 
   it("should archive a credential schema", async () => {
     const archiveRes = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema.id,
+        id: normalizeSchemaId(schema.id),
         archive: true,
         modified: new Date().toISOString(),
       },
     });
 
-    const archiveSuccess = archiveRes.data?.success ?? archiveRes.success;
-    expect(archiveSuccess).toBe(true);
+    assertOk(archiveRes);
   });
   it("should reflect the archive status in the database", async () => {
     const dbSchema = await knex("credential_schemas")
-      .where({ id: schema?.id })
+      .where({ id: normalizeSchemaId(schema?.id) })
       .first();
-    const unarchiveSuccess = dbSchema ?? dbSchema;
 
-    expect(unarchiveSuccess.is_active).toBe(false);
+    expect(dbSchema?.archived).not.toBeNull();
+    expect(dbSchema?.is_active).toBe(false);
   });
   it("should unarchive a credential schema", async () => {
     const unarchiveRes = await broker.call(`${serviceKey}.archive`, {
       payload: {
-        id: schema?.id,
+        id: normalizeSchemaId(schema?.id),
         archive: false,
         modified: new Date().toISOString(),
       },
     });
 
-    const unarchiveSuccess = unarchiveRes.data?.success ?? unarchiveRes.success;
-    expect(unarchiveSuccess).toBe(true);
+    assertOk(unarchiveRes);
   });
 });

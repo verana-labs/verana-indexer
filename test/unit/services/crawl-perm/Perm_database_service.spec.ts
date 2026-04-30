@@ -14,6 +14,11 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
   mockQuery.commit = jest.fn();
   mockQuery.rollback = jest.fn();
   mockQuery.returning = jest.fn().mockResolvedValue([{}]);
+  mockQuery.raw = jest.fn().mockResolvedValue({ rowCount: 0 });
+  mockQuery.schema = {
+    hasColumn: jest.fn().mockResolvedValue(false),
+    hasTable: jest.fn().mockResolvedValue(true),
+  };
   return mockQuery;
 });
 
@@ -25,11 +30,13 @@ describe("🧪 PermIngestService Unit Tests", () => {
   let broker: ServiceBroker;
   let service: any;
   let syncPermissionFromLedger: any;
+  let mapLedgerPermissionToDbRow: (row: Record<string, any>) => Record<string, any>;
 
   beforeAll(() => {
     broker = new ServiceBroker({ logger: false });
     service = broker.createService(PermIngestService);
     syncPermissionFromLedger = (service as any).syncPermissionFromLedger.bind(service);
+    mapLedgerPermissionToDbRow = (service as any).mapLedgerPermissionToDbRow.bind(service);
   });
 
   afterEach(() => {
@@ -60,11 +67,10 @@ describe("🧪 PermIngestService Unit Tests", () => {
           schema_id: 99,
           type: "ECOSYSTEM",
           did: "did:test:123",
-          grantee: "grantee1",
+          corporation: "grantee1",
           validation_fees: 10,
           issuance_fees: 5,
           verification_fees: 2,
-          country: "PK",
         })
       );
     });
@@ -76,7 +82,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("handleMsgCreatePermission", () => {
+  describe("handleMsgSelfCreatePermission", () => {
     it("should insert new permission if root ecosystem exists", async () => {
       (knex.where as jest.Mock).mockReturnValueOnce({
         first: jest.fn().mockResolvedValue({ id: 1 }),
@@ -96,29 +102,9 @@ describe("🧪 PermIngestService Unit Tests", () => {
         expect.objectContaining({
           validator_perm_id: 1,
           schema_id: 99,
-          grantee: "issuer1",
+          corporation: "issuer1",
         })
       );
-    });
-  });
-
-  describe("handleExtendPermission", () => {
-    it("should reject invalid ID", async () => {
-      const result = await service.handleExtendPermission({
-        id: "abc",
-        effective_until: new Date().toISOString(),
-      });
-      expect(result.success).toBe(false);
-      expect(result.reason).toBe("Invalid permission ID");
-    });
-
-    it("should reject invalid timestamp", async () => {
-      const result = await service.handleExtendPermission({
-        id: 1,
-        effective_until: "INVALID",
-      });
-      expect(result.success).toBe(false);
-      expect(result.reason).toBe("Invalid effective_until timestamp");
     });
   });
 
@@ -126,7 +112,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
     it("should revoke permission if caller is grantee", async () => {
       (knex.first as jest.Mock).mockResolvedValueOnce({
         id: 10,
-        grantee: "user1",
+        corporation: "user1",
+        schema_id: 1,
       });
       (knex.transaction as jest.Mock).mockImplementation((fn) => fn(knex));
 
@@ -176,6 +163,29 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
+  describe("mapLedgerPermissionToDbRow (VPR v4 corporation)", () => {
+    it("maps corporation from ledger", () => {
+      const row = mapLedgerPermissionToDbRow({
+        id: 1,
+        schema_id: 2,
+        type: "ECOSYSTEM",
+        did: "did:example:x",
+        corporation: "verana1corp",
+      });
+      expect(row.corporation).toBe("verana1corp");
+    });
+
+    it("uses empty string when corporation is missing (NOT NULL column)", () => {
+      const row = mapLedgerPermissionToDbRow({
+        id: 1,
+        schema_id: 2,
+        type: "ECOSYSTEM",
+        did: "did:x",
+      });
+      expect(row.corporation).toBe("");
+    });
+  });
+
   describe("syncPermissionFromLedger vs legacy stats parity", () => {
     it("should route through same stats helpers for participants/weight", async () => {
       const mockTrx: any = knex;
@@ -197,7 +207,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         schema_id: "48",
         type: "ISSUER",
         did: "did:test:issuer",
-        grantee: "verana1test",
+        corporation: "verana1test",
         created: "2026-01-29T20:27:06.725Z",
         modified: "2026-01-29T20:27:23.422Z",
         effective_from: "2026-01-29T20:27:23.422Z",
