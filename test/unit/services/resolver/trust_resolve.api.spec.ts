@@ -112,9 +112,9 @@ describe("TrustV1ApiService GET /resolve", () => {
       10
     );
     expect(ctx.meta.$statusCode).toBe(200);
-    expect(res.trustStatus).toBe("TRUSTED");
+    expect(res.trust_status).toBe("TRUSTED");
     expect(res.production).toBe(true);
-    expect(res.evaluatedAtBlock).toBe(10);
+    expect(res.evaluated_at_block).toBe(10);
     expect(res.resolve_result).toBeUndefined();
   });
 
@@ -143,16 +143,16 @@ describe("TrustV1ApiService GET /resolve", () => {
 
     expect(ctx.meta.$statusCode).toBe(200);
     expect(res.did).toBe("did:verana:test123");
-    expect(res.evaluatedAtBlock).toBe(10);
-    expect(res.trustStatus).toBe("TRUSTED");
+    expect(res.evaluated_at_block).toBe(10);
+    expect(res.trust_status).toBe("TRUSTED");
     expect(res.resolve_result).toBeUndefined();
     expect(res.credentials).toEqual([
       expect.objectContaining({
         result: "VALID",
-        presentedBy: "did:verana:test123",
+        presented_by: "did:verana:test123",
       }),
     ]);
-    expect(res.failedCredentials).toEqual([{ id: "x", error: "bad" }]);
+    expect(res.failed_credentials).toEqual([{ id: "x", error: "bad" }]);
     expect(res.issuer_auth).toBeUndefined();
   });
 
@@ -185,10 +185,10 @@ describe("TrustV1ApiService GET /resolve", () => {
     expect(res.credentials?.[0]).toEqual(
       expect.objectContaining({
         result: "VALID",
-        vtjscId: "https://example.com/schemas/ecs-service/v1",
+        vtjsc_id: "https://example.com/schemas/ecs-service/v1",
       })
     );
-    expect(res.credentials?.[0].digestSri).toMatch(/^sha256-/);
+    expect(res.credentials?.[0].digest_sri).toMatch(/^sha256-/);
   });
 
   it("accepts at as ISO datetime by mapping to block height", async () => {
@@ -206,7 +206,7 @@ describe("TrustV1ApiService GET /resolve", () => {
     };
     const res = await service.resolve(ctx);
     expect(ctx.meta.$statusCode).toBe(200);
-    expect(res.evaluatedAtBlock).toBe(9);
+    expect(res.evaluated_at_block).toBe(9);
   });
 });
 

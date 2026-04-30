@@ -352,14 +352,14 @@ function buildStableApiPayload(args: {
 
   const payload: Record<string, unknown> = {
     did: summary.did,
-    trustStatus: summary.trustStatus,
+    trust_status: summary.trust_status,
     production: summary.production,
-    evaluatedAt: evaluatedAtIso,
-    evaluatedAtBlock: args.evaluatedAtBlock,
+    evaluated_at: evaluatedAtIso,
+    evaluated_at_block: args.evaluatedAtBlock,
     credentials,
-    failedCredentials,
+    failed_credentials: failedCredentials,
   };
-  if (expiresAtIso) payload.expiresAt = expiresAtIso;
+  if (expiresAtIso) payload.expires_at = expiresAtIso;
   return payload;
 }
 
@@ -381,7 +381,7 @@ export async function saveTrustResults(row: {
     trustTtlSeconds,
   });
 
-  const trustStatus = String(payload.trustStatus ?? "UNTRUSTED");
+  const trustStatus = String(payload.trust_status ?? "UNTRUSTED");
   const production = Boolean(payload.production);
   const expiresAt =
     trustTtlSeconds > 0 ? new Date(evaluatedAt.getTime() + trustTtlSeconds * 1000) : new Date(evaluatedAt.getTime());
@@ -541,11 +541,11 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
 
 export type TrustSummaryPayload = {
   did: string;
-  trustStatus: string;
+  trust_status: string;
   production: boolean;
-  evaluatedAt: string;
-  evaluatedAtBlock: number;
-  expiresAt?: string;
+  evaluated_at: string;
+  evaluated_at_block: number;
+  expires_at?: string;
 };
 
 function mapOutcomeToTrustStatus(verified: boolean, outcome: unknown): string {
@@ -574,13 +574,13 @@ export function buildTrustSummaryFromStoredRow(args: {
   if (!args.resolveResult || typeof args.resolveResult !== "object" || (args.resolveResult as { error?: boolean }).error) {
     const base: TrustSummaryPayload = {
       did: args.did,
-      trustStatus: "UNTRUSTED",
+      trust_status: "UNTRUSTED",
       production: false,
-      evaluatedAt,
-      evaluatedAtBlock: args.evaluatedAtBlock,
+      evaluated_at: evaluatedAt,
+      evaluated_at_block: args.evaluatedAtBlock,
     };
     if (trustTtlSeconds > 0) {
-      base.expiresAt = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString();
+      base.expires_at = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString();
     }
     return base;
   }
@@ -590,13 +590,13 @@ export function buildTrustSummaryFromStoredRow(args: {
   const outcome = r.outcome;
   const summary: TrustSummaryPayload = {
     did: args.did,
-    trustStatus: mapOutcomeToTrustStatus(verified, outcome),
+    trust_status: mapOutcomeToTrustStatus(verified, outcome),
     production: mapOutcomeToProduction(verified, outcome),
-    evaluatedAt,
-    evaluatedAtBlock: args.evaluatedAtBlock,
+    evaluated_at: evaluatedAt,
+    evaluated_at_block: args.evaluatedAtBlock,
   };
   if (trustTtlSeconds > 0) {
-    summary.expiresAt = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString();
+    summary.expires_at = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString();
   }
   return summary;
 }

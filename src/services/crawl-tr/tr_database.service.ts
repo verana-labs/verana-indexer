@@ -12,6 +12,7 @@ import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
 import { mapTrustRegistryApiFields } from "../../common/vpr-v4-mapping";
+import { enrichTrustDataDeep, parseTrustDataMode } from "../resolver/trust-data-enrichment";
 import {
     ensureDepositDefaultIfColumnExists,
     finalizeTrustRegistryHistoryInsert,
@@ -1125,9 +1126,16 @@ export default class TrustRegistryDatabaseService extends BaseService {
         tr_id: number;
         active_gf_only?: string | boolean;
         preferred_language?: string;
+        trust_data?: string;
     }>) {
         try {
             const { tr_id: trId, preferred_language: preferredLanguage } = ctx.params;
+            const trustDataRaw = (ctx.params as any).trust_data;
+            const trustDataModeParsed = parseTrustDataMode(trustDataRaw);
+            if (!trustDataModeParsed.ok) {
+                return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+            }
+            const trustDataMode = trustDataModeParsed.mode;
             const activeGfOnly =
                 String(ctx.params.active_gf_only).toLowerCase() === "true";
             const blockHeight = (ctx.meta as any)?.blockHeight;
@@ -1190,7 +1198,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         network_slashed_amount: Number(snapshot.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
                     };
-                    return ApiResponder.success(ctx, { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) }, 200);
+                    const responsePayload = { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) };
+                    const enrichedResponsePayload =
+                        trustDataMode === "none"
+                            ? responsePayload
+                            : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                    return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                 }
                 const tr = await knex("trust_registry").where({ id: trId }).first();
                 if (!tr) {
@@ -1237,7 +1250,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     }));
                 }
                 const t = tr as any;
-                return ApiResponder.success(ctx, {
+                const responsePayload = {
                     trust_registry: mapTrustRegistryApiFields({
                         id: tr.id,
                         did: tr.did,
@@ -1268,7 +1281,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                         network_slashed_amount: Number(t.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
                     } as Record<string, unknown>),
-                }, 200);
+                };
+                const enrichedResponsePayload =
+                    trustDataMode === "none"
+                        ? responsePayload
+                        : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             if (typeof blockHeight === "number") {
@@ -1297,7 +1315,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
                             }));
                         }
                         const s = snapshot as any;
-                        return ApiResponder.success(ctx, {
+                        const responsePayload = {
                             trust_registry: mapTrustRegistryApiFields({
                                 id: s.tr_id,
                                 did: s.did,
@@ -1328,7 +1346,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                                 network_slashed_amount: Number(s.network_slashed_amount ?? 0),
                                 network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
                             } as Record<string, unknown>),
-                        }, 200);
+                        };
+                        const enrichedResponsePayload =
+                            trustDataMode === "none"
+                                ? responsePayload
+                                : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                        return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                     }
                 }
 
@@ -1377,7 +1400,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
                 };
 
-                return ApiResponder.success(ctx, { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) }, 200);
+                const responsePayload = { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) };
+                const enrichedResponsePayload =
+                    trustDataMode === "none"
+                        ? responsePayload
+                        : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             const registry = await TrustRegistry.query()
@@ -1414,7 +1442,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
             delete (plain as any).height;
 
             const p = plain as any;
-            return ApiResponder.success(ctx, {
+            const responsePayload = {
                 trust_registry: mapTrustRegistryApiFields({
                     ...plain,
                     id: plain.id,
@@ -1438,7 +1466,12 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     network_slashed_amount: Number(p.network_slashed_amount ?? 0),
                     network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
                 } as Record<string, unknown>),
-            }, 200);
+            };
+            const enrichedResponsePayload =
+                trustDataMode === "none"
+                    ? responsePayload
+                    : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+            return ApiResponder.success(ctx, enrichedResponsePayload, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }
@@ -1480,6 +1513,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
             max_ecosystem_slash_events: { type: "number", optional: true },
             min_network_slash_events: { type: "number", optional: true },
             max_network_slash_events: { type: "number", optional: true },
+            trust_data: { type: "string", optional: true },
         },
     })
     public async listTrustRegistries(ctx: Context<{
@@ -1517,6 +1551,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         max_ecosystem_slash_events?: number;
         min_network_slash_events?: number;
         max_network_slash_events?: number;
+        trust_data?: string;
     }>) {
         try {
             const {
@@ -1553,7 +1588,13 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 max_ecosystem_slash_events: maxEcosystemSlashEvents,
                 min_network_slash_events: minNetworkSlashEvents,
                 max_network_slash_events: maxNetworkSlashEvents,
+                trust_data: trustDataSnake,
             } = ctx.params;
+            const trustDataModeParsed = parseTrustDataMode(trustDataSnake);
+            if (!trustDataModeParsed.ok) {
+                return ApiResponder.error(ctx, trustDataModeParsed.message, 400);
+            }
+            const trustDataMode = trustDataModeParsed.mode;
 
             const participantValidation = validateParticipantParam(participant, "participant");
             if (!participantValidation.valid) {
@@ -1701,11 +1742,16 @@ export default class TrustRegistryDatabaseService extends BaseService {
                     });
                     const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters);
                     const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
-                    return ApiResponder.success(ctx, {
+                    const responsePayload = {
                         trust_registries: sortedRegistries.map((r) =>
                             mapTrustRegistryApiFields(r as Record<string, unknown>)
                         ),
-                    }, 200);
+                    };
+                    const enrichedResponsePayload =
+                        trustDataMode === "none"
+                            ? responsePayload
+                            : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                    return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                 }
 
                 let participantTrIds: number[] | undefined;
@@ -1811,11 +1857,16 @@ export default class TrustRegistryDatabaseService extends BaseService {
 
                 const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
 
-                return ApiResponder.success(ctx, {
+                const responsePayload = {
                     trust_registries: sortedRegistries.map((r) =>
                         mapTrustRegistryApiFields(r as Record<string, unknown>)
                     ),
-                }, 200);
+                };
+                const enrichedResponsePayload =
+                    trustDataMode === "none"
+                        ? responsePayload
+                        : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             const useHeightSyncListLive =
@@ -1938,11 +1989,16 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 });
                 const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters);
                 const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize);
-                return ApiResponder.success(ctx, {
+                const responsePayload = {
                     trust_registries: sortedBatch.map((r) =>
                         mapTrustRegistryApiFields(r as Record<string, unknown>)
                     ),
-                }, 200);
+                };
+                const enrichedResponsePayload =
+                    trustDataMode === "none"
+                        ? responsePayload
+                        : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+                return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
             let query = TrustRegistry.query();
@@ -2057,11 +2113,16 @@ export default class TrustRegistryDatabaseService extends BaseService {
                 ? registriesWithStats.slice(0, responseMaxSize)
                 : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
-            return ApiResponder.success(ctx, {
+            const responsePayload = {
                 trust_registries: sortedRegistries.map((r) =>
                     mapTrustRegistryApiFields(r as Record<string, unknown>)
                 ),
-            }, 200);
+            };
+            const enrichedResponsePayload =
+                trustDataMode === "none"
+                    ? responsePayload
+                    : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
+            return ApiResponder.success(ctx, enrichedResponsePayload, 200);
         } catch (err: any) {
             return ApiResponder.error(ctx, err.message, 500);
         }

@@ -298,6 +298,27 @@ flowchart TD
 
 ---
 
+## API: `trust_data` Enrichment
+
+Permission API methods support optional trust enrichment using query parameter `trust_data`:
+
+- `GET /verana/perm/v1/get/{id}`
+- `GET /verana/perm/v1/list`
+- `GET /verana/perm/v1/pending/flat`
+
+Allowed values:
+
+- `null` (default): no trust enrichment
+- `summary`: attach trust summary payload
+- `full`: attach full trust payload
+
+Behavior:
+
+- For each returned object that includes `did`, a sibling field `trust_data` is added at the same level.
+- In `pending/flat`, this applies to nested permission rows and trust registry rows that include `did`.
+
+---
+
 ## Summary
 
 The services together provide a **robust, blockchain-integrated permission management system**.
