@@ -6,12 +6,14 @@ import ApiResponder from "../../common/utils/apiResponse";
 import BaseService from "../../base/base.service";
 import { isValidDid } from "./api_shared";
 
+type SnapshotRow = Record<string, unknown>;
+
 type SnapshotResponse = {
   did: string;
   block_height: number;
-  trust_registries: any[];
-  schemas: any[];
-  permissions: any[];
+  trust_registries: SnapshotRow[];
+  schemas: SnapshotRow[];
+  permissions: SnapshotRow[];
   count: {
     trust_registries: number;
     schemas: number;
@@ -69,7 +71,7 @@ function parseNonNegativeInteger(value: unknown): number | null {
   return n;
 }
 
-async function fetchTrustRegistriesAtHeight(did: string, height: number, tables: SnapshotTables): Promise<any[]> {
+async function fetchTrustRegistriesAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
   if (!tables.hasTrustRegistry) return [];
 
   const query = knex("trust_registry")
@@ -83,7 +85,7 @@ async function fetchTrustRegistriesAtHeight(did: string, height: number, tables:
   return query.orderBy("id", "asc");
 }
 
-async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, tables: SnapshotTables): Promise<any[]> {
+async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
   if (!tables.hasCredentialSchemas) return [];
   if (trIds.length === 0) return [];
 
@@ -103,10 +105,11 @@ async function fetchPermissionsAtHeight(args: {
   did: string;
   blockHeight: number;
   schemaIds: number[];
+  schemaTrIds?: number[];
   corporationAddresses: string[];
   tables: SnapshotTables;
-}): Promise<any[]> {
-  const { did, schemaIds, corporationAddresses, tables, blockHeight } = args;
+}): Promise<SnapshotRow[]> {
+  const { did, schemaIds, schemaTrIds = [], corporationAddresses, tables, blockHeight } = args;
   if (!tables.hasPermissions) return [];
 
   const query = knex("permissions")
@@ -115,6 +118,15 @@ async function fetchPermissionsAtHeight(args: {
       qb.where("did", did);
       if (corporationAddresses.length > 0) qb.orWhere((q) => q.whereIn("corporation", corporationAddresses));
       if (schemaIds.length > 0) qb.orWhereIn("schema_id", schemaIds);
+      if (tables.hasCredentialSchemas && schemaTrIds.length > 0) {
+        const schemaQuery = knex("credential_schemas")
+          .select("id")
+          .whereIn("tr_id", schemaTrIds);
+        if (tables.credentialSchemasHasHeight) {
+          schemaQuery.andWhere("height", "<=", blockHeight);
+        }
+        qb.orWhereIn("schema_id", schemaQuery);
+      }
     })
     .orderBy("id", "asc");
 
@@ -131,30 +143,29 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
 
   const trustRegistries = await fetchTrustRegistriesAtHeight(did, blockHeight, tables);
   const trIds = trustRegistries
-    .map((row: any) => Number(row.id))
+    .map((row) => Number(row.id))
     .filter((id) => Number.isInteger(id) && id >= 0);
 
   const corporationAddresses = Array.from(
     new Set(
       trustRegistries
-        .map((row: any) => row.corporation)
+        .map((row) => row.corporation)
         .filter((corp): corp is string => typeof corp === "string" && corp.trim().length > 0)
         .map((corp) => corp.trim())
     )
   );
 
-  const credentialSchemas = await fetchCredentialSchemasAtHeight(trIds, blockHeight, tables);
-  const schemaIds = credentialSchemas
-    .map((row: any) => Number(row.id))
-    .filter((id) => Number.isInteger(id) && id >= 0);
-
-  const permissions = await fetchPermissionsAtHeight({
-    did,
-    blockHeight,
-    schemaIds,
-    corporationAddresses,
-    tables,
-  });
+  const [credentialSchemas, permissions] = await Promise.all([
+    fetchCredentialSchemasAtHeight(trIds, blockHeight, tables),
+    fetchPermissionsAtHeight({
+      did,
+      blockHeight,
+      schemaIds: [],
+      schemaTrIds: trIds,
+      corporationAddresses,
+      tables,
+    }),
+  ]);
 
   return {
     did,
@@ -187,7 +198,7 @@ export default class IndexerSnapshotService extends BaseService {
     },
     rest: "GET /snapshot",
   })
-  public async getSnapshot(ctx: Context<{ did?: string; block_height?: unknown }>): Promise<SnapshotResponse | any> {
+  public async getSnapshot(ctx: Context<{ did?: string; block_height?: unknown }>) {
     try {
       const did = typeof ctx.params.did === "string" ? ctx.params.did.trim() : "";
       if (!did) return ApiResponder.error(ctx, "Missing did", 400);
@@ -203,7 +214,7 @@ export default class IndexerSnapshotService extends BaseService {
 
       const snapshot = await getDidSnapshotAtHeight({ did, blockHeight });
       return ApiResponder.success(ctx, snapshot, 200);
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error("[IndexerSnapshotService] Failed to build snapshot:", err);
       if (err instanceof Errors.MoleculerError) throw err;
       throw new Errors.MoleculerError("Failed to build snapshot", 500, "SNAPSHOT_FAILED");
