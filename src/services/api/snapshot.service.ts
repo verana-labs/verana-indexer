@@ -23,6 +23,7 @@ type SnapshotTables = {
   hasTrustRegistry: boolean;
   hasCredentialSchemas: boolean;
   hasPermissions: boolean;
+  trustRegistryHasHeight: boolean;
   credentialSchemasHasHeight: boolean;
   permissionsHasHeight: boolean;
 };
@@ -41,7 +42,8 @@ async function getSnapshotTables(): Promise<SnapshotTables> {
       knex.schema.hasTable("permissions"),
     ]);
 
-    const [credentialSchemasHasHeight, permissionsHasHeight] = await Promise.all([
+    const [trustRegistryHasHeight, credentialSchemasHasHeight, permissionsHasHeight] = await Promise.all([
+      hasTrustRegistry ? knex.schema.hasColumn("trust_registry", "height") : Promise.resolve(false),
       hasCredentialSchemas ? knex.schema.hasColumn("credential_schemas", "height") : Promise.resolve(false),
       hasPermissions ? knex.schema.hasColumn("permissions", "height") : Promise.resolve(false),
     ]);
@@ -50,6 +52,7 @@ async function getSnapshotTables(): Promise<SnapshotTables> {
       hasTrustRegistry,
       hasCredentialSchemas,
       hasPermissions,
+      trustRegistryHasHeight,
       credentialSchemasHasHeight,
       permissionsHasHeight,
     };
@@ -69,13 +72,15 @@ function parseNonNegativeInteger(value: unknown): number | null {
 async function fetchTrustRegistriesAtHeight(did: string, height: number, tables: SnapshotTables): Promise<any[]> {
   if (!tables.hasTrustRegistry) return [];
 
-  return knex("trust_registry")
+  const query = knex("trust_registry")
     .select("*")
-    .where((qb) => {
-      qb.where("did", did).orWhere("corporation", did);
-    })
-    .andWhere("height", "<=", height)
-    .orderBy("id", "asc");
+    .where("did", did);
+
+  if (tables.trustRegistryHasHeight) {
+    query.andWhere("height", "<=", height);
+  }
+
+  return query.orderBy("id", "asc");
 }
 
 async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, tables: SnapshotTables): Promise<any[]> {
@@ -98,15 +103,17 @@ async function fetchPermissionsAtHeight(args: {
   did: string;
   blockHeight: number;
   schemaIds: number[];
+  corporationAddresses: string[];
   tables: SnapshotTables;
 }): Promise<any[]> {
-  const { did, schemaIds, tables, blockHeight } = args;
+  const { did, schemaIds, corporationAddresses, tables, blockHeight } = args;
   if (!tables.hasPermissions) return [];
 
   const query = knex("permissions")
     .select("*")
     .where((qb) => {
-      qb.where("did", did).orWhere("corporation", did);
+      qb.where("did", did);
+      if (corporationAddresses.length > 0) qb.orWhere((q) => q.whereIn("corporation", corporationAddresses));
       if (schemaIds.length > 0) qb.orWhereIn("schema_id", schemaIds);
     })
     .orderBy("id", "asc");
@@ -127,6 +134,15 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     .map((row: any) => Number(row.id))
     .filter((id) => Number.isInteger(id) && id >= 0);
 
+  const corporationAddresses = Array.from(
+    new Set(
+      trustRegistries
+        .map((row: any) => row.corporation)
+        .filter((corp): corp is string => typeof corp === "string" && corp.trim().length > 0)
+        .map((corp) => corp.trim())
+    )
+  );
+
   const credentialSchemas = await fetchCredentialSchemasAtHeight(trIds, blockHeight, tables);
   const schemaIds = credentialSchemas
     .map((row: any) => Number(row.id))
@@ -136,6 +152,7 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     did,
     blockHeight,
     schemaIds,
+    corporationAddresses,
     tables,
   });
 
@@ -168,6 +185,7 @@ export default class IndexerSnapshotService extends BaseService {
       did: { type: "string", optional: true, trim: true },
       block_height: { type: "any", optional: true },
     },
+    rest: "GET /snapshot",
   })
   public async getSnapshot(ctx: Context<{ did?: string; block_height?: unknown }>): Promise<SnapshotResponse | any> {
     try {

@@ -248,17 +248,43 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     expect(snap.permissions).toEqual([]);
   });
 
-  it("returns DID-linked snapshot objects from current tables (did + corporation linking)", async () => {
+  it("returns DID-linked snapshot objects from current tables", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
     const trId = await insertTrustRegistry({ did: didA, corporation: "cosmos1corp", height: baseHeight });
     const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, trId });
-    await insertPermission({ schemaId: schemaRowId, did: otherDid, corporation: "cosmos1corp" });
+    await insertPermission({ schemaId: schemaRowId + 100000, did: didA, corporation: "cosmos1other-corp" });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
     expect(snap.count.trust_registries).toBe(1);
     expect(snap.count.schemas).toBe(1);
     expect(snap.count.permissions).toBe(1);
     expect(snap.trust_registries[0]?.did).toBe(didA);
+    expect(snap.permissions[0]?.did).toBe(didA);
+  });
+
+  it("returns schema-linked permissions", async () => {
+    const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
+    const trId = await insertTrustRegistry({ did: didA, corporation: "cosmos1corp", height: baseHeight });
+    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, trId });
+    await insertPermission({ schemaId: schemaRowId, did: otherDid, corporation: "cosmos1other-corp" });
+
+    const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
+    expect(snap.count.permissions).toBe(1);
+    expect(snap.permissions[0]?.schema_id).toBe(schemaRowId);
+    expect(snap.permissions[0]?.did).toBe(otherDid);
+  });
+
+  it("returns corporation-linked permissions from derived corporation addresses", async () => {
+    const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
+    const corporation = "cosmos1derived-corp";
+    const trId = await insertTrustRegistry({ did: didA, corporation, height: baseHeight });
+    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, trId });
+    await insertPermission({ schemaId: schemaRowId + 100000, did: null, corporation });
+
+    const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
+    expect(snap.count.permissions).toBe(1);
+    expect(snap.permissions[0]?.corporation).toBe(corporation);
+    expect(snap.permissions[0]?.schema_id).not.toBe(schemaRowId);
   });
 });
 
