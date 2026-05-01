@@ -10,7 +10,6 @@ import knex from "../../common/utils/db_connection";
 import { applySpeedToBatchSize, applySpeedToDelay, getRecommendedConcurrency } from "../../common/utils/crawl_speed_config";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import config from "../../config.json" with { type: "json" };
-import { DbDerefCache } from "./db-cache";
 import {
   defaultVprRegistriesFromEnv,
   readBoolFromEnv,
@@ -443,6 +442,33 @@ function snapshotFromError(message: string): TrustRoleSnapshot {
   return { verified: false, error: message };
 }
 
+class InvalidResolutionResultError extends Error {
+  constructor(message = "Resolver returned no verification result") {
+    super(message);
+    this.name = "InvalidResolutionResultError";
+  }
+}
+
+function normalizeTrustResolution(result: unknown): TrustResolution {
+  if (!result || typeof result !== "object") {
+    throw new InvalidResolutionResultError();
+  }
+  const parsed = result as TrustResolution;
+  if (typeof parsed.verified !== "boolean") {
+    throw new InvalidResolutionResultError();
+  }
+  return parsed;
+}
+
+function isInvalidResolutionResultError(err: unknown): boolean {
+  return err instanceof InvalidResolutionResultError;
+}
+
+function isInvalidCredentialError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return msg.includes("cannot read properties of undefined") || msg.includes("invalid credential structure");
+}
+
 async function getImpactedDids(blockHeight: number, limit: number): Promise<string[]> {
   const h = blockHeight;
   const res = await knex.raw(IMPACTED_DIDS_SQL, [h, h, limit]);
@@ -464,17 +490,18 @@ export async function resolveTrustForDidAtHeight(
   const derefTtlSeconds = getDeclaredDereferenceCacheTtlSeconds() ?? 0;
   const cache: any =
     verreCache ??
-    (derefTtlSeconds > 0 ? new DbDerefCache(derefTtlSeconds * 1000) : new InMemoryCache(5 * 60 * 1000));
+    new InMemoryCache(derefTtlSeconds > 0 ? derefTtlSeconds * 1000 : 5 * 60 * 1000);
   const cfg = getResolverRuntimeConfig();
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0;
   const resourceId = `${did}@${blockHeight}`;
 
   try {
-    const result = (await resolveDID(did, {
+    const rawResult = await resolveDID(did, {
       verifiablePublicRegistries,
       skipDigestSRICheck,
       cache,
-    })) as TrustResolution;
+    });
+    const result = normalizeTrustResolution(rawResult);
 
     const snap = snapshotFromResolution(result);
     await saveTrustResults({
@@ -489,28 +516,43 @@ export async function resolveTrustForDidAtHeight(
     await clearReattemptable(resourceId);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    const snap = snapshotFromError(message);
     const lower = message.toLowerCase();
-    const errorCode =
-      lower.includes("not found") || lower.includes("not_found") || lower.includes("404")
+    const invalidResolutionResult = isInvalidResolutionResultError(err);
+    const invalidCredential = isInvalidCredentialError(err);
+    const errorCode = invalidResolutionResult
+      ? "invalid_resolution_result"
+      : invalidCredential
+      ? "invalid_credential"
+      : lower.includes("not found") || lower.includes("not_found") || lower.includes("404")
         ? "not_found"
         : "resolution_failed";
+    const errorMessage = invalidResolutionResult
+      ? "Invalid DID resolution result"
+      : invalidCredential
+        ? "Invalid credential structure"
+        : `DID resolution failed for ${did}`;
+    const failureMessage = invalidResolutionResult
+      ? "Resolver returned no verification result"
+      : invalidCredential
+        ? "Invalid credential structure"
+        : message;
+    const snap = snapshotFromError(errorMessage);
 
     await saveTrustResults({
       did,
       height: blockHeight,
       resolve_result: {
         error: true,
-        message,
+        message: errorMessage,
         dereferenceErrors: [],
         credentials: [],
         failedCredentials: [
           {
             id: did,
-            error: `DID resolution failed for ${did}`,
+            error: errorMessage,
             format: "N/A",
             errorCode,
-            message,
+            message: failureMessage,
           },
         ],
       },
@@ -523,7 +565,7 @@ export async function resolveTrustForDidAtHeight(
       resourceId,
       resourceType: "did-evaluation",
       errorType: "resolveDID",
-      lastError: message,
+      lastError: failureMessage,
       retryDays,
     });
   }

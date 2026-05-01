@@ -13,6 +13,12 @@ jest.mock(
     __esModule: true,
     resolveDID: jest.fn(async () => ({ verified: true })),
     verifyPermissions: jest.fn(async () => ({ verified: true })),
+    InMemoryCache: jest.fn().mockImplementation(() => ({
+      get: jest.fn(() => undefined),
+      set: jest.fn(),
+      delete: jest.fn(),
+      clear: jest.fn(),
+    })),
     PermissionType: { ISSUER: "ISSUER", VERIFIER: "VERIFIER" },
     TrustResolutionOutcome,
   }),
@@ -31,6 +37,8 @@ jest.mock("../../../../src/models", () => ({
 
 jest.mock("canonicalize", () => ({ __esModule: true, default: (obj: any) => JSON.stringify(obj) }), { virtual: true });
 
+const knexMock: any = jest.fn();
+
 jest.mock("../../../../src/common/utils/db_connection", () => {
   const chain: any = {};
   chain.select = jest.fn(() => chain);
@@ -41,8 +49,12 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
   chain.orderBy = jest.fn(() => chain);
   chain.limit = jest.fn(async () => []);
   chain.first = jest.fn(async () => ({ height: 9 }));
+  chain.insert = jest.fn(() => chain);
+  chain.onConflict = jest.fn(() => chain);
+  chain.merge = jest.fn(async () => undefined);
+  chain.delete = jest.fn(async () => undefined);
 
-  const knexMock: any = jest.fn((table?: string) => {
+  knexMock.mockImplementation((table?: string) => {
     if (table === "credential_schemas") {
       const listChain: any = {};
       listChain.select = jest.fn(() => listChain);
@@ -189,6 +201,143 @@ describe("TrustV1ApiService GET /resolve", () => {
       })
     );
     expect(res.credentials?.[0].digestSri).toMatch(/^sha256-/);
+  });
+
+  it("handles invalid resolver credential structure without throwing and records invalid_credential error", async () => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    const Verre = await import("@verana-labs/verre");
+    const knexModule = await import("../../../../src/common/utils/db_connection");
+    const knex = knexModule.default ?? knexModule;
+    const resolveSpy = jest.spyOn(Verre, "resolveDID").mockRejectedValue(
+      new TypeError("Cannot read properties of undefined (reading 'verified')")
+    );
+    jest.spyOn(TrustResolve, "clearReattemptable").mockResolvedValue(undefined);
+    jest.spyOn(TrustResolve, "markReattemptableFailure").mockResolvedValue(undefined);
+
+    await TrustResolve.resolveTrustForDidAtHeight("did:verana:test123", 100);
+
+    expect(resolveSpy).toHaveBeenCalled();
+    const chain = knex("trust_results");
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        did: "did:verana:test123",
+        height: 100,
+        resolve_result: expect.objectContaining({
+          error: true,
+          failedCredentials: [
+            expect.objectContaining({
+              id: "did:verana:test123",
+              error: "Invalid credential structure",
+              errorCode: "invalid_credential",
+              message: "Invalid credential structure",
+            }),
+          ],
+        }),
+      })
+    );
+    expect(JSON.stringify(chain.insert.mock.calls)).not.toContain("Cannot read properties of undefined");
+  });
+
+  it.each([
+    ["undefined result", undefined],
+    ["missing verified", { outcome: TrustResolutionOutcome.VERIFIED }],
+  ])("records invalid_resolution_result when Verre returns %s", async (_label, verreResult) => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    const Verre = await import("@verana-labs/verre");
+    const knexModule = await import("../../../../src/common/utils/db_connection");
+    const knex = knexModule.default ?? knexModule;
+    jest.spyOn(Verre, "resolveDID").mockResolvedValue(verreResult as any);
+    jest.spyOn(TrustResolve, "clearReattemptable").mockResolvedValue(undefined);
+    jest.spyOn(TrustResolve, "markReattemptableFailure").mockResolvedValue(undefined);
+
+    await TrustResolve.resolveTrustForDidAtHeight("did:verana:test123", 101);
+
+    const chain = knex("trust_results");
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        did: "did:verana:test123",
+        height: 101,
+        resolve_result: expect.objectContaining({
+          error: true,
+          message: "Invalid DID resolution result",
+          failedCredentials: [
+            expect.objectContaining({
+              id: "did:verana:test123",
+              error: "Invalid DID resolution result",
+              format: "N/A",
+              errorCode: "invalid_resolution_result",
+              message: "Resolver returned no verification result",
+            }),
+          ],
+        }),
+      })
+    );
+    expect(JSON.stringify(chain.insert.mock.calls)).not.toContain("Cannot read properties of undefined");
+  });
+
+  it.each([
+    ["verified=false", { verified: false, outcome: TrustResolutionOutcome.NOT_TRUSTED }, false],
+    ["verified=true", { verified: true, outcome: TrustResolutionOutcome.VERIFIED }, true],
+  ])("stores controlled trust result when Verre returns %s", async (_label, verreResult, expectedVerified) => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    const Verre = await import("@verana-labs/verre");
+    const knexModule = await import("../../../../src/common/utils/db_connection");
+    const knex = knexModule.default ?? knexModule;
+    jest.spyOn(Verre, "resolveDID").mockResolvedValue(verreResult as any);
+    jest.spyOn(TrustResolve, "clearReattemptable").mockResolvedValue(undefined);
+    jest.spyOn(TrustResolve, "markReattemptableFailure").mockResolvedValue(undefined);
+
+    await TrustResolve.resolveTrustForDidAtHeight("did:verana:test123", 102);
+
+    const chain = knex("trust_results");
+    expect(chain.insert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        did: "did:verana:test123",
+        height: 102,
+        resolve_result: expect.objectContaining({
+          verified: expectedVerified,
+        }),
+        issuer_auth: expect.objectContaining({
+          verified: expectedVerified,
+        }),
+      })
+    );
+  });
+
+  it("detail=full handles a sample-like DID without raw TypeError output", async () => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    const did = "did:webvh:Qmb9hQmWuJ3FSRssNVaGseurmmMfmHa6TGXBFMXSuJuaQa:dm.gov-id-issuer.demos.2060.io";
+    jest.spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight").mockResolvedValue({
+      did,
+      height: 10,
+      resolve_result: {
+        verified: true,
+        outcome: TrustResolutionOutcome.VERIFIED,
+        credentials: [{ result: "VALID", presentedBy: did }],
+        failedCredentials: [],
+      },
+      created_at: "2026-01-01T00:00:00Z",
+    } as any);
+
+    const ctx: any = {
+      params: { did, detail: "full", at: "10" },
+      meta: {},
+    };
+    const res = await service.resolve(ctx);
+
+    expect(ctx.meta.$statusCode).toBe(200);
+    expect(res).toEqual(
+      expect.objectContaining({
+        did,
+        trustStatus: expect.any(String),
+        production: expect.any(Boolean),
+        evaluatedAt: expect.any(String),
+        evaluatedAtBlock: 10,
+        credentials: expect.any(Array),
+        failedCredentials: [],
+      })
+    );
+    expect(JSON.stringify(res)).not.toContain("Cannot read properties of undefined");
   });
 
   it("accepts at as ISO datetime by mapping to block height", async () => {

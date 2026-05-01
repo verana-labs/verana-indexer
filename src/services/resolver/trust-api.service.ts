@@ -653,7 +653,7 @@ export class TrustApiService extends BaseService {
       verifiablePublicRegistries,
       permissionType: args.permissionType,
     });
-    const verreOk = Boolean(verre.verified);
+    const verreOk = Boolean(verre?.verified);
 
     const listType = isIssuer ? "ISSUER" : "VERIFIER";
     let leaf: Record<string, unknown> | null = null;
