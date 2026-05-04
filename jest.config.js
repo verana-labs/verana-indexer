@@ -17,6 +17,7 @@ export default {
   },
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
+    '^@verana-labs/verre$': '<rootDir>/test/config/mocks/verre.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   globals: {
