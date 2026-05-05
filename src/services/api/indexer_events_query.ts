@@ -141,52 +141,6 @@ const EVENT_META: Record<string, EventMeta> = {
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
 
-const TABLE_COLUMNS_TTL_MS = 10 * 60 * 1000;
-const tableColumnsCache = new Map<string, { expiresAt: number; value: Promise<Set<string>> }>();
-
-const DID_QUERY_CACHE_TTL_MS = 60 * 1000;
-const CACHE_MAX_ENTRIES = 5000;
-
-class ExpiringBoundedMap<K, V extends { expiresAt: number }> extends Map<K, V> {
-  constructor(private readonly maxEntries: number) {
-    super();
-  }
-
-  private pruneExpired(now = Date.now()): void {
-    for (const [key, entry] of super.entries()) {
-      if (entry.expiresAt <= now) {
-        super.delete(key);
-      }
-    }
-  }
-
-  override get(key: K): V | undefined {
-    this.pruneExpired();
-    const entry = super.get(key);
-    if (!entry) return undefined;
-    if (entry.expiresAt <= Date.now()) {
-      super.delete(key);
-      return undefined;
-    }
-    return entry;
-  }
-
-  override set(key: K, value: V): this {
-    this.pruneExpired();
-    super.set(key, value);
-    while (this.size > this.maxEntries) {
-      const oldestKey = this.keys().next().value as K | undefined;
-      if (oldestKey === undefined) break;
-      super.delete(oldestKey);
-    }
-    return this;
-  }
-}
-
-const permissionSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
-const credentialSchemaSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
-const trustRegistrySnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
-
 function addDid(out: Set<string>, value: unknown): void {
   if (isValidDid(value)) out.add(value);
 }
@@ -216,133 +170,32 @@ function readNumber(content: unknown, keys: string[]): number | null {
   return null;
 }
 
-async function getTableColumns(tableName: string): Promise<Set<string>> {
-  const now = Date.now();
-  const cached = tableColumnsCache.get(tableName);
-  if (cached && cached.expiresAt > now) return cached.value;
-
-  const value = knex(tableName)
-    .columnInfo()
-    .then((info) => new Set(Object.keys(info)));
-  tableColumnsCache.set(tableName, { expiresAt: now + TABLE_COLUMNS_TTL_MS, value });
-  return value;
-}
-
-async function existingColumns(tableName: string, columns: string[]): Promise<string[]> {
-  const available = await getTableColumns(tableName);
-  return columns.filter((column) => available.has(column));
-}
-
-async function addTrustRegistryDids(trId: number | null, height: number, dids: Set<string>): Promise<void> {
-  if (!trId) return;
-  const now = Date.now();
-  const cacheKey = `${trId}:${height}`;
-  const cached = trustRegistrySnapshotCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    const row = await cached.value;
-    addDid(dids, (row as any)?.did);
-    addDid(dids, (row as any)?.controller);
-    return;
-  }
-  const columns = await existingColumns("trust_registry_history", ["did", "controller"]);
-  if (columns.length === 0) return;
-
-  const value = knex("trust_registry_history")
-    .select(columns)
-    .where("tr_id", trId)
-    .where("height", "<=", height)
-    .orderBy("height", "desc")
-    .first();
-  trustRegistrySnapshotCache.set(cacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value });
-
-  const row = await value;
-  addDid(dids, (row as any)?.did);
-  addDid(dids, (row as any)?.controller);
-}
-
-async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<string>): Promise<string | undefined> {
+function getEntityId(row: EventRow, meta: EventMeta): string | undefined {
   if (meta.module === "permission") {
     const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
-    if (!permissionId) return undefined;
-    const now = Date.now();
-    const permCacheKey = `${permissionId}:${row.block_height}`;
-    const cachedPerm = permissionSnapshotCache.get(permCacheKey);
-    const columns = await existingColumns("permission_history", [
-      "permission_id",
-      "did",
-      "grantee",
-      "created_by",
-      "extended_by",
-      "revoked_by",
-      "slashed_by",
-      "repaid_by",
-      "schema_id",
-    ]);
-    const permPromise =
-      cachedPerm && cachedPerm.expiresAt > now
-        ? cachedPerm.value
-        : knex("permission_history")
-          .select(columns)
-          .where("permission_id", permissionId)
-          .where("height", "<=", row.block_height)
-          .orderBy("height", "desc")
-          .first();
-    if (!cachedPerm || cachedPerm.expiresAt <= now) {
-      permissionSnapshotCache.set(permCacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value: permPromise });
-    }
-    const perm = await permPromise;
-    addDid(dids, (perm as any)?.did);
-    addDid(dids, (perm as any)?.grantee);
-    addDid(dids, (perm as any)?.created_by);
-    addDid(dids, (perm as any)?.extended_by);
-    addDid(dids, (perm as any)?.revoked_by);
-    addDid(dids, (perm as any)?.slashed_by);
-    addDid(dids, (perm as any)?.repaid_by);
-    const schemaId = Number((perm as any)?.schema_id);
-    if (Number.isInteger(schemaId) && schemaId > 0) {
-      const csCacheKey = `${schemaId}:${row.block_height}`;
-      const cachedCs = credentialSchemaSnapshotCache.get(csCacheKey);
-      const csPromise =
-        cachedCs && cachedCs.expiresAt > now
-          ? cachedCs.value
-          : knex("credential_schema_history")
-            .select("tr_id")
-            .where("credential_schema_id", schemaId)
-            .where("height", "<=", row.block_height)
-            .orderBy("height", "desc")
-            .first();
-      if (!cachedCs || cachedCs.expiresAt <= now) {
-        credentialSchemaSnapshotCache.set(csCacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value: csPromise });
-      }
-      const cs = await csPromise;
-      await addTrustRegistryDids(Number((cs as any)?.tr_id) || null, row.block_height, dids);
-    }
-    return String(permissionId);
+    return permissionId ? String(permissionId) : undefined;
   }
 
   if (meta.module === "credential-schema") {
     const schemaId = readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const trIdFromContent = readNumber(row.content, ["tr_id", "trId", "trust_registry_id", "trustRegistryId"]);
-    let trId = trIdFromContent;
-    if (schemaId) {
-      const columns = await existingColumns("credential_schema_history", ["credential_schema_id", "tr_id"]);
-      const cs = await knex("credential_schema_history")
-        .select(columns)
-        .where("credential_schema_id", schemaId)
-        .where("height", "<=", row.block_height)
-        .orderBy("height", "desc")
-        .first();
-      trId = Number((cs as any)?.tr_id) || trId;
-    }
-    await addTrustRegistryDids(trId, row.block_height, dids);
     return schemaId ? String(schemaId) : undefined;
   }
 
   const trId =
     readNumber(row.content, ["id", "tr_id", "trId", "trust_registry_id", "trustRegistryId"]) ??
     readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]);
-  await addTrustRegistryDids(trId, row.block_height, dids);
   return trId ? String(trId) : undefined;
+}
+
+function normalizeRequestedDid(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return decodeURIComponent(trimmed).trim();
+  } catch {
+    return trimmed;
+  }
 }
 
 async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
@@ -352,7 +205,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const relatedDids = new Set<string>();
   addDid(relatedDids, row.sender);
   collectDids(row.content, relatedDids);
-  const entityId = await enrichRelatedDids(row, meta, relatedDids);
+  const entityId = getEntityId(row, meta);
 
   return {
     type: "transaction-executed",
@@ -505,32 +358,40 @@ export async function listIndexerEvents(args: {
   limit?: number;
 }): Promise<IndexerEventRecord[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 100))));
-  const query = knex("indexer_events")
+  const normalizedDid = normalizeRequestedDid(args.did);
+  const query = knex("indexer_events as ie")
     .select(
-      "id",
-      "event_type",
-      "did",
-      "block_height",
-      "tx_hash",
-      "tx_index",
-      "message_index",
-      "message_type",
-      "module",
-      "entity_type",
-      "entity_id",
-      "timestamp",
-      "payload"
+      "ie.id",
+      "ie.event_type",
+      "ie.did",
+      "ie.block_height",
+      "ie.tx_hash",
+      "ie.tx_index",
+      "ie.message_index",
+      "ie.message_type",
+      "ie.module",
+      "ie.entity_type",
+      "ie.entity_id",
+      "ie.timestamp",
+      "ie.payload"
     )
-    .orderBy("block_height", "asc")
-    .orderBy("tx_index", "asc")
-    .orderBy("message_index", "asc")
-    .orderBy("did", "asc")
-    .orderBy("id", "asc")
+    .orderBy("ie.block_height", "asc")
+    .orderBy("ie.tx_index", "asc")
+    .orderBy("ie.message_index", "asc")
+    .orderBy("ie.id", "asc")
     .limit(limit);
 
-  if (args.ids) query.whereIn("id", args.ids);
-  if (args.did) query.where("did", args.did);
-  applyBlockHeightFilter(query, args, "block_height");
+  if (args.ids) query.whereIn("ie.id", args.ids);
+  if (args.did && !normalizedDid) return [];
+  if (normalizedDid && !args.ids) {
+    query.andWhere((builder) => {
+      builder
+        .where("ie.did", normalizedDid)
+        .orWhereRaw("(ie.payload -> 'related_dids') \\? ?", [normalizedDid])
+        .orWhereRaw("(ie.payload -> 'relatedDids') \\? ?", [normalizedDid]);
+    });
+  }
+  applyBlockHeightFilter(query, args, "ie.block_height");
 
   const rows = (await query) as Array<Record<string, any>>;
   return rows.map(fromStoredRow);

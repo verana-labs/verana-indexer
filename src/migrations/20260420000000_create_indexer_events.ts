@@ -25,6 +25,16 @@ export async function up(knex: Knex): Promise<void> {
     table.index(["block_height", "tx_index", "message_index", "id"], "idx_events_replay_order");
     table.index(["event_type"], "idx_events_event_type");
   });
+
+  await knex.raw(`
+    CREATE INDEX IF NOT EXISTS idx_events_payload_related_dids_gin
+    ON indexer_events USING GIN ((payload -> 'related_dids'))
+  `);
+
+  await knex.raw(`
+    CREATE INDEX IF NOT EXISTS idx_events_payload_related_dids_camel_gin
+    ON indexer_events USING GIN ((payload -> 'relatedDids'))
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
