@@ -179,7 +179,7 @@
           "Indexer"
         ],
         "summary": "Get DID-linked current indexed snapshot",
-        "description": "Returns a current indexed snapshot for DID-linked objects. block_height is applied only on current tables that expose a height column. This endpoint does not query history tables.",
+        "description": "Returns the indexed snapshot for DID-linked objects at a specific block height. Only applies to current tables that expose a height column; does not query history tables.",
         "operationId": "getIndexerSnapshot",
         "parameters": [
           {

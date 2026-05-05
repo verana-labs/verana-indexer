@@ -104,12 +104,11 @@ async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, 
 async function fetchPermissionsAtHeight(args: {
   did: string;
   blockHeight: number;
-  schemaIds: number[];
   schemaTrIds?: number[];
   corporationAddresses: string[];
   tables: SnapshotTables;
 }): Promise<SnapshotRow[]> {
-  const { did, schemaIds, schemaTrIds = [], corporationAddresses, tables, blockHeight } = args;
+  const { did, schemaTrIds = [], corporationAddresses, tables, blockHeight } = args;
   if (!tables.hasPermissions) return [];
 
   const query = knex("permissions")
@@ -117,7 +116,6 @@ async function fetchPermissionsAtHeight(args: {
     .where((qb) => {
       qb.where("did", did);
       if (corporationAddresses.length > 0) qb.orWhere((q) => q.whereIn("corporation", corporationAddresses));
-      if (schemaIds.length > 0) qb.orWhereIn("schema_id", schemaIds);
       if (tables.hasCredentialSchemas && schemaTrIds.length > 0) {
         const schemaQuery = knex("credential_schemas")
           .select("id")
@@ -160,7 +158,6 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     fetchPermissionsAtHeight({
       did,
       blockHeight,
-      schemaIds: [],
       schemaTrIds: trIds,
       corporationAddresses,
       tables,
