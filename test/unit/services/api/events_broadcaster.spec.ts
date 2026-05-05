@@ -367,21 +367,36 @@ describe("EventsBroadcaster", () => {
     const eventA = makeEvent(didA, {
       payload: { ...makeEvent(didA).payload, related_dids: [didA, didB] },
     });
-    const eventB = makeEvent(didB, {
-      tx_hash: eventA.tx_hash,
-      payload: { ...eventA.payload, related_dids: [didA, didB] },
-    });
-
     const messageA = waitForMessage(wsA, (msg) => msg.type === "indexer-event");
     const messageB = waitForMessage(wsB, (msg) => msg.type === "indexer-event");
     broadcaster.broadcastIndexerEvent(eventA);
-    broadcaster.broadcastIndexerEvent(eventB);
 
     await expect(messageA).resolves.toMatchObject({ did: didA, payload: { related_dids: [didA, didB] } });
-    await expect(messageB).resolves.toMatchObject({ did: didB, payload: { related_dids: [didA, didB] } });
+    await expect(messageB).resolves.toMatchObject({ did: didA, payload: { related_dids: [didA, didB] } });
 
     closeSocket(wsA);
     closeSocket(wsB);
+  });
+
+  it("does not emit duplicate DID room events when did is also related", async () => {
+    const didA = "did:web:agent-duplicate.example";
+    const wsA = new WebSocket(`${WS_URL}?did=${encodeURIComponent(didA)}`);
+    await waitForOpen(wsA);
+    await waitForMessage(wsA, (msg) => msg.type === "connected");
+
+    let received = 0;
+    wsA.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "indexer-event") received++;
+    });
+
+    broadcaster.broadcastIndexerEvent(makeEvent(didA, {
+      payload: { ...makeEvent(didA).payload, related_dids: [didA, didA] },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(received).toBe(1);
+    closeSocket(wsA);
   });
 
   it("broadcasts legacy block-indexed events to global subscribers only", async () => {

@@ -20,11 +20,25 @@ export async function up(knex: Knex): Promise<void> {
     table.jsonb("payload").notNullable().defaultTo("{}");
     table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
 
-    table.unique(["did", "tx_hash", "message_index", "event_type"], "idx_events_did_tx_msg_type_unique");
     table.index(["did", "block_height", "tx_index", "message_index", "id"], "idx_events_did_replay_order");
     table.index(["block_height", "tx_index", "message_index", "id"], "idx_events_replay_order");
+    table.index(["block_height"], "idx_events_block_height");
+    table.index(["did"], "idx_events_did");
+    table.index(["tx_hash"], "idx_events_tx_hash");
     table.index(["event_type"], "idx_events_event_type");
   });
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_tx_msg_entity_unique
+    ON indexer_events (
+      tx_hash,
+      tx_index,
+      message_index,
+      event_type,
+      entity_type,
+      COALESCE(entity_id, '')
+    )
+  `);
 
   await knex.raw(`
     CREATE INDEX IF NOT EXISTS idx_events_payload_related_dids_gin
