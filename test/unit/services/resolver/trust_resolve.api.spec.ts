@@ -99,6 +99,7 @@ describe("TrustV1ApiService GET /resolve", () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   it("summary returns trust summary + legacy fields and queries stored row at clamped height", async () => {
@@ -246,13 +247,14 @@ describe("TrustV1ApiService GET /resolve", () => {
     const Verre = await import("@verana-labs/verre");
     const knexModule = await import("../../../../src/common/utils/db_connection");
     const knex = knexModule.default ?? knexModule;
+    const chain = knex("trust_results");
+    chain.insert.mockClear();
     jest.spyOn(Verre, "resolveDID").mockResolvedValue(verreResult as any);
     jest.spyOn(TrustResolve, "clearReattemptable").mockResolvedValue(undefined);
     jest.spyOn(TrustResolve, "markReattemptableFailure").mockResolvedValue(undefined);
 
     await TrustResolve.resolveTrustForDidAtHeight("did:verana:test123", 101);
 
-    const chain = knex("trust_results");
     expect(chain.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         did: "did:verana:test123",
@@ -329,12 +331,12 @@ describe("TrustV1ApiService GET /resolve", () => {
     expect(res).toEqual(
       expect.objectContaining({
         did,
-        trustStatus: expect.any(String),
+        trust_status: expect.any(String),
         production: expect.any(Boolean),
-        evaluatedAt: expect.any(String),
-        evaluatedAtBlock: 10,
+        evaluated_at: expect.any(String),
+        evaluated_at_block: 10,
         credentials: expect.any(Array),
-        failedCredentials: [],
+        failed_credentials: [],
       })
     );
     expect(JSON.stringify(res)).not.toContain("Cannot read properties of undefined");
@@ -357,6 +359,53 @@ describe("TrustV1ApiService GET /resolve", () => {
     expect(ctx.meta.$statusCode).toBe(200);
     expect(res.evaluated_at_block).toBe(9);
   });
+
+  it("issuer authorization handles malformed Verre permission result without 500", async () => {
+    const Verre = await import("@verana-labs/verre");
+    jest.spyOn(Verre, "verifyPermissions").mockResolvedValue(undefined as any);
+    jest.spyOn(service.broker, "call").mockImplementation(async (action: string) => {
+      if (action.includes("listPermissions")) {
+        return {
+          permissions: [
+            {
+              id: 7,
+              type: "ISSUER",
+              did: "did:verana:test123",
+              deposit: 0,
+              perm_state: "ACTIVE",
+            },
+          ],
+        };
+      }
+      if (action.includes("findBeneficiaries")) return { permissions: [] };
+      if (action.includes("getPermission")) {
+        return {
+          permission: {
+            id: 7,
+            type: "ECOSYSTEM",
+            did: "did:verana:test123",
+            deposit: 0,
+            perm_state: "ACTIVE",
+          },
+        };
+      }
+      return {};
+    });
+
+    const ctx: any = {
+      params: {
+        did: "did:verana:test123",
+        vtjscId: "https://example.com/schemas/ecs-service/v1",
+      },
+      meta: {},
+    };
+
+    const res = await service.issuerAuthorization(ctx);
+
+    expect(ctx.meta.$statusCode).toBe(200);
+    expect(res.authorized).toBe(false);
+    expect(res.reason).toBe("Verre permission verification did not succeed for this DID and VTJSC.");
+  });
 });
 
 describe("TrustV1ApiService POST /refresh", () => {
@@ -371,6 +420,7 @@ describe("TrustV1ApiService POST /refresh", () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   it("returns { did, result: ok } when refresh is triggered", async () => {
