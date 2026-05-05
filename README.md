@@ -101,6 +101,7 @@ A list of services is shown below:
 
 You can view detail database schema [here](./docs/database_schema.md)
 
+
 ## Setup
 
 This setup guide is for **local development** and connecting to the **Verana testnet**. For production deployments or other networks, adjust the configuration accordingly.
