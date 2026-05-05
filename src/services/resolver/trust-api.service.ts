@@ -24,32 +24,32 @@ function isDidParam(did: string): did is string {
 }
 
 type PermissionChainLink = {
-  permissionId: number;
+  permission_id: number;
   type: string;
   did: string | null;
   deposit: string;
-  permState: string;
-  effectiveFrom?: string | null;
-  effectiveUntil?: string | null;
+  perm_state: string;
+  effective_from?: string | null;
+  effective_until?: string | null;
 };
 
 type Q1Credential = {
   result: "VALID" | "IGNORED" | "FAILED";
-  ecsType: "ECS-SERVICE" | "ECS-ORG" | "ECS-PERSONA" | "ECS-UA" | null;
-  presentedBy: string | null;
-  issuedBy: string | null;
+  ecs_type: "ECS-SERVICE" | "ECS-ORG" | "ECS-PERSONA" | "ECS-UA" | null;
+  presented_by: string | null;
+  issued_by: string | null;
   id?: string;
   type?: string;
   format?: string;
-  issuedAt?: string;
-  validUntil?: string;
-  digestSri?: string;
-  effectiveIssuanceTime?: string;
-  vtjscId?: string;
+  issued_at?: string;
+  valid_until?: string;
+  digest_sri?: string;
+  effective_issuance_time?: string;
+  vtjsc_id?: string;
   claims?: unknown;
   schema?: unknown;
-  permissionChain?: Array<Record<string, unknown>>;
-  digestAlgorithm?: string;
+  permission_chain?: Array<Record<string, unknown>>;
+  digest_algorithm?: string;
 };
 
 const RESOLVE_RESULT_STATUS_BY_OUTCOME: Record<string, { trustStatus: string; production: boolean }> = {
@@ -111,13 +111,13 @@ function toPermissionChainLink(p: Record<string, unknown>): PermissionChainLink 
   const id = Number(p.id);
   const state = String(p.perm_state ?? p.permState ?? "").toUpperCase() || "UNKNOWN";
   return {
-    permissionId: Number.isFinite(id) ? id : 0,
+    permission_id: Number.isFinite(id) ? id : 0,
     type: String(p.type ?? ""),
     did: (p.did as string) ?? (p.grantee as string) ?? null,
     deposit: formatDeposit(p.deposit),
-    permState: state,
-    effectiveFrom: p.effective_from != null ? String(p.effective_from) : p.effective != null ? String(p.effective) : null,
-    effectiveUntil:
+    perm_state: state,
+    effective_from: p.effective_from != null ? String(p.effective_from) : p.effective != null ? String(p.effective) : null,
+    effective_until:
       p.effective_until != null
         ? String(p.effective_until)
         : p.expiration != null
@@ -294,7 +294,7 @@ export class TrustApiService extends BaseService {
     return undefined;
   }
 
-  private ecsTypeFromCredential(c: Record<string, unknown>): Q1Credential["ecsType"] {
+  private ecsTypeFromCredential(c: Record<string, unknown>): Q1Credential["ecs_type"] {
     const vtjscId =
       (typeof c.vtjscId === "string" && c.vtjscId) ||
       (typeof (c.schema as any)?.jsonSchema === "string" && (c.schema as any).jsonSchema) ||
@@ -341,8 +341,8 @@ export class TrustApiService extends BaseService {
   }
 
   private async tryComputeDigestSriForCredential(vtjscId: string | undefined, rawCredential: unknown): Promise<{
-    digestSri?: string;
-    digestAlgorithm?: string;
+    digest_sri?: string;
+    digest_algorithm?: string;
   }> {
     if (!vtjscId || !rawCredential) return {};
     let schemaId = this.vtjscToSchemaId.get(vtjscId);
@@ -362,9 +362,9 @@ export class TrustApiService extends BaseService {
     if (!alg) return {};
     try {
       const canonical = await canonicalizeJson(rawCredential);
-      return { digestSri: computeSri(alg, canonical), digestAlgorithm: alg };
+      return { digest_sri: computeSri(alg, canonical), digest_algorithm: alg };
     } catch {
-      return { digestAlgorithm: alg };
+      return { digest_algorithm: alg };
     }
   }
 
@@ -384,26 +384,44 @@ export class TrustApiService extends BaseService {
       (typeof c.vtjscId === "string" && c.vtjscId) ||
       (typeof schema?.jsonSchema === "string" && schema.jsonSchema) ||
       undefined;
-    const presentedBy = (typeof c.presentedBy === "string" && c.presentedBy) || (typeof c.presented_by === "string" && (c as any).presented_by) || did;
-    const issuedBy = (typeof c.issuedBy === "string" && c.issuedBy) || (typeof c.issuer === "string" && c.issuer) || (typeof c.issued_by === "string" && (c as any).issued_by) || null;
+    const presentedBy =
+      (typeof c.presentedBy === "string" && c.presentedBy) ||
+      (typeof c.presented_by === "string" && (c as any).presented_by) ||
+      did;
+    const issuedBy =
+      (typeof c.issuedBy === "string" && c.issuedBy) ||
+      (typeof c.issuer === "string" && c.issuer) ||
+      (typeof c.issued_by === "string" && (c as any).issued_by) ||
+      null;
     const claims = c.claims ?? c.credentialSubject ?? c.subjectClaims ?? undefined;
     const w3c = this.extractW3cCredentialJson(c);
     return {
       result: this.resultFromCredential(c),
-      ecsType: this.ecsTypeFromCredential({ ...c, vtjscId }),
-      presentedBy,
-      issuedBy,
+      ecs_type: this.ecsTypeFromCredential({ ...c, vtjscId }),
+      presented_by: presentedBy,
+      issued_by: issuedBy,
       id: typeof c.id === "string" ? c.id : undefined,
       type: typeof c.type === "string" ? c.type : undefined,
       format: typeof c.format === "string" ? c.format : undefined,
-      issuedAt: typeof c.issuedAt === "string" ? c.issuedAt : typeof (c as any).issuanceDate === "string" ? (c as any).issuanceDate : undefined,
-      validUntil: typeof c.validUntil === "string" ? c.validUntil : typeof (c as any).expirationDate === "string" ? (c as any).expirationDate : undefined,
-      digestSri: typeof c.digestSri === "string" ? c.digestSri : undefined,
-      effectiveIssuanceTime: typeof c.effectiveIssuanceTime === "string" ? c.effectiveIssuanceTime : undefined,
-      vtjscId,
+      issued_at:
+        typeof c.issuedAt === "string"
+          ? c.issuedAt
+          : typeof (c as any).issuanceDate === "string"
+            ? (c as any).issuanceDate
+            : undefined,
+      valid_until:
+        typeof c.validUntil === "string"
+          ? c.validUntil
+          : typeof (c as any).expirationDate === "string"
+            ? (c as any).expirationDate
+            : undefined,
+      digest_sri: typeof c.digestSri === "string" ? c.digestSri : undefined,
+      effective_issuance_time: typeof c.effectiveIssuanceTime === "string" ? c.effectiveIssuanceTime : undefined,
+      vtjsc_id: vtjscId,
       claims,
       schema: c.schema,
-      permissionChain: Array.isArray((c as any).permissionChain) ? ((c as any).permissionChain as any[]) : undefined,
+      permission_chain: Array.isArray((c as any).permissionChain) ? ((c as any).permissionChain as any[]) : undefined,
+      ...(w3c ? { credential: w3c } : {}),
     };
   }
 
@@ -414,18 +432,18 @@ export class TrustApiService extends BaseService {
 
   private computeVsReqTrustStatus(did: string, credentials: Q1Credential[]): { trustStatus: string; production: boolean } {
     const valid = credentials.filter((c) => c.result === "VALID");
-    const services = valid.filter((c) => c.ecsType === "ECS-SERVICE" && c.presentedBy === did);
+    const services = valid.filter((c) => c.ecs_type === "ECS-SERVICE" && c.presented_by === did);
     if (services.length === 0) return { trustStatus: "UNTRUSTED", production: false };
 
     const byEco = new Map<string, { services: Q1Credential[]; orgPersonaByDid: Map<string, Q1Credential[]> }>();
     for (const c of valid) {
       const key = this.ecosystemKeyFromCredential(c);
       const cur = byEco.get(key) ?? { services: [], orgPersonaByDid: new Map<string, Q1Credential[]>() };
-      if (c.ecsType === "ECS-SERVICE" && c.presentedBy === did) cur.services.push(c);
-      if ((c.ecsType === "ECS-ORG" || c.ecsType === "ECS-PERSONA") && c.presentedBy) {
-        const arr = cur.orgPersonaByDid.get(c.presentedBy) ?? [];
+      if (c.ecs_type === "ECS-SERVICE" && c.presented_by === did) cur.services.push(c);
+      if ((c.ecs_type === "ECS-ORG" || c.ecs_type === "ECS-PERSONA") && c.presented_by) {
+        const arr = cur.orgPersonaByDid.get(c.presented_by) ?? [];
         arr.push(c);
-        cur.orgPersonaByDid.set(c.presentedBy, arr);
+        cur.orgPersonaByDid.set(c.presented_by, arr);
       }
       byEco.set(key, cur);
     }
@@ -437,7 +455,7 @@ export class TrustApiService extends BaseService {
       ecosystemsWithService += 1;
       let ok = false;
       for (const svc of cur.services) {
-        const issuer = svc.issuedBy;
+        const issuer = svc.issued_by;
         if (!issuer) continue;
         if (issuer === did) {
           const arr = cur.orgPersonaByDid.get(did) ?? [];
@@ -486,7 +504,7 @@ export class TrustApiService extends BaseService {
       createdAt: row.evaluated_at ?? row.created_at,
       trustTtlSeconds: getTrustEvaluationTtlSeconds(),
     });
-    const ok = summary.trustStatus === "TRUSTED" || summary.trustStatus === "PARTIAL";
+    const ok = summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
     this.trustedVsAtHeight.set(key, ok);
     return ok;
   }
@@ -495,7 +513,7 @@ export class TrustApiService extends BaseService {
     cred: Q1Credential,
     blockHeight: number
   ): Promise<Array<Record<string, unknown>>> {
-    const raw = cred.permissionChain;
+    const raw = cred.permission_chain;
     if (!Array.isArray(raw) || raw.length === 0) return [];
     const visited = new Set<string>();
     const out: Array<Record<string, unknown>> = [];
@@ -505,7 +523,7 @@ export class TrustApiService extends BaseService {
       const didIsTrustedVS = did ? await this.isTrustedVsAtHeight(did, blockHeight, visited) : false;
       out.push({
         ...link,
-        didIsTrustedVS,
+        did_is_trusted_vs: didIsTrustedVS,
       });
     }
     return out;
@@ -570,7 +588,8 @@ export class TrustApiService extends BaseService {
     });
 
     if (detailRaw === "full") {
-      const evaluatedAtIso = evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluatedAt;
+      const evaluatedAtIso =
+        evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at;
       const { credentials: rawCreds, failedCredentials } = extractQ1CredentialArrays(row.resolve_result);
       const credentials = (rawCreds as unknown[])
         .map((c) => this.normalizeQ1Credential(c, did))
@@ -578,18 +597,18 @@ export class TrustApiService extends BaseService {
     
       const withDigest = await Promise.all(
         credentials.map(async (cred, idx) => {
-          if (cred.digestSri) return cred;
+          if (cred.digest_sri) return cred;
           const raw = (rawCreds as unknown[])[idx];
           const rawObj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
           const w3c = rawObj ? this.extractW3cCredentialJson(rawObj) : null;
-          const computed = await this.tryComputeDigestSriForCredential(cred.vtjscId, w3c);
+          const computed = await this.tryComputeDigestSriForCredential(cred.vtjsc_id, w3c);
           return { ...cred, ...computed };
         })
       );
       const enrichedCredentials = await Promise.all(
         withDigest.map(async (c) => ({
           ...c,
-          permissionChain: await this.enrichCredentialPermissionChain(c, row.height),
+          permission_chain: await this.enrichCredentialPermissionChain(c, row.height),
         }))
       );
       const vsReq = (() => {
@@ -602,25 +621,25 @@ export class TrustApiService extends BaseService {
       })();
       const body: Record<string, unknown> = {
         did: summary.did,
-        trustStatus: vsReq.trustStatus,
+        trust_status: vsReq.trustStatus,
         production: vsReq.production,
-        evaluatedAt: evaluatedAtIso,
-        evaluatedAtBlock: row.height,
+        evaluated_at: evaluatedAtIso,
+        evaluated_at_block: row.height,
         credentials: enrichedCredentials,
-        failedCredentials,
+        failed_credentials: failedCredentials,
       };
-      if (summary.expiresAt !== undefined) body.expiresAt = summary.expiresAt;
+      if (summary.expires_at !== undefined) body.expires_at = summary.expires_at;
       return ApiResponder.success(ctx, body, 200);
     }
 
     const summaryBody: Record<string, unknown> = {
       did: summary.did,
-      trustStatus: summary.trustStatus,
+      trust_status: summary.trust_status,
       production: summary.production,
-      evaluatedAt: summary.evaluatedAt,
-      evaluatedAtBlock: row.height,
+      evaluated_at: summary.evaluated_at,
+      evaluated_at_block: row.height,
     };
-    if (summary.expiresAt !== undefined) summaryBody.expiresAt = summary.expiresAt;
+    if (summary.expires_at !== undefined) summaryBody.expires_at = summary.expires_at;
     return ApiResponder.success(ctx, summaryBody, 200);
   }
 
@@ -672,7 +691,7 @@ export class TrustApiService extends BaseService {
       }
     }
 
-    const base = { did: args.did, vtjscId: args.vtjscId, evaluatedAt: now, evaluatedAtBlock };
+    const base = { did: args.did, vtjsc_id: args.vtjscId, evaluated_at: now, evaluated_at_block: evaluatedAtBlock };
 
     if (!leaf || resolvedSchemaId === null) {
       const schemaHint = schemaIds.length > 0 ? String(schemaIds[0]) : "?";
@@ -684,7 +703,7 @@ export class TrustApiService extends BaseService {
           reason: `No active ${listType} permission found for DID on schema ${schemaHint} (VTJSC: ${args.vtjscId})`,
           permission: null,
           fees: { required: false },
-          permissionChain: [] satisfies PermissionChainLink[],
+          permission_chain: [] satisfies PermissionChainLink[],
         },
         200
       );
@@ -709,11 +728,11 @@ export class TrustApiService extends BaseService {
       if (isIssuer) {
         const iss = Number(p.issuance_fees ?? 0);
         totalFeeUnits += iss;
-        return { permissionId: pid, type: typ, issuanceFees: this.formatUvnaAmount(iss) };
+        return { permission_id: pid, type: typ, issuance_fees: this.formatUvnaAmount(iss) };
       }
       const vf = Number(p.verification_fees ?? 0);
       totalFeeUnits += vf;
-      return { permissionId: pid, type: typ, verificationFees: this.formatUvnaAmount(vf) };
+      return { permission_id: pid, type: typ, verification_fees: this.formatUvnaAmount(vf) };
     });
 
     const feesRequired = totalFeeUnits > 0;
@@ -731,7 +750,7 @@ export class TrustApiService extends BaseService {
           fees: {
             pricingAssetType: "COIN",
             pricingAsset: "uvna",
-            totalBeneficiaryFees: this.formatUvnaAmount(totalFeeUnits),
+            total_beneficiary_fees: this.formatUvnaAmount(totalFeeUnits),
             beneficiaries,
           },
         },
@@ -752,9 +771,9 @@ export class TrustApiService extends BaseService {
           session = {
             id: args.sessionId,
             paid: true,
-            ...(isIssuer ? { issuerPermId: Number(leaf.id) } : { verifierPermId: Number(leaf.id) }),
-            agentPermId: Number(sn.agent_perm_id ?? 0) || 0,
-            walletAgentPermId: Number(sn.wallet_agent_perm_id ?? 0) || 0,
+            ...(isIssuer ? { issuer_perm_id: Number(leaf.id) } : { verifier_perm_id: Number(leaf.id) }),
+            agent_perm_id: Number(sn.agent_perm_id ?? 0) || 0,
+            wallet_agent_perm_id: Number(sn.wallet_agent_perm_id ?? 0) || 0,
             created: sn.created ?? null,
           };
         }
@@ -782,17 +801,17 @@ export class TrustApiService extends BaseService {
     const permissionObj: Record<string, unknown> = {
       id: Number(leaf.id),
       type: leaf.type,
-      schemaId: resolvedSchemaId,
+      schema_id: resolvedSchemaId,
       did: (leaf.did as string) ?? (leaf.grantee as string),
       deposit: this.formatUvnaAmount(leaf.deposit),
-      permState: String(leaf.perm_state ?? "").toUpperCase(),
-      effectiveFrom: leaf.effective_from ?? leaf.effective ?? null,
-      effectiveUntil: leaf.effective_until ?? leaf.expiration ?? null,
+      perm_state: String(leaf.perm_state ?? "").toUpperCase(),
+      effective_from: leaf.effective_from ?? leaf.effective ?? null,
+      effective_until: leaf.effective_until ?? leaf.expiration ?? null,
     };
     if (isIssuer) {
-      permissionObj.issuanceFeeDiscount = leaf.issuance_fee_discount != null ? String(leaf.issuance_fee_discount) : "0";
+      permissionObj.issuance_fee_discount = leaf.issuance_fee_discount != null ? String(leaf.issuance_fee_discount) : "0";
     } else {
-      permissionObj.verificationFeeDiscount = leaf.verification_fee_discount != null ? String(leaf.verification_fee_discount) : "0";
+      permissionObj.verification_fee_discount = leaf.verification_fee_discount != null ? String(leaf.verification_fee_discount) : "0";
     }
 
     const feesPayload = feesRequired
@@ -800,7 +819,7 @@ export class TrustApiService extends BaseService {
           required: true,
           pricingAssetType: "COIN",
           pricingAsset: "uvna",
-          totalBeneficiaryFees: this.formatUvnaAmount(totalFeeUnits),
+          total_beneficiary_fees: this.formatUvnaAmount(totalFeeUnits),
           beneficiaries,
           paid: sessionOk,
         }
@@ -822,7 +841,7 @@ export class TrustApiService extends BaseService {
         ...(denialReason ? { reason: denialReason } : {}),
         permission: permissionObj,
         fees: feesPayload,
-        permissionChain,
+        permission_chain: permissionChain,
         ...(session ? { session } : {}),
       },
       200
@@ -960,15 +979,15 @@ export class TrustApiService extends BaseService {
         const permState = String(p.perm_state ?? "").toUpperCase();
         if (permState !== "ACTIVE") continue;
         permissions.push({
-          permissionId: Number(p.id),
+          permission_id: Number(p.id),
           did: (p.did as string) ?? (p.grantee as string) ?? did,
           type: String(p.type ?? ""),
-          schemaId,
-          vtjscId,
+          schema_id: schemaId,
+          vtjsc_id: vtjscId,
           deposit: this.formatUvnaAmount(p.deposit),
-          permState,
-          effectiveFrom: p.effective_from ?? p.effective ?? null,
-          effectiveUntil: p.effective_until ?? p.expiration ?? null,
+          perm_state: permState,
+          effective_from: p.effective_from ?? p.effective ?? null,
+          effective_until: p.effective_until ?? p.expiration ?? null,
         });
       }
     }
@@ -977,11 +996,11 @@ export class TrustApiService extends BaseService {
       ctx,
       {
         did,
-        ecosystemDid,
-        ecosystemAka: (trRow as any).aka ?? null,
-        isParticipant: permissions.length > 0,
-        evaluatedAt,
-        evaluatedAtBlock,
+        ecosystem_did: ecosystemDid,
+        ecosystem_aka: (trRow as any).aka ?? null,
+        is_participant: permissions.length > 0,
+        evaluated_at: evaluatedAt,
+        evaluated_at_block: evaluatedAtBlock,
         permissions,
       },
       200
