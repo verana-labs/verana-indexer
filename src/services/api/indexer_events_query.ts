@@ -97,6 +97,16 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "ArchiveCredentialSchema",
     entityType: "CredentialSchema",
   },
+  [VeranaPermissionMessageTypes.CreateRootPermission]: {
+    module: "permission",
+    action: "CreateRootPermission",
+    entityType: "Permission",
+  },
+  [VeranaPermissionMessageTypes.SelfCreatePermission]: {
+    module: "permission",
+    action: "CreatePermission",
+    entityType: "Permission",
+  },
   [VeranaPermissionMessageTypes.StartPermissionVP]: {
     module: "permission",
     action: "StartPermissionVP",
@@ -216,6 +226,42 @@ function readNumber(content: unknown, keys: string[]): number | null {
   return null;
 }
 
+async function readEventAttributeNumber(args: {
+  txId: number;
+  messageIndex: number;
+  keys: string[];
+}): Promise<number | null> {
+  const txId = Number(args.txId);
+  const messageIndex = Number(args.messageIndex);
+  if (!Number.isInteger(txId) || txId <= 0) return null;
+  if (!Number.isInteger(messageIndex) || messageIndex < 0) return null;
+  if (!args.keys || args.keys.length === 0) return null;
+
+  async function query(whereMsgIndex: boolean): Promise<number | null> {
+    const q = knex("event_attribute as ea")
+      .innerJoin("event as e", "e.id", "ea.event_id")
+      .select("ea.key", "ea.value")
+      .where("e.tx_id", txId)
+      .whereIn("ea.key", args.keys)
+      .orderBy("ea.index", "asc");
+
+    if (whereMsgIndex) {
+      q.andWhere("e.tx_msg_index", messageIndex);
+    } else {
+      q.whereNull("e.tx_msg_index");
+    }
+
+    const rows = (await q) as Array<{ key?: unknown; value?: unknown }>;
+    for (const row of rows) {
+      const n = Number(row?.value);
+      if (Number.isInteger(n) && n > 0) return n;
+    }
+    return null;
+  }
+
+  return (await query(true)) ?? (await query(false));
+}
+
 async function getTableColumns(tableName: string): Promise<Set<string>> {
   const now = Date.now();
   const cached = tableColumnsCache.get(tableName);
@@ -260,12 +306,91 @@ async function addTrustRegistryDids(trId: number | null, height: number, dids: S
   addDid(dids, (row as any)?.controller);
 }
 
+async function findTrustRegistryIdByDid(did: string, height: number): Promise<number | null> {
+  if (!isValidDid(did)) return null;
+  const h = Number(height);
+  if (!Number.isInteger(h) || h <= 0) return null;
+  const row = await knex("trust_registry_history")
+    .select("tr_id")
+    .where("did", did)
+    .where("height", "<=", h)
+    .orderBy("height", "desc")
+    .orderBy("id", "desc")
+    .first();
+  const id = Number((row as any)?.tr_id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+async function findCredentialSchemaIdByTrId(trId: number, height: number): Promise<number | null> {
+  const t = Number(trId);
+  const h = Number(height);
+  if (!Number.isInteger(t) || t <= 0) return null;
+  if (!Number.isInteger(h) || h <= 0) return null;
+  const row = await knex("credential_schema_history")
+    .select("credential_schema_id")
+    .where("tr_id", t)
+    .where("height", "<=", h)
+    .orderBy("height", "desc")
+    .orderBy("id", "desc")
+    .first();
+  const id = Number((row as any)?.credential_schema_id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+async function findPermissionIdByActors(args: {
+  did?: unknown;
+  grantee?: unknown;
+  createdBy?: unknown;
+  height: number;
+}): Promise<number | null> {
+  const h = Number(args.height);
+  if (!Number.isInteger(h) || h <= 0) return null;
+  const did = typeof args.did === "string" ? args.did : null;
+  const grantee = typeof args.grantee === "string" ? args.grantee : null;
+  const createdBy = typeof args.createdBy === "string" ? args.createdBy : null;
+  if (!isValidDid(did) && !isValidDid(grantee) && !isValidDid(createdBy)) return null;
+
+  const q = knex("permission_history")
+    .select("permission_id")
+    .where("height", "<=", h)
+    .orderBy("height", "desc")
+    .orderBy("id", "desc")
+    .limit(1);
+
+  q.andWhere(function () {
+    if (isValidDid(did)) this.orWhere("did", did);
+    if (isValidDid(grantee)) this.orWhere("grantee", grantee);
+    if (isValidDid(createdBy)) this.orWhere("created_by", createdBy);
+  });
+
+  const row = await q.first();
+  const id = Number((row as any)?.permission_id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<string>): Promise<string | undefined> {
   if (meta.module === "permission") {
-    const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
-    if (!permissionId) return undefined;
+    const permissionId =
+      readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]) ??
+      (await readEventAttributeNumber({
+        txId: row.tx_id,
+        messageIndex: row.message_index,
+        keys: ["permission_id", "permissionId", "perm_id", "permId", "id"],
+      }));
+    const resolvedPermissionId =
+      permissionId ??
+      (row.message_type === VeranaPermissionMessageTypes.SelfCreatePermission ||
+      row.message_type === VeranaPermissionMessageTypes.CreateRootPermission
+        ? await findPermissionIdByActors({
+            did: (row.content as any)?.did,
+            grantee: (row.content as any)?.grantee,
+            createdBy: (row.content as any)?.creator ?? (row.content as any)?.created_by ?? (row.content as any)?.createdBy,
+            height: row.block_height,
+          })
+        : null);
+    if (!resolvedPermissionId) return undefined;
     const now = Date.now();
-    const permCacheKey = `${permissionId}:${row.block_height}`;
+    const permCacheKey = `${resolvedPermissionId}:${row.block_height}`;
     const cachedPerm = permissionSnapshotCache.get(permCacheKey);
     const columns = await existingColumns("permission_history", [
       "permission_id",
@@ -283,7 +408,7 @@ async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<strin
         ? cachedPerm.value
         : knex("permission_history")
           .select(columns)
-          .where("permission_id", permissionId)
+          .where("permission_id", resolvedPermissionId)
           .where("height", "<=", row.block_height)
           .orderBy("height", "desc")
           .first();
@@ -317,12 +442,24 @@ async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<strin
       const cs = await csPromise;
       await addTrustRegistryDids(Number((cs as any)?.tr_id) || null, row.block_height, dids);
     }
-    return String(permissionId);
+    return String(resolvedPermissionId);
   }
 
   if (meta.module === "credential-schema") {
-    const schemaId = readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const trIdFromContent = readNumber(row.content, ["tr_id", "trId", "trust_registry_id", "trustRegistryId"]);
+    const schemaId =
+      readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]) ??
+      (await readEventAttributeNumber({
+        txId: row.tx_id,
+        messageIndex: row.message_index,
+        keys: ["credential_schema_id", "credentialSchemaId", "schema_id", "schemaId", "id"],
+      }));
+    const trIdFromContent =
+      readNumber(row.content, ["tr_id", "trId", "trust_registry_id", "trustRegistryId"]) ??
+      (await readEventAttributeNumber({
+        txId: row.tx_id,
+        messageIndex: row.message_index,
+        keys: ["trust_registry_id", "trustRegistryId", "tr_id", "trId"],
+      }));
     let trId = trIdFromContent;
     if (schemaId) {
       const columns = await existingColumns("credential_schema_history", ["credential_schema_id", "tr_id"]);
@@ -334,15 +471,35 @@ async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<strin
         .first();
       trId = Number((cs as any)?.tr_id) || trId;
     }
+    const resolvedSchemaId =
+      schemaId ??
+      (row.message_type === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema && trId
+        ? await findCredentialSchemaIdByTrId(trId, row.block_height)
+        : null);
     await addTrustRegistryDids(trId, row.block_height, dids);
-    return schemaId ? String(schemaId) : undefined;
+    return resolvedSchemaId ? String(resolvedSchemaId) : undefined;
   }
 
   const trId =
     readNumber(row.content, ["id", "tr_id", "trId", "trust_registry_id", "trustRegistryId"]) ??
-    readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]);
-  await addTrustRegistryDids(trId, row.block_height, dids);
-  return trId ? String(trId) : undefined;
+    (await readEventAttributeNumber({
+      txId: row.tx_id,
+      messageIndex: row.message_index,
+      keys: ["trust_registry_id", "trustRegistryId", "tr_id", "trId", "id"],
+    })) ??
+    readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]) ??
+    (await readEventAttributeNumber({
+      txId: row.tx_id,
+      messageIndex: row.message_index,
+      keys: ["gfv_id", "gfvId", "gfd_id", "gfdId"],
+    }));
+  const resolvedTrId =
+    trId ??
+    (row.message_type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry
+      ? await findTrustRegistryIdByDid(String((row.content as any)?.did ?? ""), row.block_height)
+      : null);
+  await addTrustRegistryDids(resolvedTrId, row.block_height, dids);
+  return resolvedTrId ? String(resolvedTrId) : undefined;
 }
 
 async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
@@ -425,6 +582,36 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
   };
 }
 
+async function deriveMissingEntityIdFromHistory(row: Record<string, any>): Promise<string | null> {
+  const messageType = String(row.payload?.message_type ?? row.payload?.messageType ?? row.message_type ?? "");
+  const did = String(row.did ?? "");
+  const height = Number(row.block_height);
+  if (!messageType || !isValidDid(did)) return null;
+  if (!Number.isInteger(height) || height <= 0) return null;
+
+  if (messageType === VeranaTrustRegistryMessageTypes.CreateTrustRegistry) {
+    const trId = await findTrustRegistryIdByDid(did, height);
+    return trId ? String(trId) : null;
+  }
+
+  if (messageType === VeranaCredentialSchemaMessageTypes.CreateCredentialSchema) {
+    const trId = await findTrustRegistryIdByDid(did, height);
+    if (!trId) return null;
+    const schemaId = await findCredentialSchemaIdByTrId(trId, height);
+    return schemaId ? String(schemaId) : null;
+  }
+
+  if (
+    messageType === VeranaPermissionMessageTypes.CreateRootPermission ||
+    messageType === VeranaPermissionMessageTypes.CreatePermission
+  ) {
+    const permId = await findPermissionIdByActors({ did, grantee: did, createdBy: did, height });
+    return permId ? String(permId) : null;
+  }
+
+  return null;
+}
+
 async function buildIndexerTxEvents(args: {
   afterBlockHeight?: number;
   blockHeight?: number;
@@ -478,7 +665,19 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
     const inserted = await knex("indexer_events")
       .insert(rows)
       .onConflict(["did", "tx_hash", "message_index", "event_type"])
-      .ignore()
+      .merge({
+        entity_id: knex.raw("COALESCE(indexer_events.entity_id, EXCLUDED.entity_id)"),
+        entity_type: knex.raw("COALESCE(indexer_events.entity_type, EXCLUDED.entity_type)"),
+        payload: knex.raw(
+          `
+          CASE
+            WHEN (indexer_events.payload->>'entity_id') IS NULL AND EXCLUDED.entity_id IS NOT NULL
+              THEN jsonb_set(COALESCE(indexer_events.payload, '{}'::jsonb), '{entity_id}', to_jsonb(EXCLUDED.entity_id::text), true)
+            ELSE COALESCE(indexer_events.payload, '{}'::jsonb)
+          END
+          `
+        ),
+      })
       .returning("id");
     insertedIds = inserted
       .map((row: number | string | { id?: number | string }) => Number(typeof row === "object" ? row.id : row))
@@ -533,5 +732,51 @@ export async function listIndexerEvents(args: {
   applyBlockHeightFilter(query, args, "block_height");
 
   const rows = (await query) as Array<Record<string, any>>;
-  return rows.map(fromStoredRow);
+  const out = rows.map(fromStoredRow);
+
+  const logger = (global as any).logger as { warn?: (...args: any[]) => void } | undefined;
+  let backfillFailures = 0;
+  const backfillFailureIds: number[] = [];
+
+  await Promise.all(
+    out.map(async (ev, i) => {
+      const existing = ev.payload.entity_id;
+      if (existing !== undefined && existing !== null && String(existing).length > 0) return;
+
+      const derived = await deriveMissingEntityIdFromHistory(rows[i]);
+      if (!derived) return;
+
+      ev.payload.entity_id = derived;
+
+      try {
+        const id = Number(rows[i]?.id);
+        if (Number.isInteger(id) && id > 0) {
+          await knex("indexer_events")
+            .where({ id })
+            .update({
+              entity_id: derived,
+              payload: knex.raw(
+                "jsonb_set(COALESCE(payload, '{}'::jsonb), '{entity_id}', to_jsonb(?::text), true)",
+                [derived]
+              ),
+            });
+        }
+      } catch {
+        backfillFailures += 1;
+        const id = Number(rows[i]?.id);
+        if (Number.isInteger(id) && id > 0 && backfillFailureIds.length < 10) {
+          backfillFailureIds.push(id);
+        }
+      }
+    })
+  );
+
+  if (backfillFailures > 0 && logger?.warn) {
+    logger.warn(
+      `[IndexerEvents] entity_id backfill failed for ${backfillFailures} row(s)` +
+      (backfillFailureIds.length ? ` (sample ids: ${backfillFailureIds.join(", ")})` : "")
+    );
+  }
+
+  return out;
 }

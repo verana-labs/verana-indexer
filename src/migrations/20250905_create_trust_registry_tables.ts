@@ -12,6 +12,8 @@ export async function up(knex: Knex): Promise<void> {
     table.string("language", 2).notNullable();
     table.integer("active_version").nullable();
     table.bigInteger("height").notNullable().unique();
+    table.unique(["did", "height"], "trust_registry_did_height_unique");
+    table.index(["height"], "trust_registry_height_idx");
 
     table.bigInteger("participants").notNullable().defaultTo(0);
     table.bigInteger("participants_ecosystem").notNullable().defaultTo(0);
