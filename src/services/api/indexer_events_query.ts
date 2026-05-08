@@ -226,19 +226,6 @@ function normalizePositiveIntStrings(values: string[]): string[] {
     .map((n) => String(n));
 }
 
-function chooseEntityIdCandidate(args: { candidates: Array<{ value: unknown }>; row: EventRow }): string | undefined {
-  const unique = Array.from(new Set(normalizePositiveIntStrings(args.candidates.map((c) => String(c.value ?? "")))));
-  if (unique.length === 1) return unique[0];
-  if (unique.length > 1) {
-    getLogger()?.warn?.(`[IndexerEvents] conflicting entity_id candidates; leaving entity_id empty`, {
-      txHash: args.row.tx_hash,
-      messageIndex: args.row.message_index,
-      candidates: unique,
-    });
-  }
-  return undefined;
-}
-
 export function resolveEntityIdFromTxResponseEvents(args: {
   txHash: string;
   blockHeight: number;
@@ -338,7 +325,7 @@ export function resolveEntityIdFromTxResponseEvents(args: {
       eventTypes: ["set_permission_vp_to_terminated"],
       idKeys: ["permission_id", "perm_id", "id"],
     },
-    set_permission_vp_to_cancelled_last_request: {
+    cancel_permission_vp_last_request: {
       eventTypes: ["cancel_permission_vp_last_request", "set_permission_vp_to_cancelled"],
       idKeys: ["permission_id", "perm_id", "id"],
     },
@@ -526,7 +513,7 @@ async function resolveEntityIdFromTxLocalData(row: EventRow, meta: EventMeta): P
   return entityId;
 }
 
-async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<string>): Promise<string | undefined> {
+async function resolveEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
   return await resolveEntityIdFromTxLocalData(row, meta);
 }
 
@@ -537,7 +524,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const relatedDids = new Set<string>();
   addDid(relatedDids, row.sender);
   collectDids(row.content, relatedDids);
-  const entityId = await enrichRelatedDids(row, meta, relatedDids);
+  const entityId = await resolveEntityId(row, meta);
   return {
     type: "transaction-executed",
     module: meta.module,
@@ -628,7 +615,7 @@ async function buildIndexerTxEvents(args: {
       "tm.sender",
       "tm.content",
       "tx.data as tx_data",
-      knex.raw("(select count(*)::int from transaction_message tm2 where tm2.tx_id = tx.id) as tx_message_count"),
+      knex.raw("count(*) over (partition by tx.id)::int as tx_message_count"),
       "tx.height as block_height",
       "tx.hash as tx_hash",
       "tx.index as tx_index",
@@ -676,6 +663,9 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
           `
         ),
       })
+      .where((builder) =>
+        builder.whereNull("indexer_events.entity_id").orWhereRaw("(indexer_events.payload->>'entity_id') IS NULL")
+      )
       .returning("id");
     insertedIds = inserted
       .map((row: number | string | { id?: number | string }) => Number(typeof row === "object" ? row.id : row))

@@ -563,31 +563,36 @@ describe("indexer_events_query", () => {
   });
 
   it("conflicting emitted IDs warns and leaves entity_id empty", async () => {
-    (global as any).logger = { warn: jest.fn() };
-    await insertBlock(baseHeight + 86);
-    await insertTxMessage({
-      height: baseHeight + 86,
-      txIndex: 0,
-      messageIndex: 0,
-      hash: `tx-${runId}-conflict`,
-      content: { did, id: 999 },
-      messageType: VeranaPermissionMessageTypes.SelfCreatePermission,
-      txResponse: {
-        events: [
-          {
-            type: "self_create_permission",
-            attributes: [
-              { key: "msg_index", value: "0" },
-              { key: "permission_id", value: "902" },
-              { key: "self_permission_id", value: "903" },
-            ],
-          },
-        ],
-      },
-    });
-    await persistIndexerEventsForBlock(baseHeight + 86);
-    const events = await listIndexerEvents({ did, blockHeight: baseHeight + 86, limit: 10 });
-    expect(events[0].payload.entity_id).toBeUndefined();
-    expect((global as any).logger.warn).toHaveBeenCalled();
+    const prevLogger = (global as any).logger;
+    try {
+      (global as any).logger = { warn: jest.fn() };
+      await insertBlock(baseHeight + 86);
+      await insertTxMessage({
+        height: baseHeight + 86,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-conflict`,
+        content: { did, id: 999 },
+        messageType: VeranaPermissionMessageTypes.SelfCreatePermission,
+        txResponse: {
+          events: [
+            {
+              type: "self_create_permission",
+              attributes: [
+                { key: "msg_index", value: "0" },
+                { key: "permission_id", value: "902" },
+                { key: "self_permission_id", value: "903" },
+              ],
+            },
+          ],
+        },
+      });
+      await persistIndexerEventsForBlock(baseHeight + 86);
+      const events = await listIndexerEvents({ did, blockHeight: baseHeight + 86, limit: 10 });
+      expect(events[0].payload.entity_id).toBeUndefined();
+      expect((global as any).logger.warn).toHaveBeenCalled();
+    } finally {
+      (global as any).logger = prevLogger;
+    }
   });
 });
