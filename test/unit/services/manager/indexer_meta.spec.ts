@@ -144,5 +144,21 @@ describe("IndexerMetaService next_change_at", () => {
       tableHeights.block_checkpoint = prevCheckpoint;
     }
   });
+
+  it("returns null when checkpoint exists but no next change is within (block_height, checkpoint]", async () => {
+    const next = await service.getNextChangeAt(150);
+    expect(next).toBeNull();
+  });
+
+  it("returns null when no checkpoint row exists", async () => {
+    const prevCheckpoint = tableHeights.block_checkpoint;
+    try {
+      tableHeights.block_checkpoint = [];
+      const next = await service.getNextChangeAt(105);
+      expect(next).toBeNull();
+    } finally {
+      tableHeights.block_checkpoint = prevCheckpoint;
+    }
+  });
 });
 
