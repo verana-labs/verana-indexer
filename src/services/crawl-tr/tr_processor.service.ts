@@ -152,6 +152,13 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
 
       let processed = false;
       if (useHeightSyncTR) {
+        if (
+          !normalizedTrId &&
+          (processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry)
+        ) {
+          await this.processCreateTR(processedTR);
+          processed = true;
+        }
         if (normalizedTrId && Number.isFinite(Number(message.height))) {
           const dedupeKey = `${Number(message.height)}::${normalizedTrId}`;
           if (seenHeightSyncKeys.has(dedupeKey)) {
