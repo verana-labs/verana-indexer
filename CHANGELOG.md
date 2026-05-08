@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-05-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* 
+
+### Features
+
+* add snapshot endpoint for initial sync ([#238](https://github.com/verana-labs/verana-indexer/issues/238)) ([56dfda5](https://github.com/verana-labs/verana-indexer/commit/56dfda5fc478a49d6255e1951a0f2164d7fdad7a))
+* add support for v4 verifiable transactions in indexer ([#220](https://github.com/verana-labs/verana-indexer/issues/220)) ([11083fc](https://github.com/verana-labs/verana-indexer/commit/11083fc0d69058ac3a3baa9abba8bab01f74f2a0))
+* add trustData summary/full/null to TR and Perm APIs ([#228](https://github.com/verana-labs/verana-indexer/issues/228)) ([709b4b1](https://github.com/verana-labs/verana-indexer/commit/709b4b111c2ed3a553e8c882c5f7ea66b8f10e52))
+* remove mx reputation module ([#237](https://github.com/verana-labs/verana-indexer/issues/237)) ([2769445](https://github.com/verana-labs/verana-indexer/commit/2769445d4adf22edbfc8cc4914a1edb17f447533))
+
+
+### Bug Fixes
+
+* improve event replay for pre-existing DIDs ([#242](https://github.com/verana-labs/verana-indexer/issues/242)) ([d785a36](https://github.com/verana-labs/verana-indexer/commit/d785a367b9ede3ade8266e8d3ad7fae2ea19aa30))
+* remove duplicate index creation from indexer events migration ([#245](https://github.com/verana-labs/verana-indexer/issues/245)) ([65c70be](https://github.com/verana-labs/verana-indexer/commit/65c70be47825e35380242de2b8384afceb89d694))
+* return null when no next indexer change exists ([#244](https://github.com/verana-labs/verana-indexer/issues/244)) ([881e326](https://github.com/verana-labs/verana-indexer/commit/881e326c3ef1b53057b747eb8c79ca326e15ae0f))
+* verana-types import path (.js.js) causing startup failure ([#236](https://github.com/verana-labs/verana-indexer/issues/236)) ([c1cee21](https://github.com/verana-labs/verana-indexer/commit/c1cee21f2b34566bd29da396c78b3a19bf9a5952))
+
 ## [1.3.1](https://github.com/verana-labs/verana-indexer/compare/v1.3.0...v1.3.1) (2026-04-28)
 
 
