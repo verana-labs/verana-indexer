@@ -121,6 +121,14 @@ export default class IndexerMetaService extends BaseService {
   }
 
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
+    const checkpoint = await knex("block_checkpoint")
+      .select("height")
+      .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
+      .first();
+    const maxHeight = Number(checkpoint?.height);
+    if (!Number.isFinite(maxHeight) || maxHeight <= 0) return null;
+    if (!Number.isFinite(blockHeight) || blockHeight >= maxHeight) return null;
+
     // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
     const tables = [
       "trust_registry_history",
@@ -139,6 +147,7 @@ export default class IndexerMetaService extends BaseService {
           const row = await knex(tableName)
             .select("height")
             .where("height", ">", blockHeight)
+            .andWhere("height", "<=", maxHeight)
             .orderBy("height", "asc")
             .limit(1)
             .first();
