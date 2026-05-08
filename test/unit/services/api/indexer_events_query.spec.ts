@@ -1,6 +1,7 @@
 import knex from "../../../../src/common/utils/db_connection";
 import { VeranaPermissionMessageTypes } from "../../../../src/common/verana-message-types";
 import { up as createIndexerEventsTable } from "../../../../src/migrations/20260420000000_create_indexer_events";
+import { up as hardenIndexerEventsTable } from "../../../../src/migrations/20260421000000_harden_indexer_events_replay";
 import { listIndexerEvents, persistIndexerEventsForBlock } from "../../../../src/services/api/indexer_events_query";
 
 describe("indexer_events_query", () => {
@@ -11,10 +12,88 @@ describe("indexer_events_query", () => {
   const otherDid = `did:web:indexer-events-other-${runId}.example`;
   const txHashes: string[] = [];
   const heights: number[] = [];
+  const createdTables: string[] = [];
 
   beforeAll(async () => {
+    await ensureBaseTables();
     await createIndexerEventsTable(knex);
+    await hardenIndexerEventsTable(knex);
   });
+
+  afterAll(async () => {
+    for (const table of createdTables.reverse()) {
+      await knex.schema.dropTableIfExists(table);
+    }
+  });
+
+  async function ensureBaseTables(): Promise<void> {
+    if (!(await knex.schema.hasTable("block"))) {
+      await knex.schema.createTable("block", (table) => {
+        table.bigInteger("height").primary();
+        table.text("hash").notNullable();
+        table.timestamp("time").notNullable();
+        table.text("proposer_address").nullable();
+        table.jsonb("data").nullable();
+      });
+      createdTables.push("block");
+    }
+
+    if (!(await knex.schema.hasTable("transaction"))) {
+      await knex.schema.createTable("transaction", (table) => {
+        table.bigInteger("id").primary();
+        table.bigInteger("height").notNullable();
+        table.text("hash").notNullable();
+        table.text("codespace").nullable();
+        table.integer("code").notNullable().defaultTo(0);
+        table.bigInteger("gas_used").nullable();
+        table.bigInteger("gas_wanted").nullable();
+        table.bigInteger("gas_limit").nullable();
+        table.jsonb("fee").nullable();
+        table.timestamp("timestamp").notNullable();
+        table.jsonb("data").nullable();
+        table.integer("index").notNullable().defaultTo(0);
+      });
+      createdTables.push("transaction");
+    }
+
+    if (!(await knex.schema.hasTable("transaction_message"))) {
+      await knex.schema.createTable("transaction_message", (table) => {
+        table.bigInteger("id").primary();
+        table.bigInteger("tx_id").notNullable();
+        table.integer("index").notNullable().defaultTo(0);
+        table.text("type").notNullable();
+        table.text("sender").nullable();
+        table.jsonb("content").nullable();
+      });
+      createdTables.push("transaction_message");
+    }
+
+    if (!(await knex.schema.hasTable("trust_registry"))) {
+      await knex.schema.createTable("trust_registry", (table) => {
+        table.bigInteger("id").primary();
+        table.text("did").notNullable();
+      });
+      createdTables.push("trust_registry");
+    }
+
+    if (!(await knex.schema.hasTable("credential_schemas"))) {
+      await knex.schema.createTable("credential_schemas", (table) => {
+        table.bigInteger("id").primary();
+        table.bigInteger("tr_id").notNullable();
+      });
+      createdTables.push("credential_schemas");
+    }
+
+    if (!(await knex.schema.hasTable("permissions"))) {
+      await knex.schema.createTable("permissions", (table) => {
+        table.bigInteger("id").primary();
+        table.bigInteger("schema_id").nullable();
+        table.text("did").nullable();
+        table.bigInteger("validator_perm_id").nullable();
+      });
+      createdTables.push("permissions");
+    }
+  }
 
   async function insertBlock(height: number): Promise<void> {
     heights.push(height);
@@ -62,6 +141,41 @@ describe("indexer_events_query", () => {
       type: VeranaPermissionMessageTypes.StartPermissionVP,
       sender: args.sender ?? did,
       content: args.content ?? { id: 42, applicant: did },
+    });
+  }
+
+  async function insertStoredIndexerEvent(args: {
+    did: string;
+    relatedDids: string[];
+    height: number;
+    txHash: string;
+    txIndex?: number;
+    messageIndex?: number;
+  }): Promise<void> {
+    txHashes.push(args.txHash);
+    await knex("indexer_events").insert({
+      event_type: "StartPermissionVP",
+      did: args.did,
+      block_height: args.height,
+      tx_hash: args.txHash,
+      tx_index: args.txIndex ?? 0,
+      message_index: args.messageIndex ?? 0,
+      message_type: VeranaPermissionMessageTypes.StartPermissionVP,
+      module: "permission",
+      entity_type: "Permission",
+      entity_id: "42",
+      timestamp: new Date("2025-01-15T10:30:00Z"),
+      payload: {
+        module: "permission",
+        action: "StartPermissionVP",
+        message_type: VeranaPermissionMessageTypes.StartPermissionVP,
+        tx_index: args.txIndex ?? 0,
+        message_index: args.messageIndex ?? 0,
+        sender: otherDid,
+        related_dids: args.relatedDids,
+        entity_type: "Permission",
+        entity_id: "42",
+      },
     });
   }
 
@@ -115,7 +229,7 @@ describe("indexer_events_query", () => {
     ]);
   });
 
-  it("persists one row per affected DID and protects duplicate inserts", async () => {
+  it("persists one event with all affected DIDs and protects duplicate inserts", async () => {
     await insertBlock(baseHeight + 20);
     await insertTxMessage({
       height: baseHeight + 20,
@@ -129,9 +243,163 @@ describe("indexer_events_query", () => {
     const secondPersist = await persistIndexerEventsForBlock(baseHeight + 20);
     const rows = await knex("indexer_events").where("tx_hash", `tx-${runId}-multi-did`).orderBy("did", "asc");
 
-    expect(firstPersist.map((event) => event.did).sort()).toEqual([did, otherDid]);
+    expect(firstPersist).toHaveLength(1);
+    expect(firstPersist[0].did).toBe(did);
+    expect(firstPersist[0].payload.related_dids).toEqual([did, otherDid]);
     expect(secondPersist).toEqual([]);
-    expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.did)).toEqual([did, otherDid]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].did).toBe(did);
+  });
+
+  it("matches persisted events by event.did", async () => {
+    const height = baseHeight + 30;
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height,
+      txHash: `tx-${runId}-match-did`,
+    });
+
+    const events = await listIndexerEvents({ did, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ did, tx_hash: `tx-${runId}-match-did` });
+  });
+
+  it("matches persisted events by payload.related_dids", async () => {
+    const height = baseHeight + 40;
+    const relatedDid = `did:web:indexer-events-related-${runId}.example`;
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [relatedDid],
+      height,
+      txHash: `tx-${runId}-related-dids`,
+    });
+
+    const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].did).toBe(otherDid);
+    expect(events[0].payload.related_dids).toContain(relatedDid);
+  });
+
+  it("normalizes URL-encoded DID input before matching", async () => {
+    const height = baseHeight + 50;
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height,
+      txHash: `tx-${runId}-encoded-did`,
+    });
+
+    const events = await listIndexerEvents({
+      did: encodeURIComponent(` ${did} `),
+      afterBlockHeight: 0,
+      limit: 10,
+    });
+
+    expect(events.map((event) => event.tx_hash)).toContain(`tx-${runId}-encoded-did`);
+  });
+
+  it("after_block_height excludes old events", async () => {
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height: baseHeight + 60,
+      txHash: `tx-${runId}-old-height`,
+    });
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height: baseHeight + 61,
+      txHash: `tx-${runId}-new-height`,
+    });
+
+    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 60, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-new-height`]);
+  });
+
+  it("applies limit after deterministic ordering", async () => {
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height: baseHeight + 70,
+      txHash: `tx-${runId}-limit-1`,
+      txIndex: 0,
+    });
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height: baseHeight + 70,
+      txHash: `tx-${runId}-limit-2`,
+      txIndex: 1,
+    });
+
+    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 69, limit: 1 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-limit-1`]);
+  });
+
+  it("returns an empty array for an unknown DID", async () => {
+    await insertStoredIndexerEvent({
+      did,
+      relatedDids: [did],
+      height: baseHeight + 80,
+      txHash: `tx-${runId}-unknown-did-control`,
+    });
+
+    const events = await listIndexerEvents({
+      did: `did:web:indexer-events-missing-${runId}.example`,
+      afterBlockHeight: 0,
+      limit: 10,
+    });
+
+    expect(events).toEqual([]);
+  });
+
+  it("does not reconstruct unpersisted historical transaction events in the request path", async () => {
+    const height = baseHeight + 90;
+    const unpersistedDid = `did:web:indexer-events-unpersisted-${runId}.example`;
+    await insertBlock(height);
+    await insertTxMessage({
+      height,
+      txIndex: 0,
+      messageIndex: 0,
+      hash: `tx-${runId}-unpersisted-history`,
+      sender: otherDid,
+      content: { id: 42, applicant: unpersistedDid },
+    });
+
+    const events = await listIndexerEvents({ did: unpersistedDid, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events).toEqual([]);
+  });
+
+  it("does not leak unrelated rows when after_block_height is combined with related_dids matching", async () => {
+    const height = baseHeight + 100;
+    const relatedDid = `did:web:indexer-events-grouping-${runId}.example`;
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [relatedDid],
+      height,
+      txHash: `tx-${runId}-grouping-match`,
+    });
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [relatedDid],
+      height: height - 50,
+      txHash: `tx-${runId}-grouping-too-old`,
+    });
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [`did:web:indexer-events-unrelated-${runId}.example`],
+      height: height + 1,
+      txHash: `tx-${runId}-grouping-unrelated`,
+    });
+
+    const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-grouping-match`]);
   });
 });

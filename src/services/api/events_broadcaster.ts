@@ -4,6 +4,7 @@ import { indexerStatusManager } from "../manager/indexer_status.manager";
 import type { IndexerEventRecord } from "./indexer_events_query";
 import { createLogger, isUnknownMessageError, isValidDid, toIsoSeconds, type LoggerLike } from "./api_shared";
 import type { IndexerStatusEvent } from "../manager/indexer_status.events";
+import { normalizeDid, uniqueNormalizedDids } from "./indexer_event_utils";
 
 type ClientDidParseResult = {
   did?: string;
@@ -30,9 +31,10 @@ export class EventsBroadcaster {
   private parseClientDid(req: IncomingMessage): ClientDidParseResult {
     const host = req.headers.host || "localhost";
     const url = new URL(req.url || "/verana/indexer/v1/events", `http://${host}`);
-    const did = (url.searchParams.get("did") || "").trim();
-    if (!did) return {};
-    return isValidDid(did) ? { did } : { invalidDid: did };
+    const rawDid = (url.searchParams.get("did") || "").trim();
+    if (!rawDid) return {};
+    const did = normalizeDid(rawDid);
+    return did && isValidDid(did) ? { did } : { invalidDid: rawDid };
   }
 
   private addToRoom(ws: WebSocket, did: string): void {
@@ -224,7 +226,15 @@ export class EventsBroadcaster {
   }
 
   broadcastIndexerEvent(event: IndexerEventRecord): void {
-    this.broadcastToDid(event.did, event as unknown as Record<string, unknown>);
+    const rooms = uniqueNormalizedDids([event.did, ...(event.payload?.related_dids ?? [])]);
+    if (rooms.length === 0) {
+      this.logger.warn(`[EventsBroadcaster] No DID found for indexer event ${event.event_type} tx=${event.tx_hash}`);
+      return;
+    }
+
+    rooms.forEach((did) => {
+      this.broadcastToDid(did, event as unknown as Record<string, unknown>);
+    });
   }
 
   broadcastBlockProcessed(height: number, timestamp: Date | string): void {

@@ -1,14 +1,23 @@
 import knex from "../../common/utils/db_connection";
 import {
   VeranaCredentialSchemaMessageTypes,
+  VeranaDelegationMessageTypes,
+  VeranaDiMessageTypes,
   VeranaPermissionMessageTypes,
   VeranaTrustRegistryMessageTypes,
 } from "../../common/verana-message-types";
-import { applyBlockHeightFilter, isValidDid, toIsoSeconds } from "./api_shared";
+import { applyBlockHeightFilter, toIsoSeconds } from "./api_shared";
+import {
+  collectDidsDeep,
+  firstNormalizedDid,
+  normalizeDid,
+  readFirstPositiveInteger,
+  uniqueNormalizedDids,
+} from "./indexer_event_utils";
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
-  module: "trust-registry" | "credential-schema" | "permission";
+  module: "trust-registry" | "credential-schema" | "permission" | "digital-identity" | "delegation";
   action: string;
   messageType: string;
   blockHeight: number;
@@ -16,9 +25,13 @@ export type IndexerTxEvent = {
   txIndex: number;
   messageIndex: number;
   sender: string;
+  did: string;
   relatedDids: string[];
   entityType?: string;
   entityId?: string;
+  trId?: string;
+  schemaId?: string;
+  permissionId?: string;
   timestamp: string;
 };
 
@@ -39,6 +52,9 @@ export type IndexerEventRecord = {
     related_dids: string[];
     entity_type?: string;
     entity_id?: string;
+    tr_id?: string;
+    schema_id?: string;
+    permission_id?: string;
   };
 };
 
@@ -72,6 +88,11 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "UpdateTrustRegistry",
     entityType: "TrustRegistry",
   },
+  [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: {
+    module: "trust-registry",
+    action: "ArchiveTrustRegistry",
+    entityType: "TrustRegistry",
+  },
   [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: {
     module: "trust-registry",
     action: "AddGovernanceFrameworkDocument",
@@ -100,6 +121,16 @@ const EVENT_META: Record<string, EventMeta> = {
   [VeranaPermissionMessageTypes.StartPermissionVP]: {
     module: "permission",
     action: "StartPermissionVP",
+    entityType: "Permission",
+  },
+  [VeranaPermissionMessageTypes.CreateRootPermission]: {
+    module: "permission",
+    action: "CreateRootPermission",
+    entityType: "Permission",
+  },
+  [VeranaPermissionMessageTypes.SelfCreatePermission]: {
+    module: "permission",
+    action: "SelfCreatePermission",
     entityType: "Permission",
   },
   [VeranaPermissionMessageTypes.RenewPermissionVP]: {
@@ -137,222 +168,184 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "CancelPermissionVPLastRequest",
     entityType: "Permission",
   },
+  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: {
+    module: "permission",
+    action: "CreateOrUpdatePermissionSession",
+    entityType: "PermissionSession",
+  },
+  [VeranaDiMessageTypes.StoreDigest]: {
+    module: "digital-identity",
+    action: "StoreDigest",
+    entityType: "DigitalIdentityDigest",
+  },
+  [VeranaDelegationMessageTypes.GrantOperatorAuthorization]: {
+    module: "delegation",
+    action: "GrantOperatorAuthorization",
+    entityType: "OperatorAuthorization",
+  },
+  [VeranaDelegationMessageTypes.RevokeOperatorAuthorization]: {
+    module: "delegation",
+    action: "RevokeOperatorAuthorization",
+    entityType: "OperatorAuthorization",
+  },
 };
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
 
-const TABLE_COLUMNS_TTL_MS = 10 * 60 * 1000;
-const tableColumnsCache = new Map<string, { expiresAt: number; value: Promise<Set<string>> }>();
-
-const DID_QUERY_CACHE_TTL_MS = 60 * 1000;
-const CACHE_MAX_ENTRIES = 5000;
-
-class ExpiringBoundedMap<K, V extends { expiresAt: number }> extends Map<K, V> {
-  constructor(private readonly maxEntries: number) {
-    super();
-  }
-
-  private pruneExpired(now = Date.now()): void {
-    for (const [key, entry] of super.entries()) {
-      if (entry.expiresAt <= now) {
-        super.delete(key);
-      }
-    }
-  }
-
-  override get(key: K): V | undefined {
-    this.pruneExpired();
-    const entry = super.get(key);
-    if (!entry) return undefined;
-    if (entry.expiresAt <= Date.now()) {
-      super.delete(key);
-      return undefined;
-    }
-    return entry;
-  }
-
-  override set(key: K, value: V): this {
-    this.pruneExpired();
-    super.set(key, value);
-    while (this.size > this.maxEntries) {
-      const oldestKey = this.keys().next().value as K | undefined;
-      if (oldestKey === undefined) break;
-      super.delete(oldestKey);
-    }
-    return this;
-  }
-}
-
-const permissionSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
-const credentialSchemaSnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
-const trustRegistrySnapshotCache = new ExpiringBoundedMap<string, { expiresAt: number; value: Promise<any> }>(CACHE_MAX_ENTRIES);
-
-function addDid(out: Set<string>, value: unknown): void {
-  if (isValidDid(value)) out.add(value);
-}
-
-function collectDids(value: unknown, out: Set<string>): void {
-  if (isValidDid(value)) {
-    out.add(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item) => collectDids(item, out));
-    return;
-  }
-  if (value && typeof value === "object") {
-    Object.values(value as Record<string, unknown>).forEach((item) => collectDids(item, out));
-  }
-}
-
 function readNumber(content: unknown, keys: string[]): number | null {
-  if (!content || typeof content !== "object") return null;
-  const obj = content as Record<string, unknown>;
-  for (const key of keys) {
-    const raw = obj[key];
-    const n = Number(raw);
-    if (Number.isInteger(n) && n > 0) return n;
-  }
-  return null;
+  return readFirstPositiveInteger(content, keys);
 }
 
-async function getTableColumns(tableName: string): Promise<Set<string>> {
-  const now = Date.now();
-  const cached = tableColumnsCache.get(tableName);
-  if (cached && cached.expiresAt > now) return cached.value;
-
-  const value = knex(tableName)
-    .columnInfo()
-    .then((info) => new Set(Object.keys(info)));
-  tableColumnsCache.set(tableName, { expiresAt: now + TABLE_COLUMNS_TTL_MS, value });
-  return value;
-}
-
-async function existingColumns(tableName: string, columns: string[]): Promise<string[]> {
-  const available = await getTableColumns(tableName);
-  return columns.filter((column) => available.has(column));
-}
-
-async function addTrustRegistryDids(trId: number | null, height: number, dids: Set<string>): Promise<void> {
-  if (!trId) return;
-  const now = Date.now();
-  const cacheKey = `${trId}:${height}`;
-  const cached = trustRegistrySnapshotCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    const row = await cached.value;
-    addDid(dids, (row as any)?.did);
-    addDid(dids, (row as any)?.controller);
-    return;
-  }
-  const columns = await existingColumns("trust_registry_history", ["did", "controller"]);
-  if (columns.length === 0) return;
-
-  const value = knex("trust_registry_history")
-    .select(columns)
-    .where("tr_id", trId)
-    .where("height", "<=", height)
-    .orderBy("height", "desc")
-    .first();
-  trustRegistrySnapshotCache.set(cacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value });
-
-  const row = await value;
-  addDid(dids, (row as any)?.did);
-  addDid(dids, (row as any)?.controller);
-}
-
-async function enrichRelatedDids(row: EventRow, meta: EventMeta, dids: Set<string>): Promise<string | undefined> {
+function getEntityId(row: EventRow, meta: EventMeta): string | undefined {
   if (meta.module === "permission") {
     const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
-    if (!permissionId) return undefined;
-    const now = Date.now();
-    const permCacheKey = `${permissionId}:${row.block_height}`;
-    const cachedPerm = permissionSnapshotCache.get(permCacheKey);
-    const columns = await existingColumns("permission_history", [
-      "permission_id",
-      "did",
-      "grantee",
-      "created_by",
-      "extended_by",
-      "revoked_by",
-      "slashed_by",
-      "repaid_by",
-      "schema_id",
-    ]);
-    const permPromise =
-      cachedPerm && cachedPerm.expiresAt > now
-        ? cachedPerm.value
-        : knex("permission_history")
-          .select(columns)
-          .where("permission_id", permissionId)
-          .where("height", "<=", row.block_height)
-          .orderBy("height", "desc")
-          .first();
-    if (!cachedPerm || cachedPerm.expiresAt <= now) {
-      permissionSnapshotCache.set(permCacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value: permPromise });
-    }
-    const perm = await permPromise;
-    addDid(dids, (perm as any)?.did);
-    addDid(dids, (perm as any)?.grantee);
-    addDid(dids, (perm as any)?.created_by);
-    addDid(dids, (perm as any)?.extended_by);
-    addDid(dids, (perm as any)?.revoked_by);
-    addDid(dids, (perm as any)?.slashed_by);
-    addDid(dids, (perm as any)?.repaid_by);
-    const schemaId = Number((perm as any)?.schema_id);
-    if (Number.isInteger(schemaId) && schemaId > 0) {
-      const csCacheKey = `${schemaId}:${row.block_height}`;
-      const cachedCs = credentialSchemaSnapshotCache.get(csCacheKey);
-      const csPromise =
-        cachedCs && cachedCs.expiresAt > now
-          ? cachedCs.value
-          : knex("credential_schema_history")
-            .select("tr_id")
-            .where("credential_schema_id", schemaId)
-            .where("height", "<=", row.block_height)
-            .orderBy("height", "desc")
-            .first();
-      if (!cachedCs || cachedCs.expiresAt <= now) {
-        credentialSchemaSnapshotCache.set(csCacheKey, { expiresAt: now + DID_QUERY_CACHE_TTL_MS, value: csPromise });
-      }
-      const cs = await csPromise;
-      await addTrustRegistryDids(Number((cs as any)?.tr_id) || null, row.block_height, dids);
-    }
-    return String(permissionId);
+    return permissionId ? String(permissionId) : undefined;
   }
 
   if (meta.module === "credential-schema") {
     const schemaId = readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const trIdFromContent = readNumber(row.content, ["tr_id", "trId", "trust_registry_id", "trustRegistryId"]);
-    let trId = trIdFromContent;
-    if (schemaId) {
-      const columns = await existingColumns("credential_schema_history", ["credential_schema_id", "tr_id"]);
-      const cs = await knex("credential_schema_history")
-        .select(columns)
-        .where("credential_schema_id", schemaId)
-        .where("height", "<=", row.block_height)
-        .orderBy("height", "desc")
-        .first();
-      trId = Number((cs as any)?.tr_id) || trId;
-    }
-    await addTrustRegistryDids(trId, row.block_height, dids);
     return schemaId ? String(schemaId) : undefined;
   }
 
   const trId =
     readNumber(row.content, ["id", "tr_id", "trId", "trust_registry_id", "trustRegistryId"]) ??
     readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]);
-  await addTrustRegistryDids(trId, row.block_height, dids);
   return trId ? String(trId) : undefined;
+}
+
+function normalizeRequestedDid(value: unknown): string | undefined {
+  return normalizeDid(value);
+}
+
+async function loadTrustRegistryDid(trId: number | null | undefined): Promise<string | undefined> {
+  if (!trId) return undefined;
+  const row = await knex("trust_registry").select("did").where({ id: trId }).first();
+  return normalizeDid(row?.did);
+}
+
+async function loadSchemaRelation(schemaId: number | null | undefined): Promise<{
+  schemaId?: string;
+  trId?: string;
+  trDid?: string;
+}> {
+  if (!schemaId) return {};
+  const schema = await knex("credential_schemas as cs")
+    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
+    .where("cs.id", schemaId)
+    .select("cs.id as schema_id", "cs.tr_id", "tr.did as tr_did")
+    .first();
+  if (!schema) return { schemaId: String(schemaId) };
+  return {
+    schemaId: String(schema.schema_id ?? schemaId),
+    trId: schema.tr_id != null ? String(schema.tr_id) : undefined,
+    trDid: normalizeDid(schema.tr_did),
+  };
+}
+
+async function loadPermissionRelation(permissionId: number | null | undefined): Promise<{
+  permissionId?: string;
+  permissionDid?: string;
+  schemaId?: string;
+  trId?: string;
+  trDid?: string;
+  validatorPermissionDid?: string;
+}> {
+  if (!permissionId) return {};
+  const perm = await knex("permissions as p")
+    .leftJoin("credential_schemas as cs", "cs.id", "p.schema_id")
+    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
+    .leftJoin("permissions as validator", "validator.id", "p.validator_perm_id")
+    .where("p.id", permissionId)
+    .select(
+      "p.id as permission_id",
+      "p.did as permission_did",
+      "p.schema_id",
+      "cs.tr_id",
+      "tr.did as tr_did",
+      "validator.did as validator_permission_did"
+    )
+    .first();
+  if (!perm) return { permissionId: String(permissionId) };
+  return {
+    permissionId: String(perm.permission_id ?? permissionId),
+    permissionDid: normalizeDid(perm.permission_did),
+    schemaId: perm.schema_id != null ? String(perm.schema_id) : undefined,
+    trId: perm.tr_id != null ? String(perm.tr_id) : undefined,
+    trDid: normalizeDid(perm.tr_did),
+    validatorPermissionDid: normalizeDid(perm.validator_permission_did),
+  };
 }
 
 async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const meta = EVENT_META[row.message_type];
   if (!meta) return null;
 
-  const relatedDids = new Set<string>();
-  addDid(relatedDids, row.sender);
-  collectDids(row.content, relatedDids);
-  const entityId = await enrichRelatedDids(row, meta, relatedDids);
+  const entityId = getEntityId(row, meta);
+  const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
+  const collected = collectDidsDeep([row.sender, row.content]);
+  let trId: string | undefined;
+  let schemaId: string | undefined;
+  let permissionId: string | undefined;
+  const explicitPrimaryDid = firstNormalizedDid([
+    content.did,
+    content.trust_registry_did,
+    content.trustRegistryDid,
+    content.permission_did,
+    content.permissionDid,
+    content.participant_did,
+    content.participantDid,
+    content.sender,
+    row.sender,
+  ]);
+
+  if (meta.module === "trust-registry") {
+    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId", "id"]);
+    trId = rawTrId ? String(rawTrId) : entityId;
+    const trDid = await loadTrustRegistryDid(rawTrId);
+    if (trDid) collected.add(trDid);
+  }
+
+  if (meta.module === "credential-schema") {
+    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId", "id"]);
+    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId"]);
+    const relation = await loadSchemaRelation(rawSchemaId);
+    schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : entityId);
+    trId = relation.trId ?? (rawTrId ? String(rawTrId) : undefined);
+    const trDid = relation.trDid ?? (await loadTrustRegistryDid(rawTrId));
+    if (trDid) collected.add(trDid);
+  }
+
+  if (meta.module === "permission") {
+    const rawPermissionId = readNumber(row.content, ["permission_id", "permissionId", "perm_id", "permId", "id"]);
+    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
+    const rawValidatorPermId = readNumber(row.content, ["validator_perm_id", "validatorPermId"]);
+    const relation = await loadPermissionRelation(rawPermissionId);
+    permissionId = relation.permissionId ?? (rawPermissionId ? String(rawPermissionId) : entityId);
+    schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
+    trId = relation.trId;
+    [relation.permissionDid, relation.trDid, relation.validatorPermissionDid].forEach((did) => {
+      if (did) collected.add(did);
+    });
+    if (rawSchemaId && !relation.trDid) {
+      const schemaRelation = await loadSchemaRelation(rawSchemaId);
+      schemaId = schemaId ?? schemaRelation.schemaId;
+      trId = trId ?? schemaRelation.trId;
+      if (schemaRelation.trDid) collected.add(schemaRelation.trDid);
+    }
+    if (rawValidatorPermId) {
+      const validatorRelation = await loadPermissionRelation(rawValidatorPermId);
+      [validatorRelation.permissionDid, validatorRelation.trDid].forEach((did) => {
+        if (did) collected.add(did);
+      });
+    }
+  }
+
+  const relatedDids = uniqueNormalizedDids(collected);
+  const primaryDid =
+    explicitPrimaryDid ??
+    (meta.module === "permission" ? firstNormalizedDid(relatedDids) : undefined) ??
+    firstNormalizedDid(relatedDids);
+  if (!primaryDid) return null;
 
   return {
     type: "transaction-executed",
@@ -364,17 +357,21 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     txIndex: Number(row.tx_index),
     messageIndex: Number(row.message_index),
     sender: row.sender,
-    relatedDids: Array.from(relatedDids).sort(),
+    did: primaryDid,
+    relatedDids,
     entityType: meta.entityType,
     entityId,
+    trId,
+    schemaId,
+    permissionId,
     timestamp: toIsoSeconds(row.timestamp),
   };
 }
 
-function toEventRows(event: IndexerTxEvent): Array<Record<string, unknown>> {
-  return event.relatedDids.map((did) => ({
+function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
+  return {
     event_type: event.action,
-    did,
+    did: event.did,
     block_height: event.blockHeight,
     tx_hash: event.txHash,
     tx_index: event.txIndex,
@@ -394,8 +391,11 @@ function toEventRows(event: IndexerTxEvent): Array<Record<string, unknown>> {
       related_dids: event.relatedDids,
       entity_type: event.entityType,
       entity_id: event.entityId,
+      tr_id: event.trId,
+      schema_id: event.schemaId,
+      permission_id: event.permissionId,
     },
-  }));
+  };
 }
 
 function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
@@ -421,6 +421,9 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
           : [String(row.did)],
       entity_type: row.payload?.entity_type ?? row.payload?.entityType ?? row.entity_type ?? undefined,
       entity_id: row.payload?.entity_id ?? row.payload?.entityId ?? row.entity_id ?? undefined,
+      tr_id: row.payload?.tr_id ?? row.payload?.trId ?? undefined,
+      schema_id: row.payload?.schema_id ?? row.payload?.schemaId ?? undefined,
+      permission_id: row.payload?.permission_id ?? row.payload?.permissionId ?? undefined,
     },
   };
 }
@@ -468,7 +471,7 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   let offset = 0;
   while (true) {
     const txEvents = await buildIndexerTxEvents({ blockHeight, limit: pageSize, offset });
-    rows.push(...txEvents.flatMap(toEventRows));
+    rows.push(...txEvents.map(toEventRow));
     if (txEvents.length < pageSize) break;
     offset += pageSize;
   }
@@ -477,12 +480,19 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   if (rows.length > 0) {
     const inserted = await knex("indexer_events")
       .insert(rows)
-      .onConflict(["did", "tx_hash", "message_index", "event_type"])
+      .onConflict(knex.raw("(tx_hash, tx_index, message_index, event_type, entity_type, COALESCE(entity_id, ''))"))
       .ignore()
       .returning("id");
     insertedIds = inserted
       .map((row: number | string | { id?: number | string }) => Number(typeof row === "object" ? row.id : row))
       .filter((id): id is number => Number.isInteger(id));
+    if (insertedIds.length === 0) {
+      console.info(`[IndexerEvents] skipped duplicate event batch for block_height=${blockHeight}, candidates=${rows.length}`);
+    } else {
+      console.info(`[IndexerEvents] saved ${insertedIds.length}/${rows.length} event(s) for block_height=${blockHeight}`);
+    }
+  } else {
+    console.info(`[IndexerEvents] no DID found or no watched messages for block_height=${blockHeight}`);
   }
 
   if (insertedIds.length === 0) return [];
@@ -505,32 +515,40 @@ export async function listIndexerEvents(args: {
   limit?: number;
 }): Promise<IndexerEventRecord[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 100))));
-  const query = knex("indexer_events")
+  const normalizedDid = normalizeRequestedDid(args.did);
+  const query = knex("indexer_events as ie")
     .select(
-      "id",
-      "event_type",
-      "did",
-      "block_height",
-      "tx_hash",
-      "tx_index",
-      "message_index",
-      "message_type",
-      "module",
-      "entity_type",
-      "entity_id",
-      "timestamp",
-      "payload"
+      "ie.id",
+      "ie.event_type",
+      "ie.did",
+      "ie.block_height",
+      "ie.tx_hash",
+      "ie.tx_index",
+      "ie.message_index",
+      "ie.message_type",
+      "ie.module",
+      "ie.entity_type",
+      "ie.entity_id",
+      "ie.timestamp",
+      "ie.payload"
     )
-    .orderBy("block_height", "asc")
-    .orderBy("tx_index", "asc")
-    .orderBy("message_index", "asc")
-    .orderBy("did", "asc")
-    .orderBy("id", "asc")
+    .orderBy("ie.block_height", "asc")
+    .orderBy("ie.tx_index", "asc")
+    .orderBy("ie.message_index", "asc")
+    .orderBy("ie.id", "asc")
     .limit(limit);
 
-  if (args.ids) query.whereIn("id", args.ids);
-  if (args.did) query.where("did", args.did);
-  applyBlockHeightFilter(query, args, "block_height");
+  if (args.ids) query.whereIn("ie.id", args.ids);
+  if (args.did && !normalizedDid) return [];
+  if (normalizedDid && !args.ids) {
+    query.andWhere(function () {
+      this
+        .where("ie.did", normalizedDid)
+        .orWhereRaw("(ie.payload -> 'related_dids') \\? ?", [normalizedDid])
+        .orWhereRaw("(ie.payload -> 'relatedDids') \\? ?", [normalizedDid]);
+    });
+  }
+  applyBlockHeightFilter(query, args, "ie.block_height");
 
   const rows = (await query) as Array<Record<string, any>>;
   return rows.map(fromStoredRow);
