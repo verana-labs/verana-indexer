@@ -1,14 +1,27 @@
 import knex from "../../common/utils/db_connection";
 import {
   VeranaCredentialSchemaMessageTypes,
+  VeranaDelegationMessageTypes,
+  VeranaDiMessageTypes,
   VeranaPermissionMessageTypes,
   VeranaTrustRegistryMessageTypes,
 } from "../../common/verana-message-types";
-import { applyBlockHeightFilter, isValidDid, toIsoSeconds } from "./api_shared";
+import { applyBlockHeightFilter, createLogger, toIsoSeconds } from "./api_shared";
+import {
+  collectDidsDeep,
+  firstNormalizedDid,
+  normalizeDid,
+  readFirstPositiveInteger,
+  uniqueNormalizedDids,
+} from "./indexer_event_utils";
+
+function logger() {
+  return createLogger((global as any).logger);
+}
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
-  module: "trust-registry" | "credential-schema" | "permission";
+  module: "trust-registry" | "credential-schema" | "permission" | "digital-identity" | "delegation";
   action: string;
   messageType: string;
   blockHeight: number;
@@ -16,9 +29,13 @@ export type IndexerTxEvent = {
   txIndex: number;
   messageIndex: number;
   sender: string;
+  did: string;
   relatedDids: string[];
   entityType?: string;
   entityId?: string;
+  trId?: string;
+  schemaId?: string;
+  permissionId?: string;
   timestamp: string;
 };
 
@@ -39,6 +56,9 @@ export type IndexerEventRecord = {
     related_dids: string[];
     entity_type?: string;
     entity_id?: string;
+    tr_id?: string;
+    schema_id?: string;
+    permission_id?: string;
   };
 };
 
@@ -154,35 +174,37 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "CancelPermissionVPLastRequest",
     entityType: "Permission",
   },
+  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: {
+    module: "permission",
+    action: "CreateOrUpdatePermissionSession",
+    entityType: "PermissionSession",
+  },
+  [VeranaDiMessageTypes.StoreDigest]: {
+    module: "digital-identity",
+    action: "StoreDigest",
+    entityType: "DigitalIdentityDigest",
+  },
+  [VeranaDelegationMessageTypes.GrantOperatorAuthorization]: {
+    module: "delegation",
+    action: "GrantOperatorAuthorization",
+    entityType: "OperatorAuthorization",
+  },
+  [VeranaDelegationMessageTypes.RevokeOperatorAuthorization]: {
+    module: "delegation",
+    action: "RevokeOperatorAuthorization",
+    entityType: "OperatorAuthorization",
+  },
 };
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
 
-function addDid(out: Set<string>, value: unknown): void {
-  if (isValidDid(value)) out.add(value);
-}
-
-function getLogger(): { warn?: (...args: any[]) => void } | undefined {
-  return (global as any).logger as { warn?: (...args: any[]) => void } | undefined;
-}
-
-function collectDids(value: unknown, out: Set<string>): void {
-  if (isValidDid(value)) {
-    out.add(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item) => collectDids(item, out));
-    return;
-  }
-  if (value && typeof value === "object") {
-    Object.values(value as Record<string, unknown>).forEach((item) => collectDids(item, out));
-  }
+function readNumber(content: unknown, keys: string[]): number | null {
+  return readFirstPositiveInteger(content, keys);
 }
 
 type TxEventAttribute = { key?: unknown; value?: unknown };
 type TxEvent = { type?: unknown; attributes?: unknown };
-type TxResponse = { events?: TxEvent[]; logs?: Array<{ events?: TxEvent[] }> };
+type TxResponse = { events?: TxEvent[] };
 
 function toLowerSnake(input: string): string {
   const s = String(input ?? "");
@@ -190,6 +212,7 @@ function toLowerSnake(input: string): string {
   return s
     .replace(/\./g, "_")
     .replace(/[\s-]+/g, "_")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/__+/g, "_")
     .toLowerCase()
@@ -200,13 +223,21 @@ function looksLikeBase64(s: string): boolean {
   return /^[A-Za-z0-9+/=]+$/.test(s) && s.length % 4 === 0;
 }
 
+let warnedBase64DecodeFailure = false;
+
 function decodeMaybeBase64(v: unknown): string {
   const s = typeof v === "string" ? v : "";
   if (!s) return "";
   try {
     if (looksLikeBase64(s)) return Buffer.from(s, "base64").toString("utf-8");
-  } catch {
-    //
+  } catch (err) {
+    if (!warnedBase64DecodeFailure) {
+      warnedBase64DecodeFailure = true;
+      logger().warn("[IndexerEvents] failed to decode base64 tx event attribute", {
+        sample: s.slice(0, 64),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
   return s;
 }
@@ -233,6 +264,7 @@ export function resolveEntityIdFromTxResponseEvents(args: {
   txMessageCount: number;
   action: string;
   module: EventMeta["module"];
+  entityType?: string;
   txResponse: TxResponse | null;
 }): { entityId?: string; reason?: string; debug?: any } {
   const action = String(args.action ?? "");
@@ -259,19 +291,37 @@ export function resolveEntityIdFromTxResponseEvents(args: {
       idKeys: ["trust_registry_id", "tr_id", "id"],
     },
 
-    // Governance Framework (only valid for GF entity types)
     add_governance_framework_document: {
-      eventTypes: ["add_governance_framework_document", "create_governance_framework_document"],
-      idKeys: ["gf_document_id", "governance_framework_document_id", "gfd_id", "id"],
+      eventTypes: [
+        "add_governance_framework_document",
+        "create_governance_framework_document",
+        "governance_framework_document_added",
+        "add_gf_document",
+        "create_gf_document",
+      ],
+      idKeys: [
+        "gf_document_id",
+        "governance_framework_document_id",
+        "governance_framework_doc_id",
+        "gfd_id",
+        "document_id",
+        "doc_id",
+        "id",
+      ],
     },
     increase_active_gf_version: {
-      eventTypes: ["increase_active_gf_version", "create_governance_framework_version"],
-      idKeys: ["gf_version_id", "governance_framework_version_id", "gfv_id", "id"],
+      eventTypes: [
+        "increase_active_gf_version",
+        "increase_active_governance_framework_version",
+        "create_governance_framework_version",
+        "governance_framework_version_created",
+      ],
+      idKeys: ["gf_version_id", "governance_framework_version_id", "gfv_id", "version_id", "active_version", "id"],
     },
 
     // Credential Schema
     create_new_credential_schema: {
-      eventTypes: ["create_credential_schema"],
+      eventTypes: ["create_credential_schema", "create_new_credential_schema"],
       idKeys: ["credential_schema_id", "schema_id", "cs_id", "id"],
     },
     update_credential_schema: {
@@ -364,6 +414,7 @@ export function resolveEntityIdFromTxResponseEvents(args: {
   if (!rule) return { reason: "no_rule" };
 
   const candidates: Array<{ value: string; key: string; eventType: string }> = [];
+  const gfFallbackCandidates: Array<{ value: string; key: string; eventType: string }> = [];
   const consideredEvents: Array<{ type: string; msgIndex?: string }> = [];
   const idAttributesFound: Array<{ eventType: string; key: string; value: string }> = [];
 
@@ -375,6 +426,9 @@ export function resolveEntityIdFromTxResponseEvents(args: {
     const n = Number(eventMsgIndexRaw);
     return Number.isInteger(n) && n === msgIndex;
   };
+
+  const isGovernanceFrameworkEntity =
+    args.entityType === "GovernanceFrameworkDocument" || args.entityType === "GovernanceFrameworkVersion";
 
   const scan = (ev: TxEvent, eventType: string, attrMap: Record<string, string>) => {
     for (const idKey of rule.idKeys) {
@@ -394,6 +448,15 @@ export function resolveEntityIdFromTxResponseEvents(args: {
       if (v == null || v === "") continue;
       idAttributesFound.push({ eventType, key: idKey, value: v });
       candidates.push({ value: v, key: idKey, eventType });
+    }
+
+    if (isGovernanceFrameworkEntity) {
+      for (const fallbackKey of ["tr_id", "trust_registry_id"] as const) {
+        const v = attrMap[fallbackKey];
+        if (v == null || v === "") continue;
+        idAttributesFound.push({ eventType, key: fallbackKey, value: v });
+        gfFallbackCandidates.push({ value: v, key: fallbackKey, eventType });
+      }
     }
   };
 
@@ -435,6 +498,25 @@ export function resolveEntityIdFromTxResponseEvents(args: {
   const unique = Array.from(new Set(normalizePositiveIntStrings(candidates.map((c) => c.value))));
   if (unique.length === 1) return { entityId: unique[0] };
   if (unique.length === 0) {
+    if (isGovernanceFrameworkEntity) {
+      const gfUnique = Array.from(new Set(normalizePositiveIntStrings(gfFallbackCandidates.map((c) => c.value))));
+      if (gfUnique.length === 1) return { entityId: gfUnique[0] };
+      if (gfUnique.length > 1) {
+        return {
+          reason: "conflict",
+          debug: {
+            txHash: args.txHash,
+            blockHeight: args.blockHeight,
+            action: normalizedAction,
+            module: args.module,
+            candidates: gfFallbackCandidates,
+            consideredEvents,
+            idAttributesFound,
+            unique: gfUnique,
+          },
+        };
+      }
+    }
     return {
       reason: "no_candidate",
       debug: { action: normalizedAction, consideredEvents, idKeys: rule.idKeys, idAttributesFound },
@@ -456,23 +538,7 @@ export function resolveEntityIdFromTxResponseEvents(args: {
   };
 }
 
-async function debugTxAttributesForMissingEntityId(row: EventRow): Promise<void> {
-  if (process.env.INDEXER_EVENTS_DEBUG_ENTITY_ID !== "1") return;
-  const logger = getLogger();
-  if (!logger?.warn) return;
-  const txResponse = readTxResponse(row);
-  logger.warn(`[IndexerEvents] Missing entity_id for create message; raw tx attributes dumped`, {
-    tx_hash: row.tx_hash,
-    block_height: row.block_height,
-    message_type: row.message_type,
-    message_index: row.message_index,
-    tx_id: row.tx_id,
-    tx_response: txResponse,
-  });
-}
-
 async function resolveEntityIdFromTxLocalData(row: EventRow, meta: EventMeta): Promise<string | undefined> {
-  const messageType = String(row.message_type ?? "");
   const txResponse = readTxResponse(row);
   const resolved = resolveEntityIdFromTxResponseEvents({
     txHash: row.tx_hash,
@@ -481,34 +547,12 @@ async function resolveEntityIdFromTxLocalData(row: EventRow, meta: EventMeta): P
     txMessageCount: Number(row.tx_message_count ?? 0),
     action: meta.action,
     module: meta.module,
+    entityType: meta.entityType,
     txResponse,
   });
   const entityId = resolved.entityId;
   if (resolved.reason === "conflict") {
-    getLogger()?.warn?.(`[IndexerEvents] conflicting entity_id candidates; leaving entity_id empty`, resolved.debug);
-  }
-  if (!entityId && resolved.reason) {
-    getLogger()?.warn?.(`[IndexerEvents] missing entity_id from tx_response events`, {
-      block_height: row.block_height,
-      tx_hash: row.tx_hash,
-      message_index: row.message_index,
-      action: meta.action,
-      module: meta.module,
-      entity_type: meta.entityType,
-      reason: resolved.reason,
-      debug: resolved.debug,
-    });
-  }
-  if (
-    !entityId &&
-    [
-      VeranaTrustRegistryMessageTypes.CreateTrustRegistry,
-      VeranaCredentialSchemaMessageTypes.CreateCredentialSchema,
-      VeranaPermissionMessageTypes.CreateRootPermission,
-      VeranaPermissionMessageTypes.StartPermissionVP,
-    ].includes(messageType as any)
-  ) {
-    await debugTxAttributesForMissingEntityId(row);
+    logger().warn(`[IndexerEvents] conflicting entity_id candidates; leaving entity_id empty`, resolved.debug);
   }
   return entityId;
 }
@@ -517,14 +561,147 @@ async function resolveEntityId(row: EventRow, meta: EventMeta): Promise<string |
   return await resolveEntityIdFromTxLocalData(row, meta);
 }
 
+function normalizeRequestedDid(value: unknown): string | undefined {
+  return normalizeDid(value);
+}
+
+async function loadTrustRegistryDid(trId: number | null | undefined): Promise<string | undefined> {
+  if (!trId) return undefined;
+  const row = await knex("trust_registry").select("did").where({ id: trId }).first();
+  return normalizeDid(row?.did);
+}
+
+async function loadSchemaRelation(schemaId: number | null | undefined): Promise<{
+  schemaId?: string;
+  trId?: string;
+  trDid?: string;
+}> {
+  if (!schemaId) return {};
+  const schema = await knex("credential_schemas as cs")
+    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
+    .where("cs.id", schemaId)
+    .select("cs.id as schema_id", "cs.tr_id", "tr.did as tr_did")
+    .first();
+  if (!schema) return { schemaId: String(schemaId) };
+  return {
+    schemaId: String(schema.schema_id ?? schemaId),
+    trId: schema.tr_id != null ? String(schema.tr_id) : undefined,
+    trDid: normalizeDid(schema.tr_did),
+  };
+}
+
+async function loadPermissionRelation(permissionId: number | null | undefined): Promise<{
+  permissionId?: string;
+  permissionDid?: string;
+  schemaId?: string;
+  trId?: string;
+  trDid?: string;
+  validatorPermissionDid?: string;
+}> {
+  if (!permissionId) return {};
+  const perm = await knex("permissions as p")
+    .leftJoin("credential_schemas as cs", "cs.id", "p.schema_id")
+    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
+    .leftJoin("permissions as validator", "validator.id", "p.validator_perm_id")
+    .where("p.id", permissionId)
+    .select(
+      "p.id as permission_id",
+      "p.did as permission_did",
+      "p.schema_id",
+      "cs.tr_id",
+      "tr.did as tr_did",
+      "validator.did as validator_permission_did"
+    )
+    .first();
+  if (!perm) return { permissionId: String(permissionId) };
+  return {
+    permissionId: String(perm.permission_id ?? permissionId),
+    permissionDid: normalizeDid(perm.permission_did),
+    schemaId: perm.schema_id != null ? String(perm.schema_id) : undefined,
+    trId: perm.tr_id != null ? String(perm.tr_id) : undefined,
+    trDid: normalizeDid(perm.tr_did),
+    validatorPermissionDid: normalizeDid(perm.validator_permission_did),
+  };
+}
+
 async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const meta = EVENT_META[row.message_type];
   if (!meta) return null;
 
-  const relatedDids = new Set<string>();
-  addDid(relatedDids, row.sender);
-  collectDids(row.content, relatedDids);
-  const entityId = await resolveEntityId(row, meta);
+  let entityId = await resolveEntityId(row, meta);
+  const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
+  const collected = collectDidsDeep([row.sender, row.content]);
+  let trId: string | undefined;
+  let schemaId: string | undefined;
+  let permissionId: string | undefined;
+  const explicitPrimaryDid = firstNormalizedDid([
+    content.did,
+    content.trust_registry_did,
+    content.trustRegistryDid,
+    content.permission_did,
+    content.permissionDid,
+    content.participant_did,
+    content.participantDid,
+    content.sender,
+    row.sender,
+  ]);
+
+  if (meta.module === "trust-registry") {
+    const isTrustRegistryEntity = meta.entityType === "TrustRegistry";
+    const rawTrId = readNumber(
+      row.content,
+      isTrustRegistryEntity ? ["trust_registry_id", "trustRegistryId", "tr_id", "trId", "id"] : ["trust_registry_id", "trustRegistryId", "tr_id", "trId"]
+    );
+    trId = rawTrId ? String(rawTrId) : isTrustRegistryEntity ? entityId : undefined;
+    const trDid = await loadTrustRegistryDid(rawTrId);
+    if (trDid) collected.add(trDid);
+  }
+
+  if (meta.module === "credential-schema") {
+    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId", "id"]);
+    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId"]);
+    const relation = await loadSchemaRelation(rawSchemaId);
+    schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : entityId);
+    trId = relation.trId ?? (rawTrId ? String(rawTrId) : undefined);
+    const trDid = relation.trDid ?? (await loadTrustRegistryDid(rawTrId));
+    if (trDid) collected.add(trDid);
+  }
+
+  if (meta.module === "permission") {
+    const rawPermissionId = readNumber(row.content, ["permission_id", "permissionId", "perm_id", "permId", "id"]);
+    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
+    const rawValidatorPermId = readNumber(row.content, ["validator_perm_id", "validatorPermId"]);
+    const relation = await loadPermissionRelation(rawPermissionId);
+    permissionId = relation.permissionId ?? (rawPermissionId ? String(rawPermissionId) : entityId);
+    schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
+    trId = relation.trId;
+    [relation.permissionDid, relation.trDid, relation.validatorPermissionDid].forEach((did) => {
+      if (did) collected.add(did);
+    });
+    if (rawSchemaId && !relation.trDid) {
+      const schemaRelation = await loadSchemaRelation(rawSchemaId);
+      schemaId = schemaId ?? schemaRelation.schemaId;
+      trId = trId ?? schemaRelation.trId;
+      if (schemaRelation.trDid) collected.add(schemaRelation.trDid);
+    }
+    if (rawValidatorPermId) {
+      const validatorRelation = await loadPermissionRelation(rawValidatorPermId);
+      [validatorRelation.permissionDid, validatorRelation.trDid].forEach((did) => {
+        if (did) collected.add(did);
+      });
+    }
+  }
+
+  if (!entityId && (meta.entityType === "GovernanceFrameworkDocument" || meta.entityType === "GovernanceFrameworkVersion")) {
+    entityId = trId;
+  }
+
+  const relatedDids = uniqueNormalizedDids(collected);
+  const primaryDid =
+    explicitPrimaryDid ??
+    (meta.module === "permission" ? firstNormalizedDid(relatedDids) : undefined) ??
+    firstNormalizedDid(relatedDids);
+  if (!primaryDid) return null;
   return {
     type: "transaction-executed",
     module: meta.module,
@@ -535,17 +712,21 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     txIndex: Number(row.tx_index),
     messageIndex: Number(row.message_index),
     sender: row.sender,
-    relatedDids: Array.from(relatedDids).sort(),
+    did: primaryDid,
+    relatedDids,
     entityType: meta.entityType,
     entityId,
+    trId,
+    schemaId,
+    permissionId,
     timestamp: toIsoSeconds(row.timestamp),
   };
 }
 
-function toEventRows(event: IndexerTxEvent): Array<Record<string, unknown>> {
-  return event.relatedDids.map((did) => ({
+function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
+  return {
     event_type: event.action,
-    did,
+    did: event.did,
     block_height: event.blockHeight,
     tx_hash: event.txHash,
     tx_index: event.txIndex,
@@ -565,8 +746,11 @@ function toEventRows(event: IndexerTxEvent): Array<Record<string, unknown>> {
       related_dids: event.relatedDids,
       entity_type: event.entityType,
       entity_id: event.entityId,
+      tr_id: event.trId,
+      schema_id: event.schemaId,
+      permission_id: event.permissionId,
     },
-  }));
+  };
 }
 
 function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
@@ -592,6 +776,9 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
           : [String(row.did)],
       entity_type: row.payload?.entity_type ?? row.payload?.entityType ?? row.entity_type ?? undefined,
       entity_id: row.payload?.entity_id ?? row.payload?.entityId ?? row.entity_id ?? undefined,
+      tr_id: row.payload?.tr_id ?? row.payload?.trId ?? undefined,
+      schema_id: row.payload?.schema_id ?? row.payload?.schemaId ?? undefined,
+      permission_id: row.payload?.permission_id ?? row.payload?.permissionId ?? undefined,
     },
   };
 }
@@ -641,35 +828,72 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   let offset = 0;
   while (true) {
     const txEvents = await buildIndexerTxEvents({ blockHeight, limit: pageSize, offset });
-    rows.push(...txEvents.flatMap(toEventRows));
+    rows.push(...txEvents.map(toEventRow));
     if (txEvents.length < pageSize) break;
     offset += pageSize;
   }
   let insertedIds: number[] = [];
   if (rows.length > 0) {
+    const updatable = rows
+      .map((r: any) => ({
+        tx_hash: r.tx_hash,
+        tx_index: r.tx_index,
+        message_index: r.message_index,
+        event_type: r.event_type,
+        entity_type: r.entity_type,
+        entity_id: r.entity_id,
+      }))
+      .filter((r) => r.entity_id != null);
+    if (updatable.length > 0) {
+      await knex.raw(
+        `
+          UPDATE indexer_events ie
+          SET
+            entity_id = COALESCE(ie.entity_id, v.entity_id),
+            payload = CASE
+              WHEN COALESCE(ie.payload->>'entity_id', '') <> '' THEN ie.payload
+              ELSE jsonb_set(ie.payload, '{entity_id}', to_jsonb(v.entity_id), true)
+            END
+          FROM (
+            VALUES ${updatable.map(() => "(?::text, ?::int, ?::int, ?::text, ?::text, ?::text)").join(",")}
+          ) AS v(tx_hash, tx_index, message_index, event_type, entity_type, entity_id)
+          WHERE
+            ie.tx_hash = v.tx_hash
+            AND ie.tx_index = v.tx_index
+            AND ie.message_index = v.message_index
+            AND ie.event_type = v.event_type
+            AND (
+              (ie.entity_type IS NULL AND v.entity_type IS NULL)
+              OR ie.entity_type = v.entity_type
+            )
+            AND ie.entity_id IS NULL
+        `,
+        updatable.flatMap((r) => [
+          r.tx_hash,
+          Number(r.tx_index),
+          Number(r.message_index),
+          r.event_type,
+          r.entity_type,
+          r.entity_id,
+        ])
+      );
+    }
+
     const inserted = await knex("indexer_events")
       .insert(rows)
-      .onConflict(["did", "tx_hash", "message_index", "event_type"])
-      .merge({
-        entity_id: knex.raw("COALESCE(indexer_events.entity_id, EXCLUDED.entity_id)"),
-        entity_type: knex.raw("COALESCE(indexer_events.entity_type, EXCLUDED.entity_type)"),
-        payload: knex.raw(
-          `
-          CASE
-            WHEN (indexer_events.payload->>'entity_id') IS NULL AND EXCLUDED.entity_id IS NOT NULL
-              THEN jsonb_set(COALESCE(indexer_events.payload, '{}'::jsonb), '{entity_id}', to_jsonb(EXCLUDED.entity_id::text), true)
-            ELSE COALESCE(indexer_events.payload, '{}'::jsonb)
-          END
-          `
-        ),
-      })
-      .where((builder) =>
-        builder.whereNull("indexer_events.entity_id").orWhereRaw("(indexer_events.payload->>'entity_id') IS NULL")
-      )
+      .onConflict(knex.raw("(tx_hash, tx_index, message_index, event_type, entity_type, COALESCE(entity_id, ''))"))
+      .ignore()
       .returning("id");
     insertedIds = inserted
       .map((row: number | string | { id?: number | string }) => Number(typeof row === "object" ? row.id : row))
       .filter((id): id is number => Number.isInteger(id));
+    if (insertedIds.length === 0) {
+      logger().info(`[IndexerEvents] skipped duplicate event batch for block_height=${blockHeight}, candidates=${rows.length}`);
+    } else {
+      logger().info(`[IndexerEvents] saved ${insertedIds.length}/${rows.length} event(s) for block_height=${blockHeight}`);
+    }
+  } else {
+    logger().info(`[IndexerEvents] no DID found or no watched messages for block_height=${blockHeight}`);
   }
 
   if (insertedIds.length === 0) return [];
@@ -692,32 +916,40 @@ export async function listIndexerEvents(args: {
   limit?: number;
 }): Promise<IndexerEventRecord[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 100))));
-  const query = knex("indexer_events")
+  const normalizedDid = normalizeRequestedDid(args.did);
+  const query = knex("indexer_events as ie")
     .select(
-      "id",
-      "event_type",
-      "did",
-      "block_height",
-      "tx_hash",
-      "tx_index",
-      "message_index",
-      "message_type",
-      "module",
-      "entity_type",
-      "entity_id",
-      "timestamp",
-      "payload"
+      "ie.id",
+      "ie.event_type",
+      "ie.did",
+      "ie.block_height",
+      "ie.tx_hash",
+      "ie.tx_index",
+      "ie.message_index",
+      "ie.message_type",
+      "ie.module",
+      "ie.entity_type",
+      "ie.entity_id",
+      "ie.timestamp",
+      "ie.payload"
     )
-    .orderBy("block_height", "asc")
-    .orderBy("tx_index", "asc")
-    .orderBy("message_index", "asc")
-    .orderBy("did", "asc")
-    .orderBy("id", "asc")
+    .orderBy("ie.block_height", "asc")
+    .orderBy("ie.tx_index", "asc")
+    .orderBy("ie.message_index", "asc")
+    .orderBy("ie.id", "asc")
     .limit(limit);
 
-  if (args.ids) query.whereIn("id", args.ids);
-  if (args.did) query.where("did", args.did);
-  applyBlockHeightFilter(query, args, "block_height");
+  if (args.ids) query.whereIn("ie.id", args.ids);
+  if (args.did && !normalizedDid) return [];
+  if (normalizedDid && !args.ids) {
+    query.andWhere(function () {
+      this
+        .where("ie.did", normalizedDid)
+        .orWhereRaw("(ie.payload -> 'related_dids') \\? ?", [normalizedDid])
+        .orWhereRaw("(ie.payload -> 'relatedDids') \\? ?", [normalizedDid]);
+    });
+  }
+  applyBlockHeightFilter(query, args, "ie.block_height");
 
   const rows = (await query) as Array<Record<string, any>>;
   return rows.map(fromStoredRow);
