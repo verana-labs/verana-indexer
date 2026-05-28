@@ -1,8 +1,6 @@
 import {
-  InMemoryCache,
   resolveDID,
   type TrustResolution,
-  type TrustResolutionCache,
   type VerifiablePublicRegistry,
 } from "@verana-labs/verre";
 import { BULL_JOB_NAME } from "../../common";
@@ -10,7 +8,6 @@ import knex from "../../common/utils/db_connection";
 import { applySpeedToBatchSize, applySpeedToDelay, getRecommendedConcurrency } from "../../common/utils/crawl_speed_config";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import config from "../../config.json" with { type: "json" };
-import { DbDerefCache } from "./db-cache";
 import {
   defaultVprRegistriesFromEnv,
   readBoolFromEnv,
@@ -33,7 +30,6 @@ export type ResolverRuntimeConfig = {
   useEmbeddedRegistryAdapter?: boolean;
   disableDigestSriVerification?: boolean;
   trustEvaluationTtlSeconds?: number;
-  dereferenceCacheTtlSeconds?: number;
   pollObjectCachingRetryDays?: number;
  
   txPrefilterEnabled?: boolean;
@@ -62,20 +58,12 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
     trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
-    dereferenceCacheTtlSeconds: next?.dereferenceCacheTtlSeconds ?? legacy?.dereferenceCacheTtlSeconds,
     pollObjectCachingRetryDays: next?.pollObjectCachingRetryDays ?? legacy?.pollObjectCachingRetryDays,
     didResolveConcurrency: next?.didResolveConcurrency ?? legacy?.didResolveConcurrency,
     maxDidsPerTrustBlock: next?.maxDidsPerTrustBlock ?? legacy?.maxDidsPerTrustBlock,
     freshStart: next?.freshStart ?? legacy?.freshStart,
     reindexing: next?.reindexing ?? legacy?.reindexing,
   };
-}
-
-export function getDeclaredDereferenceCacheTtlSeconds(): number | null {
-  const cfg = getResolverRuntimeConfig();
-  const c = Number(cfg?.dereferenceCacheTtlSeconds);
-  if (Number.isFinite(c) && c > 0) return Math.floor(c);
-  return null;
 }
 
 export function getTrustEvaluationTtlSeconds(): number {
@@ -457,14 +445,9 @@ async function getImpactedDids(blockHeight: number, limit: number): Promise<stri
 
 export async function resolveTrustForDidAtHeight(
   did: string,
-  blockHeight: number,
-  verreCache?: TrustResolutionCache<string, Promise<TrustResolution>>
+  blockHeight: number
 ): Promise<void> {
   const { verifiablePublicRegistries, skipDigestSRICheck } = getVerreTrustEvaluationCallOptions();
-  const derefTtlSeconds = getDeclaredDereferenceCacheTtlSeconds() ?? 0;
-  const cache: any =
-    verreCache ??
-    (derefTtlSeconds > 0 ? new DbDerefCache(derefTtlSeconds * 1000) : new InMemoryCache(5 * 60 * 1000));
   const cfg = getResolverRuntimeConfig();
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0;
   const resourceId = `${did}@${blockHeight}`;
@@ -473,7 +456,6 @@ export async function resolveTrustForDidAtHeight(
     const result = (await resolveDID(did, {
       verifiablePublicRegistries,
       skipDigestSRICheck,
-      cache,
     })) as TrustResolution;
 
     const snap = snapshotFromResolution(result);
@@ -534,9 +516,8 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
 
   const tuning = await getResolverTuning();
   const impactedDids = await getImpactedDids(blockHeight, tuning.maxDidsPerBlock);
-  const verreCache = new InMemoryCache(20 * 60 * 1000);
 
-  await runPool(impactedDids, tuning.didConcurrency, async (did) => resolveTrustForDidAtHeight(did, blockHeight, verreCache));
+  await runPool(impactedDids, tuning.didConcurrency, async (did) => resolveTrustForDidAtHeight(did, blockHeight));
 }
 
 export type TrustSummaryPayload = {

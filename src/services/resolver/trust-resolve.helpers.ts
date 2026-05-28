@@ -12,7 +12,7 @@ export function readBoolFromEnv(keys: string[]): boolean | null {
 
 export function guessProductionFromChainId(chainId: string): boolean {
   const s = chainId.toLowerCase();
-  if (s.includes("devnet") || s.includes("testnet") || s.includes("local") || s.includes("test")) return false;
+  if (s.includes("devnet") || s.includes("testnet") || s.includes("local") || s.includes("test")) return true;
   return true;
 }
 
@@ -20,5 +20,6 @@ export function defaultVprRegistriesFromEnv(): VerifiablePublicRegistry[] {
   const chainId = (process.env.CHAIN_ID ?? "").trim();
   if (!chainId) return [];
   const id = `vpr:verana:${chainId}`;
-  return [{ id, baseUrls: [], production: guessProductionFromChainId(chainId) }];
+  const cleanedChainId = chainId.toLowerCase().replace(/^vna-/, "").replace(/-\d+$/, "");
+  return [{ id, baseUrls: [`https://idx.${cleanedChainId}.verana.network/verana`], production: guessProductionFromChainId(chainId) }];
 }
