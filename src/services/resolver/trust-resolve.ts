@@ -590,11 +590,36 @@ export function extractQ1CredentialArrays(resolveResult: unknown): {
     return { credentials: [], failedCredentials: [] };
   }
   const r = resolveResult as Record<string, unknown>;
-  const credentials = Array.isArray(r.credentials)
+  const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : [];
+  const explicit = Array.isArray(r.credentials)
     ? r.credentials
     : Array.isArray(r.validCredentials)
       ? r.validCredentials
-      : [];
-  const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : [];
-  return { credentials, failedCredentials };
+      : null;
+  if (explicit && explicit.length > 0) {
+    return { credentials: explicit, failedCredentials };
+  }
+
+  const derived = deriveCredentialsFromVerreResolution(r);
+  return { credentials: derived.length > 0 ? derived : (explicit ?? []), failedCredentials };
+}
+
+function deriveCredentialsFromVerreResolution(r: Record<string, unknown>): unknown[] {
+  const result = r.verified === true ? "VALID" : "FAILED";
+  const out: unknown[] = [];
+  const push = (cred: unknown) => {
+    if (!cred || typeof cred !== "object") return;
+    const c = cred as Record<string, unknown>;
+    const schemaType = typeof c.schemaType === "string" ? c.schemaType : "";
+    out.push({
+      ...c,
+      result,
+      vtjscId: typeof c.vtjscId === "string" ? c.vtjscId : schemaType || undefined,
+      issuedBy: typeof c.issuer === "string" ? c.issuer : undefined,
+      claims: c.claims ?? c,
+    });
+  };
+  push(r.serviceProvider);
+  push(r.service);
+  return out;
 }
