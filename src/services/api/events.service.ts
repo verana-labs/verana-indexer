@@ -39,7 +39,7 @@ export default class IndexerEventsService extends BaseService {
         events,
       });
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error broadcasting block envelope:", error);
+      this.logger.error("[IndexerEventsService] Error broadcasting block-indexed:", error);
       throw error;
     }
 
