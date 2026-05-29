@@ -8,7 +8,7 @@ import BaseService from "../../base/base.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
-import { eventsBroadcaster } from "./events_broadcaster";
+import { subscribeBroadcaster } from "./subscribe_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import { isUnknownMessageError } from "./api_shared";
 
@@ -435,16 +435,16 @@ export default class ApiService extends BaseService {
     const server = (this as unknown as { server?: Server }).server;
     if (server) {
       attachRequestTimingHook(server);
-      eventsBroadcaster.setLogger(this.logger);
-      eventsBroadcaster.initialize(server);
-      this.logger.info("✅ WebSocket events broadcaster initialized on /verana/indexer/v1/events");
+      subscribeBroadcaster.setLogger(this.logger);
+      subscribeBroadcaster.initialize(server);
+      this.logger.info("WebSocket subscribe broadcaster initialized on /verana/indexer/v1/subscribe");
     } else {
-      this.logger.warn("⚠️ HTTP server not found, WebSocket events broadcaster not initialized");
+      this.logger.warn("HTTP server not found, WebSocket subscribe broadcaster not initialized");
     }
   }
 
   async stopped() {
-    eventsBroadcaster.close();
-    this.logger.info("🔌 WebSocket events broadcaster closed");
+    subscribeBroadcaster.close();
+    this.logger.info("🔌 WebSocket broadcasters closed");
   }
 }
