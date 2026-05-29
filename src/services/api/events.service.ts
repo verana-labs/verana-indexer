@@ -2,7 +2,7 @@ import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended"
 import { Context, Errors, ServiceBroker } from "moleculer";
 import BaseService from "../../base/base.service";
 import { SERVICE } from "../../common";
-import { eventsBroadcaster } from "./events_broadcaster";
+import { subscribeBroadcaster } from "./subscribe_broadcaster";
 import { listIndexerEvents, persistIndexerEventsForBlock } from "./indexer_events_query";
 
 @Service({
@@ -28,53 +28,28 @@ export default class IndexerEventsService extends BaseService {
 
     try {
       events = await persistIndexerEventsForBlock(height);
-      events.forEach((event) => eventsBroadcaster.broadcastIndexerEvent(event));
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error persisting/broadcasting indexer events:", error);
-    } finally {
-      eventsBroadcaster.broadcastBlockProcessed(height, eventTimestamp);
+      this.logger.error("[IndexerEventsService] Error persisting indexer events:", error);
     }
 
     try {
-      eventsBroadcaster.broadcastBlockIndexed(height, eventTimestamp);
+      subscribeBroadcaster.broadcastBlockEnvelope({
+        block: height,
+        blockTime: eventTimestamp.toISOString(),
+        events,
+      });
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error broadcasting block-indexed:", error);
+      this.logger.error("[IndexerEventsService] Error broadcasting block envelope:", error);
       throw error;
     }
 
     return {
       success: true,
-      clientsNotified: eventsBroadcaster.getWSClientCount(),
+      clientsNotified: subscribeBroadcaster.getClientCount(),
       eventsNotified: events.length,
       height,
       timestamp: eventTimestamp.toISOString(),
     };
-  }
-
-  @Action({
-    name: "broadcastBlockResolved",
-    params: {
-      height: { type: "number", integer: true, positive: true, convert: true },
-      timestamp: { type: "string", optional: true, convert: true },
-    },
-  })
-  public async broadcastBlockResolved(ctx: Context<{ height: number; timestamp?: string }>) {
-    const { height, timestamp } = ctx.params;
-    const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
-
-    try {
-      eventsBroadcaster.broadcastBlockResolved(height, eventTimestamp);
-
-      return {
-        success: true,
-        clientsNotified: eventsBroadcaster.getWSClientCount(),
-        height,
-        timestamp: eventTimestamp.toISOString(),
-      };
-    } catch (error) {
-      this.logger.error("[IndexerEventsService] Error broadcasting block-resolved:", error);
-      throw error;
-    }
   }
 
   @Action({

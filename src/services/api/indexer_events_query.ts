@@ -52,9 +52,9 @@ export type IndexerEventRecord = {
     related_dids: string[];
     entity_type?: string;
     entity_id?: string;
-    tr_id?: string;
-    schema_id?: string;
-    permission_id?: string;
+    tr_id?: string; // TODO: Consider use only entity_id
+    schema_id?: string; // TODO: Consider use only entity_id
+    permission_id?: string; // TODO: Consider use only entity_id
   };
 };
 
@@ -196,6 +196,11 @@ function readNumber(content: unknown, keys: string[]): number | null {
   return readFirstPositiveInteger(content, keys);
 }
 
+// TODO(entity_id): this only resolves entity_id for Msgs that carry the id
+// in their body (Updates/Archives). Create-type Msgs leave entity_id
+// undefined because the chain assigns the id during execution and it never
+// reaches `row.content`. Spec IDX-INDEXER-SUB-1 lists entity_id in the
+// payload, so leaving it optional is a known gap.
 function getEntityId(row: EventRow, meta: EventMeta): string | undefined {
   if (meta.module === "permission") {
     const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
