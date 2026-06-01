@@ -54,7 +54,7 @@ export function readPositiveInteger(value: unknown): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export function readFirstPositiveInteger(source: unknown, keys: string[]): number | null {
+export function readFirstPositiveInteger(source: unknown, keys: readonly string[]): number | null {
   if (!source || typeof source !== "object") return null;
   const obj = source as Record<string, unknown>;
   for (const key of keys) {
