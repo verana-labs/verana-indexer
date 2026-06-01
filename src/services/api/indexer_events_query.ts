@@ -192,25 +192,63 @@ const EVENT_META: Record<string, EventMeta> = {
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
 
-function readNumber(content: unknown, keys: string[]): number | null {
+function readNumber(content: unknown, keys: readonly string[]): number | null {
   return readFirstPositiveInteger(content, keys);
 }
 
-function getEntityId(row: EventRow, meta: EventMeta): string | undefined {
+const ID_ALIASES = {
+  trustRegistry: ["tr_id", "trId", "trust_registry_id", "trustRegistryId"],
+  credentialSchema: ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"],
+  permission: ["permission_id", "permissionId", "perm_id", "permId"],
+  validatorPermission: ["validator_perm_id", "validatorPermId"],
+  governanceFramework: ["gfv_id", "gfvId", "gfd_id", "gfdId"],
+} as const;
+
+async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
   if (meta.module === "permission") {
-    const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
+    const permissionId = readNumber(row.content, ["id", ...ID_ALIASES.permission]);
     return permissionId ? String(permissionId) : undefined;
   }
 
   if (meta.module === "credential-schema") {
-    const schemaId = readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
+    const schemaId = readNumber(row.content, ["id", ...ID_ALIASES.credentialSchema]);
     return schemaId ? String(schemaId) : undefined;
   }
 
   const trId =
-    readNumber(row.content, ["id", "tr_id", "trId", "trust_registry_id", "trustRegistryId"]) ??
-    readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]);
-  return trId ? String(trId) : undefined;
+    readNumber(row.content, ["id", ...ID_ALIASES.trustRegistry]) ??
+    readNumber(row.content, ID_ALIASES.governanceFramework);
+  return trId ? String(trId) : resolveEntityIdFromDomain(row, meta);
+}
+
+async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promise<string | undefined> {
+  const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
+  const height = Number(row.block_height);
+
+  if (meta.module === "trust-registry") {
+    const did = normalizeDid(content.did);
+    if (!did) return undefined;
+    const tr = await knex("trust_registry").select("id").where({ did }).first();
+    return tr?.id != null ? String(tr.id) : undefined;
+  }
+
+  if (meta.module === "credential-schema") {
+    const trId = readNumber(content, ID_ALIASES.trustRegistry);
+    const query = knex("credential_schema_history").select("credential_schema_id").where({ height });
+    if (trId) query.andWhere({ tr_id: trId });
+    const cs = await query.orderBy("credential_schema_id", "desc").first();
+    return cs?.credential_schema_id != null ? String(cs.credential_schema_id) : undefined;
+  }
+
+  if (meta.module === "permission") {
+    const did = normalizeDid(content.did);
+    const query = knex("permission_history").select("permission_id").where({ height });
+    if (did) query.andWhere({ did });
+    const perm = await query.orderBy("permission_id", "desc").first();
+    return perm?.permission_id != null ? String(perm.permission_id) : undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeRequestedDid(value: unknown): string | undefined {
@@ -280,7 +318,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const meta = EVENT_META[row.message_type];
   if (!meta) return null;
 
-  const entityId = getEntityId(row, meta);
+  const entityId = await getEntityId(row, meta);
   const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
   const collected = collectDidsDeep([row.sender, row.content]);
   let trId: string | undefined;
@@ -299,15 +337,15 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   ]);
 
   if (meta.module === "trust-registry") {
-    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId", "id"]);
+    const rawTrId = readNumber(row.content, [...ID_ALIASES.trustRegistry, "id"]);
     trId = rawTrId ? String(rawTrId) : entityId;
     const trDid = await loadTrustRegistryDid(rawTrId);
     if (trDid) collected.add(trDid);
   }
 
   if (meta.module === "credential-schema") {
-    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId", "id"]);
-    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId"]);
+    const rawSchemaId = readNumber(row.content, [...ID_ALIASES.credentialSchema, "id"]);
+    const rawTrId = readNumber(row.content, ID_ALIASES.trustRegistry);
     const relation = await loadSchemaRelation(rawSchemaId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : entityId);
     trId = relation.trId ?? (rawTrId ? String(rawTrId) : undefined);
@@ -316,9 +354,9 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   }
 
   if (meta.module === "permission") {
-    const rawPermissionId = readNumber(row.content, ["permission_id", "permissionId", "perm_id", "permId", "id"]);
-    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const rawValidatorPermId = readNumber(row.content, ["validator_perm_id", "validatorPermId"]);
+    const rawPermissionId = readNumber(row.content, [...ID_ALIASES.permission, "id"]);
+    const rawSchemaId = readNumber(row.content, ID_ALIASES.credentialSchema);
+    const rawValidatorPermId = readNumber(row.content, ID_ALIASES.validatorPermission);
     const relation = await loadPermissionRelation(rawPermissionId);
     permissionId = relation.permissionId ?? (rawPermissionId ? String(rawPermissionId) : entityId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
