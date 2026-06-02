@@ -73,7 +73,7 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
   return knexMock;
 });
 
-describe("TrustV1ApiService GET /resolve", () => {
+describe("TrustV1ApiService POST /v4/verifiable-trust/resolve (resolveV4)", () => {
   let broker: ServiceBroker;
   let service: any;
 
@@ -89,124 +89,113 @@ describe("TrustV1ApiService GET /resolve", () => {
     jest.restoreAllMocks();
   });
 
-  it("summary returns trust summary + legacy fields and queries stored row at clamped height", async () => {
-    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
-    jest.spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight").mockResolvedValue({
+  function mockStoredRow(overrides: Record<string, unknown> = {}) {
+    return {
       did: "did:verana:test123",
       height: 10,
       resolve_result: { verified: true, outcome: TrustResolutionOutcome.VERIFIED },
-      issuer_auth: { verified: true },
-      verifier_auth: { verified: false },
-      ecosystem_participant: { verified: true },
       created_at: "2026-01-01T00:00:00Z",
-    } as any);
+      ...overrides,
+    } as any;
+  }
 
-    const ctx: any = {
-      params: { did: "did:verana:test123", detail: "summary", at: "10" },
-      meta: {},
-    };
-    const res = await service.resolve(ctx);
+  it("returns trust-core fields in the normative camelCase shape", async () => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    jest
+      .spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight")
+      .mockResolvedValue(mockStoredRow());
+
+    const ctx: any = { params: { did: "did:verana:test123" }, meta: {} };
+    const res = await service.resolveV4(ctx);
 
     expect(TrustResolve.getTrustResultLatestByDidAtOrBeforeHeight).toHaveBeenCalledWith(
       "did:verana:test123",
       10
     );
     expect(ctx.meta.$statusCode).toBe(200);
-    expect(res.trust_status).toBe("TRUSTED");
-    expect(res.production).toBe(true);
-    expect(res.evaluated_at_block).toBe(10);
-    expect(res.resolve_result).toBeUndefined();
+    expect(res).toMatchObject({
+      did: "did:verana:test123",
+      trusted: true,
+      evaluatedAtBlock: 10,
+      corporationId: 0,
+    });
+    expect(typeof res.evaluatedAtTime).toBe("string");
+    expect(typeof res.expiresAtTime).toBe("string");
+    // legacy fields must be gone
+    expect(res.trust_status).toBeUndefined();
+    expect(res.evaluated_at_block).toBeUndefined();
+    // opt-in sections excluded by default
+    expect(res.participations).toBeUndefined();
+    expect(res.ecosystems).toBeUndefined();
   });
 
-  it("detail=full returns normative Q1 shape + credential arrays from stored Verre", async () => {
+  it("trusted is true for PARTIAL (verified-test) outcomes", async () => {
     const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
-    jest.spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight").mockResolvedValue({
-      did: "did:verana:test123",
-      height: 10,
-      resolve_result: {
-        verified: true,
-        outcome: TrustResolutionOutcome.VERIFIED,
-        credentials: [{ result: "VALID" }],
-        failedCredentials: [{ id: "x", error: "bad" }],
-      },
-      issuer_auth: { verified: true },
-      verifier_auth: { verified: false },
-      ecosystem_participant: { verified: true },
-      created_at: "2026-01-01T00:00:00Z",
-    } as any);
-
-    const ctx: any = {
-      params: { did: "did:verana:test123", detail: "full", at: "10" },
-      meta: {},
-    };
-    const res = await service.resolve(ctx);
-
-    expect(ctx.meta.$statusCode).toBe(200);
-    expect(res.did).toBe("did:verana:test123");
-    expect(res.evaluated_at_block).toBe(10);
-    expect(res.trust_status).toBe("TRUSTED");
-    expect(res.resolve_result).toBeUndefined();
-    expect(res.credentials).toEqual([
-      expect.objectContaining({
-        result: "VALID",
-        presented_by: "did:verana:test123",
-      }),
-    ]);
-    expect(res.failed_credentials).toEqual([{ id: "x", error: "bad" }]);
-    expect(res.issuer_auth).toBeUndefined();
-  });
-
-  it("default detail is full and computes digestSri when schema digest algorithm exists", async () => {
-    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
-    jest.spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight").mockResolvedValue({
-      did: "did:verana:test123",
-      height: 10,
-      resolve_result: {
-        verified: true,
-        outcome: TrustResolutionOutcome.VERIFIED,
-        credentials: [
-          {
-            result: "VALID",
-            vtjscId: "https://example.com/schemas/ecs-service/v1",
-            credential: { a: 1, b: 2 },
-          },
-        ],
-        failedCredentials: [],
-      },
-      created_at: "2026-01-01T00:00:00Z",
-    } as any);
-
-    const ctx: any = {
-      params: { did: "did:verana:test123" }, // no detail => default full
-      meta: {},
-    };
-    const res = await service.resolve(ctx);
-    expect(ctx.meta.$statusCode).toBe(200);
-    expect(res.credentials?.[0]).toEqual(
-      expect.objectContaining({
-        result: "VALID",
-        vtjsc_id: "https://example.com/schemas/ecs-service/v1",
-      })
+    jest.spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight").mockResolvedValue(
+      mockStoredRow({ resolve_result: { verified: true, outcome: TrustResolutionOutcome.VERIFIED_TEST } })
     );
-    expect(res.credentials?.[0].digest_sri).toMatch(/^sha256-/);
+
+    const ctx: any = { params: { did: "did:verana:test123" }, meta: {} };
+    const res = await service.resolveV4(ctx);
+    expect(res.trusted).toBe(true);
   });
 
-  it("accepts at as ISO datetime by mapping to block height", async () => {
+  it("uses the At-Block-Height header (ctx.meta.blockHeight), clamped to last trust block", async () => {
     const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
-    jest.spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight").mockResolvedValue({
-      did: "did:verana:test123",
-      height: 9,
-      resolve_result: { verified: true, outcome: TrustResolutionOutcome.VERIFIED },
-      created_at: "2026-01-01T00:00:00Z",
-    } as any);
+    const spy = jest
+      .spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight")
+      .mockResolvedValue(mockStoredRow({ height: 5 }));
+
+    const ctx: any = { params: { did: "did:verana:test123" }, meta: { blockHeight: 5 } };
+    await service.resolveV4(ctx);
+    expect(spy).toHaveBeenCalledWith("did:verana:test123", 5);
+  });
+
+  it("includes participations only when selected, parsing the states filter", async () => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    jest
+      .spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight")
+      .mockResolvedValue(mockStoredRow());
+    const Builders = await import("../../../../src/services/resolver/trust-resolve-v4.builders");
+    const partSpy = jest
+      .spyOn(Builders, "buildParticipations")
+      .mockResolvedValue([{ id: 501, role: "ISSUER", state: "ACTIVE" } as any]);
 
     const ctx: any = {
-      params: { did: "did:verana:test123", at: "2026-01-01T00:00:00Z" },
+      params: { did: "did:verana:test123", participations: { states: ["ACTIVE", "REVOKED"] } },
       meta: {},
     };
-    const res = await service.resolve(ctx);
-    expect(ctx.meta.$statusCode).toBe(200);
-    expect(res.evaluated_at_block).toBe(9);
+    const res = await service.resolveV4(ctx);
+
+    expect(partSpy).toHaveBeenCalledWith("did:verana:test123", expect.any(Date), ["ACTIVE", "REVOKED"]);
+    expect(res.participations).toEqual([{ id: 501, role: "ISSUER", state: "ACTIVE" }]);
+  });
+
+  it("includes ecosystems only when selected", async () => {
+    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
+    jest
+      .spyOn(TrustResolve, "getTrustResultLatestByDidAtOrBeforeHeight")
+      .mockResolvedValue(mockStoredRow());
+    const Builders = await import("../../../../src/services/resolver/trust-resolve-v4.builders");
+    const ecoSpy = jest
+      .spyOn(Builders, "buildEcosystems")
+      .mockResolvedValue([{ id: 1234, corporationId: 0, archived: false } as any]);
+
+    const ctx: any = { params: { did: "did:verana:test123", ecosystems: true }, meta: {} };
+    const res = await service.resolveV4(ctx);
+
+    expect(ecoSpy).toHaveBeenCalledWith("did:verana:test123", {
+      includeArchived: false,
+      credentialSchemas: { include: false, includeArchived: false },
+    });
+    expect(res.ecosystems).toEqual([{ id: 1234, corporationId: 0, archived: false }]);
+  });
+
+  it("rejects a non-DID parameter with 400", async () => {
+    const ctx: any = { params: { did: "not-a-did" }, meta: {} };
+    const res = await service.resolveV4(ctx);
+    expect(ctx.meta.$statusCode).toBe(400);
+    expect(res.error).toMatch(/did:/);
   });
 });
 

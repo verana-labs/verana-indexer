@@ -1,10 +1,12 @@
-export type PermState = "REPAID" | "SLASHED" | "REVOKED" | "EXPIRED" | "ACTIVE" | "FUTURE" | "INACTIVE";
+import type { ParticipantRole, ParticipantState } from "../../common/types/types";
+
+export type PermState = ParticipantState;
 
 export type CorporationAction = "VP_RENEW" | "VP_CANCEL" | "PERM_REVOKE" | "PERM_ADJUST" | "PERM_REPAY";
 export type GranteeAction = CorporationAction;
 export type ValidatorAction = "VP_SET_VALIDATED" | "PERM_REVOKE" | "PERM_ADJUST" | "PERM_SLASH";
 
-export type PermissionType = "UNSPECIFIED" | "ISSUER_GRANTOR" | "ISSUER" | "VERIFIER_GRANTOR" | "VERIFIER" | "HOLDER" | "ECOSYSTEM";
+export type PermissionType = "UNSPECIFIED" | ParticipantRole;
 export type ValidationState = "VALIDATION_STATE_UNSPECIFIED" | "PENDING" | "VALIDATED" | "TERMINATED" | null;
 export type SchemaMode = "GRANTOR_VALIDATION" | "OPEN" | "ECOSYSTEM";
 

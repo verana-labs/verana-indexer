@@ -1,3 +1,14 @@
+export function toDate(value: unknown): Date | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value as string);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+export function toIso(value: unknown): string | undefined {
+  const d = toDate(value);
+  return d ? d.toISOString() : undefined;
+}
+
 export function formatTimestamp(rawTimestamp: any): string {
     let date: Date;
 

@@ -3,7 +3,7 @@ import { Context, ServiceBroker } from "moleculer";
 import { ECS, PermissionType, verifyPermissions } from "@verana-labs/verre";
 import { createHash } from "node:crypto";
 import BaseService from "../../base/base.service";
-import { BULL_JOB_NAME, SERVICE } from "../../common";
+import { BULL_JOB_NAME, canonicalizeJson, SERVICE, toCoin } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { BlockCheckpoint } from "../../models";
@@ -11,10 +11,16 @@ import {
   getTrustEvaluationTtlSeconds,
   getVerreTrustEvaluationCallOptions,
   buildTrustSummaryFromStoredRow,
-  extractQ1CredentialArrays,
   getTrustResultLatestByDidAtOrBeforeHeight,
   resolveTrustForDidAtHeight,
 } from "./trust-resolve";
+import {
+  buildEcosystems,
+  buildParticipations,
+  resolveCorporationId,
+  type EcosystemsOptions,
+} from "./trust-resolve-v4.builders";
+import { ALL_PARTICIPANT_STATES, type ParticipantState } from "../../common/types/types";
 
 function isDidParam(did: string): did is string {
   return did.startsWith("did:");
@@ -85,17 +91,6 @@ function computeSri(algorithm: string, canonicalJson: string): string {
   if (!hashAlg) throw new Error(`Unsupported digest algorithm: ${algorithm}`);
   const digest = createHash(hashAlg).update(canonicalJson, "utf8").digest("base64");
   return `${hashAlg}-${digest}`;
-}
-
-let canonicalizeLoader: Promise<(v: unknown) => string> | null = null;
-async function canonicalizeJson(value: unknown): Promise<string> {
-  if (!canonicalizeLoader) {
-    canonicalizeLoader = import("canonicalize").then((mod: any) => mod?.default ?? mod);
-  }
-  const fn = await canonicalizeLoader;
-  const out = fn(value);
-  if (typeof out !== "string") throw new Error("canonicalize did not return a string");
-  return out;
 }
 
 function formatDeposit(n: unknown): string {
@@ -266,28 +261,6 @@ export class TrustApiService extends BaseService {
       const n = Number.parseInt(String(atParam), 10);
       if (Number.isInteger(n) && n >= 0) return n;
     }
-    return undefined;
-  }
-
-  private isIsoDateTime(s: string): boolean {
-    if (!s) return false;
-    const d = new Date(s);
-    return Number.isFinite(d.getTime());
-  }
-
-  private async blockHeightAtOrBeforeTime(atIso: string): Promise<number | undefined> {
-    const d = new Date(atIso);
-    if (!Number.isFinite(d.getTime())) return undefined;
-    const row = await knex("block").select("height").where("time", "<=", d).orderBy("height", "desc").first();
-    const h = Number((row as any)?.height);
-    return Number.isInteger(h) && h >= 0 ? h : undefined;
-  }
-
-  private async parseAtToHeight(atParam?: string): Promise<number | undefined> {
-    if (atParam === undefined || atParam === "") return undefined;
-    const asHeight = this.parseBlockHeightQuery(undefined, atParam);
-    if (asHeight !== undefined) return asHeight;
-    if (this.isIsoDateTime(atParam)) return this.blockHeightAtOrBeforeTime(atParam);
     return undefined;
   }
 
@@ -547,33 +520,87 @@ export class TrustApiService extends BaseService {
     return chain;
   }
 
-  private formatUvnaAmount(n: unknown): string {
-    const v = Number(n);
-    if (!Number.isFinite(v)) return "0uvna";
-    return `${Math.trunc(v)}uvna`;
+  private async blockTimeAtHeight(height: number): Promise<Date | null> {
+    if (!Number.isInteger(height) || height < 0) return null;
+    const row = await knex("block").select("time").where("height", height).first();
+    const t = (row as { time?: Date | string } | undefined)?.time;
+    const d = t != null ? new Date(t as Date | string) : null;
+    return d && Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  private parseParticipationsSelector(value: unknown): ParticipantState[] | null {
+    if (value === undefined || value === false || value === null) return null;
+    if (value === true) return ["ACTIVE"];
+    if (typeof value === "object") {
+      const states = (value as { states?: unknown }).states;
+      if (Array.isArray(states)) {
+        const valid = states
+          .map((s) => String(s).toUpperCase())
+          .filter((s): s is ParticipantState => (ALL_PARTICIPANT_STATES as string[]).includes(s));
+        return valid.length > 0 ? [...new Set(valid)] : ["ACTIVE"];
+      }
+      return ["ACTIVE"];
+    }
+    return null;
+  }
+
+  private parseEcosystemsSelector(value: unknown): EcosystemsOptions | null {
+    if (value === undefined || value === false || value === null) return null;
+    if (value === true) {
+      return { includeArchived: false, credentialSchemas: { include: false, includeArchived: false } };
+    }
+    if (typeof value === "object") {
+      const obj = value as { includeArchived?: unknown; credentialSchemas?: unknown };
+      const cs = obj.credentialSchemas;
+      let credentialSchemas = { include: false, includeArchived: false };
+      if (cs === true) {
+        credentialSchemas = { include: true, includeArchived: false };
+      } else if (cs && typeof cs === "object") {
+        credentialSchemas = {
+          include: true,
+          includeArchived: (cs as { includeArchived?: unknown }).includeArchived === true,
+        };
+      }
+      return { includeArchived: obj.includeArchived === true, credentialSchemas };
+    }
+    return null;
   }
 
   @Action({
-    rest: "GET /resolve",
+    rest: "POST /resolve",
     params: {
       did: { type: "string" },
-      detail: { type: "string", optional: true },
-      at: { type: "string", optional: true },
+      corporation: { type: "boolean", optional: true },
+      ecsCredentials: { type: "boolean", optional: true },
+      services: { type: "boolean", optional: true },
+      participations: { type: "any", optional: true },
+      presentations: { type: "any", optional: true },
+      ecosystems: { type: "any", optional: true },
     },
   })
-  public async resolve(ctx: Context<{ did: string; detail?: string; at?: string }>) {
+  public async resolveV4(
+    ctx: Context<{
+      did: string;
+      corporation?: boolean;
+      ecsCredentials?: boolean;
+      services?: boolean;
+      participations?: unknown;
+      presentations?: unknown;
+      ecosystems?: unknown;
+    }>
+  ) {
     const did = ctx.params.did;
     if (!isDidParam(did)) return ApiResponder.error(ctx, 'Missing or invalid "did". Must start with "did:".', 400);
 
-    const detailRaw = (ctx.params.detail ?? "full").toLowerCase();
-    if (detailRaw !== "summary" && detailRaw !== "full") {
-      return ApiResponder.error(ctx, 'Invalid "detail". Use "summary" or "full".', 400);
-    }
-
-    const requestedHeight = await this.parseAtToHeight(ctx.params.at);
+    const metaBlockHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
+    const requestedHeight = typeof metaBlockHeight === "number" ? metaBlockHeight : undefined;
     const effectiveHeight = await this.clampQueryBlockHeight(requestedHeight);
     const row = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
-    if (!row) return ApiResponder.error(ctx, `No trust evaluation found for DID: ${did}`, 404);
+    if (!row) {
+      const didErr = await this.ensureDidExistsOr404(ctx, did);
+      if (didErr) return didErr;
+      return ApiResponder.error(ctx, `No trust evaluation found for DID: ${did}`, 404);
+    }
 
     const evaluatedAtSource = row.evaluated_at ?? row.created_at;
     const summary = buildTrustSummaryFromStoredRow({
@@ -584,60 +611,29 @@ export class TrustApiService extends BaseService {
       trustTtlSeconds: getTrustEvaluationTtlSeconds(),
     });
 
-    if (detailRaw === "full") {
-      const evaluatedAtIso =
-        evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at;
-      const { credentials: rawCreds, failedCredentials } = extractQ1CredentialArrays(row.resolve_result);
-      const credentials = (rawCreds as unknown[])
-        .map((c) => this.normalizeQ1Credential(c, did))
-        .filter(Boolean) as Q1Credential[];
-    
-      const withDigest = await Promise.all(
-        credentials.map(async (cred, idx) => {
-          if (cred.digest_sri) return cred;
-          const raw = (rawCreds as unknown[])[idx];
-          const rawObj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-          const w3c = rawObj ? this.extractW3cCredentialJson(rawObj) : null;
-          const computed = await this.tryComputeDigestSriForCredential(cred.vtjsc_id, w3c);
-          return { ...cred, ...computed };
-        })
-      );
-      const enrichedCredentials = await Promise.all(
-        withDigest.map(async (c) => ({
-          ...c,
-          permission_chain: await this.enrichCredentialPermissionChain(c, row.height),
-        }))
-      );
-      const vsReq = (() => {
-        const computed = this.computeVsReqTrustStatus(did, enrichedCredentials);
-        if (computed.trustStatus === "UNTRUSTED") {
-          const fb = this.trustStatusFallbackFromResolveResult(row.resolve_result);
-          return fb.trustStatus !== "UNTRUSTED" ? fb : computed;
-        }
-        return computed;
-      })();
-      const body: Record<string, unknown> = {
-        did: summary.did,
-        trust_status: vsReq.trustStatus,
-        production: vsReq.production,
-        evaluated_at: evaluatedAtIso,
-        evaluated_at_block: row.height,
-        credentials: enrichedCredentials,
-        failed_credentials: failedCredentials,
-      };
-      if (summary.expires_at !== undefined) body.expires_at = summary.expires_at;
-      return ApiResponder.success(ctx, body, 200);
-    }
+    const evaluatedAtTime =
+      evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at;
+    const expiresAtTime =
+      summary.expires_at ??
+      new Date(new Date(evaluatedAtTime).getTime() + getTrustEvaluationTtlSeconds() * 1000).toISOString();
 
-    const summaryBody: Record<string, unknown> = {
-      did: summary.did,
-      trust_status: summary.trust_status,
-      production: summary.production,
-      evaluated_at: summary.evaluated_at,
-      evaluated_at_block: row.height,
+    const trusted = summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
+
+    const body: Record<string, unknown> = {
+      did,
+      trusted,
+      evaluatedAtTime,
+      evaluatedAtBlock: row.height,
+      expiresAtTime,
+      corporationId: await resolveCorporationId(did),
     };
-    if (summary.expires_at !== undefined) summaryBody.expires_at = summary.expires_at;
-    return ApiResponder.success(ctx, summaryBody, 200);
+
+    const now = (await this.blockTimeAtHeight(effectiveHeight)) ?? new Date(evaluatedAtTime);
+    const states = this.parseParticipationsSelector(ctx.params.participations);
+    if (states) body.participations = await buildParticipations(did, now, states);
+    const ecosystemsOpts = this.parseEcosystemsSelector(ctx.params.ecosystems);
+    if (ecosystemsOpts) body.ecosystems = await buildEcosystems(did, ecosystemsOpts);
+    return ApiResponder.success(ctx, body, 200);
   }
 
   private async vtjscAuthorizationResponse(
@@ -725,11 +721,11 @@ export class TrustApiService extends BaseService {
       if (isIssuer) {
         const iss = Number(p.issuance_fees ?? 0);
         totalFeeUnits += iss;
-        return { permission_id: pid, type: typ, issuance_fees: this.formatUvnaAmount(iss) };
+        return { permission_id: pid, type: typ, issuance_fees: toCoin(iss) };
       }
       const vf = Number(p.verification_fees ?? 0);
       totalFeeUnits += vf;
-      return { permission_id: pid, type: typ, verification_fees: this.formatUvnaAmount(vf) };
+      return { permission_id: pid, type: typ, verification_fees: toCoin(vf) };
     });
 
     const feesRequired = totalFeeUnits > 0;
@@ -747,7 +743,7 @@ export class TrustApiService extends BaseService {
           fees: {
             pricingAssetType: "COIN",
             pricingAsset: "uvna",
-            total_beneficiary_fees: this.formatUvnaAmount(totalFeeUnits),
+            total_beneficiary_fees: toCoin(totalFeeUnits),
             beneficiaries,
           },
         },
@@ -800,7 +796,7 @@ export class TrustApiService extends BaseService {
       type: leaf.type,
       schema_id: resolvedSchemaId,
       did: (leaf.did as string) ?? (leaf.grantee as string),
-      deposit: this.formatUvnaAmount(leaf.deposit),
+      deposit: toCoin(leaf.deposit),
       perm_state: String(leaf.perm_state ?? "").toUpperCase(),
       effective_from: leaf.effective_from ?? leaf.effective ?? null,
       effective_until: leaf.effective_until ?? leaf.expiration ?? null,
@@ -816,7 +812,7 @@ export class TrustApiService extends BaseService {
           required: true,
           pricingAssetType: "COIN",
           pricingAsset: "uvna",
-          total_beneficiary_fees: this.formatUvnaAmount(totalFeeUnits),
+          total_beneficiary_fees: toCoin(totalFeeUnits),
           beneficiaries,
           paid: sessionOk,
         }
@@ -981,7 +977,7 @@ export class TrustApiService extends BaseService {
           type: String(p.type ?? ""),
           schema_id: schemaId,
           vtjsc_id: vtjscId,
-          deposit: this.formatUvnaAmount(p.deposit),
+          deposit: toCoin(p.deposit),
           perm_state: permState,
           effective_from: p.effective_from ?? p.effective ?? null,
           effective_until: p.effective_until ?? p.expiration ?? null,

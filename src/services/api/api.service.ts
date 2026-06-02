@@ -393,11 +393,13 @@ function createRoute(
       }),
       createRoute("/verana/resolver/v1", {
         "GET block-height": `${SERVICE.V1.TrustV1ApiService.path}.blockHeight`,
-        "GET resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolve`,
         "GET issuer-authorization": `${SERVICE.V1.TrustV1ApiService.path}.issuerAuthorization`,
         "GET verifier-authorization": `${SERVICE.V1.TrustV1ApiService.path}.verifierAuthorization`,
         "GET ecosystem-participant": `${SERVICE.V1.TrustV1ApiService.path}.ecosystemParticipant`,
         "POST refresh": `${SERVICE.V1.TrustV1ApiService.path}.refresh`,
+      }),
+      createRoute("/v4/verifiable-trust", {
+        "POST resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolveV4`,
       }),
       createRoute("/verana/indexer/v1", {
         "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
