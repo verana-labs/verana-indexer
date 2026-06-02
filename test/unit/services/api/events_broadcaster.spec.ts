@@ -131,7 +131,7 @@ describe("SubscribeBroadcaster", () => {
       const addr = httpServer.address();
       const port = typeof addr === "object" && addr ? addr.port : 0;
       TEST_PORT = port;
-      WS_URL = `ws://localhost:${TEST_PORT}/verana/indexer/v1/subscribe`;
+      WS_URL = `ws://localhost:${TEST_PORT}/v4/indexer/subscribe`;
       done();
     });
   });

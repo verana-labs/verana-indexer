@@ -36,7 +36,7 @@ export class SubscribeBroadcaster {
 
     this.wss = new WebSocketServer({
       server,
-      path: "/verana/indexer/v1/subscribe",
+      path: "/v4/indexer/subscribe",
       perMessageDeflate: false,
       maxPayload: this.MAX_CONTROL_MESSAGE_BYTES,
       verifyClient: () => {
@@ -90,7 +90,7 @@ export class SubscribeBroadcaster {
     }, this.PING_INTERVAL);
 
     this.logger.info(
-      "[SubscribeBroadcaster] WebSocket server initialized on /verana/indexer/v1/subscribe"
+      "[SubscribeBroadcaster] WebSocket server initialized on /v4/indexer/subscribe"
     );
   }
 

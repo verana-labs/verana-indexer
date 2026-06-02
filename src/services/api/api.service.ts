@@ -437,7 +437,7 @@ export default class ApiService extends BaseService {
       attachRequestTimingHook(server);
       subscribeBroadcaster.setLogger(this.logger);
       subscribeBroadcaster.initialize(server);
-      this.logger.info("WebSocket subscribe broadcaster initialized on /verana/indexer/v1/subscribe");
+      this.logger.info("WebSocket subscribe broadcaster initialized on /v4/indexer/subscribe");
     } else {
       this.logger.warn("HTTP server not found, WebSocket subscribe broadcaster not initialized");
     }
