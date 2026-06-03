@@ -12,6 +12,143 @@
     }
   ],
   "paths": {
+    "/verana/co/v1/get/{id}": {
+      "get": {
+        "tags": [
+          "Corporation"
+        ],
+        "summary": "Get Corporation",
+        "description": "Retrieve a Corporation by its numeric id, DID, or group_policy_address. Includes members and governance framework versions/documents.",
+        "operationId": "getCorporation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Corporation numeric id, DID, or group_policy_address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with the Corporation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Corporation"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Corporation not found"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/co/v1/list": {
+      "get": {
+        "tags": [
+          "Corporation"
+        ],
+        "summary": "List Corporations",
+        "description": "Retrieve a paginated list of Corporations with their members and governance framework versions/documents.",
+        "operationId": "listCorporations",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            },
+            "description": "Maximum number of records to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Number of records to skip"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with list of Corporations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorporationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/verana/co/v1/history/{id}": {
+      "get": {
+        "tags": [
+          "Corporation"
+        ],
+        "summary": "Get Corporation activity timeline",
+        "description": "Retrieve the change history for a Corporation (by numeric id, DID, or group_policy_address), ordered by block height ascending.",
+        "operationId": "getCorporationHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Corporation numeric id, DID, or group_policy_address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with the Corporation history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorporationHistoryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Corporation not found"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/indexer/v1/block-height": {
       "get": {
         "tags": [
@@ -3981,6 +4118,234 @@
       }
     },
     "schemas": {
+      "CorporationMember": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Bech32 address of the member"
+          },
+          "weight": {
+            "type": "string",
+            "description": "Voting weight (decimal string)"
+          },
+          "metadata": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional member metadata"
+          }
+        }
+      },
+      "CoGovernanceFrameworkDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gfv_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "language": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "digest_sri": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CoGovernanceFrameworkVersion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "corporation_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ecosystem_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "0 = Corporation's own CGF; otherwise an Ecosystem"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "active_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoGovernanceFrameworkDocument"
+            }
+          }
+        }
+      },
+      "Corporation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "did": {
+            "type": "string",
+            "description": "Globally-unique DID of the Corporation"
+          },
+          "corporation": {
+            "type": "string",
+            "nullable": true,
+            "description": "On-chain group_policy_address (assigned by x/group)"
+          },
+          "creator": {
+            "type": "string",
+            "nullable": true
+          },
+          "language": {
+            "type": "string",
+            "nullable": true
+          },
+          "group_metadata": {
+            "type": "string",
+            "nullable": true
+          },
+          "group_policy_metadata": {
+            "type": "string",
+            "nullable": true
+          },
+          "decision_policy": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "doc_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "doc_digest_sri": {
+            "type": "string",
+            "nullable": true
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CorporationMember"
+            }
+          },
+          "governanceFrameworkVersions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoGovernanceFrameworkVersion"
+            }
+          }
+        }
+      },
+      "CorporationResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Corporation"
+          }
+        ]
+      },
+      "CorporationListResponse": {
+        "type": "object",
+        "properties": {
+          "corporations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Corporation"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        }
+      },
+      "CorporationHistoryItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "corporation_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "did": {
+            "type": "string",
+            "nullable": true
+          },
+          "corporation": {
+            "type": "string",
+            "nullable": true
+          },
+          "language": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Create | Update"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "changes": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CorporationHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CorporationHistoryItem"
+            }
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -6486,6 +6851,10 @@
     }
   },
   "tags": [
+    {
+      "name": "Corporation",
+      "description": "Corporations (verana.co.v1) and their Governance Frameworks (verana.gf.v1)"
+    },
     {
       "name": "Trust Registry",
       "description": "Trust Registry management operations"

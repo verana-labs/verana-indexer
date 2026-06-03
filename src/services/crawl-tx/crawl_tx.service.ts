@@ -34,6 +34,8 @@ import {
   isPermissionMessageType,
   isTrustDepositMessageType,
   isTrustRegistryMessageType,
+  isCorporationMessageType,
+  isGovernanceFrameworkMessageType,
   isKnownVeranaMessageType,
 } from '../../common/verana-message-types';
 import ChainRegistry from '../../common/utils/chain.registry';
@@ -515,6 +517,7 @@ export default class CrawlTxService extends BullableService {
       try {
         const allPayloads: any = {
           trustRegistryList: [],
+          corporationList: [],
           credentialSchemaMessages: [],
           permissionMessages: [],
           trustDepositList: [],
@@ -540,6 +543,9 @@ export default class CrawlTxService extends BullableService {
           if (txPayloads) {
             if (txPayloads.trustRegistryList?.length) {
               allPayloads.trustRegistryList.push(...txPayloads.trustRegistryList);
+            }
+            if (txPayloads.corporationList?.length) {
+              allPayloads.corporationList.push(...txPayloads.corporationList);
             }
             if (txPayloads.credentialSchemaMessages?.length) {
               allPayloads.credentialSchemaMessages.push(...txPayloads.credentialSchemaMessages);
@@ -1198,6 +1204,7 @@ export default class CrawlTxService extends BullableService {
     }
     return {
       trustRegistryList: [],
+      corporationList: [],
       credentialSchemaMessages: [],
       permissionMessages: [],
       trustDepositList: [],
@@ -1227,6 +1234,24 @@ export default class CrawlTxService extends BullableService {
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
           eventTrIds,
+        };
+      });
+
+    const corporationList = successfulMsgs
+      .filter(
+        (msg: any) =>
+          isCorporationMessageType(msg.type) || isGovernanceFrameworkMessageType(msg.type)
+      )
+      .map((msg: any) => {
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        return {
+          type: msg.type,
+          content: msg.content ?? null,
+          timestamp: parentTx?.data?.tx_response?.timestamp ?? parentTx?.timestamp ?? null,
+          height: Number(parentTx?.data?.tx_response?.height ?? parentTx?.height ?? 0),
+          id: msg?.tx_id ?? null,
+          txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
+          txEvents: parentTx?.data?.tx_response?.events ?? [],
         };
       });
 
@@ -1290,6 +1315,7 @@ export default class CrawlTxService extends BullableService {
 
     return {
       trustRegistryList,
+      corporationList,
       credentialSchemaMessages,
       permissionMessages,
       trustDepositList,
@@ -1774,6 +1800,13 @@ export default class CrawlTxService extends BullableService {
           );
         }
       }
+    }
+
+    if (payload.corporationList?.length) {
+      await this.broker.call(
+        `${SERVICE.V1.CorporationMessageProcessorService.path}.handleCorporationMessages`,
+        { corporationList: payload.corporationList },
+      );
     }
 
     const useHeightSyncCS = process.env.USE_HEIGHT_SYNC_CS === "true";

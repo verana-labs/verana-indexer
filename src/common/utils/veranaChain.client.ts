@@ -8,6 +8,8 @@ import {
   MsgUpdateCredentialSchema,
   MsgUpdateParams as MsgUpdateParamsCS,
 } from "@verana-labs/verana-types/codec/verana/cs/v1/tx";
+import { MsgCreateCorporation, MsgUpdateCorporation, MsgUpdateParams as MsgUpdateParamsCO } from "@verana-labs/verana-types/codec/verana/co/v1/tx";
+import { MsgAddGovernanceFrameworkDocument as MsgAddGovernanceFrameworkDocumentGF, MsgIncreaseActiveGovernanceFrameworkVersion as MsgIncreaseActiveGovernanceFrameworkVersionGF, MsgUpdateParams as MsgUpdateParamsGF } from "@verana-labs/verana-types/codec/verana/gf/v1/tx";
 import { MsgStoreDigest, MsgUpdateParams as MsgUpdateParamsDI } from "@verana-labs/verana-types/codec/verana/di/v1/tx";
 import { MsgGrantOperatorAuthorization, MsgRevokeOperatorAuthorization, MsgUpdateParams as MsgUpdateParamsDE } from "@verana-labs/verana-types/codec/verana/de/v1/tx";
 import { MsgCancelPermissionVPLastRequest, MsgCreateOrUpdatePermissionSession, MsgSelfCreatePermission, MsgCreateRootPermission, MsgRenewPermissionVP, MsgRepayPermissionSlashedTrustDeposit as MsgRepayPermissionSlashedTrustDepositPerm, MsgRevokePermission, MsgSetPermissionVPToValidated, MsgSlashPermissionTrustDeposit, MsgStartPermissionVP, MsgUpdateParams as MsgUpdateParamsPerm ,MsgAdjustPermission} from '@verana-labs/verana-types/codec/verana/perm/v1/tx';
@@ -15,10 +17,12 @@ import { MsgReclaimTrustDepositYield, MsgRepaySlashedTrustDeposit, MsgSlashTrust
 import { MsgAddGovernanceFrameworkDocument, MsgArchiveTrustRegistry, MsgCreateTrustRegistry, MsgIncreaseActiveGovernanceFrameworkVersion, MsgUpdateTrustRegistry, MsgUpdateParams as MsgUpdateParamsTR } from '@verana-labs/verana-types/codec/verana/tr/v1/tx';
 import { MsgCreateExchangeRate, MsgSetExchangeRateState, MsgUpdateExchangeRate, MsgUpdateParams as MsgUpdateParamsXR } from "@verana-labs/verana-types/codec/verana/xr/v1/tx";
 import {
+  VeranaCorporationMessageTypes,
   VeranaCredentialSchemaMessageTypes,
   VeranaDiMessageTypes,
   VeranaDelegationMessageTypes,
   VeranaExchangeRateMessageTypes,
+  VeranaGovernanceFrameworkMessageTypes,
   VeranaPermissionMessageTypes,
   VeranaTrustDepositMessageTypes,
   VeranaTrustRegistryMessageTypes,
@@ -67,7 +71,15 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
     [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit, MsgRepayPermissionSlashedTrustDepositPerm],
     [VeranaPermissionMessageTypes.SelfCreatePermission, MsgSelfCreatePermission],
     [VeranaPermissionMessageTypes.UpdateParams, MsgUpdateParamsPerm],
-    [VeranaPermissionMessageTypes.AdjustPermission, MsgAdjustPermission]
+    [VeranaPermissionMessageTypes.AdjustPermission, MsgAdjustPermission],
+    // verana.co.v1
+    [VeranaCorporationMessageTypes.CreateCorporation, MsgCreateCorporation],
+    [VeranaCorporationMessageTypes.UpdateCorporation, MsgUpdateCorporation],
+    [VeranaCorporationMessageTypes.UpdateParams, MsgUpdateParamsCO],
+    // verana.gf.v1
+    [VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument, MsgAddGovernanceFrameworkDocumentGF],
+    [VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion, MsgIncreaseActiveGovernanceFrameworkVersionGF],
+    [VeranaGovernanceFrameworkMessageTypes.UpdateParams, MsgUpdateParamsGF],
 ];
 
 

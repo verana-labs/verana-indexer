@@ -120,8 +120,10 @@ export const BULL_JOB_NAME = {
 export enum ModulesParamsNamesTypes {
   AUTH = "auth",
   BANK = "bank",
+  CO = "co",
   CS = "cs",
   DISTRIBUTION = "distribution",
+  GF = "gf",
   GOV = "gov",
   MINT = "mint",
   PERM = "perm",
@@ -215,6 +217,14 @@ export const SERVICE = {
     TrustRegistryDatabaseService: {
       key: "TrustRegistryDatabaseService",
       path: "v1.TrustRegistryDatabaseService",
+    },
+    CorporationMessageProcessorService: {
+      key: "CorporationMessageProcessorService",
+      path: "v1.CorporationMessageProcessorService",
+    },
+    CorporationApiService: {
+      key: "CorporationApiService",
+      path: "v1.CorporationApiService",
     },
     IndexerMetaService: {
       key: "IndexerMetaService",

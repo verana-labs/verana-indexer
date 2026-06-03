@@ -373,6 +373,11 @@ function createRoute(
         "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
         "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`,
       }),
+      createRoute("/verana/co/v1", {
+        "GET get/:id": `${SERVICE.V1.CorporationApiService.path}.getCorporation`,
+        "GET list": `${SERVICE.V1.CorporationApiService.path}.listCorporations`,
+        "GET history/:id": `${SERVICE.V1.CorporationApiService.path}.getCorporationHistory`,
+      }),
       createRoute("/verana/perm/v1", {
         "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
         "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
