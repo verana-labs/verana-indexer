@@ -16,9 +16,13 @@ import {
 } from "./trust-resolve";
 import {
   buildEcosystems,
+  buildEcsCredentials,
   buildParticipations,
+  buildPresentations,
+  buildServices,
   resolveCorporationId,
   type EcosystemsOptions,
+  type PresentationsOptions,
 } from "./trust-resolve-v4.builders";
 import { ALL_PARTICIPANT_STATES, type ParticipantState } from "../../common/types/types";
 
@@ -544,6 +548,19 @@ export class TrustApiService extends BaseService {
     return null;
   }
 
+  private parsePresentationsSelector(value: unknown): PresentationsOptions | null {
+    if (value === undefined || value === false || value === null) return null;
+    if (value === true) return { unresolvableCredentialIds: false, invalidCredentialIds: false };
+    if (typeof value === "object") {
+      const obj = value as { unresolvableCredentialIds?: unknown; invalidCredentialIds?: unknown };
+      return {
+        unresolvableCredentialIds: obj.unresolvableCredentialIds === true,
+        invalidCredentialIds: obj.invalidCredentialIds === true,
+      };
+    }
+    return null;
+  }
+
   private parseEcosystemsSelector(value: unknown): EcosystemsOptions | null {
     if (value === undefined || value === false || value === null) return null;
     if (value === true) {
@@ -633,6 +650,10 @@ export class TrustApiService extends BaseService {
     if (states) body.participations = await buildParticipations(did, now, states);
     const ecosystemsOpts = this.parseEcosystemsSelector(ctx.params.ecosystems);
     if (ecosystemsOpts) body.ecosystems = await buildEcosystems(did, ecosystemsOpts);
+    if (ctx.params.ecsCredentials === true) body.ecsCredentials = await buildEcsCredentials(row.resolve_result);
+    const presentationsOpts = this.parsePresentationsSelector(ctx.params.presentations);
+    if (presentationsOpts) body.presentations = buildPresentations(row.resolve_result, presentationsOpts);
+    if (ctx.params.services === true) body.services = buildServices(row.resolve_result);
     return ApiResponder.success(ctx, body, 200);
   }
 

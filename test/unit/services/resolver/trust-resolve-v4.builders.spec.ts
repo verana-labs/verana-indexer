@@ -26,6 +26,9 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
 import {
   deriveParticipantState,
   buildParticipations,
+  buildServices,
+  buildPresentations,
+  buildEcsCredentials,
 } from "../../../../src/services/resolver/trust-resolve-v4.builders";
 
 const NOW = new Date("2026-06-02T00:00:00Z");
@@ -123,5 +126,133 @@ describe("buildParticipations", () => {
     const out = await buildParticipations("did:example:eco", NOW, ["ACTIVE"]);
     expect(out[0].role).toBe("ECOSYSTEM");
     expect(out[0].validatorParticipantId).toBeNull();
+  });
+});
+
+describe("buildServices", () => {
+  const mcp = { id: "did:example:1#mcp", type: "MCP", serviceEndpoint: "https://x/mcp" };
+  const didcomm = {
+    id: "did:example:1#did-communication",
+    type: "did-communication",
+    serviceEndpoint: "wss://x/didcomm",
+    accept: ["didcomm/v2"],
+  };
+  const linkedVp = {
+    id: "did:example:1#vt-vp1",
+    type: "LinkedVerifiablePresentation",
+    serviceEndpoint: "https://x/vp1.json",
+  };
+
+  it("returns the non-LinkedVerifiablePresentation service entries verbatim", () => {
+    const out = buildServices({ didDocument: { service: [mcp, linkedVp, didcomm] } });
+    expect(out).toEqual([mcp, didcomm]);
+  });
+
+  it("filters LinkedVerifiablePresentation when type is an array", () => {
+    const arrayTyped = { ...linkedVp, type: ["LinkedVerifiablePresentation"] };
+    const out = buildServices({ didDocument: { service: [mcp, arrayTyped] } });
+    expect(out).toEqual([mcp]);
+  });
+
+  it("returns [] when the resolution has no DID Document or services", () => {
+    expect(buildServices(undefined)).toEqual([]);
+    expect(buildServices({ error: true })).toEqual([]);
+    expect(buildServices({ didDocument: {} })).toEqual([]);
+    expect(buildServices({ didDocument: { service: null } })).toEqual([]);
+  });
+});
+
+describe("buildPresentations", () => {
+  const noFlags = { unresolvableCredentialIds: false, invalidCredentialIds: false };
+  const resolution = {
+    didDocument: {
+      id: "did:example:x",
+      service: [
+        { id: "did:example:x#whois", type: "LinkedVerifiablePresentation", serviceEndpoint: "https://x/vp1.json" },
+        { id: "#files", type: "relativeRef", serviceEndpoint: "https://x" },
+        { id: "#vp2", type: "LinkedVerifiablePresentation", serviceEndpoint: "https://x/vp2.json" },
+      ],
+    },
+  };
+
+  it("maps LinkedVerifiablePresentation entries, resolving relative service ids", () => {
+    expect(buildPresentations(resolution, noFlags)).toEqual([
+      { id: "https://x/vp1.json", serviceId: "did:example:x#whois", vtcCredentials: [] },
+      { id: "https://x/vp2.json", serviceId: "did:example:x#vp2", vtcCredentials: [] },
+    ]);
+  });
+
+  it("includes the empty sub-lists only when their flags are set", () => {
+    const [first] = buildPresentations(resolution, {
+      unresolvableCredentialIds: true,
+      invalidCredentialIds: true,
+    });
+    expect(first).toMatchObject({ unresolvableCredentialIds: [], invalidCredentialIds: [] });
+  });
+
+  it("dedupes by resolved serviceId and returns [] without a DID Document", () => {
+    const dup = {
+      didDocument: {
+        id: "did:example:x",
+        service: [
+          { id: "#vp", type: "LinkedVerifiablePresentation", serviceEndpoint: "https://x/a.json" },
+          { id: "did:example:x#vp", type: "LinkedVerifiablePresentation", serviceEndpoint: "https://x/b.json" },
+        ],
+      },
+    };
+    expect(buildPresentations(dup, noFlags)).toHaveLength(1);
+    expect(buildPresentations({ error: true }, noFlags)).toEqual([]);
+  });
+});
+
+describe("buildEcsCredentials", () => {
+  beforeEach(() => {
+    for (const k of Object.keys(tableRows)) delete tableRows[k];
+  });
+
+  const service = {
+    schemaType: "ecs-service",
+    id: "did:example:sub",
+    issuer: "did:example:org",
+    name: "Gov ID issuer",
+    type: "VerifiableService",
+  };
+
+  it("surfaces the subject and resolves stable ids from permissions/schemas", async () => {
+    tableRows.permissions = [{ id: 501, schema_id: 1, did: "did:example:sub", type: "HOLDER" }];
+    tableRows.credential_schemas = [
+      { id: 1, tr_id: 9, json_schema: { title: "ServiceCredential", $id: "vpr:verana:net/cs/v1/js/1" } },
+    ];
+
+    const out = await buildEcsCredentials({ service });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      ecsSchema: "ServiceCredential",
+      ecsSchemaVersion: "v1",
+      credentialSchemaId: 1,
+      ecosystemId: 9,
+      participantId: 501,
+      credentialSubject: { id: "did:example:sub", name: "Gov ID issuer", type: "VerifiableService" },
+    });
+    expect(out[0].credentialSubject).not.toHaveProperty("schemaType");
+    expect(out[0].credentialSubject).not.toHaveProperty("issuer");
+  });
+
+  it("still surfaces the credential with 0 ids when no permission is indexed", async () => {
+    const out = await buildEcsCredentials({ service });
+    expect(out[0]).toMatchObject({
+      ecsSchema: "ServiceCredential",
+      ecsSchemaVersion: "",
+      credentialSchemaId: 0,
+      issuerParticipantId: 0,
+      ecosystemId: 0,
+      participantId: 0,
+      credentialSubject: { id: "did:example:sub" },
+    });
+  });
+
+  it("ignores non-ECS resolutions", async () => {
+    expect(await buildEcsCredentials({ service: { schemaType: "unknown", id: "did:x" } })).toEqual([]);
+    expect(await buildEcsCredentials({ error: true })).toEqual([]);
   });
 });

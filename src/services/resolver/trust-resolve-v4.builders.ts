@@ -247,3 +247,167 @@ export async function buildEcosystems(
 export async function resolveCorporationId(_did: string): Promise<number> {
   return 0;
 }
+
+const LINKED_VP_SERVICE_TYPE = "LinkedVerifiablePresentation";
+
+function isLinkedVpType(type: unknown): boolean {
+  if (typeof type === "string") return type === LINKED_VP_SERVICE_TYPE;
+  if (Array.isArray(type)) return type.includes(LINKED_VP_SERVICE_TYPE);
+  return false;
+}
+
+function didDocumentServices(resolveResult: unknown): Array<Record<string, unknown>> {
+  if (!resolveResult || typeof resolveResult !== "object") return [];
+  const didDocument = (resolveResult as { didDocument?: unknown }).didDocument;
+  if (!didDocument || typeof didDocument !== "object") return [];
+  const services = (didDocument as { service?: unknown }).service;
+  if (!Array.isArray(services)) return [];
+  return services.filter(
+    (svc): svc is Record<string, unknown> => Boolean(svc) && typeof svc === "object"
+  );
+}
+
+export function buildServices(resolveResult: unknown): Array<Record<string, unknown>> {
+  return didDocumentServices(resolveResult).filter((svc) => !isLinkedVpType(svc.type));
+}
+
+export type PresentationsOptions = {
+  unresolvableCredentialIds: boolean;
+  invalidCredentialIds: boolean;
+};
+
+export function buildPresentations(
+  resolveResult: unknown,
+  opts: PresentationsOptions
+): Array<Record<string, unknown>> {
+  const didDocument = (resolveResult as { didDocument?: { id?: unknown } } | null)?.didDocument;
+  const didId = typeof didDocument?.id === "string" ? didDocument.id : "";
+
+  const out: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  for (const svc of didDocumentServices(resolveResult)) {
+    if (!isLinkedVpType(svc.type)) continue;
+    const rawId = typeof svc.id === "string" ? svc.id : "";
+    const serviceId = rawId.startsWith("#") ? `${didId}${rawId}` : rawId;
+    if (!serviceId || seen.has(serviceId)) continue;
+    seen.add(serviceId);
+
+    const endpoint = svc.serviceEndpoint;
+    const entry: Record<string, unknown> = {
+      id: typeof endpoint === "string" ? endpoint : "",
+      serviceId,
+      vtcCredentials: [],
+    };
+    if (opts.unresolvableCredentialIds) entry.unresolvableCredentialIds = [];
+    if (opts.invalidCredentialIds) entry.invalidCredentialIds = [];
+    out.push(entry);
+  }
+  return out;
+}
+
+const ECS_SCHEMA_TITLE_BY_TYPE: Record<string, string> = {
+  "ecs-service": "ServiceCredential",
+  "ecs-org": "OrganizationCredential",
+  "ecs-persona": "PersonaCredential",
+  "ecs-user-agent": "UserAgentCredential",
+};
+
+function parseSchemaJson(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object") return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function ecsSchemaVersionFromId(schemaJson: unknown): string {
+  const sid = parseSchemaJson(schemaJson)?.$id;
+  const m = typeof sid === "string" ? sid.match(/\/cs\/(v\d+)\//) : null;
+  return m ? m[1] : "";
+}
+
+function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
+  const { schemaType: _schemaType, issuer: _issuer, ...subject } = cred;
+  return subject;
+}
+
+type EcsSchemaLink = {
+  participantId: number;
+  credentialSchemaId: number;
+  ecosystemId: number;
+  ecsSchemaVersion: string;
+};
+
+async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string): Promise<EcsSchemaLink | null> {
+  const perms = (await knex("permissions")
+    .where({ did: subjectDid, type: "HOLDER" })
+    .select("id", "schema_id")) as Array<{ id: number; schema_id: number }>;
+  if (perms.length === 0) return null;
+
+  const schemaIds = [...new Set(perms.map((p) => Number(p.schema_id)).filter((n) => Number.isFinite(n)))];
+  if (schemaIds.length === 0) return null;
+  const schemas = (await knex("credential_schemas")
+    .whereIn("id", schemaIds)
+    .select("id", "tr_id", "json_schema")) as Array<{ id: number; tr_id: number; json_schema: unknown }>;
+
+  for (const p of perms) {
+    const cs = schemas.find((s) => Number(s.id) === Number(p.schema_id));
+    if (cs && parseSchemaJson(cs.json_schema)?.title === ecsSchemaTitle) {
+      return {
+        participantId: Number(p.id) || 0,
+        credentialSchemaId: Number(cs.id) || 0,
+        ecosystemId: Number(cs.tr_id) || 0,
+        ecsSchemaVersion: ecsSchemaVersionFromId(cs.json_schema),
+      };
+    }
+  }
+  return null;
+}
+
+async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId: number): Promise<number> {
+  if (!issuerDid || credentialSchemaId <= 0) return 0;
+  const row = (await knex("permissions")
+    .where({ did: issuerDid, schema_id: credentialSchemaId, type: "ISSUER" })
+    .select("id")
+    .first()) as { id?: number } | undefined;
+  return row?.id != null ? Number(row.id) || 0 : 0;
+}
+
+export async function buildEcsCredentials(resolveResult: unknown): Promise<Array<Record<string, unknown>>> {
+  if (!resolveResult || typeof resolveResult !== "object") return [];
+  const r = resolveResult as Record<string, unknown>;
+
+  const out: Array<Record<string, unknown>> = [];
+  for (const key of ["service", "serviceProvider"]) {
+    const cred = r[key];
+    if (!cred || typeof cred !== "object") continue;
+    const c = cred as Record<string, unknown>;
+    const ecsSchema = ECS_SCHEMA_TITLE_BY_TYPE[String(c.schemaType ?? "").toLowerCase()];
+    if (!ecsSchema) continue;
+
+    const subjectDid = typeof c.id === "string" ? c.id : null;
+    const issuerDid = typeof c.issuer === "string" ? c.issuer : null;
+    const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null;
+    const credentialSchemaId = link?.credentialSchemaId ?? 0;
+    const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0;
+
+    const entry: Record<string, unknown> = {
+      ecsSchema,
+      ecsSchemaVersion: link?.ecsSchemaVersion ?? "",
+      credentialSchemaId,
+      issuerParticipantId,
+      ecosystemId: link?.ecosystemId ?? 0,
+      participantId: link?.participantId ?? 0,
+      credentialSubject: toCredentialSubject(c),
+    };
+    if (typeof c.validFrom === "string") entry.validFrom = c.validFrom;
+    if (typeof c.validUntil === "string") entry.validUntil = c.validUntil;
+    out.push(entry);
+  }
+  return out;
+}
