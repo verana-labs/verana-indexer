@@ -47,6 +47,13 @@ services:
       timeout: 5s
       retries: 5
 
+  # Verana node command is configured to setup a single-validator testnet on first boot
+  # Note: this only support the version of the node v0.10.1-dev.12
+  # if you requiere a different version, please update the command based on the file './scripts/setup_primary_validator.sh'
+  # Run CLI commands against this local node with:
+  #   docker exec -it verana-node veranad <command> --home /root/.verana --keyring-backend test
+  #   e.g. docker exec -it verana-node veranad query tr list-trust-registries -o json
+  #   tx example: docker exec -it verana-node veranad tx tr create-trust-registry ... --chain-id vna-testnet-1 --from cooluser --keyring-backend test --home /root/.verana -y
   verana-node:
     image: veranalabs/verana-node:${VERANA_VERSION:-v0.10.1-dev.12}
     platform: linux/amd64
