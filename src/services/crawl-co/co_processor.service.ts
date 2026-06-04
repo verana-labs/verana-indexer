@@ -155,6 +155,38 @@ export default class CorporationMessageProcessorService extends BullableService 
     }
   }
 
+  private async withTransaction(
+    label: string,
+    fn: (trx: Knex.Transaction) => Promise<string | void>
+  ): Promise<void> {
+    const trx = await knex.transaction();
+    try {
+      const successMsg = await fn(trx);
+      if (!trx.isCompleted()) await trx.commit();
+      if (successMsg) this.logger.info(successMsg);
+    } catch (err: unknown) {
+      if (!trx.isCompleted()) await trx.rollback();
+      this.logger.error(`Failed to process ${label}: ${getErrorMessage(err)}`);
+      throw err;
+    }
+  }
+
+  private async requireCorporation(
+    trx: Knex.Transaction,
+    message: DecodedCoMessage,
+    label: string
+  ): Promise<CorporationRow | null> {
+    const corporation = await this.findCorporation(trx, message);
+    if (!corporation) {
+      await trx.rollback();
+      this.logger.warn(
+        `${label}: corporation not found (corporation=${message.corporation}, did=${message.did}), height=${message.height}`
+      );
+      return null;
+    }
+    return corporation;
+  }
+
   private async recordCorporationHistory(
     trx: Knex.Transaction,
     corporationId: number,
@@ -202,8 +234,7 @@ export default class CorporationMessageProcessorService extends BullableService 
       ? message.members
       : [];
 
-    const trx = await knex.transaction();
-    try {
+    await this.withTransaction(`CreateCorporation for did=${did}`, async (trx) => {
       const existing = (await trx("corporation").where({ did }).first()) as
         | CorporationRow
         | undefined;
@@ -279,28 +310,14 @@ export default class CorporationMessageProcessorService extends BullableService 
         });
       }
 
-      await trx.commit();
-      this.logger.info(`Corporation created/updated: did=${did}, id=${corporation.id}`);
-    } catch (err: unknown) {
-      await trx.rollback();
-      this.logger.error(
-        `Failed to process CreateCorporation for did=${did}: ${getErrorMessage(err)}`
-      );
-      throw err;
-    }
+      return `Corporation created/updated: did=${did}, id=${corporation.id}`;
+    });
   }
 
   private async processUpdateCorporation(message: DecodedCoMessage): Promise<void> {
-    const trx = await knex.transaction();
-    try {
-      const corporation = await this.findCorporation(trx, message);
-      if (!corporation) {
-        await trx.rollback();
-        this.logger.warn(
-          `UpdateCorporation: corporation not found (corporation=${message.corporation}, did=${message.did}), height=${message.height}`
-        );
-        return;
-      }
+    await this.withTransaction("UpdateCorporation", async (trx) => {
+      const corporation = await this.requireCorporation(trx, message, "UpdateCorporation");
+      if (!corporation) return undefined;
 
       const timestamp = formatTimestamp(message.timestamp);
       const updateData: CorporationRow = { ...corporation };
@@ -319,28 +336,18 @@ export default class CorporationMessageProcessorService extends BullableService 
         updateData
       );
 
-      await trx.commit();
-      this.logger.info(`Corporation updated: id=${corporation.id}`);
-    } catch (err: unknown) {
-      await trx.rollback();
-      this.logger.error(
-        `Failed to process UpdateCorporation: ${getErrorMessage(err)}`
-      );
-      throw err;
-    }
+      return `Corporation updated: id=${corporation.id}`;
+    });
   }
 
   private async processAddGovernanceFrameworkDocument(message: DecodedCoMessage): Promise<void> {
-    const trx = await knex.transaction();
-    try {
-      const corporation = await this.findCorporation(trx, message);
-      if (!corporation) {
-        await trx.rollback();
-        this.logger.warn(
-          `AddGovernanceFrameworkDocument: corporation not found (corporation=${message.corporation}), height=${message.height}`
-        );
-        return;
-      }
+    await this.withTransaction("AddGovernanceFrameworkDocument", async (trx) => {
+      const corporation = await this.requireCorporation(
+        trx,
+        message,
+        "AddGovernanceFrameworkDocument"
+      );
+      if (!corporation) return undefined;
 
       const timestamp = formatTimestamp(message.timestamp);
       const ecosystemId = Number(message.ecosystem_id ?? message.ecosystemId ?? 0);
@@ -372,30 +379,18 @@ export default class CorporationMessageProcessorService extends BullableService 
         created: timestamp,
       });
 
-      await trx.commit();
-      this.logger.info(
-        `AddGovernanceFrameworkDocument OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${version}`
-      );
-    } catch (err: unknown) {
-      await trx.rollback();
-      this.logger.error(
-        `Failed to process AddGovernanceFrameworkDocument: ${getErrorMessage(err)}`
-      );
-      throw err;
-    }
+      return `AddGovernanceFrameworkDocument OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${version}`;
+    });
   }
 
   private async processIncreaseActiveGovernanceFrameworkVersion(message: DecodedCoMessage): Promise<void> {
-    const trx = await knex.transaction();
-    try {
-      const corporation = await this.findCorporation(trx, message);
-      if (!corporation) {
-        await trx.rollback();
-        this.logger.warn(
-          `IncreaseActiveGovernanceFrameworkVersion: corporation not found (corporation=${message.corporation}), height=${message.height}`
-        );
-        return;
-      }
+    await this.withTransaction("IncreaseActiveGovernanceFrameworkVersion", async (trx) => {
+      const corporation = await this.requireCorporation(
+        trx,
+        message,
+        "IncreaseActiveGovernanceFrameworkVersion"
+      );
+      if (!corporation) return undefined;
 
       const timestamp = formatTimestamp(message.timestamp);
       const ecosystemId = Number(message.ecosystem_id ?? message.ecosystemId ?? 0);
@@ -412,7 +407,6 @@ export default class CorporationMessageProcessorService extends BullableService 
         .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId, version: nextVersion })
         .first()) as GfvRow | undefined;
       if (!gfv) {
-        await trx.rollback();
         this.logger.warn(
           `IncreaseActiveGovernanceFrameworkVersion: version ${nextVersion} not found for corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}. Retry needed.`
         );
@@ -425,17 +419,8 @@ export default class CorporationMessageProcessorService extends BullableService 
         .where({ id: gfv.id })
         .update({ active_since: timestamp });
 
-      await trx.commit();
-      this.logger.info(
-        `IncreaseActiveGovernanceFrameworkVersion OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${nextVersion}`
-      );
-    } catch (err: unknown) {
-      await trx.rollback();
-      this.logger.error(
-        `Failed to process IncreaseActiveGovernanceFrameworkVersion: ${getErrorMessage(err)}`
-      );
-      throw err;
-    }
+      return `IncreaseActiveGovernanceFrameworkVersion OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${nextVersion}`;
+    });
   }
 
   private async findCorporation(
