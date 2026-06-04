@@ -24,7 +24,6 @@ export default class CorporationApiService extends BaseService {
       const query = Corporation.query()
         .withGraphFetched("[members, governanceFrameworkVersions.documents]");
 
-      // Accept either the numeric id, the DID, or the group_policy_address.
       const numericId = Number(id);
       const corporation = Number.isInteger(numericId) && numericId > 0
         ? await query.findById(numericId)
