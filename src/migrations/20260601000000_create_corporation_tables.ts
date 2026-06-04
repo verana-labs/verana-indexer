@@ -3,11 +3,7 @@ import { Knex } from "knex";
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("corporation", (table) => {
     table.bigIncrements("id").primary();
-    // did is the globally-unique identifier of the Corporation (MsgCreateCorporation.did).
     table.string("did").notNullable().unique();
-    // corporation is the on-chain group_policy_address assigned by x/group.
-    // It is not present in MsgCreateCorporation content (assigned by the chain),
-    // so it is nullable and back-filled from events / MsgUpdateCorporation.
     table.string("corporation").nullable();
     table.string("creator").nullable();
     table.string("language", 8).nullable();
@@ -62,8 +58,6 @@ export async function up(knex: Knex): Promise<void> {
     table.index(["height"]);
   });
 
-  // Governance Framework owned by a Corporation (verana.gf.v1).
-  // ecosystem_id = 0 targets the Corporation's own CGF; otherwise an Ecosystem.
   await knex.schema.createTable("co_governance_framework_version", (table) => {
     table.bigIncrements("id").primary();
     table.bigInteger("corporation_id").notNullable();
