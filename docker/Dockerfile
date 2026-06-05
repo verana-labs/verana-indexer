@@ -11,10 +11,10 @@ RUN useradd --system --uid 1001 -g nodejs nodejs || true
 RUN corepack enable && corepack prepare pnpm@10.14.0 --activate
 
 # Copy package files first (for better caching)
-COPY package.json ./
+COPY package.json pnpm-lock.yaml ./
 
-# Install dependencies without lock file (fallback)
-RUN pnpm install
+# Install dependencies from the lock file so transitive versions
+RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY . .

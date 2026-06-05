@@ -8,9 +8,6 @@ import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { BlockCheckpoint } from "../../models";
 import {
-  getDeclaredDereferenceCacheTtlSeconds,
-  getDeclaredPollObjectCachingRetryDays,
-  getResolverRuntimeConfig,
   getTrustEvaluationTtlSeconds,
   getVerreTrustEvaluationCallOptions,
   buildTrustSummaryFromStoredRow,
