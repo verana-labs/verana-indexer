@@ -204,7 +204,7 @@ function pickMessageBool(msg: Record<string, any>, snake: string, camel: string,
 
 function extractPermissionType(msg: Record<string, any>, fallback: string | number = "UNSPECIFIED") {
   return mapPermissionType(
-    msg.permission_type ?? msg.permissionType ?? msg.type ?? msg.role ?? fallback
+    msg.permission_type ?? msg.permissionType ?? msg.role ?? fallback
   );
 }
 
