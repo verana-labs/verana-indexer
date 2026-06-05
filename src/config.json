@@ -145,7 +145,6 @@
     "txPrefilterEnabled": true,
     "verifiablePublicRegistries": [],
     "trustEvaluationTtlSeconds": 3600,
-    "dereferenceCacheTtlSeconds": 86400,
     "pollObjectCachingRetryDays": 7
   },
   "crawlSigningInfo": {
