@@ -38,8 +38,6 @@ export enum VeranaEcosystemMessageTypes {
   CreateEcosystem = "/verana.ec.v1.MsgCreateEcosystem",
   UpdateEcosystem = "/verana.ec.v1.MsgUpdateEcosystem",
   ArchiveEcosystem = "/verana.ec.v1.MsgArchiveEcosystem",
-  // Legacy governance-framework messages, now served by the gf module; kept so
-  // historical maps still resolve (these URLs are no longer emitted on-chain).
   AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
   IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }

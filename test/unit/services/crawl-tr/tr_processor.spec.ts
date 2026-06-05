@@ -2,7 +2,7 @@ import { ServiceBroker } from "moleculer";
 import {
   ModulesParamsNamesTypes,
 } from "../../../../src/common";
-import { VeranaTrustRegistryMessageTypes as TrustRegistryMessageTypes } from "../../../../src/common/verana-message-types";
+import { VeranaEcosystemMessageTypes as TrustRegistryMessageTypes } from "../../../../src/common/verana-message-types";
 import knex from "../../../../src/common/utils/db_connection";
 import TrustRegistryMessageProcessorService from "../../../../src/services/crawl-tr/tr_processor.service";
 
@@ -54,7 +54,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const dummyTR = [
       {
-        type: TrustRegistryMessageTypes.CreateTrustRegistry,
+        type: TrustRegistryMessageTypes.CreateEcosystem,
         content: {
           did: "did:example:insert",
           creator: "creator_test",
@@ -128,7 +128,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const UpdateResponse = [
       {
-        type: TrustRegistryMessageTypes.UpdateTrustRegistry,
+        type: TrustRegistryMessageTypes.UpdateEcosystem,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_update",
@@ -186,7 +186,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const archiveTrustRegistry = [
       {
-        type: TrustRegistryMessageTypes.ArchiveTrustRegistry,
+        type: TrustRegistryMessageTypes.ArchiveEcosystem,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_archive",
@@ -227,7 +227,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const unarchiveTrustRegistry = [
       {
-        type: TrustRegistryMessageTypes.ArchiveTrustRegistry,
+        type: TrustRegistryMessageTypes.ArchiveEcosystem,
         content: {
           trust_registry_id: trId.id,
           creator: "creator_archive",
@@ -277,7 +277,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     // Create first TR
     const firstTR = [
       {
-        type: TrustRegistryMessageTypes.CreateTrustRegistry,
+        type: TrustRegistryMessageTypes.CreateEcosystem,
         content: {
           did: sameDid,
           creator: "creator1",
@@ -316,7 +316,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     // Create second TR with same DID but different height
     const secondTR = [
       {
-        type: TrustRegistryMessageTypes.CreateTrustRegistry,
+        type: TrustRegistryMessageTypes.CreateEcosystem,
         content: {
           did: sameDid,
           creator: "creator2",

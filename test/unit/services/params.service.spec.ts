@@ -2,9 +2,9 @@ import { ModulesParamsNamesTypes } from '../../../src/common/constant';
 import {
   UpdateParamsMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaPermissionMessageTypes,
+  VeranaParticipantMessageTypes,
   VeranaTrustDepositMessageTypes,
-  VeranaTrustRegistryMessageTypes,
+  VeranaEcosystemMessageTypes,
 } from '../../../src/common/verana-message-types';
 import { hasMeaningfulChanges } from '../../../src/common/utils/params_utils';
 
@@ -24,8 +24,8 @@ describe('UpdateParams Message Processing', () => {
     });
 
     it('should map PERMISSION to PERM module', () => {
-      expect(UpdateParamsMessageTypes.PERMISSION).toBe('/verana.perm.v1.MsgUpdateParams');
-      expect(VeranaPermissionMessageTypes.UpdateParams).toBe('/verana.perm.v1.MsgUpdateParams');
+      expect(UpdateParamsMessageTypes.PERMISSION).toBe('/verana.pp.v1.MsgUpdateParams');
+      expect(VeranaParticipantMessageTypes.UpdateParams).toBe('/verana.pp.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.PERM).toBe('perm');
     });
 
@@ -36,8 +36,8 @@ describe('UpdateParams Message Processing', () => {
     });
 
     it('should map TRUST_REGISTRY to TR module', () => {
-      expect(UpdateParamsMessageTypes.TRUST_REGISTRY).toBe('/verana.tr.v1.MsgUpdateParams');
-      expect(VeranaTrustRegistryMessageTypes.UpdateParams).toBe('/verana.tr.v1.MsgUpdateParams');
+      expect(UpdateParamsMessageTypes.TRUST_REGISTRY).toBe('/verana.ec.v1.MsgUpdateParams');
+      expect(VeranaEcosystemMessageTypes.UpdateParams).toBe('/verana.ec.v1.MsgUpdateParams');
       expect(ModulesParamsNamesTypes.TR).toBe('tr');
     });
   });

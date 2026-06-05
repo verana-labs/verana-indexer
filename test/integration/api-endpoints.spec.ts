@@ -555,9 +555,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list credential schemas - with tr_id filter', async () => {
+      itIf('should list credential schemas - with ecosystem_id filter', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
-          tr_id: SAMPLE_TR_ID,
+          ecosystem_id: SAMPLE_TR_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -665,7 +665,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps();
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
           response_max_size: 50,
-          tr_id: SAMPLE_TR_ID,
+          ecosystem_id: SAMPLE_TR_ID,
           participant: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
           only_active: true,
@@ -760,9 +760,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with validator_perm_id', async () => {
+      itIf('should list permissions - with validator_participant_id', async () => {
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          validator_perm_id: SAMPLE_PERM_ID,
+          validator_participant_id: SAMPLE_PERM_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -824,9 +824,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with vp_state filter', async () => {
+      itIf('should list permissions - with op_state filter', async () => {
         const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          vp_state: 'VALIDATED',
+          op_state: 'VALIDATED',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -913,7 +913,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
           only_valid: true,
           modified_after: timestamps.from,
           country: 'US',
-          vp_state: 'VALIDATED',
+          op_state: 'VALIDATED',
           response_max_size: 50,
           when: timestamps.from,
           sort: 'modified',

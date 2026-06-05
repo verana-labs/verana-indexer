@@ -3,7 +3,7 @@ import PermProcessorService from "../../../../src/services/crawl-perm/perm_proce
 import {
   SERVICE,
 } from "../../../../src/common/constant";
-import { VeranaPermissionMessageTypes as PermissionMessageTypes } from "../../../../src/common/verana-message-types";
+import { VeranaParticipantMessageTypes as PermissionMessageTypes } from "../../../../src/common/verana-message-types";
 
 jest.mock("../../../../src/common/utils/start_mode_detector", () => ({
   detectStartMode: jest.fn().mockResolvedValue({ isFreshStart: false })
@@ -31,23 +31,23 @@ describe("🧪 PermProcessorService", () => {
     comparePermissionWithLedgerSpy = jest.fn(() => ({ success: true, matches: true }));
 
     broker.createService({
-      name: "permIngest",
+      name: "participantIngest",
       actions: {
-        handleMsgCreateRootPermission: spyCreateRootPermission,
-        handleMsgSelfCreatePermission: spyCreatePermission,
-        handleMsgAdjustPermission: jest.fn(() => ({ saved: true })),
-        handleMsgRevokePermission: jest.fn(() => ({ saved: true })),
-        handleMsgStartPermissionVP: jest.fn(() => ({ saved: true })),
-        handleMsgSetPermissionVPToValidated: jest.fn(() => ({ saved: true })),
-        handleMsgRenewPermissionVP: jest.fn(() => ({ saved: true })),
-        handleMsgCancelPermissionVPLastRequest: jest.fn(() => ({
+        handleMsgCreateRootParticipant: spyCreateRootPermission,
+        handleMsgSelfCreateParticipant: spyCreatePermission,
+        handleMsgSetParticipantEffectiveUntil: jest.fn(() => ({ saved: true })),
+        handleMsgRevokeParticipant: jest.fn(() => ({ saved: true })),
+        handleMsgStartParticipantOP: jest.fn(() => ({ saved: true })),
+        handleMsgSetParticipantOPToValidated: jest.fn(() => ({ saved: true })),
+        handleMsgRenewParticipantOP: jest.fn(() => ({ saved: true })),
+        handleMsgCancelParticipantOPLastRequest: jest.fn(() => ({
           saved: true,
         })),
-        handleMsgCreateOrUpdatePermissionSession: jest.fn(() => ({
+        handleMsgCreateOrUpdateParticipantSession: jest.fn(() => ({
           saved: true,
         })),
-        handleMsgSlashPermissionTrustDeposit: jest.fn(() => ({ saved: true })),
-        handleMsgRepayPermissionSlashedTrustDeposit: jest.fn(() => ({
+        handleMsgSlashParticipantTrustDeposit: jest.fn(() => ({ saved: true })),
+        handleMsgRepayParticipantSlashedTrustDeposit: jest.fn(() => ({
           saved: true,
         })),
         syncPermissionFromLedger: syncPermissionFromLedgerSpy,
@@ -71,7 +71,7 @@ describe("🧪 PermProcessorService", () => {
     });
 
     broker.createService({
-      name: SERVICE.V1.TrustRegistryDatabaseService.key,
+      name: SERVICE.V1.EcosystemDatabaseService.key,
       version: 1,
       actions: {
         get: jest.fn(() => ({ trust_registry: { id: 3, controller: "verana1controller" } })),
@@ -98,19 +98,19 @@ describe("🧪 PermProcessorService", () => {
   it("✅ should process permission messages and call correct handlers", async () => {
     const messages = [
       {
-        type: PermissionMessageTypes.CreateRootPermission,
+        type: PermissionMessageTypes.CreateRootParticipant,
         content: { "@type": "someType", id: "perm1", corporation: "acc1" },
         timestamp: "2025-10-08T10:00:00Z",
       },
       {
-        type: PermissionMessageTypes.SelfCreatePermission,
+        type: PermissionMessageTypes.SelfCreateParticipant,
         content: { "@type": "someType", id: "perm2", corporation: "acc2" },
         timestamp: "2025-10-08T11:00:00Z",
       },
     ];
 
     await broker.call(
-      `v1.${SERVICE.V1.PermProcessorService.key}.handlePermissionMessages`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.handlePermissionMessages`,
       { permissionMessages: messages }
     );
 
@@ -129,7 +129,7 @@ describe("🧪 PermProcessorService", () => {
 
   it("✅ should return permission for getPermission", async () => {
     const res = await broker.call(
-      `v1.${SERVICE.V1.PermProcessorService.key}.getPermission`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.getPermission`,
       { schema_id: 123, grantee: "wallet123", type: "root" }
     );
     expect(res).toEqual({ id: "perm-123", type: "root" });
@@ -137,7 +137,7 @@ describe("🧪 PermProcessorService", () => {
 
   it("✅ should list permissions for listPermissions", async () => {
     const res = await broker.call(
-      `v1.${SERVICE.V1.PermProcessorService.key}.listPermissions`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.listPermissions`,
       { schema_id: 123, grantee: "wallet123", type: "root" }
     );
     expect(Array.isArray(res)).toBe(true);
@@ -149,14 +149,14 @@ describe("🧪 PermProcessorService", () => {
     process.env.USE_HEIGHT_SYNC_PERM = "true";
     const fetchSpy = jest.spyOn(global as any, "fetch").mockImplementation(async (url: string) => {
       const textUrl = String(url);
-      if (textUrl.includes("/verana/perm/v1/get/101")) {
+      if (textUrl.includes("/verana/pp/v1/get/101")) {
         return {
           ok: true,
           json: async () => ({
             permission: {
               id: 101,
               schema_id: 7,
-              type: "ISSUER",
+              role: "ISSUER",
               grantee: "verana1grantee",
               created_by: "verana1creator",
               created: "2026-03-01T00:00:00Z",
@@ -179,7 +179,7 @@ describe("🧪 PermProcessorService", () => {
         return {
           ok: true,
           json: async () => ({
-            schema: { id: 7, tr_id: 3 },
+            schema: { id: 7, ecosystem_id: 3 },
           }),
         } as any;
       }
@@ -187,10 +187,10 @@ describe("🧪 PermProcessorService", () => {
     });
 
     await broker.call(
-      `v1.${SERVICE.V1.PermProcessorService.key}.handlePermissionMessages`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.handlePermissionMessages`,
       {
         permissionMessages: [{
-          type: PermissionMessageTypes.SelfCreatePermission,
+          type: PermissionMessageTypes.SelfCreateParticipant,
           content: { id: 101 },
           height: 123,
           timestamp: "2026-03-01T00:00:00Z",

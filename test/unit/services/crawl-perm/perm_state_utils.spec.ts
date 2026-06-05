@@ -11,40 +11,40 @@ describe("🧪 perm_state_utils", () => {
   const NOW = new Date("2025-01-10T00:00:00.000Z");
 
   const basePerm: PermissionData = {
-    type: "ISSUER",
+    role: "ISSUER",
   };
 
   describe("pendingFlatMatchesVpPendingWithEligiblePermState", () => {
-    it("is true when vp_state is PENDING and perm_state is INACTIVE, ACTIVE, FUTURE, or EXPIRED", () => {
+    it("is true when op_state is PENDING and perm_state is INACTIVE, ACTIVE, FUTURE, or EXPIRED", () => {
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "INACTIVE" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "PENDING", perm_state: "INACTIVE" })
       ).toBe(true);
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "pending", perm_state: "ACTIVE" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "pending", perm_state: "ACTIVE" })
       ).toBe(true);
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "FUTURE" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "PENDING", perm_state: "FUTURE" })
       ).toBe(true);
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "EXPIRED" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "PENDING", perm_state: "EXPIRED" })
       ).toBe(true);
     });
 
-    it("is false when vp_state is PENDING but perm_state is REPAID, REVOKED, or SLASHED", () => {
+    it("is false when op_state is PENDING but perm_state is REPAID, REVOKED, or SLASHED", () => {
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "REPAID" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "PENDING", perm_state: "REPAID" })
       ).toBe(false);
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "REVOKED" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "PENDING", perm_state: "REVOKED" })
       ).toBe(false);
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "PENDING", perm_state: "SLASHED" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "PENDING", perm_state: "SLASHED" })
       ).toBe(false);
     });
 
-    it("is false when vp_state is not PENDING", () => {
+    it("is false when op_state is not PENDING", () => {
       expect(
-        pendingFlatMatchesVpPendingWithEligiblePermState({ vp_state: "VALIDATED", perm_state: "ACTIVE" })
+        pendingFlatMatchesVpPendingWithEligiblePermState({ op_state: "VALIDATED", perm_state: "ACTIVE" })
       ).toBe(false);
     });
   });
@@ -126,7 +126,7 @@ describe("🧪 perm_state_utils", () => {
     it("for ISSUER in OPEN mode and ACTIVE state allows PERM_REVOKE and PERM_ADJUST", () => {
       const perm: PermissionData = {
         ...basePerm,
-        type: "ISSUER",
+        role: "ISSUER",
         effective_from: makeDate("2025-01-01T00:00:00.000Z"),
         effective_until: makeDate("2025-02-01T00:00:00.000Z"),
       };
@@ -139,7 +139,7 @@ describe("🧪 perm_state_utils", () => {
     it("for ISSUER in OPEN mode and SLASHED state allows only PERM_REPAY", () => {
       const perm: PermissionData = {
         ...basePerm,
-        type: "ISSUER",
+        role: "ISSUER",
         slashed: makeDate("2025-01-01T00:00:00.000Z"),
       };
 
@@ -151,10 +151,10 @@ describe("🧪 perm_state_utils", () => {
     it("for ISSUER in GRANTOR_VALIDATION with PENDING VP allows VP_CANCEL and PERM_REVOKE", () => {
       const perm: PermissionData = {
         ...basePerm,
-        type: "ISSUER",
+        role: "ISSUER",
         effective_from: makeDate("2025-01-01T00:00:00.000Z"),
         effective_until: makeDate("2025-02-01T00:00:00.000Z"),
-        vp_state: "PENDING",
+        op_state: "PENDING",
       };
 
       const schema: SchemaData = {
@@ -169,11 +169,11 @@ describe("🧪 perm_state_utils", () => {
 
     it("for HOLDER with VALIDATED, non-expired VP and active validator allows VP_RENEW and PERM_REVOKE", () => {
       const perm: PermissionData = {
-        type: "HOLDER",
+        role: "HOLDER",
         effective_from: makeDate("2025-01-01T00:00:00.000Z"),
         effective_until: makeDate("2025-02-01T00:00:00.000Z"),
-        vp_state: "VALIDATED",
-        vp_exp: makeDate("2025-02-01T00:00:00.000Z"),
+        op_state: "VALIDATED",
+        op_exp: makeDate("2025-02-01T00:00:00.000Z"),
       };
 
       const schema: SchemaData = {
@@ -189,10 +189,10 @@ describe("🧪 perm_state_utils", () => {
     it("for VERIFIER with OPEN schema, PENDING VP and INACTIVE perm_state allows only VP_CANCEL (issue #63)", () => {
       const perm: PermissionData = {
         ...basePerm,
-        type: "VERIFIER",
+        role: "VERIFIER",
         effective_from: null,
         effective_until: null,
-        vp_state: "PENDING",
+        op_state: "PENDING",
       };
 
       const schema: SchemaData = {
@@ -205,13 +205,13 @@ describe("🧪 perm_state_utils", () => {
       expect(actions).toEqual(["VP_CANCEL"]);
     });
 
-    it("for VERIFIER with numeric type (2) and numeric vp_state (1) from DB still yields VP_CANCEL", () => {
+    it("for VERIFIER with numeric type (2) and numeric op_state (1) from DB still yields VP_CANCEL", () => {
       const perm = {
         ...basePerm,
-        type: 2 as unknown as PermissionData["type"],
+        role: 2 as unknown as PermissionData["role"],
         effective_from: null,
         effective_until: null,
-        vp_state: 1 as unknown as PermissionData["vp_state"],
+        op_state: 1 as unknown as PermissionData["op_state"],
       };
 
       const schema: SchemaData = {
@@ -233,14 +233,14 @@ describe("🧪 perm_state_utils", () => {
 
     it("corporation_available_actions = [VP_CANCEL], validator_available_actions includes VP_SET_VALIDATED", () => {
       const perm69: PermissionData = {
-        type: "VERIFIER",
+        role: "VERIFIER",
         repaid: null,
         slashed: null,
         revoked: null,
         effective_from: null,
         effective_until: null,
-        vp_state: "PENDING",
-        vp_exp: null,
+        op_state: "PENDING",
+        op_exp: null,
         validator_perm_id: "1",
       };
 
@@ -264,10 +264,10 @@ describe("🧪 perm_state_utils", () => {
     it("for ISSUER in GRANTOR_VALIDATION with ACTIVE state and PENDING VP includes slash, revoke, extend and set validated", () => {
       const perm: PermissionData = {
         ...basePerm,
-        type: "ISSUER",
+        role: "ISSUER",
         effective_from: makeDate("2025-01-01T00:00:00.000Z"),
         effective_until: makeDate("2025-02-01T00:00:00.000Z"),
-        vp_state: "PENDING",
+        op_state: "PENDING",
       };
 
       const actions = calculateValidatorAvailableActions(perm, grantorSchema, NOW);
@@ -282,10 +282,10 @@ describe("🧪 perm_state_utils", () => {
 
     it("for HOLDER with ACTIVE state and PENDING VP includes slash, revoke, adjust and set validated", () => {
       const perm: PermissionData = {
-        type: "HOLDER",
+        role: "HOLDER",
         effective_from: makeDate("2025-01-01T00:00:00.000Z"),
         effective_until: makeDate("2025-02-01T00:00:00.000Z"),
-        vp_state: "PENDING",
+        op_state: "PENDING",
       };
 
       const schema: SchemaData = {
@@ -306,10 +306,10 @@ describe("🧪 perm_state_utils", () => {
     it("for VERIFIER with OPEN schema, PENDING VP and INACTIVE perm_state includes VP_SET_VALIDATED (issue #63)", () => {
       const perm: PermissionData = {
         ...basePerm,
-        type: "VERIFIER",
+        role: "VERIFIER",
         effective_from: null,
         effective_until: null,
-        vp_state: "PENDING",
+        op_state: "PENDING",
       };
 
       const schema: SchemaData = {

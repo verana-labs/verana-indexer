@@ -65,7 +65,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       expect(knex.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           schema_id: 99,
-          type: "ECOSYSTEM",
+          role: "ECOSYSTEM",
           did: "did:test:123",
           corporation: "grantee1",
           validation_fees: 10,
@@ -93,14 +93,14 @@ describe("🧪 PermIngestService Unit Tests", () => {
         schema_id: 99,
         did: "did:test:123",
         creator: "issuer1",
-        type: 1,
+        role: 1,
       };
 
       await service.handleCreatePermission(msg);
 
       expect(knex.insert).toHaveBeenCalledWith(
         expect.objectContaining({
-          validator_perm_id: 1,
+          validator_participant_id: 1,
           schema_id: 99,
           corporation: "issuer1",
         })
@@ -146,7 +146,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       });
 
       const msg = {
-        validator_perm_id: 99,
+        validator_participant_id: 99,
         did: "did:test:abc",
         creator: "alice",
         timestamp: "t1",
@@ -156,8 +156,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
 
       expect(knex.insert).toHaveBeenCalledWith(
         expect.objectContaining({
-          validator_perm_id: 99,
-          vp_state: "PENDING",
+          validator_participant_id: 99,
+          op_state: "PENDING",
         })
       );
     });
@@ -168,7 +168,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       const row = mapLedgerPermissionToDbRow({
         id: 1,
         schema_id: 2,
-        type: "ECOSYSTEM",
+        role: "ECOSYSTEM",
         did: "did:example:x",
         corporation: "verana1corp",
       });
@@ -179,7 +179,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       const row = mapLedgerPermissionToDbRow({
         id: 1,
         schema_id: 2,
-        type: "ECOSYSTEM",
+        role: "ECOSYSTEM",
         did: "did:x",
       });
       expect(row.corporation).toBe("");
@@ -205,17 +205,17 @@ describe("🧪 PermIngestService Unit Tests", () => {
       const ledgerPermission = {
         id: "7",
         schema_id: "48",
-        type: "ISSUER",
+        role: "ISSUER",
         did: "did:test:issuer",
         corporation: "verana1test",
         created: "2026-01-29T20:27:06.725Z",
         modified: "2026-01-29T20:27:23.422Z",
         effective_from: "2026-01-29T20:27:23.422Z",
         effective_until: null,
-        vp_state: "VALIDATED",
+        op_state: "VALIDATED",
       };
 
-      await syncPermissionFromLedger(ledgerPermission, 1908620, "tx-hash", "/verana.perm.v1.MsgSetPermissionVPToValidated");
+      await syncPermissionFromLedger(ledgerPermission, 1908620, "tx-hash", "/verana.pp.v1.MsgSetParticipantOPToValidated");
 
       expect(updateWeightSpy).toHaveBeenCalledWith(mockTrx, 7);
       expect(updateParticipantsSpy).toHaveBeenCalledWith(mockTrx, 7);
