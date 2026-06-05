@@ -34,7 +34,7 @@ export async function getSchemasForTrustRegistry(trId: number, blockHeight?: num
             return await knex("credential_schema_history as csh")
                 .distinctOn("csh.credential_schema_id")
                 .select("csh.*")
-                .where("csh.tr_id", String(trId))
+                .where("csh.ecosystem_id", String(trId))
                 .where("csh.height", "<=", blockHeight)
                 .orderBy("csh.credential_schema_id", "asc")
                 .orderBy("csh.height", "desc")
@@ -46,13 +46,13 @@ export async function getSchemasForTrustRegistry(trId: number, blockHeight?: num
                 "csh.*",
                 knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
             )
-            .where("csh.tr_id", String(trId))
+            .where("csh.ecosystem_id", String(trId))
             .where("csh.height", "<=", blockHeight)
             .as("ranked");
         return await knex.from(ranked).select("*").where("rn", 1);
     }
     return await knex("credential_schemas")
-        .where("tr_id", String(trId))
+        .where("ecosystem_id", String(trId))
         .select("*");
 }
 
@@ -159,7 +159,7 @@ export async function calculateSlashStatsForSchema(
             .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -168,7 +168,7 @@ export async function calculateSlashStatsForSchema(
             .whereIn("permission_id", permissionIdArray)
             .whereRaw("schema_id = ?", [schemaId])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -192,7 +192,7 @@ export async function calculateSlashStatsForSchema(
 
         prevSlashedDeposits.set(permIdStr, currentSlashed);
 
-        const isEcosystemPermission = event.type === "ECOSYSTEM";
+        const isEcosystemPermission = event.role === "ECOSYSTEM";
 
         if (isEcosystemPermission) {
             networkSlashEvents++;
@@ -269,8 +269,8 @@ export async function calculateTrustRegistryStatsBatch(
         if (IS_PG_CLIENT) {
             schemas = await knex("credential_schema_history as csh")
                 .distinctOn("csh.credential_schema_id")
-                .select("csh.credential_schema_id", "csh.tr_id", "csh.archived")
-                .whereIn("csh.tr_id", trIds)
+                .select("csh.credential_schema_id", "csh.ecosystem_id", "csh.archived")
+                .whereIn("csh.ecosystem_id", trIds)
                 .where("csh.height", "<=", blockHeight)
                 .orderBy("csh.credential_schema_id", "asc")
                 .orderBy("csh.height", "desc")
@@ -280,17 +280,17 @@ export async function calculateTrustRegistryStatsBatch(
             const ranked = knex("credential_schema_history as csh")
                 .select(
                     "csh.credential_schema_id",
-                    "csh.tr_id",
+                    "csh.ecosystem_id",
                     "csh.archived",
                     knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
                 )
-                .whereIn("csh.tr_id", trIds)
+                .whereIn("csh.ecosystem_id", trIds)
                 .where("csh.height", "<=", blockHeight)
                 .as("ranked");
             schemas = await knex.from(ranked).select("credential_schema_id", "tr_id", "archived").where("rn", 1);
         }
     } else {
-        schemas = await knex("credential_schemas").select("id as credential_schema_id", "tr_id", "archived").whereIn("tr_id", trIds);
+        schemas = await knex("credential_schemas").select("id as credential_schema_id", "ecosystem_id", "archived").whereIn("ecosystem_id", trIds);
     }
 
     for (const trId of trIds) {

@@ -6,7 +6,7 @@ import {
   fetchPermLedgerJson,
 } from "./perm_height_sync_helpers";
 
-const PERM_INGEST_SERVICE = "permIngest";
+const PARTICIPANT_INGEST_SERVICE = "participantIngest";
 const PERM_MULTI_HEIGHT_WINDOW = 3;
 
 type PermHeightSyncLogger = {
@@ -55,15 +55,15 @@ export async function runHeightSyncPerm(
 
     for (const permissionId of permissionIds) {
       const ledgerPermissionResponse = await fetchPermLedgerJson(
-        `/verana/perm/v1/get/${permissionId}`,
+        `/verana/pp/v1/get/${permissionId}`,
         blockHeight
       );
-      const ledgerPermission = ledgerPermissionResponse?.permission;
+      const ledgerPermission = ledgerPermissionResponse?.permission ?? ledgerPermissionResponse?.participant;
       if (!ledgerPermission) continue;
       impactedPermissionIds.add(permissionId);
 
       const syncResult = (await broker.call(
-        `${PERM_INGEST_SERVICE}.syncPermissionFromLedger`,
+        `${PARTICIPANT_INGEST_SERVICE}.syncPermissionFromLedger`,
         {
           ledgerPermission,
           blockHeight,
@@ -73,7 +73,7 @@ export async function runHeightSyncPerm(
       )) as any;
 
       const immediateCompare = (await broker.call(
-        `${PERM_INGEST_SERVICE}.comparePermissionWithLedger`,
+        `${PARTICIPANT_INGEST_SERVICE}.comparePermissionWithLedger`,
         {
           permissionId,
           ledgerPermission,
@@ -100,14 +100,14 @@ export async function runHeightSyncPerm(
 
     for (const sessionId of sessionIds) {
       const sessionResponse = await fetchPermLedgerJson(
-        `/verana/perm/v1/get_session/${encodeURIComponent(sessionId)}`,
+        `/verana/pp/v1/get_session/${encodeURIComponent(sessionId)}`,
         blockHeight
       );
       const ledgerSession = sessionResponse?.session;
       if (!ledgerSession) continue;
 
       await broker.call(
-        `${PERM_INGEST_SERVICE}.syncPermissionSessionFromLedger`,
+        `${PARTICIPANT_INGEST_SERVICE}.syncPermissionSessionFromLedger`,
         {
           ledgerSession,
           blockHeight,
@@ -117,7 +117,7 @@ export async function runHeightSyncPerm(
       );
 
       const compareSession = (await broker.call(
-        `${PERM_INGEST_SERVICE}.comparePermissionSessionWithLedger`,
+        `${PARTICIPANT_INGEST_SERVICE}.comparePermissionSessionWithLedger`,
         {
           sessionId,
           ledgerSession,
@@ -142,14 +142,14 @@ export async function runHeightSyncPerm(
 
       for (const h of heightsToCheck) {
         const ledgerPermissionResponse = await fetchPermLedgerJson(
-          `/verana/perm/v1/get/${permissionId}`,
+          `/verana/pp/v1/get/${permissionId}`,
           h
         );
-        const ledgerPermission = ledgerPermissionResponse?.permission;
+        const ledgerPermission = ledgerPermissionResponse?.permission ?? ledgerPermissionResponse?.participant;
         if (!ledgerPermission) continue;
 
         const compare = (await broker.call(
-          `${PERM_INGEST_SERVICE}.comparePermissionWithLedger`,
+          `${PARTICIPANT_INGEST_SERVICE}.comparePermissionWithLedger`,
           {
             permissionId,
             ledgerPermission,

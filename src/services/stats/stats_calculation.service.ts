@@ -704,7 +704,7 @@ export default class StatsCalculationService extends BullableService {
 
   private async computeTrustRegistryStats(trId: string, timestamp: Date): Promise<any> {
     const schemas = await knex("credential_schemas")
-      .where("tr_id", trId)
+      .where("ecosystem_id", trId)
       .where("created", "<=", timestamp)
       .select("id");
 

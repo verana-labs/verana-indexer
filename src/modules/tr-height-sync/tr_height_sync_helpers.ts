@@ -1,7 +1,14 @@
-import { VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
+import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 import { Network } from "../../network";
 
-const TR_GET_PATH = "/verana/tr/v1/get";
+// TODO(node-ec-query): the `ec` REST query gateway is NOT enabled in the current node
+// build — every `/verana/ec/v1/*` route returns 501 "Not Implemented" (unlike `pp`/`cs`,
+// which respond 200). So ecosystem height-sync cannot fetch state and ecosystems will not
+// index until the node implements `/verana/ec/v1/get`. We intentionally do NOT force the
+// direct create handler as a fallback: it would assign a serial id that diverges from the
+// chain ecosystem id (height-sync inserts with the chain id explicitly). The `create_ecosystem`
+// event already carries `ecosystem_id`, so once the node enables the query this just works.
+const TR_GET_PATH = "/verana/ec/v1/get";
 const HEIGHT_HEADER = "x-cosmos-block-height";
 
 export interface LedgerTrustRegistryVersion {
@@ -51,12 +58,12 @@ export interface TrMessageLike {
 }
 
 const TR_MESSAGE_TYPES = new Set<string>([
-  VeranaTrustRegistryMessageTypes.CreateTrustRegistry,
-  VeranaTrustRegistryMessageTypes.UpdateTrustRegistry,
-  VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry,
-  VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc,
-  VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion,
-  VeranaTrustRegistryMessageTypes.UpdateParams,
+  VeranaEcosystemMessageTypes.CreateEcosystem,
+  VeranaEcosystemMessageTypes.UpdateEcosystem,
+  VeranaEcosystemMessageTypes.ArchiveEcosystem,
+  VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc,
+  VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion,
+  VeranaEcosystemMessageTypes.UpdateParams,
 ]);
 
 function normalizeLedgerResponse(data: unknown): LedgerTrustRegistryResponse | null {

@@ -31,9 +31,9 @@ import {
   shouldSkipUnknownMessages,
   isUpdateParamsMessageType,
   isCredentialSchemaMessageType,
-  isPermissionMessageType,
+  isParticipantMessageType,
   isTrustDepositMessageType,
-  isTrustRegistryMessageType,
+  isEcosystemMessageType,
   isCorporationMessageType,
   isGovernanceFrameworkMessageType,
   isKnownVeranaMessageType,
@@ -1221,7 +1221,7 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
     const trustRegistryList = successfulMsgs
-      .filter((msg: any) => isTrustRegistryMessageType(msg.type))
+      .filter((msg: any) => isEcosystemMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         const txEvents = parentTx?.data?.tx_response?.events ?? [];
@@ -1270,7 +1270,7 @@ export default class CrawlTxService extends BullableService {
       });
 
     const permissionMessages = successfulMsgs
-      .filter((msg: any) => isPermissionMessageType(msg.type))
+      .filter((msg: any) => isParticipantMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         return {
@@ -1748,7 +1748,7 @@ export default class CrawlTxService extends BullableService {
     if (!payload) return;
     if (payload.trustRegistryList?.length) {
       await this.broker.call(
-        `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
+        `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleTrustRegistryMessages`,
         { trustRegistryList: payload.trustRegistryList },
       );
     }
@@ -1783,7 +1783,7 @@ export default class CrawlTxService extends BullableService {
       if (extraTrIdsFromEvents.length > 0) {
         try {
           await this.broker.call(
-            `${SERVICE.V1.TrustRegistryMessageProcessorService.path}.handleTrustRegistryMessages`,
+            `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleTrustRegistryMessages`,
             {
               trustRegistryList: extraTrIdsFromEvents.map((id: number) => ({
                 type: "EVENT_SYNC_TR",
@@ -1835,7 +1835,7 @@ export default class CrawlTxService extends BullableService {
       for (let i = 0; i < permissionMessages.length; i += permissionBatchSize) {
         const batch = permissionMessages.slice(i, i + permissionBatchSize);
         await this.broker.call(
-          `${SERVICE.V1.PermProcessorService.path}.handlePermissionMessages`,
+          `${SERVICE.V1.ParticipantProcessorService.path}.handlePermissionMessages`,
           { permissionMessages: batch },
           { timeout: getHeavyBrokerCallTimeoutMs() },
         );

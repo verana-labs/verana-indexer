@@ -378,9 +378,9 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     const participants = Number((participantsResult as any)?.count ?? 0);
 
     const activeParticipantsByType = await activePermsBase()
-      .select("type")
+      .select("role")
       .countDistinct(`${permParticipantCol} as count`)
-      .groupBy("type");
+      .groupBy("role");
 
     const participantsByType = {
       participants_ecosystem: 0,
@@ -392,12 +392,12 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     };
     for (const row of activeParticipantsByType as any[]) {
       const count = Number(row?.count || row?.count_distinct || 0);
-      if (row.type === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
-      if (row.type === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
-      if (row.type === "ISSUER") participantsByType.participants_issuer = count;
-      if (row.type === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
-      if (row.type === "VERIFIER") participantsByType.participants_verifier = count;
-      if (row.type === "HOLDER") participantsByType.participants_holder = count;
+      if (row.role === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
+      if (row.role === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
+      if (row.role === "ISSUER") participantsByType.participants_issuer = count;
+      if (row.role === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
+      if (row.role === "VERIFIER") participantsByType.participants_verifier = count;
+      if (row.role === "HOLDER") participantsByType.participants_holder = count;
     }
 
     return {
@@ -535,22 +535,22 @@ export async function computeGlobalMetrics(blockHeight?: number) {
         revoked: historyRecord.revoked,
         effective_from: historyRecord.effective_from,
         effective_until: historyRecord.effective_until,
-        type: historyRecord.type,
-        vp_state: historyRecord.vp_state,
-        vp_exp: historyRecord.vp_exp,
-        validator_perm_id: historyRecord.validator_perm_id,
+        role: historyRecord.role,
+        op_state: historyRecord.op_state,
+        op_exp: historyRecord.op_exp,
+        validator_participant_id: historyRecord.validator_participant_id,
       },
       asOfTime
     );
     const corp = (historyRecord as { corporation?: string }).corporation;
     if (permState === "ACTIVE" && corp) {
       allParticipantsSet.add(corp);
-      if (historyRecord.type === "ECOSYSTEM") participantsEcosystemSet.add(corp);
-      if (historyRecord.type === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(corp);
-      if (historyRecord.type === "ISSUER") participantsIssuerSet.add(corp);
-      if (historyRecord.type === "VERIFIER_GRANTOR") participantsVerifierGrantorSet.add(corp);
-      if (historyRecord.type === "VERIFIER") participantsVerifierSet.add(corp);
-      if (historyRecord.type === "HOLDER") participantsHolderSet.add(corp);
+      if (historyRecord.role === "ECOSYSTEM") participantsEcosystemSet.add(corp);
+      if (historyRecord.role === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(corp);
+      if (historyRecord.role === "ISSUER") participantsIssuerSet.add(corp);
+      if (historyRecord.role === "VERIFIER_GRANTOR") participantsVerifierGrantorSet.add(corp);
+      if (historyRecord.role === "VERIFIER") participantsVerifierSet.add(corp);
+      if (historyRecord.role === "HOLDER") participantsHolderSet.add(corp);
     }
   }
 

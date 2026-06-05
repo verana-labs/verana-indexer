@@ -18,8 +18,8 @@ export enum PermissionTypeNames {
   ECOSYSTEM = 5,
   HOLDER = 6,
 }
-export function getPermissionTypeString(msg: MsgStartPermissionVP): string {
-  const rawType = (msg as any).type ?? (msg as any).permission_type ?? (msg as any).permissionType;
+export function getPermissionTypeString(msg: MsgStartParticipantOP): string {
+  const rawType = (msg as any).type ?? (msg as any).role ?? (msg as any).permission_type ?? (msg as any).permissionType;
   if (typeof rawType === 'string') {
     return rawType;
   }
@@ -28,7 +28,7 @@ export function getPermissionTypeString(msg: MsgStartPermissionVP): string {
   }
   return "UNKNOWN";
 }
-export interface MsgCreateRootPermission {
+export interface MsgCreateRootParticipant {
   creator?: string;
   corporation?: string;
   operator?: string;
@@ -56,7 +56,7 @@ export type DenomAmount = {
   denom: string;
   amount: string;
 };
-export interface MsgStartPermissionVP {
+export interface MsgStartParticipantOP {
   creator?: string;
   corporation?: string;
   operator?: string;
@@ -64,8 +64,8 @@ export interface MsgStartPermissionVP {
   type: number;
   permission_type?: number | string;
   permissionType?: number | string;
-  validator_perm_id: number;
-  validatorPermId?: number;
+  validator_participant_id: number;
+  validatorParticipantId?: number;
   did: string;
   effective_from: Date | undefined;
   effectiveFrom?: Date | undefined;
@@ -90,7 +90,7 @@ export interface MsgStartPermissionVP {
   vs_operator_authz_spend_period?: string | null;
   vsOperatorAuthzSpendPeriod?: string | null;
 }
-export interface MsgSlashPermissionTrustDeposit {
+export interface MsgSlashParticipantTrustDeposit {
   timestamp?: Date | undefined;
   creator?: string;
   corporation?: string;
@@ -99,7 +99,7 @@ export interface MsgSlashPermissionTrustDeposit {
   amount: number;
   reason?: string;
 }
-export interface MsgSetPermissionVPToValidated {
+export interface MsgSetParticipantOPToValidated {
   creator: string;
   id: number;
   effective_until?: Date | undefined;
@@ -107,15 +107,15 @@ export interface MsgSetPermissionVPToValidated {
   validation_fees: number;
   issuance_fees: number;
   verification_fees: number;
-  vp_summary_digest?: string;
+  op_summary_digest?: string;
 }
 
-export interface MsgRevokePermission {
+export interface MsgRevokeParticipant {
   timestamp: Date | string;
   id: number;
   creator: string;
 }
-export interface MsgRepayPermissionSlashedTrustDeposit {
+export interface MsgRepayParticipantSlashedTrustDeposit {
   timestamp: Date | string;
   creator?: string;
   corporation?: string;
@@ -123,7 +123,7 @@ export interface MsgRepayPermissionSlashedTrustDeposit {
   id: number;
   amount?: number | string;
 }
-export interface MsgRenewPermissionVP {
+export interface MsgRenewParticipantOP {
   creator?: string;
   corporation?: string;
   operator?: string;
@@ -132,7 +132,7 @@ export interface MsgRenewPermissionVP {
   permission_type?: number | string;
   permissionType?: number | string;
 }
-export interface MsgAdjustPermission {
+export interface MsgSetParticipantEffectiveUntil {
   creator?: string;
   corporation?: string;
   authority?: string;
@@ -142,7 +142,7 @@ export interface MsgAdjustPermission {
   effectiveUntil?: Date | undefined;
   timestamp?: Date | undefined;
 }
-export interface MsgSelfCreatePermission {
+export interface MsgSelfCreateParticipant {
   creator?: string;
   corporation?: string;
   operator?: string;
@@ -151,8 +151,8 @@ export interface MsgSelfCreatePermission {
   type: PermissionType;
   permission_type?: number | string;
   permissionType?: number | string;
-  validator_perm_id?: number;
-  validatorPermId?: number;
+  validator_participant_id?: number;
+  validatorParticipantId?: number;
   did: string;
   effective_from?: Date | undefined;
   effectiveFrom?: Date | undefined;
@@ -178,7 +178,7 @@ export interface MsgSelfCreatePermission {
   vs_operator_authz_spend_period?: string | null;
   vsOperatorAuthzSpendPeriod?: string | null;
 }
-export interface MsgCreateOrUpdatePermissionSession {
+export interface MsgCreateOrUpdateParticipantSession {
   timestamp?: Date | undefined;
   creator?: string;
   corporation?: string;
@@ -194,7 +194,7 @@ export interface MsgCreateOrUpdatePermissionSession {
   wallet_agent_perm_id?: number;
   digest?: string;
 }
-export interface MsgCancelPermissionVPLastRequest {
+export interface MsgCancelParticipantOPLastRequest {
   timestamp?: Date | undefined;
   creator?: string;
   corporation?: string;

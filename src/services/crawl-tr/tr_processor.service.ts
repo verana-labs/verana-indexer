@@ -8,7 +8,7 @@ import {
   ModulesParamsNamesTypes,
   SERVICE,
 } from "../../common";
-import { VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
+import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
 import { requireController } from "../../common/utils/extract_controller";
@@ -45,10 +45,10 @@ function getDefaultTRStats(fallbackData?: any): any {
 }
 
 @Service({
-  name: SERVICE.V1.TrustRegistryMessageProcessorService.key,
+  name: SERVICE.V1.EcosystemMessageProcessorService.key,
   version: 1,
 })
-export default class TrustRegistryMessageProcessorService extends BullableService {
+export default class EcosystemMessageProcessorService extends BullableService {
   private processorBase: MessageProcessorBase;
   private _isFreshStart: boolean = false;
   private trHistoryColumnsCache: Set<string> | null = null;
@@ -100,7 +100,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     this.processorBase.setFreshStartMode(this._isFreshStart);
     this.logger.info(`TrustRegistry processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
     await super._start();
-    this.logger.info("TrustRegistryMessageProcessorService started and ready.");
+    this.logger.info("EcosystemMessageProcessorService started and ready.");
   }
 
   @Action({ name: "handleTrustRegistryMessages" })
@@ -169,33 +169,33 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
         processed = true;
       } else {
         if (
-          processedTR.type === VeranaTrustRegistryMessageTypes.CreateTrustRegistry
+          processedTR.type === VeranaEcosystemMessageTypes.CreateEcosystem
         ) {
           await this.processCreateTR(processedTR);
           processed = true;
         }
 
         if (
-          processedTR.type === VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc
+          processedTR.type === VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc
         ) {
           await this.processAddGovFrameworkDoc(processedTR);
           processed = true;
         }
 
-        if (processedTR.type === VeranaTrustRegistryMessageTypes.UpdateTrustRegistry) {
+        if (processedTR.type === VeranaEcosystemMessageTypes.UpdateEcosystem) {
           await this.processUpdateTR(processedTR);
           processed = true;
         }
 
         if (
           processedTR.type ===
-          VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion
+          VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion
         ) {
           await this.processIncreaseActiveGFV(processedTR);
           processed = true;
         }
 
-        if (processedTR.type === VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry) {
+        if (processedTR.type === VeranaEcosystemMessageTypes.ArchiveEcosystem) {
           await this.processArchiveTR(processedTR);
           processed = true;
         }
@@ -326,7 +326,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
           const ledgerResponse = await getTrustRegistry(trIdNum, blockHeight);
           if (ledgerResponse?.trust_registry) {
             await this.broker.call(
-              `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+              `${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`,
               {
                 ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
                 blockHeight,
@@ -618,7 +618,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
       }
 
       const syncResult: any = await this.broker.call(
-        `${SERVICE.V1.TrustRegistryDatabaseService.path}.syncFromLedger`,
+        `${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`,
         {
           ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
           blockHeight,
@@ -701,7 +701,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process ArchiveTrustRegistry for id=${message.trust_registry_id}:`, errorMessage);
+      this.logger.error(`❌ Failed to process ArchiveEcosystem for id=${message.trust_registry_id}:`, errorMessage);
       console.error("FATAL TR ARCHIVE ERROR:", err);
       throw err;
     }
@@ -747,7 +747,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process UpdateTrustRegistry for id=${message.trust_registry_id}:`, errorMessage);
+      this.logger.error(`❌ Failed to process UpdateEcosystem for id=${message.trust_registry_id}:`, errorMessage);
       console.error("FATAL TR UPDATE ERROR:", err);
       throw err;
     }
@@ -892,7 +892,7 @@ export default class TrustRegistryMessageProcessorService extends BullableServic
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process CreateTrustRegistry for did=${message.did}:`, errorMessage);
+      this.logger.error(`❌ Failed to process CreateEcosystem for did=${message.did}:`, errorMessage);
       console.error("FATAL TR CREATE ERROR:", err);
       throw err;
     }

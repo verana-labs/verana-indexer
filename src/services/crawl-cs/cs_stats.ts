@@ -123,7 +123,7 @@ export async function getSchemaController(schemaId: number, blockHeight?: number
         }
 
         const trHistory = await knex("trust_registry_history")
-            .where("tr_id", schemaHistory.tr_id)
+            .where("tr_id", schemaHistory.ecosystem_id)
             .where("height", "<=", blockHeight)
             .orderBy("height", "desc")
             .orderBy("created_at", "desc")
@@ -141,7 +141,7 @@ export async function getSchemaController(schemaId: number, blockHeight?: number
     }
 
     const tr = await knex("trust_registry")
-        .where("id", schema.tr_id)
+        .where("id", schema.ecosystem_id)
         .first();
     
     return participantFromTrRow(tr as Record<string, unknown>) ?? null;
@@ -236,7 +236,7 @@ export async function calculateSlashStatsForSchema(
             .whereRaw("schema_id = ?", [Number(schemaId)])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -245,7 +245,7 @@ export async function calculateSlashStatsForSchema(
             .whereIn("permission_id", permissionIdArray)
             .whereRaw("schema_id = ?", [Number(schemaId)])
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .select("permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
             .orderBy("permission_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
@@ -269,7 +269,7 @@ export async function calculateSlashStatsForSchema(
 
         prevSlashedDeposits.set(permIdStr, currentSlashed);
 
-        const isEcosystemSlash = event.type === "ECOSYSTEM";
+        const isEcosystemSlash = event.role === "ECOSYSTEM";
 
         const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
         const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
@@ -418,10 +418,10 @@ export async function calculateCredentialSchemaStatsBatch(
                 revoked: perm.revoked,
                 effective_from: perm.effective_from,
                 effective_until: perm.effective_until,
-                type: perm.type,
-                vp_state: perm.vp_state,
-                vp_exp: perm.vp_exp,
-                validator_perm_id: perm.validator_perm_id,
+                role: perm.role,
+                op_state: perm.op_state,
+                op_exp: perm.op_exp,
+                validator_participant_id: perm.validator_participant_id,
             },
             now
         );
@@ -432,12 +432,12 @@ export async function calculateCredentialSchemaStatsBatch(
             corpRaw === null || corpRaw === undefined ? "" : String(corpRaw).trim();
         if (permState === "ACTIVE" && corp) {
             activeParticipantsBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "ISSUER_GRANTOR") activeParticipantsIssuerGrantorBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "ISSUER") activeParticipantsIssuerBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "VERIFIER_GRANTOR") activeParticipantsVerifierGrantorBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "VERIFIER") activeParticipantsVerifierBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "HOLDER") activeParticipantsHolderBySchema.get(schemaId)?.add(corp);
+            if (perm.role === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(corp);
+            if (perm.role === "ISSUER_GRANTOR") activeParticipantsIssuerGrantorBySchema.get(schemaId)?.add(corp);
+            if (perm.role === "ISSUER") activeParticipantsIssuerBySchema.get(schemaId)?.add(corp);
+            if (perm.role === "VERIFIER_GRANTOR") activeParticipantsVerifierGrantorBySchema.get(schemaId)?.add(corp);
+            if (perm.role === "VERIFIER") activeParticipantsVerifierBySchema.get(schemaId)?.add(corp);
+            if (perm.role === "HOLDER") activeParticipantsHolderBySchema.get(schemaId)?.add(corp);
         }
 
         const stats = result.get(schemaId)!;
@@ -462,7 +462,7 @@ export async function calculateCredentialSchemaStatsBatch(
 
     const slashEvents: any[] = typeof blockHeight === "number"
         ? await knex("permission_history")
-            .select("schema_id", "permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at", "id")
+            .select("schema_id", "permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at", "id")
             .whereIn("schema_id", schemaIds)
             .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
@@ -495,7 +495,7 @@ export async function calculateCredentialSchemaStatsBatch(
         if (incrementalSlashed <= 0) continue;
 
         const stats = result.get(schemaId)!;
-        const isEcosystemSlash = event.type === "ECOSYSTEM";
+        const isEcosystemSlash = event.role === "ECOSYSTEM";
 
         if (isEcosystemSlash) {
             stats.ecosystem_slash_events += 1;

@@ -53,8 +53,8 @@ export async function applyScheduledPermissionFlipsForBlock(
         .select(
           "id",
           "schema_id",
-          "validator_perm_id",
-          "type",
+          "validator_participant_id",
+          "role",
           "last_valid_flip_version",
           ...(hasIsActiveNow ? (["is_active_now"] as const) : [])
         )
@@ -71,7 +71,7 @@ export async function applyScheduledPermissionFlipsForBlock(
         continue;
       }
 
-      const roleType = ROLE_TYPE[perm.type] ?? 0;
+      const roleType = ROLE_TYPE[perm.role] ?? 0;
       if (!roleType) {
         await markFlipStale(trx, flip, height, blockTime);
         continue;
@@ -117,12 +117,12 @@ export async function applyScheduledPermissionFlipsForBlock(
         }
         visited.add(currentId);
         const p = await trx("permissions")
-          .select("id", "schema_id", "validator_perm_id")
+          .select("id", "schema_id", "validator_participant_id")
           .where({ id: currentId })
           .first();
         if (!p) break;
         permChain.push({ id: p.id, schema_id: p.schema_id });
-        currentId = p.validator_perm_id ?? null;
+        currentId = p.validator_participant_id ?? null;
       }
 
       if (traversalAborted) {
@@ -132,10 +132,10 @@ export async function applyScheduledPermissionFlipsForBlock(
 
       const schemaId = perm.schema_id;
       const schema = await trx("credential_schemas")
-        .select("id", "tr_id")
+        .select("id", "ecosystem_id")
         .where({ id: schemaId })
         .first();
-      const trId = schema?.tr_id ?? null;
+      const trId = schema?.ecosystem_id ?? null;
 
       for (const p of permChain) {
         await bumpEntity(trx, {

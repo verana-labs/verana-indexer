@@ -42,7 +42,7 @@ type CSType = "create" | "update" | "archive";
 export interface CredentialSchemaEventData {
   type: CSType;
   id: number;
-  tr_id: number;
+  ecosystem_id: number;
   issuer_grantor_validation_validity_period: number;
   verifier_grantor_validation_validity_period: number;
   issuer_validation_validity_period: number;
@@ -98,7 +98,7 @@ export function parseCredentialSchemaEvent(
   return {
     type: typeMap[event.type] ?? "update",
     id: num(getAttr(attributeMap, "credential_schema_id")),
-    tr_id: num(getAttr(attributeMap, "trust_registry_id")),
+    ecosystem_id: num(getAttr(attributeMap, "ecosystem_id") || getAttr(attributeMap, "trust_registry_id")),
     issuer_grantor_validation_validity_period: num(getAttr(attributeMap, "issuer_grantor_validation_validity_period")),
     verifier_grantor_validation_validity_period: num(getAttr(attributeMap, "verifier_grantor_validation_validity_period")),
     issuer_validation_validity_period: num(getAttr(attributeMap, "issuer_validation_validity_period")),

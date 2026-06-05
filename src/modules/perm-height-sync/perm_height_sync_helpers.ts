@@ -61,8 +61,8 @@ export function extractImpactedPermissionIds(
     msg?.content?.id,
     msg?.content?.permission_id,
     msg?.content?.perm_id,
-    msg?.content?.validator_perm_id,
-    msg?.content?.validatorPermId,
+    msg?.content?.validator_participant_id,
+    msg?.content?.validatorParticipantId,
     msg?.content?.issuer_perm_id,
     msg?.content?.issuerPermId,
     msg?.content?.verifier_perm_id,
@@ -81,7 +81,7 @@ export function extractImpactedPermissionIds(
   for (const id of extractIdsFromTxEvents(msg.txEvents, [
     "permission_id",
     "root_permission_id",
-    "validator_perm_id",
+    "validator_participant_id",
     "issuer_perm_id",
     "verifier_perm_id",
     "agent_perm_id",
@@ -97,7 +97,7 @@ export function extractStartPermissionVpNewPermissionId(
   msg: PermissionMessagePayload
 ): number | undefined {
   const validatorRaw =
-    msg?.content?.validator_perm_id ?? msg?.content?.validatorPermId;
+    msg?.content?.validator_participant_id ?? msg?.content?.validatorParticipantId;
   const validatorId = Number(validatorRaw);
   const hasValidator =
     validatorRaw !== undefined &&

@@ -9,19 +9,19 @@ export enum VeranaCredentialSchemaMessageTypes {
   RevokeSchemaAuthorizationPolicy = "/verana.cs.v1.MsgRevokeSchemaAuthorizationPolicy",
 }
 
-export enum VeranaPermissionMessageTypes {
-  UpdateParams = "/verana.perm.v1.MsgUpdateParams",
-  CreateRootPermission = "/verana.perm.v1.MsgCreateRootPermission",
-  SelfCreatePermission = "/verana.perm.v1.MsgSelfCreatePermission",
-  StartPermissionVP = "/verana.perm.v1.MsgStartPermissionVP",
-  RenewPermissionVP = "/verana.perm.v1.MsgRenewPermissionVP",
-  RevokePermission = "/verana.perm.v1.MsgRevokePermission",
-  AdjustPermission = "/verana.perm.v1.MsgAdjustPermission",
-  SetPermissionVPToValidated = "/verana.perm.v1.MsgSetPermissionVPToValidated",
-  CreateOrUpdatePermissionSession = "/verana.perm.v1.MsgCreateOrUpdatePermissionSession",
-  SlashPermissionTrustDeposit = "/verana.perm.v1.MsgSlashPermissionTrustDeposit",
-  RepayPermissionSlashedTrustDeposit = "/verana.perm.v1.MsgRepayPermissionSlashedTrustDeposit",
-  CancelPermissionVPLastRequest = "/verana.perm.v1.MsgCancelPermissionVPLastRequest",
+export enum VeranaParticipantMessageTypes {
+  UpdateParams = "/verana.pp.v1.MsgUpdateParams",
+  CreateRootParticipant = "/verana.pp.v1.MsgCreateRootParticipant",
+  SelfCreateParticipant = "/verana.pp.v1.MsgSelfCreateParticipant",
+  StartParticipantOP = "/verana.pp.v1.MsgStartParticipantOP",
+  RenewParticipantOP = "/verana.pp.v1.MsgRenewParticipantOP",
+  RevokeParticipant = "/verana.pp.v1.MsgRevokeParticipant",
+  SetParticipantEffectiveUntil = "/verana.pp.v1.MsgSetParticipantEffectiveUntil",
+  SetParticipantOPToValidated = "/verana.pp.v1.MsgSetParticipantOPToValidated",
+  CreateOrUpdateParticipantSession = "/verana.pp.v1.MsgCreateOrUpdateParticipantSession",
+  SlashParticipantTrustDeposit = "/verana.pp.v1.MsgSlashParticipantTrustDeposit",
+  RepayParticipantSlashedTrustDeposit = "/verana.pp.v1.MsgRepayParticipantSlashedTrustDeposit",
+  CancelParticipantOPLastRequest = "/verana.pp.v1.MsgCancelParticipantOPLastRequest",
 }
 
 export enum VeranaTrustDepositMessageTypes {
@@ -33,11 +33,13 @@ export enum VeranaTrustDepositMessageTypes {
   BurnEcosystemSlashedTrustDeposit = "/verana.td.v1.MsgBurnEcosystemSlashedTrustDeposit",
 }
 
-export enum VeranaTrustRegistryMessageTypes {
-  UpdateParams = "/verana.tr.v1.MsgUpdateParams",
-  CreateTrustRegistry = "/verana.tr.v1.MsgCreateTrustRegistry",
-  UpdateTrustRegistry = "/verana.tr.v1.MsgUpdateTrustRegistry",
-  ArchiveTrustRegistry = "/verana.tr.v1.MsgArchiveTrustRegistry",
+export enum VeranaEcosystemMessageTypes {
+  UpdateParams = "/verana.ec.v1.MsgUpdateParams",
+  CreateEcosystem = "/verana.ec.v1.MsgCreateEcosystem",
+  UpdateEcosystem = "/verana.ec.v1.MsgUpdateEcosystem",
+  ArchiveEcosystem = "/verana.ec.v1.MsgArchiveEcosystem",
+  // Legacy governance-framework messages, now served by the gf module; kept so
+  // historical maps still resolve (these URLs are no longer emitted on-chain).
   AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
   IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }
@@ -74,9 +76,9 @@ export enum VeranaExchangeRateMessageTypes {
 
 export enum UpdateParamsMessageTypes {
   CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
-  PERMISSION = "/verana.perm.v1.MsgUpdateParams",
+  PERMISSION = "/verana.pp.v1.MsgUpdateParams",
   TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
-  TRUST_REGISTRY = "/verana.tr.v1.MsgUpdateParams",
+  TRUST_REGISTRY = "/verana.ec.v1.MsgUpdateParams",
   DIGITAL_IDENTITY = "/verana.di.v1.MsgUpdateParams",
   DELEGATION = "/verana.de.v1.MsgUpdateParams",
   EXCHANGE_RATE = "/verana.xr.v1.MsgUpdateParams",
@@ -99,9 +101,9 @@ export enum CosmosSlashingMessageTypes {
 
 export const ALL_KNOWN_VERANA_MESSAGE_TYPES = new Set<string>([
   ...Object.values(VeranaCredentialSchemaMessageTypes),
-  ...Object.values(VeranaPermissionMessageTypes),
+  ...Object.values(VeranaParticipantMessageTypes),
   ...Object.values(VeranaTrustDepositMessageTypes),
-  ...Object.values(VeranaTrustRegistryMessageTypes),
+  ...Object.values(VeranaEcosystemMessageTypes),
   ...Object.values(VeranaCorporationMessageTypes),
   ...Object.values(VeranaGovernanceFrameworkMessageTypes),
   ...Object.values(VeranaDiMessageTypes),
@@ -128,16 +130,16 @@ export function isVeranaMessageType(messageType: string): boolean {
   return messageType.startsWith('/verana.');
 }
 
-export function isTrustRegistryMessageType(messageType: string): boolean {
-  return Object.values(VeranaTrustRegistryMessageTypes).includes(messageType as VeranaTrustRegistryMessageTypes);
+export function isEcosystemMessageType(messageType: string): boolean {
+  return Object.values(VeranaEcosystemMessageTypes).includes(messageType as VeranaEcosystemMessageTypes);
 }
 
 export function isCredentialSchemaMessageType(messageType: string): boolean {
   return Object.values(VeranaCredentialSchemaMessageTypes).includes(messageType as VeranaCredentialSchemaMessageTypes);
 }
 
-export function isPermissionMessageType(messageType: string): boolean {
-  return Object.values(VeranaPermissionMessageTypes).includes(messageType as VeranaPermissionMessageTypes);
+export function isParticipantMessageType(messageType: string): boolean {
+  return Object.values(VeranaParticipantMessageTypes).includes(messageType as VeranaParticipantMessageTypes);
 }
 
 export function isTrustDepositMessageType(messageType: string): boolean {
@@ -170,9 +172,9 @@ export function isGovernanceFrameworkMessageType(messageType: string): boolean {
 
 export function isUpdateParamsMessageType(messageType: string): boolean {
   return messageType === VeranaCredentialSchemaMessageTypes.UpdateParams ||
-         messageType === VeranaPermissionMessageTypes.UpdateParams ||
+         messageType === VeranaParticipantMessageTypes.UpdateParams ||
          messageType === VeranaTrustDepositMessageTypes.UpdateParams ||
-         messageType === VeranaTrustRegistryMessageTypes.UpdateParams ||
+         messageType === VeranaEcosystemMessageTypes.UpdateParams ||
          messageType === VeranaDiMessageTypes.UpdateParams ||
          messageType === VeranaDelegationMessageTypes.UpdateParams ||
          messageType === VeranaExchangeRateMessageTypes.UpdateParams ||

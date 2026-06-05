@@ -28,10 +28,10 @@ function ledgerHasKey(obj: unknown, key: string): boolean {
 }
 
 @Service({
-    name: SERVICE.V1.TrustRegistryDatabaseService.key,
+    name: SERVICE.V1.EcosystemDatabaseService.key,
     version: 1
 })
-export default class TrustRegistryDatabaseService extends BaseService {
+export default class EcosystemDatabaseService extends BaseService {
     private trHistoryColumnExistsCache = new Map<string, boolean>();
     private trHistoryColumnsCache: Set<string> | null = null;
     private trustRegistryParticipantColumn: "corporation" | null = null;
@@ -822,7 +822,7 @@ export default class TrustRegistryDatabaseService extends BaseService {
         let hasIdSort = false;
         let fullyApplied = true;
         for (const { attribute, direction } of sortOrders) {
-            if (!TrustRegistryDatabaseService.SQL_SORTABLE_TR_ATTRIBUTES.has(attribute)) {
+            if (!EcosystemDatabaseService.SQL_SORTABLE_TR_ATTRIBUTES.has(attribute)) {
                 fullyApplied = false;
                 continue;
             }
@@ -910,19 +910,19 @@ export default class TrustRegistryDatabaseService extends BaseService {
         }
     ): any[] {
         let filtered = rows;
-        filtered = this.applyRangeToRows(filtered, filters.minActiveSchemas, filters.maxActiveSchemas, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.active_schemas));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipants, filters.maxParticipants, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipantsEcosystem, filters.maxParticipantsEcosystem, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_ecosystem));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipantsIssuerGrantor, filters.maxParticipantsIssuerGrantor, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_issuer_grantor));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipantsIssuer, filters.maxParticipantsIssuer, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_issuer));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipantsVerifierGrantor, filters.maxParticipantsVerifierGrantor, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_verifier_grantor));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipantsVerifier, filters.maxParticipantsVerifier, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_verifier));
-        filtered = this.applyRangeToRows(filtered, filters.minParticipantsHolder, filters.maxParticipantsHolder, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.participants_holder));
-        filtered = this.applyRangeToRows(filtered, filters.minWeight, filters.maxWeight, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.weight));
-        filtered = this.applyRangeToRows(filtered, filters.minIssued, filters.maxIssued, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.issued));
-        filtered = this.applyRangeToRows(filtered, filters.minVerified, filters.maxVerified, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.verified));
-        filtered = this.applyRangeToRows(filtered, filters.minEcosystemSlashEvents, filters.maxEcosystemSlashEvents, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.ecosystem_slash_events));
-        filtered = this.applyRangeToRows(filtered, filters.minNetworkSlashEvents, filters.maxNetworkSlashEvents, (r) => TrustRegistryDatabaseService.toFiniteNumber(r.network_slash_events));
+        filtered = this.applyRangeToRows(filtered, filters.minActiveSchemas, filters.maxActiveSchemas, (r) => EcosystemDatabaseService.toFiniteNumber(r.active_schemas));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipants, filters.maxParticipants, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsEcosystem, filters.maxParticipantsEcosystem, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants_ecosystem));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsIssuerGrantor, filters.maxParticipantsIssuerGrantor, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants_issuer_grantor));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsIssuer, filters.maxParticipantsIssuer, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants_issuer));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsVerifierGrantor, filters.maxParticipantsVerifierGrantor, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants_verifier_grantor));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsVerifier, filters.maxParticipantsVerifier, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants_verifier));
+        filtered = this.applyRangeToRows(filtered, filters.minParticipantsHolder, filters.maxParticipantsHolder, (r) => EcosystemDatabaseService.toFiniteNumber(r.participants_holder));
+        filtered = this.applyRangeToRows(filtered, filters.minWeight, filters.maxWeight, (r) => EcosystemDatabaseService.toFiniteNumber(r.weight));
+        filtered = this.applyRangeToRows(filtered, filters.minIssued, filters.maxIssued, (r) => EcosystemDatabaseService.toFiniteNumber(r.issued));
+        filtered = this.applyRangeToRows(filtered, filters.minVerified, filters.maxVerified, (r) => EcosystemDatabaseService.toFiniteNumber(r.verified));
+        filtered = this.applyRangeToRows(filtered, filters.minEcosystemSlashEvents, filters.maxEcosystemSlashEvents, (r) => EcosystemDatabaseService.toFiniteNumber(r.ecosystem_slash_events));
+        filtered = this.applyRangeToRows(filtered, filters.minNetworkSlashEvents, filters.maxNetworkSlashEvents, (r) => EcosystemDatabaseService.toFiniteNumber(r.network_slash_events));
         return filtered;
     }
 
@@ -2151,8 +2151,8 @@ export default class TrustRegistryDatabaseService extends BaseService {
         }
         const trIdRows = await knex("credential_schemas")
             .whereIn("id", schemaIds)
-            .distinct("tr_id");
-        const corpTrIds = trIdRows.map((r: { tr_id: number }) => r.tr_id);
+            .distinct("ecosystem_id");
+        const corpTrIds = trIdRows.map((r: { ecosystem_id: number }) => r.ecosystem_id);
 
         return [...new Set([...controllerIds, ...corpTrIds])];
     }

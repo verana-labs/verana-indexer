@@ -625,7 +625,7 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
   const height = overrides.height || 0;
   const baseRow: any = {
     credential_schema_id: row.id,
-    tr_id: row.tr_id ?? null,
+    ecosystem_id: row.ecosystem_id ?? null,
     json_schema: row.json_schema ?? null,
     title: row.title ?? null,
     description: row.description ?? null,
@@ -862,7 +862,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           await trx("credential_schemas")
             .where("id", finalRecord.id)
             .update(getCSStatsUpdateObject(stats));
-          await syncTrustRegistryStatsAndHistoryFromSchemaChange(trx, finalRecord.tr_id, blockHeight);
+          await syncTrustRegistryStatsAndHistoryFromSchemaChange(trx, finalRecord.ecosystem_id, blockHeight);
         } catch (statsError: any) {
           this.logger.warn(` Failed to update statistics for CS ${finalRecord.id}: ${statsError?.message || String(statsError)}`);
         }
@@ -1029,7 +1029,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         await knex("credential_schemas")
           .where("id", existing.id)
           .update(getCSStatsUpdateObject(stats));
-        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.tr_id, blockHeight);
+        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.ecosystem_id, blockHeight);
       } catch (statsError: any) {
         this.logger.warn(` Failed to update statistics for CS ${existing.id}: ${statsError?.message || String(statsError)}`);
       }
@@ -1123,7 +1123,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         await knex("credential_schemas")
           .where("id", id)
           .update(getCSStatsUpdateObject(stats));
-        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.tr_id, blockHeight);
+        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.ecosystem_id, blockHeight);
       } catch (statsError: any) {
         this.logger.warn(` Failed to update statistics for CS ${id}: ${statsError?.message || String(statsError)}`);
       }
@@ -1162,7 +1162,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       const payload: Record<string, unknown> = {
         id,
-        tr_id: schema.tr_id ?? schema.trId ?? null,
+        ecosystem_id: schema.ecosystem_id ?? schema.ecosystemId ?? null,
         json_schema: jsonSchemaStr,
         issuer_grantor_validation_validity_period: Number(schema.issuer_grantor_validation_validity_period ?? 0),
         verifier_grantor_validation_validity_period: Number(schema.verifier_grantor_validation_validity_period ?? 0),
@@ -1399,7 +1399,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
         const historicalSchema = {
           id: historyRecord.credential_schema_id,
-          tr_id: historyRecord.tr_id,
+          ecosystem_id: historyRecord.ecosystem_id,
           json_schema: storedSchemaString,
           title: historyRecord.title ?? undefined,
           description: historyRecord.description ?? undefined,
@@ -1525,7 +1525,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action({
     rest: "GET list",
     params: {
-      tr_id: { type: "number", optional: true },
+      ecosystem_id: { type: "number", optional: true },
       participant: { type: "any", optional: true },
       modified_after: { type: "string", optional: true },
       only_active: {
@@ -1565,7 +1565,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     },
   })
   async list(ctx: Context<{
-    tr_id?: number;
+    ecosystem_id?: number;
     participant?: string;
     modified_after?: string;
     only_active?: any;
@@ -1601,7 +1601,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   }>) {
     try {
       const {
-        tr_id: trId,
+        ecosystem_id: ecosystemId,
         participant,
         modified_after: modifiedAfter,
         only_active: onlyActive,
@@ -1763,7 +1763,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .whereIn("csh.credential_schema_id", schemaIdsAtHeight)
             .modify((qb) => {
               if (hasHeightColumn) qb.where("csh.height", "<=", blockHeight);
-              if (trId) qb.where("csh.tr_id", trId);
+              if (ecosystemId) qb.where("csh.ecosystem_id", ecosystemId);
               if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
               if (onlyActiveBool === true) qb.whereNull("csh.archived");
               if (effectiveIssuerOm !== undefined) qb.where("csh.issuer_onboarding_mode", effectiveIssuerOm);
@@ -1791,7 +1791,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .whereIn("csh.credential_schema_id", schemaIdsAtHeight)
             .modify((qb) => {
               if (hasHeightColumn) qb.where("csh.height", "<=", blockHeight);
-              if (trId) qb.where("csh.tr_id", trId);
+              if (ecosystemId) qb.where("csh.ecosystem_id", ecosystemId);
               if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
               if (onlyActiveBool === true) qb.whereNull("csh.archived");
               if (effectiveIssuerOm !== undefined) qb.where("csh.issuer_onboarding_mode", effectiveIssuerOm);
@@ -1810,7 +1810,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
             return {
               id: historyRecord.credential_schema_id,
-              tr_id: historyRecord.tr_id,
+              ecosystem_id: historyRecord.ecosystem_id,
               json_schema: storedSchemaString,
               title: historyRecord.title ?? undefined,
               description: historyRecord.description ?? undefined,
@@ -1837,7 +1837,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         type FilteredItem = {
           id: number;
-          tr_id: any;
+          ecosystem_id: any;
           json_schema: any;
           issuer_grantor_validation_validity_period: any;
           verifier_grantor_validation_validity_period: any;
@@ -2084,7 +2084,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
         query.whereIn("id", participantSchemaIds);
       }
-      if (trId) query.where("tr_id", trId);
+      if (ecosystemId) query.where("ecosystem_id", ecosystemId);
       applyHalfOpenRangeToQuery(query, "participants", minParticipants, maxParticipants);
       applyHalfOpenRangeToQuery(query, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
       applyHalfOpenRangeToQuery(query, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
@@ -2299,7 +2299,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     const schemaIdsFromController =
       controllerTrIds.length === 0
         ? []
-        : (await knex("credential_schemas").whereIn("tr_id", controllerTrIds).select("id")).map((r: { id: number }) => r.id);
+        : (await knex("credential_schemas").whereIn("ecosystem_id", controllerTrIds).select("id")).map((r: { id: number }) => r.id);
 
     const permPart = await resolvePermissionsParticipantColumn(knex);
     const corpRows = await knex("permissions").where(permPart, account).distinct("schema_id");
@@ -2321,7 +2321,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     let schemaIdsFromController: number[] = [];
     if (controllerTrIds.length > 0) {
       const cshRanked = knex("credential_schema_history")
-        .select("credential_schema_id", "tr_id")
+        .select("credential_schema_id", "ecosystem_id")
         .select(
           knex.raw(
             "ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"
@@ -2329,7 +2329,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         )
         .where("height", "<=", blockHeight)
         .as("ranked");
-      const latestCsh = await knex.from(cshRanked).where("rn", 1).whereIn("tr_id", controllerTrIds).select("credential_schema_id");
+      const latestCsh = await knex.from(cshRanked).where("rn", 1).whereIn("ecosystem_id", controllerTrIds).select("credential_schema_id");
       schemaIdsFromController = latestCsh.map((r: { credential_schema_id: number }) => r.credential_schema_id);
     }
 

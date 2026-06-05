@@ -206,17 +206,17 @@ export const SERVICE = {
       key: "CrawlTrustDepositService",
       path: "v1.CrawlTrustDepositService",
     },
-    TrustRegistryMessageProcessorService: {
-      key: "TrustRegistryMessageProcessorService",
-      path: "v1.TrustRegistryMessageProcessorService",
+    EcosystemMessageProcessorService: {
+      key: "EcosystemMessageProcessorService",
+      path: "v1.EcosystemMessageProcessorService",
     },
-    TrustRegistryHistoryService: {
-      key: "TrustRegistryHistoryService",
-      path: "v1.TrustRegistryHistoryService",
+    EcosystemHistoryService: {
+      key: "EcosystemHistoryService",
+      path: "v1.EcosystemHistoryService",
     },
-    TrustRegistryDatabaseService: {
-      key: "TrustRegistryDatabaseService",
-      path: "v1.TrustRegistryDatabaseService",
+    EcosystemDatabaseService: {
+      key: "EcosystemDatabaseService",
+      path: "v1.EcosystemDatabaseService",
     },
     CorporationMessageProcessorService: {
       key: "CorporationMessageProcessorService",
@@ -254,9 +254,9 @@ export const SERVICE = {
       key: "GenesisParamsService",
       path: "v1.GenesisParamsService",
     },
-    PermissionProcessService: {
-      key: "PermissionProcessService",
-      path: "v1.PermissionProcessService",
+    ParticipantProcessService: {
+      key: "ParticipantProcessService",
+      path: "v1.ParticipantProcessService",
     },
     PermAPIService: {
       key: "PermAPIService",
@@ -270,9 +270,9 @@ export const SERVICE = {
       key: "ProcessCredentialSchemaService",
       path: "v1.ProcessCredentialSchemaService",
     },
-    PermProcessorService: {
-      key: "PermProcessorService",
-      path: "v1.PermProcessorService",
+    ParticipantProcessorService: {
+      key: "ParticipantProcessorService",
+      path: "v1.ParticipantProcessorService",
     },
     MetricsApiService: {
       key: "MetricsApiService",

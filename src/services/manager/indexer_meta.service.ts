@@ -9,30 +9,30 @@ import { getIndexerVersion } from "../../common/utils/version";
 import { getLcdClient } from "../../common/utils/verana_client";
 import { Network } from "../../network";
 import {
-  VeranaTrustRegistryMessageTypes,
+  VeranaEcosystemMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaPermissionMessageTypes,
+  VeranaParticipantMessageTypes,
 } from "../../common/verana-message-types";
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
-  [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: "CreateTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry]: "UpdateTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: "ArchiveTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: "AddGovernanceFrameworkDocument",
-  [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion]: "IncreaseGovernanceFrameworkVersion",
+  [VeranaEcosystemMessageTypes.CreateEcosystem]: "CreateEcosystem",
+  [VeranaEcosystemMessageTypes.UpdateEcosystem]: "UpdateEcosystem",
+  [VeranaEcosystemMessageTypes.ArchiveEcosystem]: "ArchiveEcosystem",
+  [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: "AddGovernanceFrameworkDocument",
+  [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: "IncreaseGovernanceFrameworkVersion",
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: "CreateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
-  [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
-  [VeranaPermissionMessageTypes.SelfCreatePermission]: "SelfCreatePermission",
-  [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
-  [VeranaPermissionMessageTypes.RenewPermissionVP]: "RenewPermissionVP",
-  [VeranaPermissionMessageTypes.RevokePermission]: "RevokePermission",
-  [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: "SetPermissionVPToValidated",
-  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: "CreateOrUpdatePermissionSession",
-  [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: "SlashPermissionTrustDeposit",
-  [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit]: "RepayPermissionSlashedTrustDeposit",
-  [VeranaPermissionMessageTypes.CancelPermissionVPLastRequest]: "CancelPermissionVPLastRequest",
+  [VeranaParticipantMessageTypes.CreateRootParticipant]: "CreateRootParticipant",
+  [VeranaParticipantMessageTypes.SelfCreateParticipant]: "SelfCreateParticipant",
+  [VeranaParticipantMessageTypes.StartParticipantOP]: "StartParticipantOP",
+  [VeranaParticipantMessageTypes.RenewParticipantOP]: "RenewParticipantOP",
+  [VeranaParticipantMessageTypes.RevokeParticipant]: "RevokeParticipant",
+  [VeranaParticipantMessageTypes.SetParticipantOPToValidated]: "SetParticipantOPToValidated",
+  [VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession]: "CreateOrUpdateParticipantSession",
+  [VeranaParticipantMessageTypes.SlashParticipantTrustDeposit]: "SlashParticipantTrustDeposit",
+  [VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit]: "RepayParticipantSlashedTrustDeposit",
+  [VeranaParticipantMessageTypes.CancelParticipantOPLastRequest]: "CancelParticipantOPLastRequest",
 };
 
 function normalizeEventType(eventType: string): string {

@@ -3,8 +3,8 @@ import {
   VeranaCredentialSchemaMessageTypes,
   VeranaDelegationMessageTypes,
   VeranaDiMessageTypes,
-  VeranaPermissionMessageTypes,
-  VeranaTrustRegistryMessageTypes,
+  VeranaParticipantMessageTypes,
+  VeranaEcosystemMessageTypes,
 } from "../../common/verana-message-types";
 import { applyBlockHeightFilter, toIsoSeconds } from "./api_shared";
 import {
@@ -78,27 +78,27 @@ type EventMeta = {
 };
 
 const EVENT_META: Record<string, EventMeta> = {
-  [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: {
+  [VeranaEcosystemMessageTypes.CreateEcosystem]: {
     module: "trust-registry",
     action: "CreateNewTrustRegistry",
     entityType: "TrustRegistry",
   },
-  [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry]: {
+  [VeranaEcosystemMessageTypes.UpdateEcosystem]: {
     module: "trust-registry",
-    action: "UpdateTrustRegistry",
+    action: "UpdateEcosystem",
     entityType: "TrustRegistry",
   },
-  [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: {
+  [VeranaEcosystemMessageTypes.ArchiveEcosystem]: {
     module: "trust-registry",
-    action: "ArchiveTrustRegistry",
+    action: "ArchiveEcosystem",
     entityType: "TrustRegistry",
   },
-  [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: {
+  [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: {
     module: "trust-registry",
     action: "AddGovernanceFrameworkDocument",
     entityType: "GovernanceFrameworkDocument",
   },
-  [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion]: {
+  [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: {
     module: "trust-registry",
     action: "IncreaseActiveGFVersion",
     entityType: "GovernanceFrameworkVersion",
@@ -118,59 +118,59 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "ArchiveCredentialSchema",
     entityType: "CredentialSchema",
   },
-  [VeranaPermissionMessageTypes.StartPermissionVP]: {
+  [VeranaParticipantMessageTypes.StartParticipantOP]: {
     module: "permission",
-    action: "StartPermissionVP",
+    action: "StartParticipantOP",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.CreateRootPermission]: {
+  [VeranaParticipantMessageTypes.CreateRootParticipant]: {
     module: "permission",
-    action: "CreateRootPermission",
+    action: "CreateRootParticipant",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.SelfCreatePermission]: {
+  [VeranaParticipantMessageTypes.SelfCreateParticipant]: {
     module: "permission",
-    action: "SelfCreatePermission",
+    action: "SelfCreateParticipant",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.RenewPermissionVP]: {
+  [VeranaParticipantMessageTypes.RenewParticipantOP]: {
     module: "permission",
-    action: "RenewPermissionVP",
+    action: "RenewParticipantOP",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: {
+  [VeranaParticipantMessageTypes.SetParticipantOPToValidated]: {
     module: "permission",
-    action: "SetPermissionVPToValidated",
+    action: "SetParticipantOPToValidated",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.AdjustPermission]: {
+  [VeranaParticipantMessageTypes.SetParticipantEffectiveUntil]: {
     module: "permission",
-    action: "AdjustPermission",
+    action: "SetParticipantEffectiveUntil",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.RevokePermission]: {
+  [VeranaParticipantMessageTypes.RevokeParticipant]: {
     module: "permission",
-    action: "RevokePermission",
+    action: "RevokeParticipant",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: {
+  [VeranaParticipantMessageTypes.SlashParticipantTrustDeposit]: {
     module: "permission",
-    action: "SlashPermissionTrustDeposit",
+    action: "SlashParticipantTrustDeposit",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit]: {
+  [VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit]: {
     module: "permission",
-    action: "RepayPermissionSlashedTrustDeposit",
+    action: "RepayParticipantSlashedTrustDeposit",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.CancelPermissionVPLastRequest]: {
+  [VeranaParticipantMessageTypes.CancelParticipantOPLastRequest]: {
     module: "permission",
-    action: "CancelPermissionVPLastRequest",
+    action: "CancelParticipantOPLastRequest",
     entityType: "Permission",
   },
-  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: {
+  [VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession]: {
     module: "permission",
-    action: "CreateOrUpdatePermissionSession",
+    action: "CreateOrUpdateParticipantSession",
     entityType: "PermissionSession",
   },
   [VeranaDiMessageTypes.StoreDigest]: {
@@ -230,14 +230,14 @@ async function loadSchemaRelation(schemaId: number | null | undefined): Promise<
 }> {
   if (!schemaId) return {};
   const schema = await knex("credential_schemas as cs")
-    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
+    .leftJoin("trust_registry as tr", "tr.id", "cs.ecosystem_id")
     .where("cs.id", schemaId)
-    .select("cs.id as schema_id", "cs.tr_id", "tr.did as tr_did")
+    .select("cs.id as schema_id", "cs.ecosystem_id", "tr.did as tr_did")
     .first();
   if (!schema) return { schemaId: String(schemaId) };
   return {
     schemaId: String(schema.schema_id ?? schemaId),
-    trId: schema.tr_id != null ? String(schema.tr_id) : undefined,
+    trId: schema.ecosystem_id != null ? String(schema.ecosystem_id) : undefined,
     trDid: normalizeDid(schema.tr_did),
   };
 }
@@ -253,14 +253,14 @@ async function loadPermissionRelation(permissionId: number | null | undefined): 
   if (!permissionId) return {};
   const perm = await knex("permissions as p")
     .leftJoin("credential_schemas as cs", "cs.id", "p.schema_id")
-    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
-    .leftJoin("permissions as validator", "validator.id", "p.validator_perm_id")
+    .leftJoin("trust_registry as tr", "tr.id", "cs.ecosystem_id")
+    .leftJoin("permissions as validator", "validator.id", "p.validator_participant_id")
     .where("p.id", permissionId)
     .select(
       "p.id as permission_id",
       "p.did as permission_did",
       "p.schema_id",
-      "cs.tr_id",
+      "cs.ecosystem_id",
       "tr.did as tr_did",
       "validator.did as validator_permission_did"
     )
@@ -270,7 +270,7 @@ async function loadPermissionRelation(permissionId: number | null | undefined): 
     permissionId: String(perm.permission_id ?? permissionId),
     permissionDid: normalizeDid(perm.permission_did),
     schemaId: perm.schema_id != null ? String(perm.schema_id) : undefined,
-    trId: perm.tr_id != null ? String(perm.tr_id) : undefined,
+    trId: perm.ecosystem_id != null ? String(perm.ecosystem_id) : undefined,
     trDid: normalizeDid(perm.tr_did),
     validatorPermissionDid: normalizeDid(perm.validator_permission_did),
   };
@@ -318,7 +318,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   if (meta.module === "permission") {
     const rawPermissionId = readNumber(row.content, ["permission_id", "permissionId", "perm_id", "permId", "id"]);
     const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const rawValidatorPermId = readNumber(row.content, ["validator_perm_id", "validatorPermId"]);
+    const rawValidatorPermId = readNumber(row.content, ["validator_participant_id", "validatorParticipantId"]);
     const relation = await loadPermissionRelation(rawPermissionId);
     permissionId = relation.permissionId ?? (rawPermissionId ? String(rawPermissionId) : entityId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);

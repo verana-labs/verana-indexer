@@ -368,10 +368,10 @@ function createRoute(
         "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
       }),
       createRoute("/verana/tr/v1", {
-        "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
-        "GET list": `${SERVICE.V1.TrustRegistryDatabaseService.path}.listTrustRegistries`,
-        "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
-        "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`,
+        "GET get/:tr_id": `${SERVICE.V1.EcosystemDatabaseService.path}.getTrustRegistry`,
+        "GET list": `${SERVICE.V1.EcosystemDatabaseService.path}.listTrustRegistries`,
+        "GET params": `${SERVICE.V1.EcosystemDatabaseService.path}.getParams`,
+        "GET history/:tr_id": `${SERVICE.V1.EcosystemHistoryService.path}.getTRHistory`,
       }),
       createRoute("/verana/co/v1", {
         "GET get/:id": `${SERVICE.V1.CorporationApiService.path}.getCorporation`,

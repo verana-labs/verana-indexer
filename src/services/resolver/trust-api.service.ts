@@ -112,7 +112,7 @@ function toPermissionChainLink(p: Record<string, unknown>): PermissionChainLink 
   const state = String(p.perm_state ?? p.permState ?? "").toUpperCase() || "UNKNOWN";
   return {
     permission_id: Number.isFinite(id) ? id : 0,
-    type: String(p.type ?? ""),
+    type: String(p.role ?? ""),
     did: (p.did as string) ?? (p.grantee as string) ?? null,
     deposit: formatDeposit(p.deposit),
     perm_state: state,
@@ -542,8 +542,8 @@ export class TrustApiService extends BaseService {
       const perm = raw?.permission;
       if (!perm || typeof perm !== "object") break;
       chain.push(toPermissionChainLink(perm as Record<string, unknown>));
-      const typ = String(perm.type ?? "").toUpperCase();
-      const parent = perm.validator_perm_id != null ? Number(perm.validator_perm_id) : null;
+      const typ = String(perm.role ?? "").toUpperCase();
+      const parent = perm.validator_participant_id != null ? Number(perm.validator_participant_id) : null;
       if (typ === "ECOSYSTEM" || !parent || !Number.isFinite(parent)) break;
       id = parent;
     }
@@ -680,7 +680,7 @@ export class TrustApiService extends BaseService {
     for (const sid of schemaIds) {
       const permResp = (await this.broker.call(
         `${SERVICE.V1.PermAPIService.path}.listPermissions`,
-        { did: args.did, schema_id: sid, type: listType, only_valid: true, response_max_size: 32 },
+        { did: args.did, schema_id: sid, role: listType, only_valid: true, response_max_size: 32 },
         meta
       )) as { permissions?: Array<Record<string, unknown>> };
       const hit = (permResp?.permissions ?? []).find((p) => String(p.perm_state ?? "").toUpperCase() === "ACTIVE");
@@ -724,7 +724,7 @@ export class TrustApiService extends BaseService {
     let totalFeeUnits = 0;
     const beneficiaries = benPerms.map((p) => {
       const pid = Number(p.id);
-      const typ = String(p.type ?? "");
+      const typ = String(p.role ?? "");
       if (isIssuer) {
         const iss = Number(p.issuance_fees ?? 0);
         totalFeeUnits += iss;
@@ -800,7 +800,7 @@ export class TrustApiService extends BaseService {
 
     const permissionObj: Record<string, unknown> = {
       id: Number(leaf.id),
-      type: leaf.type,
+      type: leaf.role,
       schema_id: resolvedSchemaId,
       did: (leaf.did as string) ?? (leaf.grantee as string),
       deposit: this.formatUvnaAmount(leaf.deposit),
@@ -957,7 +957,7 @@ export class TrustApiService extends BaseService {
       );
     }
 
-    const schemaRows = await knex("credential_schemas").select("id", "json_schema").where({ tr_id: Number((trRow as any).id) }).whereNull("archived");
+    const schemaRows = await knex("credential_schemas").select("id", "json_schema").where({ ecosystem_id: Number((trRow as any).id) }).whereNull("archived");
 
     const permissions: Array<Record<string, unknown>> = [];
     for (const s of schemaRows as Array<{ id?: unknown; json_schema?: unknown }>) {
@@ -981,7 +981,7 @@ export class TrustApiService extends BaseService {
         permissions.push({
           permission_id: Number(p.id),
           did: (p.did as string) ?? (p.grantee as string) ?? did,
-          type: String(p.type ?? ""),
+          type: String(p.role ?? ""),
           schema_id: schemaId,
           vtjsc_id: vtjscId,
           deposit: this.formatUvnaAmount(p.deposit),

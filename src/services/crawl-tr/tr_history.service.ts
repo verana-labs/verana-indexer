@@ -9,10 +9,10 @@ import { isValidISO8601UTC } from "../../common/utils/date_utils";
 import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
 
 @Service({
-  name: SERVICE.V1.TrustRegistryHistoryService.key,
+  name: SERVICE.V1.EcosystemHistoryService.key,
   version: 1,
 })
-export default class TrustRegistryHistoryService extends BaseService {
+export default class EcosystemHistoryService extends BaseService {
   public constructor(public broker: ServiceBroker) {
     super(broker);
   }
@@ -279,7 +279,7 @@ export default class TrustRegistryHistoryService extends BaseService {
     });
 
     return deduped.map((row: any) => {
-      const msg = row.event_type === "Create" ? "CreateTrustRegistry" : row.event_type === "Archive" ? "ArchiveTrustRegistry" : row.event_type;
+      const msg = row.event_type === "Create" ? "CreateEcosystem" : row.event_type === "Archive" ? "ArchiveEcosystem" : row.event_type;
       let versions = Array.isArray(row.versions_snapshot) ? row.versions_snapshot : [];
       versions = versions.map((v: any) => ({
         id: v.id ?? v.version_id,
@@ -419,11 +419,11 @@ export default class TrustRegistryHistoryService extends BaseService {
           delete cleanedChanges.added_governance_framework_versions;
           delete cleanedChanges.added_governance_framework_documents;
 
-          if ((addedGfvs && addedGfvs.length > 0) || (addedGfds && addedGfds.length > 0) || item.msg === "CreateTrustRegistry") {
+          if ((addedGfvs && addedGfvs.length > 0) || (addedGfds && addedGfds.length > 0) || item.msg === "CreateEcosystem") {
             if (blockHeight && !Number.isNaN(blockHeight)) {
               let versionsToAdd: any[] = [];
 
-              if (item.msg === "CreateTrustRegistry") {
+              if (item.msg === "CreateEcosystem") {
                 versionsToAdd = await this.buildVersionsAtHeight(trId, blockHeight);
               } else if ((addedGfvs && addedGfvs.length > 0) || (addedGfds && addedGfds.length > 0)) {
                 versionsToAdd = await this.buildChangedVersions(

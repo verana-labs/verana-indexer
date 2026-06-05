@@ -91,7 +91,7 @@ async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, 
 
   const query = knex("credential_schemas")
     .select("*")
-    .whereIn("tr_id", trIds)
+    .whereIn("ecosystem_id", trIds)
     .orderBy("id", "asc");
 
   if (tables.credentialSchemasHasHeight) {
@@ -119,7 +119,7 @@ async function fetchPermissionsAtHeight(args: {
       if (tables.hasCredentialSchemas && schemaTrIds.length > 0) {
         const schemaQuery = knex("credential_schemas")
           .select("id")
-          .whereIn("tr_id", schemaTrIds);
+          .whereIn("ecosystem_id", schemaTrIds);
         if (tables.credentialSchemasHasHeight) {
           schemaQuery.andWhere("height", "<=", blockHeight);
         }

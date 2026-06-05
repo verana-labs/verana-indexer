@@ -13,7 +13,7 @@ import knex from "../../common/utils/db_connection";
 import { Network } from "../../network";
 import { hasMeaningfulChanges, recordModuleParamsHistorySafe } from "../../common/utils/params_utils";
 import { clearParamsCache } from "../../common/utils/params_service";
-import { VeranaCorporationMessageTypes, VeranaCredentialSchemaMessageTypes, VeranaGovernanceFrameworkMessageTypes, VeranaPermissionMessageTypes, VeranaTrustDepositMessageTypes, VeranaTrustRegistryMessageTypes } from "../../common/verana-message-types";
+import { VeranaCorporationMessageTypes, VeranaCredentialSchemaMessageTypes, VeranaGovernanceFrameworkMessageTypes, VeranaParticipantMessageTypes, VeranaTrustDepositMessageTypes, VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 
 @Service({
   name: SERVICE.V1.GenesisParamsService.key,
@@ -352,11 +352,11 @@ export default class GenesisParamsService extends BullableService {
     let module: string;
     if (type === VeranaCredentialSchemaMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.CS;
-    } else if (type === VeranaPermissionMessageTypes.UpdateParams) {
+    } else if (type === VeranaParticipantMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.PERM;
     } else if (type === VeranaTrustDepositMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.TD;
-    } else if (type === VeranaTrustRegistryMessageTypes.UpdateParams) {
+    } else if (type === VeranaEcosystemMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.TR;
     } else if (type === VeranaCorporationMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.CO;

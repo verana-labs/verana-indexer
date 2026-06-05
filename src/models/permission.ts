@@ -24,7 +24,7 @@ export default class Permission extends BaseModel {
 
     id!: number;
     schema_id!: number;
-    type!: PermissionType;
+    role!: PermissionType;
     did?: string;
     corporation!: string;
     created!: Date;
@@ -42,14 +42,14 @@ export default class Permission extends BaseModel {
     slashed_deposit!: number;
     repaid_deposit!: number;
     revoked?: Date | null;
-    validator_perm_id?: number | null; // Can be null for ECOSYSTEM permissions
-    vp_state?: ValidationState;
-    vp_exp?: Date | null;
-    vp_last_state_change?: string | null;
-    vp_validator_deposit!: number;
-    vp_current_fees!: number;
-    vp_current_deposit!: number;
-    vp_summary_digest?: string;
+    validator_participant_id?: number | null; // Can be null for ECOSYSTEM permissions
+    op_state?: ValidationState;
+    op_exp?: Date | null;
+    op_last_state_change?: string | null;
+    op_validator_deposit!: number;
+    op_current_fees!: number;
+    op_current_deposit!: number;
+    op_summary_digest?: string;
     vs_operator?: string | null;
     adjusted?: Date | string | null;
     vs_operator_authz_enabled?: boolean;
@@ -78,12 +78,12 @@ export default class Permission extends BaseModel {
     static get jsonSchema() {
         return {
             type: 'object',
-            required: ['id', 'schema_id', 'type', 'corporation', 'created', 'modified'],
+            required: ['id', 'schema_id', 'role', 'corporation', 'created', 'modified'],
             additionalProperties: false,
             properties: {
                 id: { type: 'integer' },
                 schema_id: { type: 'integer' },
-                type: {
+                role: {
                     type: 'string',
                     enum: ['UNSPECIFIED', 'ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER']
                 },
@@ -95,10 +95,10 @@ export default class Permission extends BaseModel {
                 deposit: { type: 'integer' },
                 slashed_deposit: { type: 'integer' },
                 repaid_deposit: { type: 'integer' },
-                vp_validator_deposit: { type: 'integer' },
-                vp_current_fees: { type: 'integer' },
-                vp_current_deposit: { type: 'integer' },
-                validator_perm_id: { type: ['integer', 'null'] },
+                op_validator_deposit: { type: 'integer' },
+                op_current_fees: { type: 'integer' },
+                op_current_deposit: { type: 'integer' },
+                validator_participant_id: { type: ['integer', 'null'] },
                 created: { type: 'string' },
                 modified: { type: 'string' },
                 adjusted: { type: ['string', 'null'] },
@@ -107,13 +107,13 @@ export default class Permission extends BaseModel {
                 effective_from: { type: ['string', 'null'] },
                 effective_until: { type: ['string', 'null'] },
                 revoked: { type: ['string', 'null'] },
-                vp_exp: { type: ['string', 'null'] },
-                vp_last_state_change: { type: ['string', 'null'] },
-                vp_state: {
+                op_exp: { type: ['string', 'null'] },
+                op_last_state_change: { type: ['string', 'null'] },
+                op_state: {
                     type: 'string',
                     enum: ['VALIDATION_STATE_UNSPECIFIED', 'PENDING', 'VALIDATED', 'TERMINATED']
                 },
-                vp_summary_digest: { type: 'string', maxLength: 512 },
+                op_summary_digest: { type: 'string', maxLength: 512 },
                 vs_operator: { type: ['string', 'null'] },
                 vs_operator_authz_enabled: { type: ['boolean', 'null'] },
                 vs_operator_authz_spend_limit: {
@@ -187,7 +187,7 @@ export default class Permission extends BaseModel {
                 relation: Model.BelongsToOneRelation,
                 modelClass: Permission,
                 join: {
-                    from: 'permissions.validator_perm_id',
+                    from: 'permissions.validator_participant_id',
                     to: 'permissions.id'
                 }
             },
@@ -196,7 +196,7 @@ export default class Permission extends BaseModel {
                 modelClass: Permission,
                 join: {
                     from: 'permissions.id',
-                    to: 'permissions.validator_perm_id'
+                    to: 'permissions.validator_participant_id'
                 }
             },
             sessions: {
@@ -221,7 +221,7 @@ export default class Permission extends BaseModel {
         if (this.revoked) return false;
         if (this.slashed && !this.repaid) return false;
 
-        return this.vp_state === 'VALIDATED' || this.type === 'ECOSYSTEM';
+        return this.op_state === 'VALIDATED' || this.role === 'ECOSYSTEM';
     }
 
     isExpired(): boolean {
@@ -233,15 +233,15 @@ export default class Permission extends BaseModel {
         // Implementation based on MOD-PERM-MSG-1-2-2 rules
         switch (applicantType) {
             case 'ISSUER':
-                return this.type === 'ISSUER_GRANTOR' || this.type === 'ECOSYSTEM';
+                return this.role === 'ISSUER_GRANTOR' || this.role === 'ECOSYSTEM';
             case 'ISSUER_GRANTOR':
-                return this.type === 'ECOSYSTEM';
+                return this.role === 'ECOSYSTEM';
             case 'VERIFIER':
-                return this.type === 'VERIFIER_GRANTOR' || this.type === 'ECOSYSTEM';
+                return this.role === 'VERIFIER_GRANTOR' || this.role === 'ECOSYSTEM';
             case 'VERIFIER_GRANTOR':
-                return this.type === 'ECOSYSTEM';
+                return this.role === 'ECOSYSTEM';
             case 'HOLDER':
-                return this.type === 'ISSUER';
+                return this.role === 'ISSUER';
             default:
                 return false;
         }
@@ -271,8 +271,8 @@ export default class Permission extends BaseModel {
         const ancestors: Permission[] = [];
         let currentPerm: Permission | undefined = this as Permission;
 
-        while (currentPerm?.validator_perm_id) {
-            const parent = await Permission.query().findById(currentPerm.validator_perm_id);
+        while (currentPerm?.validator_participant_id) {
+            const parent = await Permission.query().findById(currentPerm.validator_participant_id);
             if (!parent) break;
             ancestors.push(parent);
             currentPerm = parent;

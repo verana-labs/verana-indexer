@@ -409,7 +409,7 @@ export default class MetricsApiService extends BaseService {
           .select(
             "ph.permission_id",
             "ph.corporation",
-            "ph.type",
+            "ph.role",
             "ph.repaid",
             "ph.slashed",
             "ph.revoked",
@@ -426,7 +426,7 @@ export default class MetricsApiService extends BaseService {
           .select(
             "ph.permission_id",
             "ph.corporation",
-            "ph.type",
+            "ph.role",
             "ph.repaid",
             "ph.slashed",
             "ph.revoked",
@@ -457,12 +457,12 @@ export default class MetricsApiService extends BaseService {
           .clone()
           .select(
             knex.raw("COUNT(DISTINCT corporation) as participants"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ECOSYSTEM') as participants_ecosystem"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ISSUER') as participants_issuer"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'VERIFIER') as participants_verifier"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'HOLDER') as participants_holder")
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'ECOSYSTEM') as participants_ecosystem"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'ISSUER') as participants_issuer"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'VERIFIER') as participants_verifier"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'HOLDER') as participants_holder")
           )
           .first();
       } else {
@@ -472,8 +472,8 @@ export default class MetricsApiService extends BaseService {
           .first();
         participantsByTypeAgg = await activePermBaseQuery
           .clone()
-          .groupBy("type")
-          .select("type")
+          .groupBy("role")
+          .select("role")
           .countDistinct("corporation as participants");
       }
 
@@ -488,12 +488,12 @@ export default class MetricsApiService extends BaseService {
       if (!IS_PG_CLIENT) {
         for (const row of participantsByTypeAgg as any[]) {
           const count = Number(row?.participants || row?.count || row?.count_distinct || 0);
-          if (row.type === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
-          if (row.type === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
-          if (row.type === "ISSUER") participantsByType.participants_issuer = count;
-          if (row.type === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
-          if (row.type === "VERIFIER") participantsByType.participants_verifier = count;
-          if (row.type === "HOLDER") participantsByType.participants_holder = count;
+          if (row.role === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
+          if (row.role === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
+          if (row.role === "ISSUER") participantsByType.participants_issuer = count;
+          if (row.role === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
+          if (row.role === "VERIFIER") participantsByType.participants_verifier = count;
+          if (row.role === "HOLDER") participantsByType.participants_holder = count;
         }
       }
 

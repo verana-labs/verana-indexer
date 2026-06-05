@@ -14,10 +14,10 @@ export interface PermissionData {
   revoked?: string | null;
   effective_from?: string | null;
   effective_until?: string | null;
-  type: PermissionType;
-  vp_state?: ValidationState;
-  vp_exp?: string | null;
-  validator_perm_id?: string | null;
+  role: PermissionType;
+  op_state?: ValidationState;
+  op_exp?: string | null;
+  validator_participant_id?: string | null;
 }
 
 export interface SchemaData {
@@ -33,10 +33,10 @@ export const PENDING_FLAT_VP_PENDING_PERM_STATES: ReadonlySet<PermState> = new S
 ]);
 
 export function pendingFlatMatchesVpPendingWithEligiblePermState(perm: {
-  vp_state?: string | null;
+  op_state?: string | null;
   perm_state?: string | null;
 }): boolean {
-  if (String(perm.vp_state ?? "").toUpperCase() !== "PENDING") return false;
+  if (String(perm.op_state ?? "").toUpperCase() !== "PENDING") return false;
   const ps = perm.perm_state as PermState | undefined;
   return ps !== undefined && PENDING_FLAT_VP_PENDING_PERM_STATES.has(ps);
 }
@@ -155,13 +155,13 @@ export function calculateCorporationAvailableActions(
   now: Date = new Date()
 ): CorporationAction[] {
   const actions: Set<CorporationAction> = new Set();
-  const type = normalizePermissionType(perm.type);
-  const vpState = normalizeVpState(perm.vp_state);
+  const type = normalizePermissionType(perm.role);
+  const opState = normalizeVpState(perm.op_state);
   const permState = calculatePermState(perm, now);
   const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode);
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode);
-  const vpExp = perm.vp_exp ? new Date(perm.vp_exp) : null;
-  const isVpExpired = vpExp !== null && !Number.isNaN(vpExp.getTime()) && vpExp < now;
+  const opExp = perm.op_exp ? new Date(perm.op_exp) : null;
+  const isVpExpired = opExp !== null && !Number.isNaN(opExp.getTime()) && opExp < now;
 
   const isValidatorActive = validatorPermState === "ACTIVE";
   if (isIssuerType(type)) {
@@ -170,14 +170,14 @@ export function calculateCorporationAvailableActions(
       } else if (permState === "SLASHED") {
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "VALIDATED" && !isVpExpired) {
+        if (opState === "VALIDATED" && !isVpExpired) {
           if (isValidatorActive) {
             actions.add("VP_RENEW");
           }
           if (permState === "ACTIVE" || permState === "FUTURE") {
             actions.add("PERM_REVOKE");
           }
-        } else if (vpState === "PENDING") {
+        } else if (opState === "PENDING") {
           actions.add("VP_CANCEL");
           if (permState === "ACTIVE" || permState === "FUTURE") {
             actions.add("PERM_REVOKE");
@@ -196,21 +196,21 @@ export function calculateCorporationAvailableActions(
   }
 
   if (isVerifierType(type)) {
-    const inVpFlow = vpState !== null && vpState !== "VALIDATION_STATE_UNSPECIFIED";
+    const inVpFlow = opState !== null && opState !== "VALIDATION_STATE_UNSPECIFIED";
     const useVpFlowRules = verifierMode === "GRANTOR_VALIDATION" || verifierMode === "ECOSYSTEM" || inVpFlow;
     if (useVpFlowRules) {
       if (permState === "REPAID" || permState === "REVOKED") {
       } else if (permState === "SLASHED") {
         actions.add("PERM_REPAY");
       } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "VALIDATED" && !isVpExpired) {
+        if (opState === "VALIDATED" && !isVpExpired) {
           if (isValidatorActive) {
             actions.add("VP_RENEW");
           }
           if (permState === "ACTIVE" || permState === "FUTURE") {
             actions.add("PERM_REVOKE");
           }
-        } else if (vpState === "PENDING") {
+        } else if (opState === "PENDING") {
           actions.add("VP_CANCEL");
           if (permState === "ACTIVE" || permState === "FUTURE") {
             actions.add("PERM_REVOKE");
@@ -233,14 +233,14 @@ export function calculateCorporationAvailableActions(
     } else if (permState === "SLASHED") {
       actions.add("PERM_REPAY");
     } else if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-      if (vpState === "VALIDATED" && !isVpExpired) {
+      if (opState === "VALIDATED" && !isVpExpired) {
         if (isValidatorActive) {
           actions.add("VP_RENEW");
         }
         if (permState === "ACTIVE" || permState === "FUTURE") {
           actions.add("PERM_REVOKE");
         }
-      } else if (vpState === "PENDING") {
+      } else if (opState === "PENDING") {
         actions.add("VP_CANCEL");
         if (permState === "ACTIVE" || permState === "FUTURE") {
           actions.add("PERM_REVOKE");
@@ -270,12 +270,12 @@ export function calculateValidatorAvailableActions(
   now: Date = new Date()
 ): ValidatorAction[] {
   const actions: Set<ValidatorAction> = new Set();
-  const type = normalizePermissionType(perm.type);
-  const vpState = normalizeVpState(perm.vp_state);
+  const type = normalizePermissionType(perm.role);
+  const opState = normalizeVpState(perm.op_state);
   const permState = calculatePermState(perm, now);
   const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode);
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode);
-  const vpExp = perm.vp_exp ? new Date(perm.vp_exp) : null;
+  const opExp = perm.op_exp ? new Date(perm.op_exp) : null;
   if (isIssuerType(type)) {
     if (issuerMode === "GRANTOR_VALIDATION" || issuerMode === "ECOSYSTEM") {
       actions.add("PERM_SLASH");
@@ -286,12 +286,12 @@ export function calculateValidatorAvailableActions(
       }
       
       if (permState === "ACTIVE" || permState === "FUTURE") {
-        if (vpState === "VALIDATED" && vpExp && !Number.isNaN(vpExp.getTime())) {
+        if (opState === "VALIDATED" && opExp && !Number.isNaN(opExp.getTime())) {
         }
       }
       
       if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "PENDING") {
+        if (opState === "PENDING") {
           actions.add("VP_SET_VALIDATED");
         }
       }
@@ -299,7 +299,7 @@ export function calculateValidatorAvailableActions(
   }
 
   if (isVerifierType(type)) {
-    const inVpFlow = vpState !== null && vpState !== "VALIDATION_STATE_UNSPECIFIED";
+    const inVpFlow = opState !== null && opState !== "VALIDATION_STATE_UNSPECIFIED";
     const useVpFlowRules = verifierMode === "GRANTOR_VALIDATION" || verifierMode === "ECOSYSTEM" || inVpFlow;
     if (useVpFlowRules) {
       actions.add("PERM_SLASH");
@@ -310,12 +310,12 @@ export function calculateValidatorAvailableActions(
       }
 
       if (permState === "ACTIVE" || permState === "FUTURE") {
-        if (vpState === "VALIDATED" && vpExp && !Number.isNaN(vpExp.getTime())) {
+        if (opState === "VALIDATED" && opExp && !Number.isNaN(opExp.getTime())) {
         }
       }
 
       if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-        if (vpState === "PENDING") {
+        if (opState === "PENDING") {
           actions.add("VP_SET_VALIDATED");
         }
       }
@@ -331,12 +331,12 @@ export function calculateValidatorAvailableActions(
     }
     
     if (permState === "ACTIVE" || permState === "FUTURE") {
-      if (vpState === "VALIDATED" && vpExp && !Number.isNaN(vpExp.getTime())) {
+      if (opState === "VALIDATED" && opExp && !Number.isNaN(opExp.getTime())) {
       }
     }
     
     if (permState === "ACTIVE" || permState === "FUTURE" || permState === "INACTIVE") {
-      if (vpState === "PENDING") {
+      if (opState === "PENDING") {
         actions.add("VP_SET_VALIDATED");
       }
     }

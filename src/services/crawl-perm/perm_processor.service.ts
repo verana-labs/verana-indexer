@@ -4,7 +4,7 @@ import {
 } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
 import BullableService from "../../base/bullable.service";
-import { VeranaPermissionMessageTypes } from "../../common/verana-message-types";
+import { VeranaParticipantMessageTypes } from "../../common/verana-message-types";
 import { SERVICE } from "../../common";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
@@ -17,10 +17,10 @@ import {
 
 
 @Service({
-  name: SERVICE.V1.PermProcessorService.key,
+  name: SERVICE.V1.ParticipantProcessorService.key,
   version: 1,
 })
-export default class PermProcessorService extends BullableService {
+export default class ParticipantProcessorService extends BullableService {
   private processorBase: MessageProcessorBase;
   private _isFreshStart: boolean = false;
 
@@ -59,22 +59,22 @@ export default class PermProcessorService extends BullableService {
 
       const priority = (type: string | undefined) => {
         switch (type) {
-          case VeranaPermissionMessageTypes.CreateRootPermission:
-          case VeranaPermissionMessageTypes.SelfCreatePermission:
+          case VeranaParticipantMessageTypes.CreateRootParticipant:
+          case VeranaParticipantMessageTypes.SelfCreateParticipant:
             return 1;
-          case VeranaPermissionMessageTypes.AdjustPermission:
-          case VeranaPermissionMessageTypes.RevokePermission:
+          case VeranaParticipantMessageTypes.SetParticipantEffectiveUntil:
+          case VeranaParticipantMessageTypes.RevokeParticipant:
             return 2;
-          case VeranaPermissionMessageTypes.StartPermissionVP:
+          case VeranaParticipantMessageTypes.StartParticipantOP:
             return 3;
-          case VeranaPermissionMessageTypes.RenewPermissionVP:
-          case VeranaPermissionMessageTypes.CancelPermissionVPLastRequest:
+          case VeranaParticipantMessageTypes.RenewParticipantOP:
+          case VeranaParticipantMessageTypes.CancelParticipantOPLastRequest:
             return 4;
-          case VeranaPermissionMessageTypes.SetPermissionVPToValidated:
+          case VeranaParticipantMessageTypes.SetParticipantOPToValidated:
             return 5;
-          case VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession:
-          case VeranaPermissionMessageTypes.SlashPermissionTrustDeposit:
-          case VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
+          case VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession:
+          case VeranaParticipantMessageTypes.SlashParticipantTrustDeposit:
+          case VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit:
             return 6;
           default:
             return 99;
@@ -111,8 +111,8 @@ export default class PermProcessorService extends BullableService {
 
        
         if (
-          (msg.type === VeranaPermissionMessageTypes.CreateRootPermission
-            || msg.type === VeranaPermissionMessageTypes.SelfCreatePermission)
+          (msg.type === VeranaParticipantMessageTypes.CreateRootParticipant
+            || msg.type === VeranaParticipantMessageTypes.SelfCreateParticipant)
           && (payload as any)?.id == null
         ) {
           const impacted = extractImpactedPermissionIds(msg as PermissionMessagePayload);
@@ -121,7 +121,7 @@ export default class PermProcessorService extends BullableService {
           }
         }
         if (
-          msg.type === VeranaPermissionMessageTypes.StartPermissionVP
+          msg.type === VeranaParticipantMessageTypes.StartParticipantOP
           && (payload as any)?.id == null
         ) {
           const vpNewId = extractStartPermissionVpNewPermissionId(
@@ -134,66 +134,66 @@ export default class PermProcessorService extends BullableService {
 
         let result: any;
         switch (msg.type) {
-          case VeranaPermissionMessageTypes.CreateRootPermission:
-            result = await this.broker.call("permIngest.handleMsgCreateRootPermission", {
+          case VeranaParticipantMessageTypes.CreateRootParticipant:
+            result = await this.broker.call("participantIngest.handleMsgCreateRootParticipant", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.SelfCreatePermission:
-            result = await this.broker.call("permIngest.handleMsgSelfCreatePermission", {
+          case VeranaParticipantMessageTypes.SelfCreateParticipant:
+            result = await this.broker.call("participantIngest.handleMsgSelfCreateParticipant", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.AdjustPermission:
-            result = await this.broker.call("permIngest.handleMsgAdjustPermission", {
+          case VeranaParticipantMessageTypes.SetParticipantEffectiveUntil:
+            result = await this.broker.call("participantIngest.handleMsgSetParticipantEffectiveUntil", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.RevokePermission:
-            result = await this.broker.call("permIngest.handleMsgRevokePermission", {
+          case VeranaParticipantMessageTypes.RevokeParticipant:
+            result = await this.broker.call("participantIngest.handleMsgRevokeParticipant", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.StartPermissionVP:
-            result = await this.broker.call("permIngest.handleMsgStartPermissionVP", {
+          case VeranaParticipantMessageTypes.StartParticipantOP:
+            result = await this.broker.call("participantIngest.handleMsgStartParticipantOP", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.SetPermissionVPToValidated:
+          case VeranaParticipantMessageTypes.SetParticipantOPToValidated:
             result = await this.broker.call(
-              "permIngest.handleMsgSetPermissionVPToValidated",
+              "participantIngest.handleMsgSetParticipantOPToValidated",
               { data: payload }
             );
             if (result && result.success === false) {
-              this.logger.warn(` SetPermissionVPToValidated failed for id=${payload.id}: ${result.reason}`);
+              this.logger.warn(` SetParticipantOPToValidated failed for id=${payload.id}: ${result.reason}`);
             }
             break;
-          case VeranaPermissionMessageTypes.RenewPermissionVP:
-            result = await this.broker.call("permIngest.handleMsgRenewPermissionVP", {
+          case VeranaParticipantMessageTypes.RenewParticipantOP:
+            result = await this.broker.call("participantIngest.handleMsgRenewParticipantOP", {
               data: payload,
             });
             break;
-          case VeranaPermissionMessageTypes.CancelPermissionVPLastRequest:
+          case VeranaParticipantMessageTypes.CancelParticipantOPLastRequest:
             result = await this.broker.call(
-              "permIngest.handleMsgCancelPermissionVPLastRequest",
+              "participantIngest.handleMsgCancelParticipantOPLastRequest",
               { data: payload }
             );
             break;
-          case VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession:
+          case VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession:
             result = await this.broker.call(
-              "permIngest.handleMsgCreateOrUpdatePermissionSession",
+              "participantIngest.handleMsgCreateOrUpdateParticipantSession",
               { data: payload }
             );
             break;
-          case VeranaPermissionMessageTypes.SlashPermissionTrustDeposit:
+          case VeranaParticipantMessageTypes.SlashParticipantTrustDeposit:
             result = await this.broker.call(
-              "permIngest.handleMsgSlashPermissionTrustDeposit",
+              "participantIngest.handleMsgSlashParticipantTrustDeposit",
               { data: payload }
             );
             break;
-          case VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit:
+          case VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit:
             result = await this.broker.call(
-              "permIngest.handleMsgRepayPermissionSlashedTrustDeposit",
+              "participantIngest.handleMsgRepayParticipantSlashedTrustDeposit",
               { data: payload }
             );
             break;
@@ -221,26 +221,26 @@ export default class PermProcessorService extends BullableService {
 
   @Action({ name: "getPermission" })
   async getPermission(
-    ctx: Context<{ schema_id: number; corporation: string; type: string }>
+    ctx: Context<{ schema_id: number; corporation: string; role: string }>
   ) {
-    const { schema_id: schemaId, corporation, type } = ctx.params;
-    const permission = await this.broker.call("permIngest.getPermission", {
+    const { schema_id: schemaId, corporation, role } = ctx.params;
+    const permission = await this.broker.call("participantIngest.getPermission", {
       schema_id: schemaId,
       corporation,
-      type,
+      role,
     });
     return permission;
   }
 
   @Action({ name: "listPermissions" })
   async listPermissions(
-    ctx: Context<{ schema_id?: number; corporation?: string; type?: string }>
+    ctx: Context<{ schema_id?: number; corporation?: string; role?: string }>
   ) {
-    const { schema_id: schemaId, corporation, type } = ctx.params;
-    const permissions = await this.broker.call("permIngest.listPermissions", {
+    const { schema_id: schemaId, corporation, role } = ctx.params;
+    const permissions = await this.broker.call("participantIngest.listPermissions", {
       schema_id: schemaId,
       corporation,
-      type,
+      role,
     });
     return permissions;
   }

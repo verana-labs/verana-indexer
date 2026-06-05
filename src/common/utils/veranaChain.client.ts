@@ -12,9 +12,22 @@ import { MsgCreateCorporation, MsgUpdateCorporation, MsgUpdateParams as MsgUpdat
 import { MsgAddGovernanceFrameworkDocument as MsgAddGovernanceFrameworkDocumentGF, MsgIncreaseActiveGovernanceFrameworkVersion as MsgIncreaseActiveGovernanceFrameworkVersionGF, MsgUpdateParams as MsgUpdateParamsGF } from "@verana-labs/verana-types/codec/verana/gf/v1/tx";
 import { MsgStoreDigest, MsgUpdateParams as MsgUpdateParamsDI } from "@verana-labs/verana-types/codec/verana/di/v1/tx";
 import { MsgGrantOperatorAuthorization, MsgRevokeOperatorAuthorization, MsgUpdateParams as MsgUpdateParamsDE } from "@verana-labs/verana-types/codec/verana/de/v1/tx";
-import { MsgCancelPermissionVPLastRequest, MsgCreateOrUpdatePermissionSession, MsgSelfCreatePermission, MsgCreateRootPermission, MsgRenewPermissionVP, MsgRepayPermissionSlashedTrustDeposit as MsgRepayPermissionSlashedTrustDepositPerm, MsgRevokePermission, MsgSetPermissionVPToValidated, MsgSlashPermissionTrustDeposit, MsgStartPermissionVP, MsgUpdateParams as MsgUpdateParamsPerm ,MsgAdjustPermission} from '@verana-labs/verana-types/codec/verana/perm/v1/tx';
+import {
+  MsgCancelParticipantOPLastRequest,
+  MsgCreateOrUpdateParticipantSession,
+  MsgSelfCreateParticipant,
+  MsgCreateRootParticipant,
+  MsgRenewParticipantOP,
+  MsgRepayParticipantSlashedTrustDeposit,
+  MsgRevokeParticipant,
+  MsgSetParticipantOPToValidated,
+  MsgSlashParticipantTrustDeposit,
+  MsgStartParticipantOP,
+  MsgUpdateParams as MsgUpdateParamsPP,
+  MsgSetParticipantEffectiveUntil,
+} from '@verana-labs/verana-types/codec/verana/pp/v1/tx';
 import { MsgReclaimTrustDepositYield, MsgRepaySlashedTrustDeposit, MsgSlashTrustDeposit, MsgUpdateParams } from '@verana-labs/verana-types/codec/verana/td/v1/tx';
-import { MsgAddGovernanceFrameworkDocument, MsgArchiveTrustRegistry, MsgCreateTrustRegistry, MsgIncreaseActiveGovernanceFrameworkVersion, MsgUpdateTrustRegistry, MsgUpdateParams as MsgUpdateParamsTR } from '@verana-labs/verana-types/codec/verana/tr/v1/tx';
+import { MsgArchiveEcosystem, MsgCreateEcosystem, MsgUpdateEcosystem, MsgUpdateParams as MsgUpdateParamsEC } from '@verana-labs/verana-types/codec/verana/ec/v1/tx';
 import { MsgCreateExchangeRate, MsgSetExchangeRateState, MsgUpdateExchangeRate, MsgUpdateParams as MsgUpdateParamsXR } from "@verana-labs/verana-types/codec/verana/xr/v1/tx";
 import {
   VeranaCorporationMessageTypes,
@@ -23,9 +36,9 @@ import {
   VeranaDelegationMessageTypes,
   VeranaExchangeRateMessageTypes,
   VeranaGovernanceFrameworkMessageTypes,
-  VeranaPermissionMessageTypes,
+  VeranaParticipantMessageTypes,
   VeranaTrustDepositMessageTypes,
-  VeranaTrustRegistryMessageTypes,
+  VeranaEcosystemMessageTypes,
 } from '../verana-message-types';
 
 export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
@@ -34,13 +47,11 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
     [VeranaTrustDepositMessageTypes.RepaySlashed, MsgRepaySlashedTrustDeposit],
     [VeranaTrustDepositMessageTypes.SlashTrustDeposit, MsgSlashTrustDeposit],
     [VeranaTrustDepositMessageTypes.UpdateParams, MsgUpdateParams],
-    // verana.tr.v1
-    [VeranaTrustRegistryMessageTypes.CreateTrustRegistry, MsgCreateTrustRegistry],
-    [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry, MsgUpdateTrustRegistry],
-    [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry, MsgArchiveTrustRegistry],
-    [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc, MsgAddGovernanceFrameworkDocument],
-    [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion, MsgIncreaseActiveGovernanceFrameworkVersion],
-    [VeranaTrustRegistryMessageTypes.UpdateParams, MsgUpdateParamsTR],
+    // verana.ec.v1
+    [VeranaEcosystemMessageTypes.CreateEcosystem, MsgCreateEcosystem],
+    [VeranaEcosystemMessageTypes.UpdateEcosystem, MsgUpdateEcosystem],
+    [VeranaEcosystemMessageTypes.ArchiveEcosystem, MsgArchiveEcosystem],
+    [VeranaEcosystemMessageTypes.UpdateParams, MsgUpdateParamsEC],
     // verana.cs.v1
     [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema, MsgCreateCredentialSchema],
     [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema, MsgUpdateCredentialSchema],
@@ -59,19 +70,19 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
     [VeranaExchangeRateMessageTypes.UpdateExchangeRate, MsgUpdateExchangeRate],
     [VeranaExchangeRateMessageTypes.SetExchangeRateState, MsgSetExchangeRateState],
     [VeranaExchangeRateMessageTypes.UpdateParams, MsgUpdateParamsXR],
-    // verana.perm.v1
-    [VeranaPermissionMessageTypes.StartPermissionVP, MsgStartPermissionVP],
-    [VeranaPermissionMessageTypes.RenewPermissionVP, MsgRenewPermissionVP],
-    [VeranaPermissionMessageTypes.SetPermissionVPToValidated, MsgSetPermissionVPToValidated],
-    [VeranaPermissionMessageTypes.CancelPermissionVPLastRequest, MsgCancelPermissionVPLastRequest],
-    [VeranaPermissionMessageTypes.CreateRootPermission, MsgCreateRootPermission],
-    [VeranaPermissionMessageTypes.RevokePermission, MsgRevokePermission],
-    [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession, MsgCreateOrUpdatePermissionSession],
-    [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit, MsgSlashPermissionTrustDeposit],
-    [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit, MsgRepayPermissionSlashedTrustDepositPerm],
-    [VeranaPermissionMessageTypes.SelfCreatePermission, MsgSelfCreatePermission],
-    [VeranaPermissionMessageTypes.UpdateParams, MsgUpdateParamsPerm],
-    [VeranaPermissionMessageTypes.AdjustPermission, MsgAdjustPermission],
+    // verana.pp.v1
+    [VeranaParticipantMessageTypes.StartParticipantOP, MsgStartParticipantOP],
+    [VeranaParticipantMessageTypes.RenewParticipantOP, MsgRenewParticipantOP],
+    [VeranaParticipantMessageTypes.SetParticipantOPToValidated, MsgSetParticipantOPToValidated],
+    [VeranaParticipantMessageTypes.CancelParticipantOPLastRequest, MsgCancelParticipantOPLastRequest],
+    [VeranaParticipantMessageTypes.CreateRootParticipant, MsgCreateRootParticipant],
+    [VeranaParticipantMessageTypes.RevokeParticipant, MsgRevokeParticipant],
+    [VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession, MsgCreateOrUpdateParticipantSession],
+    [VeranaParticipantMessageTypes.SlashParticipantTrustDeposit, MsgSlashParticipantTrustDeposit],
+    [VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit, MsgRepayParticipantSlashedTrustDeposit],
+    [VeranaParticipantMessageTypes.SelfCreateParticipant, MsgSelfCreateParticipant],
+    [VeranaParticipantMessageTypes.UpdateParams, MsgUpdateParamsPP],
+    [VeranaParticipantMessageTypes.SetParticipantEffectiveUntil, MsgSetParticipantEffectiveUntil],
     // verana.co.v1
     [VeranaCorporationMessageTypes.CreateCorporation, MsgCreateCorporation],
     [VeranaCorporationMessageTypes.UpdateCorporation, MsgUpdateCorporation],
@@ -81,5 +92,3 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
     [VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion, MsgIncreaseActiveGovernanceFrameworkVersionGF],
     [VeranaGovernanceFrameworkMessageTypes.UpdateParams, MsgUpdateParamsGF],
 ];
-
-
