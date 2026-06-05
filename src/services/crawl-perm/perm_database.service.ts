@@ -1560,7 +1560,7 @@ export default class ParticipantIngestService extends Service {
       slashed_deposit: Number(record.slashed_deposit ?? record.slashedDeposit ?? 0),
       repaid_deposit: Number(record.repaid_deposit ?? record.repaidDeposit ?? 0),
       revoked: this.normalizeComparableTimestamp(record.revoked),
-      validator_participant_id: Number(record.validator_participant_id ?? record.validatorParticipantId ?? record.validator_participant_id ?? record.validatorParticipantId ?? 0) || null,
+      validator_participant_id: Number(record.validator_participant_id ?? record.validatorParticipantId ?? 0) || null,
       op_state: normalizeValidationState(record.op_state ?? record.opState),
       op_exp: this.normalizeComparableTimestamp(record.op_exp ?? record.opExp),
       op_last_state_change: this.normalizeComparableTimestamp(record.op_last_state_change ?? record.opLastStateChange),
