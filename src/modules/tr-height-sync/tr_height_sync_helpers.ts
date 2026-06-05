@@ -8,9 +8,6 @@ import type { EcosystemWithVersions } from "@verana-labs/verana-types/codec/vera
 import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 import { Network } from "../../network";
 
-const TR_GET_PATH = "/verana/ec/v1/get";
-const HEIGHT_HEADER = "x-cosmos-block-height";
-
 export interface LedgerTrustRegistryVersion {
   id?: number | string;
   version?: number | string;
@@ -66,28 +63,6 @@ const TR_MESSAGE_TYPES = new Set<string>([
   VeranaEcosystemMessageTypes.UpdateParams,
 ]);
 
-function normalizeLedgerResponse(data: unknown): LedgerTrustRegistryResponse | null {
-  if (!data || typeof data !== "object") return null;
-  const obj = data as Record<string, unknown>;
-  const tr =
-    obj.trust_registry ??
-    obj.trustRegistry ??
-    obj.tr ??
-    obj.trustRegistryState ??
-    obj.data;
-  if (tr && typeof tr === "object") {
-    return { trust_registry: tr as LedgerTrustRegistry };
-  }
-  return null;
-}
-
-export function getLedgerBaseUrl(): string {
-  const envLedger =
-    (typeof process !== "undefined" && process.env?.LCD_ENDPOINT?.trim()) || "";
-  const base = envLedger || Network?.LCD || "";
-  return base.replace(/\/$/, "");
-}
-
 function getRpcBaseUrl(): string {
   const envRpc =
     (typeof process !== "undefined" && process.env?.RPC_ENDPOINT?.trim()) || "";
@@ -134,7 +109,7 @@ export function mapEcosystemToLedgerTrustRegistry(
   } as LedgerTrustRegistry;
 }
 
-export async function getTrustRegistryViaGrpc(
+export async function getTrustRegistry(
   trId: number,
   blockHeight?: number
 ): Promise<LedgerTrustRegistryResponse | null> {
@@ -182,115 +157,6 @@ export async function getTrustRegistryViaGrpc(
       // ignore disconnect errors
     }
   }
-}
-
-export async function getTrustRegistry(
-  trId: number,
-  blockHeight?: number
-): Promise<LedgerTrustRegistryResponse | null> {
-  const transport = (process.env.EC_QUERY_TRANSPORT || "grpc").toLowerCase();
-
-  if (transport !== "rest") {
-    try {
-      const grpcResult = await getTrustRegistryViaGrpc(trId, blockHeight);
-      if (grpcResult?.trust_registry) return grpcResult;
-    } catch (err: any) {
-      if (process.env.EC_QUERY_GRPC_STRICT === "true") throw err;
-    }
-    if (transport === "grpc-only") {
-      throw new Error(
-        `[TR Height-Sync] gRPC ec query returned no ecosystem for trId=${trId} (EC_QUERY_TRANSPORT=grpc-only)`
-      );
-    }
-  }
-
-  return getTrustRegistryViaRest(trId, blockHeight);
-}
-
-async function getTrustRegistryViaRest(
-  trId: number,
-  blockHeight?: number
-): Promise<LedgerTrustRegistryResponse | null> {
-  const baseUrl = getLedgerBaseUrl();
-  if (!baseUrl) {
-    throw new Error(
-      `[TR Height-Sync] Missing LCD base URL. Please set LCD_ENDPOINT or Network.LCD.`
-    );
-  }
-  const url = `${baseUrl}${TR_GET_PATH}/${trId}`;
-  const withHeight = typeof blockHeight === "number" && blockHeight > 0;
-  const headers: Record<string, string> = {};
-  if (withHeight) headers[HEIGHT_HEADER] = String(blockHeight);
-
-  const requestOnce = async (
-    useHeightHeader: boolean
-  ): Promise<{
-    payload: LedgerTrustRegistryResponse | null;
-    status: number | null;
-    bodySnippet: string;
-    errorMessage: string | null;
-  }> => {
-    const reqHeaders = useHeightHeader ? headers : {};
-    try {
-      const res = await fetch(url, { headers: reqHeaders });
-      const bodyText = await res.text().catch(() => "");
-      const bodySnippet = bodyText.slice(0, 300);
-      if (!res.ok) {
-        return {
-          payload: null,
-          status: res.status,
-          bodySnippet,
-          errorMessage: `HTTP ${res.status}`,
-        };
-      }
-      const data = bodyText ? JSON.parse(bodyText) : null;
-      if (!data) {
-        return {
-          payload: null,
-          status: res.status,
-          bodySnippet,
-          errorMessage: "Empty JSON response body",
-        };
-      }
-      return {
-        payload: normalizeLedgerResponse(data) ?? (data as LedgerTrustRegistryResponse),
-        status: res.status,
-        bodySnippet,
-        errorMessage: null,
-      };
-    } catch (err: any) {
-      return {
-        payload: null,
-        status: null,
-        bodySnippet: "",
-        errorMessage: err?.message || String(err),
-      };
-    }
-  };
-
-  const firstAttempt = await requestOnce(withHeight);
-  if (firstAttempt.payload) {
-    return firstAttempt.payload;
-  }
-
-  if (withHeight) {
-    const fallbackAttempt = await requestOnce(false);
-    if (fallbackAttempt.payload) {
-      return fallbackAttempt.payload;
-    }
-    throw new Error(
-      `[TR Height-Sync] getTrustRegistry failed for trId=${trId}, height=${blockHeight}, ` +
-      `with-height(${firstAttempt.errorMessage || "unknown"}, status=${String(firstAttempt.status)}), ` +
-      `fallback(${fallbackAttempt.errorMessage || "unknown"}, status=${String(fallbackAttempt.status)}), ` +
-      `with-height-body="${firstAttempt.bodySnippet}", fallback-body="${fallbackAttempt.bodySnippet}"`
-    );
-  }
-
-  throw new Error(
-    `[TR Height-Sync] getTrustRegistry failed for trId=${trId}, ` +
-    `${firstAttempt.errorMessage || "unknown"} (status=${String(firstAttempt.status)}), ` +
-    `body="${firstAttempt.bodySnippet}"`
-  );
 }
 
 export function isTrMessageType(type: string): boolean {
