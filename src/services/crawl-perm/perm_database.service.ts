@@ -825,7 +825,7 @@ export default class ParticipantIngestService extends Service {
       deposit: Number(ledgerPermission.deposit ?? 0),
       slashed_deposit: Number(ledgerPermission.slashed_deposit ?? ledgerPermission.slashedDeposit ?? 0),
       repaid_deposit: Number(ledgerPermission.repaid_deposit ?? ledgerPermission.repaidDeposit ?? 0),
-      validator_participant_id: Number(ledgerPermission.validator_participant_id ?? ledgerPermission.validatorParticipantId ?? ledgerPermission.validator_participant_id ?? ledgerPermission.validatorParticipantId ?? 0) || null,
+      validator_participant_id: Number(ledgerPermission.validator_participant_id ?? ledgerPermission.validatorParticipantId ?? 0) || null,
       op_state: normalizeValidationState(ledgerPermission.op_state ?? ledgerPermission.opState),
       op_exp: toIsoOrNull(ledgerPermission.op_exp ?? ledgerPermission.opExp),
       op_last_state_change: toIsoOrNull(ledgerPermission.op_last_state_change ?? ledgerPermission.opLastStateChange),
