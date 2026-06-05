@@ -1,5 +1,5 @@
 import { ServiceBroker } from "moleculer";
-import PermIngestService from "../../../../src/services/crawl-perm/perm_database.service";
+import ParticipantIngestService from "../../../../src/services/crawl-perm/perm_database.service";
 import knex from "../../../../src/common/utils/db_connection";
 import { formatTimestamp } from "../../../../src/common/utils/date_utils";
 
@@ -34,7 +34,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
 
   beforeAll(() => {
     broker = new ServiceBroker({ logger: false });
-    service = broker.createService(PermIngestService);
+    service = broker.createService(ParticipantIngestService);
     syncPermissionFromLedger = (service as any).syncPermissionFromLedger.bind(service);
     mapLedgerPermissionToDbRow = (service as any).mapLedgerPermissionToDbRow.bind(service);
   });
@@ -60,7 +60,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         country: "PK",
       };
 
-      await service.handleCreateRootPermission(msg);
+      await service.handleCreateRootParticipant(msg);
 
       expect(knex.insert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -77,7 +77,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
 
     it("should skip insert if schema_id is missing", async () => {
       const msg = { creator: "grantee1" };
-      await service.handleCreateRootPermission(msg as any);
+      await service.handleCreateRootParticipant(msg as any);
       expect(knex.insert).not.toHaveBeenCalled();
     });
   });
@@ -117,7 +117,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       });
       (knex.transaction as jest.Mock).mockImplementation((fn) => fn(knex));
 
-      const result = await service.handleRevokePermission({
+      const result = await service.handleRevokeParticipant({
         id: 10,
         creator: "user1",
         timestamp: "now",
@@ -129,7 +129,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
 
     it("should return error if permission not found", async () => {
       (knex.first as jest.Mock).mockResolvedValueOnce(null);
-      const result = await service.handleRevokePermission({
+      const result = await service.handleRevokeParticipant({
         id: 999,
         creator: "user1",
       });
@@ -137,8 +137,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("handleStartPermissionVP", () => {
-    it("should insert new VP record", async () => {
+  describe("handleStartParticipantOP", () => {
+    it("should insert new OP record", async () => {
       (knex.first as jest.Mock).mockResolvedValueOnce({
         id: 99,
         schema_id: 99,
@@ -152,7 +152,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         timestamp: "t1",
       };
 
-      await service.handleStartPermissionVP(msg);
+      await service.handleStartParticipantOP(msg);
 
       expect(knex.insert).toHaveBeenCalledWith(
         expect.objectContaining({

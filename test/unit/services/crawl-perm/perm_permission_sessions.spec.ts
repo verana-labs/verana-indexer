@@ -21,7 +21,7 @@ describe("🧪 PermDatabaseService Basic Tests", () => {
 
   it("✅ should create service successfully", () => {
     expect(service).toBeDefined();
-    expect(service.name).toBe("permIngest");
+    expect(service.name).toBe("participantIngest");
   });
 
   it("✅ should have getPermission action", () => {
