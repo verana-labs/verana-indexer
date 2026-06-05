@@ -1,13 +1,13 @@
+import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
+import { QueryClient } from "@cosmjs/stargate";
+import {
+  QueryClientImpl as EcQueryClientImpl,
+  QueryGetEcosystemRequest,
+} from "@verana-labs/verana-types/codec/verana/ec/v1/query";
+import type { EcosystemWithVersions } from "@verana-labs/verana-types/codec/verana/ec/v1/types";
 import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 import { Network } from "../../network";
 
-// TODO(node-ec-query): the `ec` REST query gateway is NOT enabled in the current node
-// build — every `/verana/ec/v1/*` route returns 501 "Not Implemented" (unlike `pp`/`cs`,
-// which respond 200). So ecosystem height-sync cannot fetch state and ecosystems will not
-// index until the node implements `/verana/ec/v1/get`. We intentionally do NOT force the
-// direct create handler as a fallback: it would assign a serial id that diverges from the
-// chain ecosystem id (height-sync inserts with the chain id explicitly). The `create_ecosystem`
-// event already carries `ecosystem_id`, so once the node enables the query this just works.
 const TR_GET_PATH = "/verana/ec/v1/get";
 const HEIGHT_HEADER = "x-cosmos-block-height";
 
@@ -88,7 +88,126 @@ export function getLedgerBaseUrl(): string {
   return base.replace(/\/$/, "");
 }
 
+function getRpcBaseUrl(): string {
+  const envRpc =
+    (typeof process !== "undefined" && process.env?.RPC_ENDPOINT?.trim()) || "";
+  const base = envRpc || Network?.RPC || "";
+  return base.replace(/\/$/, "");
+}
+
+function dateToIsoOrNull(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return typeof value === "string" ? value : null;
+}
+
+export function mapEcosystemToLedgerTrustRegistry(
+  eco: EcosystemWithVersions
+): LedgerTrustRegistry {
+  const versions: LedgerTrustRegistryVersion[] = (eco.versions ?? []).map((v) => ({
+    id: v.id,
+    version: v.version,
+    created: dateToIsoOrNull(v.created) ?? undefined,
+    active_since: dateToIsoOrNull(v.activeSince),
+    documents: (v.documents ?? []).map((d) => ({
+      id: d.id,
+      created: dateToIsoOrNull(d.created) ?? undefined,
+      language: d.language ?? null,
+      url: d.url ?? null,
+      digest_sri: d.digestSri ?? null,
+    })),
+  }));
+
+  return {
+    id: eco.id,
+    did: eco.did,
+    corporation: eco.corporationId ?? null,
+    corporation_id: eco.corporationId ?? null,
+    created: dateToIsoOrNull(eco.created) ?? undefined,
+    modified: dateToIsoOrNull(eco.modified) ?? undefined,
+    archived: eco.archived ? (dateToIsoOrNull(eco.modified) ?? new Date().toISOString()) : null,
+    language: eco.language ?? null,
+    active_version: eco.activeVersion,
+    versions,
+  } as LedgerTrustRegistry;
+}
+
+export async function getTrustRegistryViaGrpc(
+  trId: number,
+  blockHeight?: number
+): Promise<LedgerTrustRegistryResponse | null> {
+  const rpcUrl = getRpcBaseUrl();
+  if (!rpcUrl) {
+    throw new Error(
+      `[TR Height-Sync] Missing RPC base URL for gRPC ec query. Set RPC_ENDPOINT or Network.RPC.`
+    );
+  }
+
+  const tmClient = await Tendermint37Client.connect(rpcUrl);
+  try {
+    const queryClient = new QueryClient(tmClient as any);
+    const withHeight = typeof blockHeight === "number" && blockHeight > 0;
+    const rpc = {
+      request: async (
+        service: string,
+        method: string,
+        data: Uint8Array
+      ): Promise<Uint8Array> => {
+        const path = `/${service}/${method}`;
+        const response = await queryClient.queryAbci(
+          path,
+          data,
+          withHeight ? blockHeight : undefined
+        );
+        return response.value;
+      },
+    };
+
+    const ecQuery = new EcQueryClientImpl(rpc);
+    const res = await ecQuery.GetEcosystem(
+      QueryGetEcosystemRequest.fromPartial({
+        id: trId,
+        activeGfOnly: false,
+        preferredLanguage: "",
+      })
+    );
+    if (!res?.ecosystem) return null;
+    return { trust_registry: mapEcosystemToLedgerTrustRegistry(res.ecosystem) };
+  } finally {
+    try {
+      tmClient.disconnect();
+    } catch {
+      // ignore disconnect errors
+    }
+  }
+}
+
 export async function getTrustRegistry(
+  trId: number,
+  blockHeight?: number
+): Promise<LedgerTrustRegistryResponse | null> {
+  const transport = (process.env.EC_QUERY_TRANSPORT || "grpc").toLowerCase();
+
+  if (transport !== "rest") {
+    try {
+      const grpcResult = await getTrustRegistryViaGrpc(trId, blockHeight);
+      if (grpcResult?.trust_registry) return grpcResult;
+    } catch (err: any) {
+      if (process.env.EC_QUERY_GRPC_STRICT === "true") throw err;
+    }
+    if (transport === "grpc-only") {
+      throw new Error(
+        `[TR Height-Sync] gRPC ec query returned no ecosystem for trId=${trId} (EC_QUERY_TRANSPORT=grpc-only)`
+      );
+    }
+  }
+
+  return getTrustRegistryViaRest(trId, blockHeight);
+}
+
+async function getTrustRegistryViaRest(
   trId: number,
   blockHeight?: number
 ): Promise<LedgerTrustRegistryResponse | null> {
