@@ -71,7 +71,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     if (!hasCs) {
       await knex.schema.createTable("credential_schemas", (table) => {
         table.increments("id").primary();
-        table.integer("tr_id").notNullable();
+        table.integer("ecosystem_id").notNullable();
         table.text("json_schema").nullable();
         table.boolean("is_active").notNullable().defaultTo(true);
       });
@@ -83,7 +83,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
       await knex.schema.createTable("permissions", (table) => {
         table.increments("id").primary();
         table.integer("schema_id").notNullable();
-        table.string("type").nullable();
+        table.string("role").nullable();
         table.string("did").nullable();
         table.string("corporation").nullable();
       });
@@ -134,7 +134,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
       .insert(
         await (async () => {
           const base = {
-            tr_id: args.trId,
+            ecosystem_id: args.trId,
             json_schema: JSON.stringify({ $id: `schema-${args.schemaId}` }),
             is_active: true,
 
@@ -167,7 +167,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     const [idRow] = await knex("permissions")
       .insert({
         schema_id: args.schemaId,
-        type: "ISSUER",
+        role: "ISSUER",
         did: args.did ?? null,
         corporation: args.corporation,
       })
