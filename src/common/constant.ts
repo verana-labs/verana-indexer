@@ -126,20 +126,20 @@ export enum ModulesParamsNamesTypes {
   GF = "gf",
   GOV = "gov",
   MINT = "mint",
-  PERM = "perm",
+  PP = "pp",
   PROTOCOLPOOL = "protocolpool",
   SLASHING = "slashing",
   STAKING = "staking",
   TD = "td",
-  TR = "tr",
+  EC = "ec",
   TRANSFER = "transfer",
 }
 
 export const MODULE_DISPLAY_NAMES = {
-  TRUST_REGISTRY: "trustregistry",
+  ECOSYSTEM: "ecosystem",
   CREDENTIAL_SCHEMA: "credentialschema",
   TRUST_DEPOSIT: "trustdeposit",
-  PERMISSION: "permission",
+  PARTICIPANT: "participant",
 } as const;
 
 export enum TrustDepositEventType {
@@ -258,9 +258,9 @@ export const SERVICE = {
       key: "ParticipantProcessService",
       path: "v1.ParticipantProcessService",
     },
-    PermAPIService: {
-      key: "PermAPIService",
-      path: "v1.PermAPIService",
+    ParticipantAPIService: {
+      key: "ParticipantAPIService",
+      path: "v1.ParticipantAPIService",
     },
     CredentialSchemaDatabaseService: {
       key: "CredentialSchemaDatabaseService",

@@ -115,7 +115,7 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
       return undefined;
     }
 
-    const row = await knex("permissions")
+    const row = await knex("participants")
       .select("role", "created", "effective_from", "effective_until")
       .where("schema_id", dbSchemaId)
       .andWhere("did", did)

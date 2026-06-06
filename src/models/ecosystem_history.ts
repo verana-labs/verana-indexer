@@ -1,12 +1,12 @@
 import { Model } from "objection";
 import BaseModel from "./base";
-import { TrustRegistry } from "./trust_registry";
+import { Ecosystem } from "./ecosystem";
 
-export class TrustRegistryHistory extends BaseModel {
-  static tableName = "trust_registry_history";
+export class EcosystemHistory extends BaseModel {
+  static tableName = "ecosystem_history";
 
   id!: number;
-  tr_id!: number;
+  ecosystem_id!: number;
   did!: string;
   corporation!: string;
   created!: Date;
@@ -33,12 +33,12 @@ export class TrustRegistryHistory extends BaseModel {
   created_at!: Date;
 
   static relationMappings = () => ({
-    trustRegistry: {
+    ecosystem: {
       relation: Model.BelongsToOneRelation,
-      modelClass: TrustRegistry,
+      modelClass: Ecosystem,
       join: {
-        from: "trust_registry_history.tr_id",
-        to: "trust_registry.id",
+        from: "ecosystem_history.ecosystem_id",
+        to: "ecosystem.id",
       },
     },
   });

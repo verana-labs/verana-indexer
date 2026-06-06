@@ -14,9 +14,9 @@ import knex from "../../common/utils/db_connection";
 import { requireController } from "../../common/utils/extract_controller";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
-import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
-import { finalizeTrustRegistryHistoryInsert } from "../../common/utils/installed_table_columns";
-import { getTrustRegistry } from "../../modules/tr-height-sync/tr_height_sync_helpers";
+import { calculateEcosystemStats, TR_STATS_FIELDS } from "./ec_stats";
+import { finalizeEcosystemHistoryInsert } from "../../common/utils/installed_table_columns";
+import { getEcosystem } from "../../modules/ec-height-sync/ec_height_sync_helpers";
 
 type ChangeRecord = Record<string, any>;
 
@@ -51,27 +51,27 @@ function getDefaultTRStats(fallbackData?: any): any {
 export default class EcosystemMessageProcessorService extends BullableService {
   private processorBase: MessageProcessorBase;
   private _isFreshStart: boolean = false;
-  private trHistoryColumnsCache: Set<string> | null = null;
+  private ecosystemHistoryColumnsCache: Set<string> | null = null;
 
   constructor(broker: ServiceBroker) {
     super(broker);
     this.processorBase = new MessageProcessorBase(this);
   }
 
-  private extractTrustRegistryId(raw: any, options?: { allowTopLevelId?: boolean }): number | null {
+  private extractEcosystemId(raw: any, options?: { allowTopLevelId?: boolean }): number | null {
     if (!raw || typeof raw !== "object") return null;
     const allowTopLevelId = options?.allowTopLevelId === true;
     const candidates = [
-      raw.trust_registry_id,
-      raw.trustRegistryId,
-      raw.tr_id,
-      raw.trId,
-      raw.trust_registry?.id,
-      raw.trust_registry?.tr_id,
-      raw.trust_registry?.trId,
-      raw.trustRegistry?.id,
-      raw.trustRegistry?.tr_id,
-      raw.trustRegistry?.trId,
+      raw.ecosystem_id,
+      raw.ecosystemId,
+      raw.ecosystem_id,
+      raw.ecosystemId,
+      raw.ecosystem?.id,
+      raw.ecosystem?.ecosystem_id,
+      raw.ecosystem?.ecosystemId,
+      raw.ecosystem?.id,
+      raw.ecosystem?.ecosystem_id,
+      raw.ecosystem?.ecosystemId,
       ...(allowTopLevelId ? [raw.id] : []),
     ];
     for (const candidate of candidates) {
@@ -81,68 +81,68 @@ export default class EcosystemMessageProcessorService extends BullableService {
     return null;
   }
 
-  private resolveTrustRegistryIdForMessage(message: any): number | null {
-    const eventTrIds = Array.isArray(message?.eventTrIds) ? message.eventTrIds : [];
-    for (const rawEventId of eventTrIds) {
+  private resolveEcosystemIdForMessage(message: any): number | null {
+    const eventEcosystemIds = Array.isArray(message?.eventEcosystemIds) ? message.eventEcosystemIds : [];
+    for (const rawEventId of eventEcosystemIds) {
       const eventId = Number(rawEventId);
       if (Number.isInteger(eventId) && eventId > 0) return eventId;
     }
 
-    const contentId = this.extractTrustRegistryId(message?.content, { allowTopLevelId: true });
+    const contentId = this.extractEcosystemId(message?.content, { allowTopLevelId: true });
     if (contentId) return contentId;
 
-    return this.extractTrustRegistryId(message);
+    return this.extractEcosystemId(message);
   }
 
   public async _start() {
     const startMode = await detectStartMode();
     this._isFreshStart = startMode.isFreshStart;
     this.processorBase.setFreshStartMode(this._isFreshStart);
-    this.logger.info(`TrustRegistry processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    this.logger.info(`Ecosystem processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
     await super._start();
     this.logger.info("EcosystemMessageProcessorService started and ready.");
   }
 
-  @Action({ name: "handleTrustRegistryMessages" })
-  async handleTrustRegistryMessages(
-    ctx: Context<{ trustRegistryList: any[] }>
+  @Action({ name: "handleEcosystemMessages" })
+  async handleEcosystemMessages(
+    ctx: Context<{ ecosystemList: any[] }>
   ) {
-    const { trustRegistryList } = ctx.params;
-    this.logger.info(` Processing ${trustRegistryList?.length || 0} TrustRegistry messages`);
+    const { ecosystemList } = ctx.params;
+    this.logger.info(` Processing ${ecosystemList?.length || 0} Ecosystem messages`);
 
-    if (!trustRegistryList || trustRegistryList.length === 0) {
-      this.logger.warn(" No TrustRegistry messages to process");
+    if (!ecosystemList || ecosystemList.length === 0) {
+      this.logger.warn(" No Ecosystem messages to process");
       return;
     }
 
     const failThreshold = 0.1;
     const failedMessages: any[] = [];
-    const seenTrIds: number[] = [];
-    const syncedTrIds: number[] = []; 
+    const seenEcosystemIds: number[] = [];
+    const syncedEcosystemIds: number[] = []; 
     const seenHeightSyncKeys = new Set<string>();
-    const totalMessages = trustRegistryList.length;
+    const totalMessages = ecosystemList.length;
     const useHeightSyncTR =
       process.env.NODE_ENV !== "test" && process.env.USE_HEIGHT_SYNC_TR === "true";
 
     const processMessage = async (message: any, index: number) => {
       if (!message.type) {
-        this.logger.error(`TR message missing type:`, JSON.stringify(message));
+        this.logger.error(`EC message missing type:`, JSON.stringify(message));
         failedMessages.push({ message, error: "Missing type" });
         return;
       }
 
-      const messageTrId = this.resolveTrustRegistryIdForMessage(message);
-      this.logger.info(`Processing TR message ${index + 1}/${totalMessages}: type=${message.type}, height=${message.height}, tr_id=${messageTrId ?? "n/a"}`);
+      const messageEcosystemId = this.resolveEcosystemIdForMessage(message);
+      this.logger.info(`Processing EC message ${index + 1}/${totalMessages}: type=${message.type}, height=${message.height}, ecosystem_id=${messageEcosystemId ?? "n/a"}`);
 
       const processedTR: any = { ...message, ...message.content };
-      const normalizedTrId = this.resolveTrustRegistryIdForMessage(message);
-      if (normalizedTrId) {
-        processedTR.trust_registry_id = normalizedTrId;
+      const normalizedEcosystemId = this.resolveEcosystemIdForMessage(message);
+      if (normalizedEcosystemId) {
+        processedTR.ecosystem_id = normalizedEcosystemId;
       }
 
       if (!useHeightSyncTR) {
-        const numericId = this.resolveTrustRegistryIdForMessage(message);
-        if (numericId) seenTrIds.push(numericId);
+        const numericId = this.resolveEcosystemIdForMessage(message);
+        if (numericId) seenEcosystemIds.push(numericId);
       }
 
       delete processedTR?.content;
@@ -152,19 +152,19 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
       let processed = false;
       if (useHeightSyncTR) {
-        if (normalizedTrId && Number.isFinite(Number(message.height))) {
-          const dedupeKey = `${Number(message.height)}::${normalizedTrId}`;
+        if (normalizedEcosystemId && Number.isFinite(Number(message.height))) {
+          const dedupeKey = `${Number(message.height)}::${normalizedEcosystemId}`;
           if (seenHeightSyncKeys.has(dedupeKey)) {
-            this.logger.debug(`[TR Height-Sync] Skip duplicate message for key=${dedupeKey}`);
+            this.logger.debug(`[EC Height-Sync] Skip duplicate message for key=${dedupeKey}`);
             processed = true;
           } else {
             seenHeightSyncKeys.add(dedupeKey);
           }
         }
         if (processed) return;
-        const syncedTrId = await this.processTrustRegistryHeightSync(processedTR);
-        if (syncedTrId && Number.isInteger(syncedTrId) && syncedTrId > 0) {
-          syncedTrIds.push(syncedTrId);
+        const syncedEcosystemId = await this.processEcosystemHeightSync(processedTR);
+        if (syncedEcosystemId && Number.isInteger(syncedEcosystemId) && syncedEcosystemId > 0) {
+          syncedEcosystemIds.push(syncedEcosystemId);
         }
         processed = true;
       } else {
@@ -202,13 +202,13 @@ export default class EcosystemMessageProcessorService extends BullableService {
       }
 
       if (!processed) {
-        this.logger.warn(`Unknown TR message type: ${processedTR.type}`);
+        this.logger.warn(`Unknown EC message type: ${processedTR.type}`);
         failedMessages.push({ message, error: `Unknown type: ${processedTR.type}` });
-        throw new Error(`Unknown TR message type: ${processedTR.type}`);
+        throw new Error(`Unknown EC message type: ${processedTR.type}`);
       }
     };
 
-    const sortedMessages = [...trustRegistryList].sort((a, b) => {
+    const sortedMessages = [...ecosystemList].sort((a, b) => {
       const heightDiff = (a.height || 0) - (b.height || 0);
       if (heightDiff !== 0) return heightDiff;
       return (a.id || 0) - (b.id || 0);
@@ -225,28 +225,28 @@ export default class EcosystemMessageProcessorService extends BullableService {
       }
     }
 
-    this.logger.info(`TrustRegistry processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${totalMessages} total`);
+    this.logger.info(`Ecosystem processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${totalMessages} total`);
 
     if (failedMessages.length > 0) {
-      this.logger.error(`Failed to process ${failedMessages.length} TrustRegistry messages:`);
+      this.logger.error(`Failed to process ${failedMessages.length} Ecosystem messages:`);
       failedMessages.forEach((failed, idx) => {
         this.logger.error(`  ${idx + 1}. Type: ${failed.message.type}, Error: ${failed.error}`);
       });
 
       if (failedMessages.length > totalMessages * failThreshold) {
         const failureRate = ((failedMessages.length / totalMessages) * 100).toFixed(2);
-        this.logger.error(`CRITICAL: ${failureRate}% of TR messages failed (${failedMessages.length}/${totalMessages})! This indicates a serious issue.`);
-        throw new Error(`Failed to process ${failedMessages.length} out of ${totalMessages} TrustRegistry messages (${failureRate}% failure rate). This exceeds the ${(failThreshold * 100).toFixed(0)}% threshold.`);
+        this.logger.error(`CRITICAL: ${failureRate}% of EC messages failed (${failedMessages.length}/${totalMessages})! This indicates a serious issue.`);
+        throw new Error(`Failed to process ${failedMessages.length} out of ${totalMessages} Ecosystem messages (${failureRate}% failure rate). This exceeds the ${(failThreshold * 100).toFixed(0)}% threshold.`);
       }
     }
   }
 
-  private async updateTRStatsAndSync(trId: number, messageTrId: number | string, height?: number): Promise<void> {
+  private async updateTRStatsAndSync(ecosystemId: number, messageEcosystemId: number | string, height?: number): Promise<void> {
     try {
-      const oldTr = await knex("trust_registry").where("id", trId).first();
+      const oldTr = await knex("ecosystem").where("id", ecosystemId).first();
       if (!oldTr) return;
 
-      const stats = await calculateTrustRegistryStats(trId, height);
+      const stats = await calculateEcosystemStats(ecosystemId, height);
       const statsUpdate: any = {
         participants: Number(stats.participants ?? 0),
         participants_ecosystem: Number(stats.participants_ecosystem ?? 0),
@@ -289,58 +289,58 @@ export default class EcosystemMessageProcessorService extends BullableService {
         Number(oldTr.network_slashed_amount_repaid ?? 0) !== statsUpdate.network_slashed_amount_repaid;
 
       if (statsChanged) {
-        this.logger.info(`Stats changed for TR ${trId}, updating main table and recording StatsUpdate history`);
+        this.logger.info(`Stats changed for EC ${ecosystemId}, updating main table and recording StatsUpdate history`);
       }
 
-      await knex("trust_registry").where("id", trId).update(statsUpdate);
+      await knex("ecosystem").where("id", ecosystemId).update(statsUpdate);
 
       if (statsChanged) {
         try {
-          const updatedTr = await knex("trust_registry").where("id", trId).first();
+          const updatedTr = await knex("ecosystem").where("id", ecosystemId).first();
           if (updatedTr) {
             const effectiveHeight = Number(height || updatedTr.height || oldTr.height || 0);
             await knex.transaction(async (trx) => {
               const updatedTrWithStats = { ...updatedTr, ...statsUpdate };
-              await this.recordTRHistory(trx, trId, "StatsUpdate", effectiveHeight, oldTr, updatedTrWithStats);
+              await this.recordTRHistory(trx, ecosystemId, "StatsUpdate", effectiveHeight, oldTr, updatedTrWithStats);
             });
           } else {
-            this.logger.warn(` Updated TR ${trId} not found after stats update`);
+            this.logger.warn(` Updated EC ${ecosystemId} not found after stats update`);
           }
         } catch (historyErr: any) {
-          this.logger.warn(` Failed to record StatsUpdate history for TR ${trId}: ${historyErr?.message || String(historyErr)}`);
+          this.logger.warn(` Failed to record StatsUpdate history for EC ${ecosystemId}: ${historyErr?.message || String(historyErr)}`);
         }
       }
 
       if (!statsChanged) {
-        this.logger.debug(` No stats changes detected for TR ${trId}, skipping history update`);
+        this.logger.debug(` No stats changes detected for EC ${ecosystemId}, skipping history update`);
       }
     } catch (statsError: any) {
-      this.logger.warn(` Failed to update statistics for TR ${trId}: ${statsError?.message || String(statsError)}`);
+      this.logger.warn(` Failed to update statistics for EC ${ecosystemId}: ${statsError?.message || String(statsError)}`);
     }
 
     if (process.env.USE_HEIGHT_SYNC_TR === "true" && height) {
       try {
-        const trIdNum = Number(messageTrId);
+        const ecosystemIdNum = Number(messageEcosystemId);
         const blockHeight = Number(height || 0);
-        if (Number.isInteger(trIdNum) && trIdNum > 0 && blockHeight > 0) {
-          const ledgerResponse = await getTrustRegistry(trIdNum, blockHeight);
-          if (ledgerResponse?.trust_registry) {
+        if (Number.isInteger(ecosystemIdNum) && ecosystemIdNum > 0 && blockHeight > 0) {
+          const ledgerResponse = await getEcosystem(ecosystemIdNum, blockHeight);
+          if (ledgerResponse?.ecosystem) {
             await this.broker.call(
               `${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`,
               {
-                ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+                ledgerResponse: { ecosystem: ledgerResponse.ecosystem },
                 blockHeight,
               }
             );
           } else {
             this.logger.warn(
-              `[TR Ledger Sync] No ledger trust_registry found for id=${trIdNum} at height=${blockHeight}`
+              `[EC Ledger Sync] No ledger ecosystem found for id=${ecosystemIdNum} at height=${blockHeight}`
             );
           }
         }
       } catch (syncErr: any) {
         this.logger.warn(
-          `[TR Ledger Sync] Failed to reconcile TR id=${messageTrId}: ${syncErr?.message || String(syncErr)}`
+          `[EC Ledger Sync] Failed to reconcile EC id=${messageEcosystemId}: ${syncErr?.message || String(syncErr)}`
         );
       }
     }
@@ -348,7 +348,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
   private async recordTRHistory(
     trx: any,
-    trId: number,
+    ecosystemId: number,
     eventType: string,
     height: number,
     oldData: any,
@@ -363,10 +363,10 @@ export default class EcosystemMessageProcessorService extends BullableService {
       stats = getDefaultTRStats(newData);
     } else {
       try {
-        stats = await calculateTrustRegistryStats(trId, height);
+        stats = await calculateEcosystemStats(ecosystemId, height);
       } catch (err: any) {
         this.logger.warn(
-          `Failed to calculate stats for TR ${trId} at height ${height}: ${err?.message || String(err)}`
+          `Failed to calculate stats for EC ${ecosystemId} at height ${height}: ${err?.message || String(err)}`
         );
         stats = getDefaultTRStats(newData);
       }
@@ -406,7 +406,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
     changes.height = Number(height);
 
     const historyPayload: any = {
-      tr_id: trId,
+      ecosystem_id: ecosystemId,
       did: newData.did,
       corporation: newData.corporation,
       created: newData.created,
@@ -439,17 +439,17 @@ export default class EcosystemMessageProcessorService extends BullableService {
       created_at: newData.modified ?? newData.created ?? new Date(),
     };
 
-    const historyColumns = await this.getTrustRegistryHistoryColumns(trx);
-    const rowForInsert = finalizeTrustRegistryHistoryInsert(
+    const historyColumns = await this.getEcosystemHistoryColumns(trx);
+    const rowForInsert = finalizeEcosystemHistoryInsert(
       historyColumns,
       historyPayload,
       newData
     ) as Record<string, any>;
 
     try {
-      const existingSameEvent = await trx("trust_registry_history")
+      const existingSameEvent = await trx("ecosystem_history")
         .where({
-          tr_id: trId,
+          ecosystem_id: ecosystemId,
           event_type: eventType,
           height: Number(height),
         })
@@ -459,32 +459,32 @@ export default class EcosystemMessageProcessorService extends BullableService {
         const existingChanges = existingSameEvent.changes ? String(existingSameEvent.changes) : null;
         const nextChanges = rowForInsert.changes ? String(rowForInsert.changes) : null;
         if (existingChanges === nextChanges) {
-          this.logger.debug(`Skipping duplicate TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
+          this.logger.debug(`Skipping duplicate EC history for ecosystem_id=${ecosystemId}, event_type=${eventType}, height=${height}`);
           return;
         }
       }
 
-      await trx("trust_registry_history").insert(rowForInsert);
-      this.logger.debug(` Recorded TR history for tr_id=${trId}, event_type=${eventType}, height=${height}`);
+      await trx("ecosystem_history").insert(rowForInsert);
+      this.logger.debug(` Recorded EC history for ecosystem_id=${ecosystemId}, event_type=${eventType}, height=${height}`);
     } catch (insertErr: any) {
-      this.logger.error(`❌ Failed to insert TR history for tr_id=${trId}: ${insertErr?.message || String(insertErr)}`);
+      this.logger.error(`❌ Failed to insert EC history for ecosystem_id=${ecosystemId}: ${insertErr?.message || String(insertErr)}`);
       throw insertErr;
     }
   }
 
-  private async getTrustRegistryHistoryColumns(trx: any): Promise<Set<string>> {
-    if (this.trHistoryColumnsCache) {
-      return this.trHistoryColumnsCache;
+  private async getEcosystemHistoryColumns(trx: any): Promise<Set<string>> {
+    if (this.ecosystemHistoryColumnsCache) {
+      return this.ecosystemHistoryColumnsCache;
     }
-    const info = await trx("trust_registry_history").columnInfo();
-    this.trHistoryColumnsCache = new Set(Object.keys(info || {}));
-    return this.trHistoryColumnsCache;
+    const info = await trx("ecosystem_history").columnInfo();
+    this.ecosystemHistoryColumnsCache = new Set(Object.keys(info || {}));
+    return this.ecosystemHistoryColumnsCache;
   }
 
   private async recordGFVHistory(
     trx: any,
     gfvId: number,
-    trId: number,
+    ecosystemId: number,
     eventType: string,
     height: number,
     oldData: any,
@@ -511,7 +511,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
     }
 
     await trx("governance_framework_version_history").insert({
-      tr_id: trId,
+      ecosystem_id: ecosystemId,
       created: newData.created || new Date(),
       version: newData.version,
       active_since: newData.active_since || newData.created || new Date(),
@@ -526,7 +526,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
     trx: any,
     gfdId: number,
     gfvId: number,
-    trId: number,
+    ecosystemId: number,
     eventType: string,
     height: number,
     oldData: any,
@@ -554,7 +554,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
     await trx("governance_framework_document_history").insert({
       gfv_id: gfvId,
-      tr_id: trId,
+      ecosystem_id: ecosystemId,
       created: newData.created || new Date(),
       language: newData.language || "",
       url: newData.url || "",
@@ -566,23 +566,23 @@ export default class EcosystemMessageProcessorService extends BullableService {
     });
   }
 
-  private async processTrustRegistryHeightSync(message: any): Promise<number | null> {
-    const trId =
-      this.resolveTrustRegistryIdForMessage(message) ??
-      this.extractTrustRegistryId(message, { allowTopLevelId: true });
+  private async processEcosystemHeightSync(message: any): Promise<number | null> {
+    const ecosystemId =
+      this.resolveEcosystemIdForMessage(message) ??
+      this.extractEcosystemId(message, { allowTopLevelId: true });
     const heightNum = Number(message.height || 0);
 
-    if (!trId) {
+    if (!ecosystemId) {
       this.logger.warn(
-        `[TR Height-Sync] Skipping message with invalid trust_registry_id=${String(
-          message?.trust_registry_id ?? message?.trustRegistryId ?? message?.tr_id ?? message?.trId ?? message?.id
+        `[EC Height-Sync] Skipping message with invalid ecosystem_id=${String(
+          message?.ecosystem_id ?? message?.ecosystemId ?? message?.ecosystem_id ?? message?.ecosystemId ?? message?.id
         )}, height=${message.height}`
       );
       return null;
     }
     if (!Number.isFinite(heightNum) || heightNum <= 0) {
       this.logger.warn(
-        `[TR Height-Sync] Skipping message for tr_id=${trId} due to invalid height=${message.height}`
+        `[EC Height-Sync] Skipping message for ecosystem_id=${ecosystemId} due to invalid height=${message.height}`
       );
       return null;
     }
@@ -590,54 +590,54 @@ export default class EcosystemMessageProcessorService extends BullableService {
     const blockHeight = heightNum;
 
     try {
-      await knex("trust_registry").where({ id: trId }).first();
+      await knex("ecosystem").where({ id: ecosystemId }).first();
     } catch (err: any) {
       this.logger.warn(
-        `[TR Height-Sync] Failed to load previous TR row for id=${trId}: ${
+        `[EC Height-Sync] Failed to load previous EC row for id=${ecosystemId}: ${
           err?.message || String(err)
         }`
       );
     }
 
-    let actualTrId: number | null = null;
+    let actualEcosystemId: number | null = null;
     try {
-      const ledgerResponse = await getTrustRegistry(trId, blockHeight);
-      if (!ledgerResponse?.trust_registry) {
+      const ledgerResponse = await getEcosystem(ecosystemId, blockHeight);
+      if (!ledgerResponse?.ecosystem) {
         this.logger.warn(
-          `[TR Height-Sync] Ledger returned no trust_registry for id=${trId} at height=${blockHeight}`
+          `[EC Height-Sync] Ledger returned no ecosystem for id=${ecosystemId} at height=${blockHeight}`
         );
         return null;
       }
 
-      const ledgerTr = ledgerResponse.trust_registry;
-      const extractedTrId = Number(ledgerTr.id ?? ledgerTr.tr_id ?? trId);
-      if (Number.isInteger(extractedTrId) && extractedTrId > 0) {
-        actualTrId = extractedTrId;
+      const ledgerTr = ledgerResponse.ecosystem;
+      const extractedEcosystemId = Number(ledgerTr.id ?? ledgerTr.ecosystem_id ?? ecosystemId);
+      if (Number.isInteger(extractedEcosystemId) && extractedEcosystemId > 0) {
+        actualEcosystemId = extractedEcosystemId;
       } else {
-        actualTrId = trId; 
+        actualEcosystemId = ecosystemId; 
       }
 
       const syncResult: any = await this.broker.call(
         `${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`,
         {
-          ledgerResponse: { trust_registry: ledgerResponse.trust_registry },
+          ledgerResponse: { ecosystem: ledgerResponse.ecosystem },
           blockHeight,
         }
       );
 
       if (!syncResult || syncResult.success !== true) {
         this.logger.warn(
-          `[TR Height-Sync] syncFromLedger reported failure for id=${actualTrId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
+          `[EC Height-Sync] syncFromLedger reported failure for id=${actualEcosystemId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
         );
         return null;
       }
 
-      if (!actualTrId) {
-        actualTrId = trId;
+      if (!actualEcosystemId) {
+        actualEcosystemId = ecosystemId;
       }
     } catch (err: any) {
       this.logger.warn(
-        `[TR Height-Sync] Failed to sync TR id=${trId} from ledger at height=${blockHeight}: ${
+        `[EC Height-Sync] Failed to sync EC id=${ecosystemId} from ledger at height=${blockHeight}: ${
           err?.message || String(err)
         }`
       );
@@ -646,63 +646,63 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
     let newTr: any | null = null;
     try {
-      newTr = await knex("trust_registry").where({ id: actualTrId! }).first();
+      newTr = await knex("ecosystem").where({ id: actualEcosystemId! }).first();
     } catch (err: any) {
       this.logger.warn(
-        `[TR Height-Sync] Failed to load updated TR row for id=${actualTrId}: ${
+        `[EC Height-Sync] Failed to load updated EC row for id=${actualEcosystemId}: ${
           err?.message || String(err)
         }`
       );
     }
     if (!newTr) {
       this.logger.warn(
-        `[TR Height-Sync] No persisted TR row found after sync for id=${actualTrId} at height=${blockHeight}`
+        `[EC Height-Sync] No persisted EC row found after sync for id=${actualEcosystemId} at height=${blockHeight}`
       );
       return null;
     }
-     return actualTrId;
+     return actualEcosystemId;
   }
 
   private async processArchiveTR(message: any) {
     const trx = await knex.transaction();
     try {
-      const tr = await trx("trust_registry")
-        .where({ id: message.trust_registry_id })
+      const ec = await trx("ecosystem")
+        .where({ id: message.ecosystem_id })
         .first();
-      if (!tr) {
+      if (!ec) {
         await trx.rollback();
-        this.logger.warn(` ArchiveTR: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
+        this.logger.warn(` ArchiveTR: EC not found for id=${message.ecosystem_id}, height=${message.height}`);
         return;
       }
 
       const timestamp = formatTimestamp(message.timestamp);
       const shouldArchive = message.archive === true || message.archive === "true";
       const newData = {
-        ...tr,
+        ...ec,
         archived: shouldArchive ? timestamp : null,
         modified: timestamp,
       };
 
-      await trx("trust_registry").where({ id: tr.id }).update(newData);
+      await trx("ecosystem").where({ id: ec.id }).update(newData);
       const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
-        tr.id,
+        ec.id,
         "Archive",
         blockHeight,
-        tr,
+        ec,
         newData
       );
 
       await trx.commit();
-      this.logger.info(` Successfully archived TR: id=${tr.id}`);
+      this.logger.info(` Successfully archived EC: id=${ec.id}`);
 
-      await this.updateTRStatsAndSync(tr.id, message.trust_registry_id ?? tr.id, message.height);
+      await this.updateTRStatsAndSync(ec.id, message.ecosystem_id ?? ec.id, message.height);
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process ArchiveEcosystem for id=${message.trust_registry_id}:`, errorMessage);
-      console.error("FATAL TR ARCHIVE ERROR:", err);
+      this.logger.error(`❌ Failed to process ArchiveEcosystem for id=${message.ecosystem_id}:`, errorMessage);
+      console.error("FATAL EC ARCHIVE ERROR:", err);
       throw err;
     }
   }
@@ -710,45 +710,45 @@ export default class EcosystemMessageProcessorService extends BullableService {
   private async processUpdateTR(message: any) {
     const trx = await knex.transaction();
     try {
-      const tr = await trx("trust_registry")
-        .where({ id: message.trust_registry_id })
+      const ec = await trx("ecosystem")
+        .where({ id: message.ecosystem_id })
         .first();
-      if (!tr) {
+      if (!ec) {
         await trx.rollback();
-        this.logger.warn(` UpdateTR: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
+        this.logger.warn(` UpdateTR: EC not found for id=${message.ecosystem_id}, height=${message.height}`);
         return;
       }
 
-      const updateData: any = { ...tr };
+      const updateData: any = { ...ec };
       if (message.did !== undefined) updateData.did = message.did;
       if (message.aka !== undefined) updateData.aka = message.aka;
       if (message.language !== undefined) updateData.language = message.language;
       if (message.height !== undefined) updateData.height = message.height;
       updateData.modified = formatTimestamp(message.timestamp);
 
-      await trx("trust_registry").where({ id: tr.id }).update(updateData);
+      await trx("ecosystem").where({ id: ec.id }).update(updateData);
       const blockHeight = message.height || 0;
-      const updatedTr = await trx("trust_registry").where({ id: tr.id }).first();
+      const updatedTr = await trx("ecosystem").where({ id: ec.id }).first();
       if (updatedTr) {
         await this.recordTRHistory(
           trx,
-          tr.id,
+          ec.id,
           "Update",
           blockHeight,
-          tr,
+          ec,
           updatedTr
         );
       }
 
       await trx.commit();
-      this.logger.info(` Successfully updated TR: id=${tr.id}`);
+      this.logger.info(` Successfully updated EC: id=${ec.id}`);
 
-      await this.updateTRStatsAndSync(tr.id, message.trust_registry_id ?? tr.id, message.height);
+      await this.updateTRStatsAndSync(ec.id, message.ecosystem_id ?? ec.id, message.height);
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process UpdateEcosystem for id=${message.trust_registry_id}:`, errorMessage);
-      console.error("FATAL TR UPDATE ERROR:", err);
+      this.logger.error(`❌ Failed to process UpdateEcosystem for id=${message.ecosystem_id}:`, errorMessage);
+      console.error("FATAL EC UPDATE ERROR:", err);
       throw err;
     }
   }
@@ -765,19 +765,19 @@ export default class EcosystemMessageProcessorService extends BullableService {
       const timestamp = formatTimestamp(message.timestamp);
       const blockHeight = message.height || 0;
 
-      this.logger.info(` Creating TR with height: ${blockHeight}, did: ${message.did}`);
+      this.logger.info(` Creating EC with height: ${blockHeight}, did: ${message.did}`);
 
-      const existingTR = await trx("trust_registry")
+      const existingTR = await trx("ecosystem")
         .where({ did: message.did, height: blockHeight })
         .first();
 
-      let tr;
-      const corporation = requireController(message, `TR ${message.did}`);
+      let ec;
+      const corporation = requireController(message, `EC ${message.did}`);
       const isReindexing = !!existingTR;
 
       if (isReindexing) {
-        this.logger.info(`TR with did ${message.did} and height ${blockHeight} already exists, updating for reindexing...`);
-        [tr] = await trx("trust_registry")
+        this.logger.info(`EC with did ${message.did} and height ${blockHeight} already exists, updating for reindexing...`);
+        [ec] = await trx("ecosystem")
           .where({ id: existingTR.id })
           .update({
             did: message.did,
@@ -789,8 +789,8 @@ export default class EcosystemMessageProcessorService extends BullableService {
           })
           .returning("*");
       } else {
-        this.logger.info(`🆕 Creating new TR with did ${message.did} at height ${blockHeight}`);
-        [tr] = await trx("trust_registry")
+        this.logger.info(`🆕 Creating new EC with did ${message.did} at height ${blockHeight}`);
+        [ec] = await trx("ecosystem")
           .insert({
             did: message.did,
             corporation,
@@ -806,16 +806,16 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
       await this.recordTRHistory(
         trx,
-        tr.id,
+        ec.id,
         "Create",
         blockHeight,
         null,
-        tr
+        ec
       );
 
       let gfv = await trx("governance_framework_version")
         .where({
-          tr_id: tr.id,
+          ecosystem_id: ec.id,
           version: 1,
         })
         .first();
@@ -823,7 +823,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
       if (!gfv) {
         [gfv] = await trx("governance_framework_version")
           .insert({
-            tr_id: tr.id,
+            ecosystem_id: ec.id,
             created: timestamp,
             version: 1,
             active_since: timestamp,
@@ -844,7 +844,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
       await this.recordGFVHistory(
         trx,
         gfv.id,
-        tr.id,
+        ec.id,
         "CreateGFV",
         blockHeight,
         null,
@@ -878,7 +878,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         trx,
         gfd.id,
         gfv.id,
-        tr.id,
+        ec.id,
         "CreateGFD",
         blockHeight,
         null,
@@ -886,14 +886,14 @@ export default class EcosystemMessageProcessorService extends BullableService {
       );
 
       await trx.commit();
-      this.logger.info(` Successfully created/updated TR: did=${message.did}, id=${tr.id}`);
+      this.logger.info(` Successfully created/updated EC: did=${message.did}, id=${ec.id}`);
 
-      await this.updateTRStatsAndSync(tr.id, tr.id, message.height);
+      await this.updateTRStatsAndSync(ec.id, ec.id, message.height);
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
       this.logger.error(`❌ Failed to process CreateEcosystem for did=${message.did}:`, errorMessage);
-      console.error("FATAL TR CREATE ERROR:", err);
+      console.error("FATAL EC CREATE ERROR:", err);
       throw err;
     }
   }
@@ -901,13 +901,13 @@ export default class EcosystemMessageProcessorService extends BullableService {
   private async processAddGovFrameworkDoc(message: any) {
     const trx = await knex.transaction();
     try {
-      const tr = await trx("trust_registry")
-        .where({ id: message.trust_registry_id })
+      const ec = await trx("ecosystem")
+        .where({ id: message.ecosystem_id })
         .first();
-      if (!tr) {
+      if (!ec) {
         await trx.rollback();
         throw new Error(
-          `AddGovFrameworkDoc: TR not found for id=${message.trust_registry_id}, height=${message.height}`
+          `AddGovFrameworkDoc: EC not found for id=${message.ecosystem_id}, height=${message.height}`
         );
       }
 
@@ -916,21 +916,21 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
       let gfv = await trx("governance_framework_version")
         .where({
-          tr_id: tr.id,
+          ecosystem_id: ec.id,
           version: message.version,
         })
         .first();
 
       if (!gfv) {
         const maxVersionResult = await trx("governance_framework_version")
-          .where({ tr_id: tr.id })
+          .where({ ecosystem_id: ec.id })
           .max("version as max_version")
           .first();
         const maxVersion = maxVersionResult?.max_version || 0;
 
-        if (message.version !== maxVersion + 1 || message.version <= tr.active_version) {
+        if (message.version !== maxVersion + 1 || message.version <= ec.active_version) {
           await trx.rollback();
-          const errMsg = `AddGovFrameworkDoc: Invalid version=${message.version} for tr_id=${tr.id}, maxVersion=${maxVersion}, active_version=${tr.active_version}`;
+          const errMsg = `AddGovFrameworkDoc: Invalid version=${message.version} for ecosystem_id=${ec.id}, maxVersion=${maxVersion}, active_version=${ec.active_version}`;
           this.logger.error(errMsg);
           this.logger.error("AddGovFrameworkDoc message payload:", JSON.stringify(message));
           console.error("FATAL: Invalid AddGovFrameworkDoc version. Exiting for debug.");
@@ -939,7 +939,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
         [gfv] = await trx("governance_framework_version")
           .insert({
-            tr_id: tr.id,
+            ecosystem_id: ec.id,
             created: timestamp,
             version: message.version,
             // active_since: null, // Omit to allow default null
@@ -949,7 +949,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         await this.recordGFVHistory(
           trx,
           gfv.id,
-          tr.id,
+          ec.id,
           "AddGFV",
           blockHeight,
           null,
@@ -985,7 +985,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         trx,
         gfd.id,
         gfv.id,
-        tr.id,
+        ec.id,
         oldGfd ? "UpdateGFD" : "AddGFD",
         blockHeight,
         oldGfd,
@@ -994,12 +994,12 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
       await trx.commit();
       this.logger.info(
-        ` AddGovFrameworkDoc OK: tr_id=${tr.id}, gfv_version=${message.version}, gfd_id=${gfd.id}`
+        ` AddGovFrameworkDoc OK: ecosystem_id=${ec.id}, gfv_version=${message.version}, gfd_id=${gfd.id}`
       );
     } catch (err: any) {
       await trx.rollback();
       this.logger.error(
-        `❌ AddGovFrameworkDoc failed for tr_id=${message.trust_registry_id}:`,
+        `❌ AddGovFrameworkDoc failed for ecosystem_id=${message.ecosystem_id}:`,
         err?.message || err
       );
       throw err;
@@ -1010,38 +1010,38 @@ export default class EcosystemMessageProcessorService extends BullableService {
   private async processIncreaseActiveGFV(message: any) {
     const trx = await knex.transaction();
     try {
-      const tr = await trx("trust_registry")
-        .where({ id: message.trust_registry_id })
+      const ec = await trx("ecosystem")
+        .where({ id: message.ecosystem_id })
         .first();
-      if (!tr) {
+      if (!ec) {
         await trx.rollback();
-        this.logger.warn(` IncreaseActiveGFV: TR not found for id=${message.trust_registry_id}, height=${message.height}`);
+        this.logger.warn(` IncreaseActiveGFV: EC not found for id=${message.ecosystem_id}, height=${message.height}`);
         return;
       }
 
-      const nextVersion = tr.active_version + 1;
+      const nextVersion = ec.active_version + 1;
       const gfv = await trx("governance_framework_version")
-        .where({ tr_id: tr.id, version: nextVersion })
+        .where({ ecosystem_id: ec.id, version: nextVersion })
         .first();
       if (!gfv) {
         await trx.rollback();
-        this.logger.warn(` IncreaseActiveGFV: GFV version ${nextVersion} not found for tr_id=${tr.id}, height=${message.height}. Will retry.`);
-        throw new Error(`GFV version ${nextVersion} not found for tr_id=${tr.id}, retry needed`);
+        this.logger.warn(` IncreaseActiveGFV: GFV version ${nextVersion} not found for ecosystem_id=${ec.id}, height=${message.height}. Will retry.`);
+        throw new Error(`GFV version ${nextVersion} not found for ecosystem_id=${ec.id}, retry needed`);
       }
 
       const timestamp = formatTimestamp(message.timestamp);
 
-      await trx("trust_registry")
-        .where({ id: tr.id })
+      await trx("ecosystem")
+        .where({ id: ec.id })
         .update({ active_version: nextVersion, modified: timestamp });
       const blockHeight = message.height || 0;
       await this.recordTRHistory(
         trx,
-        tr.id,
+        ec.id,
         "IncreaseGFV",
         blockHeight,
-        tr,
-        { ...tr, active_version: nextVersion, modified: timestamp }
+        ec,
+        { ...ec, active_version: nextVersion, modified: timestamp }
       );
 
       await trx("governance_framework_version")
@@ -1050,7 +1050,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
       await this.recordGFVHistory(
         trx,
         gfv.id,
-        tr.id,
+        ec.id,
         "ActivateGFV",
         blockHeight,
         gfv,
@@ -1058,14 +1058,14 @@ export default class EcosystemMessageProcessorService extends BullableService {
       );
 
       await trx.commit();
-      this.logger.info(` Successfully increased active GFV: tr_id=${tr.id}, version=${nextVersion}`);
+      this.logger.info(` Successfully increased active GFV: ecosystem_id=${ec.id}, version=${nextVersion}`);
       
-      await this.updateTRStatsAndSync(tr.id, message.trust_registry_id ?? tr.id, message.height);
+      await this.updateTRStatsAndSync(ec.id, message.ecosystem_id ?? ec.id, message.height);
     } catch (err: any) {
       await trx.rollback();
       const errorMessage = err?.message || String(err);
-      this.logger.error(`❌ Failed to process IncreaseActiveGFV for tr_id=${message.trust_registry_id}:`, errorMessage);
-      console.error("FATAL TR INCREASE GFV ERROR:", err);
+      this.logger.error(`❌ Failed to process IncreaseActiveGFV for ecosystem_id=${message.ecosystem_id}:`, errorMessage);
+      console.error("FATAL EC INCREASE GFV ERROR:", err);
       throw err;
     }
   }

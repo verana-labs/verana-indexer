@@ -131,12 +131,12 @@ export default class IndexerMetaService extends BaseService {
 
     // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
     const tables = [
-      "trust_registry_history",
+      "ecosystem_history",
       "governance_framework_version_history",
       "governance_framework_document_history",
       "credential_schema_history",
-      "permission_history",
-      "permission_session_history",
+      "participant_history",
+      "participant_session_history",
       "trust_deposit_history",
       "module_params_history",
     ];
@@ -353,21 +353,21 @@ export default class IndexerMetaService extends BaseService {
     ]);
 
     const [
-      trHistory,
+      ecosystemHistory,
       gfvHistory,
       gfdHistory,
       csHistory,
-      permHistory,
-      permSessionHistory,
+      participantHistory,
+      participantSessionHistory,
       tdHistory,
       moduleParamsHistory,
     ] = await Promise.all([
-      queryHistoryWithTx("trust_registry_history", blockHeight, "TrustRegistry", "tr_id", "tr_id", ["/verana.tr.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
-      queryHistoryWithTx("governance_framework_version_history", blockHeight, "GovernanceFrameworkVersion", "tr_id", "gfv_id", ["/verana.tr.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
-      queryHistoryWithTx("governance_framework_document_history", blockHeight, "GovernanceFrameworkDocument", "tr_id", "gfd_id", ["/verana.tr.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("ecosystem_history", blockHeight, "Ecosystem", "ecosystem_id", "ecosystem_id", ["/verana.ec.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("governance_framework_version_history", blockHeight, "GovernanceFrameworkVersion", "ecosystem_id", "gfv_id", ["/verana.ec.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("governance_framework_document_history", blockHeight, "GovernanceFrameworkDocument", "ecosystem_id", "gfd_id", ["/verana.ec.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("credential_schema_history", blockHeight, "CredentialSchema", "credential_schema_id", "credential_schema_id", ["/verana.cs.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
-      queryHistoryWithTx("permission_history", blockHeight, "Permission", "permission_id", "permission_id", ["/verana.perm.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
-      queryHistoryWithTx("permission_session_history", blockHeight, "PermissionSession", "session_id", "session_id", ["/verana.perm.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("participant_history", blockHeight, "Participant", "participant_id", "participant_id", ["/verana.pp.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
+      queryHistoryWithTx("participant_session_history", blockHeight, "ParticipantSession", "session_id", "session_id", ["/verana.pp.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("trust_deposit_history", blockHeight, "TrustDeposit", "corporation", "corporation", ["/verana.td.v1"], timestampAtHeight, allMessagesAtHeight as any[]),
       queryHistoryWithTx("module_params_history", blockHeight, "GlobalVariables", "module", "module", [], timestampAtHeight, allMessagesAtHeight as any[]),
     ]);
@@ -419,8 +419,8 @@ export default class IndexerMetaService extends BaseService {
       return activityItem;
     };
 
-    for (const record of trHistory) {
-      activityItems.push(toActivityItem(record, "TrustRegistry", String(record.tr_id)));
+    for (const record of ecosystemHistory) {
+      activityItems.push(toActivityItem(record, "Ecosystem", String(record.ecosystem_id)));
     }
 
     for (const record of gfvHistory) {
@@ -435,12 +435,12 @@ export default class IndexerMetaService extends BaseService {
       activityItems.push(toActivityItem(record, "CredentialSchema", String(record.credential_schema_id ?? record.id)));
     }
 
-    for (const record of permHistory) {
-      activityItems.push(toActivityItem(record, "Permission", String(record.permission_id)));
+    for (const record of participantHistory) {
+      activityItems.push(toActivityItem(record, "Participant", String(record.participant_id)));
     }
 
-    for (const record of permSessionHistory) {
-      activityItems.push(toActivityItem(record, "PermissionSession", record.session_id));
+    for (const record of participantSessionHistory) {
+      activityItems.push(toActivityItem(record, "ParticipantSession", record.session_id));
     }
 
     for (const record of tdHistory) {

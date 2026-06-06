@@ -1,5 +1,5 @@
 import { ServiceBroker } from "moleculer";
-import PermAPIService from "../../../../src/services/crawl-perm/perm_apis.service";
+import ParticipantAPIService from "../../../../src/services/crawl-pp/pp_apis.service";
 import knex from "../../../../src/common/utils/db_connection";
 
 function createKnexChain() {
@@ -55,14 +55,14 @@ describe("Pending Flat API", () => {
 
   beforeAll(() => {
     broker = new ServiceBroker({ logger: false });
-    service = broker.createService(PermAPIService);
+    service = broker.createService(ParticipantAPIService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it("returns empty when no permissions found", async () => {
+  it("returns empty when no participants found", async () => {
     (knex as any).mockImplementation(() => createKnexChain());
 
     const ctx: any = { params: { account: "acc1", response_max_size: 10 }, meta: {} };

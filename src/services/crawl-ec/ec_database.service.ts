@@ -7,20 +7,20 @@ import BaseService from "../../base/base.service";
 import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
 import { validateParticipantParam } from "../../common/utils/accountValidation";
 import ApiResponder from "../../common/utils/apiResponse";
-import { TrustRegistry } from "../../models/trust_registry";
+import { Ecosystem } from "../../models/ecosystem";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
-import { calculateTrustRegistryStats, TR_STATS_FIELDS } from "./tr_stats";
-import { mapTrustRegistryApiFields } from "../../common/vpr-v4-mapping";
+import { calculateEcosystemStats, TR_STATS_FIELDS } from "./ec_stats";
+import { mapEcosystemApiFields } from "../../common/vpr-v4-mapping";
 import { enrichTrustDataDeep, parseTrustDataMode } from "../resolver/trust-data-enrichment";
 import {
     ensureDepositDefaultIfColumnExists,
-    finalizeTrustRegistryHistoryInsert,
-    prepareTrustRegistrySnapshotRowForInsert,
-    resolvePermissionHistoryParticipantColumn,
-    resolvePermissionsParticipantColumn,
-    resolveTrustRegistryHistoryParticipantColumn,
-    resolveTrustRegistryParticipantColumn,
+    finalizeEcosystemHistoryInsert,
+    prepareEcosystemSnapshotRowForInsert,
+    resolveParticipantHistoryParticipantColumn,
+    resolveParticipantsParticipantColumn,
+    resolveEcosystemHistoryParticipantColumn,
+    resolveEcosystemParticipantColumn,
 } from "../../common/utils/installed_table_columns";
 
 function ledgerHasKey(obj: unknown, key: string): boolean {
@@ -32,9 +32,9 @@ function ledgerHasKey(obj: unknown, key: string): boolean {
     version: 1
 })
 export default class EcosystemDatabaseService extends BaseService {
-    private trHistoryColumnExistsCache = new Map<string, boolean>();
-    private trHistoryColumnsCache: Set<string> | null = null;
-    private trustRegistryParticipantColumn: "corporation" | null = null;
+    private ecosystemHistoryColumnExistsCache = new Map<string, boolean>();
+    private ecosystemHistoryColumnsCache: Set<string> | null = null;
+    private ecosystemParticipantColumn: "corporation" | null = null;
     private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
         "id",
         "modified",
@@ -60,10 +60,10 @@ export default class EcosystemDatabaseService extends BaseService {
         super(broker);
     }
 
-    private async getTrustRegistryParticipantColumn(db: Knex | Knex.Transaction): Promise<"corporation"> {
-        if (this.trustRegistryParticipantColumn) return this.trustRegistryParticipantColumn;
-        const col = await resolveTrustRegistryParticipantColumn(db);
-        this.trustRegistryParticipantColumn = col;
+    private async getEcosystemParticipantColumn(db: Knex | Knex.Transaction): Promise<"corporation"> {
+        if (this.ecosystemParticipantColumn) return this.ecosystemParticipantColumn;
+        const col = await resolveEcosystemParticipantColumn(db);
+        this.ecosystemParticipantColumn = col;
         return col;
     }
 
@@ -93,21 +93,21 @@ export default class EcosystemDatabaseService extends BaseService {
         name: "syncFromLedger",
     })
     public async syncFromLedger(
-        ctx: Context<{ ledgerResponse: { trust_registry?: any; trustRegistry?: any; tr?: any }; blockHeight: number }>
+        ctx: Context<{ ledgerResponse: { ecosystem?: any; ec?: any }; blockHeight: number }>
     ) {
         try {
             const { ledgerResponse, blockHeight } = ctx.params;
             const raw =
-                ledgerResponse?.trust_registry ??
-                ledgerResponse?.trustRegistry ??
-                ledgerResponse?.tr;
+                ledgerResponse?.ecosystem ??
+                ledgerResponse?.ecosystem ??
+                ledgerResponse?.ec;
             if (!raw || typeof raw !== "object") {
-                return ApiResponder.error(ctx, "Missing or invalid ledger trust_registry", 400);
+                return ApiResponder.error(ctx, "Missing or invalid ledger ecosystem", 400);
             }
 
-            const trId = Number((raw as any).id ?? (raw as any).tr_id);
-            if (!Number.isInteger(trId) || trId <= 0) {
-                return ApiResponder.error(ctx, "Invalid trust_registry id from ledger", 400);
+            const ecosystemId = Number((raw as any).id ?? (raw as any).ecosystem_id);
+            if (!Number.isInteger(ecosystemId) || ecosystemId <= 0) {
+                return ApiResponder.error(ctx, "Invalid ecosystem id from ledger", 400);
             }
 
             const blockHeightNum = Number(blockHeight) || 0;
@@ -122,12 +122,12 @@ export default class EcosystemDatabaseService extends BaseService {
                 (raw as any).modified ??
                 (raw as any).created ??
                 new Date();
-            const preSyncTr = await knex("trust_registry").where({ id: trId }).first();
+            const preSyncTr = await knex("ecosystem").where({ id: ecosystemId }).first();
 
             await knex.transaction(async (trx) => {
-                const existingTr = await trx("trust_registry").where({ id: trId }).first();
+                const existingTr = await trx("ecosystem").where({ id: ecosystemId }).first();
                 const rawObj = raw as Record<string, unknown>;
-                const participantCol = await this.getTrustRegistryParticipantColumn(trx);
+                const participantCol = await this.getEcosystemParticipantColumn(trx);
 
                 const activeVersionFromLedger =
                     ledgerHasKey(rawObj, "active_version") || ledgerHasKey(rawObj, "activeVersion")
@@ -167,10 +167,10 @@ export default class EcosystemDatabaseService extends BaseService {
                         blockHeightNum > 0 &&
                         Number(existingTr.height) !== Number(blockHeightNum)
                     ) {
-                        const otherOwner = await trx("trust_registry")
+                        const otherOwner = await trx("ecosystem")
                             .select("id")
                             .where("height", blockHeightNum)
-                            .whereNot("id", trId)
+                            .whereNot("id", ecosystemId)
                             .first();
                         if (otherOwner) {
                             const { height: originalHeight, ...ledgerFieldsOnly } = basePayload;
@@ -179,20 +179,20 @@ export default class EcosystemDatabaseService extends BaseService {
                                 height: existingTr.height ?? originalHeight,
                             };
                             this.logger.warn(
-                                `[TR syncFromLedger] tr_id=${trId}: cannot set height=${blockHeightNum} (legacy UNIQUE(height) ` +
+                                `[EC syncFromLedger] ecosystem_id=${ecosystemId}: cannot set height=${blockHeightNum} (legacy UNIQUE(height) ` +
                                     `held by id=${otherOwner.id}); kept height=${existingTr.height}. ` +
-                                    "Consider dropping/relaxing the legacy UNIQUE(height) constraint on trust_registry via your normal migration process."
+                                    "Consider dropping/relaxing the legacy UNIQUE(height) constraint on ecosystem via your normal migration process."
                             );
                         }
                     }
-                    await trx("trust_registry").where({ id: trId }).update(payloadForUpdate);
+                    await trx("ecosystem").where({ id: ecosystemId }).update(payloadForUpdate);
                 } else {
                     const insertRow: Record<string, unknown> = {
-                        id: trId,
+                        id: ecosystemId,
                         ...basePayload,
                     };
-                    await ensureDepositDefaultIfColumnExists(trx, "trust_registry", insertRow, (raw as any).deposit ?? (existingTr as any)?.deposit);
-                    await trx("trust_registry").insert(insertRow);
+                    await ensureDepositDefaultIfColumnExists(trx, "ecosystem", insertRow, (raw as any).deposit ?? (existingTr as any)?.deposit);
+                    await trx("ecosystem").insert(insertRow);
                 }
                 const hasVersionsInLedger = ledgerHasKey(rawObj, "versions");
                 const versions: any[] | null = hasVersionsInLedger
@@ -201,7 +201,7 @@ export default class EcosystemDatabaseService extends BaseService {
 
                 if (versions === null) {
                     this.logger.warn(
-                        `[TR syncFromLedger] Ledger response has no "versions" key for tr_id=${trId} at height=${blockHeightNum}; ` +
+                        `[EC syncFromLedger] Ledger response has no "versions" key for ecosystem_id=${ecosystemId} at height=${blockHeightNum}; ` +
                             "skipping governance framework / version document reconciliation (trust row still updated)."
                     );
                 }
@@ -215,15 +215,15 @@ export default class EcosystemDatabaseService extends BaseService {
 
                 if (versions !== null && versionNumbers.length > 0) {
                     await trx("governance_framework_version")
-                        .where({ tr_id: trId })
+                        .where({ ecosystem_id: ecosystemId })
                         .whereNotIn("version", versionNumbers)
                         .del();
                 }
 
                 const chainVersionIds: number[] = [];
                 const hasNewTrTables =
-                    (await trx.schema.hasTable("trust_registry_version")) &&
-                    (await trx.schema.hasTable("trust_registry_document"));
+                    (await trx.schema.hasTable("ecosystem_version")) &&
+                    (await trx.schema.hasTable("ecosystem_document"));
 
                 if (versions !== null) {
                     for (const v of versions) {
@@ -231,14 +231,14 @@ export default class EcosystemDatabaseService extends BaseService {
                         if (!Number.isInteger(versionNum) || versionNum <= 0) continue;
 
                         const gfvBase: any = {
-                            tr_id: trId,
+                            ecosystem_id: ecosystemId,
                             created: (v as any).created ?? null,
                             version: versionNum,
                             active_since: (v as any).active_since ?? (v as any).activeSince ?? null,
                         };
 
                         let gfvRow = await trx("governance_framework_version")
-                            .where({ tr_id: trId, version: versionNum })
+                            .where({ ecosystem_id: ecosystemId, version: versionNum })
                             .first();
 
                         const oldGfvRow = gfvRow ? { ...gfvRow } : null;
@@ -266,16 +266,16 @@ export default class EcosystemDatabaseService extends BaseService {
                         );
                         if (hasNewTrTables && Number.isInteger(chainVersionId) && chainVersionId > 0) {
                             chainVersionIds.push(chainVersionId);
-                            await trx("trust_registry_version")
+                            await trx("ecosystem_version")
                                 .insert({
                                     id: chainVersionId,
-                                    tr_id: trId,
+                                    ecosystem_id: ecosystemId,
                                     created: gfvRow.created ?? null,
                                     version: gfvRow.version,
                                     active_since: gfvRow.active_since ?? gfvRow.created ?? null,
                                 })
                                 .onConflict("id")
-                                .merge(["tr_id", "created", "version", "active_since"]);
+                                .merge(["ecosystem_id", "created", "version", "active_since"]);
                         }
 
                         const gfvChanges: Record<string, any> = {};
@@ -376,7 +376,7 @@ export default class EcosystemDatabaseService extends BaseService {
                                 digest_sri: updatedDoc.digest_sri ?? "",
                             };
 
-                              const existingTrDoc = await trx("trust_registry_document")
+                              const existingTrDoc = await trx("ecosystem_document")
                                 .where({
                                     version_id: chainVersionId,
                                     url: updatedDoc.url ?? "",
@@ -384,14 +384,14 @@ export default class EcosystemDatabaseService extends BaseService {
                                 .first();
 
                             if (existingTrDoc && existingTrDoc.id != null) {
-                                await trx("trust_registry_document")
+                                await trx("ecosystem_document")
                                     .where({ id: existingTrDoc.id })
                                     .update(trDocBasePayload);
                             } else if (
                                 Number.isInteger(chainDocId) &&
                                 chainDocId > 0
                             ) {
-                                await trx("trust_registry_document")
+                                await trx("ecosystem_document")
                                     .insert({
                                         id: chainDocId,
                                         ...trDocBasePayload,
@@ -419,7 +419,7 @@ export default class EcosystemDatabaseService extends BaseService {
                         if (isGfvCreation || isDocCreation || Object.keys(docChanges).length > 0) {
                             await trx("governance_framework_document_history").insert({
                                 gfv_id: gfvId,
-                                tr_id: trId,
+                                ecosystem_id: ecosystemId,
                                 created: updatedDoc.created || new Date(),
                                 language: updatedDoc.language || "",
                                 url: updatedDoc.url || "",
@@ -434,7 +434,7 @@ export default class EcosystemDatabaseService extends BaseService {
 
                     if (isGfvCreation || Object.keys(gfvChanges).length > 0) {
                         await trx("governance_framework_version_history").insert({
-                            tr_id: trId,
+                            ecosystem_id: ecosystemId,
                             created: gfvRow.created || new Date(),
                             version: gfvRow.version,
                             active_since: gfvRow.active_since || gfvRow.created || new Date(),
@@ -447,37 +447,37 @@ export default class EcosystemDatabaseService extends BaseService {
                 }
 
                 if (hasNewTrTables) {
-                    const existingVersionRows = await trx("trust_registry_version")
-                        .where({ tr_id: trId })
+                    const existingVersionRows = await trx("ecosystem_version")
+                        .where({ ecosystem_id: ecosystemId })
                         .select("id");
                     const existingIds = (existingVersionRows || []).map((r: any) => Number(r.id));
                     const toRemove = existingIds.filter((id: number) => !chainVersionIds.includes(id));
                     if (toRemove.length > 0) {
-                        await trx("trust_registry_document").whereIn("version_id", toRemove).del();
+                        await trx("ecosystem_document").whereIn("version_id", toRemove).del();
                     }
                     if (chainVersionIds.length > 0) {
-                        await trx("trust_registry_version")
-                            .where({ tr_id: trId })
+                        await trx("ecosystem_version")
+                            .where({ ecosystem_id: ecosystemId })
                             .whereNotIn("id", chainVersionIds)
                             .del();
                     } else {
-                        await trx("trust_registry_version").where({ tr_id: trId }).del();
+                        await trx("ecosystem_version").where({ ecosystem_id: ecosystemId }).del();
                     }
                 }
                 }
             });
 
-            const currentTr = await knex("trust_registry").where({ id: trId }).first();
+            const currentTr = await knex("ecosystem").where({ id: ecosystemId }).first();
             if (!currentTr) {
-                return ApiResponder.error(ctx, "TR not found after sync", 500);
+                return ApiResponder.error(ctx, "EC not found after sync", 500);
             }
 
             let computedStats: any = null;
             try {
-                computedStats = await calculateTrustRegistryStats(trId, undefined);
+                computedStats = await calculateEcosystemStats(ecosystemId, undefined);
             } catch (statsErr: any) {
                 this.logger.warn(
-                    `[TR syncFromLedger] Failed to calculate stats for tr_id=${trId}: ${statsErr?.message || String(statsErr)}`
+                    `[EC syncFromLedger] Failed to calculate stats for ecosystem_id=${ecosystemId}: ${statsErr?.message || String(statsErr)}`
                 );
             }
 
@@ -489,10 +489,10 @@ export default class EcosystemDatabaseService extends BaseService {
                 statsUpdatePayload[field] = value;
             }
 
-            await knex("trust_registry")
-                .where({ id: trId })
+            await knex("ecosystem")
+                .where({ id: ecosystemId })
                 .update(statsUpdatePayload);
-            const updatedTr = await knex("trust_registry").where({ id: trId }).first();
+            const updatedTr = await knex("ecosystem").where({ id: ecosystemId }).first();
             if (updatedTr) {
                 for (const field of TR_STATS_FIELDS) {
                     (updatedTr as any)[field] = statsUpdatePayload[field] ?? Number(updatedTr[field] ?? 0);
@@ -545,10 +545,10 @@ export default class EcosystemDatabaseService extends BaseService {
 
                 if (!oldTr || hasCoreChanges || hasStatsChanges) {
                     await knex.transaction(async (trx) => {
-                        const baseHistoryPayload = await this.withDynamicTrustRegistryHistoryColumns(
+                        const baseHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
                             trx,
                             {
-                                tr_id: trId,
+                                ecosystem_id: ecosystemId,
                                 did: updatedTr.did,
                                 corporation: updatedTr.corporation,
                                 created: updatedTr.created,
@@ -584,9 +584,9 @@ export default class EcosystemDatabaseService extends BaseService {
                         );
 
                         if (!oldTr || hasCoreChanges) {
-                            const existingSameBaseEvent = await trx("trust_registry_history")
+                            const existingSameBaseEvent = await trx("ecosystem_history")
                                 .where({
-                                    tr_id: trId,
+                                    ecosystem_id: ecosystemId,
                                     event_type: oldTr ? "Update" : "Create",
                                     height: blockHeightNum,
                                 })
@@ -599,12 +599,12 @@ export default class EcosystemDatabaseService extends BaseService {
                                 ? String(baseHistoryPayload.changes)
                                 : null;
                             if (!(existingSameBaseEvent && existingBaseChanges === nextBaseChanges)) {
-                                await trx("trust_registry_history").insert(baseHistoryPayload);
+                                await trx("ecosystem_history").insert(baseHistoryPayload);
                             }
                         }
 
                         if (oldTr && hasStatsChanges) {
-                            const statsHistoryPayload = await this.withDynamicTrustRegistryHistoryColumns(
+                            const statsHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
                                 trx,
                                 {
                                     ...baseHistoryPayload,
@@ -615,9 +615,9 @@ export default class EcosystemDatabaseService extends BaseService {
                                 updatedTr
                             );
 
-                            const existingSameStatsEvent = await trx("trust_registry_history")
+                            const existingSameStatsEvent = await trx("ecosystem_history")
                                 .where({
-                                    tr_id: trId,
+                                    ecosystem_id: ecosystemId,
                                     event_type: "StatsUpdate",
                                     height: blockHeightNum,
                                 })
@@ -628,7 +628,7 @@ export default class EcosystemDatabaseService extends BaseService {
                                 : null;
                             const nextStatsChanges = String(statsHistoryPayload.changes);
                             if (!(existingSameStatsEvent && existingStatsChanges === nextStatsChanges)) {
-                                await trx("trust_registry_history").insert(statsHistoryPayload);
+                                await trx("ecosystem_history").insert(statsHistoryPayload);
                             }
                         }
                     });
@@ -637,8 +637,8 @@ export default class EcosystemDatabaseService extends BaseService {
                 if (
                     process.env.USE_HEIGHT_SYNC_TR === "true" &&
                     updatedTr &&
-                    (await knex.schema.hasTable("trust_registry_snapshot")) &&
-                    (await knex.schema.hasTable("trust_registry_snapshot_diff"))
+                    (await knex.schema.hasTable("ecosystem_snapshot")) &&
+                    (await knex.schema.hasTable("ecosystem_snapshot_diff"))
                 ) {
                     const toJsonSafe = (x: any): string | number | null => {
                         if (x === null || x === undefined) return null;
@@ -665,7 +665,7 @@ export default class EcosystemDatabaseService extends BaseService {
                         }
                         versionsForSnapshot.push({
                             id: vid,
-                            tr_id: trId,
+                            ecosystem_id: ecosystemId,
                             created: toJsonSafe((v as any).created),
                             version: Number((v as any).version ?? 0),
                             active_since: toJsonSafe((v as any).active_since ?? (v as any).activeSince),
@@ -677,7 +677,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     const eventType = preSyncTr ? "Update" : "Create";
                     const snapshotStats = savedStats ?? statsUpdatePayload;
                     const insertPayload: Record<string, any> = {
-                        tr_id: trId,
+                        ecosystem_id: ecosystemId,
                         height: blockHeightNum,
                         event_type: eventType,
                         did: updatedTr.did,
@@ -709,21 +709,21 @@ export default class EcosystemDatabaseService extends BaseService {
                     if (versionsSnapshotJson !== null) {
                         insertPayload.versions_snapshot = knex.raw("?::jsonb", [versionsSnapshotJson]);
                     }
-                    const snapshotInsertRow = await prepareTrustRegistrySnapshotRowForInsert(
+                    const snapshotInsertRow = await prepareEcosystemSnapshotRowForInsert(
                         knex,
                         insertPayload as Record<string, unknown>,
                         {
-                            trRow: updatedTr as Record<string, unknown>,
+                            ecosystemRow: updatedTr as Record<string, unknown>,
                             rawLedger: raw as Record<string, unknown>,
                         }
                     );
-                    const [snapshotRow] = await knex("trust_registry_snapshot")
+                    const [snapshotRow] = await knex("ecosystem_snapshot")
                         .insert(snapshotInsertRow)
                         .returning("id");
                     const nextSnapshotId = snapshotRow?.id;
                     if (nextSnapshotId) {
-                        const prevSnapshot = await knex("trust_registry_snapshot")
-                            .where({ tr_id: trId })
+                        const prevSnapshot = await knex("ecosystem_snapshot")
+                            .where({ ecosystem_id: ecosystemId })
                             .where("height", "<", blockHeightNum)
                             .orderBy("height", "desc")
                             .orderBy("id", "desc")
@@ -747,8 +747,8 @@ export default class EcosystemDatabaseService extends BaseService {
                                 }
                             }
                         }
-                        await knex("trust_registry_snapshot_diff").insert({
-                            tr_id: trId,
+                        await knex("ecosystem_snapshot_diff").insert({
+                            ecosystem_id: ecosystemId,
                             height: blockHeightNum,
                             event_type: eventType,
                             prev_snapshot_id: prevSnapshotId,
@@ -761,38 +761,38 @@ export default class EcosystemDatabaseService extends BaseService {
 
             return ApiResponder.success(ctx, { success: true }, 200);
         } catch (err: any) {
-            this.logger.error("Error in TrustRegistry syncFromLedger:", err);
+            this.logger.error("Error in Ecosystem syncFromLedger:", err);
             return ApiResponder.error(ctx, "Internal Server Error", 500);
         }
     }
 
-    private async hasTrHistoryColumn(tableName: string, columnName: string): Promise<boolean> {
+    private async hasEcosystemHistoryColumn(tableName: string, columnName: string): Promise<boolean> {
         const key = `${tableName}.${columnName}`;
-        const cached = this.trHistoryColumnExistsCache.get(key);
+        const cached = this.ecosystemHistoryColumnExistsCache.get(key);
         if (cached !== undefined) {
             return cached;
         }
         const exists = await knex.schema.hasColumn(tableName, columnName);
-        this.trHistoryColumnExistsCache.set(key, exists);
+        this.ecosystemHistoryColumnExistsCache.set(key, exists);
         return exists;
     }
 
-    private async getTrustRegistryHistoryColumns(trx: any): Promise<Set<string>> {
-        if (this.trHistoryColumnsCache) {
-            return this.trHistoryColumnsCache;
+    private async getEcosystemHistoryColumns(trx: any): Promise<Set<string>> {
+        if (this.ecosystemHistoryColumnsCache) {
+            return this.ecosystemHistoryColumnsCache;
         }
-        const info = await trx("trust_registry_history").columnInfo();
-        this.trHistoryColumnsCache = new Set(Object.keys(info || {}));
-        return this.trHistoryColumnsCache;
+        const info = await trx("ecosystem_history").columnInfo();
+        this.ecosystemHistoryColumnsCache = new Set(Object.keys(info || {}));
+        return this.ecosystemHistoryColumnsCache;
     }
 
-    private async withDynamicTrustRegistryHistoryColumns(
+    private async withDynamicEcosystemHistoryColumns(
         trx: any,
         payload: Record<string, any>,
-        trRow: Record<string, any>
+        ecosystemRow: Record<string, any>
     ): Promise<Record<string, any>> {
-        const historyColumns = await this.getTrustRegistryHistoryColumns(trx);
-        return finalizeTrustRegistryHistoryInsert(historyColumns, payload, trRow) as Record<string, any>;
+        const historyColumns = await this.getEcosystemHistoryColumns(trx);
+        return finalizeEcosystemHistoryInsert(historyColumns, payload, ecosystemRow) as Record<string, any>;
     }
 
     private usesDerivedMetricSort(sort?: string): boolean {
@@ -812,7 +812,7 @@ export default class EcosystemDatabaseService extends BaseService {
         return derivedKeys.some((key) => lower.includes(key));
     }
 
-    private applyTrustRegistrySqlSort(query: any, sort?: string): { fullyApplied: boolean } {
+    private applyEcosystemSqlSort(query: any, sort?: string): { fullyApplied: boolean } {
         if (!sort || typeof sort !== "string" || !sort.trim()) {
             query.orderBy("modified", "desc").orderBy("id", "desc");
             return { fullyApplied: true };
@@ -999,62 +999,62 @@ export default class EcosystemDatabaseService extends BaseService {
         );
     }
 
-    private async buildHistoricalVersionsByTrIds(
-        trIdsInput: number[],
+    private async buildHistoricalVersionsByEcosystemIds(
+        ecosystemIdsInput: number[],
         blockHeight: number,
         activeGfOnly: boolean,
         preferredLanguage?: string
     ): Promise<Map<number, any[]>> {
-        const trIds = Array.from(new Set(trIdsInput.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+        const ecosystemIds = Array.from(new Set(ecosystemIdsInput.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
         const versionsByTr = new Map<number, any[]>();
-        if (trIds.length === 0) return versionsByTr;
+        if (ecosystemIds.length === 0) return versionsByTr;
 
         const gfvHistoryRows = await knex("governance_framework_version_history")
-            .select("id", "tr_id", "created", "version", "active_since", "height", "created_at")
-            .whereIn("tr_id", trIds)
+            .select("id", "ecosystem_id", "created", "version", "active_since", "height", "created_at")
+            .whereIn("ecosystem_id", ecosystemIds)
             .where("height", "<=", blockHeight)
-            .orderBy("tr_id", "asc")
+            .orderBy("ecosystem_id", "asc")
             .orderBy("version", "asc")
             .orderBy("height", "desc")
             .orderBy("created_at", "desc");
 
         const gfvRows = await knex("governance_framework_version")
-            .select("id", "tr_id", "version")
-            .whereIn("tr_id", trIds);
+            .select("id", "ecosystem_id", "version")
+            .whereIn("ecosystem_id", ecosystemIds);
         const gfvIdByTrVersion = new Map<string, number>();
         for (const row of gfvRows) {
-            gfvIdByTrVersion.set(`${Number(row.tr_id)}::${Number(row.version)}`, Number(row.id));
+            gfvIdByTrVersion.set(`${Number(row.ecosystem_id)}::${Number(row.version)}`, Number(row.id));
         }
 
         const latestByTrVersion = new Map<string, any>();
         for (const gfv of gfvHistoryRows) {
-            const trId = Number(gfv.tr_id);
+            const ecosystemId = Number(gfv.ecosystem_id);
             const version = Number(gfv.version);
-            const key = `${trId}::${version}`;
+            const key = `${ecosystemId}::${version}`;
             if (latestByTrVersion.has(key)) continue;
 
             const actualGfvId = gfvIdByTrVersion.get(key);
             const entry = {
                 id: Number.isFinite(actualGfvId as number) ? Number(actualGfvId) : Number(gfv.id),
-                tr_id: trId,
+                ecosystem_id: ecosystemId,
                 created: gfv.created,
                 version,
                 active_since: gfv.active_since,
                 documents: [] as any[],
             };
             latestByTrVersion.set(key, entry);
-            const trList = versionsByTr.get(trId) || [];
+            const trList = versionsByTr.get(ecosystemId) || [];
             trList.push(entry);
-            versionsByTr.set(trId, trList);
+            versionsByTr.set(ecosystemId, trList);
         }
 
         const gfvIds = Array.from(new Set(Array.from(latestByTrVersion.values()).map((v: any) => Number(v.id)).filter((id) => Number.isFinite(id) && id > 0)));
         if (gfvIds.length > 0) {
-            const hasGfdIdColumn = await this.hasTrHistoryColumn("governance_framework_document_history", "gfd_id");
+            const hasGfdIdColumn = await this.hasEcosystemHistoryColumn("governance_framework_document_history", "gfd_id");
             const gfdSelectColumns: Array<string | any> = [
                 "id",
                 "gfv_id",
-                "tr_id",
+                "ecosystem_id",
                 "created",
                 "language",
                 "url",
@@ -1067,7 +1067,7 @@ export default class EcosystemDatabaseService extends BaseService {
             }
             const gfdHistoryRows = await knex("governance_framework_document_history")
                 .select(...gfdSelectColumns)
-                .whereIn("tr_id", trIds)
+                .whereIn("ecosystem_id", ecosystemIds)
                 .whereIn("gfv_id", gfvIds)
                 .where("height", "<=", blockHeight)
                 .orderBy("gfv_id", "asc")
@@ -1088,7 +1088,7 @@ export default class EcosystemDatabaseService extends BaseService {
 
                 const docId = Number(hasGfdIdColumn ? gfd.gfd_id : gfd.id);
                 const dedupeId = Number.isFinite(docId) && docId > 0 ? `doc:${docId}` : `url:${gfd.url || ""}:${gfd.language || ""}`;
-                const dedupeKey = `${Number(versionEntry.tr_id)}::${gfvId}::${dedupeId}`;
+                const dedupeKey = `${Number(versionEntry.ecosystem_id)}::${gfvId}::${dedupeId}`;
                 if (seenDocs.has(dedupeKey)) continue;
                 seenDocs.add(dedupeKey);
 
@@ -1103,7 +1103,7 @@ export default class EcosystemDatabaseService extends BaseService {
             }
         }
 
-        for (const [trId, versions] of versionsByTr.entries()) {
+        for (const [ecosystemId, versions] of versionsByTr.entries()) {
             let normalized = versions;
             if (activeGfOnly) {
                 normalized = versions
@@ -1116,20 +1116,20 @@ export default class EcosystemDatabaseService extends BaseService {
                     documents: (v.documents || []).filter((d: any) => d.language === preferredLanguage),
                 }));
             }
-            versionsByTr.set(trId, normalized);
+            versionsByTr.set(ecosystemId, normalized);
         }
 
         return versionsByTr;
     }
     @Action()
-    public async getTrustRegistry(ctx: Context<{
-        tr_id: number;
+    public async getEcosystem(ctx: Context<{
+        ecosystem_id: number;
         active_gf_only?: string | boolean;
         preferred_language?: string;
         trust_data?: string;
     }>) {
         try {
-            const { tr_id: trId, preferred_language: preferredLanguage } = ctx.params;
+            const { ecosystem_id: ecosystemId, preferred_language: preferredLanguage } = ctx.params;
             const trustDataRaw = (ctx.params as any).trust_data;
             const trustDataModeParsed = parseTrustDataMode(trustDataRaw);
             if (!trustDataModeParsed.ok) {
@@ -1144,14 +1144,14 @@ export default class EcosystemDatabaseService extends BaseService {
 
             if (useHeightSync) {
                 if (typeof blockHeight === "number") {
-                    const snapshot = await knex("trust_registry_snapshot")
-                        .where({ tr_id: Number(trId) })
+                    const snapshot = await knex("ecosystem_snapshot")
+                        .where({ ecosystem_id: Number(ecosystemId) })
                         .where("height", "<=", blockHeight)
                         .orderBy("height", "desc")
                         .orderBy("id", "desc")
                         .first();
                     if (!snapshot) {
-                        return ApiResponder.error(ctx, `TrustRegistry with id ${trId} not found`, 404);
+                        return ApiResponder.error(ctx, `Ecosystem with id ${ecosystemId} not found`, 404);
                     }
                     let versions = Array.isArray(snapshot.versions_snapshot) ? snapshot.versions_snapshot : [];
                     if (activeGfOnly) {
@@ -1168,8 +1168,8 @@ export default class EcosystemDatabaseService extends BaseService {
                             documents: (v.documents || []).filter((d: any) => d.language === preferredLanguage),
                         }));
                     }
-                    const trustRegistry = {
-                        id: snapshot.tr_id,
+                    const ecosystem = {
+                        id: snapshot.ecosystem_id,
                         did: snapshot.did,
                         corporation: snapshot.corporation,
                         created: snapshot.created,
@@ -1198,21 +1198,21 @@ export default class EcosystemDatabaseService extends BaseService {
                         network_slashed_amount: Number(snapshot.network_slashed_amount ?? 0),
                         network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
                     };
-                    const responsePayload = { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) };
+                    const responsePayload = { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) };
                     const enrichedResponsePayload =
                         trustDataMode === "none"
                             ? responsePayload
                             : await enrichTrustDataDeep(responsePayload, trustDataMode, blockHeight);
                     return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                 }
-                const tr = await knex("trust_registry").where({ id: trId }).first();
-                if (!tr) {
-                    return ApiResponder.error(ctx, `TrustRegistry with id ${trId} not found`, 404);
+                const ec = await knex("ecosystem").where({ id: ecosystemId }).first();
+                if (!ec) {
+                    return ApiResponder.error(ctx, `Ecosystem with id ${ecosystemId} not found`, 404);
                 }
-                const versionsRows = await knex("trust_registry_version").where({ tr_id: Number(trId) }).orderBy("version", "asc");
+                const versionsRows = await knex("ecosystem_version").where({ ecosystem_id: Number(ecosystemId) }).orderBy("version", "asc");
                 const versionIds = versionsRows.map((r: any) => r.id);
                 const documentsRows = versionIds.length
-                    ? await knex("trust_registry_document").whereIn("version_id", versionIds)
+                    ? await knex("ecosystem_document").whereIn("version_id", versionIds)
                     : [];
                 const docByVersion = new Map<number, any[]>();
                 for (const d of documentsRows as any[]) {
@@ -1229,7 +1229,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 }
                 let versions = versionsRows.map((v: any) => ({
                     id: v.id,
-                    tr_id: v.tr_id,
+                    ecosystem_id: v.ecosystem_id,
                     created: v.created,
                     version: v.version,
                     active_since: v.active_since,
@@ -1249,18 +1249,18 @@ export default class EcosystemDatabaseService extends BaseService {
                         documents: (v.documents || []).filter((d: any) => d.language === preferredLanguage),
                     }));
                 }
-                const t = tr as any;
+                const t = ec as any;
                 const responsePayload = {
-                    trust_registry: mapTrustRegistryApiFields({
-                        id: tr.id,
-                        did: tr.did,
-                        corporation: tr.corporation,
-                        created: tr.created,
-                        modified: tr.modified,
-                        archived: tr.archived,
-                        aka: tr.aka,
-                        language: tr.language,
-                        active_version: tr.active_version,
+                    ecosystem: mapEcosystemApiFields({
+                        id: ec.id,
+                        did: ec.did,
+                        corporation: ec.corporation,
+                        created: ec.created,
+                        modified: ec.modified,
+                        archived: ec.archived,
+                        aka: ec.aka,
+                        language: ec.language,
+                        active_version: ec.active_version,
                         versions,
                         participants: Number(t.participants ?? 0),
                         participants_ecosystem: Number(t.participants_ecosystem ?? 0),
@@ -1290,10 +1290,10 @@ export default class EcosystemDatabaseService extends BaseService {
             }
 
             if (typeof blockHeight === "number") {
-                const hasSnapshotTable = await knex.schema.hasTable("trust_registry_snapshot");
+                const hasSnapshotTable = await knex.schema.hasTable("ecosystem_snapshot");
                 if (hasSnapshotTable) {
-                    const snapshot = await knex("trust_registry_snapshot")
-                        .where({ tr_id: Number(trId) })
+                    const snapshot = await knex("ecosystem_snapshot")
+                        .where({ ecosystem_id: Number(ecosystemId) })
                         .where("height", "<=", blockHeight)
                         .orderBy("height", "desc")
                         .orderBy("id", "desc")
@@ -1316,8 +1316,8 @@ export default class EcosystemDatabaseService extends BaseService {
                         }
                         const s = snapshot as any;
                         const responsePayload = {
-                            trust_registry: mapTrustRegistryApiFields({
-                                id: s.tr_id,
+                            ecosystem: mapEcosystemApiFields({
+                                id: s.ecosystem_id,
                                 did: s.did,
                                 corporation: s.corporation,
                                 created: s.created,
@@ -1355,52 +1355,52 @@ export default class EcosystemDatabaseService extends BaseService {
                     }
                 }
 
-                const trHistory = await knex("trust_registry_history")
-                    .where({ tr_id: trId })
+                const ecosystemHistory = await knex("ecosystem_history")
+                    .where({ ecosystem_id: ecosystemId })
                     .where("height", "<=", blockHeight)
                     .orderBy("height", "desc")
                     .orderBy("created_at", "desc")
                     .first();
 
-                if (!trHistory) {
-                    return ApiResponder.error(ctx, `TrustRegistry with id ${trId} not found`, 404);
+                if (!ecosystemHistory) {
+                    return ApiResponder.error(ctx, `Ecosystem with id ${ecosystemId} not found`, 404);
                 }
 
-                const versionsByTrId = await this.buildHistoricalVersionsByTrIds([Number(trId)], blockHeight, activeGfOnly, preferredLanguage);
-                const filteredVersions = versionsByTrId.get(Number(trId)) || [];
+                const versionsByEcosystemId = await this.buildHistoricalVersionsByEcosystemIds([Number(ecosystemId)], blockHeight, activeGfOnly, preferredLanguage);
+                const filteredVersions = versionsByEcosystemId.get(Number(ecosystemId)) || [];
 
-                const trustRegistry = {
-                    id: trHistory.tr_id,
-                    did: trHistory.did,
-                    corporation: trHistory.corporation,
-                    created: trHistory.created,
-                    modified: trHistory.modified,
-                    archived: trHistory.archived,
-                    aka: trHistory.aka,
-                    language: trHistory.language,
-                    active_version: trHistory.active_version,
+                const ecosystem = {
+                    id: ecosystemHistory.ecosystem_id,
+                    did: ecosystemHistory.did,
+                    corporation: ecosystemHistory.corporation,
+                    created: ecosystemHistory.created,
+                    modified: ecosystemHistory.modified,
+                    archived: ecosystemHistory.archived,
+                    aka: ecosystemHistory.aka,
+                    language: ecosystemHistory.language,
+                    active_version: ecosystemHistory.active_version,
                     versions: filteredVersions,
-                    participants: Number(trHistory.participants ?? 0),
-                    participants_ecosystem: Number((trHistory as any).participants_ecosystem ?? 0),
-                    participants_issuer_grantor: Number((trHistory as any).participants_issuer_grantor ?? 0),
-                    participants_issuer: Number((trHistory as any).participants_issuer ?? 0),
-                    participants_verifier_grantor: Number((trHistory as any).participants_verifier_grantor ?? 0),
-                    participants_verifier: Number((trHistory as any).participants_verifier ?? 0),
-                    participants_holder: Number((trHistory as any).participants_holder ?? 0),
-                    active_schemas: Number((trHistory as any).active_schemas ?? 0),
-                    archived_schemas: Number((trHistory as any).archived_schemas ?? 0),
-                    weight: Number((trHistory as any).weight ?? 0),
-                    issued: Number((trHistory as any).issued ?? 0),
-                    verified: Number((trHistory as any).verified ?? 0),
-                    ecosystem_slash_events: Number((trHistory as any).ecosystem_slash_events ?? 0),
-                    ecosystem_slashed_amount: Number((trHistory as any).ecosystem_slashed_amount ?? 0),
-                    ecosystem_slashed_amount_repaid: Number((trHistory as any).ecosystem_slashed_amount_repaid ?? 0),
-                    network_slash_events: Number((trHistory as any).network_slash_events ?? 0),
-                    network_slashed_amount: Number((trHistory as any).network_slashed_amount ?? 0),
-                    network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
+                    participants: Number(ecosystemHistory.participants ?? 0),
+                    participants_ecosystem: Number((ecosystemHistory as any).participants_ecosystem ?? 0),
+                    participants_issuer_grantor: Number((ecosystemHistory as any).participants_issuer_grantor ?? 0),
+                    participants_issuer: Number((ecosystemHistory as any).participants_issuer ?? 0),
+                    participants_verifier_grantor: Number((ecosystemHistory as any).participants_verifier_grantor ?? 0),
+                    participants_verifier: Number((ecosystemHistory as any).participants_verifier ?? 0),
+                    participants_holder: Number((ecosystemHistory as any).participants_holder ?? 0),
+                    active_schemas: Number((ecosystemHistory as any).active_schemas ?? 0),
+                    archived_schemas: Number((ecosystemHistory as any).archived_schemas ?? 0),
+                    weight: Number((ecosystemHistory as any).weight ?? 0),
+                    issued: Number((ecosystemHistory as any).issued ?? 0),
+                    verified: Number((ecosystemHistory as any).verified ?? 0),
+                    ecosystem_slash_events: Number((ecosystemHistory as any).ecosystem_slash_events ?? 0),
+                    ecosystem_slashed_amount: Number((ecosystemHistory as any).ecosystem_slashed_amount ?? 0),
+                    ecosystem_slashed_amount_repaid: Number((ecosystemHistory as any).ecosystem_slashed_amount_repaid ?? 0),
+                    network_slash_events: Number((ecosystemHistory as any).network_slash_events ?? 0),
+                    network_slashed_amount: Number((ecosystemHistory as any).network_slashed_amount ?? 0),
+                    network_slashed_amount_repaid: Number((ecosystemHistory as any).network_slashed_amount_repaid ?? 0),
                 };
 
-                const responsePayload = { trust_registry: mapTrustRegistryApiFields(trustRegistry as Record<string, unknown>) };
+                const responsePayload = { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) };
                 const enrichedResponsePayload =
                     trustDataMode === "none"
                         ? responsePayload
@@ -1408,12 +1408,12 @@ export default class EcosystemDatabaseService extends BaseService {
                 return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
-            const registry = await TrustRegistry.query()
-                .findById(trId)
+            const registry = await Ecosystem.query()
+                .findById(ecosystemId)
                 .withGraphFetched("governanceFrameworkVersions.documents");
 
             if (!registry) {
-                return ApiResponder.error(ctx, `TrustRegistry with id ${trId} not found`, 404);
+                return ApiResponder.error(ctx, `Ecosystem with id ${ecosystemId} not found`, 404);
             }
 
             const plain = registry.toJSON();
@@ -1443,7 +1443,7 @@ export default class EcosystemDatabaseService extends BaseService {
 
             const p = plain as any;
             const responsePayload = {
-                trust_registry: mapTrustRegistryApiFields({
+                ecosystem: mapEcosystemApiFields({
                     ...plain,
                     id: plain.id,
                     versions,
@@ -1664,20 +1664,20 @@ export default class EcosystemDatabaseService extends BaseService {
             if (typeof blockHeight === "number") {
                 const useHeightSyncList =
                     process.env.NODE_ENV !== "test" && process.env.USE_HEIGHT_SYNC_TR === "true";
-                const hasSnapshotTable = await knex.schema.hasTable("trust_registry_snapshot");
+                const hasSnapshotTable = await knex.schema.hasTable("ecosystem_snapshot");
 
                 if (useHeightSyncList && hasSnapshotTable) {
-                    let participantTrIds: number[] | undefined;
+                    let participantEcosystemIds: number[] | undefined;
                     if (participantAccount) {
-                        participantTrIds = await this.getTrustRegistryIdsForParticipantAtHeight(participantAccount, blockHeight);
-                        if (participantTrIds.length === 0) {
+                        participantEcosystemIds = await this.getEcosystemIdsForParticipantAtHeight(participantAccount, blockHeight);
+                        if (participantEcosystemIds.length === 0) {
                             return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                         }
                     }
-                    let snapshotBase = knex("trust_registry_snapshot")
+                    let snapshotBase = knex("ecosystem_snapshot")
                         .where("height", "<=", blockHeight);
                     if (corporationAccount) snapshotBase = snapshotBase.where("corporation", corporationAccount);
-                    if (participantTrIds !== undefined) snapshotBase = snapshotBase.whereIn("tr_id", participantTrIds);
+                    if (participantEcosystemIds !== undefined) snapshotBase = snapshotBase.whereIn("ecosystem_id", participantEcosystemIds);
                     if (modifiedAfter) {
                         const ts = new Date(modifiedAfter);
                         if (!Number.isNaN(ts.getTime())) snapshotBase = snapshotBase.where("modified", ">", ts.toISOString());
@@ -1688,10 +1688,10 @@ export default class EcosystemDatabaseService extends BaseService {
                     }
                     const ranked = knex
                         .select("*")
-                        .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, id DESC) as rn"))
+                        .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, id DESC) as rn"))
                         .from(snapshotBase.as("snap"));
                     const snapshotListQuery = knex.from(ranked.as("r")).where("rn", 1);
-                    this.applyTrustRegistrySqlSort(snapshotListQuery as any, sort);
+                    this.applyEcosystemSqlSort(snapshotListQuery as any, sort);
                     const latestSnapshots = await snapshotListQuery.limit(Math.max(responseMaxSize * 2, 256));
                     const registriesWithStats = (latestSnapshots as any[]).map((row: any) => {
                         let versions = Array.isArray(row.versions_snapshot) ? row.versions_snapshot : [];
@@ -1710,7 +1710,7 @@ export default class EcosystemDatabaseService extends BaseService {
                             }));
                         }
                         return {
-                            id: row.tr_id,
+                            id: row.ecosystem_id,
                             did: row.did,
                             corporation: row.corporation,
                             created: row.created,
@@ -1744,7 +1744,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
                     const responsePayload = {
                         trust_registries: sortedRegistries.map((r) =>
-                            mapTrustRegistryApiFields(r as Record<string, unknown>)
+                            mapEcosystemApiFields(r as Record<string, unknown>)
                         ),
                     };
                     const enrichedResponsePayload =
@@ -1754,23 +1754,23 @@ export default class EcosystemDatabaseService extends BaseService {
                     return ApiResponder.success(ctx, enrichedResponsePayload, 200);
                 }
 
-                let participantTrIds: number[] | undefined;
+                let participantEcosystemIds: number[] | undefined;
                 if (participantAccount) {
-                    participantTrIds = await this.getTrustRegistryIdsForParticipantAtHeight(participantAccount, blockHeight);
-                    if (participantTrIds.length === 0) {
+                    participantEcosystemIds = await this.getEcosystemIdsForParticipantAtHeight(participantAccount, blockHeight);
+                    if (participantEcosystemIds.length === 0) {
                         return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                     }
                 }
 
-                let filteredSubquery = knex("trust_registry_history")
+                let filteredSubquery = knex("ecosystem_history")
                     .select("*")
                     .where("height", "<=", blockHeight);
 
                 if (corporationAccount) {
                     filteredSubquery = filteredSubquery.where("corporation", corporationAccount);
                 }
-                if (participantTrIds !== undefined) {
-                    filteredSubquery = filteredSubquery.whereIn("tr_id", participantTrIds);
+                if (participantEcosystemIds !== undefined) {
+                    filteredSubquery = filteredSubquery.whereIn("ecosystem_id", participantEcosystemIds);
                 }
                 if (modifiedAfter) {
                     const ts = new Date(modifiedAfter);
@@ -1788,64 +1788,64 @@ export default class EcosystemDatabaseService extends BaseService {
 
                 const rankedSubquery = knex
                     .select("*")
-                    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn"))
+                    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn"))
                     .from(filteredSubquery.as("filtered"))
                     .as("ranked");
 
-                const latestTrHistoryQuery = knex
+                const latestEcosystemHistoryQuery = knex
                     .from(rankedSubquery)
                     .where("rn", 1);
 
-                const latestTrHistory = await applyOrdering(latestTrHistoryQuery as any, sort).limit(Math.max(responseMaxSize * 2, 256)) as any[];
+                const latestEcosystemHistory = await applyOrdering(latestEcosystemHistoryQuery as any, sort).limit(Math.max(responseMaxSize * 2, 256)) as any[];
                 const hasDerivedSort = this.usesDerivedMetricSort(sort);
                 const sortedHistory = hasDerivedSort
-                    ? latestTrHistory.slice(0, Math.max(responseMaxSize * 2, 256))
-                    : latestTrHistory.slice(0, responseMaxSize);
+                    ? latestEcosystemHistory.slice(0, Math.max(responseMaxSize * 2, 256))
+                    : latestEcosystemHistory.slice(0, responseMaxSize);
 
                 if (sortedHistory.length === 0) {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
-                const versionsByTrId = await this.buildHistoricalVersionsByTrIds(
-                    sortedHistory.map((row: any) => Number(row.tr_id)),
+                const versionsByEcosystemId = await this.buildHistoricalVersionsByEcosystemIds(
+                    sortedHistory.map((row: any) => Number(row.ecosystem_id)),
                     blockHeight,
                     activeGfOnly,
                     preferredLanguage
                 );
 
                 const registriesWithStats = await Promise.all(
-                    sortedHistory.map(async (trHistory: any) => {
-                        const trId = trHistory.tr_id;
-                        const filteredVersions = versionsByTrId.get(Number(trId)) || [];
+                    sortedHistory.map(async (ecosystemHistory: any) => {
+                        const ecosystemId = ecosystemHistory.ecosystem_id;
+                        const filteredVersions = versionsByEcosystemId.get(Number(ecosystemId)) || [];
 
                         return {
-                            id: trHistory.tr_id,
-                            did: trHistory.did,
-                            corporation: trHistory.corporation,
-                            created: trHistory.created,
-                            modified: trHistory.modified,
-                            archived: trHistory.archived,
-                            aka: trHistory.aka,
-                            language: trHistory.language,
-                            active_version: trHistory.active_version,
+                            id: ecosystemHistory.ecosystem_id,
+                            did: ecosystemHistory.did,
+                            corporation: ecosystemHistory.corporation,
+                            created: ecosystemHistory.created,
+                            modified: ecosystemHistory.modified,
+                            archived: ecosystemHistory.archived,
+                            aka: ecosystemHistory.aka,
+                            language: ecosystemHistory.language,
+                            active_version: ecosystemHistory.active_version,
                             versions: filteredVersions,
-                            participants: Number(trHistory.participants ?? 0),
-                            participants_ecosystem: Number((trHistory as any).participants_ecosystem ?? 0),
-                            participants_issuer_grantor: Number((trHistory as any).participants_issuer_grantor ?? 0),
-                            participants_issuer: Number((trHistory as any).participants_issuer ?? 0),
-                            participants_verifier_grantor: Number((trHistory as any).participants_verifier_grantor ?? 0),
-                            participants_verifier: Number((trHistory as any).participants_verifier ?? 0),
-                            participants_holder: Number((trHistory as any).participants_holder ?? 0),
-                            active_schemas: Number((trHistory as any).active_schemas ?? 0),
-                            archived_schemas: Number((trHistory as any).archived_schemas ?? 0),
-                            weight: Number((trHistory as any).weight ?? 0),
-                            issued: Number((trHistory as any).issued ?? 0),
-                            verified: Number((trHistory as any).verified ?? 0),
-                            ecosystem_slash_events: Number((trHistory as any).ecosystem_slash_events ?? 0),
-                            ecosystem_slashed_amount: Number((trHistory as any).ecosystem_slashed_amount ?? 0),
-                            ecosystem_slashed_amount_repaid: Number((trHistory as any).ecosystem_slashed_amount_repaid ?? 0),
-                            network_slash_events: Number((trHistory as any).network_slash_events ?? 0),
-                            network_slashed_amount: Number((trHistory as any).network_slashed_amount ?? 0),
-                            network_slashed_amount_repaid: Number((trHistory as any).network_slashed_amount_repaid ?? 0),
+                            participants: Number(ecosystemHistory.participants ?? 0),
+                            participants_ecosystem: Number((ecosystemHistory as any).participants_ecosystem ?? 0),
+                            participants_issuer_grantor: Number((ecosystemHistory as any).participants_issuer_grantor ?? 0),
+                            participants_issuer: Number((ecosystemHistory as any).participants_issuer ?? 0),
+                            participants_verifier_grantor: Number((ecosystemHistory as any).participants_verifier_grantor ?? 0),
+                            participants_verifier: Number((ecosystemHistory as any).participants_verifier ?? 0),
+                            participants_holder: Number((ecosystemHistory as any).participants_holder ?? 0),
+                            active_schemas: Number((ecosystemHistory as any).active_schemas ?? 0),
+                            archived_schemas: Number((ecosystemHistory as any).archived_schemas ?? 0),
+                            weight: Number((ecosystemHistory as any).weight ?? 0),
+                            issued: Number((ecosystemHistory as any).issued ?? 0),
+                            verified: Number((ecosystemHistory as any).verified ?? 0),
+                            ecosystem_slash_events: Number((ecosystemHistory as any).ecosystem_slash_events ?? 0),
+                            ecosystem_slashed_amount: Number((ecosystemHistory as any).ecosystem_slashed_amount ?? 0),
+                            ecosystem_slashed_amount_repaid: Number((ecosystemHistory as any).ecosystem_slashed_amount_repaid ?? 0),
+                            network_slash_events: Number((ecosystemHistory as any).network_slash_events ?? 0),
+                            network_slashed_amount: Number((ecosystemHistory as any).network_slashed_amount ?? 0),
+                            network_slashed_amount_repaid: Number((ecosystemHistory as any).network_slashed_amount_repaid ?? 0),
                         };
                     })
                 );
@@ -1859,7 +1859,7 @@ export default class EcosystemDatabaseService extends BaseService {
 
                 const responsePayload = {
                     trust_registries: sortedRegistries.map((r) =>
-                        mapTrustRegistryApiFields(r as Record<string, unknown>)
+                        mapEcosystemApiFields(r as Record<string, unknown>)
                     ),
                 };
                 const enrichedResponsePayload =
@@ -1871,17 +1871,17 @@ export default class EcosystemDatabaseService extends BaseService {
 
             const useHeightSyncListLive =
                 process.env.NODE_ENV !== "test" && process.env.USE_HEIGHT_SYNC_TR === "true";
-            const hasVersionTable = await knex.schema.hasTable("trust_registry_version");
-            const hasDocumentTable = await knex.schema.hasTable("trust_registry_document");
+            const hasVersionTable = await knex.schema.hasTable("ecosystem_version");
+            const hasDocumentTable = await knex.schema.hasTable("ecosystem_document");
 
             if (useHeightSyncListLive && hasVersionTable && hasDocumentTable) {
-                let batchQuery = knex("trust_registry");
+                let batchQuery = knex("ecosystem");
                 if (participantAccount) {
-                    const participantTrIds = await this.getTrustRegistryIdsForParticipant(participantAccount);
-                    if (participantTrIds.length === 0) {
+                    const participantEcosystemIds = await this.getEcosystemIdsForParticipant(participantAccount);
+                    if (participantEcosystemIds.length === 0) {
                         return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                     }
-                    batchQuery = batchQuery.whereIn("id", participantTrIds);
+                    batchQuery = batchQuery.whereIn("id", participantEcosystemIds);
                 }
                 if (corporationAccount) batchQuery = batchQuery.where("corporation", corporationAccount);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants", minParticipants, maxParticipants);
@@ -1902,17 +1902,17 @@ export default class EcosystemDatabaseService extends BaseService {
                     if (onlyActive) batchQuery = batchQuery.whereNull("archived");
                     else batchQuery = batchQuery.whereNotNull("archived");
                 }
-                const { fullyApplied: batchSortFullyApplied } = this.applyTrustRegistrySqlSort(batchQuery as any, sort);
+                const { fullyApplied: batchSortFullyApplied } = this.applyEcosystemSqlSort(batchQuery as any, sort);
                 const batchLimit = batchSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256);
-                const trRows = await batchQuery.limit(batchLimit) as any[];
-                if (trRows.length === 0) {
+                const ecosystemRows = await batchQuery.limit(batchLimit) as any[];
+                if (ecosystemRows.length === 0) {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
-                const trIds = trRows.map((r: any) => r.id);
-                const versionsRows = await knex("trust_registry_version").whereIn("tr_id", trIds).orderBy("version", "asc") as any[];
+                const ecosystemIds = ecosystemRows.map((r: any) => r.id);
+                const versionsRows = await knex("ecosystem_version").whereIn("ecosystem_id", ecosystemIds).orderBy("version", "asc") as any[];
                 const versionIds = versionsRows.map((r: any) => r.id);
                 const documentsRows = versionIds.length
-                    ? (await knex("trust_registry_document").whereIn("version_id", versionIds) as any[])
+                    ? (await knex("ecosystem_document").whereIn("version_id", versionIds) as any[])
                     : [];
                 const docByVersion = new Map<number, any[]>();
                 for (const d of documentsRows) {
@@ -1927,21 +1927,21 @@ export default class EcosystemDatabaseService extends BaseService {
                         digest_sri: d.digest_sri,
                     });
                 }
-                const versionsByTrId = new Map<number, any[]>();
+                const versionsByEcosystemId = new Map<number, any[]>();
                 for (const v of versionsRows) {
-                    const tid = Number(v.tr_id);
-                    if (!versionsByTrId.has(tid)) versionsByTrId.set(tid, []);
-                    versionsByTrId.get(tid)!.push({
+                    const tid = Number(v.ecosystem_id);
+                    if (!versionsByEcosystemId.has(tid)) versionsByEcosystemId.set(tid, []);
+                    versionsByEcosystemId.get(tid)!.push({
                         id: v.id,
-                        tr_id: v.tr_id,
+                        ecosystem_id: v.ecosystem_id,
                         created: v.created,
                         version: v.version,
                         active_since: v.active_since,
                         documents: docByVersion.get(Number(v.id)) || [],
                     });
                 }
-                const batchRegistries = trRows.map((tr: any) => {
-                    let versions = versionsByTrId.get(Number(tr.id)) || [];
+                const batchRegistries = ecosystemRows.map((ec: any) => {
+                    let versions = versionsByEcosystemId.get(Number(ec.id)) || [];
                     if (activeGfOnly) {
                         versions = [...versions].sort((a: any, b: any) => {
                             if (!a.active_since && !b.active_since) return 0;
@@ -1957,41 +1957,41 @@ export default class EcosystemDatabaseService extends BaseService {
                         }));
                     }
                     return {
-                        id: tr.id,
-                        did: tr.did,
-                        corporation: tr.corporation,
-                        created: tr.created,
-                        modified: tr.modified,
-                        archived: tr.archived,
-                        aka: tr.aka,
-                        language: tr.language,
-                        active_version: tr.active_version,
+                        id: ec.id,
+                        did: ec.did,
+                        corporation: ec.corporation,
+                        created: ec.created,
+                        modified: ec.modified,
+                        archived: ec.archived,
+                        aka: ec.aka,
+                        language: ec.language,
+                        active_version: ec.active_version,
                         versions,
-                        participants: Number(tr.participants ?? 0),
-                        participants_ecosystem: Number(tr.participants_ecosystem ?? 0),
-                        participants_issuer_grantor: Number(tr.participants_issuer_grantor ?? 0),
-                        participants_issuer: Number(tr.participants_issuer ?? 0),
-                        participants_verifier_grantor: Number(tr.participants_verifier_grantor ?? 0),
-                        participants_verifier: Number(tr.participants_verifier ?? 0),
-                        participants_holder: Number(tr.participants_holder ?? 0),
-                        active_schemas: Number(tr.active_schemas ?? 0),
-                        archived_schemas: Number(tr.archived_schemas ?? 0),
-                        weight: Number(tr.weight ?? 0),
-                        issued: Number(tr.issued ?? 0),
-                        verified: Number(tr.verified ?? 0),
-                        ecosystem_slash_events: Number(tr.ecosystem_slash_events ?? 0),
-                        ecosystem_slashed_amount: Number(tr.ecosystem_slashed_amount ?? 0),
-                        ecosystem_slashed_amount_repaid: Number(tr.ecosystem_slashed_amount_repaid ?? 0),
-                        network_slash_events: Number(tr.network_slash_events ?? 0),
-                        network_slashed_amount: Number(tr.network_slashed_amount ?? 0),
-                        network_slashed_amount_repaid: Number(tr.network_slashed_amount_repaid ?? 0),
+                        participants: Number(ec.participants ?? 0),
+                        participants_ecosystem: Number(ec.participants_ecosystem ?? 0),
+                        participants_issuer_grantor: Number(ec.participants_issuer_grantor ?? 0),
+                        participants_issuer: Number(ec.participants_issuer ?? 0),
+                        participants_verifier_grantor: Number(ec.participants_verifier_grantor ?? 0),
+                        participants_verifier: Number(ec.participants_verifier ?? 0),
+                        participants_holder: Number(ec.participants_holder ?? 0),
+                        active_schemas: Number(ec.active_schemas ?? 0),
+                        archived_schemas: Number(ec.archived_schemas ?? 0),
+                        weight: Number(ec.weight ?? 0),
+                        issued: Number(ec.issued ?? 0),
+                        verified: Number(ec.verified ?? 0),
+                        ecosystem_slash_events: Number(ec.ecosystem_slash_events ?? 0),
+                        ecosystem_slashed_amount: Number(ec.ecosystem_slashed_amount ?? 0),
+                        ecosystem_slashed_amount_repaid: Number(ec.ecosystem_slashed_amount_repaid ?? 0),
+                        network_slash_events: Number(ec.network_slash_events ?? 0),
+                        network_slashed_amount: Number(ec.network_slashed_amount ?? 0),
+                        network_slashed_amount_repaid: Number(ec.network_slashed_amount_repaid ?? 0),
                     };
                 });
                 const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters);
                 const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize);
                 const responsePayload = {
                     trust_registries: sortedBatch.map((r) =>
-                        mapTrustRegistryApiFields(r as Record<string, unknown>)
+                        mapEcosystemApiFields(r as Record<string, unknown>)
                     ),
                 };
                 const enrichedResponsePayload =
@@ -2001,14 +2001,14 @@ export default class EcosystemDatabaseService extends BaseService {
                 return ApiResponder.success(ctx, enrichedResponsePayload, 200);
             }
 
-            let query = TrustRegistry.query();
+            let query = Ecosystem.query();
 
             if (participantAccount) {
-                const participantTrIds = await this.getTrustRegistryIdsForParticipant(participantAccount);
-                if (participantTrIds.length === 0) {
+                const participantEcosystemIds = await this.getEcosystemIdsForParticipant(participantAccount);
+                if (participantEcosystemIds.length === 0) {
                     return ApiResponder.success(ctx, { trust_registries: [] }, 200);
                 }
-                query = query.where("id", "in", participantTrIds) as any;
+                query = query.where("id", "in", participantEcosystemIds) as any;
             }
             if (corporationAccount) {
                 query = query.where("corporation", corporationAccount);
@@ -2056,12 +2056,12 @@ export default class EcosystemDatabaseService extends BaseService {
                 }
             }
 
-            const { fullyApplied: liveSortFullyApplied } = this.applyTrustRegistrySqlSort(query as any, sort);
+            const { fullyApplied: liveSortFullyApplied } = this.applyEcosystemSqlSort(query as any, sort);
             const liveFetchLimit = liveSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256);
             const registries = await query.limit(liveFetchLimit);
 
-            const registriesWithStats = registries.map((tr) => {
-                const plain = tr.toJSON();
+            const registriesWithStats = registries.map((ec) => {
+                const plain = ec.toJSON();
                 let versions = plain.governanceFrameworkVersions ?? [];
 
                 if (activeGfOnly) {
@@ -2115,7 +2115,7 @@ export default class EcosystemDatabaseService extends BaseService {
 
             const responsePayload = {
                 trust_registries: sortedRegistries.map((r) =>
-                    mapTrustRegistryApiFields(r as Record<string, unknown>)
+                    mapEcosystemApiFields(r as Record<string, unknown>)
                 ),
             };
             const enrichedResponsePayload =
@@ -2129,16 +2129,16 @@ export default class EcosystemDatabaseService extends BaseService {
     }
 
 
-    private async getTrustRegistryIdsForParticipant(account: string): Promise<number[]> {
-        const trPart = await resolveTrustRegistryParticipantColumn(knex);
-        const controllerRows = await knex("trust_registry")
+    private async getEcosystemIdsForParticipant(account: string): Promise<number[]> {
+        const trPart = await resolveEcosystemParticipantColumn(knex);
+        const controllerRows = await knex("ecosystem")
             .where(trPart, account)
             .select("id");
         const controllerIds = controllerRows.map((r: { id: number }) => r.id);
 
-        const permPart = await resolvePermissionsParticipantColumn(knex);
-        const corpSchemaIds = await knex("permissions")
-            .where(permPart, account)
+        const participantPart = await resolveParticipantsParticipantColumn(knex);
+        const corpSchemaIds = await knex("participants")
+            .where(participantPart, account)
             .distinct("schema_id");
         const schemaIds = corpSchemaIds
             .map((r: { schema_id: string }) => {
@@ -2149,48 +2149,48 @@ export default class EcosystemDatabaseService extends BaseService {
         if (schemaIds.length === 0) {
             return [...new Set(controllerIds)];
         }
-        const trIdRows = await knex("credential_schemas")
+        const ecosystemIdRows = await knex("credential_schemas")
             .whereIn("id", schemaIds)
             .distinct("ecosystem_id");
-        const corpTrIds = trIdRows.map((r: { ecosystem_id: number }) => r.ecosystem_id);
+        const corpEcosystemIds = ecosystemIdRows.map((r: { ecosystem_id: number }) => r.ecosystem_id);
 
-        return [...new Set([...controllerIds, ...corpTrIds])];
+        return [...new Set([...controllerIds, ...corpEcosystemIds])];
     }
 
 
-    private async getTrustRegistryIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
-        const trHistPart = await resolveTrustRegistryHistoryParticipantColumn(knex);
-        const trHistoryRows = await knex("trust_registry_history")
+    private async getEcosystemIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
+        const trHistPart = await resolveEcosystemHistoryParticipantColumn(knex);
+        const ecosystemHistoryRows = await knex("ecosystem_history")
             .where("height", "<=", blockHeight)
             .where(trHistPart, account)
-            .select("tr_id");
-        const controllerTrIds = [...new Set(trHistoryRows.map((r: { tr_id: number }) => r.tr_id))];
+            .select("ecosystem_id");
+        const controllerEcosystemIds = [...new Set(ecosystemHistoryRows.map((r: { ecosystem_id: number }) => r.ecosystem_id))];
 
-        const permHistPart = await resolvePermissionHistoryParticipantColumn(knex);
-        const corpPermRows = await knex("permission_history")
+        const participantHistPart = await resolveParticipantHistoryParticipantColumn(knex);
+        const corpParticipantRows = await knex("participant_history")
             .where("height", "<=", blockHeight)
-            .where(permHistPart, account)
+            .where(participantHistPart, account)
             .distinct("schema_id");
-        const schemaIds = corpPermRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
+        const schemaIds = corpParticipantRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
         if (schemaIds.length === 0) {
-            return controllerTrIds;
+            return controllerEcosystemIds;
         }
 
         const cshSub = knex("credential_schema_history")
-            .select("credential_schema_id", "tr_id")
+            .select("credential_schema_id", "ecosystem_id")
             .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"))
             .where("height", "<=", blockHeight)
             .whereIn("credential_schema_id", schemaIds)
             .as("ranked");
-        const latestCsh = await knex.from(cshSub).where("rn", 1).select("tr_id");
-        const corpTrIds = [...new Set(latestCsh.map((r: { tr_id: number }) => r.tr_id))];
+        const latestCsh = await knex.from(cshSub).where("rn", 1).select("ecosystem_id");
+        const corpEcosystemIds = [...new Set(latestCsh.map((r: { ecosystem_id: number }) => r.ecosystem_id))];
 
-        return [...new Set([...controllerTrIds, ...corpTrIds])];
+        return [...new Set([...controllerEcosystemIds, ...corpEcosystemIds])];
     }
 
     @Action()
     public async getParams(ctx: Context) {
         const { getModuleParamsAction } = await import("../../common/utils/params_service");
-        return getModuleParamsAction(ctx, ModulesParamsNamesTypes.TR, MODULE_DISPLAY_NAMES.TRUST_REGISTRY);
+        return getModuleParamsAction(ctx, ModulesParamsNamesTypes.EC, MODULE_DISPLAY_NAMES.ECOSYSTEM);
     }
 }

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Verana Indexer API",
-    "description": "REST API for the Verana indexer: trust registries (TR), credential schemas (CS), permissions, trust deposits (TD), metrics, and indexer meta.",
+    "description": "REST API for the Verana indexer: ecosystems (EC), credential schemas (CS), participants, trust deposits (TD), metrics, and indexer meta.",
     "version": "1.2.1"
   },
   "servers": [
@@ -207,7 +207,7 @@
           "Indexer"
         ],
         "summary": "List indexer transaction events",
-        "description": "Replay persisted trust registry, credential schema, and permission indexer events after a block height. Use the did query parameter to return only events related to a DID.",
+        "description": "Replay persisted ecosystem, credential schema, and participant indexer events after a block height. Use the did query parameter to return only events related to a DID.",
         "operationId": "listIndexerEvents",
         "parameters": [
           {
@@ -275,22 +275,22 @@
                   "events": [
                     {
                       "type": "indexer-event",
-                      "event_type": "StartPermissionVP",
+                      "event_type": "StartParticipantOP",
                       "did": "did:web:agent.example",
                       "block_height": 1794801,
                       "tx_hash": "A1B2C3",
                       "timestamp": "2025-12-17T04:43:12Z",
                       "payload": {
-                        "module": "permission",
-                        "action": "StartPermissionVP",
-                        "message_type": "/verana.perm.v1.MsgStartPermissionVP",
+                        "module": "participant",
+                        "action": "StartParticipantOP",
+                        "message_type": "/verana.pp.v1.MsgStartParticipantOP",
                         "tx_index": 0,
                         "message_index": 0,
                         "sender": "did:web:agent.example",
                         "related_dids": [
                           "did:web:agent.example"
                         ],
-                        "entity_type": "Permission",
+                        "entity_type": "Participant",
                         "entity_id": "42"
                       }
                     }
@@ -370,7 +370,7 @@
                       },
                       "description": "Credential schemas linked to the DID."
                     },
-                    "permissions": {
+                    "participants": {
                       "type": "array",
                       "items": {
                         "type": "object"
@@ -387,7 +387,7 @@
                           "type": "integer",
                           "minimum": 0
                         },
-                        "permissions": {
+                        "participants": {
                           "type": "integer",
                           "minimum": 0
                         }
@@ -395,7 +395,7 @@
                       "required": [
                         "trust_registries",
                         "schemas",
-                        "permissions"
+                        "participants"
                       ]
                     }
                   },
@@ -404,7 +404,7 @@
                     "block_height",
                     "trust_registries",
                     "schemas",
-                    "permissions",
+                    "participants",
                     "count"
                   ]
                 },
@@ -413,11 +413,11 @@
                   "block_height": 123,
                   "trust_registries": [],
                   "schemas": [],
-                  "permissions": [],
+                  "participants": [],
                   "count": {
                     "trust_registries": 0,
                     "schemas": 0,
-                    "permissions": 0
+                    "participants": 0
                   }
                 }
               }
@@ -545,7 +545,7 @@
                     "stopped_reason": {
                       "type": "string",
                       "description": "Human-readable reason why crawling or the indexer stopped (if applicable)",
-                      "example": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available."
+                      "example": "Crawling stopped due to: Unknown Verana message types: /verana.pp.v1.MsgCreateRootParticipant. Indexer APIs remain available."
                     },
                     "last_error": {
                       "type": "object",
@@ -554,7 +554,7 @@
                         "message": {
                           "type": "string",
                           "description": "Error message",
-                          "example": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission"
+                          "example": "Unknown Verana message types: /verana.pp.v1.MsgCreateRootParticipant"
                         },
                         "stack": {
                           "type": "string",
@@ -584,9 +584,9 @@
                   "is_running": true,
                   "is_crawling": false,
                   "stopped_at": "2024-01-15T10:30:00Z",
-                  "stopped_reason": "Crawling stopped due to: Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission. Indexer APIs remain available.",
+                  "stopped_reason": "Crawling stopped due to: Unknown Verana message types: /verana.pp.v1.MsgCreateRootParticipant. Indexer APIs remain available.",
                   "last_error": {
-                    "message": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission",
+                    "message": "Unknown Verana message types: /verana.pp.v1.MsgCreateRootParticipant",
                     "timestamp": "2024-01-15T10:30:00Z",
                     "service": "crawl-tx"
                   }
@@ -627,7 +627,7 @@
                 "description": "Error message that caused crawling to stop (only present when crawling is stopped)",
                 "schema": {
                   "type": "string",
-                  "example": "Unknown Verana message types: /verana.perm.v1.MsgCreateRootPermission"
+                  "example": "Unknown Verana message types: /verana.pp.v1.MsgCreateRootParticipant"
                 }
               },
               "X-Crawling-Stopped-At": {
@@ -706,13 +706,13 @@
                     {
                       "timestamp": "2025-10-06T08:46:20.686Z",
                       "block_height": 63120,
-                      "entity_type": "TrustRegistry",
+                      "entity_type": "Ecosystem",
                       "entity_id": "42",
-                      "msg": "CreateTrustRegistry",
+                      "msg": "CreateEcosystem",
                       "changes": {
-                        "tr_id": 42,
+                        "ecosystem_id": 42,
                         "corporation": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-                        "event_type": "/verana.tr.v1.MsgCreateTrustRegistry"
+                        "event_type": "/verana.ec.v1.MsgCreateEcosystem"
                       },
                       "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
                     }
@@ -724,14 +724,14 @@
         }
       }
     },
-    "/verana/tr/v1/get/{id}": {
+    "/verana/ec/v1/get/{id}": {
       "get": {
         "tags": [
-          "Trust Registry"
+          "Ecosystem"
         ],
-        "summary": "Get Trust Registry",
-        "description": "Retrieve a specific Trust Registry by its ID",
-        "operationId": "getTrustRegistry",
+        "summary": "Get Ecosystem",
+        "description": "Retrieve a specific Ecosystem by its ID",
+        "operationId": "getEcosystem",
         "parameters": [
           {
             "name": "id",
@@ -741,7 +741,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "The Trust Registry ID to retrieve"
+            "description": "The Ecosystem ID to retrieve"
           },
           {
             "name": "active_gf_only",
@@ -781,24 +781,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Trust Registry details",
+            "description": "Successful response with Ecosystem details",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TrustRegistryResponse"
+                  "$ref": "#/components/schemas/EcosystemResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "Trust Registry not found",
+            "description": "Ecosystem not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "Trust Registry not found: 1",
+                  "error": "Ecosystem not found: 1",
                   "code": 404
                 }
               }
@@ -810,14 +810,14 @@
         }
       }
     },
-    "/verana/tr/v1/list": {
+    "/verana/ec/v1/list": {
       "get": {
         "tags": [
-          "Trust Registry"
+          "Ecosystem"
         ],
-        "summary": "List Trust Registries",
-        "description": "Retrieve a paginated list of Trust Registries with optional filtering",
-        "operationId": "listTrustRegistry",
+        "summary": "List Ecosystems",
+        "description": "Retrieve a paginated list of Ecosystems with optional filtering",
+        "operationId": "listEcosystem",
         "parameters": [
           {
             "name": "active_gf_only",
@@ -866,7 +866,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter by active status. If true, returns only active trust registries (archived is null). If false, returns only archived trust registries (archived is not null). If omitted, returns all trust registries (both active and archived). Active/inactive is determined by the archived field (null for active, timestamp for archived)."
+            "description": "Filter by active status. If true, returns only active ecosystems (archived is null). If false, returns only archived ecosystems (archived is not null). If omitted, returns all ecosystems (both active and archived). Active/inactive is determined by the archived field (null for active, timestamp for archived)."
           },
           {
             "name": "corporation",
@@ -904,7 +904,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Participant account. TRs where this account is TR corporation or holds an active permission on a schema in the TR."
+            "description": "Participant account. TRs where this account is EC corporation or holds an active participant on a schema in the EC."
           },
           {
             "name": "min_participants",
@@ -1175,11 +1175,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with list of Trust Registries",
+            "description": "Successful response with list of Ecosystems",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TrustRegistryListResponse"
+                  "$ref": "#/components/schemas/EcosystemListResponse"
                 }
               }
             }
@@ -1193,14 +1193,14 @@
         }
       }
     },
-    "/verana/tr/v1/params": {
+    "/verana/ec/v1/params": {
       "get": {
         "tags": [
-          "Trust Registry"
+          "Ecosystem"
         ],
-        "summary": "Get Trust Registry parameters",
-        "description": "Retrieve current system parameters for Trust Registry",
-        "operationId": "getTrustRegistryParams",
+        "summary": "Get Ecosystem parameters",
+        "description": "Retrieve current system parameters for Ecosystem",
+        "operationId": "getEcosystemParams",
         "parameters": [
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -1208,11 +1208,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Trust Registry parameters",
+            "description": "Successful response with Ecosystem parameters",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TrustRegistryParamsResponse"
+                  "$ref": "#/components/schemas/EcosystemParamsResponse"
                 }
               }
             }
@@ -1223,14 +1223,14 @@
         }
       }
     },
-    "/verana/tr/v1/history/{id}": {
+    "/verana/ec/v1/history/{id}": {
       "get": {
         "tags": [
-          "Trust Registry"
+          "Ecosystem"
         ],
-        "summary": "Get Trust Registry activity timeline",
-        "description": "Retrieve the activity timeline for a Trust Registry, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
-        "operationId": "getTrustRegistryHistory",
+        "summary": "Get Ecosystem activity timeline",
+        "description": "Retrieve the activity timeline for a Ecosystem, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
+        "operationId": "getEcosystemHistory",
         "parameters": [
           {
             "name": "id",
@@ -1240,7 +1240,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "The Trust Registry ID to retrieve history for"
+            "description": "The Ecosystem ID to retrieve history for"
           },
           {
             "name": "response_max_size",
@@ -1270,22 +1270,22 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Trust Registry activity timeline",
+            "description": "Successful response with Ecosystem activity timeline",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActivityTimelineResponse"
                 },
                 "example": {
-                  "entity_type": "TrustRegistry",
+                  "entity_type": "Ecosystem",
                   "entity_id": "1",
                   "activity": [
                     {
                       "timestamp": "2025-10-08T07:51:50.513Z",
                       "block_height": 96930,
-                      "entity_type": "TrustRegistry",
+                      "entity_type": "Ecosystem",
                       "entity_id": "1",
-                      "msg": "UpdateTrustRegistry",
+                      "msg": "UpdateEcosystem",
                       "changes": {
                         "modified": "2025-10-08T07:51:50.513Z"
                       },
@@ -1294,9 +1294,9 @@
                     {
                       "timestamp": "2025-10-02T17:20:55.107Z",
                       "block_height": 343,
-                      "entity_type": "TrustRegistry",
+                      "entity_type": "Ecosystem",
                       "entity_id": "1",
-                      "msg": "CreateTrustRegistry",
+                      "msg": "CreateEcosystem",
                       "changes": {
                         "aka": "http://example.com",
                         "did": "did:example:123456789abcdefghi",
@@ -1321,7 +1321,7 @@
                         "versions": [
                           {
                             "id": 1,
-                            "tr_id": 1,
+                            "ecosystem_id": 1,
                             "created": "2025-10-02T17:20:55.107Z",
                             "version": 1,
                             "active_since": "2025-10-02T17:20:55.107Z",
@@ -1345,16 +1345,16 @@
                       "block_height": 343,
                       "entity_type": "GovernanceFrameworkVersion",
                       "entity_id": "1",
-                      "msg": "CreateTrustRegistry",
+                      "msg": "CreateEcosystem",
                       "changes": {
-                        "tr_id": 1,
+                        "ecosystem_id": 1,
                         "created": "2025-10-02T17:20:55.107Z",
                         "version": 1,
                         "active_since": "2025-10-02T17:20:55.107Z",
                         "versions": [
                           {
                             "id": 1,
-                            "tr_id": 1,
+                            "ecosystem_id": 1,
                             "created": "2025-10-02T17:20:55.107Z",
                             "version": 1,
                             "active_since": "2025-10-02T17:20:55.107Z",
@@ -1378,7 +1378,7 @@
                       "block_height": 343,
                       "entity_type": "GovernanceFrameworkDocument",
                       "entity_id": "1",
-                      "msg": "CreateTrustRegistry",
+                      "msg": "CreateEcosystem",
                       "changes": {
                         "url": "https://example.com/doc001-01",
                         "gfv_id": 1,
@@ -1388,7 +1388,7 @@
                         "versions": [
                           {
                             "id": 1,
-                            "tr_id": 1,
+                            "ecosystem_id": 1,
                             "created": "2025-10-02T17:20:55.107Z",
                             "version": 1,
                             "active_since": "2025-10-02T17:20:55.107Z",
@@ -1413,14 +1413,14 @@
             }
           },
           "404": {
-            "description": "Trust Registry history not found",
+            "description": "Ecosystem history not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "Trust Registry history not found: 5",
+                  "error": "Ecosystem history not found: 5",
                   "code": 404
                 }
               }
@@ -1595,14 +1595,14 @@
         "operationId": "listCredentialSchemas",
         "parameters": [
           {
-            "name": "tr_id",
+            "name": "ecosystem_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "format": "int64"
             },
-            "description": "Filter by Trust Registry ID"
+            "description": "Filter by Ecosystem ID"
           },
           {
             "name": "modified_after",
@@ -1669,7 +1669,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Participant account. Schemas whose TR corporation matches or where the account holds an active permission."
+            "description": "Participant account. Schemas whose EC corporation matches or where the account holds an active participant."
           },
           {
             "name": "min_participants",
@@ -2041,7 +2041,7 @@
                       "msg": "CreateCredentialSchema",
                       "changes": {
                         "title": "ExampleCredential",
-                        "tr_id": 1,
+                        "ecosystem_id": 1,
                         "issued": 0,
                         "weight": 0,
                         "created": "2025-10-02T17:23:55.515Z",
@@ -2095,14 +2095,14 @@
         }
       }
     },
-    "/verana/perm/v1/get/{id}": {
+    "/verana/pp/v1/get/{id}": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
-        "summary": "Get Permission",
-        "description": "Retrieve a specific Permission by its ID",
-        "operationId": "getPermission",
+        "summary": "Get Participant",
+        "description": "Retrieve a specific Participant by its ID",
+        "operationId": "getParticipant",
         "parameters": [
           {
             "name": "id",
@@ -2112,7 +2112,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "The Permission ID to retrieve"
+            "description": "The Participant ID to retrieve"
           },
           {
             "name": "trust_data",
@@ -2134,24 +2134,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Permission details",
+            "description": "Successful response with Participant details",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PermissionResponse"
+                  "$ref": "#/components/schemas/ParticipantResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "Permission not found",
+            "description": "Participant not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "Permission not found: 1",
+                  "error": "Participant not found: 1",
                   "code": 404
                 }
               }
@@ -2163,14 +2163,14 @@
         }
       }
     },
-    "/verana/perm/v1/permission-session/{id}": {
+    "/verana/pp/v1/participant-session/{id}": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
-        "summary": "Get Permission Session",
-        "description": "Retrieve a specific Permission Session by its ID",
-        "operationId": "getPermissionSession",
+        "summary": "Get Participant Session",
+        "description": "Retrieve a specific Participant Session by its ID",
+        "operationId": "getParticipantSession",
         "parameters": [
           {
             "name": "id",
@@ -2180,7 +2180,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "description": "The Permission Session ID to retrieve"
+            "description": "The Participant Session ID to retrieve"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2188,24 +2188,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Permission Session details",
+            "description": "Successful response with Participant Session details",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PermissionSessionResponse"
+                  "$ref": "#/components/schemas/ParticipantSessionResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "Permission Session not found",
+            "description": "Participant Session not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "Permission Session not found: 123e4567-e89b-12d3-a456-426614174000",
+                  "error": "Participant Session not found: 123e4567-e89b-12d3-a456-426614174000",
                   "code": 404
                 }
               }
@@ -2217,14 +2217,14 @@
         }
       }
     },
-    "/verana/perm/v1/list": {
+    "/verana/pp/v1/list": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
-        "summary": "List Permissions",
-        "description": "Retrieve a paginated list of Permissions with extensive filtering options",
-        "operationId": "listPermissions",
+        "summary": "List Participants",
+        "description": "Retrieve a paginated list of Participants with extensive filtering options",
+        "operationId": "listParticipants",
         "parameters": [
           {
             "name": "corporation",
@@ -2233,7 +2233,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Filter by corporation (permission owner) account "
+            "description": "Filter by corporation (participant owner) account "
           },
           {
             "name": "did",
@@ -2245,13 +2245,13 @@
             "description": "Filter by DID"
           },
           {
-            "name": "perm_id",
+            "name": "participant_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer"
             },
-            "description": "Filter by permission ID"
+            "description": "Filter by participant ID"
           },
           {
             "name": "type",
@@ -2268,7 +2268,7 @@
                 "HOLDER"
               ]
             },
-            "description": "Filter by permission type"
+            "description": "Filter by participant type"
           },
           {
             "name": "only_valid",
@@ -2277,7 +2277,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter only valid permissions"
+            "description": "Filter only valid participants"
           },
           {
             "name": "only_slashed",
@@ -2286,7 +2286,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter only slashed permissions"
+            "description": "Filter only slashed participants"
           },
           {
             "name": "only_repaid",
@@ -2295,7 +2295,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter only repaid permissions"
+            "description": "Filter only repaid participants"
           },
           {
             "name": "modified_after",
@@ -2317,7 +2317,7 @@
             "description": "Filter by country code"
           },
           {
-            "name": "vp_state",
+            "name": "op_state",
             "in": "query",
             "required": false,
             "schema": {
@@ -2363,16 +2363,16 @@
             "description": "Filter by schema ID"
           },
           {
-            "name": "validator_perm_id",
+            "name": "validator_participant_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer"
             },
-            "description": "Filter by validator permission ID"
+            "description": "Filter by validator participant ID"
           },
           {
-            "name": "perm_state",
+            "name": "participant_state",
             "in": "query",
             "required": false,
             "schema": {
@@ -2387,7 +2387,7 @@
                 "INACTIVE"
               ]
             },
-            "description": "Filter by permission state (calculated based on repaid, slashed, revoked, and effective dates)"
+            "description": "Filter by participant state (calculated based on repaid, slashed, revoked, and effective dates)"
           },
           {
             "name": "sort",
@@ -2652,11 +2652,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with list of Permissions",
+            "description": "Successful response with list of Participants",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PermissionListResponse"
+                  "$ref": "#/components/schemas/ParticipantListResponse"
                 }
               }
             }
@@ -2670,13 +2670,13 @@
         }
       }
     },
-    "/verana/perm/v1/pending/flat": {
+    "/verana/pp/v1/pending/flat": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
         "summary": "Get pending tasks",
-        "description": "Return pending tasks for a given account grouped by Trust Registry and Credential Schema. Supports At-Block-Height header for historical state.",
+        "description": "Return pending tasks for a given account grouped by Ecosystem and Credential Schema. Supports At-Block-Height header for historical state.",
         "operationId": "pendingFlat",
         "parameters": [
           {
@@ -2698,7 +2698,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of trust registries to return"
+            "description": "Maximum number of ecosystems to return"
           },
           {
             "name": "sort",
@@ -2729,7 +2729,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with pending tasks grouped by trust registry and credential schema",
+            "description": "Successful response with pending tasks grouped by ecosystem and credential schema",
             "content": {
               "application/json": {
                 "schema": {
@@ -2750,7 +2750,7 @@
                           "description": "ExampleCredential using JsonSchema",
                           "pending_tasks": 3,
                           "participants": 0,
-                          "permissions": [
+                          "participants": [
                             {
                               "id": 2,
                               "schema_id": 2,
@@ -2770,18 +2770,18 @@
                               "deposit": 1000000,
                               "slashed_deposit": 0,
                               "repaid_deposit": 0,
-                              "validator_perm_id": 1,
-                              "vp_state": "PENDING",
-                              "vp_last_state_change": "2025-10-03T12:30:43.431Z",
-                              "vp_current_fees": 5000000,
-                              "vp_current_deposit": 1000000,
-                              "vp_summary_digest": null,
-                              "vp_exp": null,
-                              "vp_validator_deposit": 0,
-                              "perm_state": "INACTIVE",
+                              "validator_participant_id": 1,
+                              "op_state": "PENDING",
+                              "op_last_state_change": "2025-10-03T12:30:43.431Z",
+                              "op_current_fees": 5000000,
+                              "op_current_deposit": 1000000,
+                              "op_summary_digest": null,
+                              "op_exp": null,
+                              "op_validator_deposit": 0,
+                              "participant_state": "INACTIVE",
                               "corporation_available_actions": [
-                                "PERM_ADJUST",
-                                "PERM_REVOKE"
+                                "PARTICIPANT_ADJUST",
+                                "PARTICIPANT_REVOKE"
                               ],
                               "validator_available_actions": [],
                               "weight": 1000000,
@@ -2820,7 +2820,7 @@
           "Metrics"
         ],
         "summary": "Get Global Current Metrics",
-        "description": "Return global current metrics across all Trust Registries and Credential Schemas. Supports At-Block-Height header for historical state.",
+        "description": "Return global current metrics across all Ecosystems and Credential Schemas. Supports At-Block-Height header for historical state.",
         "operationId": "getGlobalMetrics",
         "parameters": [
           {
@@ -2866,14 +2866,14 @@
         }
       }
     },
-    "/verana/perm/v1/permission-sessions": {
+    "/verana/pp/v1/participant-sessions": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
-        "summary": "List Permission Sessions",
-        "description": "Retrieve a paginated list of Permission Sessions",
-        "operationId": "listPermissionSessions",
+        "summary": "List Participant Sessions",
+        "description": "Retrieve a paginated list of Participant Sessions",
+        "operationId": "listParticipantSessions",
         "parameters": [
           {
             "name": "modified_after",
@@ -2903,11 +2903,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with list of Permission Sessions",
+            "description": "Successful response with list of Participant Sessions",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PermissionSessionListResponse"
+                  "$ref": "#/components/schemas/ParticipantSessionListResponse"
                 }
               }
             }
@@ -2921,32 +2921,32 @@
         }
       }
     },
-    "/verana/perm/v1/beneficiaries": {
+    "/verana/pp/v1/beneficiaries": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
         "summary": "Find Beneficiaries",
-        "description": "Find permission beneficiaries based on issuer and verifier permissions",
+        "description": "Find participant beneficiaries based on issuer and verifier participants",
         "operationId": "findBeneficiaries",
         "parameters": [
           {
-            "name": "issuer_perm_id",
+            "name": "issuer_participant_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "Issuer Permission ID"
+            "description": "Issuer Participant ID"
           },
           {
-            "name": "verifier_perm_id",
+            "name": "verifier_participant_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "Verifier Permission ID"
+            "description": "Verifier Participant ID"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2954,7 +2954,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with beneficiary permissions",
+            "description": "Successful response with beneficiary participants",
             "content": {
               "application/json": {
                 "schema": {
@@ -2974,7 +2974,7 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "No beneficiaries found for issuer_perm_id: 1 and verifier_perm_id: 2",
+                  "error": "No beneficiaries found for issuer_participant_id: 1 and verifier_participant_id: 2",
                   "code": 404
                 }
               }
@@ -2986,14 +2986,14 @@
         }
       }
     },
-    "/verana/perm/v1/history/{id}": {
+    "/verana/pp/v1/history/{id}": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
-        "summary": "Get Permission activity timeline",
-        "description": "Retrieve the activity timeline for a Permission, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
-        "operationId": "getPermissionHistory",
+        "summary": "Get Participant activity timeline",
+        "description": "Retrieve the activity timeline for a Participant, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
+        "operationId": "getParticipantHistory",
         "parameters": [
           {
             "name": "id",
@@ -3003,7 +3003,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "Permission ID whose history will be returned"
+            "description": "Participant ID whose history will be returned"
           },
           {
             "name": "response_max_size",
@@ -3033,22 +3033,22 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Permission activity timeline",
+            "description": "Successful response with Participant activity timeline",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActivityTimelineResponse"
                 },
                 "example": {
-                  "entity_type": "Permission",
+                  "entity_type": "Participant",
                   "entity_id": 1,
                   "activity": [
                     {
                       "timestamp": "2025-10-03T11:59:38.834Z",
                       "block_height": 13735,
-                      "entity_type": "Permission",
+                      "entity_type": "Participant",
                       "entity_id": "1",
-                      "msg": "CreateRootPermission",
+                      "msg": "CreateRootParticipant",
                       "changes": {
                         "did": "did:example:186af95a000ef890a583f47a0274a800",
                         "type": "ECOSYSTEM",
@@ -3058,7 +3058,7 @@
                         "vs_operator": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
                         "modified": "2025-10-03T11:59:38.834Z",
                         "verified": 0,
-                        "vp_state": "VALIDATION_STATE_UNSPECIFIED",
+                        "op_state": "VALIDATION_STATE_UNSPECIFIED",
                         "schema_id": 2,
                         "issuance_fees": 5,
                         "effective_from": "2025-10-03T11:59:49.805Z",
@@ -3066,10 +3066,10 @@
                         "effective_until": "2026-09-28T11:59:49.805Z",
                         "slashed_deposit": 0,
                         "validation_fees": 5,
-                        "vp_current_fees": 0,
+                        "op_current_fees": 0,
                         "verification_fees": 5,
-                        "vp_current_deposit": 0,
-                        "vp_validator_deposit": 0
+                        "op_current_deposit": 0,
+                        "op_validator_deposit": 0
                       }
                     }
                   ]
@@ -3078,14 +3078,14 @@
             }
           },
           "404": {
-            "description": "Permission history not found",
+            "description": "Participant history not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "Permission history not found for 1",
+                  "error": "Participant history not found for 1",
                   "code": 404
                 }
               }
@@ -3097,14 +3097,14 @@
         }
       }
     },
-    "/verana/perm/v1/permission-session-history/{id}": {
+    "/verana/pp/v1/participant-session-history/{id}": {
       "get": {
         "tags": [
-          "Permissions"
+          "Participants"
         ],
-        "summary": "Get Permission Session History",
-        "description": "Retrieve the recorded history for a specific Permission Session ID.",
-        "operationId": "getPermissionSessionHistory",
+        "summary": "Get Participant Session History",
+        "description": "Retrieve the recorded history for a specific Participant Session ID.",
+        "operationId": "getParticipantSessionHistory",
         "parameters": [
           {
             "name": "id",
@@ -3114,7 +3114,7 @@
               "type": "string",
               "format": "uuid"
             },
-            "description": "Permission Session ID to fetch history for"
+            "description": "Participant Session ID to fetch history for"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3122,36 +3122,36 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with Permission Session activity timeline",
+            "description": "Successful response with Participant Session activity timeline",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActivityTimelineResponse"
                 },
                 "example": {
-                  "entity_type": "PERMISSION_SESSION",
+                  "entity_type": "PARTICIPANT_SESSION",
                   "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
                   "activity": [
                     {
                       "timestamp": "2025-10-27T16:55:04.593Z",
                       "block_height": 425339,
-                      "entity_type": "PERMISSION_SESSION",
+                      "entity_type": "PARTICIPANT_SESSION",
                       "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
-                      "msg": "CreateOrUpdatePermissionSession",
+                      "msg": "CreateOrUpdateParticipantSession",
                       "changes": {
                         "session_records": [
                           {
-                            "issuer_perm_id": 25,
-                            "verifier_perm_id": null,
-                            "wallet_agent_perm_id": 25
+                            "issuer_participant_id": 25,
+                            "verifier_participant_id": null,
+                            "wallet_agent_participant_id": 25
                           }
                         ],
                         "created": "2025-10-27T16:55:04.593Z",
                         "modified": "2025-10-27T16:55:04.593Z",
                         "corporation": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
                         "vs_operator": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
-                        "agent_perm_id": 25,
-                        "wallet_agent_perm_id": 25
+                        "agent_participant_id": 25,
+                        "wallet_agent_participant_id": 25
                       },
                       "account": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l"
                     }
@@ -3161,14 +3161,14 @@
             }
           },
           "404": {
-            "description": "Permission Session not found",
+            "description": "Participant Session not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "PermissionSession 575ad8eb-3f0a-46bc-a51e-03cce903b865 not found",
+                  "error": "ParticipantSession 575ad8eb-3f0a-46bc-a51e-03cce903b865 not found",
                   "code": 404
                 }
               }
@@ -3231,12 +3231,12 @@
               "type": "string",
               "enum": [
                 "GLOBAL",
-                "TRUST_REGISTRY",
+                "ECOSYSTEM",
                 "CREDENTIAL_SCHEMA",
-                "PERMISSION"
+                "PARTICIPANT"
               ]
             },
-            "description": "Type of entity (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
+            "description": "Type of entity (GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, PARTICIPANT)"
           },
           {
             "name": "entity_id",
@@ -3333,12 +3333,12 @@
               "type": "string",
               "enum": [
                 "GLOBAL",
-                "TRUST_REGISTRY",
+                "ECOSYSTEM",
                 "CREDENTIAL_SCHEMA",
-                "PERMISSION"
+                "PARTICIPANT"
               ]
             },
-            "description": "GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, or PERMISSION"
+            "description": "GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, or PARTICIPANT"
           },
           {
             "name": "entity_ids",
@@ -3391,7 +3391,7 @@
           "Statistics"
         ],
         "summary": "Get Participants at Height",
-        "description": "Returns the number of participants for a given entity (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, or PERMISSION) and role type at a specific block height, based on the entity_participant_changes log.",
+        "description": "Returns the number of participants for a given entity (GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, or PARTICIPANT) and role type at a specific block height, based on the entity_participant_changes log.",
         "operationId": "getParticipantsAtHeight",
         "parameters": [
           {
@@ -3403,7 +3403,7 @@
               "minimum": 0,
               "maximum": 3
             },
-            "description": "Entity kind: 0=GLOBAL, 1=TRUST_REGISTRY, 2=CREDENTIAL_SCHEMA, 3=PERMISSION"
+            "description": "Entity kind: 0=GLOBAL, 1=ECOSYSTEM, 2=CREDENTIAL_SCHEMA, 3=PARTICIPANT"
           },
           {
             "name": "entity_id",
@@ -3783,7 +3783,7 @@
           "Resolver"
         ],
         "summary": "Issuer authorization (VTJSC)",
-        "description": "Verifies whether a DID holds an active ISSUER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
+        "description": "Verifies whether a DID holds an active ISSUER participant for a given VTJSC (credential schema). Optionally validates a payment session.",
         "operationId": "trustIssuerAuthorization",
         "parameters": [
           {
@@ -3816,7 +3816,7 @@
             "name": "sessionId",
             "in": "query",
             "required": false,
-            "description": "Optional PermissionSession ID for fee payment.",
+            "description": "Optional ParticipantSession ID for fee payment.",
             "schema": {
               "type": "string"
             }
@@ -3862,7 +3862,7 @@
           "Resolver"
         ],
         "summary": "Verifier authorization (VTJSC)",
-        "description": "Verifies whether a DID holds an active VERIFIER permission for a given VTJSC (credential schema). Optionally validates a payment session.",
+        "description": "Verifies whether a DID holds an active VERIFIER participant for a given VTJSC (credential schema). Optionally validates a payment session.",
         "operationId": "trustVerifierAuthorization",
         "parameters": [
           {
@@ -3895,7 +3895,7 @@
             "name": "sessionId",
             "in": "query",
             "required": false,
-            "description": "Optional PermissionSession ID for fee payment.",
+            "description": "Optional ParticipantSession ID for fee payment.",
             "schema": {
               "type": "string"
             }
@@ -3931,7 +3931,7 @@
           "Resolver"
         ],
         "summary": "Ecosystem participant",
-        "description": "Returns all active permissions a DID holds within a specific ecosystem (Trust Registry).",
+        "description": "Returns all active participants a DID holds within a specific ecosystem (Ecosystem).",
         "operationId": "trustEcosystemParticipant",
         "parameters": [
           {
@@ -3946,7 +3946,7 @@
             "name": "ecosystemDid",
             "in": "query",
             "required": true,
-            "description": "Ecosystem DID (Trust Registry owner).",
+            "description": "Ecosystem DID (Ecosystem owner).",
             "schema": {
               "type": "string"
             }
@@ -4370,7 +4370,7 @@
           },
           "event_type": {
             "type": "string",
-            "description": "Transaction action name, such as CreateNewTrustRegistry, UpdateCredentialSchema, or StartPermissionVP."
+            "description": "Transaction action name, such as CreateNewEcosystem, UpdateCredentialSchema, or StartParticipantOP."
           },
           "did": {
             "type": "string"
@@ -4393,7 +4393,7 @@
                 "enum": [
                   "trust-registry",
                   "credential-schema",
-                  "permission"
+                  "participant"
                 ]
               },
               "action": {
@@ -4542,7 +4542,7 @@
           }
         }
       },
-      "TrustRegistryParamsResponse": {
+      "EcosystemParamsResponse": {
         "type": "object",
         "properties": {
           "params": {
@@ -4552,7 +4552,7 @@
                 "type": "number",
                 "format": "decimal"
               },
-              "trust_registry_trust_deposit": {
+              "ecosystem_trust_deposit": {
                 "type": "number",
                 "format": "decimal"
               }
@@ -4560,7 +4560,7 @@
           }
         }
       },
-      "TrustRegistry": {
+      "Ecosystem": {
         "type": "object",
         "properties": {
           "id": {
@@ -4597,29 +4597,29 @@
           },
           "participants": {
             "type": "integer",
-            "description": "Current number of active participants (perm_state=ACTIVE) in this Trust Registry"
+            "description": "Current number of active participants (participant_state=ACTIVE) in this Ecosystem"
           },
           "active_schemas": {
             "type": "integer",
-            "description": "Current number of active schema (not archived) in this Trust Registry"
+            "description": "Current number of active schema (not archived) in this Ecosystem"
           },
           "archived_schemas": {
             "type": "integer",
-            "description": "Current number of archived schemas in this Trust Registry"
+            "description": "Current number of archived schemas in this Ecosystem"
           },
           "weight": {
             "type": "integer",
             "format": "int64",
-            "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
+            "description": "Trust deposit value (sum) of the full participant tree of all the Credential Schemas of this Ecosystem since it was created. Only considers participant deposits, not ecosystem or credential schema deposits."
           },
           "issued": {
             "type": "integer",
             "format": "int64",
-            "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
+            "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Ecosystem since it was created"
           },
           "verified": {
             "type": "integer",
-            "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Trust Registry since it was created"
+            "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Ecosystem since it was created"
           },
           "ecosystem_slash_events": {
             "type": "integer",
@@ -4648,7 +4648,7 @@
           "versions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TrustRegistryVersion"
+              "$ref": "#/components/schemas/EcosystemVersion"
             }
           },
           "participants_ecosystem": {
@@ -4677,13 +4677,13 @@
           }
         }
       },
-      "TrustRegistryVersion": {
+      "EcosystemVersion": {
         "type": "object",
         "properties": {
           "id": {
             "type": "integer"
           },
-          "tr_id": {
+          "ecosystem_id": {
             "type": "integer"
           },
           "created": {
@@ -4700,12 +4700,12 @@
           "documents": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TrustRegistryDocument"
+              "$ref": "#/components/schemas/EcosystemDocument"
             }
           }
         }
       },
-      "TrustRegistryDocument": {
+      "EcosystemDocument": {
         "type": "object",
         "properties": {
           "id": {
@@ -4729,29 +4729,29 @@
           }
         }
       },
-      "TrustRegistryListResponse": {
+      "EcosystemListResponse": {
         "type": "object",
         "properties": {
           "trust_registries": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TrustRegistry"
+              "$ref": "#/components/schemas/Ecosystem"
             }
           }
         }
       },
-      "TrustRegistryResponse": {
+      "EcosystemResponse": {
         "type": "object",
         "properties": {
-          "trust_registry": {
-            "$ref": "#/components/schemas/TrustRegistry"
+          "ecosystem": {
+            "$ref": "#/components/schemas/Ecosystem"
           }
         }
       },
-      "TrustRegistryHistoryResponse": {
+      "EcosystemHistoryResponse": {
         "type": "object",
         "properties": {
-          "trust_registry": {
+          "ecosystem": {
             "type": "object",
             "properties": {
               "id": {
@@ -4788,30 +4788,30 @@
               },
               "participants": {
                 "type": "integer",
-                "description": "Current number of active participants (perm_state=ACTIVE) in this Trust Registry"
+                "description": "Current number of active participants (participant_state=ACTIVE) in this Ecosystem"
               },
               "active_schemas": {
                 "type": "integer",
-                "description": "Current number of active schema (not archived) in this Trust Registry"
+                "description": "Current number of active schema (not archived) in this Ecosystem"
               },
               "archived_schemas": {
                 "type": "integer",
-                "description": "Current number of archived schemas in this Trust Registry"
+                "description": "Current number of archived schemas in this Ecosystem"
               },
               "weight": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Trust deposit value (sum) of the full permission tree of all the Credential Schemas of this Trust Registry since it was created. Only considers permission deposits, not trust registry or credential schema deposits."
+                "description": "Trust deposit value (sum) of the full participant tree of all the Credential Schemas of this Ecosystem since it was created. Only considers participant deposits, not ecosystem or credential schema deposits."
               },
               "issued": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Trust Registry since it was created"
+                "description": "Total issued credentials (sum) by all issuers of all the Credential Schemas of this Ecosystem since it was created"
               },
               "verified": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Trust Registry since it was created"
+                "description": "Total verified credentials (sum) by all verifiers of all the Credential Schemas of this Ecosystem since it was created"
               },
               "ecosystem_slash_events": {
                 "type": "integer",
@@ -4840,7 +4840,7 @@
               "versions": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/TrustRegistryVersion"
+                  "$ref": "#/components/schemas/EcosystemVersion"
                 }
               }
             }
@@ -4853,7 +4853,7 @@
           "id": {
             "type": "integer"
           },
-          "tr_id": {
+          "ecosystem_id": {
             "type": "integer"
           },
           "json_schema": {
@@ -4912,11 +4912,11 @@
           },
           "participants": {
             "type": "integer",
-            "description": "Current number of active participants (perm_state=ACTIVE) in this Credential Schema"
+            "description": "Current number of active participants (participant_state=ACTIVE) in this Credential Schema"
           },
           "weight": {
             "type": "integer",
-            "description": "Trust deposit value (sum) of the full permission tree of this schema since the schema was created"
+            "description": "Trust deposit value (sum) of the full participant tree of this schema since the schema was created"
           },
           "issued": {
             "type": "integer",
@@ -5028,13 +5028,13 @@
           }
         }
       },
-      "Permission": {
+      "Participant": {
         "type": "object",
         "properties": {
           "id": {
             "type": "integer"
           },
-          "perm_state": {
+          "participant_state": {
             "type": "string",
             "enum": [
               "REPAID",
@@ -5045,50 +5045,50 @@
               "FUTURE",
               "INACTIVE"
             ],
-            "description": "The current state of the permission, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
+            "description": "The current state of the participant, calculated based on repaid, slashed, revoked, effective_from, and effective_until fields"
           },
           "corporation_available_actions": {
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
-                "VP_RENEW",
-                "VP_CANCEL",
-                "PERM_REVOKE",
-                "PERM_ADJUST",
-                "PERM_REPAY"
+                "OP_RENEW",
+                "OP_CANCEL",
+                "PARTICIPANT_REVOKE",
+                "PARTICIPANT_ADJUST",
+                "PARTICIPANT_REPAY"
               ]
             },
-            "description": "Actions available to the permission corporation "
+            "description": "Actions available to the participant corporation "
           },
           "validator_available_actions": {
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
-                "VP_SET_VALIDATED",
-                "PERM_REVOKE",
-                "PERM_ADJUST",
-                "PERM_SLASH"
+                "OP_SET_VALIDATED",
+                "PARTICIPANT_REVOKE",
+                "PARTICIPANT_ADJUST",
+                "PARTICIPANT_SLASH"
               ]
             },
             "description": "Actions available to the validator "
           },
           "weight": {
             "type": "integer",
-            "description": "The node weight of the permission, calculated as the sum of all trust deposits of this permission and all permissions in its subtree"
+            "description": "The node weight of the participant, calculated as the sum of all trust deposits of this participant and all participants in its subtree"
           },
           "issued": {
             "type": "integer",
-            "description": "Number of credentials issued using this permission and its ancestors"
+            "description": "Number of credentials issued using this participant and its ancestors"
           },
           "verified": {
             "type": "integer",
-            "description": "Number of credentials verified using this permission and its ancestors"
+            "description": "Number of credentials verified using this participant and its ancestors"
           },
           "participants": {
             "type": "integer",
-            "description": "Current number of active participants (perm_state=ACTIVE) (subtree, plus this permission if it is ACTIVE)"
+            "description": "Current number of active participants (participant_state=ACTIVE) (subtree, plus this participant if it is ACTIVE)"
           },
           "ecosystem_slash_events": {
             "type": "integer",
@@ -5134,7 +5134,7 @@
           },
           "corporation": {
             "type": "string",
-            "description": "Corporation  that owns this permission "
+            "description": "Corporation  that owns this participant "
           },
           "vs_operator": {
             "type": "string",
@@ -5145,7 +5145,7 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Last permission adjustment time ."
+            "description": "Last participant adjustment time ."
           },
           "vs_operator_authz_enabled": {
             "type": "boolean"
@@ -5266,11 +5266,11 @@
           "repaid_deposit": {
             "type": "integer"
           },
-          "validator_perm_id": {
+          "validator_participant_id": {
             "type": "integer",
             "nullable": true
           },
-          "vp_state": {
+          "op_state": {
             "type": "string",
             "enum": [
               "PENDING",
@@ -5279,28 +5279,28 @@
               "VALIDATION_STATE_UNSPECIFIED"
             ]
           },
-          "vp_last_state_change": {
+          "op_last_state_change": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "vp_current_fees": {
+          "op_current_fees": {
             "type": "integer"
           },
-          "vp_current_deposit": {
+          "op_current_deposit": {
             "type": "integer"
           },
-          "vp_summary_digest": {
+          "op_summary_digest": {
             "type": "string",
             "nullable": true,
             "description": "VP summary digest"
           },
-          "vp_exp": {
+          "op_exp": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "vp_validator_deposit": {
+          "op_validator_deposit": {
             "type": "integer"
           },
           "participants_ecosystem": {
@@ -5323,26 +5323,26 @@
           }
         }
       },
-      "PermissionResponse": {
+      "ParticipantResponse": {
         "type": "object",
         "properties": {
-          "permission": {
-            "$ref": "#/components/schemas/Permission"
+          "participant": {
+            "$ref": "#/components/schemas/Participant"
           }
         }
       },
-      "PermissionListResponse": {
+      "ParticipantListResponse": {
         "type": "object",
         "properties": {
-          "permissions": {
+          "participants": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Permission"
+              "$ref": "#/components/schemas/Participant"
             }
           }
         }
       },
-      "TrustRegistryPending": {
+      "EcosystemPending": {
         "type": "object",
         "properties": {
           "id": {
@@ -5396,18 +5396,18 @@
           "participants": {
             "type": "integer"
           },
-          "permissions": {
+          "participants": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Permission"
+              "$ref": "#/components/schemas/Participant"
             }
           }
         }
       },
-      "PermissionHistoryItem": {
+      "ParticipantHistoryItem": {
         "type": "object",
         "properties": {
-          "permission_id": {
+          "participant_id": {
             "type": "integer"
           },
           "schema_id": {
@@ -5418,7 +5418,7 @@
           },
           "corporation": {
             "type": "string",
-            "description": "Permission corporation at this history point "
+            "description": "Participant corporation at this history point "
           },
           "event_type": {
             "type": "string"
@@ -5437,18 +5437,18 @@
           }
         }
       },
-      "PermissionHistoryResponse": {
+      "ParticipantHistoryResponse": {
         "type": "object",
         "properties": {
           "history": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PermissionHistoryItem"
+              "$ref": "#/components/schemas/ParticipantHistoryItem"
             }
           }
         }
       },
-      "PermissionSession": {
+      "ParticipantSession": {
         "type": "object",
         "properties": {
           "id": {
@@ -5464,22 +5464,22 @@
             "nullable": true,
             "description": "Verifiable service operator "
           },
-          "agent_perm_id": {
+          "agent_participant_id": {
             "type": "integer"
           },
-          "wallet_agent_perm_id": {
+          "wallet_agent_participant_id": {
             "type": "integer"
           },
           "session_records": {
             "type": "array",
-            "description": "PermissionSessionRecord[] ",
+            "description": "ParticipantSessionRecord[] ",
             "items": {
               "type": "object",
               "properties": {
                 "created": { "type": "string", "format": "date-time" },
-                "issuer_perm_id": { "type": "integer", "nullable": true },
-                "verifier_perm_id": { "type": "integer", "nullable": true },
-                "wallet_agent_perm_id": { "type": "integer" }
+                "issuer_participant_id": { "type": "integer", "nullable": true },
+                "verifier_participant_id": { "type": "integer", "nullable": true },
+                "wallet_agent_participant_id": { "type": "integer" }
               }
             }
           },
@@ -5493,26 +5493,26 @@
           }
         }
       },
-      "PermissionSessionResponse": {
+      "ParticipantSessionResponse": {
         "type": "object",
         "properties": {
           "session": {
-            "$ref": "#/components/schemas/PermissionSession"
+            "$ref": "#/components/schemas/ParticipantSession"
           }
         }
       },
-      "PermissionSessionListResponse": {
+      "ParticipantSessionListResponse": {
         "type": "object",
         "properties": {
           "sessions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PermissionSession"
+              "$ref": "#/components/schemas/ParticipantSession"
             }
           }
         }
       },
-      "PermissionSessionHistoryItem": {
+      "ParticipantSessionHistoryItem": {
         "type": "object",
         "properties": {
           "session_id": {
@@ -5532,10 +5532,10 @@
             "type": "string",
             "nullable": true
           },
-          "agent_perm_id": {
+          "agent_participant_id": {
             "type": "integer"
           },
-          "wallet_agent_perm_id": {
+          "wallet_agent_participant_id": {
             "type": "integer"
           },
           "session_records": {
@@ -5552,13 +5552,13 @@
           }
         }
       },
-      "PermissionSessionHistoryResponse": {
+      "ParticipantSessionHistoryResponse": {
         "type": "object",
         "properties": {
           "history": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PermissionSessionHistoryItem"
+              "$ref": "#/components/schemas/ParticipantSessionHistoryItem"
             }
           }
         }
@@ -5566,10 +5566,10 @@
       "BeneficiaryResponse": {
         "type": "object",
         "properties": {
-          "permissions": {
+          "participants": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Permission"
+              "$ref": "#/components/schemas/Participant"
             }
           }
         }
@@ -5645,7 +5645,7 @@
           },
           "msg": {
             "type": "string",
-            "description": "Message/action type (e.g., CreateTrustRegistry, AddGovernanceFrameworkDocument, CreateRootPermission, CreateOrUpdatePermissionSession, AdjustTrustDeposit)"
+            "description": "Message/action type (e.g., CreateEcosystem, AddGovernanceFrameworkDocument, CreateRootParticipant, CreateOrUpdateParticipantSession, AdjustTrustDeposit)"
           },
           "changes": {
             "type": "object",
@@ -5669,13 +5669,13 @@
             "type": "string",
             "description": "The entity type (VPR spec name)",
             "enum": [
-              "TrustRegistry",
+              "Ecosystem",
               "CredentialSchema",
               "GovernanceFrameworkDocument",
               "GovernanceFrameworkVersion",
-              "Permission",
+              "Participant",
               "TrustDeposit",
-              "PERMISSION_SESSION"
+              "PARTICIPANT_SESSION"
             ]
           },
           "entity_id": {
@@ -5797,7 +5797,7 @@
               "CREATE_TRUST_DEPOSIT",
               "ADJUST_TRUST_DEPOSIT",
               "SLASH_TRUST_DEPOSIT",
-              "SLASH_PERM_TRUST_DEPOSIT",
+              "SLASH_PARTICIPANT_TRUST_DEPOSIT",
               "RECLAIM_YIELD",
               "RECLAIM_DEPOSIT",
               "REPAY_SLASHED"
@@ -5867,16 +5867,16 @@
           }
         }
       },
-      "TrustRegistryReputation": {
+      "EcosystemReputation": {
         "type": "object",
         "properties": {
-          "tr_id": {
+          "ecosystem_id": {
             "type": "integer",
-            "description": "Trust Registry ID"
+            "description": "Ecosystem ID"
           },
           "tr_did": {
             "type": "string",
-            "description": "Trust Registry DID"
+            "description": "Ecosystem DID"
           },
           "schemas": {
             "type": "array",
@@ -5927,45 +5927,45 @@
             "type": "integer",
             "description": "Number of validation processes run as applicant"
           },
-          "issuer_perm_count": {
+          "issuer_participant_count": {
             "type": "integer",
-            "description": "Total issuer permissions"
+            "description": "Total issuer participants"
           },
-          "verifier_perm_count": {
+          "verifier_participant_count": {
             "type": "integer",
-            "description": "Total verifier permissions"
+            "description": "Total verifier participants"
           },
-          "issuer_grantor_perm_count": {
+          "issuer_grantor_participant_count": {
             "type": "integer",
-            "description": "Total issuer grantor permissions"
+            "description": "Total issuer grantor participants"
           },
-          "verifier_grantor_perm_count": {
+          "verifier_grantor_participant_count": {
             "type": "integer",
-            "description": "Total verifier grantor permissions"
+            "description": "Total verifier grantor participants"
           },
-          "ecosystem_perm_count": {
+          "ecosystem_participant_count": {
             "type": "integer",
-            "description": "Total ecosystem permissions"
+            "description": "Total ecosystem participants"
           },
-          "active_issuer_perm_count": {
+          "active_issuer_participant_count": {
             "type": "integer",
-            "description": "Active issuer permissions"
+            "description": "Active issuer participants"
           },
-          "active_verifier_perm_count": {
+          "active_verifier_participant_count": {
             "type": "integer",
-            "description": "Active verifier permissions"
+            "description": "Active verifier participants"
           },
-          "active_issuer_grantor_perm_count": {
+          "active_issuer_grantor_participant_count": {
             "type": "integer",
-            "description": "Active issuer grantor permissions"
+            "description": "Active issuer grantor participants"
           },
-          "active_verifier_grantor_perm_count": {
+          "active_verifier_grantor_participant_count": {
             "type": "integer",
-            "description": "Active verifier grantor permissions"
+            "description": "Active verifier grantor participants"
           },
-          "active_ecosystem_perm_count": {
+          "active_ecosystem_participant_count": {
             "type": "integer",
-            "description": "Active ecosystem permissions"
+            "description": "Active ecosystem participants"
           },
           "slashs": {
             "type": "array",
@@ -5986,17 +5986,17 @@
       "SchemaSlashEvent": {
         "type": "object",
         "properties": {
-          "perm_id": {
+          "participant_id": {
             "type": "integer",
-            "description": "Permission ID that was slashed"
+            "description": "Participant ID that was slashed"
           },
           "schema_id": {
             "type": "integer",
             "description": "Schema ID"
           },
-          "tr_id": {
+          "ecosystem_id": {
             "type": "integer",
-            "description": "Trust Registry ID"
+            "description": "Ecosystem ID"
           },
           "slashed_ts": {
             "type": "string",
@@ -6012,17 +6012,17 @@
       "SchemaRepaymentEvent": {
         "type": "object",
         "properties": {
-          "perm_id": {
+          "participant_id": {
             "type": "integer",
-            "description": "Permission ID that was repaid"
+            "description": "Participant ID that was repaid"
           },
           "schema_id": {
             "type": "integer",
             "description": "Schema ID"
           },
-          "tr_id": {
+          "ecosystem_id": {
             "type": "integer",
-            "description": "Trust Registry ID"
+            "description": "Ecosystem ID"
           },
           "repaid_ts": {
             "type": "string",
@@ -6060,9 +6060,9 @@
             "type": "string",
             "enum": [
               "GLOBAL",
-              "TRUST_REGISTRY",
+              "ECOSYSTEM",
               "CREDENTIAL_SCHEMA",
-              "PERMISSION"
+              "PARTICIPANT"
             ],
             "description": "Type of entity"
           },
@@ -6072,7 +6072,7 @@
           },
           "cumulative_participants": {
             "type": "integer",
-            "description": "Cumulative participants (subtree for PERMISSION)"
+            "description": "Cumulative participants (subtree for PARTICIPANT)"
           },
           "cumulative_active_schemas": {
             "type": "integer",
@@ -6317,9 +6317,9 @@
             "type": "string",
             "enum": [
               "GLOBAL",
-              "TRUST_REGISTRY",
+              "ECOSYSTEM",
               "CREDENTIAL_SCHEMA",
-              "PERMISSION"
+              "PARTICIPANT"
             ]
           },
           "entity_ids": {
@@ -6352,9 +6352,9 @@
         "properties": {
           "trust_registries": {
             "type": "array",
-            "description": "Trust registries with nested credential schemas and enriched permission rows (see implementation for full permission fields).",
+            "description": "Trust registries with nested credential schemas and enriched participant rows (see implementation for full participant fields).",
             "items": {
-              "$ref": "#/components/schemas/TrustRegistryPending"
+              "$ref": "#/components/schemas/EcosystemPending"
             }
           }
         }
@@ -6604,10 +6604,10 @@
         },
         "additionalProperties": false
       },
-      "TrustPermissionChainLink": {
+      "TrustParticipantChainLink": {
         "type": "object",
         "properties": {
-          "permissionId": {
+          "participantId": {
             "type": "integer"
           },
           "type": {
@@ -6622,7 +6622,7 @@
           "deposit": {
             "type": "string"
           },
-          "permState": {
+          "participantState": {
             "type": "string"
           },
           "effectiveFrom": {
@@ -6662,7 +6662,7 @@
           "reason": {
             "type": "string"
           },
-          "permission": {
+          "participant": {
             "type": [
               "object",
               "null"
@@ -6672,10 +6672,10 @@
             "type": "object",
             "description": "When `required` is true, includes `paid` after session validation; amounts are **uvna** strings."
           },
-          "permissionChain": {
+          "participantChain": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TrustPermissionChainLink"
+              "$ref": "#/components/schemas/TrustParticipantChainLink"
             }
           },
           "session": {
@@ -6722,7 +6722,7 @@
           },
           "authorized": {
             "type": "boolean",
-            "description": "Permission + Verre; see `fees.paid` for Layer 2."
+            "description": "Participant + Verre; see `fees.paid` for Layer 2."
           },
           "evaluatedAt": {
             "type": "string",
@@ -6735,7 +6735,7 @@
           "reason": {
             "type": "string"
           },
-          "permission": {
+          "participant": {
             "type": [
               "object",
               "null"
@@ -6744,10 +6744,10 @@
           "fees": {
             "type": "object"
           },
-          "permissionChain": {
+          "participantChain": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TrustPermissionChainLink"
+              "$ref": "#/components/schemas/TrustParticipantChainLink"
             }
           },
           "session": {
@@ -6763,7 +6763,7 @@
           "isParticipant",
           "evaluatedAt",
           "evaluatedAtBlock",
-          "permissions"
+          "participants"
         ],
         "properties": {
           "did": {
@@ -6786,12 +6786,12 @@
             "type": "integer",
             "minimum": 0
           },
-          "permissions": {
+          "participants": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "permissionId": {
+                "participantId": {
                   "type": "integer"
                 },
                 "did": {
@@ -6810,7 +6810,7 @@
                   ]
                 },
                 "deposit": {},
-                "permState": {},
+                "participantState": {},
                 "effectiveFrom": {},
                 "effectiveUntil": {}
               }
@@ -6856,16 +6856,16 @@
       "description": "Corporations (verana.co.v1) and their Governance Frameworks (verana.gf.v1)"
     },
     {
-      "name": "Trust Registry",
-      "description": "Trust Registry management operations"
+      "name": "Ecosystem",
+      "description": "Ecosystem management operations"
     },
     {
       "name": "Credential Schema",
       "description": "Credential Schema management operations"
     },
     {
-      "name": "Permissions",
-      "description": "Permission management operations"
+      "name": "Participants",
+      "description": "Participant management operations"
     },
     {
       "name": "TrustDeposit",
@@ -6884,10 +6884,10 @@
     },
     {
       "name": "Statistics",
-      "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, TRUST_REGISTRY, CREDENTIAL_SCHEMA, PERMISSION)"
+      "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, PARTICIPANT)"
     },
     {
-      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartPermissionVP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"permission\",\n    \"action\": \"StartPermissionVP\",\n    \"message_type\": \"/verana.perm.v1.MsgStartPermissionVP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Permission\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
+      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartParticipantOP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"participant\",\n    \"action\": \"StartParticipantOP\",\n    \"message_type\": \"/verana.pp.v1.MsgStartParticipantOP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Participant\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
     }
   ]
 }

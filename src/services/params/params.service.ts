@@ -353,11 +353,11 @@ export default class GenesisParamsService extends BullableService {
     if (type === VeranaCredentialSchemaMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.CS;
     } else if (type === VeranaParticipantMessageTypes.UpdateParams) {
-      module = ModulesParamsNamesTypes.PERM;
+      module = ModulesParamsNamesTypes.PP;
     } else if (type === VeranaTrustDepositMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.TD;
     } else if (type === VeranaEcosystemMessageTypes.UpdateParams) {
-      module = ModulesParamsNamesTypes.TR;
+      module = ModulesParamsNamesTypes.EC;
     } else if (type === VeranaCorporationMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.CO;
     } else if (type === VeranaGovernanceFrameworkMessageTypes.UpdateParams) {

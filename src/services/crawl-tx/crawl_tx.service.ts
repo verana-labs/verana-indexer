@@ -51,8 +51,8 @@ import {
   TransactionMessage,
 } from '../../models';
 import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers';
-import { extractTrustRegistryIdsFromEvents } from "../../modules/tr-height-sync/tr_height_sync_helpers";
-import { applyScheduledPermissionFlipsForBlock } from "../crawl-perm/perm_flip_processor";
+import { extractEcosystemIdsFromEvents } from "../../modules/ec-height-sync/ec_height_sync_helpers";
+import { applyScheduledParticipantFlipsForBlock } from "../crawl-pp/pp_flip_processor";
 
 const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000);
 
@@ -437,7 +437,7 @@ export default class CrawlTxService extends BullableService {
       if (!endBlock?.time) return;
       const endTimeIso = new Date(endBlock.time).toISOString();
 
-      const earliest = await knex("permission_scheduled_flips")
+      const earliest = await knex("participant_scheduled_flips")
         .where("status", 0)
         .min("flip_at_time as min")
         .first();
@@ -488,7 +488,7 @@ export default class CrawlTxService extends BullableService {
       blockTime = new Date(block.time);
     }
 
-    await applyScheduledPermissionFlipsForBlock({
+    await applyScheduledParticipantFlipsForBlock({
       height: blockHeight,
       blockTime,
     });
@@ -516,10 +516,10 @@ export default class CrawlTxService extends BullableService {
     return await knex.transaction(async (trx) => {
       try {
         const allPayloads: any = {
-          trustRegistryList: [],
+          ecosystemList: [],
           corporationList: [],
           credentialSchemaMessages: [],
-          permissionMessages: [],
+          participantMessages: [],
           trustDepositList: [],
           updateParamsList: [],
           blockHeight,
@@ -541,8 +541,8 @@ export default class CrawlTxService extends BullableService {
           const txPayloads = await this.processSingleTransaction(tx, trx);
 
           if (txPayloads) {
-            if (txPayloads.trustRegistryList?.length) {
-              allPayloads.trustRegistryList.push(...txPayloads.trustRegistryList);
+            if (txPayloads.ecosystemList?.length) {
+              allPayloads.ecosystemList.push(...txPayloads.ecosystemList);
             }
             if (txPayloads.corporationList?.length) {
               allPayloads.corporationList.push(...txPayloads.corporationList);
@@ -550,8 +550,8 @@ export default class CrawlTxService extends BullableService {
             if (txPayloads.credentialSchemaMessages?.length) {
               allPayloads.credentialSchemaMessages.push(...txPayloads.credentialSchemaMessages);
             }
-            if (txPayloads.permissionMessages?.length) {
-              allPayloads.permissionMessages.push(...txPayloads.permissionMessages);
+            if (txPayloads.participantMessages?.length) {
+              allPayloads.participantMessages.push(...txPayloads.participantMessages);
             }
             if (txPayloads.trustDepositList?.length) {
               allPayloads.trustDepositList.push(...txPayloads.trustDepositList);
@@ -1203,10 +1203,10 @@ export default class CrawlTxService extends BullableService {
       return payload;
     }
     return {
-      trustRegistryList: [],
+      ecosystemList: [],
       corporationList: [],
       credentialSchemaMessages: [],
-      permissionMessages: [],
+      participantMessages: [],
       trustDepositList: [],
       updateParamsList: [],
     };
@@ -1220,12 +1220,12 @@ export default class CrawlTxService extends BullableService {
 
     this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
 
-    const trustRegistryList = successfulMsgs
+    const ecosystemList = successfulMsgs
       .filter((msg: any) => isEcosystemMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
         const txEvents = parentTx?.data?.tx_response?.events ?? [];
-        const eventTrIds = extractTrustRegistryIdsFromEvents(txEvents, true);
+        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents, true);
         return {
           type: msg.type,
           content: msg.content ?? null,
@@ -1233,7 +1233,7 @@ export default class CrawlTxService extends BullableService {
           height: parentTx?.height ?? null,
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
-          eventTrIds,
+          eventEcosystemIds,
         };
       });
 
@@ -1269,7 +1269,7 @@ export default class CrawlTxService extends BullableService {
         };
       });
 
-    const permissionMessages = successfulMsgs
+    const participantMessages = successfulMsgs
       .filter((msg: any) => isParticipantMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
@@ -1314,10 +1314,10 @@ export default class CrawlTxService extends BullableService {
     this.logger.info(`[insertRelatedTx] Completed processing all messages (payload prepared)`);
 
     return {
-      trustRegistryList,
+      ecosystemList,
       corporationList,
       credentialSchemaMessages,
-      permissionMessages,
+      participantMessages,
       trustDepositList,
       updateParamsList,
     };
@@ -1746,10 +1746,10 @@ export default class CrawlTxService extends BullableService {
   }
   private async processPayloads(payload: any) {
     if (!payload) return;
-    if (payload.trustRegistryList?.length) {
+    if (payload.ecosystemList?.length) {
       await this.broker.call(
-        `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleTrustRegistryMessages`,
-        { trustRegistryList: payload.trustRegistryList },
+        `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`,
+        { ecosystemList: payload.ecosystemList },
       );
     }
 
@@ -1757,35 +1757,35 @@ export default class CrawlTxService extends BullableService {
     const blockHeight = payload.blockHeight;
     if (useHeightSyncTR && typeof blockHeight === "number") {
       const events = payload.csEventsFromBlock ?? [];
-      const trIdsFromEvents = extractTrustRegistryIdsFromEvents(events, true);
-      const handledTrIds = new Set<number>();
-      for (const msg of payload.trustRegistryList ?? []) {
-        const eventIds = Array.isArray(msg?.eventTrIds) ? msg.eventTrIds : [];
+      const ecosystemIdsFromEvents = extractEcosystemIdsFromEvents(events, true);
+      const handledEcosystemIds = new Set<number>();
+      for (const msg of payload.ecosystemList ?? []) {
+        const eventIds = Array.isArray(msg?.eventEcosystemIds) ? msg.eventEcosystemIds : [];
         for (const raw of eventIds) {
           const id = Number(raw);
-          if (Number.isInteger(id) && id > 0) handledTrIds.add(id);
+          if (Number.isInteger(id) && id > 0) handledEcosystemIds.add(id);
         }
         const content = msg?.content ?? {};
         const fallbackCandidates = [
-          content?.trust_registry_id,
-          content?.trustRegistryId,
-          content?.tr_id,
-          content?.trId,
+          content?.ecosystem_id,
+          content?.ecosystemId,
+          content?.ecosystem_id,
+          content?.ecosystemId,
           content?.id,
         ];
         for (const raw of fallbackCandidates) {
           const id = Number(raw);
-          if (Number.isInteger(id) && id > 0) handledTrIds.add(id);
+          if (Number.isInteger(id) && id > 0) handledEcosystemIds.add(id);
         }
       }
 
-      const extraTrIdsFromEvents = trIdsFromEvents.filter((id) => !handledTrIds.has(id));
-      if (extraTrIdsFromEvents.length > 0) {
+      const extraEcosystemIdsFromEvents = ecosystemIdsFromEvents.filter((id) => !handledEcosystemIds.has(id));
+      if (extraEcosystemIdsFromEvents.length > 0) {
         try {
           await this.broker.call(
-            `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleTrustRegistryMessages`,
+            `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`,
             {
-              trustRegistryList: extraTrIdsFromEvents.map((id: number) => ({
+              ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
                 type: "EVENT_SYNC_TR",
                 height: blockHeight,
                 content: { id },
@@ -1794,7 +1794,7 @@ export default class CrawlTxService extends BullableService {
           );
         } catch (err: any) {
           this.logger.warn(
-            `[processPayloads] Failed to run TR height-sync from events at block=${blockHeight}: ${
+            `[processPayloads] Failed to run EC height-sync from events at block=${blockHeight}: ${
               err?.message || String(err)
             }`
           );
@@ -1829,17 +1829,17 @@ export default class CrawlTxService extends BullableService {
       }
     }
 
-    if (payload.permissionMessages?.length) {
-      const permissionMessages = payload.permissionMessages;
-      const permissionBatchSize = 50;
-      for (let i = 0; i < permissionMessages.length; i += permissionBatchSize) {
-        const batch = permissionMessages.slice(i, i + permissionBatchSize);
+    if (payload.participantMessages?.length) {
+      const participantMessages = payload.participantMessages;
+      const participantBatchSize = 50;
+      for (let i = 0; i < participantMessages.length; i += participantBatchSize) {
+        const batch = participantMessages.slice(i, i + participantBatchSize);
         await this.broker.call(
-          `${SERVICE.V1.ParticipantProcessorService.path}.handlePermissionMessages`,
-          { permissionMessages: batch },
+          `${SERVICE.V1.ParticipantProcessorService.path}.handleParticipantMessages`,
+          { participantMessages: batch },
           { timeout: getHeavyBrokerCallTimeoutMs() },
         );
-        if (i + permissionBatchSize < permissionMessages.length) {
+        if (i + participantBatchSize < participantMessages.length) {
           const { delay } = await import('../../common/utils/db_query_helper');
           await delay(200);
         }

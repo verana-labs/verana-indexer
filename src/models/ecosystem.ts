@@ -2,8 +2,8 @@ import { Model } from "objection";
 import BaseModel from "./base";
 import { GovernanceFrameworkVersion } from "./governance_framework_version";
 
-export class TrustRegistry extends BaseModel {
-  static tableName = "trust_registry";
+export class Ecosystem extends BaseModel {
+  static tableName = "ecosystem";
 
   id!: number;
   did!: string;
@@ -40,8 +40,8 @@ export class TrustRegistry extends BaseModel {
       relation: Model.HasManyRelation,
       modelClass: GovernanceFrameworkVersion,
       join: {
-        from: "trust_registry.id",
-        to: "governance_framework_version.tr_id",
+        from: "ecosystem.id",
+        to: "governance_framework_version.ecosystem_id",
       },
     },
   });

@@ -4,9 +4,9 @@ import {
   calculateCredentialSchemaStats,
   calculateCredentialSchemaStatsBatch,
 } from "../crawl-cs/cs_stats";
-import { calculatePermState } from "../crawl-perm/perm_state_utils";
+import { calculateParticipantState } from "../crawl-pp/pp_state_utils";
 import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
-import { resolvePermissionsParticipantColumn } from "../../common/utils/installed_table_columns";
+import { resolveParticipantsParticipantColumn } from "../../common/utils/installed_table_columns";
 
 function isMetricsPgClient(db: Knex): boolean {
   return String((db as any)?.client?.config?.client || "").includes("pg");
@@ -25,9 +25,9 @@ async function pgTableColumnsLower(db: Knex, table: string): Promise<Set<string>
   return new Set(rows.map((x) => String(x.column_name).toLowerCase()));
 }
 
-async function aggregateLiveTrustWeightFromPermissions(db: Knex): Promise<{
+async function aggregateLiveTrustWeightFromParticipants(db: Knex): Promise<{
   totalWeight: number;
-  maxSinglePermWeight: number;
+  maxSingleParticipantWeight: number;
 }> {
   const sumExpr = isMetricsPgClient(db)
     ? `COALESCE(SUM(
@@ -57,14 +57,14 @@ async function aggregateLiveTrustWeightFromPermissions(db: Knex): Promise<{
          END
        ), 0)`;
 
-  const row = await db("permissions as p")
+  const row = await db("participants as p")
     .join("credential_schemas as cs", "cs.id", "p.schema_id")
     .select(db.raw(`${sumExpr} as total_weight`), db.raw(`${maxExpr} as max_single`))
     .first();
 
   const totalWeight = parseMetricsNumeric((row as any)?.total_weight);
-  const maxSinglePermWeight = parseMetricsNumeric((row as any)?.max_single);
-  return { totalWeight, maxSinglePermWeight };
+  const maxSingleParticipantWeight = parseMetricsNumeric((row as any)?.max_single);
+  return { totalWeight, maxSingleParticipantWeight };
 }
 
 async function sumDenormalizedCredentialSchemaWeights(db: Knex): Promise<number> {
@@ -225,11 +225,11 @@ export async function computeTotalLockedTrustDepositWeight(blockHeight?: number)
 function logGlobalWeightSanity(opts: {
   totalWeightFromTrustDeposits: number;
   maxSingleDeposit: number;
-  permissionsDerivedTotalWeight?: number;
+  participantsDerivedTotalWeight?: number;
   denormalizedCsSum?: number;
   logger?: { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void };
 }): void {
-  const { totalWeightFromTrustDeposits, maxSingleDeposit, permissionsDerivedTotalWeight, denormalizedCsSum, logger } = opts;
+  const { totalWeightFromTrustDeposits, maxSingleDeposit, participantsDerivedTotalWeight, denormalizedCsSum, logger } = opts;
   const log = logger?.warn ?? logger?.debug ?? ((...args: unknown[]) => console.warn(...args));
 
   if (maxSingleDeposit > totalWeightFromTrustDeposits + 1e-6) {
@@ -255,19 +255,19 @@ function logGlobalWeightSanity(opts: {
   }
 
   if (
-    typeof permissionsDerivedTotalWeight === "number" &&
-    Number.isFinite(permissionsDerivedTotalWeight) &&
-    permissionsDerivedTotalWeight > 0 &&
+    typeof participantsDerivedTotalWeight === "number" &&
+    Number.isFinite(participantsDerivedTotalWeight) &&
+    participantsDerivedTotalWeight > 0 &&
     totalWeightFromTrustDeposits > 0
   ) {
-    const relDiff = Math.abs(permissionsDerivedTotalWeight - totalWeightFromTrustDeposits) / Math.max(
-      permissionsDerivedTotalWeight,
+    const relDiff = Math.abs(participantsDerivedTotalWeight - totalWeightFromTrustDeposits) / Math.max(
+      participantsDerivedTotalWeight,
       totalWeightFromTrustDeposits
     );
     if (relDiff > 0.05) {
       log(
-        "[metrics] Global trust weight from permissions differs from trust_deposits SUM by >5% — permissions denormalized columns may be stale (reindex or crawl lag).",
-        { totalFromPermissions: permissionsDerivedTotalWeight, totalFromTrustDeposits: totalWeightFromTrustDeposits, relDiff }
+        "[metrics] Global trust weight from participants differs from trust_deposits SUM by >5% — participants denormalized columns may be stale (reindex or crawl lag).",
+        { totalFromParticipants: participantsDerivedTotalWeight, totalFromTrustDeposits: totalWeightFromTrustDeposits, relDiff }
       );
     }
   }
@@ -277,7 +277,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
   const useHistory = typeof blockHeight === "number";
 
   if (!useHistory) {
-    const trCounts = await knex("trust_registry")
+    const trCounts = await knex("ecosystem")
       .select(
         knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_trust_registries"),
         knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_trust_registries")
@@ -287,14 +287,14 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     let archivedTrustRegistries = Number(trCounts?.archived_trust_registries || 0);
 
     if (activeTrustRegistries + archivedTrustRegistries === 0) {
-      const trHistoryCount = await knex("trust_registry_history").count("* as count").first();
-      const hasHistory = Number((trHistoryCount as any)?.count || 0) > 0;
+      const ecosystemHistoryCount = await knex("ecosystem_history").count("* as count").first();
+      const hasHistory = Number((ecosystemHistoryCount as any)?.count || 0) > 0;
       if (hasHistory) {
-        const trSub = knex("trust_registry_history")
-          .select("tr_id", "archived")
+        const trSub = knex("ecosystem_history")
+          .select("ecosystem_id", "archived")
           .select(
             knex.raw(
-              "ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn"
+              "ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn"
             )
           )
           .as("ranked_tr");
@@ -317,9 +317,9 @@ export async function computeGlobalMetrics(blockHeight?: number) {
 
     const logger = (global as any).logger as { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void } | undefined;
 
-    const [trustDepositWeightAgg, permissionsWeightAgg, denormalizedCsWeightSum, csStatsBySchema] = await Promise.all([
+    const [trustDepositWeightAgg, participantsWeightAgg, denormalizedCsWeightSum, csStatsBySchema] = await Promise.all([
       aggregateLiveTrustDepositWeight(knex),
-      aggregateLiveTrustWeightFromPermissions(knex).catch(() => ({ totalWeight: 0, maxSinglePermWeight: 0 })),
+      aggregateLiveTrustWeightFromParticipants(knex).catch(() => ({ totalWeight: 0, maxSingleParticipantWeight: 0 })),
       sumDenormalizedCredentialSchemaWeights(knex).catch(() => 0),
       calculateCredentialSchemaStatsBatch(schemaIds, undefined),
     ]);
@@ -328,7 +328,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     logGlobalWeightSanity({
       totalWeightFromTrustDeposits: totalWeight,
       maxSingleDeposit: trustDepositWeightAgg.maxSingleDeposit,
-      permissionsDerivedTotalWeight: permissionsWeightAgg.totalWeight,
+      participantsDerivedTotalWeight: participantsWeightAgg.totalWeight,
       denormalizedCsSum: denormalizedCsWeightSum,
       logger,
     });
@@ -356,10 +356,10 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     }
 
     const nowIso = new Date().toISOString();
-    const permParticipantCol = await resolvePermissionsParticipantColumn(knex);
-    const activePermsBase = () =>
-      knex("permissions")
-        .whereNotNull(permParticipantCol)
+    const participantParticipantCol = await resolveParticipantsParticipantColumn(knex);
+    const activeParticipantsBase = () =>
+      knex("participants")
+        .whereNotNull(participantParticipantCol)
         .whereNull("repaid")
         .whereNull("slashed")
         .andWhere(function () {
@@ -372,14 +372,14 @@ export async function computeGlobalMetrics(blockHeight?: number) {
           this.whereNull("effective_until").orWhere("effective_until", ">=", nowIso);
         });
 
-    const participantsResult = await activePermsBase()
-      .countDistinct(`${permParticipantCol} as count`)
+    const participantsResult = await activeParticipantsBase()
+      .countDistinct(`${participantParticipantCol} as count`)
       .first();
     const participants = Number((participantsResult as any)?.count ?? 0);
 
-    const activeParticipantsByType = await activePermsBase()
+    const activeParticipantsByType = await activeParticipantsBase()
       .select("role")
-      .countDistinct(`${permParticipantCol} as count`)
+      .countDistinct(`${participantParticipantCol} as count`)
       .groupBy("role");
 
     const participantsByType = {
@@ -419,25 +419,25 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     };
   }
 
-  const trSub = knex("trust_registry_history")
-    .select("tr_id")
-    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY tr_id ORDER BY height DESC, created_at DESC) as rn"))
+  const trSub = knex("ecosystem_history")
+    .select("ecosystem_id")
+    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn"))
     .where("height", "<=", blockHeight)
     .as("ranked_tr");
 
-  const trLatest = await knex.from(trSub).select("tr_id").where("rn", 1);
-  const trIds = trLatest.map((r: any) => Number(r.tr_id));
+  const trLatest = await knex.from(trSub).select("ecosystem_id").where("rn", 1);
+  const ecosystemIds = trLatest.map((r: any) => Number(r.ecosystem_id));
   let activeTrustRegistries = 0;
   let archivedTrustRegistries = 0;
-  for (const trId of trIds) {
-    const trHistory = await knex("trust_registry_history")
-      .where("tr_id", trId)
+  for (const ecosystemId of ecosystemIds) {
+    const ecosystemHistory = await knex("ecosystem_history")
+      .where("ecosystem_id", ecosystemId)
       .where("height", "<=", blockHeight)
       .orderBy("height", "desc")
       .orderBy("created_at", "desc")
       .first();
-    if (trHistory) {
-      if (trHistory.archived) archivedTrustRegistries++;
+    if (ecosystemHistory) {
+      if (ecosystemHistory.archived) archivedTrustRegistries++;
       else activeTrustRegistries++;
     }
   }
@@ -497,21 +497,21 @@ export async function computeGlobalMetrics(blockHeight?: number) {
   const participantsVerifierGrantorSet = new Set<string>();
   const participantsVerifierSet = new Set<string>();
   const participantsHolderSet = new Set<string>();
-  const latestHistorySubquery = knex("permission_history")
-    .select("permission_id")
+  const latestHistorySubquery = knex("participant_history")
+    .select("participant_id")
     .select(
       knex.raw(
-        `ROW_NUMBER() OVER (PARTITION BY permission_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
+        `ROW_NUMBER() OVER (PARTITION BY participant_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
       )
     )
     .where("height", "<=", blockHeight)
     .as("ranked");
 
-  const permIdsAtHeight = await knex
+  const participantIdsAtHeight = await knex
     .from(latestHistorySubquery)
-    .select("permission_id")
+    .select("participant_id")
     .where("rn", 1)
-    .then((rows: any[]) => rows.map((r: any) => String(r.permission_id)));
+    .then((rows: any[]) => rows.map((r: any) => String(r.participant_id)));
 
   const asOfTime = await getBlockChainTimeAsOf(blockHeight, {
     db: knex,
@@ -520,15 +520,15 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     fallback: new Date(),
   });
 
-  for (const permId of permIdsAtHeight) {
-    const historyRecord = await knex("permission_history")
-      .where({ permission_id: String(permId) })
+  for (const participantId of participantIdsAtHeight) {
+    const historyRecord = await knex("participant_history")
+      .where({ participant_id: String(participantId) })
       .where("height", "<=", blockHeight)
       .orderBy("height", "desc")
       .orderBy("created_at", "desc")
       .first();
     if (!historyRecord) continue;
-    const permState = calculatePermState(
+    const participantState = calculateParticipantState(
       {
         repaid: historyRecord.repaid,
         slashed: historyRecord.slashed,
@@ -543,7 +543,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       asOfTime
     );
     const corp = (historyRecord as { corporation?: string }).corporation;
-    if (permState === "ACTIVE" && corp) {
+    if (participantState === "ACTIVE" && corp) {
       allParticipantsSet.add(corp);
       if (historyRecord.role === "ECOSYSTEM") participantsEcosystemSet.add(corp);
       if (historyRecord.role === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(corp);

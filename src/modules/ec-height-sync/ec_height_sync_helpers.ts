@@ -8,7 +8,7 @@ import type { EcosystemWithVersions } from "@verana-labs/verana-types/codec/vera
 import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 import { Network } from "../../network";
 
-export interface LedgerTrustRegistryVersion {
+export interface LedgerEcosystemVersion {
   id?: number | string;
   version?: number | string;
   created?: string;
@@ -25,9 +25,9 @@ export interface LedgerTrustRegistryVersion {
   [key: string]: unknown;
 }
 
-export interface LedgerTrustRegistry {
+export interface LedgerEcosystem {
   id?: number | string;
-  tr_id?: number | string;
+  ecosystem_id?: number | string;
   did?: string;
   controller?: string;
   created?: string;
@@ -38,14 +38,13 @@ export interface LedgerTrustRegistry {
   language?: string | null;
   active_version?: number | string;
   activeVersion?: number | string;
-  versions?: LedgerTrustRegistryVersion[];
+  versions?: LedgerEcosystemVersion[];
   [key: string]: unknown;
 }
 
-export interface LedgerTrustRegistryResponse {
-  trust_registry?: LedgerTrustRegistry;
-  trustRegistry?: LedgerTrustRegistry;
-  tr?: LedgerTrustRegistry;
+export interface LedgerEcosystemResponse {
+  ecosystem?: LedgerEcosystem;
+  ec?: LedgerEcosystem;
   [key: string]: unknown;
 }
 
@@ -78,10 +77,10 @@ function dateToIsoOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-export function mapEcosystemToLedgerTrustRegistry(
+export function mapEcosystemToLedgerEcosystem(
   eco: EcosystemWithVersions
-): LedgerTrustRegistry {
-  const versions: LedgerTrustRegistryVersion[] = (eco.versions ?? []).map((v) => ({
+): LedgerEcosystem {
+  const versions: LedgerEcosystemVersion[] = (eco.versions ?? []).map((v) => ({
     id: v.id,
     version: v.version,
     created: dateToIsoOrNull(v.created) ?? undefined,
@@ -106,17 +105,17 @@ export function mapEcosystemToLedgerTrustRegistry(
     language: eco.language ?? null,
     active_version: eco.activeVersion,
     versions,
-  } as LedgerTrustRegistry;
+  } as LedgerEcosystem;
 }
 
-export async function getTrustRegistry(
-  trId: number,
+export async function getEcosystem(
+  ecosystemId: number,
   blockHeight?: number
-): Promise<LedgerTrustRegistryResponse | null> {
+): Promise<LedgerEcosystemResponse | null> {
   const rpcUrl = getRpcBaseUrl();
   if (!rpcUrl) {
     throw new Error(
-      `[TR Height-Sync] Missing RPC base URL for gRPC ec query. Set RPC_ENDPOINT or Network.RPC.`
+      `[EC Height-Sync] Missing RPC base URL for gRPC ec query. Set RPC_ENDPOINT or Network.RPC.`
     );
   }
 
@@ -143,13 +142,13 @@ export async function getTrustRegistry(
     const ecQuery = new EcQueryClientImpl(rpc);
     const res = await ecQuery.GetEcosystem(
       QueryGetEcosystemRequest.fromPartial({
-        id: trId,
+        id: ecosystemId,
         activeGfOnly: false,
         preferredLanguage: "",
       })
     );
     if (!res?.ecosystem) return null;
-    return { trust_registry: mapEcosystemToLedgerTrustRegistry(res.ecosystem) };
+    return { ecosystem: mapEcosystemToLedgerEcosystem(res.ecosystem) };
   } finally {
     try {
       tmClient.disconnect();
@@ -163,22 +162,22 @@ export function isTrMessageType(type: string): boolean {
   return TR_MESSAGE_TYPES.has(type);
 }
 
-export function extractTrustRegistryIdFromContent(
+export function extractEcosystemIdFromContent(
   content: Record<string, unknown> | null | undefined
 ): number | null {
   if (!content || typeof content !== "object") return null;
   const candidates = [
-    content.trust_registry_id,
-    content.trustRegistryId,
-    content.tr_id,
-    content.trId,
+    content.ecosystem_id,
+    content.ecosystemId,
+    content.ecosystem_id,
+    content.ecosystemId,
     content.id,
-    (content.trust_registry as Record<string, unknown> | undefined)?.id,
-    (content.trust_registry as Record<string, unknown> | undefined)?.tr_id,
-    (content.trust_registry as Record<string, unknown> | undefined)?.trId,
-    (content.trustRegistry as Record<string, unknown> | undefined)?.id,
-    (content.trustRegistry as Record<string, unknown> | undefined)?.tr_id,
-    (content.trustRegistry as Record<string, unknown> | undefined)?.trId,
+    (content.ecosystem as Record<string, unknown> | undefined)?.id,
+    (content.ecosystem as Record<string, unknown> | undefined)?.ecosystem_id,
+    (content.ecosystem as Record<string, unknown> | undefined)?.ecosystemId,
+    (content.ecosystem as Record<string, unknown> | undefined)?.id,
+    (content.ecosystem as Record<string, unknown> | undefined)?.ecosystem_id,
+    (content.ecosystem as Record<string, unknown> | undefined)?.ecosystemId,
   ];
   for (const raw of candidates) {
     const n = Number(raw);
@@ -227,16 +226,16 @@ function getDecodedEventAttributes(
 }
 
 const TR_EVENT_TYPES = new Set<string>([
-  "create_trust_registry",
+  "create_ecosystem",
   "create_governance_framework_version",
   "create_governance_framework_document",
   "add_governance_framework_document",
   "increase_active_gf_version",
-  "update_trust_registry",
-  "archive_trust_registry",
+  "update_ecosystem",
+  "archive_ecosystem",
 ]);
 
-export function extractTrustRegistryIdsFromEvents(
+export function extractEcosystemIdsFromEvents(
   events: TxEventLike[],
   decodeAttributes?: boolean
 ): number[] {
@@ -250,7 +249,7 @@ export function extractTrustRegistryIdsFromEvents(
 
     for (const attr of attrs) {
       const keyLower = attr.key.toLowerCase();
-      if (keyLower === "trust_registry_id") {
+      if (keyLower === "ecosystem_id") {
         const n = Number(attr.value);
         if (Number.isInteger(n) && n > 0) {
           ids.push(n);

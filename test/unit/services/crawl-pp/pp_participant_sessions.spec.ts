@@ -1,7 +1,7 @@
 import { ServiceBroker } from "moleculer";
-import PermDatabaseService from "../../../../src/services/crawl-perm/perm_database.service";
+import ParticipantDatabaseService from "../../../../src/services/crawl-pp/pp_database.service";
 
-describe("🧪 PermDatabaseService Basic Tests", () => {
+describe("🧪 ParticipantDatabaseService Basic Tests", () => {
   let broker: ServiceBroker;
   let service: any;
 
@@ -11,7 +11,7 @@ describe("🧪 PermDatabaseService Basic Tests", () => {
       metrics: false,
       tracing: false,
     });
-    service = broker.createService(PermDatabaseService);
+    service = broker.createService(ParticipantDatabaseService);
     await broker.start();
   });
 
@@ -24,17 +24,17 @@ describe("🧪 PermDatabaseService Basic Tests", () => {
     expect(service.name).toBe("participantIngest");
   });
 
-  it("✅ should have getPermission action", () => {
-    expect(service.actions.getPermission).toBeDefined();
+  it("✅ should have getParticipant action", () => {
+    expect(service.actions.getParticipant).toBeDefined();
   });
 
-  it("✅ should have listPermissions action", () => {
-    expect(service.actions.listPermissions).toBeDefined();
+  it("✅ should have listParticipants action", () => {
+    expect(service.actions.listParticipants).toBeDefined();
   });
 
-  it("✅ should be able to call getPermission action", async () => {
+  it("✅ should be able to call getParticipant action", async () => {
     try {
-      await broker.call("permDatabase.getPermission", {
+      await broker.call("participantDatabase.getParticipant", {
         schema_id: 1,
         grantee: "test",
         type: "ECOSYSTEM",

@@ -1,15 +1,15 @@
-export enum PermissionType {
-  PERMISSION_TYPE_UNSPECIFIED = 0,
-  PERMISSION_TYPE_ISSUER = 1,
-  PERMISSION_TYPE_VERIFIER = 2,
-  PERMISSION_TYPE_ISSUER_GRANTOR = 3,
-  PERMISSION_TYPE_VERIFIER_GRANTOR = 4,
-  /** PERMISSION_TYPE_ECOSYSTEM - Changed from PERMISSION_TYPE_TRUST_REGISTRY */
-  PERMISSION_TYPE_ECOSYSTEM = 5,
-  PERMISSION_TYPE_HOLDER = 6,
+export enum ParticipantType {
+  PARTICIPANT_TYPE_UNSPECIFIED = 0,
+  PARTICIPANT_TYPE_ISSUER = 1,
+  PARTICIPANT_TYPE_VERIFIER = 2,
+  PARTICIPANT_TYPE_ISSUER_GRANTOR = 3,
+  PARTICIPANT_TYPE_VERIFIER_GRANTOR = 4,
+  /** PARTICIPANT_TYPE_ECOSYSTEM - Changed from PARTICIPANT_TYPE_ECOSYSTEM */
+  PARTICIPANT_TYPE_ECOSYSTEM = 5,
+  PARTICIPANT_TYPE_HOLDER = 6,
   UNRECOGNIZED = -1,
 }
-export enum PermissionTypeNames {
+export enum ParticipantTypeNames {
   UNSPECIFIED = 0,
   ISSUER = 1,
   VERIFIER = 2,
@@ -18,13 +18,13 @@ export enum PermissionTypeNames {
   ECOSYSTEM = 5,
   HOLDER = 6,
 }
-export function getPermissionTypeString(msg: MsgStartParticipantOP): string {
-  const rawType = (msg as any).type ?? (msg as any).role ?? (msg as any).permission_type ?? (msg as any).permissionType;
+export function getParticipantTypeString(msg: MsgStartParticipantOP): string {
+  const rawType = (msg as any).type ?? (msg as any).role ?? (msg as any).participant_type ?? (msg as any).participantType;
   if (typeof rawType === 'string') {
     return rawType;
   }
   if (typeof rawType === 'number') {
-    return PermissionTypeNames[rawType] ?? "UNKNOWN";
+    return ParticipantTypeNames[rawType] ?? "UNKNOWN";
   }
   return "UNKNOWN";
 }
@@ -40,8 +40,8 @@ export interface MsgCreateRootParticipant {
   timestamp?: Date | undefined;
   effective_until?: Date | undefined;
   effectiveUntil?: Date | undefined;
-  permission_type?: number | string;
-  permissionType?: number | string;
+  participant_type?: number | string;
+  participantType?: number | string;
   validation_fees: number;
   validationFees?: number;
   issuance_fees: number;
@@ -62,8 +62,8 @@ export interface MsgStartParticipantOP {
   operator?: string;
   timestamp?: Date | undefined;
   type: number;
-  permission_type?: number | string;
-  permissionType?: number | string;
+  participant_type?: number | string;
+  participantType?: number | string;
   validator_participant_id: number;
   validatorParticipantId?: number;
   did: string;
@@ -129,8 +129,8 @@ export interface MsgRenewParticipantOP {
   operator?: string;
   timestamp: Date | string;
   id: number;
-  permission_type?: number | string;
-  permissionType?: number | string;
+  participant_type?: number | string;
+  participantType?: number | string;
 }
 export interface MsgSetParticipantEffectiveUntil {
   creator?: string;
@@ -148,9 +148,9 @@ export interface MsgSelfCreateParticipant {
   operator?: string;
   schema_id?: number;
   schemaId?: number;
-  type: PermissionType;
-  permission_type?: number | string;
-  permissionType?: number | string;
+  type: ParticipantType;
+  participant_type?: number | string;
+  participantType?: number | string;
   validator_participant_id?: number;
   validatorParticipantId?: number;
   did: string;
@@ -184,14 +184,14 @@ export interface MsgCreateOrUpdateParticipantSession {
   corporation?: string;
   operator?: string;
   id: string;
-  issuerPermId?: number;
-  issuer_perm_id?: number;
-  verifierPermId?: number;
-  verifier_perm_id?: number;
-  agentPermId?: number;
-  agent_perm_id?: number;
-  walletAgentPermId?: number;
-  wallet_agent_perm_id?: number;
+  issuerParticipantId?: number;
+  issuer_participant_id?: number;
+  verifierParticipantId?: number;
+  verifier_participant_id?: number;
+  agentParticipantId?: number;
+  agent_participant_id?: number;
+  walletAgentParticipantId?: number;
+  wallet_agent_participant_id?: number;
   digest?: string;
 }
 export interface MsgCancelParticipantOPLastRequest {
@@ -201,12 +201,12 @@ export interface MsgCancelParticipantOPLastRequest {
   operator?: string;
   id: number;
 }
-export interface MsgConfirmPermissionVPTermination {
+export interface MsgConfirmParticipantOPTermination {
   timestamp?: Date | undefined;
   creator: string;
   id: number;
 }
-export interface MsgRequestPermissionVPTermination {
+export interface MsgRequestParticipantOPTermination {
   timestamp?: Date | undefined;
   creator: string;
   id: number;

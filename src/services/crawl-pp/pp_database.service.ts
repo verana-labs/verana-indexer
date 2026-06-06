@@ -5,16 +5,16 @@ import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
 import knex from "../../common/utils/db_connection";
 import { SERVICE, ModulesParamsNamesTypes } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
-import { mapPermissionType } from "../../common/utils/utils";
+import { mapParticipantType } from "../../common/utils/utils";
 import { extractController, requireController } from "../../common/utils/extract_controller";
-import { calculatePermState } from "./perm_state_utils";
+import { calculateParticipantState } from "./pp_state_utils";
 import { CS_STATS_FIELDS, statsToUpdateObject } from "../../common/utils/stats_fields";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
-import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
-import { syncTrustRegistryStatsAndHistoryFromSchemaChange, insertCredentialSchemaHistoryStatsRow } from "../crawl-cs/cs_database.service";
+import { calculateEcosystemStats } from "../crawl-ec/ec_stats";
+import { syncEcosystemStatsAndHistoryFromSchemaChange, insertCredentialSchemaHistoryStatsRow } from "../crawl-cs/cs_database.service";
 import { getModuleParams } from "../../common/utils/params_service";
 import {
-  getPermissionTypeString,
+  getParticipantTypeString,
   MsgCancelParticipantOPLastRequest,
   MsgCreateOrUpdateParticipantSession,
   MsgSelfCreateParticipant,
@@ -26,9 +26,9 @@ import {
   MsgSetParticipantOPToValidated,
   MsgSlashParticipantTrustDeposit,
   MsgStartParticipantOP,
-} from "./perm_types";
+} from "./pp_types";
 
-const PERMISSION_HISTORY_FIELDS = [
+const PARTICIPANT_HISTORY_FIELDS = [
   "schema_id",
   "role",
   "did",
@@ -91,17 +91,17 @@ const PARTICIPANT_ROLE_HISTORY_FIELDS = [
   "participants_holder",
 ] as const;
 
-const PERMISSION_SESSION_HISTORY_FIELDS = [
+const PARTICIPANT_SESSION_HISTORY_FIELDS = [
   "corporation",
   "vs_operator",
-  "agent_perm_id",
-  "wallet_agent_perm_id",
+  "agent_participant_id",
+  "wallet_agent_participant_id",
   "session_records",
   "created",
   "modified",
 ];
 
-const PERMISSION_HISTORY_V4_FIELDS = [
+const PARTICIPANT_HISTORY_V4_FIELDS = [
   "vs_operator",
   "adjusted",
   "vs_operator_authz_enabled",
@@ -151,7 +151,7 @@ function parseJson<T = any>(value: any): T | any {
   }
 }
 
-function normalizePermissionType(value: unknown): string {
+function normalizeParticipantType(value: unknown): string {
   if (typeof value === "string") {
     const normalized = value.toUpperCase();
     if (
@@ -202,9 +202,9 @@ function pickMessageBool(msg: Record<string, any>, snake: string, camel: string,
   return fallback;
 }
 
-function extractPermissionType(msg: Record<string, any>, fallback: string | number = "UNSPECIFIED") {
-  return mapPermissionType(
-    msg.permission_type ?? msg.permissionType ?? msg.role ?? fallback
+function extractParticipantType(msg: Record<string, any>, fallback: string | number = "UNSPECIFIED") {
+  return mapParticipantType(
+    msg.participant_type ?? msg.participantType ?? msg.role ?? fallback
   );
 }
 
@@ -268,28 +268,28 @@ function normalizeDenomAmountArrayForDb(value: unknown): unknown {
   return [];
 }
 
-let permissionsInsertSavepointSeq = 0;
-function nextPermissionsInsertSavepoint(): string {
-  permissionsInsertSavepointSeq += 1;
-  return `perm_insert_sp_${permissionsInsertSavepointSeq}`;
+let participantsInsertSavepointSeq = 0;
+function nextParticipantsInsertSavepoint(): string {
+  participantsInsertSavepointSeq += 1;
+  return `participant_insert_sp_${participantsInsertSavepointSeq}`;
 }
 
-async function healPermissionsIdSequence(trx: any): Promise<void> {
+async function healParticipantsIdSequence(trx: any): Promise<void> {
   await trx.raw(`
-    SELECT setval(pg_get_serial_sequence('permissions','id'),
-      GREATEST((SELECT COALESCE(MAX(id), 1) FROM permissions), 1)
+    SELECT setval(pg_get_serial_sequence('participants','id'),
+      GREATEST((SELECT COALESCE(MAX(id), 1) FROM participants), 1)
     )
   `);
 }
 
-async function insertPermissionsWithSequenceHeal<T = any>(
+async function insertParticipantsWithSequenceHeal<T = any>(
   trx: any,
   insertData: any
 ): Promise<T> {
-  const sp = nextPermissionsInsertSavepoint();
+  const sp = nextParticipantsInsertSavepoint();
   await trx.raw(`SAVEPOINT ${sp}`);
   try {
-    const [row] = await trx("permissions").insert(insertData).returning("*");
+    const [row] = await trx("participants").insert(insertData).returning("*");
     await trx.raw(`RELEASE SAVEPOINT ${sp}`);
     return row as T;
   } catch (err: any) {
@@ -300,48 +300,48 @@ async function insertPermissionsWithSequenceHeal<T = any>(
 
     // Clear the failed statement so we can continue in the same transaction.
     await trx.raw(`ROLLBACK TO SAVEPOINT ${sp}`);
-    await healPermissionsIdSequence(trx);
-    const [row] = await trx("permissions").insert(insertData).returning("*");
+    await healParticipantsIdSequence(trx);
+    const [row] = await trx("participants").insert(insertData).returning("*");
     await trx.raw(`RELEASE SAVEPOINT ${sp}`);
     return row as T;
   }
 }
 
-const permissionHistoryColumnExistsCache: Record<string, boolean> = {};
+const participantHistoryColumnExistsCache: Record<string, boolean> = {};
 
-async function checkPermissionHistoryColumnExists(columnName: string): Promise<boolean> {
-  if (permissionHistoryColumnExistsCache[columnName] !== undefined) {
-    return permissionHistoryColumnExistsCache[columnName];
+async function checkParticipantHistoryColumnExists(columnName: string): Promise<boolean> {
+  if (participantHistoryColumnExistsCache[columnName] !== undefined) {
+    return participantHistoryColumnExistsCache[columnName];
   }
 
   try {
-    const result = await knex.schema.hasColumn('permission_history', columnName);
-    permissionHistoryColumnExistsCache[columnName] = result;
+    const result = await knex.schema.hasColumn('participant_history', columnName);
+    participantHistoryColumnExistsCache[columnName] = result;
     return result;
   } catch (error) {
-    permissionHistoryColumnExistsCache[columnName] = false;
+    participantHistoryColumnExistsCache[columnName] = false;
     return false;
   }
 }
 
-async function pickPermissionSnapshot(record: any) {
+async function pickParticipantSnapshot(record: any) {
   const snapshot: Record<string, any> = {
-    permission_id: String(record.permission_id ?? record.id ?? ""),
+    participant_id: String(record.participant_id ?? record.id ?? ""),
   };
 
-  const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
-  const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
-  const hasParticipantsColumn = await checkPermissionHistoryColumnExists("participants");
+  const hasIssuedColumn = await checkParticipantHistoryColumnExists("issued");
+  const hasVerifiedColumn = await checkParticipantHistoryColumnExists("verified");
+  const hasParticipantsColumn = await checkParticipantHistoryColumnExists("participants");
   const hasParticipantRoleColumns =
-    (await Promise.all(PARTICIPANT_ROLE_HISTORY_FIELDS.map((field) => checkPermissionHistoryColumnExists(field)))).every(Boolean);
-  const hasWeightColumn = await checkPermissionHistoryColumnExists("weight");
-  const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
-  const hasExpireSoonColumn = await checkPermissionHistoryColumnExists("expire_soon");
-   const hasIssuanceDiscountColumn = await checkPermissionHistoryColumnExists("issuance_fee_discount");
-   const hasVerificationDiscountColumn = await checkPermissionHistoryColumnExists("verification_fee_discount");
-  const hasV4PermColumns = await checkPermissionHistoryColumnExists("vs_operator");
+    (await Promise.all(PARTICIPANT_ROLE_HISTORY_FIELDS.map((field) => checkParticipantHistoryColumnExists(field)))).every(Boolean);
+  const hasWeightColumn = await checkParticipantHistoryColumnExists("weight");
+  const hasEcosystemSlashEventsColumn = await checkParticipantHistoryColumnExists("ecosystem_slash_events");
+  const hasExpireSoonColumn = await checkParticipantHistoryColumnExists("expire_soon");
+   const hasIssuanceDiscountColumn = await checkParticipantHistoryColumnExists("issuance_fee_discount");
+   const hasVerificationDiscountColumn = await checkParticipantHistoryColumnExists("verification_fee_discount");
+  const hasV4ParticipantColumns = await checkParticipantHistoryColumnExists("vs_operator");
 
-  for (const field of PERMISSION_HISTORY_FIELDS) {
+  for (const field of PARTICIPANT_HISTORY_FIELDS) {
     if (field === "expire_soon" && !hasExpireSoonColumn) continue;
     if (field === "issued" && !hasIssuedColumn) {
       continue;
@@ -369,7 +369,7 @@ async function pickPermissionSnapshot(record: any) {
     if (field === "verification_fee_discount" && !hasVerificationDiscountColumn) {
       continue;
     }
-    if (!hasV4PermColumns && (PERMISSION_HISTORY_V4_FIELDS as readonly string[]).includes(field)) {
+    if (!hasV4ParticipantColumns && (PARTICIPANT_HISTORY_V4_FIELDS as readonly string[]).includes(field)) {
       continue;
     }
     if (field === "schema_id") {
@@ -404,38 +404,38 @@ async function pickPermissionSnapshot(record: any) {
   return snapshot;
 }
 
-async function recordPermissionHistory(
+async function recordParticipantHistory(
   db: any,
-  permissionRecord: any,
+  participantRecord: any,
   eventType: string,
   height: number,
   previousRecord?: any
 ) {
-  if (!permissionRecord) return;
+  if (!participantRecord) return;
 
-  let permissionRecordForHistory = permissionRecord;
-  const permId = permissionRecord.id ?? permissionRecord.permission_id;
-  if (permId != null && db && typeof db === "function") {
-    const fresh = await db("permissions").where({ id: Number(permId) }).first();
+  let participantRecordForHistory = participantRecord;
+  const participantId = participantRecord.id ?? participantRecord.participant_id;
+  if (participantId != null && db && typeof db === "function") {
+    const fresh = await db("participants").where({ id: Number(participantId) }).first();
     if (fresh) {
-      permissionRecordForHistory = { ...fresh, id: fresh.id ?? permId, permission_id: permId };
+      participantRecordForHistory = { ...fresh, id: fresh.id ?? participantId, participant_id: participantId };
     }
   }
 
-  const hasIssuedColumn = await checkPermissionHistoryColumnExists("issued");
-  const hasVerifiedColumn = await checkPermissionHistoryColumnExists("verified");
-  const hasParticipantsColumn = await checkPermissionHistoryColumnExists("participants");
+  const hasIssuedColumn = await checkParticipantHistoryColumnExists("issued");
+  const hasVerifiedColumn = await checkParticipantHistoryColumnExists("verified");
+  const hasParticipantsColumn = await checkParticipantHistoryColumnExists("participants");
   const hasParticipantRoleColumns =
-    (await Promise.all(PARTICIPANT_ROLE_HISTORY_FIELDS.map((field) => checkPermissionHistoryColumnExists(field)))).every(Boolean);
-  const hasWeightColumn = await checkPermissionHistoryColumnExists("weight");
-  const hasEcosystemSlashEventsColumn = await checkPermissionHistoryColumnExists("ecosystem_slash_events");
+    (await Promise.all(PARTICIPANT_ROLE_HISTORY_FIELDS.map((field) => checkParticipantHistoryColumnExists(field)))).every(Boolean);
+  const hasWeightColumn = await checkParticipantHistoryColumnExists("weight");
+  const hasEcosystemSlashEventsColumn = await checkParticipantHistoryColumnExists("ecosystem_slash_events");
 
-  const hasExpireSoonColumn = await checkPermissionHistoryColumnExists("expire_soon");
-  const hasIssuanceDiscountColumn = await checkPermissionHistoryColumnExists("issuance_fee_discount");
-  const hasVerificationDiscountColumn = await checkPermissionHistoryColumnExists("verification_fee_discount");
-  const hasV4PermColumns = await checkPermissionHistoryColumnExists("vs_operator");
+  const hasExpireSoonColumn = await checkParticipantHistoryColumnExists("expire_soon");
+  const hasIssuanceDiscountColumn = await checkParticipantHistoryColumnExists("issuance_fee_discount");
+  const hasVerificationDiscountColumn = await checkParticipantHistoryColumnExists("verification_fee_discount");
+  const hasV4ParticipantColumns = await checkParticipantHistoryColumnExists("vs_operator");
 
-  const fieldsToUse = PERMISSION_HISTORY_FIELDS.filter(field => {
+  const fieldsToUse = PARTICIPANT_HISTORY_FIELDS.filter(field => {
     if (field === "expire_soon" && !hasExpireSoonColumn) return false;
     if (field === "issued" && !hasIssuedColumn) return false;
     if (field === "verified" && !hasVerifiedColumn) return false;
@@ -449,32 +449,32 @@ async function recordPermissionHistory(
     }
     if (field === "issuance_fee_discount" && !hasIssuanceDiscountColumn) return false;
     if (field === "verification_fee_discount" && !hasVerificationDiscountColumn) return false;
-    if (!hasV4PermColumns && (PERMISSION_HISTORY_V4_FIELDS as readonly string[]).includes(field)) return false;
+    if (!hasV4ParticipantColumns && (PARTICIPANT_HISTORY_V4_FIELDS as readonly string[]).includes(field)) return false;
     return true;
   });
 
-  const snapshot = await pickPermissionSnapshot(permissionRecordForHistory);
-  const changes = computeChanges(previousRecord, permissionRecordForHistory, fieldsToUse);
+  const snapshot = await pickParticipantSnapshot(participantRecordForHistory);
+  const changes = computeChanges(previousRecord, participantRecordForHistory, fieldsToUse);
 
   if (previousRecord && !changes) {
     return;
   }
 
-  await db("permission_history").insert({
+  await db("participant_history").insert({
     ...snapshot,
     event_type: eventType,
     height,
     changes: changes ? JSON.stringify(changes) : null,
-    created_at: permissionRecordForHistory?.modified ?? permissionRecordForHistory?.created ?? new Date(),
+    created_at: participantRecordForHistory?.modified ?? participantRecordForHistory?.created ?? new Date(),
   });
 
 }
 
-function pickPermissionSessionSnapshot(record: any) {
+function pickParticipantSessionSnapshot(record: any) {
   const snapshot: Record<string, any> = {
     session_id: String(record.session_id ?? record.id ?? ""),
   };
-  for (const field of PERMISSION_SESSION_HISTORY_FIELDS) {
+  for (const field of PARTICIPANT_SESSION_HISTORY_FIELDS) {
     if (field === "session_records") {
       const sr = record[field];
       if (sr === null || sr === undefined) {
@@ -491,7 +491,7 @@ function pickPermissionSessionSnapshot(record: any) {
   return snapshot;
 }
 
-async function recordPermissionSessionHistory(
+async function recordParticipantSessionHistory(
   db: any,
   sessionRecord: any,
   eventType: string,
@@ -499,18 +499,18 @@ async function recordPermissionSessionHistory(
   previousRecord?: any
 ) {
   if (!sessionRecord) return;
-  const snapshot = pickPermissionSessionSnapshot(sessionRecord);
+  const snapshot = pickParticipantSessionSnapshot(sessionRecord);
   const changes = computeChanges(
     previousRecord,
     sessionRecord,
-    PERMISSION_SESSION_HISTORY_FIELDS
+    PARTICIPANT_SESSION_HISTORY_FIELDS
   );
 
   if (previousRecord && !changes) {
     return;
   }
 
-  await db("permission_session_history").insert({
+  await db("participant_session_history").insert({
     ...snapshot,
     event_type: eventType,
     height,
@@ -519,7 +519,7 @@ async function recordPermissionSessionHistory(
   });
 }
 
-interface QueuedPermission {
+interface QueuedParticipant {
   message: any;
   reason: string;
   retryCount: number;
@@ -528,31 +528,31 @@ interface QueuedPermission {
 }
 
 export default class ParticipantIngestService extends Service {
-  private retryQueue: Map<string, QueuedPermission> = new Map();
+  private retryQueue: Map<string, QueuedParticipant> = new Map();
   private retryInterval: NodeJS.Timeout | null = null;
   private readonly MAX_RETRY_ATTEMPTS = 10;
   private readonly RETRY_INTERVAL_MS = 30000; // 30 seconds
   private readonly RETRY_BACKOFF_MULTIPLIER = 2;
 
   /**
-   * Calculate expire_soon for a permission based on its state and effective_until
+   * Calculate expire_soon for a participant based on its state and effective_until
    * Returns: null if not active, false if no expiration or not soon, true if expiring soon
    */
   private async calculateExpireSoon(
-    perm: any,
+    participant: any,
     now: Date = new Date(),
     blockHeight?: number
   ): Promise<boolean | null> {
-    // Check if permission is active
-    const effectiveFrom = perm.effective_from ? new Date(perm.effective_from) : null;
-    const effectiveUntil = perm.effective_until ? new Date(perm.effective_until) : null;
+    // Check if participant is active
+    const effectiveFrom = participant.effective_from ? new Date(participant.effective_from) : null;
+    const effectiveUntil = participant.effective_until ? new Date(participant.effective_until) : null;
 
     if (effectiveFrom && now < effectiveFrom) return null;
     if (effectiveUntil && now > effectiveUntil) return null;
-    if (perm.revoked) return null;
-    if (perm.slashed && !perm.repaid) return null;
-    if (perm.op_state !== 'VALIDATED' && perm.role !== 'ECOSYSTEM') return null;
-    if (perm.role === "UNSPECIFIED") return null;
+    if (participant.revoked) return null;
+    if (participant.slashed && !participant.repaid) return null;
+    if (participant.op_state !== 'VALIDATED' && participant.role !== 'ECOSYSTEM') return null;
+    if (participant.role === "UNSPECIFIED") return null;
 
     if (!effectiveUntil) {
       return false;
@@ -560,12 +560,12 @@ export default class ParticipantIngestService extends Service {
 
     let nDaysBefore = 0;
     try {
-      const moduleParams = await getModuleParams(ModulesParamsNamesTypes.PERM, blockHeight);
+      const moduleParams = await getModuleParams(ModulesParamsNamesTypes.PP, blockHeight);
       if (moduleParams?.params) {
-        nDaysBefore = moduleParams.params.PERMISSION_SET_EXPIRE_SOON_N_DAYS_BEFORE || 0;
+        nDaysBefore = moduleParams.params.PARTICIPANT_SET_EXPIRE_SOON_N_DAYS_BEFORE || 0;
       }
     } catch (error) {
-      this.logger.warn(`Failed to get PERMISSION module params for expire_soon calculation:`, error);
+      this.logger.warn(`Failed to get PARTICIPANT module params for expire_soon calculation:`, error);
       nDaysBefore = 0;
     }
 
@@ -589,7 +589,7 @@ export default class ParticipantIngestService extends Service {
         },
         handleMsgSelfCreateParticipant: {
           params: { data: "object" },
-          handler: async (ctx) => this.handleCreatePermission(ctx.params.data),
+          handler: async (ctx) => this.handleCreateParticipant(ctx.params.data),
         },
         handleMsgSetParticipantEffectiveUntil: {
           params: { data: "object" },
@@ -632,89 +632,89 @@ export default class ParticipantIngestService extends Service {
           handler: async (ctx) =>
             this.handleRepayParticipantSlashedTrustDeposit(ctx.params.data),
         },
-        syncPermissionFromLedger: {
+        syncParticipantFromLedger: {
           params: {
-            ledgerPermission: "object",
+            ledgerParticipant: "object",
             blockHeight: "number",
             txHash: { type: "string", optional: true },
             msgType: { type: "string", optional: true },
           },
-          handler: async (ctx) => this.syncPermissionFromLedger(
-            ctx.params.ledgerPermission,
+          handler: async (ctx) => this.syncParticipantFromLedger(
+            ctx.params.ledgerParticipant,
             Number(ctx.params.blockHeight) || 0,
             ctx.params.txHash,
             ctx.params.msgType
           ),
         },
-        syncPermissionSessionFromLedger: {
+        syncParticipantSessionFromLedger: {
           params: {
             ledgerSession: "object",
             blockHeight: "number",
             txHash: { type: "string", optional: true },
             msgType: { type: "string", optional: true },
           },
-          handler: async (ctx) => this.syncPermissionSessionFromLedger(
+          handler: async (ctx) => this.syncParticipantSessionFromLedger(
             ctx.params.ledgerSession,
             Number(ctx.params.blockHeight) || 0,
             ctx.params.txHash,
             ctx.params.msgType
           ),
         },
-        getPermissionById: {
+        getParticipantById: {
           params: { id: "number" },
-          handler: async (ctx) => knex("permissions").where({ id: Number(ctx.params.id) }).first(),
+          handler: async (ctx) => knex("participants").where({ id: Number(ctx.params.id) }).first(),
         },
-        getPermissionSessionById: {
+        getParticipantSessionById: {
           params: { id: "string" },
-          handler: async (ctx) => knex("permission_sessions").where({ id: String(ctx.params.id) }).first(),
+          handler: async (ctx) => knex("participant_sessions").where({ id: String(ctx.params.id) }).first(),
         },
-        comparePermissionWithLedger: {
+        compareParticipantWithLedger: {
           params: {
-            permissionId: "number",
-            ledgerPermission: "object",
+            participantId: "number",
+            ledgerParticipant: "object",
             blockHeight: "number",
           },
-          handler: async (ctx) => this.comparePermissionWithLedger(
-            Number(ctx.params.permissionId),
-            ctx.params.ledgerPermission,
+          handler: async (ctx) => this.compareParticipantWithLedger(
+            Number(ctx.params.participantId),
+            ctx.params.ledgerParticipant,
             Number(ctx.params.blockHeight) || 0
           ),
         },
-        comparePermissionSessionWithLedger: {
+        compareParticipantSessionWithLedger: {
           params: {
             sessionId: "string",
             ledgerSession: "object",
             blockHeight: "number",
           },
-          handler: async (ctx) => this.comparePermissionSessionWithLedger(
+          handler: async (ctx) => this.compareParticipantSessionWithLedger(
             String(ctx.params.sessionId),
             ctx.params.ledgerSession,
             Number(ctx.params.blockHeight) || 0
           ),
         },
-        rebuildPermissionStats: {
+        rebuildParticipantStats: {
           params: {
             schema_id: { type: "number", optional: true },
           },
-          handler: async (ctx) => this.rebuildPermissionStats(ctx.params.schema_id),
+          handler: async (ctx) => this.rebuildParticipantStats(ctx.params.schema_id),
         },
-        getPermission: {
+        getParticipant: {
           params: { schema_id: "number", corporation: "string", role: "string" },
           handler: async (ctx) => {
             const { schema_id: schemaId, corporation, role } = ctx.params;
-            return await knex("permissions")
+            return await knex("participants")
               .where({ schema_id: schemaId, corporation, role })
               .first();
           },
         },
-        listPermissions: {
+        listParticipants: {
           params: {
             schema_id: { type: "number", optional: true },
             corporation: { type: "string", optional: true },
             role: { type: "string", optional: true },
           },
           handler: async (ctx) => {
-            let query = knex("permissions");
+            let query = knex("participants");
             if (ctx.params.schema_id)
               query = query.where("schema_id", ctx.params.schema_id);
             if (ctx.params.corporation)
@@ -729,9 +729,9 @@ export default class ParticipantIngestService extends Service {
 
   private async handleSetParticipantEffectiveUntil(msg: MsgSetParticipantEffectiveUntil & { height?: number }) {
     const height = Number((msg as any)?.height) || 0;
-    const permId = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId ?? 0) || 0;
-    if (!Number.isInteger(permId) || permId <= 0) {
-      this.logger.warn(`[handleSetParticipantEffectiveUntil] Invalid permission id: ${String((msg as any)?.id)}`);
+    const participantId = Number((msg as any)?.id ?? (msg as any)?.participant_id ?? (msg as any)?.participantId ?? 0) || 0;
+    if (!Number.isInteger(participantId) || participantId <= 0) {
+      this.logger.warn(`[handleSetParticipantEffectiveUntil] Invalid participant id: ${String((msg as any)?.id)}`);
       return;
     }
 
@@ -740,41 +740,41 @@ export default class ParticipantIngestService extends Service {
     const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
 
     try {
-      await this.ensurePermV4Columns(knex);
+      await this.ensureParticipantV4Columns(knex);
 
-      const previous = await knex("permissions").where({ id: permId }).first();
+      const previous = await knex("participants").where({ id: participantId }).first();
       if (!previous) {
-        this.logger.warn(`[handleSetParticipantEffectiveUntil] Permission id=${permId} not found; skipping`);
+        this.logger.warn(`[handleSetParticipantEffectiveUntil] Participant id=${participantId} not found; skipping`);
         return;
       }
 
       const adjustedBy = extractController(msg as unknown as Record<string, unknown>) ?? null;
 
-      await knex("permissions")
-        .where({ id: permId })
+      await knex("participants")
+        .where({ id: participantId })
         .update({
           effective_until: effectiveUntil ?? previous.effective_until ?? null,
           adjusted: ts,
           modified: ts ?? previous.modified ?? null,
         });
 
-      const updated = await knex("permissions").where({ id: permId }).first();
+      const updated = await knex("participants").where({ id: participantId }).first();
       try {
-        await recordPermissionHistory(knex, updated ?? { id: permId }, "ADJUST_PERMISSION", height, previous);
+        await recordParticipantHistory(knex, updated ?? { id: participantId }, "ADJUST_PARTICIPANT", height, previous);
       } catch (historyErr: any) {
         this.logger.warn(
-          `[handleSetParticipantEffectiveUntil] Failed to record permission history for id=${permId}: ${historyErr?.message || historyErr}`
+          `[handleSetParticipantEffectiveUntil] Failed to record participant history for id=${participantId}: ${historyErr?.message || historyErr}`
         );
       }
 
-      await this.refreshSchemaAndTrustRegistryStats(previous.schema_id ?? updated?.schema_id, height);
+      await this.refreshSchemaAndEcosystemStats(previous.schema_id ?? updated?.schema_id, height);
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleSetParticipantEffectiveUntil:", err);
       throw err;
     }
   }
 
-  private async refreshTrustRegistryStatsBySchemaId(
+  private async refreshEcosystemStatsBySchemaId(
     schemaId: number | null | undefined,
     blockHeightRaw?: number
   ): Promise<void> {
@@ -785,88 +785,88 @@ export default class ParticipantIngestService extends Service {
         .where({ id: schemaId })
         .select("ecosystem_id")
         .first();
-      const trId = cs?.ecosystem_id != null ? Number(cs.ecosystem_id) : null;
-      if (!trId || !Number.isInteger(trId) || trId <= 0) return;
+      const ecosystemId = cs?.ecosystem_id != null ? Number(cs.ecosystem_id) : null;
+      if (!ecosystemId || !Number.isInteger(ecosystemId) || ecosystemId <= 0) return;
 
-      await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, trId, blockHeight);
+      await syncEcosystemStatsAndHistoryFromSchemaChange(knex, ecosystemId, blockHeight);
       this.logger.info(
-        `[TR Stats] Synced trust_registry stats and history from schema_id=${schemaId}, ecosystem_id=${trId}, height=${blockHeight}`
+        `[EC Stats] Synced ecosystem stats and history from schema_id=${schemaId}, ecosystem_id=${ecosystemId}, height=${blockHeight}`
       );
     } catch (err: any) {
       this.logger.warn(
-        `Failed to refresh trust_registry stats/history for schema_id=${schemaId}: ${err?.message || err}`
+        `Failed to refresh ecosystem stats/history for schema_id=${schemaId}: ${err?.message || err}`
       );
     }
   }
 
-  private mapLedgerPermissionToDbRow(ledgerPermission: Record<string, any>) {
-    const id = Number(ledgerPermission.id ?? ledgerPermission.permission_id);
-    const schemaId = Number(ledgerPermission.schema_id ?? ledgerPermission.schemaId);
+  private mapLedgerParticipantToDbRow(ledgerParticipant: Record<string, any>) {
+    const id = Number(ledgerParticipant.id ?? ledgerParticipant.participant_id);
+    const schemaId = Number(ledgerParticipant.schema_id ?? ledgerParticipant.schemaId);
     const nowIso = new Date().toISOString();
 
-    const corporation = String(ledgerPermission.corporation ?? "").trim();
+    const corporation = String(ledgerParticipant.corporation ?? "").trim();
 
     return {
       id,
       schema_id: schemaId,
-      role: normalizePermissionType(ledgerPermission.role),
-      did: ledgerPermission.did ?? null,
+      role: normalizeParticipantType(ledgerParticipant.role),
+      did: ledgerParticipant.did ?? null,
       corporation,
-      created: toIsoOrNull(ledgerPermission.created) ?? nowIso,
-      modified: toIsoOrNull(ledgerPermission.modified) ?? nowIso,
-      slashed: toIsoOrNull(ledgerPermission.slashed),
-      repaid: toIsoOrNull(ledgerPermission.repaid),
-      effective_from: toIsoOrNull(ledgerPermission.effective_from ?? ledgerPermission.effectiveFrom),
-      effective_until: toIsoOrNull(ledgerPermission.effective_until ?? ledgerPermission.effectiveUntil),
-      revoked: toIsoOrNull(ledgerPermission.revoked),
-      validation_fees: Number(ledgerPermission.validation_fees ?? ledgerPermission.validationFees ?? 0),
-      issuance_fees: Number(ledgerPermission.issuance_fees ?? ledgerPermission.issuanceFees ?? 0),
-      verification_fees: Number(ledgerPermission.verification_fees ?? ledgerPermission.verificationFees ?? 0),
-      deposit: Number(ledgerPermission.deposit ?? 0),
-      slashed_deposit: Number(ledgerPermission.slashed_deposit ?? ledgerPermission.slashedDeposit ?? 0),
-      repaid_deposit: Number(ledgerPermission.repaid_deposit ?? ledgerPermission.repaidDeposit ?? 0),
-      validator_participant_id: Number(ledgerPermission.validator_participant_id ?? ledgerPermission.validatorParticipantId ?? 0) || null,
-      op_state: normalizeValidationState(ledgerPermission.op_state ?? ledgerPermission.opState),
-      op_exp: toIsoOrNull(ledgerPermission.op_exp ?? ledgerPermission.opExp),
-      op_last_state_change: toIsoOrNull(ledgerPermission.op_last_state_change ?? ledgerPermission.opLastStateChange),
-      op_validator_deposit: Number(ledgerPermission.op_validator_deposit ?? ledgerPermission.opValidatorDeposit ?? 0),
-      op_current_fees: Number(ledgerPermission.op_current_fees ?? ledgerPermission.opCurrentFees ?? 0),
-      op_current_deposit: Number(ledgerPermission.op_current_deposit ?? ledgerPermission.opCurrentDeposit ?? 0),
+      created: toIsoOrNull(ledgerParticipant.created) ?? nowIso,
+      modified: toIsoOrNull(ledgerParticipant.modified) ?? nowIso,
+      slashed: toIsoOrNull(ledgerParticipant.slashed),
+      repaid: toIsoOrNull(ledgerParticipant.repaid),
+      effective_from: toIsoOrNull(ledgerParticipant.effective_from ?? ledgerParticipant.effectiveFrom),
+      effective_until: toIsoOrNull(ledgerParticipant.effective_until ?? ledgerParticipant.effectiveUntil),
+      revoked: toIsoOrNull(ledgerParticipant.revoked),
+      validation_fees: Number(ledgerParticipant.validation_fees ?? ledgerParticipant.validationFees ?? 0),
+      issuance_fees: Number(ledgerParticipant.issuance_fees ?? ledgerParticipant.issuanceFees ?? 0),
+      verification_fees: Number(ledgerParticipant.verification_fees ?? ledgerParticipant.verificationFees ?? 0),
+      deposit: Number(ledgerParticipant.deposit ?? 0),
+      slashed_deposit: Number(ledgerParticipant.slashed_deposit ?? ledgerParticipant.slashedDeposit ?? 0),
+      repaid_deposit: Number(ledgerParticipant.repaid_deposit ?? ledgerParticipant.repaidDeposit ?? 0),
+      validator_participant_id: Number(ledgerParticipant.validator_participant_id ?? ledgerParticipant.validatorParticipantId ?? 0) || null,
+      op_state: normalizeValidationState(ledgerParticipant.op_state ?? ledgerParticipant.opState),
+      op_exp: toIsoOrNull(ledgerParticipant.op_exp ?? ledgerParticipant.opExp),
+      op_last_state_change: toIsoOrNull(ledgerParticipant.op_last_state_change ?? ledgerParticipant.opLastStateChange),
+      op_validator_deposit: Number(ledgerParticipant.op_validator_deposit ?? ledgerParticipant.opValidatorDeposit ?? 0),
+      op_current_fees: Number(ledgerParticipant.op_current_fees ?? ledgerParticipant.opCurrentFees ?? 0),
+      op_current_deposit: Number(ledgerParticipant.op_current_deposit ?? ledgerParticipant.opCurrentDeposit ?? 0),
       op_summary_digest:
-        ledgerPermission.op_summary_digest ?? ledgerPermission.opSummaryDigest ?? null,
+        ledgerParticipant.op_summary_digest ?? ledgerParticipant.opSummaryDigest ?? null,
       issuance_fee_discount: Number(
-        ledgerPermission.issuance_fee_discount ?? ledgerPermission.issuanceFeeDiscount ?? 0
+        ledgerParticipant.issuance_fee_discount ?? ledgerParticipant.issuanceFeeDiscount ?? 0
       ),
       verification_fee_discount: Number(
-        ledgerPermission.verification_fee_discount ?? ledgerPermission.verificationFeeDiscount ?? 0
+        ledgerParticipant.verification_fee_discount ?? ledgerParticipant.verificationFeeDiscount ?? 0
       ),
-      vs_operator: ledgerPermission.vs_operator ?? ledgerPermission.vsOperator ?? null,
-      adjusted: toIsoOrNull(ledgerPermission.adjusted ?? ledgerPermission.adjustedAt),
+      vs_operator: ledgerParticipant.vs_operator ?? ledgerParticipant.vsOperator ?? null,
+      adjusted: toIsoOrNull(ledgerParticipant.adjusted ?? ledgerParticipant.adjustedAt),
       vs_operator_authz_enabled: Boolean(
-        ledgerPermission.vs_operator_authz_enabled ?? ledgerPermission.vsOperatorAuthzEnabled ?? false
+        ledgerParticipant.vs_operator_authz_enabled ?? ledgerParticipant.vsOperatorAuthzEnabled ?? false
       ),
       vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
-        ledgerPermission.vs_operator_authz_spend_limit ?? ledgerPermission.vsOperatorAuthzSpendLimit
+        ledgerParticipant.vs_operator_authz_spend_limit ?? ledgerParticipant.vsOperatorAuthzSpendLimit
       ),
       vs_operator_authz_with_feegrant: Boolean(
-        ledgerPermission.vs_operator_authz_with_feegrant ?? ledgerPermission.vsOperatorAuthzWithFeegrant ?? false
+        ledgerParticipant.vs_operator_authz_with_feegrant ?? ledgerParticipant.vsOperatorAuthzWithFeegrant ?? false
       ),
       vs_operator_authz_fee_spend_limit: normalizeDenomAmountArrayForDb(
-        ledgerPermission.vs_operator_authz_fee_spend_limit ?? ledgerPermission.vsOperatorAuthzFeeSpendLimit
+        ledgerParticipant.vs_operator_authz_fee_spend_limit ?? ledgerParticipant.vsOperatorAuthzFeeSpendLimit
       ),
       vs_operator_authz_spend_period:
-        ledgerPermission.vs_operator_authz_spend_period ??
-        ledgerPermission.vsOperatorAuthzSpendPeriod ??
+        ledgerParticipant.vs_operator_authz_spend_period ??
+        ledgerParticipant.vsOperatorAuthzSpendPeriod ??
         null,
     };
   }
 
-  private didEnsurePermV4Columns = false;
-  private async ensurePermV4Columns(db: Knex): Promise<void> {
-    if (this.didEnsurePermV4Columns) return;
+  private didEnsureParticipantV4Columns = false;
+  private async ensureParticipantV4Columns(db: Knex): Promise<void> {
+    if (this.didEnsureParticipantV4Columns) return;
 
     await db.raw(`
-      ALTER TABLE IF EXISTS permissions
+      ALTER TABLE IF EXISTS participants
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
@@ -877,7 +877,7 @@ export default class ParticipantIngestService extends Service {
     `);
 
     await db.raw(`
-      ALTER TABLE IF EXISTS permission_history
+      ALTER TABLE IF EXISTS participant_history
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
@@ -887,11 +887,11 @@ export default class ParticipantIngestService extends Service {
         ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_period text;
     `);
 
-    this.permissionsColumnExistsCache = null;
-    this.didEnsurePermV4Columns = true;
+    this.participantsColumnExistsCache = null;
+    this.didEnsureParticipantV4Columns = true;
   }
 
-  private async refreshSchemaAndTrustRegistryStats(
+  private async refreshSchemaAndEcosystemStats(
     schemaId: number | null | undefined,
     blockHeightRaw?: number
   ): Promise<void> {
@@ -899,14 +899,14 @@ export default class ParticipantIngestService extends Service {
     const blockHeight = Number(blockHeightRaw) || 0;
     try {
       const stats = await calculateCredentialSchemaStats(schemaId, blockHeight > 0 ? blockHeight : undefined);
-      const slashFromPerms = await this.sumSlashStatsFromPermissionsForSchema(schemaId);
-      const mergedStats = { ...stats, ...slashFromPerms };
+      const slashFromParticipants = await this.sumSlashStatsFromParticipantsForSchema(schemaId);
+      const mergedStats = { ...stats, ...slashFromParticipants };
       await knex("credential_schemas")
         .where("id", schemaId)
         .update(statsToUpdateObject(mergedStats as unknown as Record<string, unknown>, CS_STATS_FIELDS));
-      const hasParticipantsColumn = await this.checkPermissionsColumnExists("participants");
+      const hasParticipantsColumn = await this.checkParticipantsColumnExists("participants");
       if (hasParticipantsColumn) {
-        await knex("permissions").where("schema_id", schemaId).update({ participants: mergedStats.participants });
+        await knex("participants").where("schema_id", schemaId).update({ participants: mergedStats.participants });
       }
       try {
         await insertCredentialSchemaHistoryStatsRow(knex, schemaId, blockHeight, mergedStats);
@@ -921,40 +921,40 @@ export default class ParticipantIngestService extends Service {
       );
     }
 
-    await this.refreshTrustRegistryStatsBySchemaId(schemaId, blockHeight);
+    await this.refreshEcosystemStatsBySchemaId(schemaId, blockHeight);
 
     try {
       await this.broker.call(`${SERVICE.V1.MetricsSnapshotService.path}.computeAndStore`, {});
     } catch (error: any) {
-      this.logger.warn(`Failed to refresh global metrics after permission sync: ${error?.message || error}`);
+      this.logger.warn(`Failed to refresh global metrics after participant sync: ${error?.message || error}`);
     }
   }
 
-  private async syncPermissionFromLedger(
-    ledgerPermission: Record<string, any>,
+  private async syncParticipantFromLedger(
+    ledgerParticipant: Record<string, any>,
     blockHeight: number,
     txHash?: string,
     msgType?: string
   ) {
-    const mapped = this.mapLedgerPermissionToDbRow(ledgerPermission || {});
+    const mapped = this.mapLedgerParticipantToDbRow(ledgerParticipant || {});
     if (!Number.isInteger(mapped.id) || mapped.id <= 0) {
-      return { success: false, reason: "Invalid permission id from ledger" };
+      return { success: false, reason: "Invalid participant id from ledger" };
     }
     if (!Number.isInteger(mapped.schema_id) || mapped.schema_id <= 0) {
       return { success: false, reason: "Invalid schema_id from ledger" };
     }
 
     const effectiveHeight = Number(blockHeight) || 0;
-    let finalPermission: any = null;
-    let previousPermission: any = null;
+    let finalParticipant: any = null;
+    let previousParticipant: any = null;
 
-    await this.ensurePermV4Columns(knex);
+    await this.ensureParticipantV4Columns(knex);
 
     await knex.transaction(async (trx) => {
-      previousPermission = await trx("permissions").where({ id: mapped.id }).first();
+      previousParticipant = await trx("participants").where({ id: mapped.id }).first();
 
       const payload: any = { ...mapped };
-      const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+      const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
       if (hasExpireSoonColumn) {
         payload.expire_soon = await this.calculateExpireSoon(
           payload,
@@ -963,88 +963,88 @@ export default class ParticipantIngestService extends Service {
         );
       }
 
-      if (previousPermission) {
-        await trx("permissions")
+      if (previousParticipant) {
+        await trx("participants")
           .where({ id: mapped.id })
           .update(payload);
-        finalPermission = await trx("permissions").where({ id: mapped.id }).first();
+        finalParticipant = await trx("participants").where({ id: mapped.id }).first();
       } else {
-        await trx("permissions").insert(payload);
-        finalPermission = await trx("permissions").where({ id: mapped.id }).first();
+        await trx("participants").insert(payload);
+        finalParticipant = await trx("participants").where({ id: mapped.id }).first();
       }
 
       try {
         const hasFlipMetaColumns =
-          await this.checkPermissionsColumnExists("last_valid_flip_version");
+          await this.checkParticipantsColumnExists("last_valid_flip_version");
         const hasIsActiveNowColumn =
-          await this.checkPermissionsColumnExists("is_active_now");
+          await this.checkParticipantsColumnExists("is_active_now");
 
-        if (hasFlipMetaColumns && finalPermission) {
-          const fallbackTime = new Date(mapped.modified || finalPermission.modified || new Date().toISOString());
+        if (hasFlipMetaColumns && finalParticipant) {
+          const fallbackTime = new Date(mapped.modified || finalParticipant.modified || new Date().toISOString());
           const currentBlockTime = await getBlockChainTimeAsOf(effectiveHeight, {
             db: trx,
-            logContext: "[perm_database]",
+            logContext: "[pp_database]",
             fallback: fallbackTime,
             logger: this.logger,
           });
 
-          const permState = calculatePermState(
+          const participantState = calculateParticipantState(
             {
-              repaid: finalPermission.repaid,
-              slashed: finalPermission.slashed,
-              revoked: finalPermission.revoked,
-              effective_from: finalPermission.effective_from,
-              effective_until: finalPermission.effective_until,
-              role: finalPermission.role,
-              op_state: finalPermission.op_state,
-              op_exp: finalPermission.op_exp,
-              validator_participant_id: finalPermission.validator_participant_id,
+              repaid: finalParticipant.repaid,
+              slashed: finalParticipant.slashed,
+              revoked: finalParticipant.revoked,
+              effective_from: finalParticipant.effective_from,
+              effective_until: finalParticipant.effective_until,
+              role: finalParticipant.role,
+              op_state: finalParticipant.op_state,
+              op_exp: finalParticipant.op_exp,
+              validator_participant_id: finalParticipant.validator_participant_id,
             },
             currentBlockTime
           );
 
           const stateInputsChanged =
-            !previousPermission
-            || previousPermission.repaid !== finalPermission.repaid
-            || previousPermission.slashed !== finalPermission.slashed
-            || previousPermission.revoked !== finalPermission.revoked
-            || previousPermission.effective_from !== finalPermission.effective_from
-            || previousPermission.effective_until !== finalPermission.effective_until;
+            !previousParticipant
+            || previousParticipant.repaid !== finalParticipant.repaid
+            || previousParticipant.slashed !== finalParticipant.slashed
+            || previousParticipant.revoked !== finalParticipant.revoked
+            || previousParticipant.effective_from !== finalParticipant.effective_from
+            || previousParticipant.effective_until !== finalParticipant.effective_until;
 
           if (stateInputsChanged) {
             const prevVersion: number =
-              typeof previousPermission?.last_valid_flip_version === "number"
-                ? previousPermission.last_valid_flip_version
+              typeof previousParticipant?.last_valid_flip_version === "number"
+                ? previousParticipant.last_valid_flip_version
                 : 0;
             const newVersion = prevVersion + 1;
 
             const prevIsActiveNow =
-              hasIsActiveNowColumn && previousPermission
-                ? Boolean((previousPermission as any).is_active_now)
+              hasIsActiveNowColumn && previousParticipant
+                ? Boolean((previousParticipant as any).is_active_now)
                 : false;
 
-            const permUpdate: Record<string, any> = {
+            const participantUpdate: Record<string, any> = {
               last_valid_flip_version: newVersion,
             };
        
-            await trx("permissions")
-              .where({ id: finalPermission.id })
-              .update(permUpdate);
+            await trx("participants")
+              .where({ id: finalParticipant.id })
+              .update(participantUpdate);
 
             const enterFlips: Array<{ flip_at_time: string; flip_kind: number }> = [];
             const exitFlips: Array<{ flip_at_time: string; flip_kind: number }> = [];
 
-          const effectiveFrom = finalPermission.effective_from
-            ? new Date(finalPermission.effective_from)
+          const effectiveFrom = finalParticipant.effective_from
+            ? new Date(finalParticipant.effective_from)
             : null;
-          const effectiveUntil = finalPermission.effective_until
-            ? new Date(finalPermission.effective_until)
+          const effectiveUntil = finalParticipant.effective_until
+            ? new Date(finalParticipant.effective_until)
             : null;
-          const revoked = finalPermission.revoked ? new Date(finalPermission.revoked) : null;
-          const slashed = finalPermission.slashed ? new Date(finalPermission.slashed) : null;
-          const repaid = finalPermission.repaid ? new Date(finalPermission.repaid) : null;
+          const revoked = finalParticipant.revoked ? new Date(finalParticipant.revoked) : null;
+          const slashed = finalParticipant.slashed ? new Date(finalParticipant.slashed) : null;
+          const repaid = finalParticipant.repaid ? new Date(finalParticipant.repaid) : null;
 
-          if (permState === "FUTURE") {
+          if (participantState === "FUTURE") {
             if (effectiveFrom && !Number.isNaN(effectiveFrom.getTime())) {
               enterFlips.push({
                 flip_at_time: effectiveFrom.toISOString(),
@@ -1057,7 +1057,7 @@ export default class ParticipantIngestService extends Service {
                 flip_kind: 2, // EXIT_ACTIVE
               });
             }
-          } else if (permState === "ACTIVE") {
+          } else if (participantState === "ACTIVE") {
             // Spec: insert ENTER_ACTIVE at effective_from.
             if (effectiveFrom && !Number.isNaN(effectiveFrom.getTime())) {
               enterFlips.push({
@@ -1071,7 +1071,7 @@ export default class ParticipantIngestService extends Service {
                 flip_kind: 2, // EXIT_ACTIVE
               });
             }
-          } else if (permState === "EXPIRED") {
+          } else if (participantState === "EXPIRED") {
             if (
               prevIsActiveNow &&
               effectiveUntil &&
@@ -1083,11 +1083,11 @@ export default class ParticipantIngestService extends Service {
                 flip_kind: 2, // EXIT_ACTIVE
               });
             }
-          } else if (permState === "SLASHED" || permState === "REVOKED" || permState === "REPAID") {
+          } else if (participantState === "SLASHED" || participantState === "REVOKED" || participantState === "REPAID") {
             let exitTime: Date | null = null;
-            if (permState === "SLASHED") exitTime = slashed;
-            if (permState === "REVOKED") exitTime = revoked;
-            if (permState === "REPAID") exitTime = repaid;
+            if (participantState === "SLASHED") exitTime = slashed;
+            if (participantState === "REVOKED") exitTime = revoked;
+            if (participantState === "REPAID") exitTime = repaid;
 
             if (
               effectiveFrom &&
@@ -1107,20 +1107,20 @@ export default class ParticipantIngestService extends Service {
             const flipsToInsert = [...enterFlips, ...exitFlips];
             for (const flip of flipsToInsert) {
               try {
-                await trx("permission_scheduled_flips")
+                await trx("participant_scheduled_flips")
                   .insert({
-                    perm_id: finalPermission.id,
+                    participant_id: finalParticipant.id,
                     flip_at_time: flip.flip_at_time,
                     flip_kind: flip.flip_kind,
                     status: 0, // PENDING
                     version: newVersion,
                     created_at: currentBlockTime.toISOString(),
                   })
-                  .onConflict(["perm_id", "version", "flip_at_time", "flip_kind"])
+                  .onConflict(["participant_id", "version", "flip_at_time", "flip_kind"])
                   .ignore();
               } catch (err: any) {
                 this.logger.warn(
-                  `[syncPermissionFromLedger] Failed to insert scheduled flip for permission ${finalPermission.id}:`,
+                  `[syncParticipantFromLedger] Failed to insert scheduled flip for participant ${finalParticipant.id}:`,
                   err?.message || err
                 );
               }
@@ -1129,35 +1129,35 @@ export default class ParticipantIngestService extends Service {
         }
       } catch (err: any) {
         this.logger.warn(
-          `[syncPermissionFromLedger] Failed to update scheduled flips metadata for permission ${mapped.id}:`,
+          `[syncParticipantFromLedger] Failed to update scheduled flips metadata for participant ${mapped.id}:`,
           err?.message || err
         );
       }
   try {
-        const prevSlashed = BigInt(previousPermission?.slashed_deposit ?? 0);
+        const prevSlashed = BigInt(previousParticipant?.slashed_deposit ?? 0);
         const newSlashed = BigInt(mapped.slashed_deposit ?? 0);
-        const prevRepaid = BigInt(previousPermission?.repaid_deposit ?? 0);
+        const prevRepaid = BigInt(previousParticipant?.repaid_deposit ?? 0);
         const newRepaid = BigInt(mapped.repaid_deposit ?? 0);
 
         const slashDelta = newSlashed > prevSlashed ? newSlashed - prevSlashed : BigInt(0);
         const repayDelta = newRepaid > prevRepaid ? newRepaid - prevRepaid : BigInt(0);
 
         if (slashDelta > BigInt(0) || repayDelta > BigInt(0)) {
-          const permRow = finalPermission || mapped;
-          const isEcosystemPermission = permRow.role === "ECOSYSTEM";
+          const participantRow = finalParticipant || mapped;
+          const isEcosystemParticipant = participantRow.role === "ECOSYSTEM";
           let isEcosystemSlash = false;
           let isNetworkSlash = false;
 
-          if (isEcosystemPermission) {
+          if (isEcosystemParticipant) {
             isEcosystemSlash = true;
-          } else if (permRow.schema_id && ledgerPermission.slashed_by) {
+          } else if (participantRow.schema_id && ledgerParticipant.slashed_by) {
             const schema = await trx("credential_schemas")
-              .where({ id: permRow.schema_id })
+              .where({ id: participantRow.schema_id })
               .first();
             if (schema?.ecosystem_id) {
-              const tr = await trx("trust_registry").where({ id: schema.ecosystem_id }).first();
-              const slashedBy = ledgerPermission.slashed_by;
-              if (tr?.corporation && slashedBy === tr.corporation) {
+              const ec = await trx("ecosystem").where({ id: schema.ecosystem_id }).first();
+              const slashedBy = ledgerParticipant.slashed_by;
+              if (ec?.corporation && slashedBy === ec.corporation) {
                 isEcosystemSlash = true;
               } else {
                 isNetworkSlash = true;
@@ -1182,7 +1182,7 @@ export default class ParticipantIngestService extends Service {
         }
       } catch (err: any) {
         this.logger.warn(
-          `[syncPermissionFromLedger] Failed to infer slash statistics for permission ${mapped.id}:`,
+          `[syncParticipantFromLedger] Failed to infer slash statistics for participant ${mapped.id}:`,
           err?.message || err
         );
       }
@@ -1190,38 +1190,38 @@ export default class ParticipantIngestService extends Service {
       await this.updateWeight(trx, mapped.id);
       await this.updateParticipants(trx, mapped.id);
 
-      const refreshed = await trx("permissions").where({ id: mapped.id }).first();
+      const refreshed = await trx("participants").where({ id: mapped.id }).first();
       if (refreshed) {
-        finalPermission = refreshed;
+        finalParticipant = refreshed;
       }
 
-      await recordPermissionHistory(
+      await recordParticipantHistory(
         trx,
-        finalPermission,
+        finalParticipant,
         `SYNC_LEDGER${msgType ? `:${msgType}` : ""}${txHash ? `:${txHash}` : ""}`,
         effectiveHeight,
-        previousPermission ? await pickPermissionSnapshot(previousPermission) : undefined
+        previousParticipant ? await pickParticipantSnapshot(previousParticipant) : undefined
       );
     });
 
-    await this.refreshSchemaAndTrustRegistryStats(mapped.schema_id, effectiveHeight);
+    await this.refreshSchemaAndEcosystemStats(mapped.schema_id, effectiveHeight);
 
     return {
       success: true,
-      permissionId: mapped.id,
+      participantId: mapped.id,
       schemaId: mapped.schema_id,
-      changed: !!previousPermission,
+      changed: !!previousParticipant,
     };
   }
 
-  private async syncPermissionSessionFromLedger(
+  private async syncParticipantSessionFromLedger(
     ledgerSession: Record<string, any>,
     blockHeight: number,
     txHash?: string,
     msgType?: string
   ) {
     const id = String(ledgerSession?.id || "").trim();
-    if (!id) return { success: false, reason: "Invalid permission session id from ledger" };
+    if (!id) return { success: false, reason: "Invalid participant session id from ledger" };
 
     const effectiveHeight = Number(blockHeight) || 0;
     const recordsRaw = Array.isArray(ledgerSession?.session_records)
@@ -1233,33 +1233,33 @@ export default class ParticipantIngestService extends Service {
           : [];
 
     const enrichedAuthz = await Promise.all(recordsRaw.map(async (entry: any) => {
-      const directIssuer = entry?.issuer_perm_id ?? entry?.issuerPermId;
-      const directVerifier = entry?.verifier_perm_id ?? entry?.verifierPermId;
+      const directIssuer = entry?.issuer_participant_id ?? entry?.issuerParticipantId;
+      const directVerifier = entry?.verifier_participant_id ?? entry?.verifierParticipantId;
       if (directIssuer != null || directVerifier != null) {
-        const walletAgentPermId =
-          Number(entry?.wallet_agent_perm_id ?? entry?.walletAgentPermId ?? ledgerSession?.wallet_agent_perm_id ?? 0) || 0;
+        const walletAgentParticipantId =
+          Number(entry?.wallet_agent_participant_id ?? entry?.walletAgentParticipantId ?? ledgerSession?.wallet_agent_participant_id ?? 0) || 0;
         return {
-          issuer_perm_id: directIssuer != null ? Number(directIssuer) : null,
-          verifier_perm_id: directVerifier != null ? Number(directVerifier) : null,
-          wallet_agent_perm_id: walletAgentPermId || null,
+          issuer_participant_id: directIssuer != null ? Number(directIssuer) : null,
+          verifier_participant_id: directVerifier != null ? Number(directVerifier) : null,
+          wallet_agent_participant_id: walletAgentParticipantId || null,
         };
       }
 
-      const walletAgentPermId = Number(entry?.wallet_agent_perm_id ?? ledgerSession?.wallet_agent_perm_id ?? 0) || 0;
-      const beneficiaryPermId = Number(entry?.beneficiary_perm_id ?? 0) || 0;
+      const walletAgentParticipantId = Number(entry?.wallet_agent_participant_id ?? ledgerSession?.wallet_agent_participant_id ?? 0) || 0;
+      const beneficiaryParticipantId = Number(entry?.beneficiary_participant_id ?? 0) || 0;
 
-      let issuerPermId: number | null = null;
-      let verifierPermId: number | null = null;
-      if (beneficiaryPermId > 0) {
-        const beneficiaryPerm = await knex("permissions").where({ id: beneficiaryPermId }).select("role").first();
-        if (beneficiaryPerm?.role === "ISSUER") issuerPermId = beneficiaryPermId;
-        if (beneficiaryPerm?.role === "VERIFIER") verifierPermId = beneficiaryPermId;
+      let issuerParticipantId: number | null = null;
+      let verifierParticipantId: number | null = null;
+      if (beneficiaryParticipantId > 0) {
+        const beneficiaryParticipant = await knex("participants").where({ id: beneficiaryParticipantId }).select("role").first();
+        if (beneficiaryParticipant?.role === "ISSUER") issuerParticipantId = beneficiaryParticipantId;
+        if (beneficiaryParticipant?.role === "VERIFIER") verifierParticipantId = beneficiaryParticipantId;
       }
 
       return {
-        issuer_perm_id: issuerPermId,
-        verifier_perm_id: verifierPermId,
-        wallet_agent_perm_id: walletAgentPermId || null,
+        issuer_participant_id: issuerParticipantId,
+        verifier_participant_id: verifierParticipantId,
+        wallet_agent_participant_id: walletAgentParticipantId || null,
       };
     }));
 
@@ -1267,17 +1267,17 @@ export default class ParticipantIngestService extends Service {
         id,
         corporation: ledgerSession?.corporation ?? null,
         vs_operator: ledgerSession?.vs_operator ?? ledgerSession?.vsOperator ?? null,
-        agent_perm_id: Number(ledgerSession?.agent_perm_id ?? ledgerSession?.agentPermId ?? 0) || 0,
-        wallet_agent_perm_id: Number(ledgerSession?.wallet_agent_perm_id ?? ledgerSession?.walletAgentPermId ?? 0) || 0,
+        agent_participant_id: Number(ledgerSession?.agent_participant_id ?? ledgerSession?.agentParticipantId ?? 0) || 0,
+        wallet_agent_participant_id: Number(ledgerSession?.wallet_agent_participant_id ?? ledgerSession?.walletAgentParticipantId ?? 0) || 0,
         session_records: JSON.stringify(
           enrichedAuthz.map((e: any, i: number) => ({
             created:
               toIsoOrNull(recordsRaw[i]?.created) ??
               toIsoOrNull(ledgerSession?.modified) ??
               new Date().toISOString(),
-            issuer_perm_id: e.issuer_perm_id ?? null,
-            verifier_perm_id: e.verifier_perm_id ?? null,
-            wallet_agent_perm_id: e.wallet_agent_perm_id ?? null,
+            issuer_participant_id: e.issuer_participant_id ?? null,
+            verifier_participant_id: e.verifier_participant_id ?? null,
+            wallet_agent_participant_id: e.wallet_agent_participant_id ?? null,
           }))
         ),
         created: toIsoOrNull(ledgerSession?.created) ?? new Date().toISOString(),
@@ -1285,24 +1285,24 @@ export default class ParticipantIngestService extends Service {
       };
 
     await knex.transaction(async (trx) => {
-      const previous = await trx("permission_sessions").where({ id }).first();
+      const previous = await trx("participant_sessions").where({ id }).first();
       let finalSession: any = null;
       if (previous) {
-        await trx("permission_sessions")
+        await trx("participant_sessions")
           .where({ id })
           .update(mappedSession);
-        finalSession = await trx("permission_sessions").where({ id }).first();
+        finalSession = await trx("participant_sessions").where({ id }).first();
       } else {
-        await trx("permission_sessions").insert(mappedSession);
-        finalSession = await trx("permission_sessions").where({ id }).first();
+        await trx("participant_sessions").insert(mappedSession);
+        finalSession = await trx("participant_sessions").where({ id }).first();
       }
 
-      await recordPermissionSessionHistory(
+      await recordParticipantSessionHistory(
         trx,
         finalSession,
         `SYNC_LEDGER${msgType ? `:${msgType}` : ""}${txHash ? `:${txHash}` : ""}`,
         effectiveHeight,
-        previous ? pickPermissionSessionSnapshot(previous) : undefined
+        previous ? pickParticipantSessionSnapshot(previous) : undefined
       );
 
       const previousAuthzRaw = previous?.session_records ?? previous?.authz;
@@ -1315,34 +1315,34 @@ export default class ParticipantIngestService extends Service {
         }
       }
 
-      const previousIssuerPermIds = new Set(
+      const previousIssuerParticipantIds = new Set(
         previousAuthz
-          .map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id)
+          .map((entry: { issuer_participant_id?: string | number }) => entry.issuer_participant_id)
           .filter((v: any) => v !== null && v !== undefined)
       );
-      const previousVerifierPermIds = new Set(
+      const previousVerifierParticipantIds = new Set(
         previousAuthz
-          .map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id)
+          .map((entry: { verifier_participant_id?: string | number }) => entry.verifier_participant_id)
           .filter((v: any) => v !== null && v !== undefined)
       );
 
-      const newIssuerPermIds = new Set(
+      const newIssuerParticipantIds = new Set(
         enrichedAuthz
-          .map((entry: { issuer_perm_id?: number | null }) => entry.issuer_perm_id)
+          .map((entry: { issuer_participant_id?: number | null }) => entry.issuer_participant_id)
           .filter((v): v is number => v !== null && v !== undefined)
       );
-      const newVerifierPermIds = new Set(
+      const newVerifierParticipantIds = new Set(
         enrichedAuthz
-          .map((entry: { verifier_perm_id?: number | null }) => entry.verifier_perm_id)
+          .map((entry: { verifier_participant_id?: number | null }) => entry.verifier_participant_id)
           .filter((v): v is number => v !== null && v !== undefined)
       );
 
-      for (const issuerId of newIssuerPermIds) {
-        if (!previousIssuerPermIds.has(issuerId)) {
+      for (const issuerId of newIssuerParticipantIds) {
+        if (!previousIssuerParticipantIds.has(issuerId)) {
           try {
-            await this.incrementPermissionStatistics(trx, Number(issuerId), true, false);
+            await this.incrementParticipantStatistics(trx, Number(issuerId), true, false);
             try {
-              await recordPermissionHistory(
+              await recordParticipantHistory(
                 trx,
                 { id: Number(issuerId) },
                 "CREDENTIAL_ISSUED",
@@ -1350,25 +1350,25 @@ export default class ParticipantIngestService extends Service {
               );
             } catch (historyErr: any) {
               this.logger.warn(
-                `[Session Height-Sync] Failed to record permission history for issued perm ${issuerId}:`,
+                `[Session Height-Sync] Failed to record participant history for issued participant ${issuerId}:`,
                 historyErr?.message || historyErr
               );
             }
           } catch (issuedErr: any) {
             this.logger.error(
-              `[Session Height-Sync] Failed to increment issued for permission ${issuerId}:`,
+              `[Session Height-Sync] Failed to increment issued for participant ${issuerId}:`,
               issuedErr?.message || issuedErr
             );
           }
         }
       }
 
-      for (const verifierId of newVerifierPermIds) {
-        if (!previousVerifierPermIds.has(verifierId)) {
+      for (const verifierId of newVerifierParticipantIds) {
+        if (!previousVerifierParticipantIds.has(verifierId)) {
           try {
-            await this.incrementPermissionStatistics(trx, Number(verifierId), false, true);
+            await this.incrementParticipantStatistics(trx, Number(verifierId), false, true);
             try {
-              await recordPermissionHistory(
+              await recordParticipantHistory(
                 trx,
                 { id: Number(verifierId) },
                 "CREDENTIAL_VERIFIED",
@@ -1376,13 +1376,13 @@ export default class ParticipantIngestService extends Service {
               );
             } catch (historyErr: any) {
               this.logger.warn(
-                `[Session Height-Sync] Failed to record permission history for verified perm ${verifierId}:`,
+                `[Session Height-Sync] Failed to record participant history for verified participant ${verifierId}:`,
                 historyErr?.message || historyErr
               );
             }
           } catch (verifiedErr: any) {
             this.logger.error(
-              `[Session Height-Sync] Failed to increment verified for permission ${verifierId}:`,
+              `[Session Height-Sync] Failed to increment verified for participant ${verifierId}:`,
               verifiedErr?.message || verifiedErr
             );
           }
@@ -1394,42 +1394,42 @@ export default class ParticipantIngestService extends Service {
   }
 
 
-  private async rebuildPermissionStats(schemaId?: number) {
+  private async rebuildParticipantStats(schemaId?: number) {
     try {
-      this.logger.info(`[rebuildPermissionStats] Starting rebuild${schemaId ? ` for schema_id=${schemaId}` : ""}...`);
+      this.logger.info(`[rebuildParticipantStats] Starting rebuild${schemaId ? ` for schema_id=${schemaId}` : ""}...`);
 
       await knex.transaction(async (trx) => {
-        let permQuery = trx("permissions").select("id", "schema_id");
+        let participantQuery = trx("participants").select("id", "schema_id");
         if (schemaId && Number.isInteger(schemaId) && schemaId > 0) {
-          permQuery = permQuery.where("schema_id", schemaId);
+          participantQuery = participantQuery.where("schema_id", schemaId);
         }
-        const perms = await permQuery;
-        if (!perms || perms.length === 0) {
-          this.logger.info("[rebuildPermissionStats] No permissions found in scope, nothing to rebuild.");
+        const participants = await participantQuery;
+        if (!participants || participants.length === 0) {
+          this.logger.info("[rebuildParticipantStats] No participants found in scope, nothing to rebuild.");
           return;
         }
 
-        const permIds = perms.map((p: any) => Number(p.id));
-        const permIdSet = new Set<number>(permIds);
+        const participantIds = participants.map((p: any) => Number(p.id));
+        const participantIdSet = new Set<number>(participantIds);
 
-        for (const { id } of perms) {
+        for (const { id } of participants) {
           const pid = Number(id);
           if (!Number.isInteger(pid) || pid <= 0) continue;
           try {
             await this.updateWeight(trx, pid);
           } catch (err: any) {
-            this.logger.warn(`[rebuildPermissionStats] Failed to update weight for permission ${pid}:`, err?.message || err);
+            this.logger.warn(`[rebuildParticipantStats] Failed to update weight for participant ${pid}:`, err?.message || err);
           }
           try {
             await this.updateParticipants(trx, pid);
           } catch (err: any) {
-            this.logger.warn(`[rebuildPermissionStats] Failed to update participants for permission ${pid}:`, err?.message || err);
+            this.logger.warn(`[rebuildParticipantStats] Failed to update participants for participant ${pid}:`, err?.message || err);
           }
         }
 
         const issuedCounts = new Map<number, number>();
         const verifiedCounts = new Map<number, number>();
-        const sessionRows = await trx("permission_sessions").select("session_records");
+        const sessionRows = await trx("participant_sessions").select("session_records");
         for (const row of sessionRows || []) {
           let authz: any[] = [];
           try {
@@ -1443,22 +1443,22 @@ export default class ParticipantIngestService extends Service {
             authz = [];
           }
           for (const entry of authz) {
-            const issuerId = Number(entry?.issuer_perm_id ?? 0) || 0;
-            const verifierId = Number(entry?.verifier_perm_id ?? 0) || 0;
-            if (issuerId > 0 && permIdSet.has(issuerId)) {
+            const issuerId = Number(entry?.issuer_participant_id ?? 0) || 0;
+            const verifierId = Number(entry?.verifier_participant_id ?? 0) || 0;
+            if (issuerId > 0 && participantIdSet.has(issuerId)) {
               issuedCounts.set(issuerId, (issuedCounts.get(issuerId) || 0) + 1);
             }
-            if (verifierId > 0 && permIdSet.has(verifierId)) {
+            if (verifierId > 0 && participantIdSet.has(verifierId)) {
               verifiedCounts.set(verifierId, (verifiedCounts.get(verifierId) || 0) + 1);
             }
           }
         }
 
         const historyStats = new Map<number, any>();
-        const historyRows = await trx("permission_history")
-          .whereIn("permission_id", Array.from(permIdSet))
+        const historyRows = await trx("participant_history")
+          .whereIn("participant_id", Array.from(participantIdSet))
           .select(
-            "permission_id",
+            "participant_id",
             "ecosystem_slash_events",
             "ecosystem_slashed_amount",
             "ecosystem_slashed_amount_repaid",
@@ -1466,14 +1466,14 @@ export default class ParticipantIngestService extends Service {
             "network_slashed_amount",
             "network_slashed_amount_repaid"
           )
-          .orderBy("permission_id")
+          .orderBy("participant_id")
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
           .orderBy("id", "desc");
 
         for (const row of historyRows || []) {
-          const pid = Number(row.permission_id);
-          if (!permIdSet.has(pid)) continue;
+          const pid = Number(row.participant_id);
+          if (!participantIdSet.has(pid)) continue;
           if (!historyStats.has(pid)) {
             historyStats.set(pid, {
               ecosystem_slash_events: Number(row.ecosystem_slash_events ?? 0),
@@ -1486,7 +1486,7 @@ export default class ParticipantIngestService extends Service {
           }
         }
 
-        for (const { id } of perms) {
+        for (const { id } of participants) {
           const pid = Number(id);
           if (!Number.isInteger(pid) || pid <= 0) continue;
 
@@ -1502,7 +1502,7 @@ export default class ParticipantIngestService extends Service {
           };
 
           try {
-            await trx("permissions")
+            await trx("participants")
               .where({ id: pid })
               .update({
                 issued,
@@ -1516,17 +1516,17 @@ export default class ParticipantIngestService extends Service {
               });
           } catch (err: any) {
             this.logger.warn(
-              `[rebuildPermissionStats] Failed to update rebuilt stats for permission ${pid}:`,
+              `[rebuildParticipantStats] Failed to update rebuilt stats for participant ${pid}:`,
               err?.message || err
             );
           }
         }
       });
 
-      this.logger.info(`[rebuildPermissionStats] Completed rebuild${schemaId ? ` for schema_id=${schemaId}` : ""}.`);
+      this.logger.info(`[rebuildParticipantStats] Completed rebuild${schemaId ? ` for schema_id=${schemaId}` : ""}.`);
       return { success: true };
     } catch (err: any) {
-      this.logger.error("[rebuildPermissionStats] Failed to rebuild permission stats:", err);
+      this.logger.error("[rebuildParticipantStats] Failed to rebuild participant stats:", err);
       return { success: false, reason: err?.message || String(err) };
     }
   }
@@ -1538,12 +1538,12 @@ export default class ParticipantIngestService extends Service {
     return d.toISOString();
   }
 
-  private normalizeComparablePermissionRecord(record: Record<string, any> | null | undefined): Record<string, any> | null {
+  private normalizeComparableParticipantRecord(record: Record<string, any> | null | undefined): Record<string, any> | null {
     if (!record) return null;
     return {
-      id: Number(record.id ?? record.permission_id ?? 0) || 0,
+      id: Number(record.id ?? record.participant_id ?? 0) || 0,
       schema_id: Number(record.schema_id ?? record.schemaId ?? 0) || 0,
-      role: normalizePermissionType(record.role),
+      role: normalizeParticipantType(record.role),
       did: record.did ?? null,
       corporation: record.corporation ?? null,
       created: this.normalizeComparableTimestamp(record.created),
@@ -1574,7 +1574,7 @@ export default class ParticipantIngestService extends Service {
     };
   }
 
-  private normalizeComparablePermissionSessionRecord(record: Record<string, any> | null | undefined): Record<string, any> | null {
+  private normalizeComparableParticipantSessionRecord(record: Record<string, any> | null | undefined): Record<string, any> | null {
     if (!record) return null;
     const srRaw = Array.isArray(record.session_records)
       ? record.session_records
@@ -1583,9 +1583,9 @@ export default class ParticipantIngestService extends Service {
       ? srRaw
           .map((entry: any) => ({
             created: String(entry?.created ?? ""),
-            issuer_perm_id: Number(entry?.issuer_perm_id ?? 0) || null,
-            verifier_perm_id: Number(entry?.verifier_perm_id ?? 0) || null,
-            wallet_agent_perm_id: Number(entry?.wallet_agent_perm_id ?? 0) || null,
+            issuer_participant_id: Number(entry?.issuer_participant_id ?? 0) || null,
+            verifier_participant_id: Number(entry?.verifier_participant_id ?? 0) || null,
+            wallet_agent_participant_id: Number(entry?.wallet_agent_participant_id ?? 0) || null,
           }))
           .sort((a: any, b: any) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
       : [];
@@ -1594,20 +1594,20 @@ export default class ParticipantIngestService extends Service {
       id: String(record.id ?? record.session_id ?? ""),
       corporation: record.corporation ?? null,
       vs_operator: record.vs_operator ?? record.vsOperator ?? null,
-      agent_perm_id: Number(record.agent_perm_id ?? record.agentPermId ?? 0) || 0,
-      wallet_agent_perm_id: Number(record.wallet_agent_perm_id ?? record.walletAgentPermId ?? 0) || 0,
+      agent_participant_id: Number(record.agent_participant_id ?? record.agentParticipantId ?? 0) || 0,
+      wallet_agent_participant_id: Number(record.wallet_agent_participant_id ?? record.walletAgentParticipantId ?? 0) || 0,
       session_records: sessionRecords,
       created: this.normalizeComparableTimestamp(record.created),
       modified: this.normalizeComparableTimestamp(record.modified),
     };
   }
 
-  private async getPermissionSnapshotAtHeight(permissionId: number, blockHeight: number): Promise<any | null> {
+  private async getParticipantSnapshotAtHeight(participantId: number, blockHeight: number): Promise<any | null> {
     if (!(Number.isInteger(blockHeight) && blockHeight > 0)) {
-      return knex("permissions").where({ id: permissionId }).first();
+      return knex("participants").where({ id: participantId }).first();
     }
-    const history = await knex("permission_history")
-      .where({ permission_id: permissionId })
+    const history = await knex("participant_history")
+      .where({ participant_id: participantId })
       .andWhere("height", "<=", blockHeight)
       .orderBy("height", "desc")
       .orderBy("created_at", "desc")
@@ -1616,15 +1616,15 @@ export default class ParticipantIngestService extends Service {
     if (!history) return null;
     return {
       ...history,
-      id: Number(history.permission_id),
+      id: Number(history.participant_id),
     };
   }
 
-  private async getPermissionSessionSnapshotAtHeight(sessionId: string, blockHeight: number): Promise<any | null> {
+  private async getParticipantSessionSnapshotAtHeight(sessionId: string, blockHeight: number): Promise<any | null> {
     if (!(Number.isInteger(blockHeight) && blockHeight > 0)) {
-      return knex("permission_sessions").where({ id: sessionId }).first();
+      return knex("participant_sessions").where({ id: sessionId }).first();
     }
-    const history = await knex("permission_session_history")
+    const history = await knex("participant_session_history")
       .where({ session_id: sessionId })
       .andWhere("height", "<=", blockHeight)
       .orderBy("height", "desc")
@@ -1655,32 +1655,32 @@ export default class ParticipantIngestService extends Service {
     return { matches: diffs.length === 0, diffs };
   }
 
-  private async comparePermissionWithLedger(
-    permissionId: number,
-    ledgerPermission: Record<string, any>,
+  private async compareParticipantWithLedger(
+    participantId: number,
+    ledgerParticipant: Record<string, any>,
     blockHeight: number
   ) {
-    const dbSnapshot = await this.getPermissionSnapshotAtHeight(permissionId, blockHeight);
-    const normalizedDb = this.normalizeComparablePermissionRecord(dbSnapshot);
-    const normalizedLedger = this.normalizeComparablePermissionRecord(ledgerPermission);
+    const dbSnapshot = await this.getParticipantSnapshotAtHeight(participantId, blockHeight);
+    const normalizedDb = this.normalizeComparableParticipantRecord(dbSnapshot);
+    const normalizedLedger = this.normalizeComparableParticipantRecord(ledgerParticipant);
     const result = this.compareObjects(normalizedDb, normalizedLedger);
     return {
       success: true,
       matches: result.matches,
       diffs: result.diffs,
-      permissionId,
+      participantId,
       blockHeight,
     };
   }
 
-  private async comparePermissionSessionWithLedger(
+  private async compareParticipantSessionWithLedger(
     sessionId: string,
     ledgerSession: Record<string, any>,
     blockHeight: number
   ) {
-    const dbSnapshot = await this.getPermissionSessionSnapshotAtHeight(sessionId, blockHeight);
-    const normalizedDb = this.normalizeComparablePermissionSessionRecord(dbSnapshot);
-    const normalizedLedger = this.normalizeComparablePermissionSessionRecord(ledgerSession);
+    const dbSnapshot = await this.getParticipantSessionSnapshotAtHeight(sessionId, blockHeight);
+    const normalizedDb = this.normalizeComparableParticipantSessionRecord(dbSnapshot);
+    const normalizedLedger = this.normalizeComparableParticipantSessionRecord(ledgerSession);
     const result = this.compareObjects(normalizedDb, normalizedLedger);
     return {
       success: true,
@@ -1692,30 +1692,30 @@ export default class ParticipantIngestService extends Service {
   }
 
   private async handleCreateRootParticipant(msg: MsgCreateRootParticipant & { height?: number }) {
-    let permission: any = null;
+    let participant: any = null;
     try {
       this.logger.info(`🔐 handleCreateRootParticipant called with msg:`, JSON.stringify(msg, null, 2));
       const schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
       this.logger.info(`🔐 Extracted schemaId: ${schemaId}`);
       if (!schemaId) {
         this.logger.error(
-          "CRITICAL: Missing schema_id in MsgCreateRootParticipant, cannot create root permission. Msg keys:", Object.keys(msg)
+          "CRITICAL: Missing schema_id in MsgCreateRootParticipant, cannot create root participant. Msg keys:", Object.keys(msg)
         );
         return;
 
       }
 
-      const creator = requireController(msg, `PERM CREATE_ROOT ${schemaId}`);
+      const creator = requireController(msg, `PP CREATE_ROOT ${schemaId}`);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
       const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
       const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
       const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
       const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
-      const permissionType = extractPermissionType(msg as any, "ECOSYSTEM");
+      const participantType = extractParticipantType(msg as any, "ECOSYSTEM");
 
-      // Calculate expire_soon for the new permission
-      const newPermData = {
-        role: permissionType,
+      // Calculate expire_soon for the new participant
+      const newParticipantData = {
+        role: participantType,
         op_state: "VALIDATION_STATE_UNSPECIFIED",
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
@@ -1724,17 +1724,17 @@ export default class ParticipantIngestService extends Service {
         repaid: null,
       };
       const height = Number((msg as any)?.height) || 0;
-      const expireSoon = await this.calculateExpireSoon(newPermData, new Date(timestamp || new Date()), height);
-      const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+      const expireSoon = await this.calculateExpireSoon(newParticipantData, new Date(timestamp || new Date()), height);
+      const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
       this.logger.info(`[handleCreateRootParticipant] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
-      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.participant_id ?? (msg as any)?.participantId);
       const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
 
       const insertData: any = {
         schema_id: schemaId,
-        role: permissionType,
+        role: participantType,
         op_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
         corporation: creator,
@@ -1761,36 +1761,36 @@ export default class ParticipantIngestService extends Service {
         this.logger.warn(`[handleCreateRootParticipant] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
-      let insertedPermission: any = null;
-      await this.ensurePermV4Columns(knex);
+      let insertedParticipant: any = null;
+      await this.ensureParticipantV4Columns(knex);
       await knex.transaction(async (trx) => {
         const existing = hasValidMsgId
-          ? await trx("permissions").where({ id: msgIdNum }).first()
+          ? await trx("participants").where({ id: msgIdNum }).first()
           : null;
 
         if (existing) {
-          await trx("permissions").where({ id: msgIdNum }).update(insertData);
-          insertedPermission = await trx("permissions").where({ id: msgIdNum }).first();
+          await trx("participants").where({ id: msgIdNum }).update(insertData);
+          insertedParticipant = await trx("participants").where({ id: msgIdNum }).first();
         } else {
           try {
-            const q = trx("permissions").insert(insertData);
+            const q = trx("participants").insert(insertData);
             if (hasValidMsgId) {
-              [insertedPermission] = await q.onConflict("id").merge(insertData).returning("*");
+              [insertedParticipant] = await q.onConflict("id").merge(insertData).returning("*");
             } else {
-              insertedPermission = await insertPermissionsWithSequenceHeal(trx, insertData);
+              insertedParticipant = await insertParticipantsWithSequenceHeal(trx, insertData);
             }
           } catch (insertError: any) {
             if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
               this.logger.warn(
                 `[handleCreateRootParticipant] expire_soon column error detected, clearing cache and retrying without expire_soon`
               );
-              this.permissionsColumnExistsCache = null;
+              this.participantsColumnExistsCache = null;
               delete insertData.expire_soon;
-              const q = trx("permissions").insert(insertData);
+              const q = trx("participants").insert(insertData);
               if (hasValidMsgId) {
-                [insertedPermission] = await q.onConflict("id").merge(insertData).returning("*");
+                [insertedParticipant] = await q.onConflict("id").merge(insertData).returning("*");
               } else {
-                insertedPermission = await insertPermissionsWithSequenceHeal(trx, insertData);
+                insertedParticipant = await insertParticipantsWithSequenceHeal(trx, insertData);
               }
             } else {
               throw insertError;
@@ -1799,60 +1799,60 @@ export default class ParticipantIngestService extends Service {
         }
       });
 
-      if (!insertedPermission) {
+      if (!insertedParticipant) {
         this.logger.error(
-          "CRITICAL: Failed to create root permission - insert returned no record"
+          "CRITICAL: Failed to create root participant - insert returned no record"
         );
         return;
 
       }
 
-      permission = insertedPermission;
+      participant = insertedParticipant;
 
       try {
         await knex.transaction(async (trx) => {
-          await this.updateParticipants(trx, Number(permission.id));
+          await this.updateParticipants(trx, Number(participant.id));
         });
       } catch (participantsErr: any) {
-        this.logger.warn(`Failed to update participants for root permission ${permission.id}:`, participantsErr?.message || participantsErr);
+        this.logger.warn(`Failed to update participants for root participant ${participant.id}:`, participantsErr?.message || participantsErr);
       }
 
       try {
-        await recordPermissionHistory(
+        await recordParticipantHistory(
           knex,
-          permission,
-          "CREATE_ROOT_PERMISSION",
+          participant,
+          "CREATE_ROOT_PARTICIPANT",
           height
         );
       } catch (historyErr: any) {
         this.logger.error(
-          "CRITICAL: Failed to record permission history for root permission:",
+          "CRITICAL: Failed to record participant history for root participant:",
           historyErr
         );
 
       }
 
-      await this.refreshTrustRegistryStatsBySchemaId(schemaId, height);
+      await this.refreshEcosystemStatsBySchemaId(schemaId, height);
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleCreateRootParticipant:", err);
-      console.error("FATAL PERM CREATE ROOT ERROR:", err);
+      console.error("FATAL PP CREATE ROOT ERROR:", err);
 
     }
   }
 
-  private async handleCreatePermission(msg: MsgSelfCreateParticipant & { height?: number }) {
+  private async handleCreateParticipant(msg: MsgSelfCreateParticipant & { height?: number }) {
     try {
-      this.logger.info(`🔐 handleCreatePermission called with msg:`, JSON.stringify(msg, null, 2));
+      this.logger.info(`🔐 handleCreateParticipant called with msg:`, JSON.stringify(msg, null, 2));
       let schemaId = (msg as any).schemaId ?? (msg as any).schema_id ?? null;
-      const explicitValidatorPermId =
+      const explicitValidatorParticipantId =
         (msg as any).validatorParticipantId ?? (msg as any).validator_participant_id ??
         (msg as any).validatorParticipantId ?? (msg as any).validator_participant_id ?? null;
-      let validatorPermFromMessage: any = null;
-      if (!schemaId && explicitValidatorPermId) {
-        validatorPermFromMessage = await knex("permissions")
-          .where({ id: explicitValidatorPermId })
+      let validatorParticipantFromMessage: any = null;
+      if (!schemaId && explicitValidatorParticipantId) {
+        validatorParticipantFromMessage = await knex("participants")
+          .where({ id: explicitValidatorParticipantId })
           .first();
-        schemaId = validatorPermFromMessage?.schema_id ?? null;
+        schemaId = validatorParticipantFromMessage?.schema_id ?? null;
       }
       this.logger.info(`🔐 Extracted schemaId: ${schemaId}`);
       if (!schemaId) {
@@ -1863,19 +1863,19 @@ export default class ParticipantIngestService extends Service {
 
       }
 
-      const role = extractPermissionType(msg as any, (msg as any).type);
+      const role = extractParticipantType(msg as any, (msg as any).type);
 
-      const ecosystemPerm = await knex("permissions")
+      const ecosystemParticipant = await knex("participants")
         .where({ schema_id: schemaId, role: "ECOSYSTEM" })
         .first();
 
-      if (!ecosystemPerm) {
+      if (!ecosystemParticipant) {
         this.logger.warn(
-          `No root ECOSYSTEM permission found for schema_id=${schemaId}, cannot create ${role}`
+          `No root ECOSYSTEM participant found for schema_id=${schemaId}, cannot create ${role}`
         );
       }
 
-      const creator = requireController(msg, `PERM CREATE ${schemaId}`);
+      const creator = requireController(msg, `PP CREATE ${schemaId}`);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
       const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
       const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
@@ -1883,8 +1883,8 @@ export default class ParticipantIngestService extends Service {
       const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
       const height = Number((msg as any)?.height) || 0;
 
-      // Calculate expire_soon for the new permission
-      const newPermData = {
+      // Calculate expire_soon for the new participant
+      const newParticipantData = {
         role,
         op_state: "VALIDATION_STATE_UNSPECIFIED",
         effective_from: effectiveFrom,
@@ -1893,12 +1893,12 @@ export default class ParticipantIngestService extends Service {
         slashed: null,
         repaid: null,
       };
-      const expireSoon = await this.calculateExpireSoon(newPermData, new Date(timestamp || new Date()), height);
-      const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+      const expireSoon = await this.calculateExpireSoon(newParticipantData, new Date(timestamp || new Date()), height);
+      const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
-      this.logger.info(`[handleCreatePermission] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
+      this.logger.info(`[handleCreateParticipant] expire_soon calculated: ${expireSoon}, column exists: ${hasExpireSoonColumn}`);
 
-      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.participant_id ?? (msg as any)?.participantId);
       const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
 
       const insertData: any = {
@@ -1913,7 +1913,7 @@ export default class ParticipantIngestService extends Service {
         validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
         issuance_fees: Number(pickMessageValue(msg as any, "issuance_fees", "issuanceFees") ?? 0),
         deposit: 0,
-        validator_participant_id: explicitValidatorPermId ?? ecosystemPerm?.id ?? null,
+        validator_participant_id: explicitValidatorParticipantId ?? ecosystemParticipant?.id ?? null,
         vs_operator: pickMessageValue(msg as any, "vs_operator", "vsOperator") ?? null,
         vs_operator_authz_enabled: pickMessageBool(msg as any, "vs_operator_authz_enabled", "vsOperatorAuthzEnabled", false),
         vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
@@ -1939,41 +1939,41 @@ export default class ParticipantIngestService extends Service {
 
       if (hasExpireSoonColumn) {
         insertData.expire_soon = expireSoon;
-        this.logger.info(`[handleCreatePermission] Adding expire_soon=${expireSoon} to insert data`);
+        this.logger.info(`[handleCreateParticipant] Adding expire_soon=${expireSoon} to insert data`);
       } else {
-        this.logger.warn(`[handleCreatePermission] expire_soon column does not exist, skipping. Please run database migrations.`);
+        this.logger.warn(`[handleCreateParticipant] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
-      let permission: any = null;
-      await this.ensurePermV4Columns(knex);
+      let participant: any = null;
+      await this.ensureParticipantV4Columns(knex);
       await knex.transaction(async (trx) => {
         const existing = hasValidMsgId
-          ? await trx("permissions").where({ id: msgIdNum }).first()
+          ? await trx("participants").where({ id: msgIdNum }).first()
           : null;
 
         if (existing) {
-          await trx("permissions").where({ id: msgIdNum }).update(insertData);
-          permission = await trx("permissions").where({ id: msgIdNum }).first();
+          await trx("participants").where({ id: msgIdNum }).update(insertData);
+          participant = await trx("participants").where({ id: msgIdNum }).first();
         } else {
           try {
-            const q = trx("permissions").insert(insertData);
+            const q = trx("participants").insert(insertData);
             if (hasValidMsgId) {
-              [permission] = await q.onConflict("id").merge(insertData).returning("*");
+              [participant] = await q.onConflict("id").merge(insertData).returning("*");
             } else {
-              permission = await insertPermissionsWithSequenceHeal(trx, insertData);
+              participant = await insertParticipantsWithSequenceHeal(trx, insertData);
             }
           } catch (insertError: any) {
             if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
               this.logger.warn(
-                `[handleCreatePermission] expire_soon column error detected, clearing cache and retrying without expire_soon`
+                `[handleCreateParticipant] expire_soon column error detected, clearing cache and retrying without expire_soon`
               );
-              this.permissionsColumnExistsCache = null;
+              this.participantsColumnExistsCache = null;
               delete insertData.expire_soon;
-              const q = trx("permissions").insert(insertData);
+              const q = trx("participants").insert(insertData);
               if (hasValidMsgId) {
-                [permission] = await q.onConflict("id").merge(insertData).returning("*");
+                [participant] = await q.onConflict("id").merge(insertData).returning("*");
               } else {
-                permission = await insertPermissionsWithSequenceHeal(trx, insertData);
+                participant = await insertParticipantsWithSequenceHeal(trx, insertData);
               }
             } else {
               throw insertError;
@@ -1982,9 +1982,9 @@ export default class ParticipantIngestService extends Service {
         }
       });
 
-      if (!permission) {
+      if (!participant) {
         this.logger.error(
-          "CRITICAL: Failed to create permission - insert returned no record"
+          "CRITICAL: Failed to create participant - insert returned no record"
         );
         return;
 
@@ -1993,31 +1993,31 @@ export default class ParticipantIngestService extends Service {
 
       try {
         await knex.transaction(async (trx) => {
-          await this.updateParticipants(trx, Number(permission.id));
+          await this.updateParticipants(trx, Number(participant.id));
         });
       } catch (participantsErr: any) {
-        this.logger.warn(`Failed to update participants for permission ${permission.id}:`, participantsErr?.message || participantsErr);
+        this.logger.warn(`Failed to update participants for participant ${participant.id}:`, participantsErr?.message || participantsErr);
       }
 
       try {
-        await recordPermissionHistory(
+        await recordParticipantHistory(
           knex,
-          permission,
-          "CREATE_PERMISSION",
+          participant,
+          "CREATE_PARTICIPANT",
           height
         );
       } catch (historyErr: any) {
         this.logger.error(
-          "CRITICAL: Failed to record permission history:",
+          "CRITICAL: Failed to record participant history:",
           historyErr
         );
 
       }
 
-      await this.refreshTrustRegistryStatsBySchemaId(permission.schema_id, height);
+      await this.refreshEcosystemStatsBySchemaId(participant.schema_id, height);
     } catch (err: any) {
-      this.logger.error("CRITICAL: Error in handleCreatePermission:", err);
-      console.error("FATAL PERM CREATE ERROR:", err);
+      this.logger.error("CRITICAL: Error in handleCreateParticipant:", err);
+      console.error("FATAL PP CREATE ERROR:", err);
 
     }
   }
@@ -2030,61 +2030,61 @@ export default class ParticipantIngestService extends Service {
       }
 
       const now = formatTimestamp(msg.timestamp);
-      const applicantPerm = await knex("permissions")
+      const applicantParticipant = await knex("participants")
         .where({ id: msg.id })
         .first();
-      if (!applicantPerm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
+      if (!applicantParticipant) {
+        this.logger.warn(`Participant ${msg.id} not found`);
+        return { success: false, reason: "Participant not found" };
       }
 
       const caller = extractController(msg as unknown as Record<string, unknown>);
 
       let authorized = false;
-      if (applicantPerm.validator_participant_id) {
-        let validatorParticipantId = applicantPerm.validator_participant_id;
+      if (applicantParticipant.validator_participant_id) {
+        let validatorParticipantId = applicantParticipant.validator_participant_id;
         while (validatorParticipantId) {
-          const validatorPerm = await knex("permissions")
+          const validatorParticipant = await knex("participants")
             .where({ id: validatorParticipantId })
             .first();
-          if (!validatorPerm) break;
-          if (validatorPerm.corporation === caller) {
+          if (!validatorParticipant) break;
+          if (validatorParticipant.corporation === caller) {
             authorized = true;
             break;
           }
-          validatorParticipantId = validatorPerm.validator_participant_id;
+          validatorParticipantId = validatorParticipant.validator_participant_id;
         }
       }
 
       if (!authorized) {
         const cs = await knex("credential_schemas")
-          .where({ id: applicantPerm.schema_id })
+          .where({ id: applicantParticipant.schema_id })
           .first();
         if (cs) {
-          const tr = await knex("trust_registry")
+          const ec = await knex("ecosystem")
             .where({ id: cs.ecosystem_id })
             .first();
-          if (tr?.corporation === caller) {
+          if (ec?.corporation === caller) {
             authorized = true;
           }
         }
       }
 
       if (!authorized) {
-        if (applicantPerm.corporation === caller) {
+        if (applicantParticipant.corporation === caller) {
           authorized = true;
         }
       }
 
       if (!authorized) {
-        this.logger.warn("Caller is not authorized to revoke this permission");
+        this.logger.warn("Caller is not authorized to revoke this participant");
         return { success: false, reason: "Unauthorized caller" };
       }
 
       const height = Number((msg as any)?.height) || 0;
       await knex.transaction(async (trx) => {
-        // Revoked permissions are not active, so expire_soon should be null
-        const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+        // Revoked participants are not active, so expire_soon should be null
+        const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
         const updateData: any = {
           revoked: now,
@@ -2095,14 +2095,14 @@ export default class ParticipantIngestService extends Service {
           updateData.expire_soon = null;
         }
 
-        const [updated] = await trx("permissions")
+        const [updated] = await trx("participants")
           .where({ id: msg.id })
           .update(updateData)
           .returning("*");
 
         if (!updated) {
           this.logger.error(
-            `CRITICAL: Failed to revoke permission ${msg.id} - update returned no record`
+            `CRITICAL: Failed to revoke participant ${msg.id} - update returned no record`
           );
 
         }
@@ -2110,52 +2110,52 @@ export default class ParticipantIngestService extends Service {
         try {
           await this.updateParticipants(trx, Number(msg.id));
         } catch (participantsErr: any) {
-          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+          this.logger.warn(`Failed to update participants for participant ${msg.id}:`, participantsErr?.message || participantsErr);
         }
 
         try {
-          await recordPermissionHistory(
+          await recordParticipantHistory(
             trx,
             updated,
-            "REVOKE_PERMISSION",
+            "REVOKE_PARTICIPANT",
             height,
-            applicantPerm
+            applicantParticipant
           );
         } catch (historyErr: any) {
           this.logger.error(
-            "CRITICAL: Failed to record permission history for revoke:",
+            "CRITICAL: Failed to record participant history for revoke:",
             historyErr
           );
 
         }
       });
 
-      await this.refreshTrustRegistryStatsBySchemaId(applicantPerm?.schema_id, height);
+      await this.refreshEcosystemStatsBySchemaId(applicantParticipant?.schema_id, height);
 
       this.logger.info(
-        `Permission ${msg.id} successfully revoked by ${caller}`
+        `Participant ${msg.id} successfully revoked by ${caller}`
       );
       return { success: true };
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleRevokeParticipant:", err);
-      console.error("FATAL PERM REVOKE ERROR:", err);
-      return { success: false, reason: "Internal error revoking permission" };
+      console.error("FATAL PP REVOKE ERROR:", err);
+      return { success: false, reason: "Internal error revoking participant" };
     }
   }
 
   private async handleStartParticipantOP(msg: MsgStartParticipantOP & { height?: number }) {
     try {
-      const typeStr = extractPermissionType(msg as any, getPermissionTypeString(msg));
+      const typeStr = extractParticipantType(msg as any, getParticipantTypeString(msg));
       const now = formatTimestamp(msg.timestamp);
       const validatorParticipantId = (msg as any).validatorParticipantId ?? (msg as any).validator_participant_id;
 
-      const perm = await knex("permissions")
+      const participant = await knex("participants")
         .where({ id: validatorParticipantId })
         .first();
 
-      if (!perm) {
+      if (!participant) {
         this.logger.warn(
-          `Permission ${validatorParticipantId} not found, skipping VP start`
+          `Participant ${validatorParticipantId} not found, skipping OP start`
         );
         return;
       }
@@ -2172,15 +2172,15 @@ export default class ParticipantIngestService extends Service {
 
       if (typeStr !== "HOLDER") {
         const trustUnitPrice = Number(
-          globalVariables?.tr?.trust_unit_price ?? 0
+          globalVariables?.ec?.trust_unit_price ?? 0
         );
         const trustDepositRate = Number(
           globalVariables?.td?.trust_deposit_rate ?? 0
         );
 
         validationFeesDenom =
-          perm?.validation_fees && trustUnitPrice
-            ? Number(perm.validation_fees) * trustUnitPrice
+          participant?.validation_fees && trustUnitPrice
+            ? Number(participant.validation_fees) * trustUnitPrice
             : 0;
 
         validationTDDenom =
@@ -2189,15 +2189,15 @@ export default class ParticipantIngestService extends Service {
             : 0;
       }
 
-      const creator = requireController(msg, `PERM START_VP ${validatorParticipantId}`);
+      const creator = requireController(msg, `PP START_OP ${validatorParticipantId}`);
       const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
       const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
       const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
       const effectiveUntil = effectiveUntilRaw ? formatTimestamp(effectiveUntilRaw) : null;
       const height = Number((msg as any)?.height) || 0;
 
-      // Calculate expire_soon for the new permission (PENDING state means not active, so null)
-      const newPermData = {
+      // Calculate expire_soon for the new participant (PENDING state means not active, so null)
+      const newParticipantData = {
         role: typeStr,
         op_state: "PENDING",
         effective_from: effectiveFrom,
@@ -2206,14 +2206,14 @@ export default class ParticipantIngestService extends Service {
         slashed: null,
         repaid: null,
       };
-      const expireSoon = await this.calculateExpireSoon(newPermData, new Date(now), height);
-      const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+      const expireSoon = await this.calculateExpireSoon(newParticipantData, new Date(now), height);
+      const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
-      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.permission_id ?? (msg as any)?.permissionId);
+      const msgIdNum = Number((msg as any)?.id ?? (msg as any)?.participant_id ?? (msg as any)?.participantId);
       const hasValidMsgId = Number.isInteger(msgIdNum) && msgIdNum > 0;
 
       const Entry: any = {
-        schema_id: perm?.schema_id,
+        schema_id: participant?.schema_id,
         role: typeStr,
         did: msg.did,
         corporation: creator,
@@ -2260,93 +2260,93 @@ export default class ParticipantIngestService extends Service {
         this.logger.warn(`[handleStartParticipantOP] expire_soon column does not exist, skipping. Please run database migrations.`);
       }
 
-      await this.ensurePermV4Columns(knex);
+      await this.ensureParticipantV4Columns(knex);
 
-      let newPermission: any = null;
+      let newParticipant: any = null;
       await knex.transaction(async (trx) => {
-        const existing = hasValidMsgId ? await trx("permissions").where({ id: msgIdNum }).first() : null;
+        const existing = hasValidMsgId ? await trx("participants").where({ id: msgIdNum }).first() : null;
 
         if (existing) {
-          await trx("permissions").where({ id: msgIdNum }).update(Entry);
-          newPermission = await trx("permissions").where({ id: msgIdNum }).first();
+          await trx("participants").where({ id: msgIdNum }).update(Entry);
+          newParticipant = await trx("participants").where({ id: msgIdNum }).first();
           return;
         }
 
         try {
-          [newPermission] = await trx("permissions").insert(Entry).returning("*");
+          [newParticipant] = await trx("participants").insert(Entry).returning("*");
         } catch (insertError: any) {
           if (insertError?.code === "42703" && insertError?.message?.includes("expire_soon")) {
             this.logger.warn(
               `[handleStartParticipantOP] expire_soon column error detected, clearing cache and retrying without expire_soon`
             );
-            this.permissionsColumnExistsCache = null;
+            this.participantsColumnExistsCache = null;
             delete Entry.expire_soon;
-            [newPermission] = await trx("permissions").insert(Entry).returning("*");
+            [newParticipant] = await trx("participants").insert(Entry).returning("*");
           } else {
             throw insertError;
           }
         }
       });
 
-      if (!newPermission) {
+      if (!newParticipant) {
         this.logger.error(
-          "CRITICAL: Failed to create permission via VP start - insert returned no record"
+          "CRITICAL: Failed to create participant via OP start - insert returned no record"
         );
 
       }
 
       this.logger.info(
-        `Inserted new VP entry handleStartParticipantOP: ${JSON.stringify(
+        `Inserted new OP entry handleStartParticipantOP: ${JSON.stringify(
           Entry
         )}`
       );
 
       try {
         await knex.transaction(async (trx) => {
-          await this.updateWeight(trx, Number(newPermission.id));
-          await this.updateParticipants(trx, Number(newPermission.id));
+          await this.updateWeight(trx, Number(newParticipant.id));
+          await this.updateParticipants(trx, Number(newParticipant.id));
         });
       } catch (updateErr: any) {
-        this.logger.warn(`Failed to update weight/participants for new permission ${newPermission.id}:`, updateErr?.message || updateErr);
+        this.logger.warn(`Failed to update weight/participants for new participant ${newParticipant.id}:`, updateErr?.message || updateErr);
       }
 
       try {
-        await recordPermissionHistory(
+        await recordParticipantHistory(
           knex,
-          newPermission,
-          "START_PERMISSION_VP",
+          newParticipant,
+          "START_PARTICIPANT_OP",
           height
         );
       } catch (historyErr: any) {
         this.logger.error(
-          "CRITICAL: Failed to record permission history for VP start:",
+          "CRITICAL: Failed to record participant history for OP start:",
           historyErr
         );
 
       }
 
-      await this.refreshTrustRegistryStatsBySchemaId(newPermission.schema_id, height);
+      await this.refreshEcosystemStatsBySchemaId(newParticipant.schema_id, height);
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleStartParticipantOP:", err);
-      console.error("FATAL PERM START VP ERROR:", err);
+      console.error("FATAL PP START OP ERROR:", err);
       // No structured response expected; handler returns void
     }
   }
 
-  public async computeVpExp(perm: any, knex: any): Promise<string | null> {
+  public async computeOpExp(participant: any, knex: any): Promise<string | null> {
     const cs = await knex("credential_schemas")
-      .where({ id: perm.schema_id })
+      .where({ id: participant.schema_id })
       .first();
 
     if (!cs) {
       const schemaExists = await knex("credential_schemas")
-        .where({ id: perm.schema_id })
+        .where({ id: participant.schema_id })
         .first();
 
       if (!schemaExists) {
-        this.logger.warn(`CredentialSchema ${perm.schema_id} not found for permission ${perm.id} - schema may not exist yet, queuing for retry`);
+        this.logger.warn(`CredentialSchema ${participant.schema_id} not found for participant ${participant.id} - schema may not exist yet, queuing for retry`);
       } else {
-        this.logger.warn(`CredentialSchema ${perm.schema_id} exists but not visible in current transaction for permission ${perm.id} - queuing for retry`);
+        this.logger.warn(`CredentialSchema ${participant.schema_id} exists but not visible in current transaction for participant ${participant.id} - queuing for retry`);
       }
       return null;
     }
@@ -2354,7 +2354,7 @@ export default class ParticipantIngestService extends Service {
     let validityPeriodField: number | null = null;
     let validityPeriodFieldName = "";
 
-    switch (perm.role) {
+    switch (participant.role) {
       case "ISSUER_GRANTOR":
         validityPeriodField = cs.issuer_grantor_validation_validity_period;
         validityPeriodFieldName = "issuer_grantor_validation_validity_period";
@@ -2376,14 +2376,14 @@ export default class ParticipantIngestService extends Service {
         validityPeriodFieldName = "holder_validation_validity_period";
         break;
       default:
-        this.logger.warn(`Unknown permission type '${perm.role}' for permission ${perm.id} - cannot compute op_exp`);
+        this.logger.warn(`Unknown participant type '${participant.role}' for participant ${participant.id} - cannot compute op_exp`);
         return null;
     }
 
     if (validityPeriodField === null || validityPeriodField === undefined || validityPeriodField === 0) {
       this.logger.info(
-        `CredentialSchema ${perm.schema_id} validity period field '${validityPeriodFieldName}' is null/undefined/zero ` +
-        `for permission ${perm.id} (type: ${perm.role}) - returning null op_exp per spec`
+        `CredentialSchema ${participant.schema_id} validity period field '${validityPeriodFieldName}' is null/undefined/zero ` +
+        `for participant ${participant.id} (type: ${participant.role}) - returning null op_exp per spec`
       );
       return null;
     }
@@ -2391,8 +2391,8 @@ export default class ParticipantIngestService extends Service {
     const validitySeconds = Number(validityPeriodField);
     if (Number.isNaN(validitySeconds)) {
       this.logger.warn(
-        `CredentialSchema ${perm.schema_id} has invalid validity period value '${validityPeriodField}' ` +
-        `for field '${validityPeriodFieldName}' (permission ${perm.id}, type: ${perm.role})`
+        `CredentialSchema ${participant.schema_id} has invalid validity period value '${validityPeriodField}' ` +
+        `for field '${validityPeriodFieldName}' (participant ${participant.id}, type: ${participant.role})`
       );
       return null;
     }
@@ -2401,11 +2401,11 @@ export default class ParticipantIngestService extends Service {
 
     let opExp: Date;
 
-    if (!perm.op_exp) {
+    if (!participant.op_exp) {
       opExp = new Date(now.getTime() + validitySeconds * 1000);
     } else {
       opExp = new Date(
-        new Date(perm.op_exp).getTime() + validitySeconds * 1000
+        new Date(participant.op_exp).getTime() + validitySeconds * 1000
       );
     }
 
@@ -2419,20 +2419,20 @@ export default class ParticipantIngestService extends Service {
       const now = formatTimestamp(msg.timestamp);
       const height = Number((msg as any)?.height) || 0;
 
-      this.logger.info(`[SetVPToValidated] Processing permission id=${msg.id}, height=${height}`);
+      this.logger.info(`[SetOPToValidated] Processing participant id=${msg.id}, height=${height}`);
 
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-      if (!perm) {
-        this.logger.error(`[SetVPToValidated] Permission ${msg.id} not found in database`);
-        return { success: false, reason: `Permission ${msg.id} not found` };
+      const participant = await knex("participants").where({ id: msg.id }).first();
+      if (!participant) {
+        this.logger.error(`[SetOPToValidated] Participant ${msg.id} not found in database`);
+        return { success: false, reason: `Participant ${msg.id} not found` };
       }
 
-      if (perm.op_state !== "PENDING") {
-        this.logger.warn(`[SetVPToValidated] Permission ${msg.id} is not PENDING (current state: ${perm.op_state})`);
-        return { success: false, reason: `Permission not pending, current state: ${perm.op_state}` };
+      if (participant.op_state !== "PENDING") {
+        this.logger.warn(`[SetOPToValidated] Participant ${msg.id} is not PENDING (current state: ${participant.op_state})`);
+        return { success: false, reason: `Participant not pending, current state: ${participant.op_state}` };
       }
 
-      const isFirstValidation = !perm.effective_from;
+      const isFirstValidation = !participant.effective_from;
 
       if (
         msg.validation_fees < 0 ||
@@ -2444,36 +2444,36 @@ export default class ParticipantIngestService extends Service {
       }
 
       const schemaExists = await knex("credential_schemas")
-        .where({ id: perm.schema_id })
+        .where({ id: participant.schema_id })
         .first();
 
       if (!schemaExists) {
-        await this.queuePermissionForRetry(msg, "SCHEMA_NOT_FOUND");
-        this.logger.info(`Permission ${msg.id} queued for retry - waiting for CredentialSchema ${perm.schema_id}`);
-        return { success: true, message: "Permission queued for retry - schema not ready" };
+        await this.queueParticipantForRetry(msg, "SCHEMA_NOT_FOUND");
+        this.logger.info(`Participant ${msg.id} queued for retry - waiting for CredentialSchema ${participant.schema_id}`);
+        return { success: true, message: "Participant queued for retry - schema not ready" };
       }
 
-      const opExp = await this.computeVpExp(perm, knex);
+      const opExp = await this.computeOpExp(participant, knex);
       if (opExp === null) {
         const validityPeriodFieldName =
-          perm.role === "ISSUER_GRANTOR" ? "issuer_grantor_validation_validity_period" :
-            perm.role === "VERIFIER_GRANTOR" ? "verifier_grantor_validation_validity_period" :
-              perm.role === "ISSUER" ? "issuer_validation_validity_period" :
-                perm.role === "VERIFIER" ? "verifier_validation_validity_period" :
-                  perm.role === "HOLDER" ? "holder_validation_validity_period" : "unknown";
+          participant.role === "ISSUER_GRANTOR" ? "issuer_grantor_validation_validity_period" :
+            participant.role === "VERIFIER_GRANTOR" ? "verifier_grantor_validation_validity_period" :
+              participant.role === "ISSUER" ? "issuer_validation_validity_period" :
+                participant.role === "VERIFIER" ? "verifier_validation_validity_period" :
+                  participant.role === "HOLDER" ? "holder_validation_validity_period" : "unknown";
         
         const validityPeriodValue = schemaExists[validityPeriodFieldName];
         if (validityPeriodValue !== undefined && validityPeriodValue !== null) {
           this.logger.info(
-            `Permission ${msg.id}: CredentialSchema ${perm.schema_id} has validity period field ` +
+            `Participant ${msg.id}: CredentialSchema ${participant.schema_id} has validity period field ` +
             `'${validityPeriodFieldName}' = ${validityPeriodValue} (0 means no expiration per spec). ` +
             `Proceeding with op_exp = null.`
           );
         } else {
-          await this.queuePermissionForRetry(msg, "VALIDITY_PERIOD_MISSING");
+          await this.queueParticipantForRetry(msg, "VALIDITY_PERIOD_MISSING");
           this.logger.error(
-            `Permission ${msg.id} queued for retry - CredentialSchema ${perm.schema_id} exists but ` +
-            `validity period field '${validityPeriodFieldName}' is missing/null for permission type '${perm.role}'. ` +
+            `Participant ${msg.id} queued for retry - CredentialSchema ${participant.schema_id} exists but ` +
+            `validity period field '${validityPeriodFieldName}' is missing/null for participant type '${participant.role}'. ` +
             `This indicates a data integrity issue. Schema data: ${JSON.stringify({
               id: schemaExists.id,
               issuer_grantor_validation_validity_period: schemaExists.issuer_grantor_validation_validity_period,
@@ -2483,12 +2483,12 @@ export default class ParticipantIngestService extends Service {
               holder_validation_validity_period: schemaExists.holder_validation_validity_period,
             })}`
           );
-          return { success: true, message: "Permission queued for retry - validity period missing" };
+          return { success: true, message: "Participant queued for retry - validity period missing" };
         }
       }
 
       const effectiveUntil =
-        msg.effective_until ?? perm.effective_until ?? opExp ?? null;
+        msg.effective_until ?? participant.effective_until ?? opExp ?? null;
 
       if (
         effectiveUntil &&
@@ -2501,26 +2501,26 @@ export default class ParticipantIngestService extends Service {
         return { success: false, reason: "effective_until exceeds op_exp" };
       }
 
-      const currentVpValidatorDeposit = Number(perm.op_validator_deposit || 0);
-      const opCurrentDeposit = Number(perm.op_current_deposit || 0);
-      const newVpValidatorDeposit = currentVpValidatorDeposit + opCurrentDeposit;
+      const currentOpValidatorDeposit = Number(participant.op_validator_deposit || 0);
+      const opCurrentDeposit = Number(participant.op_current_deposit || 0);
+      const newOpValidatorDeposit = currentOpValidatorDeposit + opCurrentDeposit;
 
-      const updatedPermData = {
-        ...perm,
+      const updatedParticipantData = {
+        ...participant,
         op_state: "VALIDATED",
         effective_until: effectiveUntil,
-        effective_from: isFirstValidation ? now : perm.effective_from,
+        effective_from: isFirstValidation ? now : participant.effective_from,
       };
-      const expireSoon = await this.calculateExpireSoon(updatedPermData, new Date(now), height);
-      const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+      const expireSoon = await this.calculateExpireSoon(updatedParticipantData, new Date(now), height);
+      const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
       const entry: any = {
         op_state: "VALIDATED",
         op_last_state_change: now,
         op_current_fees: 0,
         op_current_deposit: 0,
-        op_validator_deposit: Number(newVpValidatorDeposit),
-        op_summary_digest: msg.op_summary_digest ?? perm.op_summary_digest ?? null,
+        op_validator_deposit: Number(newOpValidatorDeposit),
+        op_summary_digest: msg.op_summary_digest ?? participant.op_summary_digest ?? null,
         op_exp: opExp,
         effective_until: effectiveUntil,
         modified: now,
@@ -2537,25 +2537,25 @@ export default class ParticipantIngestService extends Service {
         entry.effective_from = now;
         if ((msg as any).issuance_fee_discount !== undefined) {
           entry.issuance_fee_discount = Number((msg as any).issuance_fee_discount ?? 0);
-        } else if (perm.issuance_fee_discount != null) {
-          entry.issuance_fee_discount = Number(perm.issuance_fee_discount);
+        } else if (participant.issuance_fee_discount != null) {
+          entry.issuance_fee_discount = Number(participant.issuance_fee_discount);
         }
         if ((msg as any).verification_fee_discount !== undefined) {
           entry.verification_fee_discount = Number((msg as any).verification_fee_discount ?? 0);
-        } else if (perm.verification_fee_discount != null) {
-          entry.verification_fee_discount = Number(perm.verification_fee_discount);
+        } else if (participant.verification_fee_discount != null) {
+          entry.verification_fee_discount = Number(participant.verification_fee_discount);
         }
 
         this.logger.info(
-          `[SetVPToValidated] First validation: adding op_current_deposit ${opCurrentDeposit} to op_validator_deposit (was ${currentVpValidatorDeposit}, now ${newVpValidatorDeposit}) for permission ${msg.id}`
+          `[SetOPToValidated] First validation: adding op_current_deposit ${opCurrentDeposit} to op_validator_deposit (was ${currentOpValidatorDeposit}, now ${newOpValidatorDeposit}) for participant ${msg.id}`
         );
       } else {
         const feesChanged =
           (msg.validation_fees &&
-            msg.validation_fees !== perm.validation_fees) ||
-          (msg.issuance_fees && msg.issuance_fees !== perm.issuance_fees) ||
+            msg.validation_fees !== participant.validation_fees) ||
+          (msg.issuance_fees && msg.issuance_fees !== participant.issuance_fees) ||
           (msg.verification_fees &&
-            msg.verification_fees !== perm.verification_fees);
+            msg.verification_fees !== participant.verification_fees);
 
         if (feesChanged) {
           this.logger.warn("Cannot change fees during renewal");
@@ -2566,88 +2566,88 @@ export default class ParticipantIngestService extends Service {
         }
 
         this.logger.info(
-          `[SetVPToValidated] Renewal: adding op_current_deposit ${opCurrentDeposit} to op_validator_deposit (was ${currentVpValidatorDeposit}, now ${newVpValidatorDeposit}) for permission ${msg.id}`
+          `[SetOPToValidated] Renewal: adding op_current_deposit ${opCurrentDeposit} to op_validator_deposit (was ${currentOpValidatorDeposit}, now ${newOpValidatorDeposit}) for participant ${msg.id}`
         );
       }
 
-      this.logger.info(`[SetVPToValidated] Updating permission ${msg.id} to VALIDATED`);
-      const [updated] = await knex("permissions")
+      this.logger.info(`[SetOPToValidated] Updating participant ${msg.id} to VALIDATED`);
+      const [updated] = await knex("participants")
         .where({ id: msg.id })
         .update(entry)
         .returning("*");
 
       if (!updated) {
         this.logger.error(
-          `[SetVPToValidated] CRITICAL: Failed to update permission ${msg.id} - update returned no record`
+          `[SetOPToValidated] CRITICAL: Failed to update participant ${msg.id} - update returned no record`
         );
-        throw new Error(`Failed to update permission ${msg.id}`);
+        throw new Error(`Failed to update participant ${msg.id}`);
       }
 
-      this.logger.info(`[SetVPToValidated] Permission ${msg.id} updated successfully, op_state=${updated.op_state}`);
+      this.logger.info(`[SetOPToValidated] Participant ${msg.id} updated successfully, op_state=${updated.op_state}`);
       try {
         await knex.transaction(async (trx) => {
           await this.updateParticipants(trx, Number(msg.id));
         });
       } catch (participantsErr: any) {
-        this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+        this.logger.warn(`Failed to update participants for participant ${msg.id}:`, participantsErr?.message || participantsErr);
       }
 
       try {
-        await recordPermissionHistory(
+        await recordParticipantHistory(
           knex,
           updated,
-          "SET_VALIDATE_PERMISSION_VP",
+          "SET_VALIDATE_PARTICIPANT_OP",
           height,
-          perm
+          participant
         );
       } catch (historyErr: any) {
         this.logger.error(
-          "CRITICAL: Failed to record permission history for VP validation:",
+          "CRITICAL: Failed to record participant history for OP validation:",
           historyErr
         );
 
       }
 
-      await this.refreshTrustRegistryStatsBySchemaId(perm.schema_id, height);
+      await this.refreshEcosystemStatsBySchemaId(participant.schema_id, height);
 
-      this.logger.info(`Permission ${msg.id} successfully validated`);
+      this.logger.info(`Participant ${msg.id} successfully validated`);
       return { success: true };
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleSetParticipantOPToValidated:", err);
-      console.error("FATAL PERM VP VALIDATED ERROR:", err);
-      return { success: false, reason: "Internal error validating permission VP" };
+      console.error("FATAL PP OP VALIDATED ERROR:", err);
+      return { success: false, reason: "Internal error validating participant OP" };
     }
   }
 
   private async handleRenewParticipantOP(msg: MsgRenewParticipantOP) {
     try {
       const now = formatTimestamp(msg.timestamp);
-      const applicantPerm = await knex("permissions")
+      const applicantParticipant = await knex("participants")
         .where({ id: msg.id })
         .first();
-      if (!applicantPerm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
+      if (!applicantParticipant) {
+        this.logger.warn(`Participant ${msg.id} not found`);
+        return { success: false, reason: "Participant not found" };
       }
 
       const caller = extractController(msg as unknown as Record<string, unknown>);
       if (
         caller &&
-        applicantPerm.corporation &&
-        caller !== applicantPerm.corporation
+        applicantParticipant.corporation &&
+        caller !== applicantParticipant.corporation
       ) {
-        this.logger.warn(`Caller ${caller} is not the permission corporation`);
+        this.logger.warn(`Caller ${caller} is not the participant corporation`);
         return { success: false, reason: "Caller is not corporation" };
       }
 
-      const validatorPerm = await knex("permissions")
-        .where({ id: applicantPerm.validator_participant_id })
+      const validatorParticipant = await knex("participants")
+        .where({ id: applicantParticipant.validator_participant_id })
         .first();
-      if (!validatorPerm) {
+      if (!validatorParticipant) {
         this.logger.warn(
-          `Validator permission ${applicantPerm.validator_participant_id} not found`
+          `Validator participant ${applicantParticipant.validator_participant_id} not found`
         );
-        return { success: false, reason: "Validator permission not found" };
+        return { success: false, reason: "Validator participant not found" };
       }
 
       const globalVariables = await getGlobalVariables();
@@ -2657,7 +2657,7 @@ export default class ParticipantIngestService extends Service {
         );
       }
 
-      const trustUnitPrice = globalVariables?.tr?.trust_unit_price;
+      const trustUnitPrice = globalVariables?.ec?.trust_unit_price;
       const trustDepositRate = globalVariables?.td?.trust_deposit_rate;
 
       if (trustUnitPrice === undefined || trustDepositRate === undefined) {
@@ -2666,7 +2666,7 @@ export default class ParticipantIngestService extends Service {
       }
 
       const validationFeesInDenom =
-        Number(validatorPerm.validation_fees) * trustUnitPrice;
+        Number(validatorParticipant.validation_fees) * trustUnitPrice;
       const validationTrustDepositInDenom =
         validationFeesInDenom * trustDepositRate;
       if (
@@ -2678,20 +2678,20 @@ export default class ParticipantIngestService extends Service {
       }
       const height = Number((msg as any)?.height) || 0;
       await knex.transaction(async (trx) => {
-        // Calculate expire_soon for renewed permission (PENDING state means not active)
-        const renewedPermData = {
-          ...applicantPerm,
+        // Calculate expire_soon for renewed participant (PENDING state means not active)
+        const renewedParticipantData = {
+          ...applicantParticipant,
           op_state: "PENDING",
         };
-        const expireSoon = await this.calculateExpireSoon(renewedPermData, new Date(now), height);
-        const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+        const expireSoon = await this.calculateExpireSoon(renewedParticipantData, new Date(now), height);
+        const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
         const updateData: any = {
           op_state: "PENDING",
           op_last_state_change: now,
           op_current_fees: Number(validationFeesInDenom),
           op_current_deposit: Number(validationTrustDepositInDenom),
-          deposit: Number(applicantPerm.deposit || 0) + Number(validationTrustDepositInDenom),
+          deposit: Number(applicantParticipant.deposit || 0) + Number(validationTrustDepositInDenom),
           modified: now, 
         };
 
@@ -2699,14 +2699,14 @@ export default class ParticipantIngestService extends Service {
           updateData.expire_soon = expireSoon;
         }
 
-        const [updated] = await trx("permissions")
+        const [updated] = await trx("participants")
           .where({ id: msg.id })
           .update(updateData)
           .returning("*");
 
         if (!updated) {
           this.logger.error(
-            `CRITICAL: Failed to update permission ${msg.id} for VP renewal - update returned no record`
+            `CRITICAL: Failed to update participant ${msg.id} for OP renewal - update returned no record`
           );
 
         }
@@ -2714,38 +2714,38 @@ export default class ParticipantIngestService extends Service {
         try {
           await this.updateWeight(trx, Number(msg.id));
         } catch (weightErr: any) {
-          this.logger.warn(`Failed to update weight for permission ${msg.id} after VP renewal:`, weightErr?.message || weightErr);
+          this.logger.warn(`Failed to update weight for participant ${msg.id} after OP renewal:`, weightErr?.message || weightErr);
         }
 
         try {
           await this.updateParticipants(trx, Number(msg.id));
         } catch (participantsErr: any) {
-          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+          this.logger.warn(`Failed to update participants for participant ${msg.id}:`, participantsErr?.message || participantsErr);
         }
 
         try {
-          await recordPermissionHistory(
+          await recordParticipantHistory(
             trx,
             updated,
-            "RENEW_PERMISSION_VP",
+            "RENEW_PARTICIPANT_OP",
             height,
-            applicantPerm
+            applicantParticipant
           );
         } catch (historyErr: any) {
           this.logger.error(
-            "CRITICAL: Failed to record permission history for VP renewal:",
+            "CRITICAL: Failed to record participant history for OP renewal:",
             historyErr
           );
 
         }
       });
 
-      this.logger.info(`Permission ${msg.id} successfully renewed`);
+      this.logger.info(`Participant ${msg.id} successfully renewed`);
       return { success: true };
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleRenewParticipantOP:", err);
-      console.error("FATAL PERM RENEW VP ERROR:", err);
-      return { success: false, reason: "Internal error renewing permission VP" };
+      console.error("FATAL PP RENEW OP ERROR:", err);
+      return { success: false, reason: "Internal error renewing participant OP" };
     }
   }
 
@@ -2756,39 +2756,39 @@ export default class ParticipantIngestService extends Service {
       const now = formatTimestamp(msg.timestamp);
       const height = Number((msg as any)?.height) || 0;
 
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-      if (!perm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
+      const participant = await knex("participants").where({ id: msg.id }).first();
+      if (!participant) {
+        this.logger.warn(`Participant ${msg.id} not found`);
+        return { success: false, reason: "Participant not found" };
       }
 
-      if (perm.op_state !== "PENDING") {
-        this.logger.warn(`Permission ${msg.id} is not PENDING`);
-        return { success: false, reason: "Permission not pending" };
+      if (participant.op_state !== "PENDING") {
+        this.logger.warn(`Participant ${msg.id} is not PENDING`);
+        return { success: false, reason: "Participant not pending" };
       }
 
       const caller = extractController(msg as unknown as Record<string, unknown>);
-      if (caller && perm.corporation && caller !== perm.corporation) {
-        this.logger.warn(`Creator ${caller} is not permission corporation`);
+      if (caller && participant.corporation && caller !== participant.corporation) {
+        this.logger.warn(`Creator ${caller} is not participant corporation`);
         return { success: false, reason: "Creator is not corporation" };
       }
 
       // v4-draft13 removed TERMINATED; treat "no op_exp" as validated-without-exp for legacy rows.
-      const newVpState = "VALIDATED";
+      const newOpState = "VALIDATED";
 
       const opValidatorDeposit =
-        perm.op_validator_deposit;
+        participant.op_validator_deposit;
 
-      // Calculate expire_soon for the updated permission
-      const updatedPermData = {
-        ...perm,
-        op_state: newVpState,
+      // Calculate expire_soon for the updated participant
+      const updatedParticipantData = {
+        ...participant,
+        op_state: newOpState,
       };
-      const expireSoon = await this.calculateExpireSoon(updatedPermData, new Date(now), height);
-      const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+      const expireSoon = await this.calculateExpireSoon(updatedParticipantData, new Date(now), height);
+      const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
       const updateData: any = {
-        op_state: newVpState,
+        op_state: newOpState,
         op_last_state_change: now,
         op_current_fees: 0,
         op_current_deposit: 0,
@@ -2800,14 +2800,14 @@ export default class ParticipantIngestService extends Service {
         updateData.expire_soon = expireSoon;
       }
 
-      const [updated] = await knex("permissions")
+      const [updated] = await knex("participants")
         .where({ id: msg.id })
         .update(updateData)
         .returning("*");
 
       if (!updated) {
         this.logger.error(
-          `CRITICAL: Failed to update permission ${msg.id} - update returned no record`
+          `CRITICAL: Failed to update participant ${msg.id} - update returned no record`
         );
 
       }
@@ -2817,35 +2817,35 @@ export default class ParticipantIngestService extends Service {
           await this.updateParticipants(trx, Number(msg.id));
         });
       } catch (participantsErr: any) {
-        this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+        this.logger.warn(`Failed to update participants for participant ${msg.id}:`, participantsErr?.message || participantsErr);
       }
 
-      // Record history for the permission update
+      // Record history for the participant update
       try {
-        await recordPermissionHistory(
+        await recordParticipantHistory(
           knex,
           updated,
-          "CANCEL_PERMISSION_VP",
+          "CANCEL_PARTICIPANT_OP",
           height,
-          perm
+          participant
         );
       } catch (historyErr: any) {
         this.logger.error(
-          "CRITICAL: Failed to record permission history for VP cancellation:",
+          "CRITICAL: Failed to record participant history for OP cancellation:",
           historyErr
         );
 
       }
 
       this.logger.info(
-        `Permission ${msg.id} validation cancelled. New state: ${newVpState}`
+        `Participant ${msg.id} validation cancelled. New state: ${newOpState}`
       );
 
       return { success: true };
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleCancelParticipantOPLastRequest:", err);
-      console.error("FATAL PERM CANCEL VP ERROR:", err);
-      return { success: false, reason: "Internal error cancelling permission VP request" };
+      console.error("FATAL PP CANCEL OP ERROR:", err);
+      return { success: false, reason: "Internal error cancelling participant OP request" };
     }
   }
 
@@ -2862,7 +2862,7 @@ export default class ParticipantIngestService extends Service {
       const idNum = Number(msg.id);
       if (!Number.isInteger(idNum) || idNum <= 0) {
         this.logger.warn(`Invalid id: ${msg.id}. Must be uint64`);
-        return { success: false, reason: "Invalid permission ID" };
+        return { success: false, reason: "Invalid participant ID" };
       }
 
       const amountNum = Number(slashAmount);
@@ -2871,13 +2871,13 @@ export default class ParticipantIngestService extends Service {
         return { success: false, reason: "Invalid amount" };
       }
 
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-      if (!perm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
+      const participant = await knex("participants").where({ id: msg.id }).first();
+      if (!participant) {
+        this.logger.warn(`Participant ${msg.id} not found`);
+        return { success: false, reason: "Participant not found" };
       }
 
-      const deposit = Number(perm.deposit || 0);
+      const deposit = Number(participant.deposit || 0);
       if (amountNum > deposit) {
         this.logger.warn(
           `Slash amount ${amountNum} exceeds deposit ${deposit}`
@@ -2888,26 +2888,26 @@ export default class ParticipantIngestService extends Service {
       let isAuthorized = false;
       const caller = extractController(msg as unknown as Record<string, unknown>);
 
-      let validatorPerm = perm;
-      while (validatorPerm && validatorPerm.validator_participant_id) {
-        validatorPerm = await knex("permissions")
-          .where({ id: validatorPerm.validator_participant_id })
+      let validatorParticipant = participant;
+      while (validatorParticipant && validatorParticipant.validator_participant_id) {
+        validatorParticipant = await knex("participants")
+          .where({ id: validatorParticipant.validator_participant_id })
           .first();
-        if (validatorPerm && validatorPerm.corporation === caller) {
+        if (validatorParticipant && validatorParticipant.corporation === caller) {
           isAuthorized = true;
           break;
         }
       }
 
-      if (!isAuthorized && perm.schema_id) {
+      if (!isAuthorized && participant.schema_id) {
         const schema = await knex("credential_schemas")
-          .where({ id: perm.schema_id })
+          .where({ id: participant.schema_id })
           .first();
         if (schema && schema.ecosystem_id) {
-          const tr = await knex("trust_registry")
+          const ec = await knex("ecosystem")
             .where({ id: schema.ecosystem_id })
             .first();
-          if (tr && tr.corporation === caller) {
+          if (ec && ec.corporation === caller) {
             isAuthorized = true;
           }
         }
@@ -2920,77 +2920,77 @@ export default class ParticipantIngestService extends Service {
 
       const now = formatTimestamp(msg.timestamp);
       const height = Number((msg as any)?.height) || 0;
-      const prevSlashed = Number(perm.slashed_deposit || 0);
+      const prevSlashed = Number(participant.slashed_deposit || 0);
 
       // Determine if this is ecosystem or network slash
-      const isEcosystemPermission = perm.role === "ECOSYSTEM";
+      const isEcosystemParticipant = participant.role === "ECOSYSTEM";
       let isEcosystemSlash = false;
       const isNetworkSlash = false;
       let trController: string | null = null;
       let classificationReason = '';
 
-      if (isEcosystemPermission) {
+      if (isEcosystemParticipant) {
         isEcosystemSlash = true;
-        classificationReason = 'ECOSYSTEM permission type';
-        this.logger.info(`[Slash] Permission ${msg.id} is ECOSYSTEM type - marking as ecosystem slash`);
-      } else if (perm.schema_id) {
+        classificationReason = 'ECOSYSTEM participant type';
+        this.logger.info(`[Slash] Participant ${msg.id} is ECOSYSTEM type - marking as ecosystem slash`);
+      } else if (participant.schema_id) {
         const schema = await knex("credential_schemas")
-          .where({ id: perm.schema_id })
+          .where({ id: participant.schema_id })
           .first();
 
         if (!schema) {
-          this.logger.warn(`[Slash] Permission ${msg.id} has schema_id ${perm.schema_id} but schema not found in database`);
-          classificationReason = `Schema ${perm.schema_id} not found`;
+          this.logger.warn(`[Slash] Participant ${msg.id} has schema_id ${participant.schema_id} but schema not found in database`);
+          classificationReason = `Schema ${participant.schema_id} not found`;
         } else if (!schema.ecosystem_id) {
-          this.logger.warn(`[Slash] Permission ${msg.id} schema ${perm.schema_id} has no ecosystem_id`);
-          classificationReason = `Schema ${perm.schema_id} has no ecosystem_id`;
+          this.logger.warn(`[Slash] Participant ${msg.id} schema ${participant.schema_id} has no ecosystem_id`);
+          classificationReason = `Schema ${participant.schema_id} has no ecosystem_id`;
         } else {
-          const tr = await knex("trust_registry")
+          const ec = await knex("ecosystem")
             .where({ id: schema.ecosystem_id })
             .first();
 
-          if (!tr) {
-            this.logger.warn(`[Slash] Permission ${msg.id} schema ${perm.schema_id} references TR ${schema.ecosystem_id} but TR not found in database`);
-            classificationReason = `TR ${schema.ecosystem_id} not found`;
+          if (!ec) {
+            this.logger.warn(`[Slash] Participant ${msg.id} schema ${participant.schema_id} references EC ${schema.ecosystem_id} but EC not found in database`);
+            classificationReason = `EC ${schema.ecosystem_id} not found`;
             trController = null;
           } else {
-            trController = tr.corporation || null;
+            trController = ec.corporation || null;
             if (!trController) {
-              this.logger.warn(`[Slash] Permission ${msg.id} TR ${schema.ecosystem_id} exists but has no corporation field`);
-              classificationReason = `TR ${schema.ecosystem_id} has no corporation`;
-            } else if (tr.corporation === caller) {
+              this.logger.warn(`[Slash] Participant ${msg.id} EC ${schema.ecosystem_id} exists but has no corporation field`);
+              classificationReason = `EC ${schema.ecosystem_id} has no corporation`;
+            } else if (ec.corporation === caller) {
               isEcosystemSlash = true;
-              classificationReason = `Slashed by TR corporation ${caller}`;
-              this.logger.info(`[Slash] Permission ${msg.id} slashed by TR corporation ${caller} - marking as ecosystem slash`);
+              classificationReason = `Slashed by EC corporation ${caller}`;
+              this.logger.info(`[Slash] Participant ${msg.id} slashed by EC corporation ${caller} - marking as ecosystem slash`);
             } else {
-              this.logger.warn(`[Slash] Permission ${msg.id} slashed by ${caller} but TR corporation is ${tr.corporation} - no slash type determined`);
-              classificationReason = `Caller ${caller} != TR corporation ${tr.corporation}`;
+              this.logger.warn(`[Slash] Participant ${msg.id} slashed by ${caller} but EC corporation is ${ec.corporation} - no slash type determined`);
+              classificationReason = `Caller ${caller} != EC corporation ${ec.corporation}`;
             }
           }
         }
       } else {
-        this.logger.warn(`[Slash] Permission ${msg.id} has no schema_id - no slash type determined`);
+        this.logger.warn(`[Slash] Participant ${msg.id} has no schema_id - no slash type determined`);
         classificationReason = 'No schema_id';
       }
 
       if (!isEcosystemSlash && !isNetworkSlash) {
-        this.logger.error(`[Slash] CRITICAL: Could not classify slash for permission ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${perm.schema_id || 'N/A'}, Type: ${perm.role}, Caller: ${caller}, TR Controller: ${trController || 'N/A'}`);
+        this.logger.error(`[Slash] CRITICAL: Could not classify slash for participant ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${participant.schema_id || 'N/A'}, Type: ${participant.role}, Caller: ${caller}, EC Controller: ${trController || 'N/A'}`);
       }
 
       await knex.transaction(async (trx) => {
-        const currentDeposit = BigInt(perm.deposit || "0");
+        const currentDeposit = BigInt(participant.deposit || "0");
         const newDeposit = currentDeposit > BigInt(amountNum)
           ? currentDeposit - BigInt(amountNum)
           : BigInt(0);
 
-        // Calculate expire_soon for slashed permission (slashed without repaid = inactive)
-        const slashedPermData = {
-          ...perm,
+        // Calculate expire_soon for slashed participant (slashed without repaid = inactive)
+        const slashedParticipantData = {
+          ...participant,
           slashed: now,
           repaid: null, // Not repaid yet
         };
-        const expireSoon = await this.calculateExpireSoon(slashedPermData, new Date(now), height);
-        const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+        const expireSoon = await this.calculateExpireSoon(slashedParticipantData, new Date(now), height);
+        const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
         const updateData: any = {
           slashed: now,
@@ -3003,19 +3003,19 @@ export default class ParticipantIngestService extends Service {
           updateData.expire_soon = expireSoon;
         }
 
-        const [updated] = await trx("permissions")
+        const [updated] = await trx("participants")
           .where({ id: msg.id })
           .update(updateData)
           .returning("*");
 
         if (!updated) {
           this.logger.error(
-            `CRITICAL: Failed to slash permission ${msg.id} - update returned no record`
+            `CRITICAL: Failed to slash participant ${msg.id} - update returned no record`
           );
 
         }
 
-        // Update slash statistics for this permission and ancestors
+        // Update slash statistics for this participant and ancestors
         try {
           if (isEcosystemSlash || isNetworkSlash) {
             await this.updateSlashStatistics(
@@ -3026,9 +3026,9 @@ export default class ParticipantIngestService extends Service {
               Number(amountNum),
               null
             );
-            this.logger.info(`[Slash] Updated slash statistics for permission ${msg.id} - ecosystem: ${isEcosystemSlash}, network: ${isNetworkSlash}, amount: ${amountNum}`);
+            this.logger.info(`[Slash] Updated slash statistics for participant ${msg.id} - ecosystem: ${isEcosystemSlash}, network: ${isNetworkSlash}, amount: ${amountNum}`);
           } else {
-            this.logger.warn(`[Slash] Skipping slash statistics update for permission ${msg.id} - neither ecosystem nor network slash detected`);
+            this.logger.warn(`[Slash] Skipping slash statistics update for participant ${msg.id} - neither ecosystem nor network slash detected`);
           }
         } catch (statsErr: any) {
           this.logger.warn(`Failed to update slash statistics: ${statsErr?.message || statsErr}`);
@@ -3037,26 +3037,26 @@ export default class ParticipantIngestService extends Service {
         try {
           await this.updateWeight(trx, Number(msg.id));
         } catch (weightErr: any) {
-          this.logger.warn(`Failed to update weight for permission ${Number(msg.id)}:`, weightErr?.message || weightErr);
+          this.logger.warn(`Failed to update weight for participant ${Number(msg.id)}:`, weightErr?.message || weightErr);
         }
 
         try {
           await this.updateParticipants(trx, Number(msg.id));
         } catch (participantsErr: any) {
-          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+          this.logger.warn(`Failed to update participants for participant ${msg.id}:`, participantsErr?.message || participantsErr);
         }
 
         try {
-          await recordPermissionHistory(
+          await recordParticipantHistory(
             trx,
             updated,
-            "SLASH_PERMISSION_TRUST_DEPOSIT",
+            "SLASH_PARTICIPANT_TRUST_DEPOSIT",
             height,
-            perm
+            participant
           );
         } catch (historyErr: any) {
           this.logger.error(
-            "CRITICAL: Failed to record permission history for slash:",
+            "CRITICAL: Failed to record participant history for slash:",
             historyErr
           );
           process.exit(1);
@@ -3064,11 +3064,11 @@ export default class ParticipantIngestService extends Service {
       });
 
       try {
-        const schema = await knex("permissions").where({ id: msg.id }).first();
+        const schema = await knex("participants").where({ id: msg.id }).first();
         const corporation = schema?.corporation;
         if (corporation) {
           await (this as any).broker.call(
-            `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_perm_trust_deposit`,
+            `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_participant_trust_deposit`,
             {
               corporation,
               amount: String(amountNum),
@@ -3082,20 +3082,20 @@ export default class ParticipantIngestService extends Service {
 
 
       try {
-        const slashedPerm = await knex("permissions").where({ id: msg.id }).first();
-        if (slashedPerm?.schema_id) {
-          const schemaId = Number(slashedPerm.schema_id);
+        const slashedParticipant = await knex("participants").where({ id: msg.id }).first();
+        if (slashedParticipant?.schema_id) {
+          const schemaId = Number(slashedParticipant.schema_id);
           const csStats = await calculateCredentialSchemaStats(schemaId);
-          const slashFromPerms = await this.sumSlashStatsFromPermissionsForSchema(schemaId);
-          const mergedStats = { ...csStats, ...slashFromPerms };
+          const slashFromParticipants = await this.sumSlashStatsFromParticipantsForSchema(schemaId);
+          const mergedStats = { ...csStats, ...slashFromParticipants };
           const csUpdate = statsToUpdateObject(mergedStats as unknown as Record<string, unknown>, CS_STATS_FIELDS);
           const updatedCount = await knex("credential_schemas").where("id", schemaId).update(csUpdate);
           if (updatedCount === 0) {
             this.logger.warn(`[Slash] credential_schemas update affected 0 rows for schema_id=${schemaId}`);
           }
           const height = Number((msg as any)?.height) || 0;
-          await this.refreshTrustRegistryStatsBySchemaId(schemaId, height);
-          const csStatsForHistory = { ...csStats, ...slashFromPerms };
+          await this.refreshEcosystemStatsBySchemaId(schemaId, height);
+          const csStatsForHistory = { ...csStats, ...slashFromParticipants };
           try {
             await insertCredentialSchemaHistoryStatsRow(knex, schemaId, height, csStatsForHistory);
           } catch (historyErr: any) {
@@ -3107,19 +3107,19 @@ export default class ParticipantIngestService extends Service {
       } catch (statsErr: any) {
         const code = statsErr?.nativeError?.code ?? statsErr?.code;
         this.logger.warn(
-          `Failed to update CS/TR statistics after slash: ${statsErr?.message ?? String(statsErr)}${code ? ` [code=${code}]` : ""}`
+          `Failed to update CS/EC statistics after slash: ${statsErr?.message ?? String(statsErr)}${code ? ` [code=${code}]` : ""}`
         );
       }
 
       this.logger.info(
-        `✅ Permission ${msg.id} slashed by ${caller} amount ${amountNum}`
+        `✅ Participant ${msg.id} slashed by ${caller} amount ${amountNum}`
       );
 
       return { success: true };
     } catch (err: any) {
       this.logger.error("CRITICAL: Error in handleSlashParticipantTrustDeposit:", err);
-      console.error("FATAL PERM SLASH ERROR:", err);
-      return { success: false, reason: "Internal error slashing permission trust deposit" };
+      console.error("FATAL PP SLASH ERROR:", err);
+      return { success: false, reason: "Internal error slashing participant trust deposit" };
     }
   }
 
@@ -3135,19 +3135,19 @@ export default class ParticipantIngestService extends Service {
       const idNum = Number(msg.id);
       if (!Number.isInteger(idNum) || idNum <= 0) {
         this.logger.warn(`Invalid id: ${msg.id}. Must be a valid uint64.`);
-        return { success: false, reason: "Invalid permission ID" };
+        return { success: false, reason: "Invalid participant ID" };
       }
 
-      const perm = await knex("permissions").where({ id: msg.id }).first();
-      if (!perm) {
-        this.logger.warn(`Permission ${msg.id} not found`);
-        return { success: false, reason: "Permission not found" };
+      const participant = await knex("participants").where({ id: msg.id }).first();
+      if (!participant) {
+        this.logger.warn(`Participant ${msg.id} not found`);
+        return { success: false, reason: "Participant not found" };
       }
 
-      const slashedDeposit = Number(perm.slashed_deposit || 0);
+      const slashedDeposit = Number(participant.slashed_deposit || 0);
       if (slashedDeposit <= 0) {
         this.logger.warn(
-          `Permission ${msg.id} has no slashed deposit to repay`
+          `Participant ${msg.id} has no slashed deposit to repay`
         );
         return { success: false, reason: "No slashed deposit to repay" };
       }
@@ -3156,7 +3156,7 @@ export default class ParticipantIngestService extends Service {
       const height = Number((msg as any)?.height) || 0;
 
       // Determine if this was ecosystem or network slash based on previous slash
-      const isEcosystemPermission = perm.role === "ECOSYSTEM";
+      const isEcosystemParticipant = participant.role === "ECOSYSTEM";
       let isEcosystemSlash = false;
       const isNetworkSlash = false;
       let trController: string | null = null;
@@ -3164,39 +3164,39 @@ export default class ParticipantIngestService extends Service {
 
       const repayer = extractController(msg as unknown as Record<string, unknown>);
 
-      if (isEcosystemPermission) {
+      if (isEcosystemParticipant) {
         isEcosystemSlash = true;
-        classificationReason = "ECOSYSTEM permission type";
-      } else if (perm.schema_id) {
+        classificationReason = "ECOSYSTEM participant type";
+      } else if (participant.schema_id) {
         const schema = await knex("credential_schemas")
-          .where({ id: perm.schema_id })
+          .where({ id: participant.schema_id })
           .first();
 
         if (!schema) {
-          this.logger.warn(`[Repay] Permission ${msg.id} has schema_id ${perm.schema_id} but schema not found`);
-          classificationReason = `Schema ${perm.schema_id} not found`;
+          this.logger.warn(`[Repay] Participant ${msg.id} has schema_id ${participant.schema_id} but schema not found`);
+          classificationReason = `Schema ${participant.schema_id} not found`;
         } else if (!schema.ecosystem_id) {
-          this.logger.warn(`[Repay] Permission ${msg.id} schema ${perm.schema_id} has no ecosystem_id`);
-          classificationReason = `Schema ${perm.schema_id} has no ecosystem_id`;
+          this.logger.warn(`[Repay] Participant ${msg.id} schema ${participant.schema_id} has no ecosystem_id`);
+          classificationReason = `Schema ${participant.schema_id} has no ecosystem_id`;
         } else {
-          const tr = await knex("trust_registry")
+          const ec = await knex("ecosystem")
             .where({ id: schema.ecosystem_id })
             .first();
 
-          if (!tr) {
-            this.logger.warn(`[Repay] Permission ${msg.id} TR ${schema.ecosystem_id} not found`);
-            classificationReason = `TR ${schema.ecosystem_id} not found`;
+          if (!ec) {
+            this.logger.warn(`[Repay] Participant ${msg.id} EC ${schema.ecosystem_id} not found`);
+            classificationReason = `EC ${schema.ecosystem_id} not found`;
             trController = null;
           } else {
-            trController = tr.corporation || null;
+            trController = ec.corporation || null;
             if (!trController) {
-              this.logger.warn(`[Repay] Permission ${msg.id} TR ${schema.ecosystem_id} has no corporation`);
-              classificationReason = `TR ${schema.ecosystem_id} has no corporation`;
-            } else if (repayer && tr.corporation === repayer) {
+              this.logger.warn(`[Repay] Participant ${msg.id} EC ${schema.ecosystem_id} has no corporation`);
+              classificationReason = `EC ${schema.ecosystem_id} has no corporation`;
+            } else if (repayer && ec.corporation === repayer) {
               isEcosystemSlash = true;
-              classificationReason = `Repay by TR corporation ${repayer}`;
+              classificationReason = `Repay by EC corporation ${repayer}`;
             } else {
-              classificationReason = `Repayer ${repayer || "unknown"} != TR corporation ${tr.corporation}`;
+              classificationReason = `Repayer ${repayer || "unknown"} != EC corporation ${ec.corporation}`;
             }
           }
         }
@@ -3206,27 +3206,27 @@ export default class ParticipantIngestService extends Service {
 
       if (!isEcosystemSlash && !isNetworkSlash) {
         this.logger.error(
-          `[Repay] CRITICAL: Could not classify repay for permission ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${perm.schema_id || "N/A"}, Type: ${perm.role}, TR corporation: ${trController || "N/A"}`
+          `[Repay] CRITICAL: Could not classify repay for participant ${msg.id}. Classification reason: ${classificationReason}. Schema ID: ${participant.schema_id || "N/A"}, Type: ${participant.role}, EC corporation: ${trController || "N/A"}`
         );
       }
 
       await knex.transaction(async (trx) => {
-        requireController(msg, `PERM REPAY_SLASHED ${msg.id}`);
-        const currentDeposit = BigInt(perm.deposit || "0");
+        requireController(msg, `PP REPAY_SLASHED ${msg.id}`);
+        const currentDeposit = BigInt(participant.deposit || "0");
         const requestedRepayAmount = (msg as any).amount ?? (msg as any).deposit;
         const repaidAmount = requestedRepayAmount == null
           ? BigInt(slashedDeposit)
           : BigInt(String(requestedRepayAmount));
         const newDeposit = currentDeposit + repaidAmount;
 
-        // Calculate expire_soon for repaid permission (may become active again)
-        const repaidPermData = {
-          ...perm,
+        // Calculate expire_soon for repaid participant (may become active again)
+        const repaidParticipantData = {
+          ...participant,
           repaid: now,
-          slashed: perm.slashed, // Keep original slashed timestamp
+          slashed: participant.slashed, // Keep original slashed timestamp
         };
-        const expireSoon = await this.calculateExpireSoon(repaidPermData, new Date(now), height);
-        const hasExpireSoonColumn = await this.checkPermissionsColumnExists("expire_soon");
+        const expireSoon = await this.calculateExpireSoon(repaidParticipantData, new Date(now), height);
+        const hasExpireSoonColumn = await this.checkParticipantsColumnExists("expire_soon");
 
         const updateData: any = {
           repaid: now,
@@ -3239,14 +3239,14 @@ export default class ParticipantIngestService extends Service {
           updateData.expire_soon = expireSoon;
         }
 
-        const [updated] = await trx("permissions")
+        const [updated] = await trx("participants")
           .where({ id: msg.id })
           .update(updateData)
           .returning("*");
 
         if (!updated) {
           this.logger.error(
-            `CRITICAL: Failed to repay permission ${msg.id} - update returned no record`
+            `CRITICAL: Failed to repay participant ${msg.id} - update returned no record`
           );
 
         }
@@ -3268,26 +3268,26 @@ export default class ParticipantIngestService extends Service {
         try {
           await this.updateWeight(trx, Number(msg.id));
         } catch (weightErr: any) {
-          this.logger.warn(`Failed to update weight for permission ${msg.id} after repay:`, weightErr?.message || weightErr);
+          this.logger.warn(`Failed to update weight for participant ${msg.id} after repay:`, weightErr?.message || weightErr);
         }
 
         try {
           await this.updateParticipants(trx, Number(msg.id));
         } catch (participantsErr: any) {
-          this.logger.warn(`Failed to update participants for permission ${msg.id}:`, participantsErr?.message || participantsErr);
+          this.logger.warn(`Failed to update participants for participant ${msg.id}:`, participantsErr?.message || participantsErr);
         }
 
         try {
-          await recordPermissionHistory(
+          await recordParticipantHistory(
             trx,
             updated,
-            "REPAY_PERMISSION_SLASHED_TRUST_DEPOSIT",
+            "REPAY_PARTICIPANT_SLASHED_TRUST_DEPOSIT",
             height,
-            perm
+            participant
           );
         } catch (historyErr: any) {
           this.logger.error(
-            "CRITICAL: Failed to record permission history for repay:",
+            "CRITICAL: Failed to record participant history for repay:",
             historyErr
           );
 
@@ -3295,20 +3295,20 @@ export default class ParticipantIngestService extends Service {
       });
 
       try {
-        const repaidPerm = await knex("permissions").where({ id: msg.id }).first();
-        if (repaidPerm?.schema_id) {
-          const schemaId = Number(repaidPerm.schema_id);
+        const repaidParticipant = await knex("participants").where({ id: msg.id }).first();
+        if (repaidParticipant?.schema_id) {
+          const schemaId = Number(repaidParticipant.schema_id);
           const csStats = await calculateCredentialSchemaStats(schemaId);
-          const slashFromPerms = await this.sumSlashStatsFromPermissionsForSchema(schemaId);
-          const mergedStats = { ...csStats, ...slashFromPerms };
+          const slashFromParticipants = await this.sumSlashStatsFromParticipantsForSchema(schemaId);
+          const mergedStats = { ...csStats, ...slashFromParticipants };
           const csUpdate = statsToUpdateObject(mergedStats as unknown as Record<string, unknown>, CS_STATS_FIELDS);
           const updatedCount = await knex("credential_schemas").where("id", schemaId).update(csUpdate);
           if (updatedCount === 0) {
             this.logger.warn(`[Repay] credential_schemas update affected 0 rows for schema_id=${schemaId}`);
           }
           const height = Number((msg as any)?.height) || 0;
-          await this.refreshTrustRegistryStatsBySchemaId(schemaId, height);
-          const csStatsForHistory = { ...csStats, ...slashFromPerms };
+          await this.refreshEcosystemStatsBySchemaId(schemaId, height);
+          const csStatsForHistory = { ...csStats, ...slashFromParticipants };
           try {
             await insertCredentialSchemaHistoryStatsRow(knex, schemaId, height, csStatsForHistory);
           } catch (historyErr: any) {
@@ -3320,12 +3320,12 @@ export default class ParticipantIngestService extends Service {
       } catch (statsErr: any) {
         const code = statsErr?.nativeError?.code ?? statsErr?.code;
         this.logger.warn(
-          `Failed to update CS/TR statistics after repay: ${statsErr?.message ?? String(statsErr)}${code ? ` [code=${code}]` : ""}`
+          `Failed to update CS/EC statistics after repay: ${statsErr?.message ?? String(statsErr)}${code ? ` [code=${code}]` : ""}`
         );
       }
 
       this.logger.info(
-        `✅ Permission ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${repayer}`
+        `✅ Participant ${msg.id} slashed deposit (${slashedDeposit}) repaid by ${repayer}`
       );
 
       return { success: true };
@@ -3334,69 +3334,69 @@ export default class ParticipantIngestService extends Service {
         "CRITICAL: Error in handleRepayParticipantSlashedTrustDeposit:",
         err
       );
-      console.error("FATAL PERM REPAY ERROR:", err);
-      return { success: false, reason: "Internal error repaying permission slashed trust deposit" };
+      console.error("FATAL PP REPAY ERROR:", err);
+      return { success: false, reason: "Internal error repaying participant slashed trust deposit" };
     }
   }
 
-  private permissionsColumnExistsCache: Record<string, boolean> | null = null;
+  private participantsColumnExistsCache: Record<string, boolean> | null = null;
 
-  private async checkPermissionsColumnExists(columnName: string): Promise<boolean> {
-    if (this.permissionsColumnExistsCache === null) {
-      this.permissionsColumnExistsCache = {};
+  private async checkParticipantsColumnExists(columnName: string): Promise<boolean> {
+    if (this.participantsColumnExistsCache === null) {
+      this.participantsColumnExistsCache = {};
     }
 
-    if (this.permissionsColumnExistsCache[columnName] !== undefined) {
-      return this.permissionsColumnExistsCache[columnName];
+    if (this.participantsColumnExistsCache[columnName] !== undefined) {
+      return this.participantsColumnExistsCache[columnName];
     }
 
     try {
-      const exists = await knex.schema.hasColumn("permissions", columnName);
-      this.permissionsColumnExistsCache[columnName] = exists;
+      const exists = await knex.schema.hasColumn("participants", columnName);
+      this.participantsColumnExistsCache[columnName] = exists;
       if (columnName === "expire_soon") {
-        this.logger.info(`[checkPermissionsColumnExists] expire_soon column exists: ${exists}`);
+        this.logger.info(`[checkParticipantsColumnExists] expire_soon column exists: ${exists}`);
       }
       return exists;
     } catch (error: any) {
-      this.logger.warn(`[checkPermissionsColumnExists] Error checking column ${columnName}:`, error?.message || error);
-      this.permissionsColumnExistsCache[columnName] = false;
+      this.logger.warn(`[checkParticipantsColumnExists] Error checking column ${columnName}:`, error?.message || error);
+      this.participantsColumnExistsCache[columnName] = false;
       return false;
     }
   }
 
-  private async incrementPermissionStatistics(
+  private async incrementParticipantStatistics(
     trx: any,
-    permId: number,
+    participantId: number,
     incrementIssued: boolean,
     incrementVerified: boolean
   ): Promise<void> {
-    const hasIssuedColumn = await this.checkPermissionsColumnExists("issued");
-    const hasVerifiedColumn = await this.checkPermissionsColumnExists("verified");
+    const hasIssuedColumn = await this.checkParticipantsColumnExists("issued");
+    const hasVerifiedColumn = await this.checkParticipantsColumnExists("verified");
 
     if (!hasIssuedColumn && !hasVerifiedColumn) {
-      this.logger.warn(`[incrementPermissionStatistics] Neither issued nor verified column exists for permission ${permId}`);
+      this.logger.warn(`[incrementParticipantStatistics] Neither issued nor verified column exists for participant ${participantId}`);
       return;
     }
 
     if (incrementIssued && !hasIssuedColumn) {
-      this.logger.warn(`[incrementPermissionStatistics] Attempted to increment issued for permission ${permId} but issued column does not exist`);
+      this.logger.warn(`[incrementParticipantStatistics] Attempted to increment issued for participant ${participantId} but issued column does not exist`);
     }
 
     if (incrementVerified && !hasVerifiedColumn) {
-      this.logger.warn(`[incrementPermissionStatistics] Attempted to increment verified for permission ${permId} but verified column does not exist`);
+      this.logger.warn(`[incrementParticipantStatistics] Attempted to increment verified for participant ${participantId} but verified column does not exist`);
     }
 
-    const initialPerm: { schema_id: number; validator_participant_id: number | null } | undefined = await trx("permissions").where({ id: permId }).select('schema_id', 'validator_participant_id').first();
-    if (!initialPerm) return;
+    const initialParticipant: { schema_id: number; validator_participant_id: number | null } | undefined = await trx("participants").where({ id: participantId }).select('schema_id', 'validator_participant_id').first();
+    if (!initialParticipant) return;
 
-    const schemaId = initialPerm.schema_id;
-    let currentPermId: number | null = permId;
+    const schemaId = initialParticipant.schema_id;
+    let currentParticipantId: number | null = participantId;
 
-    while (currentPermId) {
-      const perm: { schema_id: number; validator_participant_id: number | null } | undefined = await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_participant_id').first();
-      if (!perm) break;
-      if (perm.schema_id !== schemaId) {
-        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+    while (currentParticipantId) {
+      const participant: { schema_id: number; validator_participant_id: number | null } | undefined = await trx("participants").where({ id: currentParticipantId }).select('schema_id', 'validator_participant_id').first();
+      if (!participant) break;
+      if (participant.schema_id !== schemaId) {
+        this.logger.warn(`Participant tree traversal crossed schema boundary. participantId=${currentParticipantId}, expected schema=${schemaId}, found schema=${participant.schema_id}. Stopping traversal.`);
         break;
       }
 
@@ -3410,24 +3410,24 @@ export default class ParticipantIngestService extends Service {
 
       if (Object.keys(updates).length > 0) {
         try {
-          await trx("permissions")
-            .where({ id: currentPermId })
+          await trx("participants")
+            .where({ id: currentParticipantId })
             .update(updates);
         } catch (error: any) {
           if (error?.nativeError?.code === '42703') {
-            this.permissionsColumnExistsCache = null;
+            this.participantsColumnExistsCache = null;
             return;
           }
           throw error;
         }
       }
 
-      currentPermId = perm.validator_participant_id;
+      currentParticipantId = participant.validator_participant_id;
     }
   }
 
 
-  private async sumSlashStatsFromPermissionsForSchema(schemaId: number): Promise<{
+  private async sumSlashStatsFromParticipantsForSchema(schemaId: number): Promise<{
     ecosystem_slash_events: number;
     ecosystem_slashed_amount: number;
     ecosystem_slashed_amount_repaid: number;
@@ -3435,7 +3435,7 @@ export default class ParticipantIngestService extends Service {
     network_slashed_amount: number;
     network_slashed_amount_repaid: number;
   }> {
-    const hasCol = await this.checkPermissionsColumnExists("ecosystem_slash_events");
+    const hasCol = await this.checkParticipantsColumnExists("ecosystem_slash_events");
     if (!hasCol) {
       return {
         ecosystem_slash_events: 0,
@@ -3446,7 +3446,7 @@ export default class ParticipantIngestService extends Service {
         network_slashed_amount_repaid: 0,
       };
     }
-    const rows = await knex("permissions")
+    const rows = await knex("participants")
       .where("schema_id", schemaId)
       .select(
         "ecosystem_slash_events",
@@ -3482,26 +3482,26 @@ export default class ParticipantIngestService extends Service {
 
   private async updateSlashStatistics(
     trx: any,
-    permId: number,
+    participantId: number,
     isEcosystemSlash: boolean,
     isNetworkSlash: boolean,
     slashAmount: number,
     repayAmount: number | null
   ): Promise<void> {
-    const hasEcosystemSlashEventsColumn = await this.checkPermissionsColumnExists("ecosystem_slash_events");
+    const hasEcosystemSlashEventsColumn = await this.checkParticipantsColumnExists("ecosystem_slash_events");
     if (!hasEcosystemSlashEventsColumn) {
-      this.logger.warn(`[updateSlashStatistics] Column ecosystem_slash_events does not exist, skipping update for permission ${permId}`);
+      this.logger.warn(`[updateSlashStatistics] Column ecosystem_slash_events does not exist, skipping update for participant ${participantId}`);
       return;
     }
 
     if (!isEcosystemSlash && !isNetworkSlash) {
-      this.logger.warn(`[updateSlashStatistics] Neither ecosystem nor network slash flag is set for permission ${permId}, skipping update`);
+      this.logger.warn(`[updateSlashStatistics] Neither ecosystem nor network slash flag is set for participant ${participantId}, skipping update`);
       return;
     }
 
-    const permExists = await trx("permissions").where({ id: permId }).first();
-    if (!permExists) {
-      this.logger.warn(`[updateSlashStatistics] Permission ${permId} not found, skipping update`);
+    const participantExists = await trx("participants").where({ id: participantId }).first();
+    if (!participantExists) {
+      this.logger.warn(`[updateSlashStatistics] Participant ${participantId} not found, skipping update`);
       return;
     }
 
@@ -3541,64 +3541,64 @@ export default class ParticipantIngestService extends Service {
 
     if (Object.keys(updates).length > 0) {
       try {
-        const result = await trx("permissions")
-          .where({ id: permId })
+        const result = await trx("participants")
+          .where({ id: participantId })
           .update(updates);
         this.logger.debug(
-          `[updateSlashStatistics] Updated permission ${permId} with ${Object.keys(updates).length} fields, rows affected: ${result}`
+          `[updateSlashStatistics] Updated participant ${participantId} with ${Object.keys(updates).length} fields, rows affected: ${result}`
         );
       } catch (error: any) {
         if (error?.nativeError?.code === '42703') {
           this.logger.warn(
-            `[updateSlashStatistics] Column does not exist, clearing cache for permission ${permId}`
+            `[updateSlashStatistics] Column does not exist, clearing cache for participant ${participantId}`
           );
-          this.permissionsColumnExistsCache = null;
+          this.participantsColumnExistsCache = null;
           return;
         }
         throw error;
       }
     } else {
       this.logger.warn(
-        `[updateSlashStatistics] No updates to apply for permission ${permId} - isEcosystemSlash: ${isEcosystemSlash}, isNetworkSlash: ${isNetworkSlash}, slashAmount: ${slashAmount}, repayAmount: ${repayAmount}`
+        `[updateSlashStatistics] No updates to apply for participant ${participantId} - isEcosystemSlash: ${isEcosystemSlash}, isNetworkSlash: ${isNetworkSlash}, slashAmount: ${slashAmount}, repayAmount: ${repayAmount}`
       );
     }
   }
 
 
-  private async updateWeight(trx: any, permId: number): Promise<void> {
-    const hasWeightColumn = await this.checkPermissionsColumnExists("weight");
+  private async updateWeight(trx: any, participantId: number): Promise<void> {
+    const hasWeightColumn = await this.checkParticipantsColumnExists("weight");
     if (!hasWeightColumn) {
       return;
     }
 
-    const initialPerm: { schema_id: number; validator_participant_id: number | null; deposit: number } | undefined =
-      await trx("permissions").where({ id: permId }).select('schema_id', 'validator_participant_id', 'deposit').first();
-    if (!initialPerm) return;
+    const initialParticipant: { schema_id: number; validator_participant_id: number | null; deposit: number } | undefined =
+      await trx("participants").where({ id: participantId }).select('schema_id', 'validator_participant_id', 'deposit').first();
+    if (!initialParticipant) return;
 
-    const schemaId = initialPerm.schema_id;
-    let currentPermId: number | null = permId;
+    const schemaId = initialParticipant.schema_id;
+    let currentParticipantId: number | null = participantId;
 
-    const permStack: number[] = [];
-    while (currentPermId) {
-      permStack.push(currentPermId);
-      const perm: { schema_id: number; validator_participant_id: number | null } | undefined =
-        await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_participant_id').first();
-      if (!perm) break;
-      if (perm.schema_id !== schemaId) {
-        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+    const participantStack: number[] = [];
+    while (currentParticipantId) {
+      participantStack.push(currentParticipantId);
+      const participant: { schema_id: number; validator_participant_id: number | null } | undefined =
+        await trx("participants").where({ id: currentParticipantId }).select('schema_id', 'validator_participant_id').first();
+      if (!participant) break;
+      if (participant.schema_id !== schemaId) {
+        this.logger.warn(`Participant tree traversal crossed schema boundary. participantId=${currentParticipantId}, expected schema=${schemaId}, found schema=${participant.schema_id}. Stopping traversal.`);
         break;
       }
-      currentPermId = perm.validator_participant_id;
+      currentParticipantId = participant.validator_participant_id;
     }
 
-    for (let i = permStack.length - 1; i >= 0; i--) {
-      const pid = permStack[i];
-      const perm = await trx("permissions").where({ id: pid }).select('deposit', 'schema_id').first();
-      if (!perm) continue;
+    for (let i = participantStack.length - 1; i >= 0; i--) {
+      const pid = participantStack[i];
+      const participant = await trx("participants").where({ id: pid }).select('deposit', 'schema_id').first();
+      if (!participant) continue;
 
-      const children = await trx("permissions")
+      const children = await trx("participants")
         .where("validator_participant_id", pid)
-        .where("schema_id", perm.schema_id)
+        .where("schema_id", participant.schema_id)
         .select("weight");
 
       let childWeightSum = BigInt(0);
@@ -3607,16 +3607,16 @@ export default class ParticipantIngestService extends Service {
         childWeightSum += childWeight;
       }
 
-      const ownDeposit = BigInt(perm.deposit || "0");
+      const ownDeposit = BigInt(participant.deposit || "0");
       const totalWeight = ownDeposit + childWeightSum;
 
       try {
-        await trx("permissions")
+        await trx("participants")
           .where({ id: pid })
           .update({ weight: String(totalWeight) });
       } catch (error: any) {
         if (error?.nativeError?.code === '42703') {
-          this.permissionsColumnExistsCache = null;
+          this.participantsColumnExistsCache = null;
           return;
         }
         throw error;
@@ -3624,8 +3624,8 @@ export default class ParticipantIngestService extends Service {
     }
   }
 
-  private async updateParticipants(trx: any, permId: number): Promise<void> {
-    const hasParticipantsColumn = await this.checkPermissionsColumnExists("participants");
+  private async updateParticipants(trx: any, participantId: number): Promise<void> {
+    const hasParticipantsColumn = await this.checkParticipantsColumnExists("participants");
     if (!hasParticipantsColumn) {
       return;
     }
@@ -3638,36 +3638,36 @@ export default class ParticipantIngestService extends Service {
       "participants_holder",
     ] as const;
     const roleColumnsAvailabilityEntries = await Promise.all(
-      roleColumns.map(async (col) => [col, await this.checkPermissionsColumnExists(col)] as const)
+      roleColumns.map(async (col) => [col, await this.checkParticipantsColumnExists(col)] as const)
     );
     const roleColumnsAvailability = new Map<string, boolean>(roleColumnsAvailabilityEntries);
     const availableRoleColumns = roleColumns.filter((col) => roleColumnsAvailability.get(col));
 
-    const initialPerm: { schema_id: number; validator_participant_id: number | null } | undefined =
-      await trx("permissions").where({ id: permId }).select('schema_id', 'validator_participant_id').first();
-    if (!initialPerm) return;
+    const initialParticipant: { schema_id: number; validator_participant_id: number | null } | undefined =
+      await trx("participants").where({ id: participantId }).select('schema_id', 'validator_participant_id').first();
+    if (!initialParticipant) return;
 
-    const schemaId = initialPerm.schema_id;
-    let currentPermId: number | null = permId;
-    const permStack: number[] = [];
+    const schemaId = initialParticipant.schema_id;
+    let currentParticipantId: number | null = participantId;
+    const participantStack: number[] = [];
 
-    while (currentPermId) {
-      permStack.push(currentPermId);
-      const perm: { schema_id: number; validator_participant_id: number | null } | undefined =
-        await trx("permissions").where({ id: currentPermId }).select('schema_id', 'validator_participant_id').first();
-      if (!perm) break;
-      if (perm.schema_id !== schemaId) {
-        this.logger.warn(`Permission tree traversal crossed schema boundary. permId=${currentPermId}, expected schema=${schemaId}, found schema=${perm.schema_id}. Stopping traversal.`);
+    while (currentParticipantId) {
+      participantStack.push(currentParticipantId);
+      const participant: { schema_id: number; validator_participant_id: number | null } | undefined =
+        await trx("participants").where({ id: currentParticipantId }).select('schema_id', 'validator_participant_id').first();
+      if (!participant) break;
+      if (participant.schema_id !== schemaId) {
+        this.logger.warn(`Participant tree traversal crossed schema boundary. participantId=${currentParticipantId}, expected schema=${schemaId}, found schema=${participant.schema_id}. Stopping traversal.`);
         break;
       }
-      currentPermId = perm.validator_participant_id;
+      currentParticipantId = participant.validator_participant_id;
     }
 
     const now = new Date();
 
-    for (let i = permStack.length - 1; i >= 0; i--) {
-      const pid = permStack[i];
-      const perm = await trx("permissions").where({ id: pid }).select(
+    for (let i = participantStack.length - 1; i >= 0; i--) {
+      const pid = participantStack[i];
+      const participant = await trx("participants").where({ id: pid }).select(
         "repaid",
         "slashed",
         "revoked",
@@ -3679,24 +3679,24 @@ export default class ParticipantIngestService extends Service {
         "validator_participant_id",
         "schema_id"
       ).first();
-      if (!perm) continue;
+      if (!participant) continue;
 
-      const permState = calculatePermState(
+      const participantState = calculateParticipantState(
         {
-          repaid: perm.repaid,
-          slashed: perm.slashed,
-          revoked: perm.revoked,
-          effective_from: perm.effective_from,
-          effective_until: perm.effective_until,
-          role: perm.role,
-          op_state: perm.op_state,
-          op_exp: perm.op_exp,
-          validator_participant_id: perm.validator_participant_id,
+          repaid: participant.repaid,
+          slashed: participant.slashed,
+          revoked: participant.revoked,
+          effective_from: participant.effective_from,
+          effective_until: participant.effective_until,
+          role: participant.role,
+          op_state: participant.op_state,
+          op_exp: participant.op_exp,
+          validator_participant_id: participant.validator_participant_id,
         },
         now
       );
 
-      let count = permState === "ACTIVE" ? 1 : 0;
+      let count = participantState === "ACTIVE" ? 1 : 0;
       const roleTotals: Record<string, number> = {
         participants_ecosystem: 0,
         participants_issuer_grantor: 0,
@@ -3705,14 +3705,14 @@ export default class ParticipantIngestService extends Service {
         participants_verifier: 0,
         participants_holder: 0,
       };
-      const permType = normalizePermissionType(perm.role);
-      if (permState === "ACTIVE") {
-        if (permType === "ECOSYSTEM") roleTotals.participants_ecosystem += 1;
-        if (permType === "ISSUER_GRANTOR") roleTotals.participants_issuer_grantor += 1;
-        if (permType === "ISSUER") roleTotals.participants_issuer += 1;
-        if (permType === "VERIFIER_GRANTOR") roleTotals.participants_verifier_grantor += 1;
-        if (permType === "VERIFIER") roleTotals.participants_verifier += 1;
-        if (permType === "HOLDER") roleTotals.participants_holder += 1;
+      const participantType = normalizeParticipantType(participant.role);
+      if (participantState === "ACTIVE") {
+        if (participantType === "ECOSYSTEM") roleTotals.participants_ecosystem += 1;
+        if (participantType === "ISSUER_GRANTOR") roleTotals.participants_issuer_grantor += 1;
+        if (participantType === "ISSUER") roleTotals.participants_issuer += 1;
+        if (participantType === "VERIFIER_GRANTOR") roleTotals.participants_verifier_grantor += 1;
+        if (participantType === "VERIFIER") roleTotals.participants_verifier += 1;
+        if (participantType === "HOLDER") roleTotals.participants_holder += 1;
       }
 
       const childSelectColumns: string[] = [
@@ -3730,13 +3730,13 @@ export default class ParticipantIngestService extends Service {
       for (const roleCol of availableRoleColumns) {
         childSelectColumns.push(roleCol);
       }
-      const children = await trx("permissions")
+      const children = await trx("participants")
         .where("validator_participant_id", pid)
-        .where("schema_id", perm.schema_id)
+        .where("schema_id", participant.schema_id)
         .select(childSelectColumns);
 
       for (const child of children) {
-        const childState = calculatePermState(
+        const childState = calculateParticipantState(
           {
             repaid: child.repaid,
             slashed: child.slashed,
@@ -3767,12 +3767,12 @@ export default class ParticipantIngestService extends Service {
         for (const roleCol of availableRoleColumns) {
           updates[roleCol] = roleTotals[roleCol];
         }
-        await trx("permissions")
+        await trx("participants")
           .where({ id: pid })
           .update(updates);
       } catch (error: any) {
         if (error?.nativeError?.code === '42703') {
-          this.permissionsColumnExistsCache = null;
+          this.participantsColumnExistsCache = null;
           return;
         }
         throw error;
@@ -3788,50 +3788,50 @@ export default class ParticipantIngestService extends Service {
       const now = formatTimestamp(msg.timestamp);
       const height = Number((msg as any)?.height) || 0;
 
-      const agentPermId = (msg as any).agentPermId ?? (msg as any).agent_perm_id;
-      const walletAgentPermId = (msg as any).walletAgentPermId ?? (msg as any).wallet_agent_perm_id;
-      const issuerPermId = (msg as any).issuerPermId ?? (msg as any).issuer_perm_id;
-      const verifierPermId = (msg as any).verifierPermId ?? (msg as any).verifier_perm_id;
+      const agentParticipantId = (msg as any).agentParticipantId ?? (msg as any).agent_participant_id;
+      const walletAgentParticipantId = (msg as any).walletAgentParticipantId ?? (msg as any).wallet_agent_participant_id;
+      const issuerParticipantId = (msg as any).issuerParticipantId ?? (msg as any).issuer_participant_id;
+      const verifierParticipantId = (msg as any).verifierParticipantId ?? (msg as any).verifier_participant_id;
 
-      if (!msg.id || !agentPermId || !walletAgentPermId) {
+      if (!msg.id || !agentParticipantId || !walletAgentParticipantId) {
         throw new Error("Missing mandatory parameters");
       }
-      if (!issuerPermId && !verifierPermId) {
+      if (!issuerParticipantId && !verifierParticipantId) {
         throw new Error(
-          "At least one of issuer_perm_id or verifier_perm_id must be provided"
+          "At least one of issuer_participant_id or verifier_participant_id must be provided"
         );
       }
 
-      const [agentPerm, walletAgentPerm, issuerPerm, verifierPerm] =
+      const [agentParticipant, walletAgentParticipant, issuerParticipant, verifierParticipant] =
         await Promise.all([
-          trx("permissions").where({ id: agentPermId }).first(),
-          trx("permissions").where({ id: walletAgentPermId }).first(),
-          issuerPermId
-            ? trx("permissions").where({ id: issuerPermId }).first()
+          trx("participants").where({ id: agentParticipantId }).first(),
+          trx("participants").where({ id: walletAgentParticipantId }).first(),
+          issuerParticipantId
+            ? trx("participants").where({ id: issuerParticipantId }).first()
             : null,
-          verifierPermId
-            ? trx("permissions").where({ id: verifierPermId }).first()
+          verifierParticipantId
+            ? trx("participants").where({ id: verifierParticipantId }).first()
             : null,
         ]);
 
-      if (!agentPerm) {
+      if (!agentParticipant) {
         this.logger.warn(
-          `Agent permission not found for session ${msg.id}. agentPermId=${agentPermId}. Session will be saved but statistics may be incomplete.`
+          `Agent participant not found for session ${msg.id}. agentParticipantId=${agentParticipantId}. Session will be saved but statistics may be incomplete.`
         );
       }
-      if (!walletAgentPerm) {
+      if (!walletAgentParticipant) {
         this.logger.warn(
-          `Wallet Agent permission not found for session ${msg.id}. walletAgentPermId=${walletAgentPermId}. Session will be saved but statistics may be incomplete.`
+          `Wallet Agent participant not found for session ${msg.id}. walletAgentParticipantId=${walletAgentParticipantId}. Session will be saved but statistics may be incomplete.`
         );
       }
-      if (issuerPermId && issuerPerm && issuerPerm.role !== "ISSUER") {
+      if (issuerParticipantId && issuerParticipant && issuerParticipant.role !== "ISSUER") {
         this.logger.warn(
-          `Invalid issuer permission type for session ${msg.id}. Expected ISSUER, got ${issuerPerm.role}. issuerPermId=${issuerPermId}. Session will be saved.`
+          `Invalid issuer participant type for session ${msg.id}. Expected ISSUER, got ${issuerParticipant.role}. issuerParticipantId=${issuerParticipantId}. Session will be saved.`
         );
       }
-      if (verifierPermId && verifierPerm && verifierPerm.role !== "VERIFIER") {
+      if (verifierParticipantId && verifierParticipant && verifierParticipant.role !== "VERIFIER") {
         this.logger.warn(
-          `Invalid verifier permission type for session ${msg.id}. Expected VERIFIER, got ${verifierPerm.role}. verifierPermId=${verifierPermId}. Session will be saved.`
+          `Invalid verifier participant type for session ${msg.id}. Expected VERIFIER, got ${verifierParticipant.role}. verifierParticipantId=${verifierParticipantId}. Session will be saved.`
         );
       }
 
@@ -3846,7 +3846,7 @@ export default class ParticipantIngestService extends Service {
         return [];
       };
 
-      const existing = await trx("permission_sessions")
+      const existing = await trx("participant_sessions")
         .where({ id: msg.id })
         .first();
       const previousSession = existing
@@ -3858,23 +3858,23 @@ export default class ParticipantIngestService extends Service {
 
       const recordEntry = {
         created: now,
-        issuer_perm_id: issuerPermId || null,
-        verifier_perm_id: verifierPermId || null,
-        wallet_agent_perm_id: walletAgentPermId,
+        issuer_participant_id: issuerParticipantId || null,
+        verifier_participant_id: verifierParticipantId || null,
+        wallet_agent_participant_id: walletAgentParticipantId,
       };
 
       const vsOp =
         (msg as any).vs_operator ?? (msg as any).vsOperator ?? (msg as any).operator ?? existing?.vs_operator ?? null;
 
       if (!existing) {
-        const creator = requireController(msg, `PERM SESSION ${msg.id}`);
-        const [session] = await trx("permission_sessions")
+        const creator = requireController(msg, `PP SESSION ${msg.id}`);
+        const [session] = await trx("participant_sessions")
           .insert({
             id: msg.id,
             corporation: creator,
             vs_operator: vsOp,
-            agent_perm_id: agentPermId,
-            wallet_agent_perm_id: walletAgentPermId,
+            agent_participant_id: agentParticipantId,
+            wallet_agent_participant_id: walletAgentParticipantId,
             session_records: JSON.stringify([recordEntry]),
             created: now,
             modified: now,
@@ -3886,42 +3886,42 @@ export default class ParticipantIngestService extends Service {
             ? { ...session, session_records: parseJson(session.session_records) }
             : session;
 
-        await recordPermissionSessionHistory(
+        await recordParticipantSessionHistory(
           trx,
           normalizedSession,
-          "CREATE_PERMISSION_SESSION",
+          "CREATE_PARTICIPANT_SESSION",
           height
         );
 
-        if (issuerPermId) {
+        if (issuerParticipantId) {
           try {
-            await this.incrementPermissionStatistics(trx, Number(issuerPermId), true, false);
+            await this.incrementParticipantStatistics(trx, Number(issuerParticipantId), true, false);
             try {
-              await recordPermissionHistory(trx, { id: Number(issuerPermId) }, "CREDENTIAL_ISSUED", height);
+              await recordParticipantHistory(trx, { id: Number(issuerParticipantId) }, "CREDENTIAL_ISSUED", height);
             } catch (historyErr: any) {
-              this.logger.warn(`[Session] Failed to record permission history for issued perm ${issuerPermId}:`, historyErr?.message || historyErr);
+              this.logger.warn(`[Session] Failed to record participant history for issued participant ${issuerParticipantId}:`, historyErr?.message || historyErr);
             }
           } catch (issuedErr: any) {
-            this.logger.error(`[Session] Failed to increment issued for permission ${issuerPermId}:`, issuedErr?.message || issuedErr);
+            this.logger.error(`[Session] Failed to increment issued for participant ${issuerParticipantId}:`, issuedErr?.message || issuedErr);
           }
         }
-        if (verifierPermId) {
+        if (verifierParticipantId) {
           try {
-            await this.incrementPermissionStatistics(trx, Number(verifierPermId), false, true);
+            await this.incrementParticipantStatistics(trx, Number(verifierParticipantId), false, true);
             try {
-              await recordPermissionHistory(trx, { id: Number(verifierPermId) }, "CREDENTIAL_VERIFIED", height);
+              await recordParticipantHistory(trx, { id: Number(verifierParticipantId) }, "CREDENTIAL_VERIFIED", height);
             } catch (historyErr: any) {
-              this.logger.warn(`[Session] Failed to record permission history for verified perm ${verifierPermId}:`, historyErr?.message || historyErr);
+              this.logger.warn(`[Session] Failed to record participant history for verified participant ${verifierParticipantId}:`, historyErr?.message || historyErr);
             }
           } catch (verifiedErr: any) {
-            this.logger.error(`[Session] Failed to increment verified for permission ${verifierPermId}:`, verifiedErr?.message || verifiedErr);
+            this.logger.error(`[Session] Failed to increment verified for participant ${verifierParticipantId}:`, verifiedErr?.message || verifiedErr);
           }
         }
       } else {
         const existingRecords = parseSessionRecordsLocal(existing);
         existingRecords.push(recordEntry);
 
-        const [session] = await trx("permission_sessions")
+        const [session] = await trx("participant_sessions")
           .where({ id: msg.id })
           .update({
             session_records: JSON.stringify(existingRecords),
@@ -3935,54 +3935,54 @@ export default class ParticipantIngestService extends Service {
             ? { ...session, session_records: parseJson(session.session_records) }
             : session;
 
-        await recordPermissionSessionHistory(
+        await recordParticipantSessionHistory(
           trx,
           normalizedSession,
-          "UPDATE_PERMISSION_SESSION",
+          "UPDATE_PARTICIPANT_SESSION",
           height,
           previousSession
         );
 
         const previousRecords = previousSession?.session_records || [];
-        const previousIssuerPermIds = new Set(
-          previousRecords.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
+        const previousIssuerParticipantIds = new Set(
+          previousRecords.map((entry: { issuer_participant_id?: string | number }) => entry.issuer_participant_id).filter(Boolean)
         );
-        const previousVerifierPermIds = new Set(
-          previousRecords.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
-        );
-
-        const newIssuerPermIds = new Set(
-          existingRecords.map((entry: { issuer_perm_id?: string | number }) => entry.issuer_perm_id).filter(Boolean)
-        );
-        const newVerifierPermIds = new Set(
-          existingRecords.map((entry: { verifier_perm_id?: string | number }) => entry.verifier_perm_id).filter(Boolean)
+        const previousVerifierParticipantIds = new Set(
+          previousRecords.map((entry: { verifier_participant_id?: string | number }) => entry.verifier_participant_id).filter(Boolean)
         );
 
-        for (const issuerId of newIssuerPermIds) {
-          if (!previousIssuerPermIds.has(issuerId)) {
+        const newIssuerParticipantIds = new Set(
+          existingRecords.map((entry: { issuer_participant_id?: string | number }) => entry.issuer_participant_id).filter(Boolean)
+        );
+        const newVerifierParticipantIds = new Set(
+          existingRecords.map((entry: { verifier_participant_id?: string | number }) => entry.verifier_participant_id).filter(Boolean)
+        );
+
+        for (const issuerId of newIssuerParticipantIds) {
+          if (!previousIssuerParticipantIds.has(issuerId)) {
             try {
-              await this.incrementPermissionStatistics(trx, Number(issuerId), true, false);
+              await this.incrementParticipantStatistics(trx, Number(issuerId), true, false);
               try {
-                await recordPermissionHistory(trx, { id: Number(issuerId) }, "CREDENTIAL_ISSUED", height);
+                await recordParticipantHistory(trx, { id: Number(issuerId) }, "CREDENTIAL_ISSUED", height);
               } catch (historyErr: any) {
-                this.logger.warn(`[Session] Failed to record permission history for issued perm ${issuerId}:`, historyErr?.message || historyErr);
+                this.logger.warn(`[Session] Failed to record participant history for issued participant ${issuerId}:`, historyErr?.message || historyErr);
               }
             } catch (issuedErr: any) {
-              this.logger.error(`[Session] Failed to increment issued for permission ${issuerId}:`, issuedErr?.message || issuedErr);
+              this.logger.error(`[Session] Failed to increment issued for participant ${issuerId}:`, issuedErr?.message || issuedErr);
             }
           }
         }
-        for (const verifierId of newVerifierPermIds) {
-          if (!previousVerifierPermIds.has(verifierId)) {
+        for (const verifierId of newVerifierParticipantIds) {
+          if (!previousVerifierParticipantIds.has(verifierId)) {
             try {
-              await this.incrementPermissionStatistics(trx, Number(verifierId), false, true);
+              await this.incrementParticipantStatistics(trx, Number(verifierId), false, true);
               try {
-                await recordPermissionHistory(trx, { id: Number(verifierId) }, "CREDENTIAL_VERIFIED", height);
+                await recordParticipantHistory(trx, { id: Number(verifierId) }, "CREDENTIAL_VERIFIED", height);
               } catch (historyErr: any) {
-                this.logger.warn(`[Session] Failed to record permission history for verified perm ${verifierId}:`, historyErr?.message || historyErr);
+                this.logger.warn(`[Session] Failed to record participant history for verified participant ${verifierId}:`, historyErr?.message || historyErr);
               }
             } catch (verifiedErr: any) {
-              this.logger.error(`[Session] Failed to increment verified for permission ${verifierId}:`, verifiedErr?.message || verifiedErr);
+              this.logger.error(`[Session] Failed to increment verified for participant ${verifierId}:`, verifiedErr?.message || verifiedErr);
             }
           }
         }
@@ -3998,10 +3998,10 @@ export default class ParticipantIngestService extends Service {
     }
   }
 
-  private async queuePermissionForRetry(message: unknown, reason: string): Promise<void> {
+  private async queueParticipantForRetry(message: unknown, reason: string): Promise<void> {
     const msg = message as { id: string | number; type?: string };
-    const key = `${msg.id}_${msg.type || 'permission'}`;
-    const queuedPermission: QueuedPermission = {
+    const key = `${msg.id}_${msg.type || 'participant'}`;
+    const queuedParticipant: QueuedParticipant = {
       message: msg,
       reason,
       retryCount: 0,
@@ -4009,8 +4009,8 @@ export default class ParticipantIngestService extends Service {
       nextRetryAt: new Date(Date.now() + this.RETRY_INTERVAL_MS)
     };
 
-    this.retryQueue.set(key, queuedPermission);
-    this.logger.info(`Queued permission ${msg.id} for retry: ${reason}`);
+    this.retryQueue.set(key, queuedParticipant);
+    this.logger.info(`Queued participant ${msg.id} for retry: ${reason}`);
   }
 
   private startRetryProcessor(): void {
@@ -4018,52 +4018,52 @@ export default class ParticipantIngestService extends Service {
       await this.processRetryQueue();
     }, this.RETRY_INTERVAL_MS);
 
-    this.logger.info("Started permission retry processor");
+    this.logger.info("Started participant retry processor");
   }
 
   private async processRetryQueue(): Promise<void> {
     const now = new Date();
     const keysToRetry: string[] = [];
 
-    for (const [key, queuedPermission] of this.retryQueue.entries()) {
-      if (queuedPermission.nextRetryAt <= now && queuedPermission.retryCount < this.MAX_RETRY_ATTEMPTS) {
+    for (const [key, queuedParticipant] of this.retryQueue.entries()) {
+      if (queuedParticipant.nextRetryAt <= now && queuedParticipant.retryCount < this.MAX_RETRY_ATTEMPTS) {
         keysToRetry.push(key);
       }
     }
 
     for (const key of keysToRetry) {
-      const queuedPermission = this.retryQueue.get(key)!;
+      const queuedParticipant = this.retryQueue.get(key)!;
       try {
-        this.logger.info(`Retrying permission ${queuedPermission.message.id} (attempt ${queuedPermission.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS})`);
+        this.logger.info(`Retrying participant ${queuedParticipant.message.id} (attempt ${queuedParticipant.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS})`);
 
-        const result = await this.handleSetParticipantOPToValidated(queuedPermission.message);
+        const result = await this.handleSetParticipantOPToValidated(queuedParticipant.message);
 
         if (result && result.success !== false) {
           this.retryQueue.delete(key);
-          this.logger.info(`Successfully processed queued permission ${queuedPermission.message.id}`);
+          this.logger.info(`Successfully processed queued participant ${queuedParticipant.message.id}`);
         } else {
-          queuedPermission.retryCount++;
-          const delay = this.RETRY_INTERVAL_MS * (this.RETRY_BACKOFF_MULTIPLIER ** (queuedPermission.retryCount - 1));
-          queuedPermission.nextRetryAt = new Date(Date.now() + delay);
-          this.logger.warn(`Permission ${queuedPermission.message.id} still failed, scheduled next retry in ${delay}ms`);
+          queuedParticipant.retryCount++;
+          const delay = this.RETRY_INTERVAL_MS * (this.RETRY_BACKOFF_MULTIPLIER ** (queuedParticipant.retryCount - 1));
+          queuedParticipant.nextRetryAt = new Date(Date.now() + delay);
+          this.logger.warn(`Participant ${queuedParticipant.message.id} still failed, scheduled next retry in ${delay}ms`);
         }
       } catch (error) {
-        queuedPermission.retryCount++;
-        const delay = this.RETRY_INTERVAL_MS * (this.RETRY_BACKOFF_MULTIPLIER ** (queuedPermission.retryCount - 1));
-        queuedPermission.nextRetryAt = new Date(Date.now() + delay);
-        this.logger.error(`Error retrying permission ${queuedPermission.message.id}:`, error);
+        queuedParticipant.retryCount++;
+        const delay = this.RETRY_INTERVAL_MS * (this.RETRY_BACKOFF_MULTIPLIER ** (queuedParticipant.retryCount - 1));
+        queuedParticipant.nextRetryAt = new Date(Date.now() + delay);
+        this.logger.error(`Error retrying participant ${queuedParticipant.message.id}:`, error);
       }
     }
 
-    for (const [key, queuedPermission] of this.retryQueue.entries()) {
-      if (queuedPermission.retryCount >= this.MAX_RETRY_ATTEMPTS) {
+    for (const [key, queuedParticipant] of this.retryQueue.entries()) {
+      if (queuedParticipant.retryCount >= this.MAX_RETRY_ATTEMPTS) {
         this.retryQueue.delete(key);
-        this.logger.error(`Permission ${queuedPermission.message.id} exceeded max retries (${this.MAX_RETRY_ATTEMPTS}), giving up`);
+        this.logger.error(`Participant ${queuedParticipant.message.id} exceeded max retries (${this.MAX_RETRY_ATTEMPTS}), giving up`);
       }
     }
 
     if (this.retryQueue.size > 0) {
-      this.logger.info(`Retry queue status: ${this.retryQueue.size} permissions waiting`);
+      this.logger.info(`Retry queue status: ${this.retryQueue.size} participants waiting`);
     }
   }
 
@@ -4076,6 +4076,6 @@ export default class ParticipantIngestService extends Service {
       clearInterval(this.retryInterval);
       this.retryInterval = null;
     }
-    this.logger.info("Stopped permission retry processor");
+    this.logger.info("Stopped participant retry processor");
   }
 }

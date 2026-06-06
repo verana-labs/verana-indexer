@@ -13,7 +13,7 @@ export function getHolderOnboardingModeString(modeNumber: number): string {
   const modes: Record<number, string> = {
     0: "MODE_UNSPECIFIED",
     1: "ISSUER_VALIDATION_PROCESS",
-    2: "PERMISSIONLESS",
+    2: "PARTICIPANTLESS",
   };
   return modes[modeNumber] ?? "UNKNOWN";
 }

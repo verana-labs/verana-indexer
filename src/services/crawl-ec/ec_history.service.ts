@@ -26,7 +26,7 @@ export default class EcosystemHistoryService extends BaseService {
     }
   }
 
-  private async buildVersionsAtHeight(trId: number, blockHeight: number | string | null): Promise<any[]> {
+  private async buildVersionsAtHeight(ecosystemId: number, blockHeight: number | string | null): Promise<any[]> {
     if (!blockHeight) {
       return [];
     }
@@ -37,8 +37,8 @@ export default class EcosystemHistoryService extends BaseService {
     }
 
     const gfvHistory = await knex("governance_framework_version_history")
-      .select("id", "tr_id", "created", "version", "active_since", "height", "created_at")
-      .where({ tr_id: trId })
+      .select("id", "ecosystem_id", "created", "version", "active_since", "height", "created_at")
+      .where({ ecosystem_id: ecosystemId })
       .where("height", "<=", height)
       .orderBy("version", "asc")
       .orderBy("height", "desc")
@@ -46,8 +46,8 @@ export default class EcosystemHistoryService extends BaseService {
       .orderBy("id", "desc");
 
     const gfvRows = await knex("governance_framework_version")
-      .select("id", "tr_id", "version")
-      .where({ tr_id: trId });
+      .select("id", "ecosystem_id", "version")
+      .where({ ecosystem_id: ecosystemId });
     const gfvIdByVersion = new Map<number, number>();
     for (const row of gfvRows) {
       const version = Number(row.version);
@@ -69,7 +69,7 @@ export default class EcosystemHistoryService extends BaseService {
       const actualGfvId = gfvIdByVersion.get(version);
       return {
         id: Number.isFinite(actualGfvId as number) ? Number(actualGfvId) : Number(gfv.id),
-        tr_id: Number(trId),
+        ecosystem_id: Number(ecosystemId),
         created: gfv.created ? (gfv.created instanceof Date ? gfv.created.toISOString() : new Date(gfv.created).toISOString()) : null,
         version,
         active_since: gfv.active_since ? (gfv.active_since instanceof Date ? gfv.active_since.toISOString() : new Date(gfv.active_since).toISOString()) : null,
@@ -83,7 +83,7 @@ export default class EcosystemHistoryService extends BaseService {
       const gfdColumns = [
         "id",
         "gfv_id",
-        "tr_id",
+        "ecosystem_id",
         "created",
         "language",
         "url",
@@ -97,7 +97,7 @@ export default class EcosystemHistoryService extends BaseService {
 
       const gfdHistory = await knex("governance_framework_document_history")
         .select(...gfdColumns)
-        .where({ tr_id: trId })
+        .where({ ecosystem_id: ecosystemId })
         .whereIn("gfv_id", gfvIds)
         .where("height", "<=", height)
         .orderBy("gfv_id", "asc")
@@ -118,7 +118,7 @@ export default class EcosystemHistoryService extends BaseService {
 
         const docId = Number(hasGfdIdColumn ? (gfd as any).gfd_id : gfd.id);
         const dedupeId = Number.isFinite(docId) && docId > 0 ? `doc:${docId}` : `url:${gfd.url || ""}:${gfd.language || ""}`;
-        const dedupeKey = `${Number(versionEntry.tr_id)}::${gfvId}::${dedupeId}`;
+        const dedupeKey = `${Number(versionEntry.ecosystem_id)}::${gfvId}::${dedupeId}`;
         if (seenDocs.has(dedupeKey)) continue;
         seenDocs.add(dedupeKey);
 
@@ -137,7 +137,7 @@ export default class EcosystemHistoryService extends BaseService {
   }
 
   private async buildChangedVersions(
-    trId: number,
+    ecosystemId: number,
     blockHeight: number | string | null,
     addedGfvs: any[],
     addedGfds: any[]
@@ -162,7 +162,7 @@ export default class EcosystemHistoryService extends BaseService {
         const gfvHistoryRows = await knex("governance_framework_version_history")
           .select("id", "version")
           .whereIn("id", gfvHistoryIds)
-          .where({ tr_id: trId })
+          .where({ ecosystem_id: ecosystemId })
           .where("height", "<=", height)
           .orderBy("height", "desc")
           .orderBy("created_at", "desc")
@@ -182,7 +182,7 @@ export default class EcosystemHistoryService extends BaseService {
       if (docIds.length > 0) {
         const docHistoryRecords = await knex("governance_framework_document_history")
           .whereIn("id", docIds)
-          .where({ tr_id: trId })
+          .where({ ecosystem_id: ecosystemId })
           .where("height", height);
 
         const gfvIds = Array.from(
@@ -196,7 +196,7 @@ export default class EcosystemHistoryService extends BaseService {
         if (gfvIds.length > 0) {
           const gfvRows = await knex("governance_framework_version")
             .select("id", "version")
-            .where({ tr_id: trId })
+            .where({ ecosystem_id: ecosystemId })
             .whereIn("id", gfvIds);
 
           for (const row of gfvRows) {
@@ -213,7 +213,7 @@ export default class EcosystemHistoryService extends BaseService {
       return [];
     }
 
-    const versionsAtHeight = await this.buildVersionsAtHeight(trId, height);
+    const versionsAtHeight = await this.buildVersionsAtHeight(ecosystemId, height);
     if (!versionsAtHeight || versionsAtHeight.length === 0) {
       return [];
     }
@@ -224,13 +224,13 @@ export default class EcosystemHistoryService extends BaseService {
   }
 
   private async getTRHistoryFromSnapshot(
-    trId: number,
+    ecosystemId: number,
     responseMaxSize: number,
     transactionTimestampOlderThan?: string,
     atBlockHeight?: string
   ): Promise<any[]> {
-    let query = knex("trust_registry_snapshot")
-      .where({ tr_id: trId })
+    let query = knex("ecosystem_snapshot")
+      .where({ ecosystem_id: ecosystemId })
       .orderBy("height", "desc")
       .limit(responseMaxSize);
 
@@ -247,7 +247,7 @@ export default class EcosystemHistoryService extends BaseService {
     }
 
     const rows = await query.select(
-      "id", "tr_id", "height", "event_type", "created_at",
+      "id", "ecosystem_id", "height", "event_type", "created_at",
       "did", "corporation", "created", "modified", "archived", "aka", "language", "active_version",
       "participants", "participants_ecosystem", "participants_issuer_grantor", "participants_issuer",
       "participants_verifier_grantor", "participants_verifier", "participants_holder",
@@ -283,7 +283,7 @@ export default class EcosystemHistoryService extends BaseService {
       let versions = Array.isArray(row.versions_snapshot) ? row.versions_snapshot : [];
       versions = versions.map((v: any) => ({
         id: v.id ?? v.version_id,
-        tr_id: Number(trId),
+        ecosystem_id: Number(ecosystemId),
         created: v.created != null ? (v.created instanceof Date ? v.created.toISOString() : new Date(v.created).toISOString()) : null,
         version: Number(v.version ?? 0),
         active_since: v.active_since != null ? (v.active_since instanceof Date ? v.active_since.toISOString() : new Date(v.active_since).toISOString()) : null,
@@ -338,9 +338,9 @@ export default class EcosystemHistoryService extends BaseService {
   }
 
   @Action()
-  public async getTRHistory(ctx: Context<{ tr_id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
+  public async getTRHistory(ctx: Context<{ ecosystem_id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
     try {
-      const { tr_id: trId, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      const { ecosystem_id: ecosystemId, response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
 
       if (transactionTimestampOlderThan) {
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
@@ -359,44 +359,44 @@ export default class EcosystemHistoryService extends BaseService {
       const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
       const useHeightSync = process.env.USE_HEIGHT_SYNC_TR === "true";
 
-      const tr = await knex("trust_registry").where("id", trId).first();
-      if (!tr) return ApiResponder.error(ctx, "Trust Registry not found", 404);
+      const ec = await knex("ecosystem").where("id", ecosystemId).first();
+      if (!ec) return ApiResponder.error(ctx, "Trust Registry not found", 404);
 
       if (useHeightSync) {
         const activity = await this.getTRHistoryFromSnapshot(
-          trId,
+          ecosystemId,
           responseMaxSize,
           transactionTimestampOlderThan,
           atBlockHeight
         );
         return ApiResponder.success(ctx, {
-          entity_type: "TrustRegistry",
-          entity_id: String(trId),
+          entity_type: "Ecosystem",
+          entity_id: String(ecosystemId),
           activity,
         }, 200);
       }
 
       const activity = await buildActivityTimeline(
         {
-          entityType: "TrustRegistry",
-          historyTable: "trust_registry_history",
-          idField: "tr_id",
-          entityId: trId,
-          msgTypePrefixes: ["/verana.tr.v1"],
+          entityType: "Ecosystem",
+          historyTable: "ecosystem_history",
+          idField: "ecosystem_id",
+          entityId: ecosystemId,
+          msgTypePrefixes: ["/verana.ec.v1"],
           relatedEntities: [
             {
               entityType: "GovernanceFrameworkVersion",
               historyTable: "governance_framework_version_history",
-              idField: "tr_id",
+              idField: "ecosystem_id",
               entityIdField: "id",
-              msgTypePrefixes: ["/verana.tr.v1"],
+              msgTypePrefixes: ["/verana.ec.v1"],
             },
             {
               entityType: "GovernanceFrameworkDocument",
               historyTable: "governance_framework_document_history",
-              idField: "tr_id",
+              idField: "ecosystem_id",
               entityIdField: "id",
-              msgTypePrefixes: ["/verana.tr.v1"],
+              msgTypePrefixes: ["/verana.ec.v1"],
             },
           ],
         },
@@ -424,10 +424,10 @@ export default class EcosystemHistoryService extends BaseService {
               let versionsToAdd: any[] = [];
 
               if (item.msg === "CreateEcosystem") {
-                versionsToAdd = await this.buildVersionsAtHeight(trId, blockHeight);
+                versionsToAdd = await this.buildVersionsAtHeight(ecosystemId, blockHeight);
               } else if ((addedGfvs && addedGfvs.length > 0) || (addedGfds && addedGfds.length > 0)) {
                 versionsToAdd = await this.buildChangedVersions(
-                  trId,
+                  ecosystemId,
                   blockHeight,
                   addedGfvs || [],
                   addedGfds || []
@@ -450,14 +450,14 @@ export default class EcosystemHistoryService extends BaseService {
       );
 
       const result = {
-        entity_type: "TrustRegistry",
-        entity_id: String(trId),
+        entity_type: "Ecosystem",
+        entity_id: String(ecosystemId),
         activity: enrichedActivity || [],
       };
 
       return ApiResponder.success(ctx, result, 200);
     } catch (err: any) {
-      this.logger.error("Error fetching TR history:", err);
+      this.logger.error("Error fetching EC history:", err);
       this.logger.error("Error stack:", err?.stack);
       this.logger.error("Error details:", {
         message: err?.message,

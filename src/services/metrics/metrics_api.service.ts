@@ -288,27 +288,27 @@ export default class MetricsApiService extends BaseService {
       const asOfIso = asOfDate.toISOString();
 
       const trLatest = IS_PG_CLIENT
-        ? knex("trust_registry_history as trh")
-          .distinctOn("trh.tr_id")
-          .select("trh.tr_id", "trh.archived")
+        ? knex("ecosystem_history as trh")
+          .distinctOn("trh.ecosystem_id")
+          .select("trh.ecosystem_id", "trh.archived")
           .where("trh.height", "<=", blockHeight)
-          .orderBy("trh.tr_id", "asc")
+          .orderBy("trh.ecosystem_id", "asc")
           .orderBy("trh.height", "desc")
           .orderBy("trh.created_at", "desc")
           .orderBy("trh.id", "desc")
           .as("latest_tr")
         : knex
           .from(
-            knex("trust_registry_history as trh")
+            knex("ecosystem_history as trh")
               .select(
-                "trh.tr_id",
+                "trh.ecosystem_id",
                 "trh.archived",
-                knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.tr_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
+                knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.ecosystem_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
               )
               .where("trh.height", "<=", blockHeight)
               .as("ranked_tr")
           )
-          .select("tr_id", "archived")
+          .select("ecosystem_id", "archived")
           .where("rn", 1)
           .as("latest_tr");
       const trAgg = await knex.from(trLatest)
@@ -403,11 +403,11 @@ export default class MetricsApiService extends BaseService {
       }
 
       const nowIso = asOfIso;
-      const latestPermRanked = IS_PG_CLIENT
-        ? knex("permission_history as ph")
-          .distinctOn("ph.permission_id")
+      const latestParticipantRanked = IS_PG_CLIENT
+        ? knex("participant_history as ph")
+          .distinctOn("ph.participant_id")
           .select(
-            "ph.permission_id",
+            "ph.participant_id",
             "ph.corporation",
             "ph.role",
             "ph.repaid",
@@ -417,14 +417,14 @@ export default class MetricsApiService extends BaseService {
             "ph.effective_until"
           )
           .where("ph.height", "<=", blockHeight)
-          .orderBy("ph.permission_id", "asc")
+          .orderBy("ph.participant_id", "asc")
           .orderBy("ph.height", "desc")
           .orderBy("ph.created_at", "desc")
           .orderBy("ph.id", "desc")
-          .as("ranked_perm")
-        : knex("permission_history as ph")
+          .as("ranked_participant")
+        : knex("participant_history as ph")
           .select(
-            "ph.permission_id",
+            "ph.participant_id",
             "ph.corporation",
             "ph.role",
             "ph.repaid",
@@ -432,13 +432,13 @@ export default class MetricsApiService extends BaseService {
             "ph.revoked",
             "ph.effective_from",
             "ph.effective_until",
-            knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+            knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.participant_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
           )
           .where("ph.height", "<=", blockHeight)
-          .as("ranked_perm");
+          .as("ranked_participant");
 
-      const activePermBaseQuery = knex
-        .from(latestPermRanked)
+      const activeParticipantBaseQuery = knex
+        .from(latestParticipantRanked)
         .modify((qb) => {
           if (!IS_PG_CLIENT) qb.where("rn", 1);
         })
@@ -453,7 +453,7 @@ export default class MetricsApiService extends BaseService {
       let participantsAgg: any = null;
       let participantsByTypeAgg: any[] = [];
       if (IS_PG_CLIENT) {
-        participantsAgg = await activePermBaseQuery
+        participantsAgg = await activeParticipantBaseQuery
           .clone()
           .select(
             knex.raw("COUNT(DISTINCT corporation) as participants"),
@@ -466,11 +466,11 @@ export default class MetricsApiService extends BaseService {
           )
           .first();
       } else {
-        participantsAgg = await activePermBaseQuery
+        participantsAgg = await activeParticipantBaseQuery
           .clone()
           .countDistinct("corporation as participants")
           .first();
-        participantsByTypeAgg = await activePermBaseQuery
+        participantsByTypeAgg = await activeParticipantBaseQuery
           .clone()
           .groupBy("role")
           .select("role")

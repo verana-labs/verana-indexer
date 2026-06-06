@@ -54,7 +54,7 @@ export async function clearRedisCache(logger?: any): Promise<CacheCleanResult> {
 
     logger?.info?.('Clearing Redis cache for reindex');
 
-    const prefixes = ['MOL-', 'bull:', 'verana:', 'cache:', 'tr:', 'cs:', 'perm:'];
+    const prefixes = ['MOL-', 'bull:', 'verana:', 'cache:', 'ec:', 'cs:', 'participant:'];
     let totalCleared = 0;
 
     for (const prefix of prefixes) {

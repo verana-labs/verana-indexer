@@ -32,7 +32,7 @@ export * from "./corporation_member";
 export * from "./corporation_history";
 export * from "./co_governance_framework_version";
 export * from "./co_governance_framework_document";
-export * from "./trust_registry_history";
+export * from "./ecosystem_history";
 export * from "./governance_framework_version_history";
 export * from "./governance_framework_document_history";
 export * from "./stats";

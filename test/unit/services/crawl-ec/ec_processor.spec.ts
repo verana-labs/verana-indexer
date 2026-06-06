@@ -2,13 +2,13 @@ import { ServiceBroker } from "moleculer";
 import {
   ModulesParamsNamesTypes,
 } from "../../../../src/common";
-import { VeranaEcosystemMessageTypes as TrustRegistryMessageTypes } from "../../../../src/common/verana-message-types";
+import { VeranaEcosystemMessageTypes as EcosystemMessageTypes } from "../../../../src/common/verana-message-types";
 import knex from "../../../../src/common/utils/db_connection";
-import TrustRegistryMessageProcessorService from "../../../../src/services/crawl-tr/tr_processor.service";
+import EcosystemMessageProcessorService from "../../../../src/services/crawl-ec/ec_processor.service";
 
-describe("TrustRegistryMessageProcessorService Tests", () => {
+describe("EcosystemMessageProcessorService Tests", () => {
   const broker = new ServiceBroker({ logger: false });
-  const service = broker.createService(TrustRegistryMessageProcessorService);
+  const service = broker.createService(EcosystemMessageProcessorService);
 
   afterAll(async () => {
     await broker.stop();
@@ -21,7 +21,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     await knex("governance_framework_version_history")
       .del()
       .catch(() => {});
-    await knex("trust_registry_history")
+    await knex("ecosystem_history")
       .del()
       .catch(() => {});
     await knex("governance_framework_document")
@@ -30,7 +30,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     await knex("governance_framework_version")
       .del()
       .catch(() => {});
-    await knex("trust_registry")
+    await knex("ecosystem")
       .del()
       .catch(() => {});
     await knex("module_params")
@@ -38,10 +38,10 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       .catch(() => {});
 
     await knex("module_params").insert({
-      module: ModulesParamsNamesTypes.TR,
+      module: ModulesParamsNamesTypes.EC,
       params: JSON.stringify({
         params: {
-          trust_registry_trust_deposit: 1000,
+          ecosystem_trust_deposit: 1000,
           trust_unit_price: 1,
         },
       }),
@@ -54,11 +54,11 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const dummyTR = [
       {
-        type: TrustRegistryMessageTypes.CreateEcosystem,
+        type: EcosystemMessageTypes.CreateEcosystem,
         content: {
           did: "did:example:insert",
           creator: "creator_test",
-          aka: "Test TR",
+          aka: "Test EC",
           language: "en",
           height,
           doc_url: "http://example.com/doc.pdf",
@@ -68,18 +68,18 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       },
     ];
 
-    await service.handleTrustRegistryMessages({
-      params: { trustRegistryList: dummyTR },
+    await service.handleEcosystemMessages({
+      params: { ecosystemList: dummyTR },
     } as any);
 
-    const tr = await knex("trust_registry")
+    const ec = await knex("ecosystem")
       .where({ did: "did:example:insert" })
       .first();
-    expect(tr).toBeDefined();
-    expect(tr.corporation).toBe("creator_test");
+    expect(ec).toBeDefined();
+    expect(ec.corporation).toBe("creator_test");
 
     const gfv = await knex("governance_framework_version")
-      .where({ tr_id: tr.id })
+      .where({ ecosystem_id: ec.id })
       .first();
     expect(gfv).toBeDefined();
     expect(gfv.version).toBe(1);
@@ -90,14 +90,14 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(gfd).toBeDefined();
     expect(gfd.url).toBe("http://example.com/doc.pdf");
 
-    const trHistory = await knex("trust_registry_history")
-      .where({ tr_id: tr.id })
+    const ecosystemHistory = await knex("ecosystem_history")
+      .where({ ecosystem_id: ec.id })
       .first();
-    expect(trHistory).toBeDefined();
-    expect(trHistory.changes).toBeDefined();
+    expect(ecosystemHistory).toBeDefined();
+    expect(ecosystemHistory.changes).toBeDefined();
 
     const gfvHistory = await knex("governance_framework_version_history")
-      .where({ tr_id: tr.id })
+      .where({ ecosystem_id: ec.id })
       .first();
     expect(gfvHistory).toBeDefined();
     expect(gfvHistory.changes).toBeDefined();
@@ -113,13 +113,13 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     const timestamp = new Date();
     const height = 2;
 
-    const [trId] = await knex("trust_registry")
+    const [ecosystemId] = await knex("ecosystem")
       .insert({
         did: "did:example:update",
         corporation: "creator_update",
         created: timestamp,
         modified: timestamp,
-        aka: "Old TR",
+        aka: "Old EC",
         language: "en",
         height: 500,
         active_version: 1,
@@ -128,11 +128,11 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
 
     const UpdateResponse = [
       {
-        type: TrustRegistryMessageTypes.UpdateEcosystem,
+        type: EcosystemMessageTypes.UpdateEcosystem,
         content: {
-          trust_registry_id: trId.id,
+          ecosystem_id: ecosystemId.id,
           creator: "creator_update",
-          aka: "Updated TR",
+          aka: "Updated EC",
           language: "fr",
           height: 501,
           deposit: 2000,
@@ -141,27 +141,27 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       },
     ];
 
-    await service.handleTrustRegistryMessages({
-      params: { trustRegistryList: UpdateResponse },
+    await service.handleEcosystemMessages({
+      params: { ecosystemList: UpdateResponse },
     } as any);
 
-    const updatedTR = await knex("trust_registry")
-      .where({ id: trId.id })
+    const updatedTR = await knex("ecosystem")
+      .where({ id: ecosystemId.id })
       .first();
     expect(updatedTR).toBeDefined();
-    expect(updatedTR.aka).toBe("Updated TR");
+    expect(updatedTR.aka).toBe("Updated EC");
     expect(updatedTR.language).toBe("fr");
     expect(updatedTR.height).toBe(501);
 
-    const trHistory = await knex("trust_registry_history")
-      .where({ tr_id: trId.id })
+    const ecosystemHistory = await knex("ecosystem_history")
+      .where({ ecosystem_id: ecosystemId.id })
       .orderBy("id", "desc")
       .first();
-    expect(trHistory).toBeDefined();
+    expect(ecosystemHistory).toBeDefined();
     const changes =
-      typeof trHistory.changes === "string"
-        ? JSON.parse(trHistory.changes)
-        : trHistory.changes;
+      typeof ecosystemHistory.changes === "string"
+        ? JSON.parse(ecosystemHistory.changes)
+        : ecosystemHistory.changes;
     expect(changes).toHaveProperty("aka");
     expect(changes).toHaveProperty("language");
     expect(changes).toHaveProperty("height");
@@ -171,24 +171,24 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     const timestamp = new Date();
     const height = 3;
 
-    const [trId] = await knex("trust_registry")
+    const [ecosystemId] = await knex("ecosystem")
       .insert({
         did: "did:example:archive",
         corporation: "creator_archive",
         created: timestamp,
         modified: timestamp,
-        aka: "TR Archive",
+        aka: "EC Archive",
         language: "en",
         height: 700,
         active_version: 1,
       })
       .returning("id");
 
-    const archiveTrustRegistry = [
+    const archiveEcosystem = [
       {
-        type: TrustRegistryMessageTypes.ArchiveEcosystem,
+        type: EcosystemMessageTypes.ArchiveEcosystem,
         content: {
-          trust_registry_id: trId.id,
+          ecosystem_id: ecosystemId.id,
           creator: "creator_archive",
           archive: true,
           timestamp,
@@ -196,24 +196,24 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
         },
       },
     ];
-    await service.handleTrustRegistryMessages({
-      params: { trustRegistryList: archiveTrustRegistry },
+    await service.handleEcosystemMessages({
+      params: { ecosystemList: archiveEcosystem },
     } as any);
 
-    const archivedTR = await knex("trust_registry")
-      .where({ id: trId.id })
+    const archivedTR = await knex("ecosystem")
+      .where({ id: ecosystemId.id })
       .first();
     expect(archivedTR.archived).not.toBeNull();
 
-    const trHistoryArchive = await knex("trust_registry_history")
-      .where({ tr_id: trId.id })
+    const ecosystemHistoryArchive = await knex("ecosystem_history")
+      .where({ ecosystem_id: ecosystemId.id })
       .orderBy("id", "desc")
       .first();
-    expect(trHistoryArchive).toBeDefined();
+    expect(ecosystemHistoryArchive).toBeDefined();
     const archiveChanges =
-      typeof trHistoryArchive.changes === "string"
-        ? JSON.parse(trHistoryArchive.changes)
-        : trHistoryArchive.changes;
+      typeof ecosystemHistoryArchive.changes === "string"
+        ? JSON.parse(ecosystemHistoryArchive.changes)
+        : ecosystemHistoryArchive.changes;
     expect(archiveChanges).toHaveProperty("archived");
     const archivedField = archiveChanges.archived;
     if (archivedField === null) {
@@ -225,11 +225,11 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       expect(typeof archivedField).toBe("string");
     }
 
-    const unarchiveTrustRegistry = [
+    const unarchiveEcosystem = [
       {
-        type: TrustRegistryMessageTypes.ArchiveEcosystem,
+        type: EcosystemMessageTypes.ArchiveEcosystem,
         content: {
-          trust_registry_id: trId.id,
+          ecosystem_id: ecosystemId.id,
           creator: "creator_archive",
           archive: false,
           timestamp,
@@ -237,24 +237,24 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
         },
       },
     ];
-    await service.handleTrustRegistryMessages({
-      params: { trustRegistryList: unarchiveTrustRegistry },
+    await service.handleEcosystemMessages({
+      params: { ecosystemList: unarchiveEcosystem },
     } as any);
 
-    const unarchivedTR = await knex("trust_registry")
-      .where({ id: trId.id })
+    const unarchivedTR = await knex("ecosystem")
+      .where({ id: ecosystemId.id })
       .first();
     expect(unarchivedTR.archived).toBeNull();
 
-    const trHistoryUnarchive = await knex("trust_registry_history")
-      .where({ tr_id: trId.id })
+    const ecosystemHistoryUnarchive = await knex("ecosystem_history")
+      .where({ ecosystem_id: ecosystemId.id })
       .orderBy("id", "desc")
       .first();
-    expect(trHistoryUnarchive).toBeDefined();
+    expect(ecosystemHistoryUnarchive).toBeDefined();
     const unarchiveChanges =
-      typeof trHistoryUnarchive.changes === "string"
-        ? JSON.parse(trHistoryUnarchive.changes)
-        : trHistoryUnarchive.changes;
+      typeof ecosystemHistoryUnarchive.changes === "string"
+        ? JSON.parse(ecosystemHistoryUnarchive.changes)
+        : ecosystemHistoryUnarchive.changes;
     expect(unarchiveChanges).toHaveProperty("archived");
     const unarchiveArchivedField = unarchiveChanges.archived;
     if (unarchiveArchivedField === null) {
@@ -272,16 +272,16 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     const timestamp2 = new Date("2026-01-26T18:37:04.894Z");
     const height1 = 1000;
     const height2 = 2000;
-    const sameDid = "did:webvh:QmdRTJUXfCky9wX2EzYFkZKyfgG1W6wqxkQvmVU22uKmBP:ecs-tr.testnet.verana.network";
+    const sameDid = "did:webvh:QmdRTJUXfCky9wX2EzYFkZKyfgG1W6wqxkQvmVU22uKmBP:ecs-ec.testnet.verana.network";
 
-    // Create first TR
+    // Create first EC
     const firstTR = [
       {
-        type: TrustRegistryMessageTypes.CreateEcosystem,
+        type: EcosystemMessageTypes.CreateEcosystem,
         content: {
           did: sameDid,
           creator: "creator1",
-          aka: "First TR",
+          aka: "First EC",
           language: "en",
           height: height1,
           doc_url: "https://verana.io",
@@ -291,11 +291,11 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       },
     ];
 
-    await service.handleTrustRegistryMessages({
-      params: { trustRegistryList: firstTR },
+    await service.handleEcosystemMessages({
+      params: { ecosystemList: firstTR },
     } as any);
 
-    const firstTRRecord = await knex("trust_registry")
+    const firstTRRecord = await knex("ecosystem")
       .where({ height: height1 })
       .first();
     expect(firstTRRecord).toBeDefined();
@@ -303,7 +303,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(firstTRRecord.height).toBe(height1);
 
     const firstGFV = await knex("governance_framework_version")
-      .where({ tr_id: firstTRRecord.id })
+      .where({ ecosystem_id: firstTRRecord.id })
       .first();
     expect(firstGFV).toBeDefined();
 
@@ -313,14 +313,14 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(firstGFD).toBeDefined();
     expect(firstGFD.url).toBe("https://verana.io");
 
-    // Create second TR with same DID but different height
+    // Create second EC with same DID but different height
     const secondTR = [
       {
-        type: TrustRegistryMessageTypes.CreateEcosystem,
+        type: EcosystemMessageTypes.CreateEcosystem,
         content: {
           did: sameDid,
           creator: "creator2",
-          aka: "Second TR",
+          aka: "Second EC",
           language: "en",
           height: height2,
           doc_url: "https://verana.io/page/about/governance/",
@@ -330,29 +330,29 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
       },
     ];
 
-    await service.handleTrustRegistryMessages({
-      params: { trustRegistryList: secondTR },
+    await service.handleEcosystemMessages({
+      params: { ecosystemList: secondTR },
     } as any);
 
-    // Verify second TR was created (not updating the first one)
-    const secondTRRecord = await knex("trust_registry")
+    // Verify second EC was created (not updating the first one)
+    const secondTRRecord = await knex("ecosystem")
       .where({ height: height2 })
       .first();
     expect(secondTRRecord).toBeDefined();
     expect(secondTRRecord.did).toBe(sameDid);
     expect(secondTRRecord.height).toBe(height2);
-    expect(secondTRRecord.id).not.toBe(firstTRRecord.id); // Should be a different TR
+    expect(secondTRRecord.id).not.toBe(firstTRRecord.id); // Should be a different EC
 
-    // Verify first TR was not modified
-    const firstTRRecordAfter = await knex("trust_registry")
+    // Verify first EC was not modified
+    const firstTRRecordAfter = await knex("ecosystem")
       .where({ id: firstTRRecord.id })
       .first();
     expect(firstTRRecordAfter.height).toBe(height1);
-    expect(firstTRRecordAfter.aka).toBe("First TR");
+    expect(firstTRRecordAfter.aka).toBe("First EC");
 
-    // Verify second TR has its own GFV and GFD
+    // Verify second EC has its own GFV and GFD
     const secondGFV = await knex("governance_framework_version")
-      .where({ tr_id: secondTRRecord.id })
+      .where({ ecosystem_id: secondTRRecord.id })
       .first();
     expect(secondGFV).toBeDefined();
     expect(secondGFV.id).not.toBe(firstGFV.id); // Should be a different GFV
@@ -364,7 +364,7 @@ describe("TrustRegistryMessageProcessorService Tests", () => {
     expect(secondGFD.url).toBe("https://verana.io/page/about/governance/");
     expect(secondGFD.id).not.toBe(firstGFD.id); // Should be a different GFD
 
-    // Verify first TR's documents were not affected
+    // Verify first EC's documents were not affected
     const firstGFDAfter = await knex("governance_framework_document")
       .where({ gfv_id: firstGFV.id })
       .first();

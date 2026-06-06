@@ -38,8 +38,8 @@ export enum VeranaEcosystemMessageTypes {
   CreateEcosystem = "/verana.ec.v1.MsgCreateEcosystem",
   UpdateEcosystem = "/verana.ec.v1.MsgUpdateEcosystem",
   ArchiveEcosystem = "/verana.ec.v1.MsgArchiveEcosystem",
-  AddGovernanceFrameworkDoc = "/verana.tr.v1.MsgAddGovernanceFrameworkDocument",
-  IncreaseGovernanceFrameworkVersion = "/verana.tr.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
+  AddGovernanceFrameworkDoc = "/verana.ec.v1.MsgAddGovernanceFrameworkDocument",
+  IncreaseGovernanceFrameworkVersion = "/verana.ec.v1.MsgIncreaseActiveGovernanceFrameworkVersion",
 }
 
 export enum VeranaCorporationMessageTypes {
@@ -74,9 +74,9 @@ export enum VeranaExchangeRateMessageTypes {
 
 export enum UpdateParamsMessageTypes {
   CREDENTIAL_SCHEMA = "/verana.cs.v1.MsgUpdateParams",
-  PERMISSION = "/verana.pp.v1.MsgUpdateParams",
+  PARTICIPANT = "/verana.pp.v1.MsgUpdateParams",
   TRUST_DEPOSIT = "/verana.td.v1.MsgUpdateParams",
-  TRUST_REGISTRY = "/verana.ec.v1.MsgUpdateParams",
+  ECOSYSTEM = "/verana.ec.v1.MsgUpdateParams",
   DIGITAL_IDENTITY = "/verana.di.v1.MsgUpdateParams",
   DELEGATION = "/verana.de.v1.MsgUpdateParams",
   EXCHANGE_RATE = "/verana.xr.v1.MsgUpdateParams",

@@ -1,11 +1,11 @@
 import knex from "../../common/utils/db_connection";
-import { TrustRegistry } from "../../models/trust_registry";
+import { Ecosystem } from "../../models/ecosystem";
 import { TR_STATS_FIELDS } from "../../common/utils/stats_fields";
-import { calculateCredentialSchemaStatsBatch, getPermissionSessionCounters } from "../crawl-cs/cs_stats";
+import { calculateCredentialSchemaStatsBatch, getParticipantSessionCounters } from "../crawl-cs/cs_stats";
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
 
-export interface TrustRegistryStats {
+export interface EcosystemStats {
     participants: number;
     participants_ecosystem: number;
     participants_issuer_grantor: number;
@@ -28,13 +28,13 @@ export interface TrustRegistryStats {
 
 export { TR_STATS_FIELDS };
 
-export async function getSchemasForTrustRegistry(trId: number, blockHeight?: number): Promise<any[]> {
+export async function getSchemasForEcosystem(ecosystemId: number, blockHeight?: number): Promise<any[]> {
     if (typeof blockHeight === "number") {
         if (IS_PG_CLIENT) {
             return await knex("credential_schema_history as csh")
                 .distinctOn("csh.credential_schema_id")
                 .select("csh.*")
-                .where("csh.ecosystem_id", String(trId))
+                .where("csh.ecosystem_id", String(ecosystemId))
                 .where("csh.height", "<=", blockHeight)
                 .orderBy("csh.credential_schema_id", "asc")
                 .orderBy("csh.height", "desc")
@@ -46,74 +46,74 @@ export async function getSchemasForTrustRegistry(trId: number, blockHeight?: num
                 "csh.*",
                 knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
             )
-            .where("csh.ecosystem_id", String(trId))
+            .where("csh.ecosystem_id", String(ecosystemId))
             .where("csh.height", "<=", blockHeight)
             .as("ranked");
         return await knex.from(ranked).select("*").where("rn", 1);
     }
     return await knex("credential_schemas")
-        .where("ecosystem_id", String(trId))
+        .where("ecosystem_id", String(ecosystemId))
         .select("*");
 }
 
-export async function getTrustRegistryController(trId: number, blockHeight?: number): Promise<string | null> {
+export async function getEcosystemController(ecosystemId: number, blockHeight?: number): Promise<string | null> {
     if (typeof blockHeight === "number") {
-        const trHistory = await knex("trust_registry_history")
-            .where("tr_id", trId)
+        const ecosystemHistory = await knex("ecosystem_history")
+            .where("ecosystem_id", ecosystemId)
             .where("height", "<=", blockHeight)
             .orderBy("height", "desc")
             .orderBy("created_at", "desc")
             .first();
-        return trHistory?.corporation || null;
+        return ecosystemHistory?.corporation || null;
     }
-    const tr = await TrustRegistry.query().findById(trId);
-    return tr?.corporation || null;
+    const ec = await Ecosystem.query().findById(ecosystemId);
+    return ec?.corporation || null;
 }
 
-export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
+export async function getParticipantsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
     if (typeof blockHeight === "number") {
         if (IS_PG_CLIENT) {
-            return await knex("permission_history as ph")
-                .distinctOn("ph.permission_id")
+            return await knex("participant_history as ph")
+                .distinctOn("ph.participant_id")
                 .select("ph.*")
                 .where("ph.schema_id", schemaId)
                 .where("ph.height", "<=", blockHeight)
-                .orderBy("ph.permission_id", "asc")
+                .orderBy("ph.participant_id", "asc")
                 .orderBy("ph.height", "desc")
                 .orderBy("ph.created_at", "desc")
                 .orderBy("ph.id", "desc");
         }
-        const ranked = knex("permission_history as ph")
+        const ranked = knex("participant_history as ph")
             .select(
                 "ph.*",
-                knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+                knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.participant_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
             )
             .where("ph.schema_id", schemaId)
             .where("ph.height", "<=", blockHeight)
             .as("ranked");
         return await knex.from(ranked).select("*").where("rn", 1);
     }
-    return await knex("permissions")
+    return await knex("participants")
         .where("schema_id", Number(schemaId))
         .select("*");
 }
 
 export async function calculateIssuedVerifiedForSchema(
     _schemaId: number,
-    permissionIds: Set<number>,
+    participantIds: Set<number>,
     blockHeight?: number
 ): Promise<{ issued: number; verified: number }> {
     let totalIssued = 0;
     let totalVerified = 0;
 
-    if (permissionIds.size === 0) {
+    if (participantIds.size === 0) {
         return { issued: 0, verified: 0 };
     }
 
-    const counters = await getPermissionSessionCounters(blockHeight);
-    for (const permissionId of permissionIds) {
-        totalIssued += counters.issuer.get(Number(permissionId)) || 0;
-        totalVerified += counters.verifier.get(Number(permissionId)) || 0;
+    const counters = await getParticipantSessionCounters(blockHeight);
+    for (const participantId of participantIds) {
+        totalIssued += counters.issuer.get(Number(participantId)) || 0;
+        totalVerified += counters.verifier.get(Number(participantId)) || 0;
     }
 
     return { issued: totalIssued, verified: totalVerified };
@@ -121,7 +121,7 @@ export async function calculateIssuedVerifiedForSchema(
 
 export async function calculateSlashStatsForSchema(
     schemaId: number,
-    permissionIds: Set<number>,
+    participantIds: Set<number>,
     _trController: string | null,
     blockHeight?: number
 ): Promise<{
@@ -139,7 +139,7 @@ export async function calculateSlashStatsForSchema(
     let networkSlashedAmount = 0;
     let networkSlashedAmountRepaid = 0;
 
-    if (permissionIds.size === 0) {
+    if (participantIds.size === 0) {
         return {
             ecosystem_slash_events: 0,
             ecosystem_slashed_amount: 0,
@@ -150,26 +150,26 @@ export async function calculateSlashStatsForSchema(
         };
     }
 
-    const permissionIdArray = Array.from(permissionIds);
+    const participantIdArray = Array.from(participantIds);
 
     let slashEvents: any[];
     if (typeof blockHeight === "number") {
-        slashEvents = await knex("permission_history")
-            .whereIn("permission_id", permissionIdArray)
+        slashEvents = await knex("participant_history")
+            .whereIn("participant_id", participantIdArray)
             .whereRaw("schema_id = ?", [schemaId])
-            .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
+            .where("event_type", "SLASH_PARTICIPANT_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .select("permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
-            .orderBy("permission_id", "asc")
+            .select("participant_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .orderBy("participant_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
     } else {
-        slashEvents = await knex("permission_history")
-            .whereIn("permission_id", permissionIdArray)
+        slashEvents = await knex("participant_history")
+            .whereIn("participant_id", participantIdArray)
             .whereRaw("schema_id = ?", [schemaId])
-            .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-            .select("permission_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
-            .orderBy("permission_id", "asc")
+            .where("event_type", "SLASH_PARTICIPANT_TRUST_DEPOSIT")
+            .select("participant_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .orderBy("participant_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
     }
@@ -178,44 +178,44 @@ export async function calculateSlashStatsForSchema(
     const prevRepaidDeposits = new Map<string, number>();
 
     for (const event of slashEvents) {
-        const permIdStr = String(event.permission_id);
-        const prevSlashed = prevSlashedDeposits.get(permIdStr) || 0;
+        const participantIdStr = String(event.participant_id);
+        const prevSlashed = prevSlashedDeposits.get(participantIdStr) || 0;
         const currentSlashed = typeof event.slashed_deposit === 'number' ? event.slashed_deposit : Number(event.slashed_deposit);
         const incrementalSlashed = currentSlashed - prevSlashed;
 
         if (incrementalSlashed <= 0) {
-            prevSlashedDeposits.set(permIdStr, currentSlashed);
+            prevSlashedDeposits.set(participantIdStr, currentSlashed);
             const currentRepaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            prevRepaidDeposits.set(permIdStr, currentRepaid);
+            prevRepaidDeposits.set(participantIdStr, currentRepaid);
             continue;
         }
 
-        prevSlashedDeposits.set(permIdStr, currentSlashed);
+        prevSlashedDeposits.set(participantIdStr, currentSlashed);
 
-        const isEcosystemPermission = event.role === "ECOSYSTEM";
+        const isEcosystemParticipant = event.role === "ECOSYSTEM";
 
-        if (isEcosystemPermission) {
+        if (isEcosystemParticipant) {
             networkSlashEvents++;
             networkSlashedAmount += incrementalSlashed;
 
             const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
+            const prevRepaid = prevRepaidDeposits.get(participantIdStr) || 0;
             const incrementalRepaid = repaid - prevRepaid;
             if (incrementalRepaid > 0) {
                 networkSlashedAmountRepaid += incrementalRepaid;
             }
-            prevRepaidDeposits.set(permIdStr, repaid);
+            prevRepaidDeposits.set(participantIdStr, repaid);
         } else {
             ecosystemSlashEvents++;
             ecosystemSlashedAmount += incrementalSlashed;
 
             const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
+            const prevRepaid = prevRepaidDeposits.get(participantIdStr) || 0;
             const incrementalRepaid = repaid - prevRepaid;
             if (incrementalRepaid > 0) {
                 ecosystemSlashedAmountRepaid += incrementalRepaid;
             }
-            prevRepaidDeposits.set(permIdStr, repaid);
+            prevRepaidDeposits.set(participantIdStr, repaid);
         }
     }
 
@@ -229,12 +229,12 @@ export async function calculateSlashStatsForSchema(
     };
 }
 
-export async function calculateTrustRegistryStats(
-    trId: number,
+export async function calculateEcosystemStats(
+    ecosystemId: number,
     blockHeight?: number
-): Promise<TrustRegistryStats> {
-    const batch = await calculateTrustRegistryStatsBatch([trId], blockHeight);
-    return batch.get(Number(trId)) || {
+): Promise<EcosystemStats> {
+    const batch = await calculateEcosystemStatsBatch([ecosystemId], blockHeight);
+    return batch.get(Number(ecosystemId)) || {
         participants: 0,
         participants_ecosystem: 0,
         participants_issuer_grantor: 0,
@@ -256,13 +256,13 @@ export async function calculateTrustRegistryStats(
     };
 }
 
-export async function calculateTrustRegistryStatsBatch(
-    trIdsInput: number[],
+export async function calculateEcosystemStatsBatch(
+    ecosystemIdsInput: number[],
     blockHeight?: number
-): Promise<Map<number, TrustRegistryStats>> {
-    const trIds = Array.from(new Set(trIdsInput.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
-    const result = new Map<number, TrustRegistryStats>();
-    if (trIds.length === 0) return result;
+): Promise<Map<number, EcosystemStats>> {
+    const ecosystemIds = Array.from(new Set(ecosystemIdsInput.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+    const result = new Map<number, EcosystemStats>();
+    if (ecosystemIds.length === 0) return result;
 
     let schemas: any[] = [];
     if (typeof blockHeight === "number") {
@@ -270,7 +270,7 @@ export async function calculateTrustRegistryStatsBatch(
             schemas = await knex("credential_schema_history as csh")
                 .distinctOn("csh.credential_schema_id")
                 .select("csh.credential_schema_id", "csh.ecosystem_id", "csh.archived")
-                .whereIn("csh.ecosystem_id", trIds)
+                .whereIn("csh.ecosystem_id", ecosystemIds)
                 .where("csh.height", "<=", blockHeight)
                 .orderBy("csh.credential_schema_id", "asc")
                 .orderBy("csh.height", "desc")
@@ -284,17 +284,17 @@ export async function calculateTrustRegistryStatsBatch(
                     "csh.archived",
                     knex.raw("ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn")
                 )
-                .whereIn("csh.ecosystem_id", trIds)
+                .whereIn("csh.ecosystem_id", ecosystemIds)
                 .where("csh.height", "<=", blockHeight)
                 .as("ranked");
-            schemas = await knex.from(ranked).select("credential_schema_id", "tr_id", "archived").where("rn", 1);
+            schemas = await knex.from(ranked).select("credential_schema_id", "ecosystem_id", "archived").where("rn", 1);
         }
     } else {
-        schemas = await knex("credential_schemas").select("id as credential_schema_id", "ecosystem_id", "archived").whereIn("ecosystem_id", trIds);
+        schemas = await knex("credential_schemas").select("id as credential_schema_id", "ecosystem_id", "archived").whereIn("ecosystem_id", ecosystemIds);
     }
 
-    for (const trId of trIds) {
-        result.set(trId, {
+    for (const ecosystemId of ecosystemIds) {
+        result.set(ecosystemId, {
             participants: 0,
             participants_ecosystem: 0,
             participants_issuer_grantor: 0,
@@ -319,13 +319,13 @@ export async function calculateTrustRegistryStatsBatch(
     const schemaIds: number[] = [];
     const schemaToTr = new Map<number, number>();
     for (const schema of schemas) {
-        const trId = Number(schema.tr_id);
+        const ecosystemId = Number(schema.ecosystem_id);
         const schemaId = Number(schema.credential_schema_id);
-        if (!Number.isFinite(trId) || !Number.isFinite(schemaId)) continue;
-        schemaToTr.set(schemaId, trId);
+        if (!Number.isFinite(ecosystemId) || !Number.isFinite(schemaId)) continue;
+        schemaToTr.set(schemaId, ecosystemId);
         schemaIds.push(schemaId);
 
-        const trStats = result.get(trId);
+        const trStats = result.get(ecosystemId);
         if (!trStats) continue;
         if (schema.archived !== null && schema.archived !== undefined) trStats.archived_schemas += 1;
         else trStats.active_schemas += 1;
@@ -333,9 +333,9 @@ export async function calculateTrustRegistryStatsBatch(
 
     const schemaStats = await calculateCredentialSchemaStatsBatch(schemaIds, blockHeight);
     for (const [schemaId, stats] of schemaStats.entries()) {
-        const trId = schemaToTr.get(schemaId);
-        if (!trId) continue;
-        const trStats = result.get(trId);
+        const ecosystemId = schemaToTr.get(schemaId);
+        if (!ecosystemId) continue;
+        const trStats = result.get(ecosystemId);
         if (!trStats) continue;
 
         trStats.participants += Number(stats.participants || 0);

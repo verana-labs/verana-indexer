@@ -68,12 +68,12 @@ describe("indexer_events_query", () => {
       createdTables.push("transaction_message");
     }
 
-    if (!(await knex.schema.hasTable("trust_registry"))) {
-      await knex.schema.createTable("trust_registry", (table) => {
+    if (!(await knex.schema.hasTable("ecosystem"))) {
+      await knex.schema.createTable("ecosystem", (table) => {
         table.bigInteger("id").primary();
         table.text("did").notNullable();
       });
-      createdTables.push("trust_registry");
+      createdTables.push("ecosystem");
     }
 
     if (!(await knex.schema.hasTable("credential_schemas"))) {
@@ -84,14 +84,14 @@ describe("indexer_events_query", () => {
       createdTables.push("credential_schemas");
     }
 
-    if (!(await knex.schema.hasTable("permissions"))) {
-      await knex.schema.createTable("permissions", (table) => {
+    if (!(await knex.schema.hasTable("participants"))) {
+      await knex.schema.createTable("participants", (table) => {
         table.bigInteger("id").primary();
         table.bigInteger("schema_id").nullable();
         table.text("did").nullable();
         table.bigInteger("validator_participant_id").nullable();
       });
-      createdTables.push("permissions");
+      createdTables.push("participants");
     }
   }
 
@@ -154,26 +154,26 @@ describe("indexer_events_query", () => {
   }): Promise<void> {
     txHashes.push(args.txHash);
     await knex("indexer_events").insert({
-      event_type: "StartPermissionVP",
+      event_type: "StartParticipantOP",
       did: args.did,
       block_height: args.height,
       tx_hash: args.txHash,
       tx_index: args.txIndex ?? 0,
       message_index: args.messageIndex ?? 0,
       message_type: VeranaParticipantMessageTypes.StartParticipantOP,
-      module: "permission",
-      entity_type: "Permission",
+      module: "participant",
+      entity_type: "Participant",
       entity_id: "42",
       timestamp: new Date("2025-01-15T10:30:00Z"),
       payload: {
-        module: "permission",
-        action: "StartPermissionVP",
+        module: "participant",
+        action: "StartParticipantOP",
         message_type: VeranaParticipantMessageTypes.StartParticipantOP,
         tx_index: args.txIndex ?? 0,
         message_index: args.messageIndex ?? 0,
         sender: otherDid,
         related_dids: args.relatedDids,
-        entity_type: "Permission",
+        entity_type: "Participant",
         entity_id: "42",
       },
     });

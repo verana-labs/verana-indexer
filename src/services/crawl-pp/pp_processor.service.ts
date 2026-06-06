@@ -8,12 +8,12 @@ import { VeranaParticipantMessageTypes } from "../../common/verana-message-types
 import { SERVICE } from "../../common";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
-import { runHeightSyncPerm } from "../../modules/perm-height-sync/perm_height_sync_service";
-import type { PermissionMessagePayload } from "../../modules/perm-height-sync/perm_height_sync_helpers";
+import { runHeightSyncParticipant } from "../../modules/pp-height-sync/pp_height_sync_service";
+import type { ParticipantMessagePayload } from "../../modules/pp-height-sync/pp_height_sync_helpers";
 import {
-  extractImpactedPermissionIds,
-  extractStartPermissionVpNewPermissionId,
-} from "../../modules/perm-height-sync/perm_height_sync_helpers";
+  extractImpactedParticipantIds,
+  extractStartParticipantOpNewParticipantId,
+} from "../../modules/pp-height-sync/pp_height_sync_helpers";
 
 
 @Service({
@@ -33,27 +33,27 @@ export default class ParticipantProcessorService extends BullableService {
     const startMode = await detectStartMode();
     this._isFreshStart = startMode.isFreshStart;
     this.processorBase.setFreshStartMode(this._isFreshStart);
-    this.logger.info(`Permission processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
+    this.logger.info(`Participant processor started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
     return super._start();
   }
 
-  @Action({ name: "handlePermissionMessages" })
-  async handlePermissionMessages(
+  @Action({ name: "handleParticipantMessages" })
+  async handleParticipantMessages(
     ctx: Context<{
-      permissionMessages: PermissionMessagePayload[];
+      participantMessages: ParticipantMessagePayload[];
     }>
   ) {
-    const { permissionMessages } = ctx.params;
-    const totalMessages = permissionMessages?.length || 0;
-    this.logger.info(` Processing ${totalMessages} Permission messages`);
+    const { participantMessages } = ctx.params;
+    const totalMessages = participantMessages?.length || 0;
+    this.logger.info(` Processing ${totalMessages} Participant messages`);
     
-    if (!permissionMessages || permissionMessages.length === 0) {
+    if (!participantMessages || participantMessages.length === 0) {
       return { success: true };
     }
 
     const failedMessages: Array<{ message: any; error: string }> = [];
 
-    const sortedMessages = [...permissionMessages].sort((a, b) => {
+    const sortedMessages = [...participantMessages].sort((a, b) => {
       const heightDiff = (a.height || 0) - (b.height || 0);
       if (heightDiff !== 0) return heightDiff;
 
@@ -87,10 +87,10 @@ export default class ParticipantProcessorService extends BullableService {
     for (let i = 0; i < sortedMessages.length; i++) {
       const msg = sortedMessages[i];
       try {
-        this.logger.info(` Processing Permission message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`);
-        const useHeightSyncPerm = process.env.USE_HEIGHT_SYNC_PERM !== "false";
-        if (useHeightSyncPerm) {
-          const res = await runHeightSyncPerm(this.broker, [msg]);
+        this.logger.info(` Processing Participant message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`);
+        const useHeightSyncParticipant = process.env.USE_HEIGHT_SYNC_PARTICIPANT !== "false";
+        if (useHeightSyncParticipant) {
+          const res = await runHeightSyncParticipant(this.broker, [msg]);
           const synced = (res as any)?.synced;
           const attempted = (res as any)?.attempted;
 
@@ -98,7 +98,7 @@ export default class ParticipantProcessorService extends BullableService {
             continue;
           }
           this.logger.warn(
-            `[perm] Height-sync enabled but synced 0/${typeof attempted === "number" ? attempted : "?"}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? "unknown"}`
+            `[participant] Height-sync enabled but synced 0/${typeof attempted === "number" ? attempted : "?"}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? "unknown"}`
           );
         }
 
@@ -115,7 +115,7 @@ export default class ParticipantProcessorService extends BullableService {
             || msg.type === VeranaParticipantMessageTypes.SelfCreateParticipant)
           && (payload as any)?.id == null
         ) {
-          const impacted = extractImpactedPermissionIds(msg as PermissionMessagePayload);
+          const impacted = extractImpactedParticipantIds(msg as ParticipantMessagePayload);
           if (impacted.length === 1) {
             (payload as any).id = impacted[0];
           }
@@ -124,11 +124,11 @@ export default class ParticipantProcessorService extends BullableService {
           msg.type === VeranaParticipantMessageTypes.StartParticipantOP
           && (payload as any)?.id == null
         ) {
-          const vpNewId = extractStartPermissionVpNewPermissionId(
-            msg as PermissionMessagePayload
+          const opNewId = extractStartParticipantOpNewParticipantId(
+            msg as ParticipantMessagePayload
           );
-          if (vpNewId != null) {
-            (payload as any).id = vpNewId;
+          if (opNewId != null) {
+            (payload as any).id = opNewId;
           }
         }
 
@@ -198,50 +198,50 @@ export default class ParticipantProcessorService extends BullableService {
             );
             break;
           default:
-            this.logger.warn(` Unknown permission message type: ${msg.type}`);
+            this.logger.warn(` Unknown participant message type: ${msg.type}`);
             break;
         }
 
         if (result && result.success === false && result.reason) {
-          this.logger.warn(` Permission message processing returned failure: ${result.reason}`);
+          this.logger.warn(` Participant message processing returned failure: ${result.reason}`);
         }
       } catch (err: any) {
         failedMessages.push({ message: msg, error: err.message || String(err) });
-        this.logger.error(`❌ Error processing Permission message ${i + 1}/${totalMessages}:`, err);
+        this.logger.error(`❌ Error processing Participant message ${i + 1}/${totalMessages}:`, err);
       }
     }
 
     if (failedMessages.length > 0) {
-      this.logger.warn(` ${failedMessages.length}/${totalMessages} Permission messages failed to process`);
+      this.logger.warn(` ${failedMessages.length}/${totalMessages} Participant messages failed to process`);
     }
 
-    this.logger.info(` Permission processing complete: ${totalMessages - failedMessages.length}/${totalMessages} successful`);
+    this.logger.info(` Participant processing complete: ${totalMessages - failedMessages.length}/${totalMessages} successful`);
     return { success: true, failed: failedMessages.length };
   }
 
-  @Action({ name: "getPermission" })
-  async getPermission(
+  @Action({ name: "getParticipant" })
+  async getParticipant(
     ctx: Context<{ schema_id: number; corporation: string; role: string }>
   ) {
     const { schema_id: schemaId, corporation, role } = ctx.params;
-    const permission = await this.broker.call("participantIngest.getPermission", {
+    const participant = await this.broker.call("participantIngest.getParticipant", {
       schema_id: schemaId,
       corporation,
       role,
     });
-    return permission;
+    return participant;
   }
 
-  @Action({ name: "listPermissions" })
-  async listPermissions(
+  @Action({ name: "listParticipants" })
+  async listParticipants(
     ctx: Context<{ schema_id?: number; corporation?: string; role?: string }>
   ) {
     const { schema_id: schemaId, corporation, role } = ctx.params;
-    const permissions = await this.broker.call("participantIngest.listPermissions", {
+    const participants = await this.broker.call("participantIngest.listParticipants", {
       schema_id: schemaId,
       corporation,
       role,
     });
-    return permissions;
+    return participants;
   }
 }

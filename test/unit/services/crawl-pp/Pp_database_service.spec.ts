@@ -1,5 +1,5 @@
 import { ServiceBroker } from "moleculer";
-import ParticipantIngestService from "../../../../src/services/crawl-perm/perm_database.service";
+import ParticipantIngestService from "../../../../src/services/crawl-pp/pp_database.service";
 import knex from "../../../../src/common/utils/db_connection";
 import { formatTimestamp } from "../../../../src/common/utils/date_utils";
 
@@ -26,25 +26,25 @@ jest.mock("../../../../src/common/utils/date_utils", () => ({
   formatTimestamp: jest.fn((v) => `formatted-${v}`),
 }));
 
-describe("🧪 PermIngestService Unit Tests", () => {
+describe("🧪 ParticipantIngestService Unit Tests", () => {
   let broker: ServiceBroker;
   let service: any;
-  let syncPermissionFromLedger: any;
-  let mapLedgerPermissionToDbRow: (row: Record<string, any>) => Record<string, any>;
+  let syncParticipantFromLedger: any;
+  let mapLedgerParticipantToDbRow: (row: Record<string, any>) => Record<string, any>;
 
   beforeAll(() => {
     broker = new ServiceBroker({ logger: false });
     service = broker.createService(ParticipantIngestService);
-    syncPermissionFromLedger = (service as any).syncPermissionFromLedger.bind(service);
-    mapLedgerPermissionToDbRow = (service as any).mapLedgerPermissionToDbRow.bind(service);
+    syncParticipantFromLedger = (service as any).syncParticipantFromLedger.bind(service);
+    mapLedgerParticipantToDbRow = (service as any).mapLedgerParticipantToDbRow.bind(service);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe("handleMsgCreateRootPermission", () => {
-    it("should insert permission with proper fields", async () => {
+  describe("handleMsgCreateRootParticipant", () => {
+    it("should insert participant with proper fields", async () => {
       (knex.insert as jest.Mock).mockResolvedValueOnce([1]);
 
       const msg = {
@@ -82,8 +82,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("handleMsgSelfCreatePermission", () => {
-    it("should insert new permission if root ecosystem exists", async () => {
+  describe("handleMsgSelfCreateParticipant", () => {
+    it("should insert new participant if root ecosystem exists", async () => {
       (knex.where as jest.Mock).mockReturnValueOnce({
         first: jest.fn().mockResolvedValue({ id: 1 }),
       });
@@ -96,7 +96,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         role: 1,
       };
 
-      await service.handleCreatePermission(msg);
+      await service.handleCreateParticipant(msg);
 
       expect(knex.insert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -108,8 +108,8 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("handleRevokePermission", () => {
-    it("should revoke permission if caller is grantee", async () => {
+  describe("handleRevokeParticipant", () => {
+    it("should revoke participant if caller is grantee", async () => {
       (knex.first as jest.Mock).mockResolvedValueOnce({
         id: 10,
         corporation: "user1",
@@ -127,7 +127,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
       expect(result.success).toBe(true);
     });
 
-    it("should return error if permission not found", async () => {
+    it("should return error if participant not found", async () => {
       (knex.first as jest.Mock).mockResolvedValueOnce(null);
       const result = await service.handleRevokeParticipant({
         id: 999,
@@ -163,9 +163,9 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("mapLedgerPermissionToDbRow (VPR v4 corporation)", () => {
+  describe("mapLedgerParticipantToDbRow (VPR v4 corporation)", () => {
     it("maps corporation from ledger", () => {
-      const row = mapLedgerPermissionToDbRow({
+      const row = mapLedgerParticipantToDbRow({
         id: 1,
         schema_id: 2,
         role: "ECOSYSTEM",
@@ -176,7 +176,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
 
     it("uses empty string when corporation is missing (NOT NULL column)", () => {
-      const row = mapLedgerPermissionToDbRow({
+      const row = mapLedgerParticipantToDbRow({
         id: 1,
         schema_id: 2,
         role: "ECOSYSTEM",
@@ -186,7 +186,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
     });
   });
 
-  describe("syncPermissionFromLedger vs legacy stats parity", () => {
+  describe("syncParticipantFromLedger vs legacy stats parity", () => {
     it("should route through same stats helpers for participants/weight", async () => {
       const mockTrx: any = knex;
       const updateWeightSpy = jest
@@ -202,7 +202,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         schema_id: 48,
       }]);
 
-      const ledgerPermission = {
+      const ledgerParticipant = {
         id: "7",
         schema_id: "48",
         role: "ISSUER",
@@ -215,7 +215,7 @@ describe("🧪 PermIngestService Unit Tests", () => {
         op_state: "VALIDATED",
       };
 
-      await syncPermissionFromLedger(ledgerPermission, 1908620, "tx-hash", "/verana.pp.v1.MsgSetParticipantOPToValidated");
+      await syncParticipantFromLedger(ledgerParticipant, 1908620, "tx-hash", "/verana.pp.v1.MsgSetParticipantOPToValidated");
 
       expect(updateWeightSpy).toHaveBeenCalledWith(mockTrx, 7);
       expect(updateParticipantsSpy).toHaveBeenCalledWith(mockTrx, 7);

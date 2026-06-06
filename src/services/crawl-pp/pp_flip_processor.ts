@@ -9,9 +9,9 @@ interface BlockContext {
 
 const ENTITY_KIND = {
   GLOBAL: 0,
-  TRUST_REGISTRY: 1,
+  ECOSYSTEM: 1,
   CRED_SCHEMA: 2,
-  PERMISSION: 3,
+  PARTICIPANT: 3,
 } as const;
 
 const GLOBAL_ENTITY_ID = 0;
@@ -26,30 +26,30 @@ const ROLE_TYPE: Record<string, number> = {
   HOLDER: 6,
 };
 
-export async function applyScheduledPermissionFlipsForBlock(
+export async function applyScheduledParticipantFlipsForBlock(
   ctx: BlockContext
 ): Promise<void> {
   const { height, blockTime } = ctx;
 
   const blockIso = blockTime.toISOString();
-  const hasDue = await knex("permission_scheduled_flips")
+  const hasDue = await knex("participant_scheduled_flips")
     .where("status", 0)
     .andWhere("flip_at_time", "<=", blockIso)
     .first();
   if (!hasDue) return;
 
   await knex.transaction(async (trx) => {
-    const flips = await trx("permission_scheduled_flips")
+    const flips = await trx("participant_scheduled_flips")
       .where("status", 0)
       .andWhere("flip_at_time", "<=", blockIso)
       .orderBy("flip_at_time", "asc")
-      .orderBy("perm_id", "asc");
+      .orderBy("participant_id", "asc");
 
     if (!flips.length) return;
 
     for (const flip of flips) {
-      const hasIsActiveNow = await hasPermissionsIsActiveNowColumn(trx);
-      const perm = await trx("permissions")
+      const hasIsActiveNow = await hasParticipantsIsActiveNowColumn(trx);
+      const participant = await trx("participants")
         .select(
           "id",
           "schema_id",
@@ -58,32 +58,32 @@ export async function applyScheduledPermissionFlipsForBlock(
           "last_valid_flip_version",
           ...(hasIsActiveNow ? (["is_active_now"] as const) : [])
         )
-        .where({ id: flip.perm_id })
+        .where({ id: flip.participant_id })
         .first();
 
-      if (!perm) {
+      if (!participant) {
         await markFlipStale(trx, flip, height, blockTime);
         continue;
       }
 
-      if (perm.last_valid_flip_version !== flip.version) {
+      if (participant.last_valid_flip_version !== flip.version) {
         await markFlipStale(trx, flip, height, blockTime);
         continue;
       }
 
-      const roleType = ROLE_TYPE[perm.role] ?? 0;
+      const roleType = ROLE_TYPE[participant.role] ?? 0;
       if (!roleType) {
         await markFlipStale(trx, flip, height, blockTime);
         continue;
       }
 
       if (hasIsActiveNow) {
-        const currentActive = Boolean((perm as any).is_active_now);
+        const currentActive = Boolean((participant as any).is_active_now);
         const targetActive = flip.flip_kind === (1 as FlipKind);
         if (currentActive === targetActive) {
-          await trx("permission_scheduled_flips")
+          await trx("participant_scheduled_flips")
             .where({
-              perm_id: flip.perm_id,
+              participant_id: flip.participant_id,
               version: flip.version,
               flip_at_time: flip.flip_at_time,
               flip_kind: flip.flip_kind,
@@ -99,8 +99,8 @@ export async function applyScheduledPermissionFlipsForBlock(
 
       const delta: number = flip.flip_kind === (1 as FlipKind) ? 1 : -1;
 
-      const permChain: Array<{ id: number; schema_id: number }> = [];
-      let currentId: number | null = perm.id;
+      const participantChain: Array<{ id: number; schema_id: number }> = [];
+      let currentId: number | null = participant.id;
       const visited = new Set<number>();
       const MAX_VALIDATOR_CHAIN_DEPTH = 1000;
       let traversalAborted = false;
@@ -116,12 +116,12 @@ export async function applyScheduledPermissionFlipsForBlock(
           break;
         }
         visited.add(currentId);
-        const p = await trx("permissions")
+        const p = await trx("participants")
           .select("id", "schema_id", "validator_participant_id")
           .where({ id: currentId })
           .first();
         if (!p) break;
-        permChain.push({ id: p.id, schema_id: p.schema_id });
+        participantChain.push({ id: p.id, schema_id: p.schema_id });
         currentId = p.validator_participant_id ?? null;
       }
 
@@ -130,18 +130,18 @@ export async function applyScheduledPermissionFlipsForBlock(
         continue;
       }
 
-      const schemaId = perm.schema_id;
+      const schemaId = participant.schema_id;
       const schema = await trx("credential_schemas")
         .select("id", "ecosystem_id")
         .where({ id: schemaId })
         .first();
-      const trId = schema?.ecosystem_id ?? null;
+      const ecosystemId = schema?.ecosystem_id ?? null;
 
-      for (const p of permChain) {
+      for (const p of participantChain) {
         await bumpEntity(trx, {
           height,
           blockTime,
-          entityKind: ENTITY_KIND.PERMISSION,
+          entityKind: ENTITY_KIND.PARTICIPANT,
           entityId: p.id,
           roleType,
           delta,
@@ -149,7 +149,7 @@ export async function applyScheduledPermissionFlipsForBlock(
         await bumpEntity(trx, {
           height,
           blockTime,
-          entityKind: ENTITY_KIND.PERMISSION,
+          entityKind: ENTITY_KIND.PARTICIPANT,
           entityId: p.id,
           roleType: ROLE_TYPE_ANY,
           delta,
@@ -173,20 +173,20 @@ export async function applyScheduledPermissionFlipsForBlock(
         delta,
       });
 
-      if (trId != null) {
+      if (ecosystemId != null) {
         await bumpEntity(trx, {
           height,
           blockTime,
-          entityKind: ENTITY_KIND.TRUST_REGISTRY,
-          entityId: trId,
+          entityKind: ENTITY_KIND.ECOSYSTEM,
+          entityId: ecosystemId,
           roleType,
           delta,
         });
         await bumpEntity(trx, {
           height,
           blockTime,
-          entityKind: ENTITY_KIND.TRUST_REGISTRY,
-          entityId: trId,
+          entityKind: ENTITY_KIND.ECOSYSTEM,
+          entityId: ecosystemId,
           roleType: ROLE_TYPE_ANY,
           delta,
         });
@@ -209,15 +209,15 @@ export async function applyScheduledPermissionFlipsForBlock(
         delta,
       });
 
-      if (await hasPermissionsIsActiveNowColumn(trx)) {
-        await trx("permissions")
-          .where({ id: perm.id })
+      if (await hasParticipantsIsActiveNowColumn(trx)) {
+        await trx("participants")
+          .where({ id: participant.id })
           .update({ is_active_now: flip.flip_kind === 1 });
       }
 
-      await trx("permission_scheduled_flips")
+      await trx("participant_scheduled_flips")
         .where({
-          perm_id: flip.perm_id,
+          participant_id: flip.participant_id,
           version: flip.version,
           flip_at_time: flip.flip_at_time,
           flip_kind: flip.flip_kind,
@@ -237,9 +237,9 @@ async function markFlipStale(
   height: number,
   blockTime: Date
 ) {
-  await trx("permission_scheduled_flips")
+  await trx("participant_scheduled_flips")
     .where({
-      perm_id: flip.perm_id,
+      participant_id: flip.participant_id,
       version: flip.version,
       flip_at_time: flip.flip_at_time,
       flip_kind: flip.flip_kind,
@@ -315,9 +315,9 @@ async function bumpEntity(
 
 let hasIsActiveNowColumnCache: boolean | null = null;
 
-async function hasPermissionsIsActiveNowColumn(trx: any): Promise<boolean> {
+async function hasParticipantsIsActiveNowColumn(trx: any): Promise<boolean> {
   if (hasIsActiveNowColumnCache !== null) return hasIsActiveNowColumnCache;
-  const exists = await trx.schema.hasColumn("permissions", "is_active_now");
+  const exists = await trx.schema.hasColumn("participants", "is_active_now");
   hasIsActiveNowColumnCache = !!exists;
   return hasIsActiveNowColumnCache;
 }

@@ -1,6 +1,6 @@
 import { Network } from "../../network";
 
-export type PermissionMessagePayload = {
+export type ParticipantMessagePayload = {
   type: string;
   content: any;
   timestamp?: string;
@@ -13,7 +13,7 @@ export type PermissionMessagePayload = {
 
 const HEIGHT_HEADER = "x-cosmos-block-height";
 
-export function getPermLedgerBaseUrl(): string {
+export function getParticipantLedgerBaseUrl(): string {
   const envLedger =
     (typeof process !== "undefined" && process.env?.LCD_ENDPOINT?.trim()) || "";
   const base = envLedger || Network?.LCD || "";
@@ -33,7 +33,7 @@ function decodeEventValue(raw: string | undefined): string {
 }
 
 export function extractIdsFromTxEvents(
-  events: PermissionMessagePayload["txEvents"],
+  events: ParticipantMessagePayload["txEvents"],
   keyPatterns: string[]
 ): number[] {
   if (!Array.isArray(events) || events.length === 0) return [];
@@ -53,24 +53,24 @@ export function extractIdsFromTxEvents(
   return [...ids];
 }
 
-export function extractImpactedPermissionIds(
-  msg: PermissionMessagePayload
+export function extractImpactedParticipantIds(
+  msg: ParticipantMessagePayload
 ): number[] {
   const ids = new Set<number>();
   const candidates = [
     msg?.content?.id,
-    msg?.content?.permission_id,
-    msg?.content?.perm_id,
+    msg?.content?.participant_id,
+    msg?.content?.participant_id,
     msg?.content?.validator_participant_id,
     msg?.content?.validatorParticipantId,
-    msg?.content?.issuer_perm_id,
-    msg?.content?.issuerPermId,
-    msg?.content?.verifier_perm_id,
-    msg?.content?.verifierPermId,
-    msg?.content?.agent_perm_id,
-    msg?.content?.agentPermId,
-    msg?.content?.wallet_agent_perm_id,
-    msg?.content?.walletAgentPermId,
+    msg?.content?.issuer_participant_id,
+    msg?.content?.issuerParticipantId,
+    msg?.content?.verifier_participant_id,
+    msg?.content?.verifierParticipantId,
+    msg?.content?.agent_participant_id,
+    msg?.content?.agentParticipantId,
+    msg?.content?.wallet_agent_participant_id,
+    msg?.content?.walletAgentParticipantId,
   ];
 
   for (const value of candidates) {
@@ -79,13 +79,13 @@ export function extractImpactedPermissionIds(
   }
 
   for (const id of extractIdsFromTxEvents(msg.txEvents, [
-    "permission_id",
-    "root_permission_id",
+    "participant_id",
+    "root_participant_id",
     "validator_participant_id",
-    "issuer_perm_id",
-    "verifier_perm_id",
-    "agent_perm_id",
-    "wallet_agent_perm_id",
+    "issuer_participant_id",
+    "verifier_participant_id",
+    "agent_participant_id",
+    "wallet_agent_participant_id",
   ])) {
     ids.add(id);
   }
@@ -93,8 +93,8 @@ export function extractImpactedPermissionIds(
   return [...ids];
 }
 
-export function extractStartPermissionVpNewPermissionId(
-  msg: PermissionMessagePayload
+export function extractStartParticipantOpNewParticipantId(
+  msg: ParticipantMessagePayload
 ): number | undefined {
   const validatorRaw =
     msg?.content?.validator_participant_id ?? msg?.content?.validatorParticipantId;
@@ -108,8 +108,8 @@ export function extractStartPermissionVpNewPermissionId(
 
   const directCandidates = [
     msg?.content?.id,
-    msg?.content?.permission_id,
-    msg?.content?.permissionId,
+    msg?.content?.participant_id,
+    msg?.content?.participantId,
   ];
   for (const candidate of directCandidates) {
     const n = Number(candidate);
@@ -118,20 +118,20 @@ export function extractStartPermissionVpNewPermissionId(
     return n;
   }
 
-  const exactNewPermKeys = new Set([
-    "permission_id",
-    "permissionid",
-    "new_permission_id",
-    "new_permissionid",
-    "created_permission_id",
-    "created_permissionid",
+  const exactNewParticipantKeys = new Set([
+    "participant_id",
+    "participantid",
+    "new_participant_id",
+    "new_participantid",
+    "created_participant_id",
+    "created_participantid",
   ]);
   const fromExactEvents: number[] = [];
   if (Array.isArray(msg.txEvents)) {
     for (const event of msg.txEvents) {
       for (const attr of event?.attributes || []) {
         const key = decodeEventValue(attr?.key).toLowerCase();
-        if (!exactNewPermKeys.has(key)) continue;
+        if (!exactNewParticipantKeys.has(key)) continue;
         const id = Number(decodeEventValue(attr?.value));
         if (Number.isInteger(id) && id > 0) {
           fromExactEvents.push(id);
@@ -158,7 +158,7 @@ export function extractStartPermissionVpNewPermissionId(
     for (const event of msg.txEvents) {
       for (const attr of event?.attributes || []) {
         const key = decodeEventValue(attr?.key).toLowerCase();
-        if (!key.includes("permission_id") && !key.includes("permissionid")) {
+        if (!key.includes("participant_id") && !key.includes("participantid")) {
           continue;
         }
         if (key.includes("validator")) continue;
@@ -177,7 +177,7 @@ export function extractStartPermissionVpNewPermissionId(
     return filteredLoose[0];
   }
 
-  const impacted = extractImpactedPermissionIds(msg);
+  const impacted = extractImpactedParticipantIds(msg);
   const remaining = hasValidator
     ? impacted.filter((id) => id !== validatorId)
     : impacted;
@@ -189,7 +189,7 @@ export function extractStartPermissionVpNewPermissionId(
 }
 
 export function extractImpactedSessionIds(
-  msg: PermissionMessagePayload
+  msg: ParticipantMessagePayload
 ): string[] {
   const ids = new Set<string>();
   const directCandidates = [
@@ -217,11 +217,11 @@ export function extractImpactedSessionIds(
   return [...ids];
 }
 
-export async function fetchPermLedgerJson(
+export async function fetchParticipantLedgerJson(
   path: string,
   blockHeight?: number
 ): Promise<any | null> {
-  const base = getPermLedgerBaseUrl();
+  const base = getParticipantLedgerBaseUrl();
   if (!base) return null;
   const withHeight = typeof blockHeight === "number" && blockHeight > 0;
   const headers: Record<string, string> = {};

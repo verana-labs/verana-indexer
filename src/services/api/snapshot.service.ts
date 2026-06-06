@@ -13,21 +13,21 @@ type SnapshotResponse = {
   block_height: number;
   trust_registries: SnapshotRow[];
   schemas: SnapshotRow[];
-  permissions: SnapshotRow[];
+  participants: SnapshotRow[];
   count: {
     trust_registries: number;
     schemas: number;
-    permissions: number;
+    participants: number;
   };
 };
 
 type SnapshotTables = {
-  hasTrustRegistry: boolean;
+  hasEcosystem: boolean;
   hasCredentialSchemas: boolean;
-  hasPermissions: boolean;
-  trustRegistryHasHeight: boolean;
+  hasParticipants: boolean;
+  ecosystemHasHeight: boolean;
   credentialSchemasHasHeight: boolean;
-  permissionsHasHeight: boolean;
+  participantsHasHeight: boolean;
 };
 
 const TABLE_CHECK_TTL_MS = 60_000;
@@ -38,25 +38,25 @@ async function getSnapshotTables(): Promise<SnapshotTables> {
   if (cachedTables && cachedTables.expiresAt > now) return cachedTables.value;
 
   const value = (async () => {
-    const [hasTrustRegistry, hasCredentialSchemas, hasPermissions] = await Promise.all([
-      knex.schema.hasTable("trust_registry"),
+    const [hasEcosystem, hasCredentialSchemas, hasParticipants] = await Promise.all([
+      knex.schema.hasTable("ecosystem"),
       knex.schema.hasTable("credential_schemas"),
-      knex.schema.hasTable("permissions"),
+      knex.schema.hasTable("participants"),
     ]);
 
-    const [trustRegistryHasHeight, credentialSchemasHasHeight, permissionsHasHeight] = await Promise.all([
-      hasTrustRegistry ? knex.schema.hasColumn("trust_registry", "height") : Promise.resolve(false),
+    const [ecosystemHasHeight, credentialSchemasHasHeight, participantsHasHeight] = await Promise.all([
+      hasEcosystem ? knex.schema.hasColumn("ecosystem", "height") : Promise.resolve(false),
       hasCredentialSchemas ? knex.schema.hasColumn("credential_schemas", "height") : Promise.resolve(false),
-      hasPermissions ? knex.schema.hasColumn("permissions", "height") : Promise.resolve(false),
+      hasParticipants ? knex.schema.hasColumn("participants", "height") : Promise.resolve(false),
     ]);
 
     return {
-      hasTrustRegistry,
+      hasEcosystem,
       hasCredentialSchemas,
-      hasPermissions,
-      trustRegistryHasHeight,
+      hasParticipants,
+      ecosystemHasHeight,
       credentialSchemasHasHeight,
-      permissionsHasHeight,
+      participantsHasHeight,
     };
   })();
 
@@ -72,26 +72,26 @@ function parseNonNegativeInteger(value: unknown): number | null {
 }
 
 async function fetchTrustRegistriesAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
-  if (!tables.hasTrustRegistry) return [];
+  if (!tables.hasEcosystem) return [];
 
-  const query = knex("trust_registry")
+  const query = knex("ecosystem")
     .select("*")
     .where("did", did);
 
-  if (tables.trustRegistryHasHeight) {
+  if (tables.ecosystemHasHeight) {
     query.andWhere("height", "<=", height);
   }
 
   return query.orderBy("id", "asc");
 }
 
-async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+async function fetchCredentialSchemasAtHeight(ecosystemIds: number[], _height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
   if (!tables.hasCredentialSchemas) return [];
-  if (trIds.length === 0) return [];
+  if (ecosystemIds.length === 0) return [];
 
   const query = knex("credential_schemas")
     .select("*")
-    .whereIn("ecosystem_id", trIds)
+    .whereIn("ecosystem_id", ecosystemIds)
     .orderBy("id", "asc");
 
   if (tables.credentialSchemasHasHeight) {
@@ -101,25 +101,25 @@ async function fetchCredentialSchemasAtHeight(trIds: number[], _height: number, 
   return query;
 }
 
-async function fetchPermissionsAtHeight(args: {
+async function fetchParticipantsAtHeight(args: {
   did: string;
   blockHeight: number;
-  schemaTrIds?: number[];
+  schemaEcosystemIds?: number[];
   corporationAddresses: string[];
   tables: SnapshotTables;
 }): Promise<SnapshotRow[]> {
-  const { did, schemaTrIds = [], corporationAddresses, tables, blockHeight } = args;
-  if (!tables.hasPermissions) return [];
+  const { did, schemaEcosystemIds = [], corporationAddresses, tables, blockHeight } = args;
+  if (!tables.hasParticipants) return [];
 
-  const query = knex("permissions")
+  const query = knex("participants")
     .select("*")
     .where((qb) => {
       qb.where("did", did);
       if (corporationAddresses.length > 0) qb.orWhere((q) => q.whereIn("corporation", corporationAddresses));
-      if (tables.hasCredentialSchemas && schemaTrIds.length > 0) {
+      if (tables.hasCredentialSchemas && schemaEcosystemIds.length > 0) {
         const schemaQuery = knex("credential_schemas")
           .select("id")
-          .whereIn("ecosystem_id", schemaTrIds);
+          .whereIn("ecosystem_id", schemaEcosystemIds);
         if (tables.credentialSchemasHasHeight) {
           schemaQuery.andWhere("height", "<=", blockHeight);
         }
@@ -128,7 +128,7 @@ async function fetchPermissionsAtHeight(args: {
     })
     .orderBy("id", "asc");
 
-  if (tables.permissionsHasHeight) {
+  if (tables.participantsHasHeight) {
     query.andWhere("height", "<=", blockHeight);
   }
 
@@ -140,7 +140,7 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
   const tables = await getSnapshotTables();
 
   const trustRegistries = await fetchTrustRegistriesAtHeight(did, blockHeight, tables);
-  const trIds = trustRegistries
+  const ecosystemIds = trustRegistries
     .map((row) => Number(row.id))
     .filter((id) => Number.isInteger(id) && id >= 0);
 
@@ -153,12 +153,12 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     )
   );
 
-  const [credentialSchemas, permissions] = await Promise.all([
-    fetchCredentialSchemasAtHeight(trIds, blockHeight, tables),
-    fetchPermissionsAtHeight({
+  const [credentialSchemas, participants] = await Promise.all([
+    fetchCredentialSchemasAtHeight(ecosystemIds, blockHeight, tables),
+    fetchParticipantsAtHeight({
       did,
       blockHeight,
-      schemaTrIds: trIds,
+      schemaEcosystemIds: ecosystemIds,
       corporationAddresses,
       tables,
     }),
@@ -169,11 +169,11 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     block_height: blockHeight,
     trust_registries: trustRegistries,
     schemas: credentialSchemas,
-    permissions,
+    participants,
     count: {
       trust_registries: trustRegistries.length,
       schemas: credentialSchemas.length,
-      permissions: permissions.length,
+      participants: participants.length,
     },
   };
 }

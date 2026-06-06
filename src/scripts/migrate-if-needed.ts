@@ -89,9 +89,9 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
       "account",
       "transaction",
       "transaction_message",
-      "trust_registry",
+      "ecosystem",
       "credential_schemas",
-      "permissions",
+      "participants",
       "trust_results"
     ];
     
@@ -232,9 +232,9 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
         const criticalTables = [
           "account",
           "transaction",
-          "trust_registry",
+          "ecosystem",
           "credential_schemas",
-          "permissions",
+          "participants",
         ];
         
         const existingCriticalTables: string[] = [];
@@ -257,14 +257,14 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
           try {
             const moduleMigrationNames = [
               "20230317040849_create_account_table",
-              "20250905_create_trust_registry_tables",
+              "20250905_create_ecosystem_tables",
               "20250919_create_credential_schema",
-              "20240924_create_permissions_table",
+              "20240924_create_participants_table",
               "20250919_create_credential_schema_history",
-              "20250922_create_trust_registry_history",
-              "20260314000000_trust_registry_blockchain_id_and_snapshots",
-              "20251125000000_create_permission_history",
-              "20251125000001_create_permission_session_history",
+              "20250922_create_ecosystem_history",
+              "20260314000000_ecosystem_blockchain_id_and_snapshots",
+              "20251125000000_create_participant_history",
+              "20251125000001_create_participant_session_history",
               "20251125000002_create_trust_deposit_history",
               "20251125000003_create_module_params_history",
               "0123_create_trust_deposit_tables",
@@ -293,11 +293,11 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
                 const migName = mig.name;
                 if (migName.includes("account") && missingCriticalTables.includes("account")) {
                   migrationsToClear.push(migName);
-                } else if (migName.includes("trust_registry") && missingCriticalTables.includes("trust_registry")) {
+                } else if (migName.includes("ecosystem") && missingCriticalTables.includes("ecosystem")) {
                   migrationsToClear.push(migName);
                 } else if (migName.includes("credential_schema") && missingCriticalTables.includes("credential_schemas")) {
                   migrationsToClear.push(migName);
-                } else if (migName.includes("permission") && missingCriticalTables.includes("permissions")) {
+                } else if (migName.includes("participant") && missingCriticalTables.includes("participants")) {
                   migrationsToClear.push(migName);
                 } else if (migName.includes("transaction") && missingCriticalTables.includes("transaction")) {
                   migrationsToClear.push(migName);

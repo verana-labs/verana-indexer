@@ -1,9 +1,9 @@
 import { Model } from 'objection';
 import BaseModel from './base';
 import type _CredentialSchema from './credential_schema';
-import type _PermissionSession from './permission_session';
+import type _ParticipantSession from './participant_session';
 
-export type PermissionType =
+export type ParticipantType =
     | 'ECOSYSTEM'
     | 'UNSPECIFIED'
     | 'ISSUER_GRANTOR'
@@ -19,12 +19,12 @@ export type DenomAmount = {
     amount: string;
 };
 
-export default class Permission extends BaseModel {
-    static tableName = 'permissions';
+export default class Participant extends BaseModel {
+    static tableName = 'participants';
 
     id!: number;
     schema_id!: number;
-    role!: PermissionType;
+    role!: ParticipantType;
     did?: string;
     corporation!: string;
     created!: Date;
@@ -42,7 +42,7 @@ export default class Permission extends BaseModel {
     slashed_deposit!: number;
     repaid_deposit!: number;
     revoked?: Date | null;
-    validator_participant_id?: number | null; // Can be null for ECOSYSTEM permissions
+    validator_participant_id?: number | null; // Can be null for ECOSYSTEM participants
     op_state?: ValidationState;
     op_exp?: Date | null;
     op_last_state_change?: string | null;
@@ -179,32 +179,32 @@ export default class Permission extends BaseModel {
                 relation: Model.BelongsToOneRelation,
                 modelClass: 'CredentialSchema',
                 join: {
-                    from: 'permissions.schema_id',
+                    from: 'participants.schema_id',
                     to: 'credential_schemas.id'
                 }
             },
-            validator_permission: {
+            validator_participant: {
                 relation: Model.BelongsToOneRelation,
-                modelClass: Permission,
+                modelClass: Participant,
                 join: {
-                    from: 'permissions.validator_participant_id',
-                    to: 'permissions.id'
+                    from: 'participants.validator_participant_id',
+                    to: 'participants.id'
                 }
             },
-            dependent_permissions: {
+            dependent_participants: {
                 relation: Model.HasManyRelation,
-                modelClass: Permission,
+                modelClass: Participant,
                 join: {
-                    from: 'permissions.id',
-                    to: 'permissions.validator_participant_id'
+                    from: 'participants.id',
+                    to: 'participants.validator_participant_id'
                 }
             },
             sessions: {
                 relation: Model.HasManyRelation,
-                modelClass: 'PermissionSession',
+                modelClass: 'ParticipantSession',
                 join: {
-                    from: 'permissions.id',
-                    to: 'permission_sessions.agent_perm_id'
+                    from: 'participants.id',
+                    to: 'participant_sessions.agent_participant_id'
                 }
             }
         };
@@ -229,8 +229,8 @@ export default class Permission extends BaseModel {
         return new Date() > new Date(this.effective_until);
     }
 
-    canBeValidatorFor(applicantType: PermissionType): boolean {
-        // Implementation based on MOD-PERM-MSG-1-2-2 rules
+    canBeValidatorFor(applicantType: ParticipantType): boolean {
+        // Implementation based on MOD-PP-MSG-1-2-2 rules
         switch (applicantType) {
             case 'ISSUER':
                 return this.role === 'ISSUER_GRANTOR' || this.role === 'ECOSYSTEM';
@@ -247,8 +247,8 @@ export default class Permission extends BaseModel {
         }
     }
 
-    // Helper method to check if permission is valid (not expired, revoked, or slashed)
-    isValidPermission(): boolean {
+    // Helper method to check if participant is valid (not expired, revoked, or slashed)
+    isValidParticipant(): boolean {
         const now = new Date();
 
         // Check if revoked
@@ -266,16 +266,16 @@ export default class Permission extends BaseModel {
         return true;
     }
 
-    // Helper method to get ancestors in permission tree
-    async getAncestors(): Promise<Permission[]> {
-        const ancestors: Permission[] = [];
-        let currentPerm: Permission | undefined = this as Permission;
+    // Helper method to get ancestors in participant tree
+    async getAncestors(): Promise<Participant[]> {
+        const ancestors: Participant[] = [];
+        let currentParticipant: Participant | undefined = this as Participant;
 
-        while (currentPerm?.validator_participant_id) {
-            const parent = await Permission.query().findById(currentPerm.validator_participant_id);
+        while (currentParticipant?.validator_participant_id) {
+            const parent = await Participant.query().findById(currentParticipant.validator_participant_id);
             if (!parent) break;
             ancestors.push(parent);
-            currentPerm = parent;
+            currentParticipant = parent;
         }
 
         return ancestors;

@@ -23,10 +23,10 @@ describe('UpdateParams Message Processing', () => {
       expect(ModulesParamsNamesTypes.CS).toBe('cs');
     });
 
-    it('should map PERMISSION to PERM module', () => {
-      expect(UpdateParamsMessageTypes.PERMISSION).toBe('/verana.pp.v1.MsgUpdateParams');
+    it('should map PARTICIPANT to PP module', () => {
+      expect(UpdateParamsMessageTypes.PARTICIPANT).toBe('/verana.pp.v1.MsgUpdateParams');
       expect(VeranaParticipantMessageTypes.UpdateParams).toBe('/verana.pp.v1.MsgUpdateParams');
-      expect(ModulesParamsNamesTypes.PERM).toBe('perm');
+      expect(ModulesParamsNamesTypes.PP).toBe('pp');
     });
 
     it('should map TRUST_DEPOSIT to TD module', () => {
@@ -35,10 +35,10 @@ describe('UpdateParams Message Processing', () => {
       expect(ModulesParamsNamesTypes.TD).toBe('td');
     });
 
-    it('should map TRUST_REGISTRY to TR module', () => {
-      expect(UpdateParamsMessageTypes.TRUST_REGISTRY).toBe('/verana.ec.v1.MsgUpdateParams');
+    it('should map ECOSYSTEM to EC module', () => {
+      expect(UpdateParamsMessageTypes.ECOSYSTEM).toBe('/verana.ec.v1.MsgUpdateParams');
       expect(VeranaEcosystemMessageTypes.UpdateParams).toBe('/verana.ec.v1.MsgUpdateParams');
-      expect(ModulesParamsNamesTypes.TR).toBe('tr');
+      expect(ModulesParamsNamesTypes.EC).toBe('ec');
     });
   });
 
@@ -100,13 +100,13 @@ describe('UpdateParams Message Processing', () => {
       expect(typeof csParams.credential_schema_schema_max_size).toBe('number');
     });
 
-    it('should validate Permission parameters structure', () => {
-      const permParams = {
+    it('should validate Participant parameters structure', () => {
+      const participantParams = {
         validation_term_requested_timeout_days: 7
       };
 
-      expect(permParams).toHaveProperty('validation_term_requested_timeout_days');
-      expect(typeof permParams.validation_term_requested_timeout_days).toBe('number');
+      expect(participantParams).toHaveProperty('validation_term_requested_timeout_days');
+      expect(typeof participantParams.validation_term_requested_timeout_days).toBe('number');
     });
 
     it('should validate Trust Deposit parameters structure with v0.9.2 fields', () => {
@@ -131,13 +131,13 @@ describe('UpdateParams Message Processing', () => {
     it('should validate Trust Registry parameters structure', () => {
       const trParams = {
         trust_unit_price: '1000',
-        trust_registry_trust_deposit: '2000000'
+        ecosystem_trust_deposit: '2000000'
       };
 
       expect(trParams).toHaveProperty('trust_unit_price');
-      expect(trParams).toHaveProperty('trust_registry_trust_deposit');
+      expect(trParams).toHaveProperty('ecosystem_trust_deposit');
       expect(typeof trParams.trust_unit_price).toBe('string');
-      expect(typeof trParams.trust_registry_trust_deposit).toBe('string');
+      expect(typeof trParams.ecosystem_trust_deposit).toBe('string');
     });
   });
 
@@ -193,7 +193,7 @@ describe('UpdateParams Message Processing', () => {
         cs_unknown_param: 'unknown_cs',
 
         validation_term_requested_timeout_days: 7,
-        perm_new_attribute: 'new_perm',
+        participant_new_attribute: 'new_participant',
 
         trust_deposit_rate: 0.20,
         td_unknown_field: 'unknown_td',
@@ -206,7 +206,7 @@ describe('UpdateParams Message Processing', () => {
       expect(mixedParams).toHaveProperty('credential_schema_trust_deposit');
       expect(mixedParams).toHaveProperty('cs_unknown_param');
       expect(mixedParams).toHaveProperty('validation_term_requested_timeout_days');
-      expect(mixedParams).toHaveProperty('perm_new_attribute');
+      expect(mixedParams).toHaveProperty('participant_new_attribute');
       expect(mixedParams).toHaveProperty('trust_deposit_rate');
       expect(mixedParams).toHaveProperty('td_unknown_field');
       expect(mixedParams).toHaveProperty('trust_unit_price');

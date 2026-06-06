@@ -1,16 +1,16 @@
-// tests/trustRegistryDatabaseService.spec.ts
+// tests/ecosystemDatabaseService.spec.ts
 import { ServiceBroker } from "moleculer";
-import TrustRegistryDatabaseService from "../../../../src/services/crawl-tr/tr_database.service";
-import { TrustRegistry } from "../../../../src/models/trust_registry";
+import EcosystemDatabaseService from "../../../../src/services/crawl-ec/ec_database.service";
+import { Ecosystem } from "../../../../src/models/ecosystem";
 import ApiResponder from "../../../../src/common/utils/apiResponse";
 
-jest.mock("../../../../src/models/trust_registry");
+jest.mock("../../../../src/models/ecosystem");
 jest.mock("../../../../src/common/utils/apiResponse");
-jest.mock("../../../../src/services/crawl-perm/perm_state_utils", () => ({
-    calculatePermState: jest.fn().mockReturnValue("ACTIVE"),
+jest.mock("../../../../src/services/crawl-pp/pp_state_utils", () => ({
+    calculateParticipantState: jest.fn().mockReturnValue("ACTIVE"),
 }));
-jest.mock("../../../../src/services/crawl-tr/tr_stats", () => ({
-    calculateTrustRegistryStats: jest.fn(),
+jest.mock("../../../../src/services/crawl-ec/ec_stats", () => ({
+    calculateEcosystemStats: jest.fn(),
 }));
 
 jest.mock("../../../../src/common/utils/db_connection", () => {
@@ -25,33 +25,33 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
     return mockQuery;
 });
 
-describe("TrustRegistryDatabaseService", () => {
+describe("EcosystemDatabaseService", () => {
     let broker: ServiceBroker;
-    let service: TrustRegistryDatabaseService;
+    let service: EcosystemDatabaseService;
 
     beforeAll(() => {
         broker = new ServiceBroker({ nodeID: "test-node", logger: false });
-        service = new TrustRegistryDatabaseService(broker);
-        broker.createService(TrustRegistryDatabaseService as any);
+        service = new EcosystemDatabaseService(broker);
+        broker.createService(EcosystemDatabaseService as any);
     });
 
     afterAll(() => broker.stop());
     beforeEach(() => jest.clearAllMocks());
 
-    describe("getTrustRegistry", () => {
-        it("should return error if TR not found", async () => {
-            (TrustRegistry.query as any).mockReturnValueOnce({
+    describe("getEcosystem", () => {
+        it("should return error if EC not found", async () => {
+            (Ecosystem.query as any).mockReturnValueOnce({
                 findById: jest.fn().mockReturnValueOnce({
                     withGraphFetched: jest.fn().mockResolvedValueOnce(undefined),
                 }),
             });
 
-            const ctx: any = { params: { tr_id: 1 } };
-            await service.getTrustRegistry(ctx);
-            expect(ApiResponder.error).toHaveBeenCalledWith(ctx, "TrustRegistry with id 1 not found", 404);
+            const ctx: any = { params: { ecosystem_id: 1 } };
+            await service.getEcosystem(ctx);
+            expect(ApiResponder.error).toHaveBeenCalledWith(ctx, "Ecosystem with id 1 not found", 404);
         });
 
-        it("should return TR with filtered documents for preferred language", async () => {
+        it("should return EC with filtered documents for preferred language", async () => {
             const mockTR = {
                 toJSON: jest.fn().mockReturnValue({
                     id: 1,
@@ -67,14 +67,14 @@ describe("TrustRegistryDatabaseService", () => {
                 }),
             };
 
-            (TrustRegistry.query as any).mockReturnValueOnce({
+            (Ecosystem.query as any).mockReturnValueOnce({
                 findById: jest.fn().mockReturnValueOnce({
                     withGraphFetched: jest.fn().mockResolvedValueOnce(mockTR),
                 }),
             });
 
-            const { calculateTrustRegistryStats } = require("../../../../src/services/crawl-tr/tr_stats");
-            (calculateTrustRegistryStats as jest.Mock).mockResolvedValue({
+            const { calculateEcosystemStats } = require("../../../../src/services/crawl-ec/ec_stats");
+            (calculateEcosystemStats as jest.Mock).mockResolvedValue({
                 participants: 0,
                 active_schemas: 0,
                 archived_schemas: 0,
@@ -89,12 +89,12 @@ describe("TrustRegistryDatabaseService", () => {
                 network_slashed_amount_repaid: 0,
             });
 
-            const ctx: any = { params: { tr_id: 1, preferred_language: "en", active_gf_only: "true" } };
-            await service.getTrustRegistry(ctx);
+            const ctx: any = { params: { ecosystem_id: 1, preferred_language: "en", active_gf_only: "true" } };
+            await service.getEcosystem(ctx);
 
             expect(ApiResponder.success).toHaveBeenCalled();
             let data = (ApiResponder.success as jest.Mock).mock.calls[0][1];
-            data = data?.trust_registry
+            data = data?.ecosystem
             expect(data.versions[0].documents).toEqual([{ language: "en", url: "doc1" }]);
         });
     });
@@ -129,7 +129,7 @@ describe("TrustRegistryDatabaseService", () => {
                 orderBy: jest.fn().mockReturnThis(),
                 limit: jest.fn().mockResolvedValue([mockTR]),
             };
-            (TrustRegistry.query as any).mockReturnValue(mockQuery);
+            (Ecosystem.query as any).mockReturnValue(mockQuery);
 
             const knex = require("../../../../src/common/utils/db_connection");
             (knex.select as jest.Mock).mockResolvedValueOnce([
@@ -150,8 +150,8 @@ describe("TrustRegistryDatabaseService", () => {
                 },
             ]);
 
-            const { calculateTrustRegistryStats } = require("../../../../src/services/crawl-tr/tr_stats");
-            (calculateTrustRegistryStats as jest.Mock).mockResolvedValue({
+            const { calculateEcosystemStats } = require("../../../../src/services/crawl-ec/ec_stats");
+            (calculateEcosystemStats as jest.Mock).mockResolvedValue({
                 participants: 0,
                 active_schemas: 0,
                 archived_schemas: 0,

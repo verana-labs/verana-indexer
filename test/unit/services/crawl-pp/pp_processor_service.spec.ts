@@ -1,40 +1,40 @@
 import { ServiceBroker } from "moleculer";
-import PermProcessorService from "../../../../src/services/crawl-perm/perm_processor.service";
+import ParticipantProcessorService from "../../../../src/services/crawl-pp/pp_processor.service";
 import {
   SERVICE,
 } from "../../../../src/common/constant";
-import { VeranaParticipantMessageTypes as PermissionMessageTypes } from "../../../../src/common/verana-message-types";
+import { VeranaParticipantMessageTypes as ParticipantMessageTypes } from "../../../../src/common/verana-message-types";
 
 jest.mock("../../../../src/common/utils/start_mode_detector", () => ({
   detectStartMode: jest.fn().mockResolvedValue({ isFreshStart: false })
 }));
 
-describe("🧪 PermProcessorService", () => {
+describe("🧪 ParticipantProcessorService", () => {
   let broker: ServiceBroker;
-  let oldUseHeightSyncPerm: string | undefined;
-  let syncPermissionFromLedgerSpy: jest.Mock;
-  let comparePermissionWithLedgerSpy: jest.Mock;
+  let oldUseHeightSyncParticipant: string | undefined;
+  let syncParticipantFromLedgerSpy: jest.Mock;
+  let compareParticipantWithLedgerSpy: jest.Mock;
 
   // Keep references to spies
-  let spyCreateRootPermission: jest.Mock;
-  let spyCreatePermission: jest.Mock;
+  let spyCreateRootParticipant: jest.Mock;
+  let spyCreateParticipant: jest.Mock;
 
   beforeAll(async () => {
-    oldUseHeightSyncPerm = process.env.USE_HEIGHT_SYNC_PERM;
-    process.env.USE_HEIGHT_SYNC_PERM = "false";
+    oldUseHeightSyncParticipant = process.env.USE_HEIGHT_SYNC_PARTICIPANT;
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = "false";
     broker = new ServiceBroker({ logger: false });
 
     // ✅ Create spies BEFORE creating the service
-    spyCreateRootPermission = jest.fn(() => ({ saved: true }));
-    spyCreatePermission = jest.fn(() => ({ saved: true }));
-    syncPermissionFromLedgerSpy = jest.fn(() => ({ success: true, schemaId: 7 }));
-    comparePermissionWithLedgerSpy = jest.fn(() => ({ success: true, matches: true }));
+    spyCreateRootParticipant = jest.fn(() => ({ saved: true }));
+    spyCreateParticipant = jest.fn(() => ({ saved: true }));
+    syncParticipantFromLedgerSpy = jest.fn(() => ({ success: true, schemaId: 7 }));
+    compareParticipantWithLedgerSpy = jest.fn(() => ({ success: true, matches: true }));
 
     broker.createService({
       name: "participantIngest",
       actions: {
-        handleMsgCreateRootParticipant: spyCreateRootPermission,
-        handleMsgSelfCreateParticipant: spyCreatePermission,
+        handleMsgCreateRootParticipant: spyCreateRootParticipant,
+        handleMsgSelfCreateParticipant: spyCreateParticipant,
         handleMsgSetParticipantEffectiveUntil: jest.fn(() => ({ saved: true })),
         handleMsgRevokeParticipant: jest.fn(() => ({ saved: true })),
         handleMsgStartParticipantOP: jest.fn(() => ({ saved: true })),
@@ -50,14 +50,14 @@ describe("🧪 PermProcessorService", () => {
         handleMsgRepayParticipantSlashedTrustDeposit: jest.fn(() => ({
           saved: true,
         })),
-        syncPermissionFromLedger: syncPermissionFromLedgerSpy,
-        syncPermissionSessionFromLedger: jest.fn(() => ({ success: true })),
-        comparePermissionWithLedger: comparePermissionWithLedgerSpy,
-        comparePermissionSessionWithLedger: jest.fn(() => ({ success: true, matches: true })),
-        getPermission: jest.fn(() => ({ id: "perm-123", type: "root" })),
-        listPermissions: jest.fn(() => [
-          { id: "perm-1", type: "root" },
-          { id: "perm-2", type: "issue" },
+        syncParticipantFromLedger: syncParticipantFromLedgerSpy,
+        syncParticipantSessionFromLedger: jest.fn(() => ({ success: true })),
+        compareParticipantWithLedger: compareParticipantWithLedgerSpy,
+        compareParticipantSessionWithLedger: jest.fn(() => ({ success: true, matches: true })),
+        getParticipant: jest.fn(() => ({ id: "participant-123", type: "root" })),
+        listParticipants: jest.fn(() => [
+          { id: "participant-1", type: "root" },
+          { id: "participant-2", type: "issue" },
         ]),
       },
     });
@@ -74,7 +74,7 @@ describe("🧪 PermProcessorService", () => {
       name: SERVICE.V1.EcosystemDatabaseService.key,
       version: 1,
       actions: {
-        get: jest.fn(() => ({ trust_registry: { id: 3, controller: "verana1controller" } })),
+        get: jest.fn(() => ({ ecosystem: { id: 3, controller: "verana1controller" } })),
       },
     });
 
@@ -86,74 +86,74 @@ describe("🧪 PermProcessorService", () => {
       },
     });
 
-    broker.createService(PermProcessorService);
+    broker.createService(ParticipantProcessorService);
     await broker.start();
   }, 30000);
 
   afterAll(async () => {
-    process.env.USE_HEIGHT_SYNC_PERM = oldUseHeightSyncPerm;
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = oldUseHeightSyncParticipant;
     await broker.stop();
   }, 30000);
 
-  it("✅ should process permission messages and call correct handlers", async () => {
+  it("✅ should process participant messages and call correct handlers", async () => {
     const messages = [
       {
-        type: PermissionMessageTypes.CreateRootParticipant,
-        content: { "@type": "someType", id: "perm1", corporation: "acc1" },
+        type: ParticipantMessageTypes.CreateRootParticipant,
+        content: { "@type": "someType", id: "participant1", corporation: "acc1" },
         timestamp: "2025-10-08T10:00:00Z",
       },
       {
-        type: PermissionMessageTypes.SelfCreateParticipant,
-        content: { "@type": "someType", id: "perm2", corporation: "acc2" },
+        type: ParticipantMessageTypes.SelfCreateParticipant,
+        content: { "@type": "someType", id: "participant2", corporation: "acc2" },
         timestamp: "2025-10-08T11:00:00Z",
       },
     ];
 
     await broker.call(
-      `v1.${SERVICE.V1.ParticipantProcessorService.key}.handlePermissionMessages`,
-      { permissionMessages: messages }
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`,
+      { participantMessages: messages }
     );
 
     // ✅ Check first spy call
-    const ctxRoot = spyCreateRootPermission.mock.calls[0][0];
-    expect(ctxRoot.params.data.id).toBe("perm1");
+    const ctxRoot = spyCreateRootParticipant.mock.calls[0][0];
+    expect(ctxRoot.params.data.id).toBe("participant1");
     expect(ctxRoot.params.data.corporation).toBe("acc1");
     expect(ctxRoot.params.data).toHaveProperty("timestamp");
 
     // ✅ Check second spy call
-    const ctxPerm = spyCreatePermission.mock.calls[0][0];
-    expect(ctxPerm.params.data.id).toBe("perm2");
-    expect(ctxPerm.params.data.corporation).toBe("acc2");
-    expect(ctxPerm.params.data).toHaveProperty("timestamp");
+    const ctxParticipant = spyCreateParticipant.mock.calls[0][0];
+    expect(ctxParticipant.params.data.id).toBe("participant2");
+    expect(ctxParticipant.params.data.corporation).toBe("acc2");
+    expect(ctxParticipant.params.data).toHaveProperty("timestamp");
   });
 
-  it("✅ should return permission for getPermission", async () => {
+  it("✅ should return participant for getParticipant", async () => {
     const res = await broker.call(
-      `v1.${SERVICE.V1.ParticipantProcessorService.key}.getPermission`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.getParticipant`,
       { schema_id: 123, grantee: "wallet123", type: "root" }
     );
-    expect(res).toEqual({ id: "perm-123", type: "root" });
+    expect(res).toEqual({ id: "participant-123", type: "root" });
   });
 
-  it("✅ should list permissions for listPermissions", async () => {
+  it("✅ should list participants for listParticipants", async () => {
     const res = await broker.call(
-      `v1.${SERVICE.V1.ParticipantProcessorService.key}.listPermissions`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.listParticipants`,
       { schema_id: 123, grantee: "wallet123", type: "root" }
     );
     expect(Array.isArray(res)).toBe(true);
     expect(res.length).toBe(2);
-    expect(res[0].id).toBe("perm-1");
+    expect(res[0].id).toBe("participant-1");
   });
 
-  it("✅ should use height-sync strategy when USE_HEIGHT_SYNC_PERM=true", async () => {
-    process.env.USE_HEIGHT_SYNC_PERM = "true";
+  it("✅ should use height-sync strategy when USE_HEIGHT_SYNC_PARTICIPANT=true", async () => {
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = "true";
     const fetchSpy = jest.spyOn(global as any, "fetch").mockImplementation(async (url: string) => {
       const textUrl = String(url);
       if (textUrl.includes("/verana/pp/v1/get/101")) {
         return {
           ok: true,
           json: async () => ({
-            permission: {
+            participant: {
               id: 101,
               schema_id: 7,
               role: "ISSUER",
@@ -167,10 +167,10 @@ describe("🧪 PermProcessorService", () => {
               deposit: 0,
               slashed_deposit: 0,
               repaid_deposit: 0,
-              vp_state: "VALIDATED",
-              vp_validator_deposit: 0,
-              vp_current_fees: 0,
-              vp_current_deposit: 0,
+              op_state: "VALIDATED",
+              op_validator_deposit: 0,
+              op_current_fees: 0,
+              op_current_deposit: 0,
             },
           }),
         } as any;
@@ -187,10 +187,10 @@ describe("🧪 PermProcessorService", () => {
     });
 
     await broker.call(
-      `v1.${SERVICE.V1.ParticipantProcessorService.key}.handlePermissionMessages`,
+      `v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`,
       {
-        permissionMessages: [{
-          type: PermissionMessageTypes.SelfCreateParticipant,
+        participantMessages: [{
+          type: ParticipantMessageTypes.SelfCreateParticipant,
           content: { id: 101 },
           height: 123,
           timestamp: "2026-03-01T00:00:00Z",
@@ -200,10 +200,10 @@ describe("🧪 PermProcessorService", () => {
       }
     );
 
-    expect(syncPermissionFromLedgerSpy).toHaveBeenCalled();
-    expect(comparePermissionWithLedgerSpy).toHaveBeenCalled();
+    expect(syncParticipantFromLedgerSpy).toHaveBeenCalled();
+    expect(compareParticipantWithLedgerSpy).toHaveBeenCalled();
 
     fetchSpy.mockRestore();
-    process.env.USE_HEIGHT_SYNC_PERM = "false";
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = "false";
   });
 });
