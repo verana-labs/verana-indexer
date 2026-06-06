@@ -99,10 +99,10 @@ describe("EcosystemDatabaseService", () => {
         });
     });
 
-    describe("listTrustRegistries", () => {
+    describe("listEcosystems", () => {
         it("should return error for invalid response_max_size", async () => {
             const ctx: any = { params: { response_max_size: 2000 } };
-            await service.listTrustRegistries(ctx);
+            await service.listEcosystems(ctx);
             expect(ApiResponder.error).toHaveBeenCalledWith(ctx, "response_max_size must be between 1 and 1024", 400);
         });
 
@@ -169,11 +169,11 @@ describe("EcosystemDatabaseService", () => {
             const ctx: any = {
                 params: { active_gf_only: "true", preferred_language: "fr", response_max_size: 2 },
             };
-            await service.listTrustRegistries(ctx);
+            await service.listEcosystems(ctx);
 
             expect(ApiResponder.success).toHaveBeenCalled();
             let data = (ApiResponder.success as jest.Mock).mock.calls[0][1];
-            data = data?.trust_registries
+            data = data?.ecosystems
             expect(data[0].versions[0].documents).toEqual([{ language: "fr", url: "doc2" }]);
         });
     });

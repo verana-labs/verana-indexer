@@ -357,7 +357,7 @@
                       "minimum": 0,
                       "example": 123
                     },
-                    "trust_registries": {
+                    "ecosystems": {
                       "type": "array",
                       "items": {
                         "type": "object"
@@ -379,7 +379,7 @@
                     "count": {
                       "type": "object",
                       "properties": {
-                        "trust_registries": {
+                        "ecosystems": {
                           "type": "integer",
                           "minimum": 0
                         },
@@ -393,7 +393,7 @@
                         }
                       },
                       "required": [
-                        "trust_registries",
+                        "ecosystems",
                         "schemas",
                         "participants"
                       ]
@@ -402,7 +402,7 @@
                   "required": [
                     "did",
                     "block_height",
-                    "trust_registries",
+                    "ecosystems",
                     "schemas",
                     "participants",
                     "count"
@@ -411,11 +411,11 @@
                 "example": {
                   "did": "did:example",
                   "block_height": 123,
-                  "trust_registries": [],
+                  "ecosystems": [],
                   "schemas": [],
                   "participants": [],
                   "count": {
-                    "trust_registries": 0,
+                    "ecosystems": 0,
                     "schemas": 0,
                     "participants": 0
                   }
@@ -2736,7 +2736,7 @@
                   "$ref": "#/components/schemas/PendingFlatResponse"
                 },
                 "example": {
-                  "trust_registries": [
+                  "ecosystems": [
                     {
                       "id": 2,
                       "did": "did:example:186af95a000ef890a583f47a0274a800",
@@ -2837,8 +2837,8 @@
                 },
                 "example": {
                   "participants": 12345,
-                  "active_trust_registries": 12,
-                  "archived_trust_registries": 3,
+                  "active_ecosystems": 12,
+                  "archived_ecosystems": 3,
                   "active_schemas": 256,
                   "archived_schemas": 42,
                   "weight": 1234567890000000000,
@@ -4732,7 +4732,7 @@
       "EcosystemListResponse": {
         "type": "object",
         "properties": {
-          "trust_registries": {
+          "ecosystems": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Ecosystem"
@@ -6350,9 +6350,9 @@
       "PendingFlatResponse": {
         "type": "object",
         "properties": {
-          "trust_registries": {
+          "ecosystems": {
             "type": "array",
-            "description": "Trust registries with nested credential schemas and enriched participant rows (see implementation for full participant fields).",
+            "description": "Ecosystems with nested credential schemas and enriched participant rows (see implementation for full participant fields).",
             "items": {
               "$ref": "#/components/schemas/EcosystemPending"
             }
@@ -6365,10 +6365,10 @@
           "participants": {
             "type": "integer"
           },
-          "active_trust_registries": {
+          "active_ecosystems": {
             "type": "integer"
           },
-          "archived_trust_registries": {
+          "archived_ecosystems": {
             "type": "integer"
           },
           "active_schemas": {

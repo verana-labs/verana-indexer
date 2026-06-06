@@ -39,6 +39,9 @@ const COLUMN_RENAMES: Array<[string, string, string]> = [
   ["governance_framework_version", "tr_id", "ecosystem_id"],
   ["governance_framework_version_history", "tr_id", "ecosystem_id"],
   ["governance_framework_document_history", "tr_id", "ecosystem_id"],
+  // global_metrics counters (plural trust_registries -> ecosystems)
+  ["global_metrics", "active_trust_registries", "active_ecosystems"],
+  ["global_metrics", "archived_trust_registries", "archived_ecosystems"],
 ];
 
 const SEQUENCE_RENAMES: Array<[string, string]> = [

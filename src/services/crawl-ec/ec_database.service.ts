@@ -1516,7 +1516,7 @@ export default class EcosystemDatabaseService extends BaseService {
             trust_data: { type: "string", optional: true },
         },
     })
-    public async listTrustRegistries(ctx: Context<{
+    public async listEcosystems(ctx: Context<{
         corporation?: string;
         participant?: string;
         modified_after?: string;
@@ -1658,7 +1658,7 @@ export default class EcosystemDatabaseService extends BaseService {
             };
 
             if (this.hasImpossibleMetricRanges(metricFilters)) {
-                return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                return ApiResponder.success(ctx, { ecosystems: [] }, 200);
             }
 
             if (typeof blockHeight === "number") {
@@ -1671,7 +1671,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     if (participantAccount) {
                         participantEcosystemIds = await this.getEcosystemIdsForParticipantAtHeight(participantAccount, blockHeight);
                         if (participantEcosystemIds.length === 0) {
-                            return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                            return ApiResponder.success(ctx, { ecosystems: [] }, 200);
                         }
                     }
                     let snapshotBase = knex("ecosystem_snapshot")
@@ -1743,7 +1743,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters);
                     const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
                     const responsePayload = {
-                        trust_registries: sortedRegistries.map((r) =>
+                        ecosystems: sortedRegistries.map((r) =>
                             mapEcosystemApiFields(r as Record<string, unknown>)
                         ),
                     };
@@ -1758,7 +1758,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 if (participantAccount) {
                     participantEcosystemIds = await this.getEcosystemIdsForParticipantAtHeight(participantAccount, blockHeight);
                     if (participantEcosystemIds.length === 0) {
-                        return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                        return ApiResponder.success(ctx, { ecosystems: [] }, 200);
                     }
                 }
 
@@ -1803,7 +1803,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     : latestEcosystemHistory.slice(0, responseMaxSize);
 
                 if (sortedHistory.length === 0) {
-                    return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                    return ApiResponder.success(ctx, { ecosystems: [] }, 200);
                 }
                 const versionsByEcosystemId = await this.buildHistoricalVersionsByEcosystemIds(
                     sortedHistory.map((row: any) => Number(row.ecosystem_id)),
@@ -1858,7 +1858,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize);
 
                 const responsePayload = {
-                    trust_registries: sortedRegistries.map((r) =>
+                    ecosystems: sortedRegistries.map((r) =>
                         mapEcosystemApiFields(r as Record<string, unknown>)
                     ),
                 };
@@ -1879,7 +1879,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 if (participantAccount) {
                     const participantEcosystemIds = await this.getEcosystemIdsForParticipant(participantAccount);
                     if (participantEcosystemIds.length === 0) {
-                        return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                        return ApiResponder.success(ctx, { ecosystems: [] }, 200);
                     }
                     batchQuery = batchQuery.whereIn("id", participantEcosystemIds);
                 }
@@ -1906,7 +1906,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 const batchLimit = batchSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256);
                 const ecosystemRows = await batchQuery.limit(batchLimit) as any[];
                 if (ecosystemRows.length === 0) {
-                    return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                    return ApiResponder.success(ctx, { ecosystems: [] }, 200);
                 }
                 const ecosystemIds = ecosystemRows.map((r: any) => r.id);
                 const versionsRows = await knex("ecosystem_version").whereIn("ecosystem_id", ecosystemIds).orderBy("version", "asc") as any[];
@@ -1990,7 +1990,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters);
                 const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize);
                 const responsePayload = {
-                    trust_registries: sortedBatch.map((r) =>
+                    ecosystems: sortedBatch.map((r) =>
                         mapEcosystemApiFields(r as Record<string, unknown>)
                     ),
                 };
@@ -2006,7 +2006,7 @@ export default class EcosystemDatabaseService extends BaseService {
             if (participantAccount) {
                 const participantEcosystemIds = await this.getEcosystemIdsForParticipant(participantAccount);
                 if (participantEcosystemIds.length === 0) {
-                    return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+                    return ApiResponder.success(ctx, { ecosystems: [] }, 200);
                 }
                 query = query.where("id", "in", participantEcosystemIds) as any;
             }
@@ -2114,7 +2114,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 : this.sortRegistries(registriesWithStats, sort, responseMaxSize);
 
             const responsePayload = {
-                trust_registries: sortedRegistries.map((r) =>
+                ecosystems: sortedRegistries.map((r) =>
                     mapEcosystemApiFields(r as Record<string, unknown>)
                 ),
             };

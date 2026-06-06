@@ -1,18 +1,18 @@
-# 🏛️ Trust Registry Module
+# 🏛️ Ecosystem Module
 
-This guide provides a complete overview of the **Trust Registry (TR)** module, including **data models**, **relationships**, **event processing flow**, and **audit/history tracking**.
+This guide provides a complete overview of the **Ecosystem (EC)** module, including **data models**, **relationships**, **event processing flow**, and **audit/history tracking**.
 
 ---
 
 ## 📌 Overview
 
-The **Trust Registry module** is responsible for managing:
+The **Ecosystem module** is responsible for managing:
 
-1. **Trust Registries (TR)** – Core registry entities identified by DID, controlled by a creator, and containing deposits, language preferences, and versioning.
-2. **Governance Framework Versions (GFV)** – Versioned governance frameworks linked to TR.
+1. **Ecosystems (EC)** – Core registry entities identified by DID, controlled by a creator, and containing deposits, language preferences, and versioning.
+2. **Governance Framework Versions (GFV)** – Versioned governance frameworks linked to EC.
 3. **Governance Framework Documents (GFD)** – Documents under each GFV, representing legal, technical, or operational frameworks.
 
-This module ensures **auditability** by recording all TR, GFV, and GFD messages in history tables.
+This module ensures **auditability** by recording all EC, GFV, and GFD messages in history tables.
 
 ---
 
@@ -20,10 +20,10 @@ This module ensures **auditability** by recording all TR, GFV, and GFD messages 
 
 ```mermaid
 erDiagram
-    TRUST_REGISTRY ||--o{ GOVERNANCE_FRAMEWORK_VERSION : has
+    ECOSYSTEM ||--o{ GOVERNANCE_FRAMEWORK_VERSION : has
     GOVERNANCE_FRAMEWORK_VERSION ||--o{ GOVERNANCE_FRAMEWORK_DOCUMENT : contains
 
-    TRUST_REGISTRY {
+    ECOSYSTEM {
         int id PK
         string did
         string controller
@@ -39,7 +39,7 @@ erDiagram
 
     GOVERNANCE_FRAMEWORK_VERSION {
         int id PK
-        int tr_id FK
+        int ecosystem_id FK
         int version
         timestamp created
         timestamp active_since
@@ -61,14 +61,14 @@ erDiagram
 
 ```mermaid
 flowchart TD
-    A[Incoming TR Event] --> B{Event Type}
-    B -->|Create| C[Insert TR + GFV + GFD]
-    B -->|Update| D[Update TR Fields & Record Changes]
-    B -->|Archive| E[Mark TR as Archived]
+    A[Incoming EC Event] --> B{Event Type}
+    B -->|Create| C[Insert EC + GFV + GFD]
+    B -->|Update| D[Update EC Fields & Record Changes]
+    B -->|Archive| E[Mark EC as Archived]
     B -->|Add Governance Framework Doc| F[Add GFV + GFD]
     B -->|Increase Governance Framework Version| G[Activate Next GFV]
     
-    C --> H[Record TR, GFV, GFD]
+    C --> H[Record EC, GFV, GFD]
     D --> H
     E --> H
     F --> H
@@ -81,20 +81,20 @@ flowchart TD
 
 | Event Type                             | Description                                     |
 | -------------------------------------- | ----------------------------------------------- |
-| **Create / CreateLegacy**              | Create TR along with initial GFV and GFD.       |
-| **Update**                             | Update TR fields (DID, AKA, language, deposit). |
-| **Archive**                            | Mark TR as archived in the system.              |
+| **Create / CreateLegacy**              | Create EC along with initial GFV and GFD.       |
+| **Update**                             | Update EC fields (DID, AKA, language, deposit). |
+| **Archive**                            | Mark EC as archived in the system.              |
 | **AddGovernanceFrameworkDoc**          | Add a new GFV and associated GFD(s).            |
-| **IncreaseGovernanceFrameworkVersion** | Activate the next version of GFV for the TR.    |
+| **IncreaseGovernanceFrameworkVersion** | Activate the next version of GFV for the EC.    |
 
 ---
 
 ## 📜 History & Audit Reference
 
-All changes to TR, GFV, and GFD entities are recorded in **history tables** for auditability and traceability.
-You can view the **complete Trust Registry History module** here:
+All changes to EC, GFV, and GFD entities are recorded in **history tables** for auditability and traceability.
+You can view the **complete Ecosystem History module** here:
 
-[📖 Trust Registry History Module – Developer Guide](./crawl-tr-history.md)
+[📖 Ecosystem History Module – Developer Guide](./crawl-ec-history.md)
 
 This link provides **visual ER diagrams, change tracking flows, and architecture overviews** for historical data.
 
@@ -102,10 +102,10 @@ This link provides **visual ER diagrams, change tracking flows, and architecture
 
 ## API: `trust_data` Enrichment
 
-Trust Registry API methods support optional trust enrichment using query parameter `trust_data`:
+Ecosystem API methods support optional trust enrichment using query parameter `trust_data`:
 
-- `GET /verana/tr/v1/get/{id}`
-- `GET /verana/tr/v1/list`
+- `GET /verana/ec/v1/get/{id}`
+- `GET /verana/ec/v1/list`
 
 Allowed values:
 

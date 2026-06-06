@@ -235,10 +235,10 @@ export default class StatsCalculationService extends BullableService {
 
   private async calculateEcosystemStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
-      const trustRegistries = await knex("ecosystem").select("id");
-      this.logger.info(`[ECOSYSTEM] Found ${trustRegistries.length} trust registries`);
+      const ecosystems = await knex("ecosystem").select("id");
+      this.logger.info(`[ECOSYSTEM] Found ${ecosystems.length} trust registries`);
 
-      for (const ec of trustRegistries) {
+      for (const ec of ecosystems) {
         try {
           const existing = await Stats.query()
             .where("granularity", granularity)

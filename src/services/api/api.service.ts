@@ -369,7 +369,7 @@ function createRoute(
       }),
       createRoute("/verana/ec/v1", {
         "GET get/:ecosystem_id": `${SERVICE.V1.EcosystemDatabaseService.path}.getEcosystem`,
-        "GET list": `${SERVICE.V1.EcosystemDatabaseService.path}.listTrustRegistries`,
+        "GET list": `${SERVICE.V1.EcosystemDatabaseService.path}.listEcosystems`,
         "GET params": `${SERVICE.V1.EcosystemDatabaseService.path}.getParams`,
         "GET history/:ecosystem_id": `${SERVICE.V1.EcosystemHistoryService.path}.getTRHistory`,
       }),

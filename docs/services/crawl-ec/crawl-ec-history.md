@@ -1,7 +1,7 @@
 
-# Trust Registry History Module – Developer Guide
+# Ecosystem History Module – Developer Guide
 
-This document provides a complete **visual overview** of the Trust Registry History module, including all data models, relationships, and change tracking flows.
+This document provides a complete **visual overview** of the Ecosystem History module, including all data models, relationships, and change tracking flows.
 
 ---
 
@@ -9,7 +9,7 @@ This document provides a complete **visual overview** of the Trust Registry Hist
 
 The system tracks changes for auditability:
 
-1. **TR History** – Tracks Trust Registry creation, updates, and archival.
+1. **EC History** – Tracks Ecosystem creation, updates, and archival.
 2. **GFV History** – Tracks Governance Framework Version changes.
 3. **GFD History** – Tracks Governance Framework Document additions and updates.
 
@@ -19,11 +19,11 @@ The system tracks changes for auditability:
 
 ```mermaid
 erDiagram
-    TRUST_REGISTRY ||--o{ TRUST_REGISTRY_HISTORY : logs
+    ECOSYSTEM ||--o{ ECOSYSTEM_HISTORY : logs
     GOVERNANCE_FRAMEWORK_VERSION ||--o{ GFV_HISTORY : logs
     GOVERNANCE_FRAMEWORK_DOCUMENT ||--o{ GFD_HISTORY : logs
 
-    TRUST_REGISTRY {
+    ECOSYSTEM {
         int id PK
         string did
         string controller
@@ -37,9 +37,9 @@ erDiagram
         decimal deposit
     }
 
-    TRUST_REGISTRY_HISTORY {
+    ECOSYSTEM_HISTORY {
         int id PK
-        int tr_id FK
+        int ecosystem_id FK
         string event_type
         bigint height
         json changes
@@ -48,7 +48,7 @@ erDiagram
 
     GOVERNANCE_FRAMEWORK_VERSION {
         int id PK
-        int tr_id FK
+        int ecosystem_id FK
         int version
         timestamp created
         timestamp active_since
@@ -57,7 +57,7 @@ erDiagram
     GFV_HISTORY {
         int id PK
         int gfv_id FK
-        int tr_id FK
+        int ecosystem_id FK
         string event_type
         bigint height
         json changes
@@ -77,7 +77,7 @@ erDiagram
         int id PK
         int gfd_id FK
         int gfv_id FK
-        int tr_id FK
+        int ecosystem_id FK
         string event_type
         bigint height
         json changes
@@ -91,7 +91,7 @@ erDiagram
 
 ```mermaid
 flowchart TD
-    A[Trust Registry] --> B[TR History]
+    A[Ecosystem] --> B[EC History]
     C[Governance Framework Version] --> D[GFV History]
     E[Governance Framework Document] --> F[GFD History]
 
@@ -106,9 +106,9 @@ flowchart TD
 
 ```mermaid
 graph LR
-    subgraph TrustRegistry
-        TR[TR Table]
-        TRH[TR History Table]
+    subgraph Ecosystem
+        EC[EC Table]
+        TRH[EC History Table]
     end
 
     subgraph GovernanceFramework
@@ -118,7 +118,7 @@ graph LR
         GFDH[GFD History Table]
     end
 
-    TR --> TRH
+    EC --> TRH
     GFV --> GFVH
     GFD --> GFDH
 ```

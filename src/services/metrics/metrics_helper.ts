@@ -279,14 +279,14 @@ export async function computeGlobalMetrics(blockHeight?: number) {
   if (!useHistory) {
     const trCounts = await knex("ecosystem")
       .select(
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_trust_registries"),
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_trust_registries")
+        knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_ecosystems"),
+        knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_ecosystems")
       )
       .first();
-    let activeTrustRegistries = Number(trCounts?.active_trust_registries || 0);
-    let archivedTrustRegistries = Number(trCounts?.archived_trust_registries || 0);
+    let activeEcosystems = Number(trCounts?.active_ecosystems || 0);
+    let archivedEcosystems = Number(trCounts?.archived_ecosystems || 0);
 
-    if (activeTrustRegistries + archivedTrustRegistries === 0) {
+    if (activeEcosystems + archivedEcosystems === 0) {
       const ecosystemHistoryCount = await knex("ecosystem_history").count("* as count").first();
       const hasHistory = Number((ecosystemHistoryCount as any)?.count || 0) > 0;
       if (hasHistory) {
@@ -299,8 +299,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
           )
           .as("ranked_tr");
         const latest = await knex.from(trSub).select("archived").where("rn", 1);
-        activeTrustRegistries = latest.filter((r: any) => !r.archived).length;
-        archivedTrustRegistries = latest.filter((r: any) => r.archived).length;
+        activeEcosystems = latest.filter((r: any) => !r.archived).length;
+        archivedEcosystems = latest.filter((r: any) => r.archived).length;
       }
     }
 
@@ -403,8 +403,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     return {
       participants,
       ...participantsByType,
-      active_trust_registries: activeTrustRegistries,
-      archived_trust_registries: archivedTrustRegistries,
+      active_ecosystems: activeEcosystems,
+      archived_ecosystems: archivedEcosystems,
       active_schemas: Number(csAgg.active_schemas || 0),
       archived_schemas: Number(csAgg.archived_schemas || 0),
       weight: totalWeight,
@@ -427,8 +427,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
 
   const trLatest = await knex.from(trSub).select("ecosystem_id").where("rn", 1);
   const ecosystemIds = trLatest.map((r: any) => Number(r.ecosystem_id));
-  let activeTrustRegistries = 0;
-  let archivedTrustRegistries = 0;
+  let activeEcosystems = 0;
+  let archivedEcosystems = 0;
   for (const ecosystemId of ecosystemIds) {
     const ecosystemHistory = await knex("ecosystem_history")
       .where("ecosystem_id", ecosystemId)
@@ -437,8 +437,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       .orderBy("created_at", "desc")
       .first();
     if (ecosystemHistory) {
-      if (ecosystemHistory.archived) archivedTrustRegistries++;
-      else activeTrustRegistries++;
+      if (ecosystemHistory.archived) archivedEcosystems++;
+      else activeEcosystems++;
     }
   }
 
@@ -570,8 +570,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     participants_verifier_grantor: participantsVerifierGrantor,
     participants_verifier: participantsVerifier,
     participants_holder: participantsHolder,
-    active_trust_registries: activeTrustRegistries,
-    archived_trust_registries: archivedTrustRegistries,
+    active_ecosystems: activeEcosystems,
+    archived_ecosystems: archivedEcosystems,
     active_schemas: activeSchemas,
     archived_schemas: archivedSchemas,
     weight: Number(totalWeight),

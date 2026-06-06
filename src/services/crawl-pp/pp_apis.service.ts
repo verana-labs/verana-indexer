@@ -2780,7 +2780,7 @@ export default class ParticipantAPIService extends BullableService {
           .orderBy("ph.participant_id", "asc");
 
         if (!Array.isArray(joined) || joined.length === 0) {
-          return ApiResponder.success(ctx, { trust_registries: [] }, 200);
+          return ApiResponder.success(ctx, { ecosystems: [] }, 200);
         }
 
         participantsAtHeight = Array.isArray(joined)
@@ -2992,7 +2992,7 @@ export default class ParticipantAPIService extends BullableService {
         trEntry.credential_schemas.sort((a: any, b: any) => (b.participants || 0) - (a.participants || 0));
       }
 
-      const trustRegistries = Array.from(trMap.values())
+      const ecosystems = Array.from(trMap.values())
         .map((ec: any) => ({
           id: ec.id,
           did: ec.did,
@@ -3002,12 +3002,12 @@ export default class ParticipantAPIService extends BullableService {
           schemas: ec.credential_schemas,
         }))
         .sort((a: any, b: any) => (b.participants || 0) - (a.participants || 0));
-      const trustRegistriesWithTrustData = await this.enrichDidItemsWithTrustData(
-        trustRegistries.slice(0, limit),
+      const ecosystemsWithTrustData = await this.enrichDidItemsWithTrustData(
+        ecosystems.slice(0, limit),
         trustDataMode,
         useHistory ? blockHeight : undefined
       );
-      return ApiResponder.success(ctx, { trust_registries: trustRegistriesWithTrustData }, 200);
+      return ApiResponder.success(ctx, { ecosystems: ecosystemsWithTrustData }, 200);
     } catch (err: any) {
       this.logger.error("Error in pendingFlat:", err);
       return ApiResponder.error(ctx, `Failed to get pending tasks: ${err?.message || err}`, 500);

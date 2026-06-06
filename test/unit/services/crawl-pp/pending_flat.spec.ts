@@ -67,6 +67,6 @@ describe("Pending Flat API", () => {
 
     const ctx: any = { params: { account: "acc1", response_max_size: 10 }, meta: {} };
     const res = await service.pendingFlat(ctx);
-    expect(res).toEqual({ trust_registries: [] });
+    expect(res).toEqual({ ecosystems: [] });
   });
 });

@@ -241,9 +241,9 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     expect(snap).toMatchObject({
       did: didA,
       block_height: baseHeight,
-      count: { trust_registries: 0, schemas: 0, participants: 0 },
+      count: { ecosystems: 0, schemas: 0, participants: 0 },
     });
-    expect(snap.trust_registries).toEqual([]);
+    expect(snap.ecosystems).toEqual([]);
     expect(snap.schemas).toEqual([]);
     expect(snap.participants).toEqual([]);
   });
@@ -255,10 +255,10 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     await insertParticipant({ schemaId: schemaRowId + 100000, did: didA, corporation: "cosmos1other-corp" });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
-    expect(snap.count.trust_registries).toBe(1);
+    expect(snap.count.ecosystems).toBe(1);
     expect(snap.count.schemas).toBe(1);
     expect(snap.count.participants).toBe(1);
-    expect(snap.trust_registries[0]?.did).toBe(didA);
+    expect(snap.ecosystems[0]?.did).toBe(didA);
     expect(snap.participants[0]?.did).toBe(didA);
   });
 

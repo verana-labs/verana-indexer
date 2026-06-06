@@ -23,8 +23,8 @@ export default class MetricsApiService extends BaseService {
     "participants_verifier_grantor",
     "participants_verifier",
     "participants_holder",
-    "active_trust_registries",
-    "archived_trust_registries",
+    "active_ecosystems",
+    "archived_ecosystems",
     "active_schemas",
     "archived_schemas",
     "weight",
@@ -101,8 +101,8 @@ export default class MetricsApiService extends BaseService {
     return {
       participants: participantsTotal,
       ...participantsByRole,
-      active_trust_registries: Number(snap.active_trust_registries || 0),
-      archived_trust_registries: Number(snap.archived_trust_registries || 0),
+      active_ecosystems: Number(snap.active_ecosystems || 0),
+      archived_ecosystems: Number(snap.archived_ecosystems || 0),
       active_schemas: Number(snap.active_schemas || 0),
       archived_schemas: Number(snap.archived_schemas || 0),
       weight: Number(snap.weight || "0"),
@@ -165,8 +165,8 @@ export default class MetricsApiService extends BaseService {
         participants_verifier_grantor: Number(metrics.participants_verifier_grantor || 0),
         participants_verifier: Number(metrics.participants_verifier || 0),
         participants_holder: Number(metrics.participants_holder || 0),
-        active_trust_registries: Number(metrics.active_trust_registries || 0),
-        archived_trust_registries: Number(metrics.archived_trust_registries || 0),
+        active_ecosystems: Number(metrics.active_ecosystems || 0),
+        archived_ecosystems: Number(metrics.archived_ecosystems || 0),
         active_schemas: Number(metrics.active_schemas || 0),
         archived_schemas: Number(metrics.archived_schemas || 0),
         weight: String(metrics.weight || "0"),
@@ -240,7 +240,7 @@ export default class MetricsApiService extends BaseService {
 
           const looksEmpty =
             mapped.participants === 0 &&
-            mapped.active_trust_registries === 0 &&
+            mapped.active_ecosystems === 0 &&
             mapped.active_schemas === 0 &&
             mapped.issued === 0 &&
             mapped.verified === 0 &&
@@ -313,8 +313,8 @@ export default class MetricsApiService extends BaseService {
           .as("latest_tr");
       const trAgg = await knex.from(trLatest)
         .select(
-          knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_trust_registries"),
-          knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_trust_registries")
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_ecosystems"),
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_ecosystems")
         )
         .first();
 
@@ -537,8 +537,8 @@ export default class MetricsApiService extends BaseService {
         participants_verifier_grantor: participantsByType.participants_verifier_grantor,
         participants_verifier: participantsByType.participants_verifier,
         participants_holder: participantsByType.participants_holder,
-        active_trust_registries: Number((trAgg as any)?.active_trust_registries || 0),
-        archived_trust_registries: Number((trAgg as any)?.archived_trust_registries || 0),
+        active_ecosystems: Number((trAgg as any)?.active_ecosystems || 0),
+        archived_ecosystems: Number((trAgg as any)?.archived_ecosystems || 0),
         active_schemas: Number((csStateAgg as any)?.active_schemas || 0),
         archived_schemas: Number((csStateAgg as any)?.archived_schemas || 0),
         weight,

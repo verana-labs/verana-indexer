@@ -131,7 +131,7 @@
 | updated_at             | updated time                         |
 | creator                | who stored this code on network      |
 | data_hash              | data hash of code                    |
-| instantiate_permission | instantiate permission for this code |
+| instantiate_participant | instantiate participant for this code |
 | type                   | code's type (CW721/CW4973/CW20/...)  |
 | status                 | code's status                        |
 | store_hash             | hash of tx store code                |
@@ -315,37 +315,37 @@
 | denom       |                                      |
 | processed   | marked this feegrant is done or not  |
 
-### `trust_registry`
+### `ecosystem`
 
 | Column           | Description                                                                 |
 | ---------------- | --------------------------------------------------------------------------- |
-| `id`             | Primary key of the trust registry record                                    |
-| `did`            | Decentralized Identifier (DID) string associated with the trust registry    |
-| `corporation`    | Corporation  that controls this trust registry               |
-| `created`        | Creation date/time of the trust registry record                             |
-| `modified`       | Last modification date/time of the trust registry record                    |
-| `archived`       | Date/time when the trust registry was archived (nullable, if ever archived) |
-| `aka`            | Alternative name or alias for the trust registry (if provided)              |
-| `language`       | Default language of the trust registry                                      |
+| `id`             | Primary key of the ecosystem record                                    |
+| `did`            | Decentralized Identifier (DID) string associated with the ecosystem    |
+| `corporation`    | Corporation  that controls this ecosystem               |
+| `created`        | Creation date/time of the ecosystem record                             |
+| `modified`       | Last modification date/time of the ecosystem record                    |
+| `archived`       | Date/time when the ecosystem was archived (nullable, if ever archived) |
+| `aka`            | Alternative name or alias for the ecosystem (if provided)              |
+| `language`       | Default language of the ecosystem                                      |
 | `active_version` | ID of the currently active governance framework version (if applicable)     |
 | `participants`   | Total active participants across all role subtrees                           |
-| `participants_ecosystem` | Active ECOSYSTEM participants in the trust registry subtree         |
-| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the trust registry subtree |
-| `participants_issuer` | Active ISSUER participants in the trust registry subtree               |
-| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the trust registry subtree |
-| `participants_verifier` | Active VERIFIER participants in the trust registry subtree           |
-| `participants_holder` | Active HOLDER participants in the trust registry subtree               |
+| `participants_ecosystem` | Active ECOSYSTEM participants in the ecosystem subtree         |
+| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the ecosystem subtree |
+| `participants_issuer` | Active ISSUER participants in the ecosystem subtree               |
+| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the ecosystem subtree |
+| `participants_verifier` | Active VERIFIER participants in the ecosystem subtree           |
+| `participants_holder` | Active HOLDER participants in the ecosystem subtree               |
 
 **Relations**
 
-- One `trust_registry` → Many `governance_framework_version`
+- One `ecosystem` → Many `governance_framework_version`
 
 ### `governance_framework_version`
 
 | Column         | Description                                                            |
 | -------------- | ---------------------------------------------------------------------- |
 | `id`           | Primary key of the governance framework version record                 |
-| `tr_id`        | Foreign key → `trust_registry.id` (links to the parent trust registry) |
+| `ecosystem_id`        | Foreign key → `ecosystem.id` (links to the parent ecosystem) |
 | `created`      | Creation date/time of the governance framework version                 |
 | `active_since` | Date/time when this version became active                              |
 | `version`      | Version number of the governance framework                             |
@@ -353,7 +353,7 @@
 **Relations**
 
 - One `governance_framework_version` → Many `governance_framework_document`
-- Many `governance_framework_version` → One `trust_registry`
+- Many `governance_framework_version` → One `ecosystem`
 
 ### `governance_framework_document`
 
@@ -375,7 +375,7 @@
 | Column                                        | Description                                                            |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
 | `id`                                          | Primary key of the credential schema record                            |
-| `tr_id`                                       | Foreign key → `trust_registry.id` (links schema to its trust registry) |
+| `ecosystem_id`                                       | Foreign key → `ecosystem.id` (links schema to its ecosystem) |
 | `json_schema`                                 | JSON schema definition for the credential                              |
 | `issuer_grantor_validation_validity_period`   | Validity period (in blocks/days/units) for issuer-grantor validation   |
 | `verifier_grantor_validation_validity_period` | Validity period for verifier-grantor validation                        |
@@ -392,39 +392,39 @@
 | `archived`                                    | Date/time when the schema was archived (nullable)                      |
 | `created`                                     | Creation date/time of the schema record                                |
 | `modified`                                    | Last modification date/time of the schema record                       |
-| `participants`                                | Total active participants for the schema permission tree               |
-| `participants_ecosystem`                      | Active ECOSYSTEM participants for the schema permission tree           |
-| `participants_issuer_grantor`                 | Active ISSUER_GRANTOR participants for the schema permission tree      |
-| `participants_issuer`                         | Active ISSUER participants for the schema permission tree              |
-| `participants_verifier_grantor`               | Active VERIFIER_GRANTOR participants for the schema permission tree    |
-| `participants_verifier`                       | Active VERIFIER participants for the schema permission tree            |
-| `participants_holder`                         | Active HOLDER participants for the schema permission tree              |
+| `participants`                                | Total active participants for the schema participant tree               |
+| `participants_ecosystem`                      | Active ECOSYSTEM participants for the schema participant tree           |
+| `participants_issuer_grantor`                 | Active ISSUER_GRANTOR participants for the schema participant tree      |
+| `participants_issuer`                         | Active ISSUER participants for the schema participant tree              |
+| `participants_verifier_grantor`               | Active VERIFIER_GRANTOR participants for the schema participant tree    |
+| `participants_verifier`                       | Active VERIFIER participants for the schema participant tree            |
+| `participants_holder`                         | Active HOLDER participants for the schema participant tree              |
 
-### `permissions`
+### `participants`
 
 | Column                  | Description                                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------------------- |
-| `id`                    | Primary key of the permission record                                                         |
+| `id`                    | Primary key of the participant record                                                         |
 | `schema_id`             | Reference to `credential_schemas.id`                                                         |
-| `type`                  | Permission type (ECOSYSTEM / ISSUER_GRANTOR / VERIFIER_GRANTOR / ISSUER / VERIFIER / HOLDER) |
-| `did`                   | Optional DID associated with this permission                                                 |
-| `corporation`           | Corporation (account) owning this permission                                         |
+| `type`                  | Participant type (ECOSYSTEM / ISSUER_GRANTOR / VERIFIER_GRANTOR / ISSUER / VERIFIER / HOLDER) |
+| `did`                   | Optional DID associated with this participant                                                 |
+| `corporation`           | Corporation (account) owning this participant                                         |
 | `vs_operator`           | Validator-side operator address                                                              |
-| `created`               | Permission creation timestamp                                                                |
+| `created`               | Participant creation timestamp                                                                |
 | `adjusted`              | Last adjustment timestamp                             |
 | `slashed`               | Timestamp when slashed (optional)                                                            |
 | `repaid`                | Timestamp when repaid (optional)                                                             |
-| `effective_from`        | Effective start date of permission (optional)                                                |
-| `effective_until`       | Effective end date of permission (optional)                                                  |
+| `effective_from`        | Effective start date of participant (optional)                                                |
+| `effective_until`       | Effective end date of participant (optional)                                                  |
 | `revoked`               | Timestamp when revoked (optional)                                                            |
-| `validator_perm_id`     | Reference to another permission which acts as validator (optional)                           |
-| `vp_state`              | Validation state (VALIDATION_STATE_UNSPECIFIED / PENDING / VALIDATED / TERMINATED)           |
-| `vp_exp`                | Validation expiration timestamp (optional)                                                   |
-| `vp_last_state_change`  | Last validation state change timestamp (optional)                                            |
-| `vp_validator_deposit`  | Validator deposit amount                                                                     |
-| `vp_current_fees`       | Current fees for validation                                                                  |
-| `vp_current_deposit`    | Current deposit for validation                                                               |
-| `vp_summary_digest`     | VP summary digest                                                                    |
+| `validator_participant_id`     | Reference to another participant which acts as validator (optional)                           |
+| `op_state`              | Validation state (VALIDATION_STATE_UNSPECIFIED / PENDING / VALIDATED / TERMINATED)           |
+| `op_exp`                | Validation expiration timestamp (optional)                                                   |
+| `op_last_state_change`  | Last validation state change timestamp (optional)                                            |
+| `op_validator_deposit`  | Validator deposit amount                                                                     |
+| `op_current_fees`       | Current fees for validation                                                                  |
+| `op_current_deposit`    | Current deposit for validation                                                               |
+| `op_summary_digest`     | VP summary digest                                                                    |
 | `vs_operator_authz_enabled` | Whether VS operator authorization is enabled                                               |
 | `vs_operator_authz_spend_limit` | Spend limit for VS operator authz                                                     |
 | `vs_operator_authz_with_feegrant` | Fee grant flag for VS operator authz                                                  |
@@ -433,29 +433,29 @@
 | `validation_fees`       | Validation fees amount                                                                       |
 | `issuance_fees`         | Issuance fees amount                                                                         |
 | `verification_fees`     | Verification fees amount                                                                     |
-| `deposit`               | Deposit associated with the permission                                                       |
+| `deposit`               | Deposit associated with the participant                                                       |
 | `slashed_deposit`       | Amount slashed                                                                               |
 | `repaid_deposit`        | Amount repaid                                                                                |
 | `modified`              | Last modified timestamp                                                                      |
-| `participants`          | Total active participants in the permission subtree (current state)                          |
-| `participants_ecosystem` | Active ECOSYSTEM participants in the permission subtree (current state)                     |
-| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the permission subtree (current state)          |
-| `participants_issuer`   | Active ISSUER participants in the permission subtree (current state)                         |
-| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the permission subtree (current state)      |
-| `participants_verifier` | Active VERIFIER participants in the permission subtree (current state)                       |
-| `participants_holder`   | Active HOLDER participants in the permission subtree (current state)                         |
-| `last_valid_flip_version` | Version counter used to validate scheduled permission flips                                |
-| `is_active_now`         | Boolean flag indicating whether the permission is currently ACTIVE                           |
+| `participants`          | Total active participants in the participant subtree (current state)                          |
+| `participants_ecosystem` | Active ECOSYSTEM participants in the participant subtree (current state)                     |
+| `participants_issuer_grantor` | Active ISSUER_GRANTOR participants in the participant subtree (current state)          |
+| `participants_issuer`   | Active ISSUER participants in the participant subtree (current state)                         |
+| `participants_verifier_grantor` | Active VERIFIER_GRANTOR participants in the participant subtree (current state)      |
+| `participants_verifier` | Active VERIFIER participants in the participant subtree (current state)                       |
+| `participants_holder`   | Active HOLDER participants in the participant subtree (current state)                         |
+| `last_valid_flip_version` | Version counter used to validate scheduled participant flips                                |
+| `is_active_now`         | Boolean flag indicating whether the participant is currently ACTIVE                           |
 
-### `permission_sessions`
+### `participant_sessions`
 
 | Column                 | Description                                                                                         |
 | ---------------------- | --------------------------------------------------------------------------------------------------- |
-| `id`                   | Primary key of the permission session                                                               |
+| `id`                   | Primary key of the participant session                                                               |
 | `corporation`          | Corporation account                                                                       |
 | `vs_operator`          | Validator-side operator address                                                                   |
-| `agent_perm_id`        | Reference to agent permission ID                                                                    |
-| `wallet_agent_perm_id` | Reference to wallet agent permission ID                                                             |
+| `agent_participant_id`        | Reference to agent participant ID                                                                    |
+| `wallet_agent_participant_id` | Reference to wallet agent participant ID                                                             |
 | `session_records`      | JSON array of session records (replaces legacy `authz` tuples)                              |
 | `created`              | Creation timestamp                                                                                  |
 | `modified`             | Last modified timestamp                                                                             |
@@ -475,15 +475,15 @@
 | `last_repaid`     | Timestamp of the last repayment event (nullable)          |
 | `slash_count`     | Total number of times this trust deposit has been slashed |
 
-### `permission_scheduled_flips`
+### `participant_scheduled_flips`
 
 | Column          | Description                                                                                         |
 | --------------- | --------------------------------------------------------------------------------------------------- |
-| `perm_id`       | Foreign key → `permissions.id` (permission affected by this flip)                                   |
-| `flip_at_time`  | Timestamp when the permission should ENTER or EXIT the ACTIVE state                                |
+| `participant_id`       | Foreign key → `participants.id` (participant affected by this flip)                                   |
+| `flip_at_time`  | Timestamp when the participant should ENTER or EXIT the ACTIVE state                                |
 | `flip_kind`     | Flip kind: 1 = ENTER_ACTIVE, 2 = EXIT_ACTIVE                                                       |
 | `status`        | Flip status: 0 = PENDING, 1 = APPLIED, 2 = STALE                                                   |
-| `version`       | Version number, must match `permissions.last_valid_flip_version` when applied                      |
+| `version`       | Version number, must match `participants.last_valid_flip_version` when applied                      |
 | `applied_height` | Block height when the flip was applied (nullable until applied)                                   |
 | `applied_time`  | Timestamp when the flip was applied (nullable until applied)                                       |
 | `created_at`    | Timestamp when this flip entry was created                                                         |
@@ -494,7 +494,7 @@
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `height`     | Block height when the participant count changed                                                                        |
 | `block_time` | Block timestamp corresponding to `height`                                                                              |
-| `entity_kind`| Entity kind: 0=GLOBAL, 1=TRUST_REGISTRY, 2=CRED_SCHEMA, 3=PERMISSION                                                   |
+| `entity_kind`| Entity kind: 0=GLOBAL, 1=ECOSYSTEM, 2=CRED_SCHEMA, 3=PARTICIPANT                                                   |
 | `entity_id`  | Entity identifier (null for GLOBAL)                                                                                    |
 | `type`       | Participant role type: 0=ANY, 1=ECOSYSTEM, 2=ISSUER_GRANTOR, 3=ISSUER, 4=VERIFIER_GRANTOR, 5=VERIFIER, 6=HOLDER        |
 | `value`      | Current number of participants for the given entity_kind/entity_id/type combination at the specified `height`          |

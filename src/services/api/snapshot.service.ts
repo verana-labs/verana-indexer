@@ -11,11 +11,11 @@ type SnapshotRow = Record<string, unknown>;
 type SnapshotResponse = {
   did: string;
   block_height: number;
-  trust_registries: SnapshotRow[];
+  ecosystems: SnapshotRow[];
   schemas: SnapshotRow[];
   participants: SnapshotRow[];
   count: {
-    trust_registries: number;
+    ecosystems: number;
     schemas: number;
     participants: number;
   };
@@ -71,7 +71,7 @@ function parseNonNegativeInteger(value: unknown): number | null {
   return n;
 }
 
-async function fetchTrustRegistriesAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+async function fetchEcosystemsAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
   if (!tables.hasEcosystem) return [];
 
   const query = knex("ecosystem")
@@ -139,14 +139,14 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
   const { did, blockHeight } = args;
   const tables = await getSnapshotTables();
 
-  const trustRegistries = await fetchTrustRegistriesAtHeight(did, blockHeight, tables);
-  const ecosystemIds = trustRegistries
+  const ecosystems = await fetchEcosystemsAtHeight(did, blockHeight, tables);
+  const ecosystemIds = ecosystems
     .map((row) => Number(row.id))
     .filter((id) => Number.isInteger(id) && id >= 0);
 
   const corporationAddresses = Array.from(
     new Set(
-      trustRegistries
+      ecosystems
         .map((row) => row.corporation)
         .filter((corp): corp is string => typeof corp === "string" && corp.trim().length > 0)
         .map((corp) => corp.trim())
@@ -167,11 +167,11 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
   return {
     did,
     block_height: blockHeight,
-    trust_registries: trustRegistries,
+    ecosystems: ecosystems,
     schemas: credentialSchemas,
     participants,
     count: {
-      trust_registries: trustRegistries.length,
+      ecosystems: ecosystems.length,
       schemas: credentialSchemas.length,
       participants: participants.length,
     },
