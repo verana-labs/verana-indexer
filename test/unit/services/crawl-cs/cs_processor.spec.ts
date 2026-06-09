@@ -67,7 +67,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
 
   it("should insert a credential schema", async () => {
     const payload = {
-      tr_id: 6,
+      ecosystem_id: 6,
       json_schema: JSON.stringify({
         $id: "/vpr/v1/cs/js/1",
         type: "object",
@@ -123,7 +123,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
     assertOk(upsertRes);
     schema = unwrapRow(upsertRes);
 
-    expect(normalizeSchemaId(schema.tr_id)).toBe(6);
+    expect(normalizeSchemaId(schema.ecosystem_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
   it("should update a credential schema", async () => {
@@ -141,7 +141,7 @@ describe("CredentialSchemaDatabaseService Tests", () => {
     const upsertRes = await broker.call(`${serviceKey}.update`, { payload });
     assertOk(upsertRes);
     schema = unwrapRow(upsertRes);
-    expect(normalizeSchemaId(schema.tr_id)).toBe(6);
+    expect(normalizeSchemaId(schema.ecosystem_id)).toBe(6);
     expect(schema.id).toBeDefined();
   });
 

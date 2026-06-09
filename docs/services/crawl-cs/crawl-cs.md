@@ -69,7 +69,7 @@ sequenceDiagram
 | Column                                        | Type           | Description                        |
 | --------------------------------------------- | -------------- | ---------------------------------- |
 | `id`                                          | int            | Primary key                        |
-| `tr_id`                                       | string         | Trust registry ID                  |
+| `ecosystem_id`                                       | string         | Ecosystem ID                  |
 | `json_schema`                                 | jsonb          | The JSON schema definition         |
 | `deposit`                                     | string         | Required deposit                   |
 | `title`                                       | string/null    | Extracted from json_schema.title   |
@@ -99,7 +99,7 @@ Keeps **full history of changes** to schemas.
 | Column                 | Type           | Description                                |
 | ---------------------- | -------------- | ------------------------------------------ |
 | `credential_schema_id` | int            | FK → credential\_schemas.id                |
-| `tr_id`                | string         | Trust registry ID                          |
+| `ecosystem_id`                | string         | Ecosystem ID                          |
 | `json_schema`          | jsonb          | JSON schema snapshot                       |
 | `deposit`              | string         | Deposit at time of change                  |
 | `title`                | string/null    | Extracted title at time of change         |
@@ -138,7 +138,7 @@ Keeps **full history of changes** to schemas.
 
 * List schemas with filters:
 
-  * `tr_id`, `modified_after`, `only_active`, `issuer_onboarding_mode`, `verifier_onboarding_mode`, `holder_onboarding_mode`.
+  * `ecosystem_id`, `modified_after`, `only_active`, `issuer_onboarding_mode`, `verifier_onboarding_mode`, `holder_onboarding_mode`.
 * Supports pagination via `response_max_size`.
 
 ### 6. `JsonSchema`
@@ -161,7 +161,7 @@ Keeps **full history of changes** to schemas.
 Defined in `module_params`:
 
 * `credential_schema_trust_deposit`: Base deposit required for schema creation.
-* `trust_unit_price`: Unit price multiplier from trust registry.
+* `trust_unit_price`: Unit price multiplier from ecosystem.
 * **Effective deposit** = `credential_schema_trust_deposit × trust_unit_price`.
 
 ---
@@ -170,7 +170,7 @@ Defined in `module_params`:
 
 ```json
 {
-  "tr_id": "trust123",
+  "ecosystem_id": "trust123",
   "id": 1,
   "json_schema": {
     "type": "object",

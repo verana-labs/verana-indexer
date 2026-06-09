@@ -2,7 +2,7 @@ import { Model } from "objection";
 import BaseModel from "./base";
 import { GovernanceFrameworkDocument } from "./governance_framework_document";
 import { GovernanceFrameworkVersion } from "./governance_framework_version";
-import { TrustRegistry } from "./trust_registry";
+import { Ecosystem } from "./ecosystem";
 
 export class GovernanceFrameworkDocumentHistory extends BaseModel {
   static tableName = "governance_framework_document_history";
@@ -10,7 +10,7 @@ export class GovernanceFrameworkDocumentHistory extends BaseModel {
   id!: number;
   gfd_id!: number;
   gfv_id!: number;
-  tr_id!: number;
+  ecosystem_id!: number;
   created!: Date;
   language!: string;
   url!: string;
@@ -37,12 +37,12 @@ export class GovernanceFrameworkDocumentHistory extends BaseModel {
         to: "governance_framework_version.id",
       },
     },
-    trustRegistry: {
+    ecosystem: {
       relation: Model.BelongsToOneRelation,
-      modelClass: TrustRegistry,
+      modelClass: Ecosystem,
       join: {
-        from: "governance_framework_document_history.tr_id",
-        to: "trust_registry.id",
+        from: "governance_framework_document_history.ecosystem_id",
+        to: "ecosystem.id",
       },
     },
   });

@@ -15,7 +15,7 @@ const CS_MESSAGE_TYPES = new Set<string>([
 export interface LedgerCredentialSchemaResponse {
   schema?: {
     id?: number;
-    tr_id?: number;
+    ecosystem_id?: number;
     json_schema?: string | object;
     deposit?: number;
     issuer_grantor_validation_validity_period?: number;

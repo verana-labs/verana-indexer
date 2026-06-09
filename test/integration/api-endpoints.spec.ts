@@ -13,7 +13,7 @@ const SAMPLE_ID = 1;
 const SAMPLE_ACCOUNT = 'verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st';
 const SAMPLE_TR_ID = 1;
 const SAMPLE_BLOCK_HEIGHT = 1000;
-const SAMPLE_PERM_ID = 1;
+const SAMPLE_PARTICIPANT_ID = 1;
 const SAMPLE_SCHEMA_ID = 1;
 
 function getTimestamps() {
@@ -248,14 +248,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   });
 
   describe('API Response Timing Headers', () => {
-    itIf('should include x-response-time-ms for perm list endpoint', async () => {
-      const response = await testEndpoint('GET', '/verana/perm/v1/list', { response_max_size: 1 });
+    itIf('should include x-response-time-ms for participant list endpoint', async () => {
+      const response = await testEndpoint('GET', '/verana/pp/v1/list', { response_max_size: 1 });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
       expectResponseTimeHeader(response);
     });
 
-    itIf('should include x-response-time-ms for TR list endpoint', async () => {
-      const response = await testEndpoint('GET', '/verana/tr/v1/list', { response_max_size: 1 });
+    itIf('should include x-response-time-ms for EC list endpoint', async () => {
+      const response = await testEndpoint('GET', '/verana/ec/v1/list', { response_max_size: 1 });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
       expectResponseTimeHeader(response);
     });
@@ -275,8 +275,8 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   });
 
   describe('Participant Role Attributes and Filters', () => {
-    itIf('should accept participant-role min/max filters on perm/cs/tr list', async () => {
-      const perm = await testEndpoint('GET', '/verana/perm/v1/list', {
+    itIf('should accept participant-role min/max filters on participant/cs/ec list', async () => {
+      const participant = await testEndpoint('GET', '/verana/pp/v1/list', {
         response_max_size: 1,
         min_participants_ecosystem: 0,
         max_participants_ecosystem: 10,
@@ -286,15 +286,15 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         min_participants_issuer: 0,
         max_participants_issuer: 10,
       });
-      const tr = await testEndpoint('GET', '/verana/tr/v1/list', {
+      const ec = await testEndpoint('GET', '/verana/ec/v1/list', {
         response_max_size: 1,
         min_participants_verifier_grantor: 0,
         max_participants_verifier_grantor: 10,
       });
 
-      expect(perm.status).toBeLessThan(500);
+      expect(participant.status).toBeLessThan(500);
       expect(cs.status).toBeLessThan(500);
-      expect(tr.status).toBeLessThan(500);
+      expect(ec.status).toBeLessThan(500);
     });
 
     itIf('should expose participant role counters in global metrics', async () => {
@@ -312,55 +312,55 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   });
 
   describe('Trust Registry Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/tr/v1/get/:tr_id', () => {
+    describe('GET /verana/ec/v1/get/:ecosystem_id', () => {
       itIf('should get trust registry - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/tr/v1/get/${SAMPLE_TR_ID}`);
+        const response = await testEndpoint('GET', `/verana/ec/v1/get/${SAMPLE_TR_ID}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should get trust registry - with At-Block-Height header', async () => {
-        const response = await testEndpoint('GET', `/verana/tr/v1/get/${SAMPLE_TR_ID}`, {}, {
+        const response = await testEndpoint('GET', `/verana/ec/v1/get/${SAMPLE_TR_ID}`, {}, {
           'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should handle invalid TR ID format', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/get/invalid-id');
+      itIf('should handle invalid EC ID format', async () => {
+        const response = await testEndpoint('GET', '/verana/ec/v1/get/invalid-id');
         expect(response.status).toBeGreaterThanOrEqual(400);
         expect(response.status).toBeLessThan(600);
       });
     });
 
-    describe('GET /verana/tr/v1/list - ALL PARAMETERS', () => {
+    describe('GET /verana/ec/v1/list - ALL PARAMETERS', () => {
       itIf('should list trust registries - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list');
+        const response = await testEndpoint('GET', '/verana/ec/v1/list');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with response_max_size at minimum (1)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           response_max_size: 1,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with response_max_size at maximum (1024)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           response_max_size: 1024,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with controller filter', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           controller: SAMPLE_ACCOUNT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with participant filter', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           participant: SAMPLE_ACCOUNT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
@@ -368,56 +368,56 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list trust registries - with modified_after filter', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           modified_after: timestamps.from,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with only_active (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           only_active: true,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with only_active (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           only_active: false,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with active_gf_only (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           active_gf_only: true,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with preferred_language filter', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           preferred_language: 'en',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           sort: 'modified',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           sort: '-participants_verifier_grantor',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should list trust registries - with min/max filters (participants)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           min_participants: 1,
           max_participants: 100,
         });
@@ -425,7 +425,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should list trust registries - with min/max filters (weight)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           min_weight: '0',
           max_weight: '1000000',
         });
@@ -433,7 +433,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should list trust registries - with min/max filters (issued)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           min_issued: '0',
           max_issued: '1000000',
         });
@@ -441,7 +441,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should list trust registries - with min/max filters (verified)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           min_verified: '0',
           max_verified: '1000000',
         });
@@ -449,7 +449,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should list trust registries - with min/max filters (slash events)', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           min_ecosystem_slash_events: 0,
           max_ecosystem_slash_events: 100,
           min_network_slash_events: 0,
@@ -460,7 +460,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list trust registries - with ALL filters combined', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           response_max_size: 50,
           controller: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
@@ -474,44 +474,44 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should list trust registries - validation: response_max_size exceeds max', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/list', {
+        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
           response_max_size: 2000,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
     });
 
-    describe('GET /verana/tr/v1/params', () => {
-      itIf('should get TR params - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/tr/v1/params');
+    describe('GET /verana/ec/v1/params', () => {
+      itIf('should get EC params - basic', async () => {
+        const response = await testEndpoint('GET', '/verana/ec/v1/params');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
     });
 
-    describe('GET /verana/tr/v1/history/:tr_id - ALL PARAMETERS', () => {
-      itIf('should get TR history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/tr/v1/history/${SAMPLE_TR_ID}`);
+    describe('GET /verana/ec/v1/history/:ecosystem_id - ALL PARAMETERS', () => {
+      itIf('should get EC history - basic (defaults)', async () => {
+        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get TR history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/tr/v1/history/${SAMPLE_TR_ID}`, {
+      itIf('should get EC history - with response_max_size', async () => {
+        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`, {
           response_max_size: 100,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get TR history - with transaction_timestamp_older_than', async () => {
+      itIf('should get EC history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/tr/v1/history/${SAMPLE_TR_ID}`, {
+        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get TR history - with ALL parameters', async () => {
+      itIf('should get EC history - with ALL parameters', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/tr/v1/history/${SAMPLE_TR_ID}`, {
+        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         });
@@ -555,9 +555,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list credential schemas - with tr_id filter', async () => {
+      itIf('should list credential schemas - with ecosystem_id filter', async () => {
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
-          tr_id: SAMPLE_TR_ID,
+          ecosystem_id: SAMPLE_TR_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -665,7 +665,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps();
         const response = await testEndpoint('GET', '/verana/cs/v1/list', {
           response_max_size: 50,
-          tr_id: SAMPLE_TR_ID,
+          ecosystem_id: SAMPLE_TR_ID,
           participant: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
           only_active: true,
@@ -718,182 +718,182 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     });
   });
 
-  describe('Permission Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/perm/v1/get/:id', () => {
-      itIf('should get permission - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/perm/v1/get/${SAMPLE_PERM_ID}`);
+  describe('Participant Endpoints - All Parameters Tested', () => {
+    describe('GET /verana/pp/v1/get/:id', () => {
+      itIf('should get participant - basic', async () => {
+        const response = await testEndpoint('GET', `/verana/pp/v1/get/${SAMPLE_PARTICIPANT_ID}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
     });
 
-    describe('GET /verana/perm/v1/list - ALL PARAMETERS', () => {
-      itIf('should list permissions - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list');
+    describe('GET /verana/pp/v1/list - ALL PARAMETERS', () => {
+      itIf('should list participants - no parameters (defaults)', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with schema_id', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with schema_id', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           schema_id: SAMPLE_SCHEMA_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with corporation', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with corporation', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           corporation: SAMPLE_ACCOUNT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with did', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with did', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           did: SAMPLE_DID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with perm_id', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          perm_id: SAMPLE_PERM_ID,
+      itIf('should list participants - with participant_id', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+          participant_id: SAMPLE_PARTICIPANT_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with validator_perm_id', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          validator_perm_id: SAMPLE_PERM_ID,
+      itIf('should list participants - with validator_participant_id', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+          validator_participant_id: SAMPLE_PARTICIPANT_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with perm_state', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          perm_state: 'ACTIVE',
+      itIf('should list participants - with participant_state', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+          participant_state: 'ACTIVE',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with type', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with type', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           type: 'ISSUER',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with only_valid (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with only_valid (true)', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           only_valid: true,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with only_valid (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with only_valid (false)', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           only_valid: false,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with only_slashed (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with only_slashed (true)', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           only_slashed: true,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with only_repaid (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with only_repaid (true)', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           only_repaid: true,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with modified_after', async () => {
+      itIf('should list participants - with modified_after', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           modified_after: timestamps.from,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with country filter', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with country filter', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           country: 'US',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with vp_state filter', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
-          vp_state: 'VALIDATED',
+      itIf('should list participants - with op_state filter', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+          op_state: 'VALIDATED',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with response_max_size', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           response_max_size: 50,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with when parameter', async () => {
+      itIf('should list participants - with when parameter', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           when: timestamps.from,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with sort parameter', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           sort: 'modified',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with participant-role sort parameter', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           sort: '-participants_holder',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with min/max participants', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with min/max participants', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           min_participants: 1,
           max_participants: 100,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with min/max weight', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with min/max weight', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           min_weight: 0,
           max_weight: 1000000,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with min/max issued', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with min/max issued', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           min_issued: 0,
           max_issued: 1000000,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with min/max verified', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with min/max verified', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           min_verified: 0,
           max_verified: 1000000,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with min/max slash events', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+      itIf('should list participants - with min/max slash events', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           min_ecosystem_slash_events: 0,
           max_ecosystem_slash_events: 100,
           min_network_slash_events: 0,
@@ -902,18 +902,18 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permissions - with ALL filters combined', async () => {
+      itIf('should list participants - with ALL filters combined', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/perm/v1/list', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
           schema_id: SAMPLE_SCHEMA_ID,
           corporation: SAMPLE_ACCOUNT,
           did: SAMPLE_DID,
-          perm_state: 'ACTIVE',
+          participant_state: 'ACTIVE',
           type: 'ISSUER',
           only_valid: true,
           modified_after: timestamps.from,
           country: 'US',
-          vp_state: 'VALIDATED',
+          op_state: 'VALIDATED',
           response_max_size: 50,
           when: timestamps.from,
           sort: 'modified',
@@ -926,21 +926,21 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
     });
 
-    describe('GET /verana/perm/v1/pending/flat - ALL PARAMETERS', () => {
+    describe('GET /verana/pp/v1/pending/flat - ALL PARAMETERS', () => {
       itIf('should get pending flat - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat');
+        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should get pending flat - with account (required)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
           account: SAMPLE_ACCOUNT,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should get pending flat - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
           account: SAMPLE_ACCOUNT,
           response_max_size: 100,
         });
@@ -948,7 +948,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should get pending flat - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
           account: SAMPLE_ACCOUNT,
           sort: 'modified',
         });
@@ -956,7 +956,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
 
       itIf('should get pending flat - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
           account: SAMPLE_ACCOUNT,
           sort: '-participants_ecosystem',
         });
@@ -964,62 +964,62 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
     });
 
-    describe('GET /verana/perm/v1/beneficiaries - ALL PARAMETERS', () => {
-      itIf('should get beneficiaries - with issuer_perm_id', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
-          issuer_perm_id: SAMPLE_PERM_ID,
+    describe('GET /verana/pp/v1/beneficiaries - ALL PARAMETERS', () => {
+      itIf('should get beneficiaries - with issuer_participant_id', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries', {
+          issuer_participant_id: SAMPLE_PARTICIPANT_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get beneficiaries - with verifier_perm_id', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
-          verifier_perm_id: SAMPLE_PERM_ID,
+      itIf('should get beneficiaries - with verifier_participant_id', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries', {
+          verifier_participant_id: SAMPLE_PARTICIPANT_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
       itIf('should get beneficiaries - validation: missing required parameters (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries');
+        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
         if (response.status === 400) {
-          expect(response.data?.error || response.data?.message).toMatch(/issuer_perm_id|verifier_perm_id/);
+          expect(response.data?.error || response.data?.message).toMatch(/issuer_participant_id|verifier_participant_id/);
         }
       });
 
-      itIf('should get beneficiaries - with issuer_perm_id and response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/beneficiaries', {
-          issuer_perm_id: SAMPLE_PERM_ID,
+      itIf('should get beneficiaries - with issuer_participant_id and response_max_size', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries', {
+          issuer_participant_id: SAMPLE_PARTICIPANT_ID,
           response_max_size: 100,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
     });
 
-    describe('GET /verana/perm/v1/history/:id - ALL PARAMETERS', () => {
-      itIf('should get permission history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/perm/v1/history/${SAMPLE_PERM_ID}`);
+    describe('GET /verana/pp/v1/history/:id - ALL PARAMETERS', () => {
+      itIf('should get participant history - basic (defaults)', async () => {
+        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get permission history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/perm/v1/history/${SAMPLE_PERM_ID}`, {
+      itIf('should get participant history - with response_max_size', async () => {
+        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`, {
           response_max_size: 100,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get permission history - with transaction_timestamp_older_than', async () => {
+      itIf('should get participant history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/perm/v1/history/${SAMPLE_PERM_ID}`, {
+        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get permission history - with ALL parameters', async () => {
+      itIf('should get participant history - with ALL parameters', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/perm/v1/history/${SAMPLE_PERM_ID}`, {
+        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         });
@@ -1027,37 +1027,37 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
     });
 
-    describe('GET /verana/perm/v1/permission-session/:id', () => {
-      itIf('should get permission session - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/perm/v1/permission-session/${SAMPLE_PERM_ID}`);
+    describe('GET /verana/pp/v1/participant-session/:id', () => {
+      itIf('should get participant session - basic', async () => {
+        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session/${SAMPLE_PARTICIPANT_ID}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
     });
 
-    describe('GET /verana/perm/v1/permission-sessions - ALL PARAMETERS', () => {
-      itIf('should list permission sessions - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/permission-sessions');
+    describe('GET /verana/pp/v1/participant-sessions - ALL PARAMETERS', () => {
+      itIf('should list participant sessions - no parameters (defaults)', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions');
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permission sessions - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/perm/v1/permission-sessions', {
+      itIf('should list participant sessions - with response_max_size', async () => {
+        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions', {
           response_max_size: 50,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permission sessions - with modified_after', async () => {
+      itIf('should list participant sessions - with modified_after', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/perm/v1/permission-sessions', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions', {
           modified_after: timestamps.from,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should list permission sessions - with ALL parameters', async () => {
+      itIf('should list participant sessions - with ALL parameters', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', '/verana/perm/v1/permission-sessions', {
+        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions', {
           response_max_size: 50,
           modified_after: timestamps.from,
         });
@@ -1065,30 +1065,30 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       });
     });
 
-    describe('GET /verana/perm/v1/permission-session-history/:id - ALL PARAMETERS', () => {
-      itIf('should get permission session history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/perm/v1/permission-session-history/${SAMPLE_PERM_ID}`);
+    describe('GET /verana/pp/v1/participant-session-history/:id - ALL PARAMETERS', () => {
+      itIf('should get participant session history - basic (defaults)', async () => {
+        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`);
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get permission session history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/perm/v1/permission-session-history/${SAMPLE_PERM_ID}`, {
+      itIf('should get participant session history - with response_max_size', async () => {
+        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`, {
           response_max_size: 100,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get permission session history - with transaction_timestamp_older_than', async () => {
+      itIf('should get participant session history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/perm/v1/permission-session-history/${SAMPLE_PERM_ID}`, {
+        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get permission session history - with ALL parameters', async () => {
+      itIf('should get participant session history - with ALL parameters', async () => {
         const timestamps = getTimestamps();
-        const response = await testEndpoint('GET', `/verana/perm/v1/permission-session-history/${SAMPLE_PERM_ID}`, {
+        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         });
@@ -1210,11 +1210,11 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get stats by granularity and timestamp (TRUST_REGISTRY) - with entity_id', async () => {
+      itIf('should get stats by granularity and timestamp (ECOSYSTEM) - with entity_id', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
-          entity_type: 'TRUST_REGISTRY',
+          entity_type: 'ECOSYSTEM',
           entity_id: SAMPLE_TR_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
@@ -1230,12 +1230,12 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get stats by granularity and timestamp (PERMISSION) - with entity_id', async () => {
+      itIf('should get stats by granularity and timestamp (PARTICIPANT) - with entity_id', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
-          entity_type: 'PERMISSION',
-          entity_id: SAMPLE_PERM_ID,
+          entity_type: 'PARTICIPANT',
+          entity_id: SAMPLE_PARTICIPANT_ID,
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
@@ -1253,11 +1253,11 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         }
       });
 
-      itIf('should get stats - validation: TRUST_REGISTRY without entity_id (should fail)', async () => {
+      itIf('should get stats - validation: ECOSYSTEM without entity_id (should fail)', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
-          entity_type: 'TRUST_REGISTRY',
+          entity_type: 'ECOSYSTEM',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
         if (response.status === 400) {
@@ -1363,22 +1363,22 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get stats with time range (TRUST_REGISTRY) - with entity_ids array', async () => {
+      itIf('should get stats with time range (ECOSYSTEM) - with entity_ids array', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
-          entity_type: 'TRUST_REGISTRY',
+          entity_type: 'ECOSYSTEM',
           entity_ids: [SAMPLE_TR_ID],
           result_type: 'BUCKETS',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get stats with time range (TRUST_REGISTRY) - with entity_ids comma-separated string', async () => {
+      itIf('should get stats with time range (ECOSYSTEM) - with entity_ids comma-separated string', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
-          entity_type: 'TRUST_REGISTRY',
+          entity_type: 'ECOSYSTEM',
           entity_ids: `${SAMPLE_TR_ID},2,3`,
           result_type: 'BUCKETS',
         });
@@ -1396,12 +1396,12 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500);
       });
 
-      itIf('should get stats with time range (PERMISSION) - with entity_ids', async () => {
+      itIf('should get stats with time range (PARTICIPANT) - with entity_ids', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
-          entity_type: 'PERMISSION',
-          entity_ids: [SAMPLE_PERM_ID],
+          entity_type: 'PARTICIPANT',
+          entity_ids: [SAMPLE_PARTICIPANT_ID],
           result_type: 'TOTAL',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
@@ -1432,11 +1432,11 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         }
       });
 
-      itIf('should get stats - validation: TRUST_REGISTRY without entity_ids (should fail)', async () => {
+      itIf('should get stats - validation: ECOSYSTEM without entity_ids (should fail)', async () => {
         const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
-          entity_type: 'TRUST_REGISTRY',
+          entity_type: 'ECOSYSTEM',
         });
         expect(response.status).not.toBeGreaterThanOrEqual(500);
         if (response.status === 400) {

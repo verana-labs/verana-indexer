@@ -20,12 +20,12 @@ function isDidParam(did: string): did is string {
   return did.startsWith("did:");
 }
 
-type PermissionChainLink = {
-  permission_id: number;
+type ParticipantChainLink = {
+  participant_id: number;
   type: string;
   did: string | null;
   deposit: string;
-  perm_state: string;
+  participant_state: string;
   effective_from?: string | null;
   effective_until?: string | null;
 };
@@ -45,7 +45,7 @@ type Q1Credential = {
   vtjsc_id?: string;
   claims?: unknown;
   schema?: unknown;
-  permission_chain?: Array<Record<string, unknown>>;
+  participant_chain?: Array<Record<string, unknown>>;
   digest_algorithm?: string;
 };
 
@@ -104,15 +104,15 @@ function formatDeposit(n: unknown): string {
   return `${v}uvna`;
 }
 
-function toPermissionChainLink(p: Record<string, unknown>): PermissionChainLink {
+function toParticipantChainLink(p: Record<string, unknown>): ParticipantChainLink {
   const id = Number(p.id);
-  const state = String(p.perm_state ?? p.permState ?? "").toUpperCase() || "UNKNOWN";
+  const state = String(p.participant_state ?? p.participantState ?? "").toUpperCase() || "UNKNOWN";
   return {
-    permission_id: Number.isFinite(id) ? id : 0,
-    type: String(p.type ?? ""),
+    participant_id: Number.isFinite(id) ? id : 0,
+    type: String(p.role ?? ""),
     did: (p.did as string) ?? (p.grantee as string) ?? null,
     deposit: formatDeposit(p.deposit),
-    perm_state: state,
+    participant_state: state,
     effective_from: p.effective_from != null ? String(p.effective_from) : p.effective != null ? String(p.effective) : null,
     effective_until:
       p.effective_until != null
@@ -182,29 +182,29 @@ export class TrustApiService extends BaseService {
       this.logger.warn(`Failed to query trust_results table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
     }
     try {
-      const hitPerm = await knex("permissions").select("id").where({ did }).first();
-      if (hitPerm) return null;
+      const hitParticipant = await knex("participants").select("id").where({ did }).first();
+      if (hitParticipant) return null;
     } catch {
-      this.logger.warn(`Failed to query permissions table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
+      this.logger.warn(`Failed to query participants table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
     }
 
     try {
-      const hitPermH = await knex("permission_history").select("id").where({ did }).first();
-      if (hitPermH) return null;
+      const hitParticipantH = await knex("participant_history").select("id").where({ did }).first();
+      if (hitParticipantH) return null;
     } catch {
-      this.logger.warn(`Failed to query permission_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
+      this.logger.warn(`Failed to query participant_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
     }
     try {
-      const hitTr = await knex("trust_registry").select("id").where({ did }).first();
+      const hitTr = await knex("ecosystem").select("id").where({ did }).first();
       if (hitTr) return null;
     } catch {
-      this.logger.warn(`Failed to query trust_registry table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
+      this.logger.warn(`Failed to query ecosystem table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
     }
     try {
-      const hitTrH = await knex("trust_registry_history").select("id").where({ did }).first();
+      const hitTrH = await knex("ecosystem_history").select("id").where({ did }).first();
       if (hitTrH) return null;
     } catch {
-      this.logger.warn(`Failed to query trust_registry_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
+      this.logger.warn(`Failed to query ecosystem_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
     }
 
     return ApiResponder.error(ctx, "DID not found", 404);
@@ -417,7 +417,7 @@ export class TrustApiService extends BaseService {
       vtjsc_id: vtjscId,
       claims,
       schema: c.schema,
-      permission_chain: Array.isArray((c as any).permissionChain) ? ((c as any).permissionChain as any[]) : undefined,
+      participant_chain: Array.isArray((c as any).participantChain) ? ((c as any).participantChain as any[]) : undefined,
       ...(w3c ? { credential: w3c } : {}),
     };
   }
@@ -506,11 +506,11 @@ export class TrustApiService extends BaseService {
     return ok;
   }
 
-  private async enrichCredentialPermissionChain(
+  private async enrichCredentialParticipantChain(
     cred: Q1Credential,
     blockHeight: number
   ): Promise<Array<Record<string, unknown>>> {
-    const raw = cred.permission_chain;
+    const raw = cred.participant_chain;
     if (!Array.isArray(raw) || raw.length === 0) return [];
     const visited = new Set<string>();
     const out: Array<Record<string, unknown>> = [];
@@ -526,21 +526,21 @@ export class TrustApiService extends BaseService {
     return out;
   }
 
-  private async walkPermissionChainUp(leafId: number, blockHeight: number): Promise<PermissionChainLink[]> {
-    const chain: PermissionChainLink[] = [];
+  private async walkParticipantChainUp(leafId: number, blockHeight: number): Promise<ParticipantChainLink[]> {
+    const chain: ParticipantChainLink[] = [];
     let id: number | null = leafId;
     const seen = new Set<number>();
     const meta = this.brokerMeta(blockHeight);
     while (id != null && !seen.has(id)) {
       seen.add(id);
-      const raw = (await this.broker.call(`${SERVICE.V1.PermAPIService.path}.getPermission`, { id }, meta)) as {
-        permission?: Record<string, unknown>;
+      const raw = (await this.broker.call(`${SERVICE.V1.ParticipantAPIService.path}.getParticipant`, { id }, meta)) as {
+        participant?: Record<string, unknown>;
       };
-      const perm = raw?.permission;
-      if (!perm || typeof perm !== "object") break;
-      chain.push(toPermissionChainLink(perm as Record<string, unknown>));
-      const typ = String(perm.type ?? "").toUpperCase();
-      const parent = perm.validator_perm_id != null ? Number(perm.validator_perm_id) : null;
+      const participant = raw?.participant;
+      if (!participant || typeof participant !== "object") break;
+      chain.push(toParticipantChainLink(participant as Record<string, unknown>));
+      const typ = String(participant.role ?? "").toUpperCase();
+      const parent = participant.validator_participant_id != null ? Number(participant.validator_participant_id) : null;
       if (typ === "ECOSYSTEM" || !parent || !Number.isFinite(parent)) break;
       id = parent;
     }
@@ -605,7 +605,7 @@ export class TrustApiService extends BaseService {
       const enrichedCredentials = await Promise.all(
         withDigest.map(async (c) => ({
           ...c,
-          permission_chain: await this.enrichCredentialPermissionChain(c, row.height),
+          participant_chain: await this.enrichCredentialParticipantChain(c, row.height),
         }))
       );
       const vsReq = (() => {
@@ -675,12 +675,12 @@ export class TrustApiService extends BaseService {
     let leaf: Record<string, unknown> | null = null;
     let resolvedSchemaId: number | null = null;
     for (const sid of schemaIds) {
-      const permResp = (await this.broker.call(
-        `${SERVICE.V1.PermAPIService.path}.listPermissions`,
-        { did: args.did, schema_id: sid, type: listType, only_valid: true, response_max_size: 32 },
+      const participantResp = (await this.broker.call(
+        `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
+        { did: args.did, schema_id: sid, role: listType, only_valid: true, response_max_size: 32 },
         meta
-      )) as { permissions?: Array<Record<string, unknown>> };
-      const hit = (permResp?.permissions ?? []).find((p) => String(p.perm_state ?? "").toUpperCase() === "ACTIVE");
+      )) as { participants?: Array<Record<string, unknown>> };
+      const hit = (participantResp?.participants ?? []).find((p) => String(p.participant_state ?? "").toUpperCase() === "ACTIVE");
       if (hit) {
         leaf = hit;
         resolvedSchemaId = sid;
@@ -697,47 +697,47 @@ export class TrustApiService extends BaseService {
         {
           ...base,
           authorized: false,
-          reason: `No active ${listType} permission found for DID on schema ${schemaHint} (VTJSC: ${args.vtjscId})`,
-          permission: null,
+          reason: `No active ${listType} participant found for DID on schema ${schemaHint} (VTJSC: ${args.vtjscId})`,
+          participant: null,
           fees: { required: false },
-          permission_chain: [] satisfies PermissionChainLink[],
+          participant_chain: [] satisfies ParticipantChainLink[],
         },
         200
       );
     }
 
-    let benPerms: Array<Record<string, unknown>> = [];
+    let benParticipants: Array<Record<string, unknown>> = [];
     try {
       const ben = (await this.broker.call(
-        `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
-        isIssuer ? { issuer_perm_id: Number(leaf.id) } : { verifier_perm_id: Number(leaf.id) },
+        `${SERVICE.V1.ParticipantAPIService.path}.findBeneficiaries`,
+        isIssuer ? { issuer_participant_id: Number(leaf.id) } : { verifier_participant_id: Number(leaf.id) },
         meta
-      )) as { permissions?: Array<Record<string, unknown>> };
-      benPerms = ben?.permissions ?? [];
+      )) as { participants?: Array<Record<string, unknown>> };
+      benParticipants = ben?.participants ?? [];
     } catch {
-      benPerms = [];
+      benParticipants = [];
     }
 
     let totalFeeUnits = 0;
-    const beneficiaries = benPerms.map((p) => {
+    const beneficiaries = benParticipants.map((p) => {
       const pid = Number(p.id);
-      const typ = String(p.type ?? "");
+      const typ = String(p.role ?? "");
       if (isIssuer) {
         const iss = Number(p.issuance_fees ?? 0);
         totalFeeUnits += iss;
-        return { permission_id: pid, type: typ, issuance_fees: this.formatUvnaAmount(iss) };
+        return { participant_id: pid, type: typ, issuance_fees: this.formatUvnaAmount(iss) };
       }
       const vf = Number(p.verification_fees ?? 0);
       totalFeeUnits += vf;
-      return { permission_id: pid, type: typ, verification_fees: this.formatUvnaAmount(vf) };
+      return { participant_id: pid, type: typ, verification_fees: this.formatUvnaAmount(vf) };
     });
 
     const feesRequired = totalFeeUnits > 0;
 
     if (feesRequired && !args.sessionId) {
       const reason = isIssuer
-        ? "Payment required. Issuance fees are enabled for this schema but no sessionId was provided. The issuer must create a PermissionSession (MOD-PERM-MSG-10) and re-query with the sessionId."
-        : "Payment required. Verification fees are enabled for this schema but no sessionId was provided. The verifier must create a PermissionSession (MOD-PERM-MSG-10) and re-query with the sessionId.";
+        ? "Payment required. Issuance fees are enabled for this schema but no sessionId was provided. The issuer must create a ParticipantSession (MOD-PP-MSG-10) and re-query with the sessionId."
+        : "Payment required. Verification fees are enabled for this schema but no sessionId was provided. The verifier must create a ParticipantSession (MOD-PP-MSG-10) and re-query with the sessionId.";
       return ApiResponder.success(
         ctx,
         {
@@ -759,7 +759,7 @@ export class TrustApiService extends BaseService {
     let sessionOk = !feesRequired;
     if (feesRequired && args.sessionId) {
       try {
-        const raw = (await this.broker.call(`${SERVICE.V1.PermAPIService.path}.getPermissionSession`, { id: args.sessionId }, meta)) as {
+        const raw = (await this.broker.call(`${SERVICE.V1.ParticipantAPIService.path}.getParticipantSession`, { id: args.sessionId }, meta)) as {
           session?: Record<string, unknown>;
         };
         const sn = raw?.session;
@@ -768,9 +768,9 @@ export class TrustApiService extends BaseService {
           session = {
             id: args.sessionId,
             paid: true,
-            ...(isIssuer ? { issuer_perm_id: Number(leaf.id) } : { verifier_perm_id: Number(leaf.id) }),
-            agent_perm_id: Number(sn.agent_perm_id ?? 0) || 0,
-            wallet_agent_perm_id: Number(sn.wallet_agent_perm_id ?? 0) || 0,
+            ...(isIssuer ? { issuer_participant_id: Number(leaf.id) } : { verifier_participant_id: Number(leaf.id) }),
+            agent_participant_id: Number(sn.agent_participant_id ?? 0) || 0,
+            wallet_agent_participant_id: Number(sn.wallet_agent_participant_id ?? 0) || 0,
             created: sn.created ?? null,
           };
         }
@@ -781,34 +781,34 @@ export class TrustApiService extends BaseService {
       sessionOk = false;
     }
 
-    const permissionChain = await this.walkPermissionChainUp(Number(leaf.id), evaluatedAtBlock);
-    const active = String(leaf.perm_state ?? "").toUpperCase() === "ACTIVE";
-    const permissionAuthorized = Boolean(active && verreOk);
-    const authorized = permissionAuthorized && (!feesRequired || sessionOk);
+    const participantChain = await this.walkParticipantChainUp(Number(leaf.id), evaluatedAtBlock);
+    const active = String(leaf.participant_state ?? "").toUpperCase() === "ACTIVE";
+    const participantAuthorized = Boolean(active && verreOk);
+    const authorized = participantAuthorized && (!feesRequired || sessionOk);
 
     let denialReason: string | undefined;
-    if (!permissionAuthorized) {
+    if (!participantAuthorized) {
       denialReason = !active
-        ? `No active ${listType} permission found for DID on schema ${resolvedSchemaId} (VTJSC: ${args.vtjscId})`
-        : "Verre permission verification did not succeed for this DID and VTJSC.";
+        ? `No active ${listType} participant found for DID on schema ${resolvedSchemaId} (VTJSC: ${args.vtjscId})`
+        : "Verre participant verification did not succeed for this DID and VTJSC.";
     } else if (feesRequired && args.sessionId && !sessionOk) {
-      denialReason = "PermissionSession not found or invalid for the given sessionId.";
+      denialReason = "ParticipantSession not found or invalid for the given sessionId.";
     }
 
-    const permissionObj: Record<string, unknown> = {
+    const participantObj: Record<string, unknown> = {
       id: Number(leaf.id),
-      type: leaf.type,
+      type: leaf.role,
       schema_id: resolvedSchemaId,
       did: (leaf.did as string) ?? (leaf.grantee as string),
       deposit: this.formatUvnaAmount(leaf.deposit),
-      perm_state: String(leaf.perm_state ?? "").toUpperCase(),
+      participant_state: String(leaf.participant_state ?? "").toUpperCase(),
       effective_from: leaf.effective_from ?? leaf.effective ?? null,
       effective_until: leaf.effective_until ?? leaf.expiration ?? null,
     };
     if (isIssuer) {
-      permissionObj.issuance_fee_discount = leaf.issuance_fee_discount != null ? String(leaf.issuance_fee_discount) : "0";
+      participantObj.issuance_fee_discount = leaf.issuance_fee_discount != null ? String(leaf.issuance_fee_discount) : "0";
     } else {
-      permissionObj.verification_fee_discount = leaf.verification_fee_discount != null ? String(leaf.verification_fee_discount) : "0";
+      participantObj.verification_fee_discount = leaf.verification_fee_discount != null ? String(leaf.verification_fee_discount) : "0";
     }
 
     const feesPayload = feesRequired
@@ -823,11 +823,11 @@ export class TrustApiService extends BaseService {
       : isIssuer
         ? {
             required: false,
-            note: "All issuance fees are zero or fully discounted (issuanceFeeDiscount=1). No PermissionSession required for fee payment.",
+            note: "All issuance fees are zero or fully discounted (issuanceFeeDiscount=1). No ParticipantSession required for fee payment.",
           }
         : {
             required: false,
-            note: "All verification fees are zero or fully discounted (verificationFeeDiscount=1). No PermissionSession required for fee payment.",
+            note: "All verification fees are zero or fully discounted (verificationFeeDiscount=1). No ParticipantSession required for fee payment.",
           };
 
     return ApiResponder.success(
@@ -836,9 +836,9 @@ export class TrustApiService extends BaseService {
         ...base,
         authorized,
         ...(denialReason ? { reason: denialReason } : {}),
-        permission: permissionObj,
+        participant: participantObj,
         fees: feesPayload,
-        permission_chain: permissionChain,
+        participant_chain: participantChain,
         ...(session ? { session } : {}),
       },
       200
@@ -937,8 +937,8 @@ export class TrustApiService extends BaseService {
     const meta = this.brokerMeta(evaluatedAtBlock);
     const evaluatedAt = new Date().toISOString();
 
-    const trRow = await knex("trust_registry").select("id", "aka").where({ did: ecosystemDid }).first();
-    if (!trRow) {
+    const ecosystemRow = await knex("ecosystem").select("id", "aka").where({ did: ecosystemDid }).first();
+    if (!ecosystemRow) {
       return ApiResponder.success(
         ctx,
         {
@@ -948,41 +948,41 @@ export class TrustApiService extends BaseService {
           isParticipant: false,
           evaluatedAt,
           evaluatedAtBlock,
-          permissions: [],
+          participants: [],
         },
         200
       );
     }
 
-    const schemaRows = await knex("credential_schemas").select("id", "json_schema").where({ tr_id: Number((trRow as any).id) }).whereNull("archived");
+    const schemaRows = await knex("credential_schemas").select("id", "json_schema").where({ ecosystem_id: Number((ecosystemRow as any).id) }).whereNull("archived");
 
-    const permissions: Array<Record<string, unknown>> = [];
+    const participants: Array<Record<string, unknown>> = [];
     for (const s of schemaRows as Array<{ id?: unknown; json_schema?: unknown }>) {
       const schemaId = Number(s.id);
       if (!Number.isFinite(schemaId) || schemaId <= 0) continue;
 
       const resp = (await this.broker.call(
-        `${SERVICE.V1.PermAPIService.path}.listPermissions`,
+        `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
         { did, schema_id: schemaId, only_valid: true, response_max_size: 256 },
         meta
-      )) as { permissions?: Array<Record<string, unknown>> };
+      )) as { participants?: Array<Record<string, unknown>> };
 
       const vtjscId =
         (s.json_schema && typeof s.json_schema === "object"
           ? ((s.json_schema as any).$id ?? (s.json_schema as any).id ?? (s.json_schema as any)["@id"])
           : null) ?? null;
 
-      for (const p of resp?.permissions ?? []) {
-        const permState = String(p.perm_state ?? "").toUpperCase();
-        if (permState !== "ACTIVE") continue;
-        permissions.push({
-          permission_id: Number(p.id),
+      for (const p of resp?.participants ?? []) {
+        const participantState = String(p.participant_state ?? "").toUpperCase();
+        if (participantState !== "ACTIVE") continue;
+        participants.push({
+          participant_id: Number(p.id),
           did: (p.did as string) ?? (p.grantee as string) ?? did,
-          type: String(p.type ?? ""),
+          type: String(p.role ?? ""),
           schema_id: schemaId,
           vtjsc_id: vtjscId,
           deposit: this.formatUvnaAmount(p.deposit),
-          perm_state: permState,
+          participant_state: participantState,
           effective_from: p.effective_from ?? p.effective ?? null,
           effective_until: p.effective_until ?? p.expiration ?? null,
         });
@@ -994,11 +994,11 @@ export class TrustApiService extends BaseService {
       {
         did,
         ecosystem_did: ecosystemDid,
-        ecosystem_aka: (trRow as any).aka ?? null,
-        is_participant: permissions.length > 0,
+        ecosystem_aka: (ecosystemRow as any).aka ?? null,
+        is_participant: participants.length > 0,
         evaluated_at: evaluatedAt,
         evaluated_at_block: evaluatedAtBlock,
-        permissions,
+        participants,
       },
       200
     );

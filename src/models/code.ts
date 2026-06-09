@@ -5,8 +5,8 @@ import { SmartContract } from './smart_contract';
 import { CodeIdVerification } from './code_id_verification';
 import codeType from '../code-type.json' with { type: 'json' };
 
-export interface IInstantiatePermission {
-  permission: string;
+export interface IInstantiateParticipant {
+  participant: string;
   address: string;
   addresses: string[];
 }
@@ -18,7 +18,7 @@ export class Code extends BaseModel {
 
   data_hash!: string;
 
-  instantiate_permission!: IInstantiatePermission[];
+  instantiate_participant!: IInstantiateParticipant[];
 
   type: string | undefined;
 
@@ -33,7 +33,7 @@ export class Code extends BaseModel {
   }
 
   static get jsonAttributes() {
-    return ['instantiate_permission'];
+    return ['instantiate_participant'];
   }
 
   static get idColumn(): string | string[] {
@@ -56,7 +56,7 @@ export class Code extends BaseModel {
         'code_id',
         'creator',
         'data_hash',
-        'instantiate_permission',
+        'instantiate_participant',
         'store_hash',
         'store_height',
       ],
@@ -64,10 +64,10 @@ export class Code extends BaseModel {
         code_id: { type: 'number' },
         creator: { type: 'string' },
         data_hash: { type: 'string' },
-        instantiate_permission: {
+        instantiate_participant: {
           type: 'object',
           properties: {
-            permission: { type: 'string' },
+            participant: { type: 'string' },
             address: { type: 'string' },
             addresses: { type: 'array', items: { type: 'string' } },
           },

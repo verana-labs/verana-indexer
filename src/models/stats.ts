@@ -1,7 +1,7 @@
 import BaseModel from "./base";
 
 export type Granularity = "HOUR" | "DAY" | "MONTH";
-export type EntityType = "GLOBAL" | "TRUST_REGISTRY" | "CREDENTIAL_SCHEMA" | "PERMISSION";
+export type EntityType = "GLOBAL" | "ECOSYSTEM" | "CREDENTIAL_SCHEMA" | "PARTICIPANT";
 
 export default class Stats extends BaseModel {
   static tableName = "stats";
@@ -102,7 +102,7 @@ export default class Stats extends BaseModel {
       properties: {
         granularity: { type: "string", enum: ["HOUR", "DAY", "MONTH"] },
         timestamp: { type: "string", format: "date-time" },
-        entity_type: { type: "string", enum: ["GLOBAL", "TRUST_REGISTRY", "CREDENTIAL_SCHEMA", "PERMISSION"] },
+        entity_type: { type: "string", enum: ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"] },
         entity_id: { type: "number" },
       },
     };

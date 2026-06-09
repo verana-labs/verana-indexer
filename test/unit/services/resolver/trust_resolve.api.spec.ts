@@ -12,8 +12,8 @@ jest.mock(
   () => ({
     __esModule: true,
     resolveDID: jest.fn(async () => ({ verified: true })),
-    verifyPermissions: jest.fn(async () => ({ verified: true })),
-    PermissionType: { ISSUER: "ISSUER", VERIFIER: "VERIFIER" },
+    verifyParticipants: jest.fn(async () => ({ verified: true })),
+    ParticipantType: { ISSUER: "ISSUER", VERIFIER: "VERIFIER" },
     TrustResolutionOutcome,
   }),
   { virtual: true }

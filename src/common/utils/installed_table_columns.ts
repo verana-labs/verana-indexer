@@ -3,26 +3,26 @@ import type { Knex } from "knex";
 
 type KnexWithTable = Knex | Knex.Transaction;
 
-export function finalizeTrustRegistryHistoryInsert(
+export function finalizeEcosystemHistoryInsert(
   historyColumns: Set<string>,
   payload: Record<string, unknown>,
-  trRow: Record<string, unknown>
+  ecosystemRow: Record<string, unknown>
 ): Record<string, unknown> {
-  const reservedColumns = new Set(["id", "tr_id", "event_type", "height", "changes", "created_at"]);
+  const reservedColumns = new Set(["id", "ecosystem_id", "event_type", "height", "changes", "created_at"]);
   const nextPayload: Record<string, unknown> = { ...payload };
 
   for (const column of historyColumns) {
     if (reservedColumns.has(column) || Object.prototype.hasOwnProperty.call(nextPayload, column)) {
       continue;
     }
-    if (Object.prototype.hasOwnProperty.call(trRow, column)) {
-      nextPayload[column] = trRow[column];
+    if (Object.prototype.hasOwnProperty.call(ecosystemRow, column)) {
+      nextPayload[column] = ecosystemRow[column];
     }
   }
 
   if (historyColumns.has("corporation")) {
     const v =
-      (trRow.corporation as string | undefined) ??
+      (ecosystemRow.corporation as string | undefined) ??
       (nextPayload.corporation as string | undefined) ??
       null;
     if (v != null) nextPayload.corporation = v;
@@ -30,7 +30,7 @@ export function finalizeTrustRegistryHistoryInsert(
   delete nextPayload.controller;
 
   if (historyColumns.has("deposit")) {
-    const dep = nextPayload.deposit ?? trRow.deposit ?? 0;
+    const dep = nextPayload.deposit ?? ecosystemRow.deposit ?? 0;
     nextPayload.deposit = Number(dep ?? 0);
   } else {
     delete nextPayload.deposit;
@@ -51,25 +51,25 @@ async function tableColumnNames(db: KnexWithTable, table: string): Promise<Set<s
   return new Set(Object.keys(info || {}));
 }
 
-export async function resolveTrustRegistryParticipantColumn(
+export async function resolveEcosystemParticipantColumn(
   _db: KnexWithTable
 ): Promise<"corporation"> {
   return "corporation";
 }
 
-export async function resolveTrustRegistryHistoryParticipantColumn(
+export async function resolveEcosystemHistoryParticipantColumn(
   _db: KnexWithTable
 ): Promise<"corporation"> {
   return "corporation";
 }
 
-export async function resolvePermissionsParticipantColumn(
+export async function resolveParticipantsParticipantColumn(
   _db: KnexWithTable
 ): Promise<"corporation"> {
   return "corporation";
 }
 
-export async function resolvePermissionHistoryParticipantColumn(
+export async function resolveParticipantHistoryParticipantColumn(
   _db: KnexWithTable
 ): Promise<"corporation"> {
   return "corporation";
@@ -120,26 +120,26 @@ function firstNonEmptyString(
   return undefined;
 }
 
-export async function prepareTrustRegistrySnapshotRowForInsert(
+export async function prepareEcosystemSnapshotRowForInsert(
   db: KnexWithTable,
   row: Record<string, unknown>,
-  opts: { trRow: Record<string, unknown>; rawLedger?: Record<string, unknown> }
+  opts: { ecosystemRow: Record<string, unknown>; rawLedger?: Record<string, unknown> }
 ): Promise<Record<string, unknown>> {
   const next: Record<string, unknown> = { ...row };
-  const info = await db("trust_registry_snapshot").columnInfo();
+  const info = await db("ecosystem_snapshot").columnInfo();
   const cols = new Set(Object.keys(info || {}));
-  if (!cols.has("corporation") && (await db.schema.hasColumn("trust_registry_snapshot", "corporation"))) {
+  if (!cols.has("corporation") && (await db.schema.hasColumn("ecosystem_snapshot", "corporation"))) {
     cols.add("corporation");
   }
-  const { trRow, rawLedger } = opts;
+  const { ecosystemRow, rawLedger } = opts;
   const raw = rawLedger as Record<string, unknown> | undefined;
-  const participant = firstNonEmptyString([trRow, raw], ["corporation"]);
-  const didStr = String(trRow.did ?? "").trim();
+  const participant = firstNonEmptyString([ecosystemRow, raw], ["corporation"]);
+  const didStr = String(ecosystemRow.did ?? "").trim();
   const pStr = participant ?? didStr;
 
   if (cols.has("corporation")) next.corporation = pStr;
 
-  await ensureDepositDefaultIfColumnExists(db, "trust_registry_snapshot", next, trRow.deposit);
+  await ensureDepositDefaultIfColumnExists(db, "ecosystem_snapshot", next, ecosystemRow.deposit);
 
   const filtered: Record<string, unknown> = {};
   for (const k of Object.keys(next)) {

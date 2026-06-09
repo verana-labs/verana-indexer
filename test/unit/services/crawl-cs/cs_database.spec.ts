@@ -78,7 +78,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should upsert (insert) a new credential schema", async () => {
     const payload = {
-      tr_id: 123,
+      ecosystem_id: 123,
       json_schema: JSON.stringify({
         $id: "/vpr/v1/cs/js/1",
         type: "object",
@@ -105,7 +105,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     schema = row as Record<string, unknown>;
     schemaId = normalizeSchemaId(schema.id);
     expect(Number.isFinite(schemaId) && schemaId > 0).toBe(true);
-    expect(normalizeSchemaId(schema.tr_id)).toBe(123);
+    expect(normalizeSchemaId(schema.ecosystem_id)).toBe(123);
   });
 
   it("should update an existing credential schema", async () => {
@@ -121,7 +121,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
 
   it("should avoid synthetic updates in syncFromLedger and update title/description from json_schema changes", async () => {
     const basePayload = {
-      tr_id: 321,
+      ecosystem_id: 321,
       json_schema: JSON.stringify({
         $id: "/vpr/v1/cs/js/placeholder",
         type: "object",
@@ -159,7 +159,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       ledgerResponse: {
         schema: {
           id: createdId,
-          tr_id: String(beforeSync.tr_id),
+          ecosystem_id: String(beforeSync.ecosystem_id),
           json_schema: beforeSync.json_schema,
           deposit: beforeSync.deposit,
           issuer_grantor_validation_validity_period: beforeSync.issuer_grantor_validation_validity_period,
@@ -211,7 +211,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
       ledgerResponse: {
         schema: {
           id: createdId,
-          tr_id: String(beforeSync.tr_id),
+          ecosystem_id: String(beforeSync.ecosystem_id),
           json_schema: JSON.stringify(changedSchema),
           deposit: beforeSync.deposit,
           issuer_grantor_validation_validity_period: beforeSync.issuer_grantor_validation_validity_period,
@@ -286,7 +286,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     const item = body?.schema ?? body;
 
     expect(normalizeSchemaId(item.id)).toBe(schemaId);
-    expect(normalizeSchemaId(item.tr_id)).toBe(123);
+    expect(normalizeSchemaId(item.ecosystem_id)).toBe(123);
   });
 
   it("should list credential schemas", async () => {
@@ -297,7 +297,7 @@ describe("CredentialSchemaDatabaseService API Integration Tests", () => {
     expect(Array.isArray(items)).toBe(true);
     const found = items.find((i: any) => normalizeSchemaId(i.id) === schemaId);
     expect(found).toBeDefined();
-    expect(normalizeSchemaId(found.tr_id)).toBe(123);
+    expect(normalizeSchemaId(found.ecosystem_id)).toBe(123);
   });
 
   it("should fetch JsonSchema of the credential schema", async () => {

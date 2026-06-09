@@ -1,14 +1,14 @@
 import { Model } from "objection";
 import BaseModel from "./base";
 import { GovernanceFrameworkVersion } from "./governance_framework_version";
-import { TrustRegistry } from "./trust_registry";
+import { Ecosystem } from "./ecosystem";
 
 export class GovernanceFrameworkVersionHistory extends BaseModel {
   static tableName = "governance_framework_version_history";
 
   id!: number;
   gfv_id!: number;
-  tr_id!: number;
+  ecosystem_id!: number;
   created!: Date;
   version!: number;
   active_since!: Date;
@@ -26,12 +26,12 @@ export class GovernanceFrameworkVersionHistory extends BaseModel {
         to: "governance_framework_version.id",
       },
     },
-    trustRegistry: {
+    ecosystem: {
       relation: Model.BelongsToOneRelation,
-      modelClass: TrustRegistry,
+      modelClass: Ecosystem,
       join: {
-        from: "governance_framework_version_history.tr_id",
-        to: "trust_registry.id",
+        from: "governance_framework_version_history.ecosystem_id",
+        to: "ecosystem.id",
       },
     },
   });
