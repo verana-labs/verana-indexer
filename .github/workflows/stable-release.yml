@@ -96,7 +96,7 @@ jobs:
           echo "- verana-indexer:${{ needs.release-please.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
 
   discord-notify:
-    needs: release-please
+    needs: [release-please, docker-release]
     if: needs.release-please.outputs.releases_created == 'true'
     permissions:
       contents: read
