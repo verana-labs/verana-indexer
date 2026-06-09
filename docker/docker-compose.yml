@@ -47,17 +47,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Verana node command is configured to setup a single-validator testnet on first boot
-  # Note: pinned to image tag 'sha-5e32065' (verana main build == v0.10.1-dev.13; the
-  # v0.10.1-dev.13 tag was not published to Docker Hub, so we pin the commit-sha image).
-  # This build fixes MsgCreateCorporation (decision_policy unpack); v0.10.1-dev.12 did not.
-  # if you requiere a different version, please update the command based on the file './scripts/setup_primary_validator.sh' (Verana repo)
-  # Run CLI commands against this local node with:
-  #   docker exec -it verana-node veranad <command> --home /root/.verana --keyring-backend test
-  #   e.g. docker exec -it verana-node veranad query ec list-ecosystems -o json
-  #   tx example: docker exec -it verana-node veranad tx tr create-trust-registry ... --chain-id vna-testnet-1 --from cooluser --keyring-backend test --home /root/.verana -y
+  # Verana node setup commands may vary between versions.
+  # If using a version other than `main`, verify any initialization or CLI commands 
+  # against the corresponding Verana documentation.
   verana-node:
-    image: veranalabs/verana-node:${VERANA_VERSION:-sha-5e32065}
+    image: veranalabs/verana-node:${VERANA_VERSION:-main}
     platform: linux/amd64
     container_name: verana-node
     restart: unless-stopped
