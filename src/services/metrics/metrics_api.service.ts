@@ -23,8 +23,8 @@ export default class MetricsApiService extends BaseService {
     "participants_verifier_grantor",
     "participants_verifier",
     "participants_holder",
-    "active_trust_registries",
-    "archived_trust_registries",
+    "active_ecosystems",
+    "archived_ecosystems",
     "active_schemas",
     "archived_schemas",
     "weight",
@@ -101,8 +101,8 @@ export default class MetricsApiService extends BaseService {
     return {
       participants: participantsTotal,
       ...participantsByRole,
-      active_trust_registries: Number(snap.active_trust_registries || 0),
-      archived_trust_registries: Number(snap.archived_trust_registries || 0),
+      active_ecosystems: Number(snap.active_ecosystems || 0),
+      archived_ecosystems: Number(snap.archived_ecosystems || 0),
       active_schemas: Number(snap.active_schemas || 0),
       archived_schemas: Number(snap.archived_schemas || 0),
       weight: Number(snap.weight || "0"),
@@ -165,8 +165,8 @@ export default class MetricsApiService extends BaseService {
         participants_verifier_grantor: Number(metrics.participants_verifier_grantor || 0),
         participants_verifier: Number(metrics.participants_verifier || 0),
         participants_holder: Number(metrics.participants_holder || 0),
-        active_trust_registries: Number(metrics.active_trust_registries || 0),
-        archived_trust_registries: Number(metrics.archived_trust_registries || 0),
+        active_ecosystems: Number(metrics.active_ecosystems || 0),
+        archived_ecosystems: Number(metrics.archived_ecosystems || 0),
         active_schemas: Number(metrics.active_schemas || 0),
         archived_schemas: Number(metrics.archived_schemas || 0),
         weight: String(metrics.weight || "0"),
@@ -240,7 +240,7 @@ export default class MetricsApiService extends BaseService {
 
           const looksEmpty =
             mapped.participants === 0 &&
-            mapped.active_trust_registries === 0 &&
+            mapped.active_ecosystems === 0 &&
             mapped.active_schemas === 0 &&
             mapped.issued === 0 &&
             mapped.verified === 0 &&
@@ -288,33 +288,33 @@ export default class MetricsApiService extends BaseService {
       const asOfIso = asOfDate.toISOString();
 
       const trLatest = IS_PG_CLIENT
-        ? knex("trust_registry_history as trh")
-          .distinctOn("trh.tr_id")
-          .select("trh.tr_id", "trh.archived")
+        ? knex("ecosystem_history as trh")
+          .distinctOn("trh.ecosystem_id")
+          .select("trh.ecosystem_id", "trh.archived")
           .where("trh.height", "<=", blockHeight)
-          .orderBy("trh.tr_id", "asc")
+          .orderBy("trh.ecosystem_id", "asc")
           .orderBy("trh.height", "desc")
           .orderBy("trh.created_at", "desc")
           .orderBy("trh.id", "desc")
           .as("latest_tr")
         : knex
           .from(
-            knex("trust_registry_history as trh")
+            knex("ecosystem_history as trh")
               .select(
-                "trh.tr_id",
+                "trh.ecosystem_id",
                 "trh.archived",
-                knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.tr_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
+                knex.raw("ROW_NUMBER() OVER (PARTITION BY trh.ecosystem_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn")
               )
               .where("trh.height", "<=", blockHeight)
               .as("ranked_tr")
           )
-          .select("tr_id", "archived")
+          .select("ecosystem_id", "archived")
           .where("rn", 1)
           .as("latest_tr");
       const trAgg = await knex.from(trLatest)
         .select(
-          knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_trust_registries"),
-          knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_trust_registries")
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_ecosystems"),
+          knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_ecosystems")
         )
         .first();
 
@@ -403,13 +403,13 @@ export default class MetricsApiService extends BaseService {
       }
 
       const nowIso = asOfIso;
-      const latestPermRanked = IS_PG_CLIENT
-        ? knex("permission_history as ph")
-          .distinctOn("ph.permission_id")
+      const latestParticipantRanked = IS_PG_CLIENT
+        ? knex("participant_history as ph")
+          .distinctOn("ph.participant_id")
           .select(
-            "ph.permission_id",
+            "ph.participant_id",
             "ph.corporation",
-            "ph.type",
+            "ph.role",
             "ph.repaid",
             "ph.slashed",
             "ph.revoked",
@@ -417,28 +417,28 @@ export default class MetricsApiService extends BaseService {
             "ph.effective_until"
           )
           .where("ph.height", "<=", blockHeight)
-          .orderBy("ph.permission_id", "asc")
+          .orderBy("ph.participant_id", "asc")
           .orderBy("ph.height", "desc")
           .orderBy("ph.created_at", "desc")
           .orderBy("ph.id", "desc")
-          .as("ranked_perm")
-        : knex("permission_history as ph")
+          .as("ranked_participant")
+        : knex("participant_history as ph")
           .select(
-            "ph.permission_id",
+            "ph.participant_id",
             "ph.corporation",
-            "ph.type",
+            "ph.role",
             "ph.repaid",
             "ph.slashed",
             "ph.revoked",
             "ph.effective_from",
             "ph.effective_until",
-            knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+            knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.participant_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
           )
           .where("ph.height", "<=", blockHeight)
-          .as("ranked_perm");
+          .as("ranked_participant");
 
-      const activePermBaseQuery = knex
-        .from(latestPermRanked)
+      const activeParticipantBaseQuery = knex
+        .from(latestParticipantRanked)
         .modify((qb) => {
           if (!IS_PG_CLIENT) qb.where("rn", 1);
         })
@@ -453,27 +453,27 @@ export default class MetricsApiService extends BaseService {
       let participantsAgg: any = null;
       let participantsByTypeAgg: any[] = [];
       if (IS_PG_CLIENT) {
-        participantsAgg = await activePermBaseQuery
+        participantsAgg = await activeParticipantBaseQuery
           .clone()
           .select(
             knex.raw("COUNT(DISTINCT corporation) as participants"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ECOSYSTEM') as participants_ecosystem"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'ISSUER') as participants_issuer"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'VERIFIER') as participants_verifier"),
-            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE type = 'HOLDER') as participants_holder")
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'ECOSYSTEM') as participants_ecosystem"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'ISSUER') as participants_issuer"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'VERIFIER') as participants_verifier"),
+            knex.raw("COUNT(DISTINCT corporation) FILTER (WHERE role = 'HOLDER') as participants_holder")
           )
           .first();
       } else {
-        participantsAgg = await activePermBaseQuery
+        participantsAgg = await activeParticipantBaseQuery
           .clone()
           .countDistinct("corporation as participants")
           .first();
-        participantsByTypeAgg = await activePermBaseQuery
+        participantsByTypeAgg = await activeParticipantBaseQuery
           .clone()
-          .groupBy("type")
-          .select("type")
+          .groupBy("role")
+          .select("role")
           .countDistinct("corporation as participants");
       }
 
@@ -488,12 +488,12 @@ export default class MetricsApiService extends BaseService {
       if (!IS_PG_CLIENT) {
         for (const row of participantsByTypeAgg as any[]) {
           const count = Number(row?.participants || row?.count || row?.count_distinct || 0);
-          if (row.type === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
-          if (row.type === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
-          if (row.type === "ISSUER") participantsByType.participants_issuer = count;
-          if (row.type === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
-          if (row.type === "VERIFIER") participantsByType.participants_verifier = count;
-          if (row.type === "HOLDER") participantsByType.participants_holder = count;
+          if (row.role === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
+          if (row.role === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
+          if (row.role === "ISSUER") participantsByType.participants_issuer = count;
+          if (row.role === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
+          if (row.role === "VERIFIER") participantsByType.participants_verifier = count;
+          if (row.role === "HOLDER") participantsByType.participants_holder = count;
         }
       }
 
@@ -537,8 +537,8 @@ export default class MetricsApiService extends BaseService {
         participants_verifier_grantor: participantsByType.participants_verifier_grantor,
         participants_verifier: participantsByType.participants_verifier,
         participants_holder: participantsByType.participants_holder,
-        active_trust_registries: Number((trAgg as any)?.active_trust_registries || 0),
-        archived_trust_registries: Number((trAgg as any)?.archived_trust_registries || 0),
+        active_ecosystems: Number((trAgg as any)?.active_ecosystems || 0),
+        archived_ecosystems: Number((trAgg as any)?.archived_ecosystems || 0),
         active_schemas: Number((csStateAgg as any)?.active_schemas || 0),
         archived_schemas: Number((csStateAgg as any)?.archived_schemas || 0),
         weight,

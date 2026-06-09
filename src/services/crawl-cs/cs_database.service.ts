@@ -7,7 +7,7 @@ import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSortParameter } from "../../common/utils/query_ordering";
 import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from "./cs_stats";
-import { calculateTrustRegistryStats } from "../crawl-tr/tr_stats";
+import { calculateEcosystemStats } from "../crawl-ec/ec_stats";
 import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
@@ -22,16 +22,16 @@ import {
 } from "../../common/vpr-v4-mapping";
 import {
   ensureDepositDefaultIfColumnExists,
-  finalizeTrustRegistryHistoryInsert,
-  resolvePermissionHistoryParticipantColumn,
-  resolvePermissionsParticipantColumn,
-  resolveTrustRegistryHistoryParticipantColumn,
-  resolveTrustRegistryParticipantColumn,
+  finalizeEcosystemHistoryInsert,
+  resolveParticipantHistoryParticipantColumn,
+  resolveParticipantsParticipantColumn,
+  resolveEcosystemHistoryParticipantColumn,
+  resolveEcosystemParticipantColumn,
 } from "../../common/utils/installed_table_columns";
 
 let heightColumnExistsCache: boolean | null = null;
 let historyMetricColumnsExistCache: boolean | null = null;
-let trHistoryColumnsCache: Set<string> | null = null;
+let ecosystemHistoryColumnsCache: Set<string> | null = null;
 
 const CS_V4_OPTIONAL_COLUMNS = [
   "holder_onboarding_mode",
@@ -111,8 +111,8 @@ async function alignCredentialSchemaRowToInstalledColumns(
   row: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };
-  delete out.issuer_perm_management_mode;
-  delete out.verifier_perm_management_mode;
+  delete out.issuer_participant_management_mode;
+  delete out.verifier_participant_management_mode;
   return out;
 }
 
@@ -264,39 +264,39 @@ async function checkHistoryMetricColumnsExist(): Promise<boolean> {
   }
 }
 
-async function getTrustRegistryHistoryColumns(db: any): Promise<Set<string>> {
-  if (trHistoryColumnsCache) {
-    return trHistoryColumnsCache;
+async function getEcosystemHistoryColumns(db: any): Promise<Set<string>> {
+  if (ecosystemHistoryColumnsCache) {
+    return ecosystemHistoryColumnsCache;
   }
-  const info = await db("trust_registry_history").columnInfo();
-  trHistoryColumnsCache = new Set(Object.keys(info || {}));
-  return trHistoryColumnsCache;
+  const info = await db("ecosystem_history").columnInfo();
+  ecosystemHistoryColumnsCache = new Set(Object.keys(info || {}));
+  return ecosystemHistoryColumnsCache;
 }
 
-async function withDynamicTrustRegistryHistoryColumns(
+async function withDynamicEcosystemHistoryColumns(
   db: any,
   payload: Record<string, any>,
-  trRow: Record<string, any>
+  ecosystemRow: Record<string, any>
 ): Promise<Record<string, any>> {
-  const historyColumns = await getTrustRegistryHistoryColumns(db);
-  return finalizeTrustRegistryHistoryInsert(historyColumns, payload, trRow) as Record<string, any>;
+  const historyColumns = await getEcosystemHistoryColumns(db);
+  return finalizeEcosystemHistoryInsert(historyColumns, payload, ecosystemRow) as Record<string, any>;
 }
 
-export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
+export async function syncEcosystemStatsAndHistoryFromSchemaChange(
   db: any,
-  trIdRaw: unknown,
+  ecosystemIdRaw: unknown,
   blockHeightRaw: unknown
 ): Promise<void> {
-  const trId = Number(trIdRaw);
+  const ecosystemId = Number(ecosystemIdRaw);
   const blockHeight = Number(blockHeightRaw) || 0;
-  if (!Number.isInteger(trId) || trId <= 0) return;
+  if (!Number.isInteger(ecosystemId) || ecosystemId <= 0) return;
 
-  const oldTr = await db("trust_registry").where("id", trId).first();
+  const oldTr = await db("ecosystem").where("id", ecosystemId).first();
   if (!oldTr) return;
 
   let trStats: any;
   try {
-    trStats = await calculateTrustRegistryStats(trId, undefined);
+    trStats = await calculateEcosystemStats(ecosystemId, undefined);
   } catch {
     return;
   }
@@ -322,8 +322,8 @@ export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
     network_slashed_amount_repaid: Number(trStats.network_slashed_amount_repaid ?? 0),
   };
 
-  await db("trust_registry").where("id", trId).update(trStatsUpdate);
-  const updatedTr = await db("trust_registry").where("id", trId).first();
+  await db("ecosystem").where("id", ecosystemId).update(trStatsUpdate);
+  const updatedTr = await db("ecosystem").where("id", ecosystemId).first();
   if (!updatedTr) return;
 
   const trChanges: Record<string, any> = {};
@@ -336,10 +336,10 @@ export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
   }
   if (Object.keys(trChanges).length === 0) return;
 
-  const trHistoryPayload = await withDynamicTrustRegistryHistoryColumns(
+  const ecosystemHistoryPayload = await withDynamicEcosystemHistoryColumns(
     db,
     {
-      tr_id: trId,
+      ecosystem_id: ecosystemId,
       did: updatedTr.did,
       corporation: updatedTr.corporation,
       created: updatedTr.created,
@@ -374,21 +374,21 @@ export async function syncTrustRegistryStatsAndHistoryFromSchemaChange(
     updatedTr
   );
 
-  const existingSameEvent = await db("trust_registry_history")
+  const existingSameEvent = await db("ecosystem_history")
     .where({
-      tr_id: trId,
+      ecosystem_id: ecosystemId,
       event_type: "StatsUpdate",
       height: blockHeight,
     })
     .orderBy("id", "desc")
     .first();
   const existingChanges = existingSameEvent?.changes ? String(existingSameEvent.changes) : null;
-  const nextChanges = trHistoryPayload?.changes ? String(trHistoryPayload.changes) : null;
+  const nextChanges = ecosystemHistoryPayload?.changes ? String(ecosystemHistoryPayload.changes) : null;
   if (existingSameEvent && existingChanges === nextChanges) {
     return;
   }
 
-  await db("trust_registry_history").insert(trHistoryPayload);
+  await db("ecosystem_history").insert(ecosystemHistoryPayload);
 }
 
 
@@ -625,7 +625,7 @@ function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: 
   const height = overrides.height || 0;
   const baseRow: any = {
     credential_schema_id: row.id,
-    tr_id: row.tr_id ?? null,
+    ecosystem_id: row.ecosystem_id ?? null,
     json_schema: row.json_schema ?? null,
     title: row.title ?? null,
     description: row.description ?? null,
@@ -862,7 +862,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           await trx("credential_schemas")
             .where("id", finalRecord.id)
             .update(getCSStatsUpdateObject(stats));
-          await syncTrustRegistryStatsAndHistoryFromSchemaChange(trx, finalRecord.tr_id, blockHeight);
+          await syncEcosystemStatsAndHistoryFromSchemaChange(trx, finalRecord.ecosystem_id, blockHeight);
         } catch (statsError: any) {
           this.logger.warn(` Failed to update statistics for CS ${finalRecord.id}: ${statsError?.message || String(statsError)}`);
         }
@@ -1029,7 +1029,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         await knex("credential_schemas")
           .where("id", existing.id)
           .update(getCSStatsUpdateObject(stats));
-        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.tr_id, blockHeight);
+        await syncEcosystemStatsAndHistoryFromSchemaChange(knex, updated.ecosystem_id, blockHeight);
       } catch (statsError: any) {
         this.logger.warn(` Failed to update statistics for CS ${existing.id}: ${statsError?.message || String(statsError)}`);
       }
@@ -1123,7 +1123,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         await knex("credential_schemas")
           .where("id", id)
           .update(getCSStatsUpdateObject(stats));
-        await syncTrustRegistryStatsAndHistoryFromSchemaChange(knex, updated.tr_id, blockHeight);
+        await syncEcosystemStatsAndHistoryFromSchemaChange(knex, updated.ecosystem_id, blockHeight);
       } catch (statsError: any) {
         this.logger.warn(` Failed to update statistics for CS ${id}: ${statsError?.message || String(statsError)}`);
       }
@@ -1162,7 +1162,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       const payload: Record<string, unknown> = {
         id,
-        tr_id: schema.tr_id ?? schema.trId ?? null,
+        ecosystem_id: schema.ecosystem_id ?? schema.ecosystemId ?? null,
         json_schema: jsonSchemaStr,
         issuer_grantor_validation_validity_period: Number(schema.issuer_grantor_validation_validity_period ?? 0),
         verifier_grantor_validation_validity_period: Number(schema.verifier_grantor_validation_validity_period ?? 0),
@@ -1399,7 +1399,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
         const historicalSchema = {
           id: historyRecord.credential_schema_id,
-          tr_id: historyRecord.tr_id,
+          ecosystem_id: historyRecord.ecosystem_id,
           json_schema: storedSchemaString,
           title: historyRecord.title ?? undefined,
           description: historyRecord.description ?? undefined,
@@ -1525,7 +1525,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   @Action({
     rest: "GET list",
     params: {
-      tr_id: { type: "number", optional: true },
+      ecosystem_id: { type: "number", optional: true },
       participant: { type: "any", optional: true },
       modified_after: { type: "string", optional: true },
       only_active: {
@@ -1565,7 +1565,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     },
   })
   async list(ctx: Context<{
-    tr_id?: number;
+    ecosystem_id?: number;
     participant?: string;
     modified_after?: string;
     only_active?: any;
@@ -1601,7 +1601,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   }>) {
     try {
       const {
-        tr_id: trId,
+        ecosystem_id: ecosystemId,
         participant,
         modified_after: modifiedAfter,
         only_active: onlyActive,
@@ -1763,7 +1763,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .whereIn("csh.credential_schema_id", schemaIdsAtHeight)
             .modify((qb) => {
               if (hasHeightColumn) qb.where("csh.height", "<=", blockHeight);
-              if (trId) qb.where("csh.tr_id", trId);
+              if (ecosystemId) qb.where("csh.ecosystem_id", ecosystemId);
               if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
               if (onlyActiveBool === true) qb.whereNull("csh.archived");
               if (effectiveIssuerOm !== undefined) qb.where("csh.issuer_onboarding_mode", effectiveIssuerOm);
@@ -1791,7 +1791,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .whereIn("csh.credential_schema_id", schemaIdsAtHeight)
             .modify((qb) => {
               if (hasHeightColumn) qb.where("csh.height", "<=", blockHeight);
-              if (trId) qb.where("csh.tr_id", trId);
+              if (ecosystemId) qb.where("csh.ecosystem_id", ecosystemId);
               if (modifiedAfterIso) qb.where("csh.modified", ">", modifiedAfterIso);
               if (onlyActiveBool === true) qb.whereNull("csh.archived");
               if (effectiveIssuerOm !== undefined) qb.where("csh.issuer_onboarding_mode", effectiveIssuerOm);
@@ -1810,7 +1810,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             const storedSchemaString = getStoredSchemaString(historyRecord.json_schema);
             return {
               id: historyRecord.credential_schema_id,
-              tr_id: historyRecord.tr_id,
+              ecosystem_id: historyRecord.ecosystem_id,
               json_schema: storedSchemaString,
               title: historyRecord.title ?? undefined,
               description: historyRecord.description ?? undefined,
@@ -1837,7 +1837,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
         type FilteredItem = {
           id: number;
-          tr_id: any;
+          ecosystem_id: any;
           json_schema: any;
           issuer_grantor_validation_validity_period: any;
           verifier_grantor_validation_validity_period: any;
@@ -2084,7 +2084,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
         query.whereIn("id", participantSchemaIds);
       }
-      if (trId) query.where("tr_id", trId);
+      if (ecosystemId) query.where("ecosystem_id", ecosystemId);
       applyHalfOpenRangeToQuery(query, "participants", minParticipants, maxParticipants);
       applyHalfOpenRangeToQuery(query, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
       applyHalfOpenRangeToQuery(query, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
@@ -2291,18 +2291,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
 
   private async getCredentialSchemaIdsForParticipant(account: string): Promise<number[]> {
-    const trPart = await resolveTrustRegistryParticipantColumn(knex);
-    const controllerTrRows = await knex("trust_registry")
+    const trPart = await resolveEcosystemParticipantColumn(knex);
+    const controllerTrRows = await knex("ecosystem")
       .where(trPart, account)
       .select("id");
-    const controllerTrIds = controllerTrRows.map((r: { id: number }) => r.id);
+    const controllerEcosystemIds = controllerTrRows.map((r: { id: number }) => r.id);
     const schemaIdsFromController =
-      controllerTrIds.length === 0
+      controllerEcosystemIds.length === 0
         ? []
-        : (await knex("credential_schemas").whereIn("tr_id", controllerTrIds).select("id")).map((r: { id: number }) => r.id);
+        : (await knex("credential_schemas").whereIn("ecosystem_id", controllerEcosystemIds).select("id")).map((r: { id: number }) => r.id);
 
-    const permPart = await resolvePermissionsParticipantColumn(knex);
-    const corpRows = await knex("permissions").where(permPart, account).distinct("schema_id");
+    const participantPart = await resolveParticipantsParticipantColumn(knex);
+    const corpRows = await knex("participants").where(participantPart, account).distinct("schema_id");
     const schemaIdsFromCorp = corpRows
       .map((r: { schema_id: string }) => (r.schema_id != null ? parseFloat(r.schema_id) : null))
       .filter((id): id is number => id != null && !Number.isNaN(id));
@@ -2311,17 +2311,17 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   }
 
   private async getCredentialSchemaIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
-    const trHistPart = await resolveTrustRegistryHistoryParticipantColumn(knex);
-    const trHistoryRows = await knex("trust_registry_history")
+    const trHistPart = await resolveEcosystemHistoryParticipantColumn(knex);
+    const ecosystemHistoryRows = await knex("ecosystem_history")
       .where("height", "<=", blockHeight)
       .where(trHistPart, account)
-      .select("tr_id");
-    const controllerTrIds = [...new Set(trHistoryRows.map((r: { tr_id: number }) => r.tr_id))];
+      .select("ecosystem_id");
+    const controllerEcosystemIds = [...new Set(ecosystemHistoryRows.map((r: { ecosystem_id: number }) => r.ecosystem_id))];
 
     let schemaIdsFromController: number[] = [];
-    if (controllerTrIds.length > 0) {
+    if (controllerEcosystemIds.length > 0) {
       const cshRanked = knex("credential_schema_history")
-        .select("credential_schema_id", "tr_id")
+        .select("credential_schema_id", "ecosystem_id")
         .select(
           knex.raw(
             "ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"
@@ -2329,16 +2329,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         )
         .where("height", "<=", blockHeight)
         .as("ranked");
-      const latestCsh = await knex.from(cshRanked).where("rn", 1).whereIn("tr_id", controllerTrIds).select("credential_schema_id");
+      const latestCsh = await knex.from(cshRanked).where("rn", 1).whereIn("ecosystem_id", controllerEcosystemIds).select("credential_schema_id");
       schemaIdsFromController = latestCsh.map((r: { credential_schema_id: number }) => r.credential_schema_id);
     }
 
-    const permHistPart = await resolvePermissionHistoryParticipantColumn(knex);
-    const corpPermRows = await knex("permission_history")
+    const participantHistPart = await resolveParticipantHistoryParticipantColumn(knex);
+    const corpParticipantRows = await knex("participant_history")
       .where("height", "<=", blockHeight)
-      .where(permHistPart, account)
+      .where(participantHistPart, account)
       .distinct("schema_id");
-    const schemaIdsFromCorp = corpPermRows
+    const schemaIdsFromCorp = corpParticipantRows
       .map((r: { schema_id: number }) => r.schema_id)
       .filter((id): id is number => id != null);
 

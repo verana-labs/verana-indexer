@@ -5,7 +5,7 @@ export type TrustResolution = any;
 export type TrustResolutionCache = any;
 export type VerifiablePublicRegistry = any;
 
-export const PermissionType = { ISSUER: 'ISSUER', VERIFIER: 'VERIFIER' } as const;
+export const ParticipantType = { ISSUER: 'ISSUER', VERIFIER: 'VERIFIER' } as const;
 
 export const TrustResolutionOutcome = {
   VERIFIED: 'verified',
@@ -39,7 +39,7 @@ export const resolveDID = async () => ({
   outcome: TrustResolutionOutcome.NOT_TRUSTED,
 });
 
-export const verifyPermissions = async () => ({
+export const verifyParticipants = async () => ({
   verified: false,
   outcome: TrustResolutionOutcome.NOT_TRUSTED,
 });

@@ -115,11 +115,11 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
       return undefined;
     }
 
-    const row = await knex("permissions")
-      .select("type", "created", "effective_from", "effective_until")
+    const row = await knex("participants")
+      .select("role", "created", "effective_from", "effective_until")
       .where("schema_id", dbSchemaId)
       .andWhere("did", did)
-      .andWhere("type", String(permissionType))
+      .andWhere("role", String(permissionType))
       .whereNull("revoked")
       .whereNull("slashed")
       .whereNull("repaid")
@@ -128,7 +128,7 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
 
     const result = row
       ? {
-          type: String((row as any).type),
+          type: String((row as any).role),
           created: (row as any).created,
           effective_from: (row as any).effective_from ?? null,
           effective_until: (row as any).effective_until ?? null,

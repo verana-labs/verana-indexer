@@ -60,7 +60,7 @@ export function enrichSchemaMessageWithEvent(
   );
 
   const id = schemaMessage.id ?? eventData.id;
-  ensure("tr_id", eventData.tr_id);
+  ensure("ecosystem_id", eventData.ecosystem_id);
 
   return {
     ...schemaMessage,

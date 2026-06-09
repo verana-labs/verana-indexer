@@ -12,9 +12,9 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
   const createdAt = new Date("2026-01-15T10:30:00Z");
 
   const inserted = {
-    trustRegistryIds: [] as number[],
+    ecosystemIds: [] as number[],
     credentialSchemaIds: [] as number[],
-    permissionIds: [] as number[],
+    participantIds: [] as number[],
   };
 
   const createdTables: string[] = [];
@@ -38,9 +38,9 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
   }
 
   beforeAll(async () => {
-    const hasTr = await knex.schema.hasTable("trust_registry");
+    const hasTr = await knex.schema.hasTable("ecosystem");
     if (!hasTr) {
-      await knex.schema.createTable("trust_registry", (table) => {
+      await knex.schema.createTable("ecosystem", (table) => {
         table.increments("id").primary();
         table.string("did").notNullable();
         table.string("corporation").notNullable();
@@ -64,30 +64,30 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
         table.bigInteger("network_slashed_amount_repaid").notNullable().defaultTo(0);
         table.bigInteger("height").notNullable().defaultTo(0);
       });
-      createdTables.push("trust_registry");
+      createdTables.push("ecosystem");
     }
 
     const hasCs = await knex.schema.hasTable("credential_schemas");
     if (!hasCs) {
       await knex.schema.createTable("credential_schemas", (table) => {
         table.increments("id").primary();
-        table.integer("tr_id").notNullable();
+        table.integer("ecosystem_id").notNullable();
         table.text("json_schema").nullable();
         table.boolean("is_active").notNullable().defaultTo(true);
       });
       createdTables.push("credential_schemas");
     }
 
-    const hasPerms = await knex.schema.hasTable("permissions");
-    if (!hasPerms) {
-      await knex.schema.createTable("permissions", (table) => {
+    const hasParticipants = await knex.schema.hasTable("participants");
+    if (!hasParticipants) {
+      await knex.schema.createTable("participants", (table) => {
         table.increments("id").primary();
         table.integer("schema_id").notNullable();
-        table.string("type").nullable();
+        table.string("role").nullable();
         table.string("did").nullable();
         table.string("corporation").nullable();
       });
-      createdTables.push("permissions");
+      createdTables.push("participants");
     }
   });
 
@@ -98,8 +98,8 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     }
   });
 
-  async function insertTrustRegistry(args: { did: string; corporation: string; height: number }): Promise<number> {
-    const [idRow] = await knex("trust_registry")
+  async function insertEcosystem(args: { did: string; corporation: string; height: number }): Promise<number> {
+    const [idRow] = await knex("ecosystem")
       .insert({
       did: args.did,
       corporation: args.corporation,
@@ -124,17 +124,17 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
       height: args.height,
     })
       .returning("id");
-    const trId = Number(typeof idRow === "object" ? (idRow as any).id : idRow);
-    inserted.trustRegistryIds.push(trId);
-    return trId;
+    const ecosystemId = Number(typeof idRow === "object" ? (idRow as any).id : idRow);
+    inserted.ecosystemIds.push(ecosystemId);
+    return ecosystemId;
   }
 
-  async function insertCredentialSchema(args: { trId: number; schemaId: number }): Promise<number> {
+  async function insertCredentialSchema(args: { ecosystemId: number; schemaId: number }): Promise<number> {
     const [idRow] = await knex("credential_schemas")
       .insert(
         await (async () => {
           const base = {
-            tr_id: args.trId,
+            ecosystem_id: args.ecosystemId,
             json_schema: JSON.stringify({ $id: `schema-${args.schemaId}` }),
             is_active: true,
 
@@ -146,7 +146,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
 
             issuer_onboarding_mode: "OPEN",
             verifier_onboarding_mode: "OPEN",
-            holder_onboarding_mode: "PERMISSIONLESS",
+            holder_onboarding_mode: "PARTICIPANTLESS",
           };
 
           const info = await getColumnInfo("credential_schemas");
@@ -163,32 +163,32 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     return schemaRowId;
   }
 
-  async function insertPermission(args: { schemaId: number; did?: string | null; corporation: string }): Promise<number> {
-    const [idRow] = await knex("permissions")
+  async function insertParticipant(args: { schemaId: number; did?: string | null; corporation: string }): Promise<number> {
+    const [idRow] = await knex("participants")
       .insert({
         schema_id: args.schemaId,
-        type: "ISSUER",
+        role: "ISSUER",
         did: args.did ?? null,
         corporation: args.corporation,
       })
       .returning("id");
-    const permRowId = Number(typeof idRow === "object" ? (idRow as any).id : idRow);
-    inserted.permissionIds.push(permRowId);
-    return permRowId;
+    const participantRowId = Number(typeof idRow === "object" ? (idRow as any).id : idRow);
+    inserted.participantIds.push(participantRowId);
+    return participantRowId;
   }
 
   afterEach(async () => {
-    if (inserted.permissionIds.length > 0) {
-      await knex("permissions").whereIn("id", inserted.permissionIds).delete();
-      inserted.permissionIds.length = 0;
+    if (inserted.participantIds.length > 0) {
+      await knex("participants").whereIn("id", inserted.participantIds).delete();
+      inserted.participantIds.length = 0;
     }
     if (inserted.credentialSchemaIds.length > 0) {
       await knex("credential_schemas").whereIn("id", inserted.credentialSchemaIds).delete();
       inserted.credentialSchemaIds.length = 0;
     }
-    if (inserted.trustRegistryIds.length > 0) {
-      await knex("trust_registry").whereIn("id", inserted.trustRegistryIds).delete();
-      inserted.trustRegistryIds.length = 0;
+    if (inserted.ecosystemIds.length > 0) {
+      await knex("ecosystem").whereIn("id", inserted.ecosystemIds).delete();
+      inserted.ecosystemIds.length = 0;
     }
   });
 
@@ -241,50 +241,50 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     expect(snap).toMatchObject({
       did: didA,
       block_height: baseHeight,
-      count: { trust_registries: 0, schemas: 0, permissions: 0 },
+      count: { ecosystems: 0, schemas: 0, participants: 0 },
     });
-    expect(snap.trust_registries).toEqual([]);
+    expect(snap.ecosystems).toEqual([]);
     expect(snap.schemas).toEqual([]);
-    expect(snap.permissions).toEqual([]);
+    expect(snap.participants).toEqual([]);
   });
 
   it("returns DID-linked snapshot objects from current tables", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
-    const trId = await insertTrustRegistry({ did: didA, corporation: "cosmos1corp", height: baseHeight });
-    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, trId });
-    await insertPermission({ schemaId: schemaRowId + 100000, did: didA, corporation: "cosmos1other-corp" });
+    const ecosystemId = await insertEcosystem({ did: didA, corporation: "cosmos1corp", height: baseHeight });
+    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, ecosystemId });
+    await insertParticipant({ schemaId: schemaRowId + 100000, did: didA, corporation: "cosmos1other-corp" });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
-    expect(snap.count.trust_registries).toBe(1);
+    expect(snap.count.ecosystems).toBe(1);
     expect(snap.count.schemas).toBe(1);
-    expect(snap.count.permissions).toBe(1);
-    expect(snap.trust_registries[0]?.did).toBe(didA);
-    expect(snap.permissions[0]?.did).toBe(didA);
+    expect(snap.count.participants).toBe(1);
+    expect(snap.ecosystems[0]?.did).toBe(didA);
+    expect(snap.participants[0]?.did).toBe(didA);
   });
 
-  it("returns schema-linked permissions", async () => {
+  it("returns schema-linked participants", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
-    const trId = await insertTrustRegistry({ did: didA, corporation: "cosmos1corp", height: baseHeight });
-    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, trId });
-    await insertPermission({ schemaId: schemaRowId, did: otherDid, corporation: "cosmos1other-corp" });
+    const ecosystemId = await insertEcosystem({ did: didA, corporation: "cosmos1corp", height: baseHeight });
+    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, ecosystemId });
+    await insertParticipant({ schemaId: schemaRowId, did: otherDid, corporation: "cosmos1other-corp" });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
-    expect(snap.count.permissions).toBe(1);
-    expect(snap.permissions[0]?.schema_id).toBe(schemaRowId);
-    expect(snap.permissions[0]?.did).toBe(otherDid);
+    expect(snap.count.participants).toBe(1);
+    expect(snap.participants[0]?.schema_id).toBe(schemaRowId);
+    expect(snap.participants[0]?.did).toBe(otherDid);
   });
 
-  it("returns corporation-linked permissions from derived corporation addresses", async () => {
+  it("returns corporation-linked participants from derived corporation addresses", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
     const corporation = "cosmos1derived-corp";
-    const trId = await insertTrustRegistry({ did: didA, corporation, height: baseHeight });
-    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, trId });
-    await insertPermission({ schemaId: schemaRowId + 100000, did: null, corporation });
+    const ecosystemId = await insertEcosystem({ did: didA, corporation, height: baseHeight });
+    const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, ecosystemId });
+    await insertParticipant({ schemaId: schemaRowId + 100000, did: null, corporation });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
-    expect(snap.count.permissions).toBe(1);
-    expect(snap.permissions[0]?.corporation).toBe(corporation);
-    expect(snap.permissions[0]?.schema_id).not.toBe(schemaRowId);
+    expect(snap.count.participants).toBe(1);
+    expect(snap.participants[0]?.corporation).toBe(corporation);
+    expect(snap.participants[0]?.schema_id).not.toBe(schemaRowId);
   });
 });
 

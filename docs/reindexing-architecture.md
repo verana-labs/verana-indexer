@@ -4,7 +4,7 @@ This guide explains how to rebuild transaction and module data from scratch whil
 
 ## When You Need This
 
-Sometimes your transaction data or module data (Credential Schemas, Trust Registry, Permissions, Trust Deposits, etc.) gets corrupted or needs to be rebuilt, but your block data is still good. Instead of wiping everything and starting over, you can keep the blocks and rebuild everything else.
+Sometimes your transaction data or module data (Credential Schemas, Ecosystem, Participants, Trust Deposits, etc.) gets corrupted or needs to be rebuilt, but your block data is still good. Instead of wiping everything and starting over, you can keep the blocks and rebuild everything else.
 
 ## The Basic Idea
 
@@ -22,8 +22,8 @@ Only the `block` table stays untouched. This is your source of truth from the bl
 
 ### Module Tables
 - **Credential Schema**: `credential_schemas` and `credential_schema_history`
-- **Trust Registry**: `trust_registry`, `governance_framework_version`, `governance_framework_document`, plus all their history tables
-- **Permissions**: `permissions`, `permission_sessions`, and their history tables
+- **Ecosystem**: `ecosystem`, `governance_framework_version`, `governance_framework_document`, plus all their history tables
+- **Participants**: `participants`, `participant_sessions`, and their history tables
 - **Trust Deposits**: `trust_deposits` and `trust_deposit_history`
 - **Module Params**: `module_params` and `module_params_history`
 
@@ -108,8 +108,8 @@ Once you start the services:
 3. The Trust Deposit Service reads block events and creates trust deposits
 4. Other module services read transactions and create:
    - Credential Schemas
-   - Trust Registry entries
-   - Permissions
+   - Ecosystem entries
+   - Participants
    - Module parameters
 
 Everything processes from block 0 to the latest block.

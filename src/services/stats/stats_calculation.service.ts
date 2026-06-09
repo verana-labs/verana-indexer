@@ -58,14 +58,14 @@ export default class StatsCalculationService extends BullableService {
       this.logger.info(`[${granularity}] Calculating GLOBAL stats...`);
       await this.calculateGlobalStats(granularity, timestamp);
 
-      this.logger.info(`[${granularity}] Calculating TRUST_REGISTRY stats...`);
-      await this.calculateTrustRegistryStats(granularity, timestamp);
+      this.logger.info(`[${granularity}] Calculating ECOSYSTEM stats...`);
+      await this.calculateEcosystemStats(granularity, timestamp);
 
       this.logger.info(`[${granularity}] Calculating CREDENTIAL_SCHEMA stats...`);
       await this.calculateCredentialSchemaStats(granularity, timestamp);
 
-      this.logger.info(`[${granularity}] Calculating PERMISSION stats...`);
-      await this.calculatePermissionStats(granularity, timestamp);
+      this.logger.info(`[${granularity}] Calculating PARTICIPANT stats...`);
+      await this.calculateParticipantStats(granularity, timestamp);
     } catch (error: any) {
       this.logger.error(`[${granularity}] Error in calculateForGranularity:`, error?.message || error, error?.stack);
       throw error;
@@ -103,12 +103,12 @@ export default class StatsCalculationService extends BullableService {
         .first();
       this.logger.info(`GLOBAL [${granularity}] Existing stats check result: ${existing ? `Found existing entry (id: ${existing.id})` : "No existing entry"}`);
 
-      this.logger.info(`GLOBAL [${granularity}] Querying permissions table...`);
-      const permCount = await knex("permissions")
+      this.logger.info(`GLOBAL [${granularity}] Querying participants table...`);
+      const participantCount = await knex("participants")
         .where("created", "<=", timestamp)
         .count("* as count")
         .first();
-      this.logger.info(`GLOBAL [${granularity}] Permissions query result:`, permCount);
+      this.logger.info(`GLOBAL [${granularity}] Participants query result:`, participantCount);
 
       this.logger.info(`GLOBAL [${granularity}] Querying credential_schemas table...`);
       const schemaCount = await knex("credential_schemas")
@@ -117,14 +117,14 @@ export default class StatsCalculationService extends BullableService {
         .first();
       this.logger.info(`GLOBAL [${granularity}] Schemas query result:`, schemaCount);
 
-      const permCountNum = Number(permCount?.count || 0);
+      const participantCountNum = Number(participantCount?.count || 0);
       const schemaCountNum = Number(schemaCount?.count || 0);
-      this.logger.info(`GLOBAL [${granularity}] Found ${permCountNum} permissions and ${schemaCountNum} schemas`);
+      this.logger.info(`GLOBAL [${granularity}] Found ${participantCountNum} participants and ${schemaCountNum} schemas`);
 
-      const hasEntities = permCountNum > 0 || schemaCountNum > 0;
+      const hasEntities = participantCountNum > 0 || schemaCountNum > 0;
 
       if (!hasEntities) {
-        const skipMsg = `GLOBAL [${granularity}] SKIPPING - no entities exist (permissions: ${permCountNum}, schemas: ${schemaCountNum})`;
+        const skipMsg = `GLOBAL [${granularity}] SKIPPING - no entities exist (participants: ${participantCountNum}, schemas: ${schemaCountNum})`;
         this.logger.warn(skipMsg);
         return;
       }
@@ -233,54 +233,54 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateTrustRegistryStats(granularity: Granularity, timestamp: Date): Promise<void> {
+  private async calculateEcosystemStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
-      const trustRegistries = await knex("trust_registry").select("id");
-      this.logger.info(`[TRUST_REGISTRY] Found ${trustRegistries.length} trust registries`);
+      const ecosystems = await knex("ecosystem").select("id");
+      this.logger.info(`[ECOSYSTEM] Found ${ecosystems.length} trust registries`);
 
-      for (const tr of trustRegistries) {
+      for (const ec of ecosystems) {
         try {
           const existing = await Stats.query()
             .where("granularity", granularity)
             .where("timestamp", timestamp.toISOString())
-            .where("entity_type", "TRUST_REGISTRY")
-            .where("entity_id", String(tr.id))
+            .where("entity_type", "ECOSYSTEM")
+            .where("entity_id", String(ec.id))
             .first();
 
-          const stats = await this.computeTrustRegistryStats(String(tr.id), timestamp);
+          const stats = await this.computeEcosystemStats(String(ec.id), timestamp);
 
           if (!stats) {
-            this.logger.debug(`[TRUST_REGISTRY] No stats computed for TR ${tr.id} (no schemas) - skipping`);
+            this.logger.debug(`[ECOSYSTEM] No stats computed for EC ${ec.id} (no schemas) - skipping`);
             continue;
           }
 
           if (existing) {
-            this.logger.info(`[TRUST_REGISTRY][${granularity}] Updating existing entry for TR ${tr.id} (id: ${existing.id})`);
+            this.logger.info(`[ECOSYSTEM][${granularity}] Updating existing entry for EC ${ec.id} (id: ${existing.id})`);
             if (!this.hasAnyDelta(stats)) {
-              this.logger.info(`[TRUST_REGISTRY][${granularity}] SKIPPING UPDATE for TR ${tr.id} - all delta fields are zero`);
+              this.logger.info(`[ECOSYSTEM][${granularity}] SKIPPING UPDATE for EC ${ec.id} - all delta fields are zero`);
             } else if (this.isStatsEqual(existing, stats)) {
-              this.logger.info(`[TRUST_REGISTRY][${granularity}] SKIPPING UPDATE for TR ${tr.id} - no changes`);
+              this.logger.info(`[ECOSYSTEM][${granularity}] SKIPPING UPDATE for EC ${ec.id} - no changes`);
             } else {
               await Stats.query()
                 .findById(existing.id)
                 .patch(stats);
-              this.logger.info(`[TRUST_REGISTRY][${granularity}]  Updated stats for TR ${tr.id}`);
+              this.logger.info(`[ECOSYSTEM][${granularity}]  Updated stats for EC ${ec.id}`);
             }
           } else {
-            this.logger.info(`[TRUST_REGISTRY][${granularity}] Inserting new entry for TR ${tr.id}`);
+            this.logger.info(`[ECOSYSTEM][${granularity}] Inserting new entry for EC ${ec.id}`);
             if (!this.hasAnyDelta(stats)) {
-              this.logger.info(`[TRUST_REGISTRY][${granularity}] SKIPPING INSERT for TR ${tr.id} - all delta fields are zero`);
+              this.logger.info(`[ECOSYSTEM][${granularity}] SKIPPING INSERT for EC ${ec.id} - all delta fields are zero`);
               continue;
             }
             try {
               const inserted = await Stats.query().insert({
                 granularity,
                 timestamp: timestamp.toISOString(),
-                entity_type: "TRUST_REGISTRY",
-                entity_id: String(tr.id),
+                entity_type: "ECOSYSTEM",
+                entity_id: String(ec.id),
                 ...stats,
               });
-              this.logger.info(`[TRUST_REGISTRY][${granularity}]  Created stats for TR ${tr.id} (id: ${inserted.id})`);
+              this.logger.info(`[ECOSYSTEM][${granularity}]  Created stats for EC ${ec.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
               const isUniqueViolation = insertError?.nativeError?.code === '23505' 
                 || insertError?.code === '23505'
@@ -289,32 +289,32 @@ export default class StatsCalculationService extends BullableService {
                 || insertError?.message?.includes('stats_unique_key');
               
               if (isUniqueViolation) {
-                this.logger.warn(`[TRUST_REGISTRY][${granularity}]  Duplicate key detected for TR ${tr.id} (race condition), fetching existing record and updating...`);
+                this.logger.warn(`[ECOSYSTEM][${granularity}]  Duplicate key detected for EC ${ec.id} (race condition), fetching existing record and updating...`);
                 const existingRecord = await Stats.query()
                   .where("granularity", granularity)
                   .where("timestamp", timestamp.toISOString())
-                  .where("entity_type", "TRUST_REGISTRY")
-                  .where("entity_id", String(tr.id))
+                  .where("entity_type", "ECOSYSTEM")
+                  .where("entity_id", String(ec.id))
                   .first();
                 
                 if (existingRecord) {
                   if (!this.hasAnyDelta(stats)) {
-                    this.logger.info(`[TRUST_REGISTRY][${granularity}]  SKIPPING UPDATE for TR ${tr.id} - all delta fields are zero`);
+                    this.logger.info(`[ECOSYSTEM][${granularity}]  SKIPPING UPDATE for EC ${ec.id} - all delta fields are zero`);
                   } else if (this.isStatsEqual(existingRecord, stats)) {
-                    this.logger.info(`[TRUST_REGISTRY][${granularity}]  SKIPPING UPDATE for TR ${tr.id} - no changes`);
+                    this.logger.info(`[ECOSYSTEM][${granularity}]  SKIPPING UPDATE for EC ${ec.id} - no changes`);
                   } else {
                     await Stats.query()
                       .findById(existingRecord.id)
                       .patch(stats);
-                    this.logger.info(`[TRUST_REGISTRY][${granularity}]  Updated existing stats for TR ${tr.id} (id: ${existingRecord.id}) after duplicate key detection`);
+                    this.logger.info(`[ECOSYSTEM][${granularity}]  Updated existing stats for EC ${ec.id} (id: ${existingRecord.id}) after duplicate key detection`);
                   }
                 } else {
                   // Race condition: Another process inserted and possibly deleted the record, or there's a timing issue
                   // This is not critical - the duplicate key violation prevented the duplicate insert, which is the desired behavior
-                  this.logger.debug(`[TRUST_REGISTRY][${granularity}]  Duplicate key detected for TR ${tr.id} but record not found (likely race condition - non-critical)`);
+                  this.logger.debug(`[ECOSYSTEM][${granularity}]  Duplicate key detected for EC ${ec.id} but record not found (likely race condition - non-critical)`);
                 }
               } else {
-                this.logger.error(`[TRUST_REGISTRY][${granularity}]  INSERT FAILED for TR ${tr.id}:`, {
+                this.logger.error(`[ECOSYSTEM][${granularity}]  INSERT FAILED for EC ${ec.id}:`, {
                   error: insertError?.message,
                   stack: insertError?.stack,
                   code: insertError?.code,
@@ -324,11 +324,11 @@ export default class StatsCalculationService extends BullableService {
             }
           }
         } catch (error: any) {
-          this.logger.error(`[TRUST_REGISTRY] Error processing TR ${tr.id}:`, error?.message || error, error?.stack);
+          this.logger.error(`[ECOSYSTEM] Error processing EC ${ec.id}:`, error?.message || error, error?.stack);
         }
       }
     } catch (error: any) {
-      this.logger.error(`[TRUST_REGISTRY] Error in calculateTrustRegistryStats:`, error?.message || error, error?.stack);
+      this.logger.error(`[ECOSYSTEM] Error in calculateEcosystemStats:`, error?.message || error, error?.stack);
       throw error;
     }
   }
@@ -444,62 +444,62 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculatePermissionStats(granularity: Granularity, timestamp: Date): Promise<void> {
+  private async calculateParticipantStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
-      const permissions = await knex("permissions").select("id", "schema_id");
-      this.logger.info(`PERMISSION Found ${permissions.length} permissions`);
+      const participants = await knex("participants").select("id", "schema_id");
+      this.logger.info(`PARTICIPANT Found ${participants.length} participants`);
 
       let created = 0;
       let updated = 0;
       let skipped = 0;
 
-      for (const perm of permissions) {
+      for (const participant of participants) {
         try {
           const existing = await Stats.query()
             .where("granularity", granularity)
             .where("timestamp", timestamp.toISOString())
-            .where("entity_type", "PERMISSION")
-            .where("entity_id", String(perm.id))
+            .where("entity_type", "PARTICIPANT")
+            .where("entity_id", String(participant.id))
             .first();
 
-          const stats = await this.computePermissionStats(String(perm.id), String(perm.schema_id), timestamp);
+          const stats = await this.computeParticipantStats(String(participant.id), String(participant.schema_id), timestamp);
 
           if (!stats) {
             skipped++;
-            this.logger.debug(`PERMISSION No stats for permission ${perm.id} - skipping`);
+            this.logger.debug(`PARTICIPANT No stats for participant ${participant.id} - skipping`);
             continue;
           }
 
           if (existing) {
-            this.logger.info(`PERMISSION [${granularity}] Updating existing entry for permission ${perm.id} (id: ${existing.id})`);
+            this.logger.info(`PARTICIPANT [${granularity}] Updating existing entry for participant ${participant.id} (id: ${existing.id})`);
             if (!this.hasAnyDelta(stats)) {
-              this.logger.info(`PERMISSION [${granularity}] SKIPPING UPDATE for permission ${perm.id} - all delta fields are zero`);
+              this.logger.info(`PARTICIPANT [${granularity}] SKIPPING UPDATE for participant ${participant.id} - all delta fields are zero`);
             } else if (this.isStatsEqual(existing, stats)) {
-              this.logger.info(`PERMISSION [${granularity}] SKIPPING UPDATE for permission ${perm.id} - no changes`);
+              this.logger.info(`PARTICIPANT [${granularity}] SKIPPING UPDATE for participant ${participant.id} - no changes`);
             } else {
               await Stats.query()
                 .findById(existing.id)
                 .patch(stats);
               updated++;
-              this.logger.info(`PERMISSION [${granularity}]  Updated stats for permission ${perm.id}`);
+              this.logger.info(`PARTICIPANT [${granularity}]  Updated stats for participant ${participant.id}`);
             }
           } else {
-            this.logger.info(`PERMISSION [${granularity}] Inserting new entry for permission ${perm.id}`);
+            this.logger.info(`PARTICIPANT [${granularity}] Inserting new entry for participant ${participant.id}`);
             if (!this.hasAnyDelta(stats)) {
               skipped++;
-              this.logger.debug(`PERMISSION SKIPPING INSERT for permission ${perm.id} - all delta fields are zero`);
+              this.logger.debug(`PARTICIPANT SKIPPING INSERT for participant ${participant.id} - all delta fields are zero`);
               continue;
             }
             try {
               const inserted = await Stats.query().insert({
                 granularity,
                 timestamp: timestamp.toISOString(),
-                entity_type: "PERMISSION",
-                entity_id: String(perm.id),
+                entity_type: "PARTICIPANT",
+                entity_id: String(participant.id),
                 ...stats,
               });
               created++;
-              this.logger.info(`PERMISSION [${granularity}]  Created stats for permission ${perm.id} (id: ${inserted.id})`);
+              this.logger.info(`PARTICIPANT [${granularity}]  Created stats for participant ${participant.id} (id: ${inserted.id})`);
             } catch (insertError: any) {
               const isUniqueViolation = insertError?.nativeError?.code === '23505' 
                 || insertError?.code === '23505'
@@ -508,33 +508,33 @@ export default class StatsCalculationService extends BullableService {
                 || insertError?.message?.includes('stats_unique_key');
               
               if (isUniqueViolation) {
-                this.logger.warn(`PERMISSION [${granularity}]  Duplicate key detected for permission ${perm.id} (race condition), fetching existing record and updating...`);
+                this.logger.warn(`PARTICIPANT [${granularity}]  Duplicate key detected for participant ${participant.id} (race condition), fetching existing record and updating...`);
                 const existingRecord = await Stats.query()
                   .where("granularity", granularity)
                   .where("timestamp", timestamp.toISOString())
-                  .where("entity_type", "PERMISSION")
-                  .where("entity_id", String(perm.id))
+                  .where("entity_type", "PARTICIPANT")
+                  .where("entity_id", String(participant.id))
                   .first();
                 
                 if (existingRecord) {
                   if (!this.hasAnyDelta(stats)) {
-                    this.logger.info(`PERMISSION [${granularity}]  SKIPPING UPDATE for permission ${perm.id} - all delta fields are zero`);
+                    this.logger.info(`PARTICIPANT [${granularity}]  SKIPPING UPDATE for participant ${participant.id} - all delta fields are zero`);
                   } else if (this.isStatsEqual(existingRecord, stats)) {
-                    this.logger.info(`PERMISSION [${granularity}]  SKIPPING UPDATE for permission ${perm.id} - no changes`);
+                    this.logger.info(`PARTICIPANT [${granularity}]  SKIPPING UPDATE for participant ${participant.id} - no changes`);
                   } else {
                     await Stats.query()
                       .findById(existingRecord.id)
                       .patch(stats);
                     updated++;
-                    this.logger.info(`PERMISSION [${granularity}]  Updated existing stats for permission ${perm.id} (id: ${existingRecord.id}) after duplicate key detection`);
+                    this.logger.info(`PARTICIPANT [${granularity}]  Updated existing stats for participant ${participant.id} (id: ${existingRecord.id}) after duplicate key detection`);
                   }
                 } else {
                   // Race condition: Another process inserted and possibly deleted the record, or there's a timing issue
                   // This is not critical - the duplicate key violation prevented the duplicate insert, which is the desired behavior
-                  this.logger.debug(`PERMISSION [${granularity}]  Duplicate key detected for permission ${perm.id} but record not found (likely race condition - non-critical)`);
+                  this.logger.debug(`PARTICIPANT [${granularity}]  Duplicate key detected for participant ${participant.id} but record not found (likely race condition - non-critical)`);
                 }
               } else {
-                this.logger.error(`PERMISSION [${granularity}]  INSERT FAILED for permission ${perm.id}:`, {
+                this.logger.error(`PARTICIPANT [${granularity}]  INSERT FAILED for participant ${participant.id}:`, {
                   error: insertError?.message,
                   stack: insertError?.stack,
                   code: insertError?.code,
@@ -544,20 +544,20 @@ export default class StatsCalculationService extends BullableService {
             }
           }
         } catch (error: any) {
-          this.logger.error(`PERMISSION Error processing permission ${perm.id}:`, error?.message || error, error?.stack);
+          this.logger.error(`PARTICIPANT Error processing participant ${participant.id}:`, error?.message || error, error?.stack);
         }
       }
 
-      this.logger.info(`PERMISSION Completed: created=${created}, updated=${updated}, skipped=${skipped}`);
+      this.logger.info(`PARTICIPANT Completed: created=${created}, updated=${updated}, skipped=${skipped}`);
     } catch (error: any) {
-      this.logger.error(`PERMISSION Error in calculatePermissionStats:`, error?.message || error, error?.stack);
+      this.logger.error(`PARTICIPANT Error in calculateParticipantStats:`, error?.message || error, error?.stack);
       throw error;
     }
   }
 
   private async computeGlobalStats(timestamp: Date): Promise<any> {
-    this.logger.info(`GLOBAL  Computing stats: Querying permissions table...`);
-    const allPerms = await knex("permissions")
+    this.logger.info(`GLOBAL  Computing stats: Querying participants table...`);
+    const allParticipants = await knex("participants")
       .where("created", "<=", timestamp)
       .select(
         "participants",
@@ -577,7 +577,7 @@ export default class StatsCalculationService extends BullableService {
         "network_slashed_amount",
         "network_slashed_amount_repaid"
       );
-    this.logger.info(`GLOBAL  Found ${allPerms.length} permissions to process`);
+    this.logger.info(`GLOBAL  Found ${allParticipants.length} participants to process`);
 
     const cumulative = {
       participants: 0,
@@ -600,23 +600,23 @@ export default class StatsCalculationService extends BullableService {
       network_slashed_amount_repaid: BigInt(0),
     };
 
-    for (const perm of allPerms) {
-      cumulative.participants += this.sumParticipantsByRole(perm);
-      cumulative.participants_ecosystem += Number(perm.participants_ecosystem || 0);
-      cumulative.participants_issuer_grantor += Number(perm.participants_issuer_grantor || 0);
-      cumulative.participants_issuer += Number(perm.participants_issuer || 0);
-      cumulative.participants_verifier_grantor += Number(perm.participants_verifier_grantor || 0);
-      cumulative.participants_verifier += Number(perm.participants_verifier || 0);
-      cumulative.participants_holder += Number(perm.participants_holder || 0);
-      cumulative.weight += BigInt(perm.weight || "0");
-      cumulative.issued += BigInt(perm.issued || "0");
-      cumulative.verified += BigInt(perm.verified || "0");
-      cumulative.ecosystem_slash_events += Number(perm.ecosystem_slash_events || 0);
-      cumulative.ecosystem_slashed_amount += BigInt(perm.ecosystem_slashed_amount || "0");
-      cumulative.ecosystem_slashed_amount_repaid += BigInt(perm.ecosystem_slashed_amount_repaid || "0");
-      cumulative.network_slash_events += Number(perm.network_slash_events || 0);
-      cumulative.network_slashed_amount += BigInt(perm.network_slashed_amount || "0");
-      cumulative.network_slashed_amount_repaid += BigInt(perm.network_slashed_amount_repaid || "0");
+    for (const participant of allParticipants) {
+      cumulative.participants += this.sumParticipantsByRole(participant);
+      cumulative.participants_ecosystem += Number(participant.participants_ecosystem || 0);
+      cumulative.participants_issuer_grantor += Number(participant.participants_issuer_grantor || 0);
+      cumulative.participants_issuer += Number(participant.participants_issuer || 0);
+      cumulative.participants_verifier_grantor += Number(participant.participants_verifier_grantor || 0);
+      cumulative.participants_verifier += Number(participant.participants_verifier || 0);
+      cumulative.participants_holder += Number(participant.participants_holder || 0);
+      cumulative.weight += BigInt(participant.weight || "0");
+      cumulative.issued += BigInt(participant.issued || "0");
+      cumulative.verified += BigInt(participant.verified || "0");
+      cumulative.ecosystem_slash_events += Number(participant.ecosystem_slash_events || 0);
+      cumulative.ecosystem_slashed_amount += BigInt(participant.ecosystem_slashed_amount || "0");
+      cumulative.ecosystem_slashed_amount_repaid += BigInt(participant.ecosystem_slashed_amount_repaid || "0");
+      cumulative.network_slash_events += Number(participant.network_slash_events || 0);
+      cumulative.network_slashed_amount += BigInt(participant.network_slashed_amount || "0");
+      cumulative.network_slashed_amount_repaid += BigInt(participant.network_slashed_amount_repaid || "0");
     }
 
     const activeSchemas = await knex("credential_schemas")
@@ -702,9 +702,9 @@ export default class StatsCalculationService extends BullableService {
     };
   }
 
-  private async computeTrustRegistryStats(trId: string, timestamp: Date): Promise<any> {
+  private async computeEcosystemStats(ecosystemId: string, timestamp: Date): Promise<any> {
     const schemas = await knex("credential_schemas")
-      .where("tr_id", trId)
+      .where("ecosystem_id", ecosystemId)
       .where("created", "<=", timestamp)
       .select("id");
 
@@ -714,7 +714,7 @@ export default class StatsCalculationService extends BullableService {
       return null;
     }
 
-    const perms = await knex("permissions")
+    const participants = await knex("participants")
       .whereIn("schema_id", schemaIds)
       .where("created", "<=", timestamp)
       .select(
@@ -757,23 +757,23 @@ export default class StatsCalculationService extends BullableService {
       network_slashed_amount_repaid: BigInt(0),
     };
 
-    for (const perm of perms) {
-      cumulative.participants += this.sumParticipantsByRole(perm);
-      cumulative.participants_ecosystem += Number(perm.participants_ecosystem || 0);
-      cumulative.participants_issuer_grantor += Number(perm.participants_issuer_grantor || 0);
-      cumulative.participants_issuer += Number(perm.participants_issuer || 0);
-      cumulative.participants_verifier_grantor += Number(perm.participants_verifier_grantor || 0);
-      cumulative.participants_verifier += Number(perm.participants_verifier || 0);
-      cumulative.participants_holder += Number(perm.participants_holder || 0);
-      cumulative.weight += BigInt(perm.weight || "0");
-      cumulative.issued += BigInt(perm.issued || "0");
-      cumulative.verified += BigInt(perm.verified || "0");
-      cumulative.ecosystem_slash_events += Number(perm.ecosystem_slash_events || 0);
-      cumulative.ecosystem_slashed_amount += BigInt(perm.ecosystem_slashed_amount || "0");
-      cumulative.ecosystem_slashed_amount_repaid += BigInt(perm.ecosystem_slashed_amount_repaid || "0");
-      cumulative.network_slash_events += Number(perm.network_slash_events || 0);
-      cumulative.network_slashed_amount += BigInt(perm.network_slashed_amount || "0");
-      cumulative.network_slashed_amount_repaid += BigInt(perm.network_slashed_amount_repaid || "0");
+    for (const participant of participants) {
+      cumulative.participants += this.sumParticipantsByRole(participant);
+      cumulative.participants_ecosystem += Number(participant.participants_ecosystem || 0);
+      cumulative.participants_issuer_grantor += Number(participant.participants_issuer_grantor || 0);
+      cumulative.participants_issuer += Number(participant.participants_issuer || 0);
+      cumulative.participants_verifier_grantor += Number(participant.participants_verifier_grantor || 0);
+      cumulative.participants_verifier += Number(participant.participants_verifier || 0);
+      cumulative.participants_holder += Number(participant.participants_holder || 0);
+      cumulative.weight += BigInt(participant.weight || "0");
+      cumulative.issued += BigInt(participant.issued || "0");
+      cumulative.verified += BigInt(participant.verified || "0");
+      cumulative.ecosystem_slash_events += Number(participant.ecosystem_slash_events || 0);
+      cumulative.ecosystem_slashed_amount += BigInt(participant.ecosystem_slashed_amount || "0");
+      cumulative.ecosystem_slashed_amount_repaid += BigInt(participant.ecosystem_slashed_amount_repaid || "0");
+      cumulative.network_slash_events += Number(participant.network_slash_events || 0);
+      cumulative.network_slashed_amount += BigInt(participant.network_slashed_amount || "0");
+      cumulative.network_slashed_amount_repaid += BigInt(participant.network_slashed_amount_repaid || "0");
     }
 
     const activeSchemas = await knex("credential_schemas")
@@ -794,8 +794,8 @@ export default class StatsCalculationService extends BullableService {
     cumulative.archived_schemas = Number(archivedSchemas?.count || 0);
 
     const prevStats = await Stats.query()
-      .where("entity_type", "TRUST_REGISTRY")
-      .where("entity_id", trId)
+      .where("entity_type", "ECOSYSTEM")
+      .where("entity_id", ecosystemId)
       .where("timestamp", "<", timestamp)
       .orderBy("timestamp", "desc")
       .first();
@@ -862,7 +862,7 @@ export default class StatsCalculationService extends BullableService {
   }
 
   private async computeCredentialSchemaStats(schemaId: string, timestamp: Date): Promise<any> {
-    const perms = await knex("permissions")
+    const participants = await knex("participants")
       .where("schema_id", schemaId)
       .where("created", "<=", timestamp)
       .select(
@@ -905,23 +905,23 @@ export default class StatsCalculationService extends BullableService {
       network_slashed_amount_repaid: BigInt(0),
     };
 
-    for (const perm of perms) {
-      cumulative.participants += this.sumParticipantsByRole(perm);
-      cumulative.participants_ecosystem += Number(perm.participants_ecosystem || 0);
-      cumulative.participants_issuer_grantor += Number(perm.participants_issuer_grantor || 0);
-      cumulative.participants_issuer += Number(perm.participants_issuer || 0);
-      cumulative.participants_verifier_grantor += Number(perm.participants_verifier_grantor || 0);
-      cumulative.participants_verifier += Number(perm.participants_verifier || 0);
-      cumulative.participants_holder += Number(perm.participants_holder || 0);
-      cumulative.weight += BigInt(perm.weight || "0");
-      cumulative.issued += BigInt(perm.issued || "0");
-      cumulative.verified += BigInt(perm.verified || "0");
-      cumulative.ecosystem_slash_events += Number(perm.ecosystem_slash_events || 0);
-      cumulative.ecosystem_slashed_amount += BigInt(perm.ecosystem_slashed_amount || "0");
-      cumulative.ecosystem_slashed_amount_repaid += BigInt(perm.ecosystem_slashed_amount_repaid || "0");
-      cumulative.network_slash_events += Number(perm.network_slash_events || 0);
-      cumulative.network_slashed_amount += BigInt(perm.network_slashed_amount || "0");
-      cumulative.network_slashed_amount_repaid += BigInt(perm.network_slashed_amount_repaid || "0");
+    for (const participant of participants) {
+      cumulative.participants += this.sumParticipantsByRole(participant);
+      cumulative.participants_ecosystem += Number(participant.participants_ecosystem || 0);
+      cumulative.participants_issuer_grantor += Number(participant.participants_issuer_grantor || 0);
+      cumulative.participants_issuer += Number(participant.participants_issuer || 0);
+      cumulative.participants_verifier_grantor += Number(participant.participants_verifier_grantor || 0);
+      cumulative.participants_verifier += Number(participant.participants_verifier || 0);
+      cumulative.participants_holder += Number(participant.participants_holder || 0);
+      cumulative.weight += BigInt(participant.weight || "0");
+      cumulative.issued += BigInt(participant.issued || "0");
+      cumulative.verified += BigInt(participant.verified || "0");
+      cumulative.ecosystem_slash_events += Number(participant.ecosystem_slash_events || 0);
+      cumulative.ecosystem_slashed_amount += BigInt(participant.ecosystem_slashed_amount || "0");
+      cumulative.ecosystem_slashed_amount_repaid += BigInt(participant.ecosystem_slashed_amount_repaid || "0");
+      cumulative.network_slash_events += Number(participant.network_slash_events || 0);
+      cumulative.network_slashed_amount += BigInt(participant.network_slashed_amount || "0");
+      cumulative.network_slashed_amount_repaid += BigInt(participant.network_slashed_amount_repaid || "0");
     }
 
     const schema = await knex("credential_schemas")
@@ -1003,9 +1003,9 @@ export default class StatsCalculationService extends BullableService {
     };
   }
 
-  private async computePermissionStats(permId: string, schemaId: string, timestamp: Date): Promise<any> {
-    const perm = await knex("permissions")
-      .where("id", permId)
+  private async computeParticipantStats(participantId: string, schemaId: string, timestamp: Date): Promise<any> {
+    const participant = await knex("participants")
+      .where("id", participantId)
       .where("created", "<=", timestamp)
       .select(
         "participants",
@@ -1027,7 +1027,7 @@ export default class StatsCalculationService extends BullableService {
       )
       .first();
 
-    if (!perm) {
+    if (!participant) {
       return null;
     }
 
@@ -1038,29 +1038,29 @@ export default class StatsCalculationService extends BullableService {
       .first();
 
     const cumulative = {
-      participants: this.sumParticipantsByRole(perm),
-      participants_ecosystem: Number(perm.participants_ecosystem || 0),
-      participants_issuer_grantor: Number(perm.participants_issuer_grantor || 0),
-      participants_issuer: Number(perm.participants_issuer || 0),
-      participants_verifier_grantor: Number(perm.participants_verifier_grantor || 0),
-      participants_verifier: Number(perm.participants_verifier || 0),
-      participants_holder: Number(perm.participants_holder || 0),
+      participants: this.sumParticipantsByRole(participant),
+      participants_ecosystem: Number(participant.participants_ecosystem || 0),
+      participants_issuer_grantor: Number(participant.participants_issuer_grantor || 0),
+      participants_issuer: Number(participant.participants_issuer || 0),
+      participants_verifier_grantor: Number(participant.participants_verifier_grantor || 0),
+      participants_verifier: Number(participant.participants_verifier || 0),
+      participants_holder: Number(participant.participants_holder || 0),
       active_schemas: schema && schema.archived === null ? 1 : 0,
       archived_schemas: schema && schema.archived !== null ? 1 : 0,
-      weight: BigInt(perm.weight || "0"),
-      issued: BigInt(perm.issued || "0"),
-      verified: BigInt(perm.verified || "0"),
-      ecosystem_slash_events: Number(perm.ecosystem_slash_events || 0),
-      ecosystem_slashed_amount: BigInt(perm.ecosystem_slashed_amount || "0"),
-      ecosystem_slashed_amount_repaid: BigInt(perm.ecosystem_slashed_amount_repaid || "0"),
-      network_slash_events: Number(perm.network_slash_events || 0),
-      network_slashed_amount: BigInt(perm.network_slashed_amount || "0"),
-      network_slashed_amount_repaid: BigInt(perm.network_slashed_amount_repaid || "0"),
+      weight: BigInt(participant.weight || "0"),
+      issued: BigInt(participant.issued || "0"),
+      verified: BigInt(participant.verified || "0"),
+      ecosystem_slash_events: Number(participant.ecosystem_slash_events || 0),
+      ecosystem_slashed_amount: BigInt(participant.ecosystem_slashed_amount || "0"),
+      ecosystem_slashed_amount_repaid: BigInt(participant.ecosystem_slashed_amount_repaid || "0"),
+      network_slash_events: Number(participant.network_slash_events || 0),
+      network_slashed_amount: BigInt(participant.network_slashed_amount || "0"),
+      network_slashed_amount_repaid: BigInt(participant.network_slashed_amount_repaid || "0"),
     };
 
     const prevStats = await Stats.query()
-      .where("entity_type", "PERMISSION")
-      .where("entity_id", permId)
+      .where("entity_type", "PARTICIPANT")
+      .where("entity_id", participantId)
       .where("timestamp", "<", timestamp)
       .orderBy("timestamp", "desc")
       .first();
@@ -1439,7 +1439,7 @@ export default class StatsCalculationService extends BullableService {
         const warnings = [
           "  WARNING: No stats entries found in database after calculation!",
           "  This might indicate:",
-          "   1. No entities exist in permissions/credential_schemas tables",
+          "   1. No entities exist in participants/credential_schemas tables",
           "   2. Database insert operations failed silently",
           "   3. Transaction rollback occurred"
         ];

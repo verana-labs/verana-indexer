@@ -8,9 +8,9 @@ It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blo
 
 While Horoscope V2 provides the base crawling and indexing capabilities, the Verana Indexer’s scope is broader:
 
-- **Verana-Exclusive Integration** – Adapted to Verana’s governance, trust registries, credential schemas, and permissions.
+- **Verana-Exclusive Integration** – Adapted to Verana’s governance, ecosystems, credential schemas, and participants.
 - **Trust Resolution Support** – Integrates with the Trust Resolver to validate credentials and return concise Proof-of-Trust results.
-- **Indexed trust state** – Exposes trust registries, schemas, permissions, and deposits via HTTP APIs for wallets and applications.
+- **Indexed trust state** – Exposes ecosystems, schemas, participants, and deposits via HTTP APIs for wallets and applications.
 - **Off-chain Enriched Index** – Bridges minimal on-chain records with rich off-chain metadata for high-performance queries.
 
 ## Overview Architecture
@@ -31,7 +31,7 @@ flowchart LR
     subgraph INDEXER["Verana Indexer"]
         API["API Gateway"]
         CRAWLERS["Crawler Services<br/>(block, tx, account, etc.)"]
-        PROCESSORS["Verana Processors<br/>(TR, CS, Perm, TD)"]
+        PROCESSORS["Verana Processors<br/>(EC, CS, Participant, TD)"]
         DB_SERVICES["Database Services<br/>(Query APIs)"]
     end
 
@@ -89,11 +89,11 @@ A list of services is shown below:
 - [**crawl-proposal**](./docs/services/crawl-proposal/crawl-proposal.md): get proposal and its status
 - [**crawl-validator**](./docs/services/crawl-validator/crawl-validator.md): get validator and their power event, signing info
 - [**crawl-genesis**](./docs/services/crawl-genesis/crawl-genesis.md): get state from genesis chunk
-- [**crawl-tr**](./docs/services/crawl-tr/crawl-tr.md): Crawl Trust Registry, governance frameworks, and track version changes.
+- [**crawl-ec**](./docs/services/crawl-ec/crawl-ec.md): Crawl Ecosystem, governance frameworks, and track version changes.
 - [**crawl-cs**](./docs/services/crawl-cs//crawl-cs.md): Crawl all credential schema–related transactions and update their state in the database.
 - [**crawl-cs height-sync refactor**](./docs/services/crawl-cs/cs-height-sync.md): Height-based Credential Schema synchronization path (ledger-backed CS sync).
-- [**crawl-perm**](./docs/services/crawl-perm/crawl-perm.md): Crawl all permissions related to Trust Registry and Credential Schema transactions, and synchronize their current state in the database.
-- [**crawl-perm height-sync refactor**](./docs/services/crawl-perm/crawl-perm.md#permission-height-sync-refactor): Height-based Permission synchronization path (ledger-backed Permission sync with runtime verification).
+- [**crawl-pp**](./docs/services/crawl-pp/crawl-pp.md): Crawl all participants related to Ecosystem and Credential Schema transactions, and synchronize their current state in the database.
+- [**crawl-pp height-sync refactor**](./docs/services/crawl-pp/crawl-pp.md#participant-height-sync-refactor): Height-based Participant synchronization path (ledger-backed Participant sync with runtime verification).
 - [**crawl-td**](./docs/services/crawl-td/crawl-td.md):This service is responsible for crawling and indexing all Trust Deposit states in the database to keep the data up to date.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
@@ -206,17 +206,17 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 - `METRICS_ENABLED`, `METRICS_TYPE`, `METRICS_PORT`, `METRICS_PATH` – Control Prometheus/Console metrics exposure.
 - `TRACING_ENABLED`, `TRACING_TYPE`, `TRACING_ZIPKIN_URL`, `TRACING_COLORS`, `TRACING_WIDTH`, `TRACING_GUAGEWIDTH` – Trace exporters (Console/Zipkin) and formatting.
 
-**Height Sync Mode (CS & Trust Registry)**
+**Height Sync Mode (CS & Ecosystem)**
 - `USE_HEIGHT_SYNC_CS` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Credential Schema (CS) synchronization by block height. When `false`, the indexer uses the legacy CS message-processor path.
-- `USE_HEIGHT_SYNC_TR` – Set to `true` to enable the Trust Registry (TR) height-sync reconciliation path. When `true`, TR message handlers will reconcile their state against the authoritative ledger `/verana/tr/v1/get/{id}` response at the processed block height and then compute indexer-only aggregates (participants, stats, ecosystem/network counters). When `false` or unset, the indexer uses the legacy TR message-processor logic only.
-- See `docs/services/crawl-cs/cs-height-sync.md` for the CS flow, routing, and verification logs. A corresponding TR height-sync document can be added under `docs/services/crawl-tr/` following the same structure.
+- `USE_HEIGHT_SYNC_TR` – Set to `true` to enable the Ecosystem (EC) height-sync reconciliation path. When `true`, EC message handlers will reconcile their state against the authoritative ledger `/verana/ec/v1/get/{id}` response at the processed block height and then compute indexer-only aggregates (participants, stats, ecosystem/network counters). When `false` or unset, the indexer uses the legacy EC message-processor logic only.
+- See `docs/services/crawl-cs/cs-height-sync.md` for the CS flow, routing, and verification logs. A corresponding EC height-sync document can be added under `docs/services/crawl-ec/` following the same structure.
 
-**Permission (PERM) Height-Sync Refactor**
-- `USE_HEIGHT_SYNC_PERM` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Permission synchronization by block height. When `false`, the indexer uses the legacy message-by-message Permission processor path.
+**Participant (PP) Height-Sync Refactor**
+- `USE_HEIGHT_SYNC_PARTICIPANT` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Participant synchronization by block height. When `false`, the indexer uses the legacy message-by-message Participant processor path.
 - Runtime verification is enabled in this mode:
   - immediate compare at processed block height
   - rolling multi-height verification window (3 heights)
-- See `docs/services/crawl-perm/crawl-perm.md` for flow and verification details.
+- See `docs/services/crawl-pp/crawl-pp.md` for flow and verification details.
 
 **Trust Deposit (TD) Height-Sync Refactor**
 - `USE_HEIGHT_SYNC_TD` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Trust Deposit synchronization by block height (GET `/verana/td/v1/get/{id}` with `x-cosmos-block-height`). When unset or `false`, the indexer uses the legacy event/message processor path.
@@ -425,7 +425,7 @@ Both scripts use optimized Node.js flags:
 ### Process Flow
 
 1. **Connect to database** (waits up to 60s)
-2. **Drop module tables** (tables including transaction, trust_registry, trust_deposits, permissions, etc.)
+2. **Drop module tables** (tables including transaction, ecosystem, trust_deposits, participants, etc.)
 3. **Clear checkpoints** (backs up migration checkpoints, sets crawl:block to highest block)
 4. **Run migrations** (recreates all tables)
 5. **Reset sequences** (IDs start from 1)
@@ -509,15 +509,15 @@ Connect with `ws://localhost:3001/verana/indexer/v1/events?did=<URL-encoded-DID>
 ```json
 {
   "type": "indexer-event",
-  "event_type": "StartPermissionVP",
+  "event_type": "StartParticipantOP",
   "did": "did:web:agent.example",
   "block_height": 123457,
   "tx_hash": "A1B2C3",
   "timestamp": "2025-01-15T10:31:00Z",
   "payload": {
-    "module": "permission",
-    "action": "StartPermissionVP",
-    "message_type": "/verana.perm.v1.MsgStartPermissionVP",
+    "module": "participant",
+    "action": "StartParticipantOP",
+    "message_type": "/verana.pp.v1.MsgStartParticipantOP",
     "related_dids": ["did:web:agent.example"]
   }
 }
