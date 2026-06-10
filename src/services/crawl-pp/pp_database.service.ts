@@ -7,6 +7,11 @@ import { SERVICE, ModulesParamsNamesTypes } from "../../common";
 import getGlobalVariables from "../../common/utils/global_variables";
 import { mapParticipantType } from "../../common/utils/utils";
 import { extractController, requireController } from "../../common/utils/extract_controller";
+import {
+  resolveCorporationIdByAddress,
+  resolveCorporationIdForMessage,
+  resolveAddressByCorporationId,
+} from "../crawl-co/corporation_resolve";
 import { calculateParticipantState } from "./pp_state_utils";
 import { CS_STATS_FIELDS, statsToUpdateObject } from "../../common/utils/stats_fields";
 import { calculateCredentialSchemaStats } from "../crawl-cs/cs_stats";
@@ -32,7 +37,7 @@ const PARTICIPANT_HISTORY_FIELDS = [
   "schema_id",
   "role",
   "did",
-  "corporation",
+  "corporation_id",
   "created",
   "modified",
   "slashed",
@@ -92,7 +97,7 @@ const PARTICIPANT_ROLE_HISTORY_FIELDS = [
 ] as const;
 
 const PARTICIPANT_SESSION_HISTORY_FIELDS = [
-  "corporation",
+  "corporation_id",
   "vs_operator",
   "agent_participant_id",
   "wallet_agent_participant_id",
@@ -110,6 +115,17 @@ const PARTICIPANT_HISTORY_V4_FIELDS = [
   "vs_operator_authz_fee_spend_limit",
   "vs_operator_authz_spend_period",
 ] as const;
+
+async function callerOwnsCorporation(
+  corporationId: number | null | undefined,
+  callerAddress: string | null | undefined,
+  db: Knex | Knex.Transaction = knex
+): Promise<boolean> {
+  const corpId = Number(corporationId ?? 0) || 0;
+  if (corpId <= 0 || !callerAddress) return false;
+  const callerCorpId = await resolveCorporationIdByAddress(callerAddress, db);
+  return callerCorpId !== null && callerCorpId === corpId;
+}
 
 function normalizeValue(value: any) {
   if (value === undefined) return null;
@@ -702,8 +718,10 @@ export default class ParticipantIngestService extends Service {
           params: { schema_id: "number", corporation: "string", role: "string" },
           handler: async (ctx) => {
             const { schema_id: schemaId, corporation, role } = ctx.params;
+            const corporationId = await resolveCorporationIdByAddress(corporation);
+            if (corporationId === null) return undefined;
             return await knex("participants")
-              .where({ schema_id: schemaId, corporation, role })
+              .where({ schema_id: schemaId, corporation_id: corporationId, role })
               .first();
           },
         },
@@ -717,8 +735,11 @@ export default class ParticipantIngestService extends Service {
             let query = knex("participants");
             if (ctx.params.schema_id)
               query = query.where("schema_id", ctx.params.schema_id);
-            if (ctx.params.corporation)
-              query = query.where("corporation", ctx.params.corporation);
+            if (ctx.params.corporation) {
+              const corporationId = await resolveCorporationIdByAddress(ctx.params.corporation);
+              if (corporationId === null) return [];
+              query = query.where("corporation_id", corporationId);
+            }
             if (ctx.params.role) query = query.where("role", ctx.params.role);
             return await query;
           },
@@ -804,7 +825,6 @@ export default class ParticipantIngestService extends Service {
     const schemaId = Number(ledgerParticipant.schema_id ?? ledgerParticipant.schemaId);
     const nowIso = new Date().toISOString();
 
-    const corporation = String(ledgerParticipant.corporation ?? "").trim();
     const corporationId =
       Number(ledgerParticipant.corporation_id ?? ledgerParticipant.corporationId ?? 0) || 0;
 
@@ -813,7 +833,6 @@ export default class ParticipantIngestService extends Service {
       schema_id: schemaId,
       role: normalizeParticipantType(ledgerParticipant.role),
       did: ledgerParticipant.did ?? null,
-      corporation,
       corporation_id: corporationId,
       created: toIsoOrNull(ledgerParticipant.created) ?? nowIso,
       modified: toIsoOrNull(ledgerParticipant.modified) ?? nowIso,
@@ -1161,7 +1180,7 @@ export default class ParticipantIngestService extends Service {
             if (schema?.ecosystem_id) {
               const ec = await trx("ecosystem").where({ id: schema.ecosystem_id }).first();
               const slashedBy = ledgerParticipant.slashed_by;
-              if (ec?.corporation && slashedBy === ec.corporation) {
+              if (await callerOwnsCorporation(ec?.corporation_id, slashedBy, trx)) {
                 isEcosystemSlash = true;
               } else {
                 isNetworkSlash = true;
@@ -1269,7 +1288,8 @@ export default class ParticipantIngestService extends Service {
 
       const mappedSession: any = {
         id,
-        corporation: ledgerSession?.corporation ?? null,
+        corporation_id:
+          Number(ledgerSession?.corporation_id ?? ledgerSession?.corporationId ?? 0) || 0,
         vs_operator: ledgerSession?.vs_operator ?? ledgerSession?.vsOperator ?? null,
         agent_participant_id: Number(ledgerSession?.agent_participant_id ?? ledgerSession?.agentParticipantId ?? 0) || 0,
         wallet_agent_participant_id: Number(ledgerSession?.wallet_agent_participant_id ?? ledgerSession?.walletAgentParticipantId ?? 0) || 0,
@@ -1549,7 +1569,7 @@ export default class ParticipantIngestService extends Service {
       schema_id: Number(record.schema_id ?? record.schemaId ?? 0) || 0,
       role: normalizeParticipantType(record.role),
       did: record.did ?? null,
-      corporation: record.corporation ?? null,
+      corporation_id: Number(record.corporation_id ?? record.corporationId ?? 0) || 0,
       created: this.normalizeComparableTimestamp(record.created),
       modified: this.normalizeComparableTimestamp(record.modified),
       adjusted: this.normalizeComparableTimestamp(record.adjusted),
@@ -1596,7 +1616,7 @@ export default class ParticipantIngestService extends Service {
 
     return {
       id: String(record.id ?? record.session_id ?? ""),
-      corporation: record.corporation ?? null,
+      corporation_id: Number(record.corporation_id ?? record.corporationId ?? 0) || 0,
       vs_operator: record.vs_operator ?? record.vsOperator ?? null,
       agent_participant_id: Number(record.agent_participant_id ?? record.agentParticipantId ?? 0) || 0,
       wallet_agent_participant_id: Number(record.wallet_agent_participant_id ?? record.walletAgentParticipantId ?? 0) || 0,
@@ -1709,7 +1729,7 @@ export default class ParticipantIngestService extends Service {
 
       }
 
-      const creator = requireController(msg, `PP CREATE_ROOT ${schemaId}`);
+      const corporationId = await resolveCorporationIdForMessage(msg);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
       const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
       const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
@@ -1741,7 +1761,7 @@ export default class ParticipantIngestService extends Service {
         role: participantType,
         op_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
-        corporation: creator,
+        corporation_id: corporationId,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         validation_fees: Number(pickMessageValue(msg as any, "validation_fees", "validationFees") ?? 0),
@@ -1879,7 +1899,7 @@ export default class ParticipantIngestService extends Service {
         );
       }
 
-      const creator = requireController(msg, `PP CREATE ${schemaId}`);
+      const corporationId = await resolveCorporationIdForMessage(msg);
       const timestamp = msg?.timestamp ? formatTimestamp(msg.timestamp) : null;
       const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
       const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
@@ -1910,7 +1930,7 @@ export default class ParticipantIngestService extends Service {
         role,
         op_state: "VALIDATION_STATE_UNSPECIFIED",
         did: msg.did,
-        corporation: creator,
+        corporation_id: corporationId,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
@@ -2043,16 +2063,18 @@ export default class ParticipantIngestService extends Service {
       }
 
       const caller = extractController(msg as unknown as Record<string, unknown>);
+      // VPR v4: ownership compares by corporation_id; resolve the caller account once.
+      const callerCorpId = await resolveCorporationIdByAddress(caller ?? null);
 
       let authorized = false;
-      if (applicantParticipant.validator_participant_id) {
+      if (callerCorpId !== null && applicantParticipant.validator_participant_id) {
         let validatorParticipantId = applicantParticipant.validator_participant_id;
         while (validatorParticipantId) {
           const validatorParticipant = await knex("participants")
             .where({ id: validatorParticipantId })
             .first();
           if (!validatorParticipant) break;
-          if (validatorParticipant.corporation === caller) {
+          if (Number(validatorParticipant.corporation_id ?? 0) === callerCorpId) {
             authorized = true;
             break;
           }
@@ -2060,7 +2082,7 @@ export default class ParticipantIngestService extends Service {
         }
       }
 
-      if (!authorized) {
+      if (!authorized && callerCorpId !== null) {
         const cs = await knex("credential_schemas")
           .where({ id: applicantParticipant.schema_id })
           .first();
@@ -2068,14 +2090,14 @@ export default class ParticipantIngestService extends Service {
           const ec = await knex("ecosystem")
             .where({ id: cs.ecosystem_id })
             .first();
-          if (ec?.corporation === caller) {
+          if (Number(ec?.corporation_id ?? 0) === callerCorpId) {
             authorized = true;
           }
         }
       }
 
-      if (!authorized) {
-        if (applicantParticipant.corporation === caller) {
+      if (!authorized && callerCorpId !== null) {
+        if (Number(applicantParticipant.corporation_id ?? 0) === callerCorpId) {
           authorized = true;
         }
       }
@@ -2193,7 +2215,7 @@ export default class ParticipantIngestService extends Service {
             : 0;
       }
 
-      const creator = requireController(msg, `PP START_OP ${validatorParticipantId}`);
+      const corporationId = await resolveCorporationIdForMessage(msg);
       const effectiveFromRaw = pickMessageValue(msg as any, "effective_from", "effectiveFrom");
       const effectiveUntilRaw = pickMessageValue(msg as any, "effective_until", "effectiveUntil");
       const effectiveFrom = effectiveFromRaw ? formatTimestamp(effectiveFromRaw) : null;
@@ -2220,7 +2242,7 @@ export default class ParticipantIngestService extends Service {
         schema_id: participant?.schema_id,
         role: typeStr,
         did: msg.did,
-        corporation: creator,
+        corporation_id: corporationId,
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         verification_fees: Number(pickMessageValue(msg as any, "verification_fees", "verificationFees") ?? 0),
@@ -2635,11 +2657,9 @@ export default class ParticipantIngestService extends Service {
       }
 
       const caller = extractController(msg as unknown as Record<string, unknown>);
-      if (
-        caller &&
-        applicantParticipant.corporation &&
-        caller !== applicantParticipant.corporation
-      ) {
+      const callerCorpId = await resolveCorporationIdByAddress(caller ?? null);
+      const applicantCorpId = Number(applicantParticipant.corporation_id ?? 0) || 0;
+      if (caller && applicantCorpId > 0 && callerCorpId !== applicantCorpId) {
         this.logger.warn(`Caller ${caller} is not the participant corporation`);
         return { success: false, reason: "Caller is not corporation" };
       }
@@ -2772,7 +2792,9 @@ export default class ParticipantIngestService extends Service {
       }
 
       const caller = extractController(msg as unknown as Record<string, unknown>);
-      if (caller && participant.corporation && caller !== participant.corporation) {
+      const callerCorpId = await resolveCorporationIdByAddress(caller ?? null);
+      const participantCorpId = Number(participant.corporation_id ?? 0) || 0;
+      if (caller && participantCorpId > 0 && callerCorpId !== participantCorpId) {
         this.logger.warn(`Creator ${caller} is not participant corporation`);
         return { success: false, reason: "Creator is not corporation" };
       }
@@ -2891,19 +2913,20 @@ export default class ParticipantIngestService extends Service {
 
       let isAuthorized = false;
       const caller = extractController(msg as unknown as Record<string, unknown>);
+      const callerCorpId = await resolveCorporationIdByAddress(caller ?? null);
 
       let validatorParticipant = participant;
-      while (validatorParticipant && validatorParticipant.validator_participant_id) {
+      while (callerCorpId !== null && validatorParticipant && validatorParticipant.validator_participant_id) {
         validatorParticipant = await knex("participants")
           .where({ id: validatorParticipant.validator_participant_id })
           .first();
-        if (validatorParticipant && validatorParticipant.corporation === caller) {
+        if (validatorParticipant && Number(validatorParticipant.corporation_id ?? 0) === callerCorpId) {
           isAuthorized = true;
           break;
         }
       }
 
-      if (!isAuthorized && participant.schema_id) {
+      if (!isAuthorized && callerCorpId !== null && participant.schema_id) {
         const schema = await knex("credential_schemas")
           .where({ id: participant.schema_id })
           .first();
@@ -2911,7 +2934,7 @@ export default class ParticipantIngestService extends Service {
           const ec = await knex("ecosystem")
             .where({ id: schema.ecosystem_id })
             .first();
-          if (ec && ec.corporation === caller) {
+          if (ec && Number(ec.corporation_id ?? 0) === callerCorpId) {
             isAuthorized = true;
           }
         }
@@ -2958,17 +2981,18 @@ export default class ParticipantIngestService extends Service {
             classificationReason = `EC ${schema.ecosystem_id} not found`;
             trController = null;
           } else {
-            trController = ec.corporation || null;
-            if (!trController) {
-              this.logger.warn(`[Slash] Participant ${msg.id} EC ${schema.ecosystem_id} exists but has no corporation field`);
-              classificationReason = `EC ${schema.ecosystem_id} has no corporation`;
-            } else if (ec.corporation === caller) {
+            const ecCorpId = Number(ec.corporation_id ?? 0) || 0;
+            trController = ecCorpId > 0 ? String(ecCorpId) : null;
+            if (!ecCorpId) {
+              this.logger.warn(`[Slash] Participant ${msg.id} EC ${schema.ecosystem_id} exists but has no corporation_id`);
+              classificationReason = `EC ${schema.ecosystem_id} has no corporation_id`;
+            } else if (callerCorpId !== null && ecCorpId === callerCorpId) {
               isEcosystemSlash = true;
-              classificationReason = `Slashed by EC corporation ${caller}`;
-              this.logger.info(`[Slash] Participant ${msg.id} slashed by EC corporation ${caller} - marking as ecosystem slash`);
+              classificationReason = `Slashed by EC corporation_id ${ecCorpId}`;
+              this.logger.info(`[Slash] Participant ${msg.id} slashed by EC corporation_id ${ecCorpId} - marking as ecosystem slash`);
             } else {
-              this.logger.warn(`[Slash] Participant ${msg.id} slashed by ${caller} but EC corporation is ${ec.corporation} - no slash type determined`);
-              classificationReason = `Caller ${caller} != EC corporation ${ec.corporation}`;
+              this.logger.warn(`[Slash] Participant ${msg.id} slashed by ${caller} (corporation_id ${callerCorpId ?? "none"}) but EC corporation_id is ${ecCorpId} - no slash type determined`);
+              classificationReason = `Caller corporation_id ${callerCorpId ?? "none"} != EC corporation_id ${ecCorpId}`;
             }
           }
         }
@@ -3068,8 +3092,11 @@ export default class ParticipantIngestService extends Service {
       });
 
       try {
-        const schema = await knex("participants").where({ id: msg.id }).first();
-        const corporation = schema?.corporation;
+        const slashed = await knex("participants").where({ id: msg.id }).first();
+        // TrustDeposit is still address-based: resolve the owner's policy address.
+        const corporation = await resolveAddressByCorporationId(
+          Number(slashed?.corporation_id ?? 0) || 0
+        );
         if (corporation) {
           await (this as any).broker.call(
             `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_participant_trust_deposit`,
@@ -3167,6 +3194,7 @@ export default class ParticipantIngestService extends Service {
       let classificationReason = '';
 
       const repayer = extractController(msg as unknown as Record<string, unknown>);
+      const repayerCorpId = await resolveCorporationIdByAddress(repayer ?? null);
 
       if (isEcosystemParticipant) {
         isEcosystemSlash = true;
@@ -3192,15 +3220,16 @@ export default class ParticipantIngestService extends Service {
             classificationReason = `EC ${schema.ecosystem_id} not found`;
             trController = null;
           } else {
-            trController = ec.corporation || null;
-            if (!trController) {
-              this.logger.warn(`[Repay] Participant ${msg.id} EC ${schema.ecosystem_id} has no corporation`);
-              classificationReason = `EC ${schema.ecosystem_id} has no corporation`;
-            } else if (repayer && ec.corporation === repayer) {
+            const ecCorpId = Number(ec.corporation_id ?? 0) || 0;
+            trController = ecCorpId > 0 ? String(ecCorpId) : null;
+            if (!ecCorpId) {
+              this.logger.warn(`[Repay] Participant ${msg.id} EC ${schema.ecosystem_id} has no corporation_id`);
+              classificationReason = `EC ${schema.ecosystem_id} has no corporation_id`;
+            } else if (repayerCorpId !== null && ecCorpId === repayerCorpId) {
               isEcosystemSlash = true;
-              classificationReason = `Repay by EC corporation ${repayer}`;
+              classificationReason = `Repay by EC corporation_id ${ecCorpId}`;
             } else {
-              classificationReason = `Repayer ${repayer || "unknown"} != EC corporation ${ec.corporation}`;
+              classificationReason = `Repayer corporation_id ${repayerCorpId ?? "none"} != EC corporation_id ${ecCorpId}`;
             }
           }
         }
@@ -3871,11 +3900,11 @@ export default class ParticipantIngestService extends Service {
         (msg as any).vs_operator ?? (msg as any).vsOperator ?? (msg as any).operator ?? existing?.vs_operator ?? null;
 
       if (!existing) {
-        const creator = requireController(msg, `PP SESSION ${msg.id}`);
+        const corporationId = await resolveCorporationIdForMessage(msg);
         const [session] = await trx("participant_sessions")
           .insert({
             id: msg.id,
-            corporation: creator,
+            corporation_id: corporationId,
             vs_operator: vsOp,
             agent_participant_id: agentParticipantId,
             wallet_agent_participant_id: walletAgentParticipantId,

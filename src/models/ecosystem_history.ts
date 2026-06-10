@@ -8,7 +8,7 @@ export class EcosystemHistory extends BaseModel {
   id!: number;
   ecosystem_id!: number;
   did!: string;
-  corporation!: string;
+  corporation_id!: number;
   created!: Date;
   modified!: Date;
   archived?: Date | null;

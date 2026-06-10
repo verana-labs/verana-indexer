@@ -248,7 +248,7 @@ export default class EcosystemHistoryService extends BaseService {
 
     const rows = await query.select(
       "id", "ecosystem_id", "height", "event_type", "created_at",
-      "did", "corporation", "created", "modified", "archived", "aka", "language", "active_version",
+      "did", "corporation_id", "created", "modified", "archived", "aka", "language", "active_version",
       "participants", "participants_ecosystem", "participants_issuer_grantor", "participants_issuer",
       "participants_verifier_grantor", "participants_verifier", "participants_holder",
       "active_schemas", "archived_schemas", "weight", "issued", "verified",
@@ -299,7 +299,7 @@ export default class EcosystemHistoryService extends BaseService {
 
       const changes: Record<string, unknown> = {
         did: row.did,
-        corporation: row.corporation,
+        corporation_id: Number(row.corporation_id ?? 0) || 0,
         created: row.created != null ? (row.created instanceof Date ? row.created.toISOString() : new Date(row.created).toISOString()) : null,
         modified: row.modified != null ? (row.modified instanceof Date ? row.modified.toISOString() : new Date(row.modified).toISOString()) : null,
         archived: row.archived != null ? (row.archived instanceof Date ? row.archived.toISOString() : new Date(row.archived).toISOString()) : null,

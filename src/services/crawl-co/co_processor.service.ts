@@ -49,6 +49,43 @@ interface DecodedCoMessage {
   ecosystemId?: number | string;
   version?: number | string;
   content?: Record<string, unknown>;
+  txEvents?: CoTxEvent[];
+}
+
+interface CoTxEvent {
+  type?: string;
+  attributes?: Array<{ key?: string; value?: string }>;
+}
+
+function extractCreateCorporationEvent(txEvents: CoTxEvent[] | undefined): {
+  corporationId?: number;
+  policyAddress?: string;
+  did?: string;
+} {
+  if (!Array.isArray(txEvents)) return {};
+  const decode = (raw: string | undefined): string => {
+    if (!raw) return "";
+    if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length % 4 === 0 && !raw.startsWith("verana")) {
+      try {
+        return Buffer.from(raw, "base64").toString("utf-8");
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  };
+  for (const ev of txEvents) {
+    if ((ev.type ?? "") !== "create_corporation") continue;
+    const attrs = new Map<string, string>();
+    for (const a of ev.attributes ?? []) attrs.set(decode(a.key), decode(a.value).replace(/^"|"$/g, ""));
+    const idNum = Number(attrs.get("corporation_id"));
+    return {
+      corporationId: Number.isInteger(idNum) && idNum > 0 ? idNum : undefined,
+      policyAddress: attrs.get("policy_address") || undefined,
+      did: attrs.get("did") || undefined,
+    };
+  }
+  return {};
 }
 
 interface CorporationRow {
@@ -234,14 +271,20 @@ export default class CorporationMessageProcessorService extends BullableService 
       ? message.members
       : [];
 
+    const event = extractCreateCorporationEvent(message.txEvents);
+    const chainCorporationId = event.corporationId;
+    const policyAddress = event.policyAddress ?? message.corporation ?? null;
+
     await this.withTransaction(`CreateCorporation for did=${did}`, async (trx) => {
-      const existing = (await trx("corporation").where({ did }).first()) as
+      const existing = ((chainCorporationId
+        ? await trx("corporation").where({ id: chainCorporationId }).first()
+        : undefined) ?? (await trx("corporation").where({ did }).first())) as
         | CorporationRow
         | undefined;
 
       const row = {
         did,
-        corporation: message.corporation ?? null,
+        corporation: policyAddress,
         creator: message.signer ?? message.creator ?? null,
         language: message.language ?? null,
         group_metadata: message.group_metadata ?? message.groupMetadata ?? null,
@@ -263,8 +306,11 @@ export default class CorporationMessageProcessorService extends BullableService 
           .update(row)
           .returning("*")) as CorporationRow[];
       } else {
+        const insertRow = chainCorporationId
+          ? { id: chainCorporationId, ...row, created: timestamp }
+          : { ...row, created: timestamp };
         [corporation] = (await trx("corporation")
-          .insert({ ...row, created: timestamp })
+          .insert(insertRow)
           .returning("*")) as CorporationRow[];
       }
 

@@ -65,7 +65,8 @@ export function mapEcosystemApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
-  out.corporation = out.corporation ?? null;
+  out.corporation_id = Number(out.corporation_id ?? 0) || 0;
+  delete out.corporation;
   delete out.controller;
   return out;
 }
@@ -95,7 +96,8 @@ export function mapParticipantApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
-  out.corporation = out.corporation ?? null;
+  out.corporation_id = Number(out.corporation_id ?? 0) || 0;
+  delete out.corporation;
   for (const k of PARTICIPANT_V3_STRIP) {
     delete out[k];
   }

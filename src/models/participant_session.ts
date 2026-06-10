@@ -13,7 +13,7 @@ export default class ParticipantSession extends BaseModel {
   static tableName = "participant_sessions";
 
   id!: string;
-  corporation!: string;
+  corporation_id!: number;
   vs_operator?: string | null;
   agent_participant_id!: number;
   wallet_agent_participant_id!: number;
@@ -26,14 +26,14 @@ export default class ParticipantSession extends BaseModel {
       type: "object",
       required: [
         "id",
-        "corporation",
+        "corporation_id",
         "agent_participant_id",
         "wallet_agent_participant_id",
         "session_records",
       ],
       properties: {
         id: { type: "string" },
-        corporation: { type: "string", maxLength: 255 },
+        corporation_id: { type: "integer" },
         vs_operator: { type: ["string", "null"] },
         agent_participant_id: { type: "integer" },
         wallet_agent_participant_id: { type: "integer" },

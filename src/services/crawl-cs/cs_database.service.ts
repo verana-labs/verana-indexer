@@ -341,7 +341,7 @@ export async function syncEcosystemStatsAndHistoryFromSchemaChange(
     {
       ecosystem_id: ecosystemId,
       did: updatedTr.did,
-      corporation: updatedTr.corporation,
+      corporation_id: Number(updatedTr.corporation_id ?? 0) || 0,
       created: updatedTr.created,
       modified: updatedTr.modified,
       archived: updatedTr.archived ?? null,

@@ -26,7 +26,7 @@ export default class Participant extends BaseModel {
     schema_id!: number;
     role!: ParticipantType;
     did?: string;
-    corporation!: string;
+    corporation_id!: number;
     created!: Date;
     slashed?: Date | null;
     repaid?: Date | null;
@@ -78,7 +78,7 @@ export default class Participant extends BaseModel {
     static get jsonSchema() {
         return {
             type: 'object',
-            required: ['id', 'schema_id', 'role', 'corporation', 'created', 'modified'],
+            required: ['id', 'schema_id', 'role', 'corporation_id', 'created', 'modified'],
             additionalProperties: false,
             properties: {
                 id: { type: 'integer' },
@@ -88,7 +88,7 @@ export default class Participant extends BaseModel {
                     enum: ['UNSPECIFIED', 'ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER']
                 },
                 did: { type: 'string', maxLength: 255 },
-                corporation: { type: 'string', maxLength: 255 },
+                corporation_id: { type: 'integer' },
                 validation_fees: { type: 'integer' },
                 issuance_fees: { type: 'integer' },
                 verification_fees: { type: 'integer' },

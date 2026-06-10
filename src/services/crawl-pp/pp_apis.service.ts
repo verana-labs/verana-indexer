@@ -16,6 +16,7 @@ import { buildActivityTimeline } from "../../common/utils/activity_timeline_help
 import { mapParticipantApiFields } from "../../common/vpr-v4-mapping";
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from "../../common/utils/utils";
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from "../resolver/trust-data-enrichment";
+import { resolveCorporationIdByAddress } from "../crawl-co/corporation_resolve";
 import {
   calculateParticipantState,
   calculateCorporationAvailableActions,
@@ -168,7 +169,7 @@ export default class ParticipantAPIService extends BullableService {
 
     return {
       id: row.id ?? row.session_id,
-      corporation: row.corporation ?? null,
+      corporation_id: Number(row.corporation_id ?? 0) || 0,
       vs_operator: row.vs_operator ?? null,
       agent_participant_id: Number(row.agent_participant_id ?? 0) || 0,
       wallet_agent_participant_id: Number(row.wallet_agent_participant_id ?? 0) || 0,
@@ -244,7 +245,7 @@ export default class ParticipantAPIService extends BullableService {
     if (limit > 32) return false;
 
     const disallowedKeys = [
-      "corporation",
+      "corporation_id",
       "participant_id",
       "validator_participant_id",
       "participant_state",
@@ -313,7 +314,7 @@ export default class ParticipantAPIService extends BullableService {
   private applyBaseListFiltersToQuery(
     query: any,
     params: any,
-    corporationFilter: string | undefined,
+    corporationIdFilter: number | undefined,
     modifiedAfterIso: string | undefined,
     whenIso: string | undefined,
     onlyValid: boolean,
@@ -326,7 +327,7 @@ export default class ParticipantAPIService extends BullableService {
     const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name);
 
     if (params.schema_id !== undefined) query.where(col("schema_id"), Number(params.schema_id));
-    if (corporationFilter) query.where(col("corporation"), corporationFilter);
+    if (corporationIdFilter !== undefined) query.where(col("corporation_id"), corporationIdFilter);
     if (params.did) query.where(col("did"), params.did);
     if (params.participant_id !== undefined) query.where(col(participantIdColumn), Number(params.participant_id));
     if (params.validator_participant_id !== undefined) {
@@ -948,7 +949,7 @@ export default class ParticipantAPIService extends BullableService {
           .select([
             "ph.participant_id as id",
             "ph.schema_id",
-            "ph.corporation",
+            "ph.corporation_id",
             "ph.did",
             "ph.validator_participant_id",
             "ph.role",
@@ -1009,7 +1010,7 @@ export default class ParticipantAPIService extends BullableService {
           .select([
             "ph.participant_id as id",
             "ph.schema_id",
-            "ph.corporation",
+            "ph.corporation_id",
             "ph.did",
             "ph.validator_participant_id",
             "ph.role",
@@ -1078,7 +1079,7 @@ export default class ParticipantAPIService extends BullableService {
       .select([
         "id",
         "schema_id",
-        "corporation",
+        "corporation_id",
         "did",
         "validator_participant_id",
         "role",
@@ -1395,6 +1396,15 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, corporationValidation.error, 400);
       }
       const corporationFilter = corporationValidation.value;
+      // VPR v4: resolve the account-address filter to the canonical corporation_id.
+      let corporationIdFilter: number | undefined;
+      if (corporationFilter) {
+        const resolvedCorpId = await resolveCorporationIdByAddress(corporationFilter);
+        if (resolvedCorpId === null) {
+          return ApiResponder.success(ctx, { participants: [] }, 200);
+        }
+        corporationIdFilter = resolvedCorpId;
+      }
 
       const typeOpValidation = this.normalizeAndValidateTypeAndOpState(p);
       if (!typeOpValidation.ok) {
@@ -1485,7 +1495,7 @@ export default class ParticipantAPIService extends BullableService {
         const historyColumns: any[] = [
           "ph.participant_id as id",
           "ph.schema_id",
-          "ph.corporation",
+          "ph.corporation_id",
           "ph.did",
           "ph.validator_participant_id",
           "ph.role",
@@ -1555,7 +1565,7 @@ export default class ParticipantAPIService extends BullableService {
               this.applyBaseListFiltersToQuery(
                 qb,
                 normalizedParams,
-                corporationFilter,
+                corporationIdFilter,
                 modifiedAfterIso,
                 whenIso,
                 onlyValid,
@@ -1602,7 +1612,7 @@ export default class ParticipantAPIService extends BullableService {
               this.applyBaseListFiltersToQuery(
                 qb,
                 normalizedParams,
-                corporationFilter,
+                corporationIdFilter,
                 modifiedAfterIso,
                 whenIso,
                 onlyValid,
@@ -1667,7 +1677,7 @@ export default class ParticipantAPIService extends BullableService {
           const participant: any = {
             id: Number(historyRecord.id),
             schema_id: Number(historyRecord.schema_id),
-            corporation: historyRecord.corporation,
+            corporation_id: Number(historyRecord.corporation_id ?? 0) || 0,
             did: historyRecord.did,
             validator_participant_id: historyRecord.validator_participant_id ? Number(historyRecord.validator_participant_id) : null,
             role: historyRecord.role !== undefined && historyRecord.role !== null ? mapParticipantType(historyRecord.role) : historyRecord.role,
@@ -1790,7 +1800,7 @@ export default class ParticipantAPIService extends BullableService {
         "schema_id",
         "role",
         "did",
-        "corporation",
+        "corporation_id",
         "created",
         "modified",
         "slashed",
@@ -1876,7 +1886,7 @@ export default class ParticipantAPIService extends BullableService {
       this.applyBaseListFiltersToQuery(
         query,
         normalizedParams,
-        corporationFilter,
+        corporationIdFilter,
         modifiedAfterIso,
         whenIso,
         onlyValid,
@@ -2045,7 +2055,7 @@ export default class ParticipantAPIService extends BullableService {
         const selectColumns: any[] = [
           "participant_id",
           "schema_id",
-          "corporation",
+          "corporation_id",
           "did",
           "validator_participant_id",
           "role",
@@ -2110,7 +2120,7 @@ export default class ParticipantAPIService extends BullableService {
         const historicalParticipant: any = {
           id: Number(historyRecord.participant_id),
           schema_id: Number(historyRecord.schema_id),
-          corporation: historyRecord.corporation,
+          corporation_id: Number(historyRecord.corporation_id ?? 0) || 0,
           did: historyRecord.did,
           validator_participant_id: historyRecord.validator_participant_id ? Number(historyRecord.validator_participant_id) : null,
           role: historyRecord.role !== undefined && historyRecord.role !== null ? mapParticipantType(historyRecord.role) : historyRecord.role,
@@ -2530,7 +2540,7 @@ export default class ParticipantAPIService extends BullableService {
             .distinctOn("psh.session_id")
             .select(
               "psh.session_id as id",
-              "psh.corporation",
+              "psh.corporation_id",
               "psh.vs_operator",
               "psh.agent_participant_id",
               "psh.session_records",
@@ -2548,7 +2558,7 @@ export default class ParticipantAPIService extends BullableService {
           const ranked = knex("participant_session_history as psh")
             .select(
               "psh.session_id as id",
-              "psh.corporation",
+              "psh.corporation_id",
               "psh.vs_operator",
               "psh.agent_participant_id",
               "psh.session_records",
@@ -2623,6 +2633,11 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, accountValidation.error, 400);
       }
       const account = accountValidation.value;
+      // VPR v4: validator ownership is corporation-based; resolve the account once.
+      const accountCorpId = await resolveCorporationIdByAddress(account);
+      if (accountCorpId === null) {
+        return ApiResponder.success(ctx, { ecosystems: [] }, 200);
+      }
 
       const sortParam = p.sort ?? "-modified";
       try {
@@ -2652,7 +2667,7 @@ export default class ParticipantAPIService extends BullableService {
             )
           )
           .whereRaw("height <= ?", [Number(blockHeight)])
-          .andWhere("corporation", account)
+          .andWhere("corporation_id", accountCorpId)
           .whereIn("role", validatorParentTypeList)
           .as("ranked_parent");
 
@@ -2669,7 +2684,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const validatorParentIdsSubquery = knex("participants")
         .select("id")
-        .where("corporation", account)
+        .where("corporation_id", accountCorpId)
         .whereIn("role", validatorParentTypeList);
 
       if (!useHistory) {
@@ -2684,7 +2699,7 @@ export default class ParticipantAPIService extends BullableService {
         "schema_id",
         "role",
         "did",
-        "corporation",
+        "corporation_id",
         "created",
         "modified",
         "slashed",
@@ -2728,7 +2743,7 @@ export default class ParticipantAPIService extends BullableService {
           )
           .whereRaw("height <= ?", [Number(blockHeight)])
           .where((qb) => {
-            qb.where("corporation", account);
+            qb.where("corporation_id", accountCorpId);
             qb.orWhereIn("validator_participant_id", parentIdsAtHeightSubquery!.clone());
           })
           .as("ranked");
@@ -2743,7 +2758,7 @@ export default class ParticipantAPIService extends BullableService {
           .select(
             "ph.participant_id",
             "ph.schema_id",
-            "ph.corporation",
+            "ph.corporation_id",
             "ph.did",
             "ph.validator_participant_id",
             "ph.role",
@@ -2796,7 +2811,7 @@ export default class ParticipantAPIService extends BullableService {
         const rows = await knex("participants")
           .select(baseColumns)
           .where((qb) => {
-            qb.where("corporation", account);
+            qb.where("corporation_id", accountCorpId);
             qb.orWhereIn("validator_participant_id", validatorParentIdsSubquery.clone());
           })
           .limit(fetchLimit);
@@ -2812,7 +2827,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const enriched = await this.batchEnrichParticipants(participantsAtHeight, useHistory ? blockHeight : undefined, now, 50);
       const filtered = enriched.filter((participant: any) => {
-        if (participant.corporation === account) {
+        if (Number(participant.corporation_id ?? 0) === accountCorpId) {
           if (pendingFlatMatchesOpPendingWithEligibleParticipantState(participant)) return true;
           if (participant.participant_state === "SLASHED") return true;
           if (participant.participant_state === "ACTIVE" && participant.expire_soon === true) return true;
