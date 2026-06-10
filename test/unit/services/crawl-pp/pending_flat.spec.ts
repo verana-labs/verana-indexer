@@ -5,6 +5,7 @@ import knex from "../../../../src/common/utils/db_connection";
 function createKnexChain() {
   const c: any = {};
   c.select = jest.fn(() => c);
+  c.first = jest.fn(() => Promise.resolve({ id: 1 }));
   c.where = jest.fn((fn: unknown) => {
     if (typeof fn === "function") {
       const qb = { where: jest.fn(() => qb), orWhereIn: jest.fn(() => qb) };
