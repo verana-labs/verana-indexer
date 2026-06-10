@@ -11,7 +11,7 @@ import {
 import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
 import { formatTimestamp } from "../../common/utils/date_utils";
 import knex from "../../common/utils/db_connection";
-import { requireController } from "../../common/utils/extract_controller";
+import { resolveCorporationIdForMessage } from "../crawl-co/corporation_resolve";
 import { MessageProcessorBase } from "../../common/utils/message_processor_base";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import { calculateEcosystemStats, TR_STATS_FIELDS } from "./ec_stats";
@@ -408,7 +408,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
     const historyPayload: any = {
       ecosystem_id: ecosystemId,
       did: newData.did,
-      corporation: newData.corporation,
+      corporation_id: Number(newData.corporation_id ?? 0) || 0,
       created: newData.created,
       modified: newData.modified,
       archived: newData.archived ?? null,
@@ -772,7 +772,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         .first();
 
       let ec;
-      const corporation = requireController(message, `EC ${message.did}`);
+      const corporationId = await resolveCorporationIdForMessage(message, trx);
       const isReindexing = !!existingTR;
 
       if (isReindexing) {
@@ -781,11 +781,11 @@ export default class EcosystemMessageProcessorService extends BullableService {
           .where({ id: existingTR.id })
           .update({
             did: message.did,
-            corporation,
+            corporation_id: corporationId,
             modified: timestamp,
             aka: message.aka,
             language: message.language,
-            height: blockHeight, 
+            height: blockHeight,
           })
           .returning("*");
       } else {
@@ -793,7 +793,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         [ec] = await trx("ecosystem")
           .insert({
             did: message.did,
-            corporation,
+            corporation_id: corporationId,
             created: timestamp,
             modified: timestamp,
             aka: message.aka,

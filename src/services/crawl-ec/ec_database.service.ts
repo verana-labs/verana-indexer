@@ -13,6 +13,7 @@ import { applyOrdering, validateSortParameter, sortByStandardAttributes, parseSo
 import { calculateEcosystemStats, TR_STATS_FIELDS } from "./ec_stats";
 import { mapEcosystemApiFields } from "../../common/vpr-v4-mapping";
 import { enrichTrustDataDeep, parseTrustDataMode } from "../resolver/trust-data-enrichment";
+import { resolveCorporationIdByAddress } from "../crawl-co/corporation_resolve";
 import {
     ensureDepositDefaultIfColumnExists,
     finalizeEcosystemHistoryInsert,
@@ -34,7 +35,6 @@ function ledgerHasKey(obj: unknown, key: string): boolean {
 export default class EcosystemDatabaseService extends BaseService {
     private ecosystemHistoryColumnExistsCache = new Map<string, boolean>();
     private ecosystemHistoryColumnsCache: Set<string> | null = null;
-    private ecosystemParticipantColumn: "corporation" | null = null;
     private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
         "id",
         "modified",
@@ -58,13 +58,6 @@ export default class EcosystemDatabaseService extends BaseService {
 
     public constructor(public broker: ServiceBroker) {
         super(broker);
-    }
-
-    private async getEcosystemParticipantColumn(db: Knex | Knex.Transaction): Promise<"corporation"> {
-        if (this.ecosystemParticipantColumn) return this.ecosystemParticipantColumn;
-        const col = await resolveEcosystemParticipantColumn(db);
-        this.ecosystemParticipantColumn = col;
-        return col;
     }
 
     private valuesEquivalent(left: unknown, right: unknown): boolean {
@@ -127,19 +120,19 @@ export default class EcosystemDatabaseService extends BaseService {
             await knex.transaction(async (trx) => {
                 const existingTr = await trx("ecosystem").where({ id: ecosystemId }).first();
                 const rawObj = raw as Record<string, unknown>;
-                const participantCol = await this.getEcosystemParticipantColumn(trx);
 
                 const activeVersionFromLedger =
                     ledgerHasKey(rawObj, "active_version") || ledgerHasKey(rawObj, "activeVersion")
                         ? Number((raw as any).active_version ?? (raw as any).activeVersion ?? 0) || 0
                         : Number(existingTr?.active_version ?? 0) || 0;
 
-                const corporationValue =
-                    ledgerHasKey(rawObj, "corporation")
-                        ? ((raw as any).corporation ?? null)
-                        : ((existingTr as any)?.corporation ?? null);
+                const corporationIdValue =
+                    ledgerHasKey(rawObj, "corporation_id")
+                        ? (Number((raw as any).corporation_id ?? 0) || 0)
+                        : (Number((existingTr as any)?.corporation_id ?? 0) || 0);
 
                 const basePayload: Record<string, unknown> = {
+                    corporation_id: corporationIdValue,
                     did: ledgerHasKey(rawObj, "did") ? ((raw as any).did ?? null) : (existingTr?.did ?? null),
                     created: ledgerHasKey(rawObj, "created")
                         ? ((raw as any).created ?? null)
@@ -157,7 +150,6 @@ export default class EcosystemDatabaseService extends BaseService {
                     active_version: activeVersionFromLedger,
                     height: blockHeightNum,
                 };
-                basePayload[participantCol] = corporationValue;
 
                 // skip changing height (avoids 23505). Do NOT use try/catch — Postgres aborts the txn on error (25P02).
                 if (existingTr) {
@@ -550,7 +542,7 @@ export default class EcosystemDatabaseService extends BaseService {
                             {
                                 ecosystem_id: ecosystemId,
                                 did: updatedTr.did,
-                                corporation: updatedTr.corporation,
+                                corporation_id: updatedTr.corporation_id,
                                 created: updatedTr.created,
                                 modified: updatedTr.modified,
                                 archived: updatedTr.archived ?? null,
@@ -1171,7 +1163,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     const ecosystem = {
                         id: snapshot.ecosystem_id,
                         did: snapshot.did,
-                        corporation: snapshot.corporation,
+                        corporation_id: snapshot.corporation_id,
                         created: snapshot.created,
                         modified: snapshot.modified,
                         archived: snapshot.archived,
@@ -1254,7 +1246,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     ecosystem: mapEcosystemApiFields({
                         id: ec.id,
                         did: ec.did,
-                        corporation: ec.corporation,
+                        corporation_id: ec.corporation_id,
                         created: ec.created,
                         modified: ec.modified,
                         archived: ec.archived,
@@ -1319,7 +1311,7 @@ export default class EcosystemDatabaseService extends BaseService {
                             ecosystem: mapEcosystemApiFields({
                                 id: s.ecosystem_id,
                                 did: s.did,
-                                corporation: s.corporation,
+                                corporation_id: s.corporation_id,
                                 created: s.created,
                                 modified: s.modified,
                                 archived: s.archived,
@@ -1372,7 +1364,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 const ecosystem = {
                     id: ecosystemHistory.ecosystem_id,
                     did: ecosystemHistory.did,
-                    corporation: ecosystemHistory.corporation,
+                    corporation_id: ecosystemHistory.corporation_id,
                     created: ecosystemHistory.created,
                     modified: ecosystemHistory.modified,
                     archived: ecosystemHistory.archived,
@@ -1607,6 +1599,13 @@ export default class EcosystemDatabaseService extends BaseService {
                 return ApiResponder.error(ctx, corporationValidation.error, 400);
             }
             const corporationAccount = corporationValidation.value;
+            let corporationId: number | null = null;
+            if (corporationAccount) {
+                corporationId = await resolveCorporationIdByAddress(corporationAccount);
+                if (corporationId === null) {
+                    return ApiResponder.success(ctx, { ecosystems: [] }, 200);
+                }
+            }
 
             try {
                 validateSortParameter(sort);
@@ -1676,7 +1675,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     }
                     let snapshotBase = knex("ecosystem_snapshot")
                         .where("height", "<=", blockHeight);
-                    if (corporationAccount) snapshotBase = snapshotBase.where("corporation", corporationAccount);
+                    if (corporationId !== null) snapshotBase = snapshotBase.where("corporation_id", corporationId);
                     if (participantEcosystemIds !== undefined) snapshotBase = snapshotBase.whereIn("ecosystem_id", participantEcosystemIds);
                     if (modifiedAfter) {
                         const ts = new Date(modifiedAfter);
@@ -1712,7 +1711,7 @@ export default class EcosystemDatabaseService extends BaseService {
                         return {
                             id: row.ecosystem_id,
                             did: row.did,
-                            corporation: row.corporation,
+                            corporation_id: row.corporation_id,
                             created: row.created,
                             modified: row.modified,
                             archived: row.archived,
@@ -1766,8 +1765,8 @@ export default class EcosystemDatabaseService extends BaseService {
                     .select("*")
                     .where("height", "<=", blockHeight);
 
-                if (corporationAccount) {
-                    filteredSubquery = filteredSubquery.where("corporation", corporationAccount);
+                if (corporationId !== null) {
+                    filteredSubquery = filteredSubquery.where("corporation_id", corporationId);
                 }
                 if (participantEcosystemIds !== undefined) {
                     filteredSubquery = filteredSubquery.whereIn("ecosystem_id", participantEcosystemIds);
@@ -1820,7 +1819,7 @@ export default class EcosystemDatabaseService extends BaseService {
                         return {
                             id: ecosystemHistory.ecosystem_id,
                             did: ecosystemHistory.did,
-                            corporation: ecosystemHistory.corporation,
+                            corporation_id: ecosystemHistory.corporation_id,
                             created: ecosystemHistory.created,
                             modified: ecosystemHistory.modified,
                             archived: ecosystemHistory.archived,
@@ -1883,7 +1882,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     }
                     batchQuery = batchQuery.whereIn("id", participantEcosystemIds);
                 }
-                if (corporationAccount) batchQuery = batchQuery.where("corporation", corporationAccount);
+                if (corporationId !== null) batchQuery = batchQuery.where("corporation_id", corporationId);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants", minParticipants, maxParticipants);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants_ecosystem", minParticipantsEcosystem, maxParticipantsEcosystem);
                 batchQuery = this.applyRangeToQuery(batchQuery, "participants_issuer_grantor", minParticipantsIssuerGrantor, maxParticipantsIssuerGrantor);
@@ -1959,7 +1958,7 @@ export default class EcosystemDatabaseService extends BaseService {
                     return {
                         id: ec.id,
                         did: ec.did,
-                        corporation: ec.corporation,
+                        corporation_id: ec.corporation_id,
                         created: ec.created,
                         modified: ec.modified,
                         archived: ec.archived,
@@ -2010,8 +2009,8 @@ export default class EcosystemDatabaseService extends BaseService {
                 }
                 query = query.where("id", "in", participantEcosystemIds) as any;
             }
-            if (corporationAccount) {
-                query = query.where("corporation", corporationAccount);
+            if (corporationId !== null) {
+                query = query.where("corporation_id", corporationId);
             }
 
             query = query.withGraphFetched("governanceFrameworkVersions.documents") as any;
@@ -2130,15 +2129,17 @@ export default class EcosystemDatabaseService extends BaseService {
 
 
     private async getEcosystemIdsForParticipant(account: string): Promise<number[]> {
+        const corporationId = await resolveCorporationIdByAddress(account);
+        if (corporationId === null) return [];
         const trPart = await resolveEcosystemParticipantColumn(knex);
         const controllerRows = await knex("ecosystem")
-            .where(trPart, account)
+            .where(trPart, corporationId)
             .select("id");
         const controllerIds = controllerRows.map((r: { id: number }) => r.id);
 
         const participantPart = await resolveParticipantsParticipantColumn(knex);
         const corpSchemaIds = await knex("participants")
-            .where(participantPart, account)
+            .where(participantPart, corporationId)
             .distinct("schema_id");
         const schemaIds = corpSchemaIds
             .map((r: { schema_id: string }) => {
@@ -2159,17 +2160,19 @@ export default class EcosystemDatabaseService extends BaseService {
 
 
     private async getEcosystemIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
+        const corporationId = await resolveCorporationIdByAddress(account);
+        if (corporationId === null) return [];
         const trHistPart = await resolveEcosystemHistoryParticipantColumn(knex);
         const ecosystemHistoryRows = await knex("ecosystem_history")
             .where("height", "<=", blockHeight)
-            .where(trHistPart, account)
+            .where(trHistPart, corporationId)
             .select("ecosystem_id");
         const controllerEcosystemIds = [...new Set(ecosystemHistoryRows.map((r: { ecosystem_id: number }) => r.ecosystem_id))];
 
         const participantHistPart = await resolveParticipantHistoryParticipantColumn(knex);
         const corpParticipantRows = await knex("participant_history")
             .where("height", "<=", blockHeight)
-            .where(participantHistPart, account)
+            .where(participantHistPart, corporationId)
             .distinct("schema_id");
         const schemaIds = corpParticipantRows.map((r: { schema_id: number }) => r.schema_id).filter((id): id is number => id != null);
         if (schemaIds.length === 0) {

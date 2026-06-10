@@ -1,5 +1,6 @@
 import knex from "../../common/utils/db_connection";
 import { Ecosystem } from "../../models/ecosystem";
+import { resolveAddressByCorporationId } from "../crawl-co/corporation_resolve";
 import { TR_STATS_FIELDS } from "../../common/utils/stats_fields";
 import { calculateCredentialSchemaStatsBatch, getParticipantSessionCounters } from "../crawl-cs/cs_stats";
 
@@ -64,10 +65,10 @@ export async function getEcosystemController(ecosystemId: number, blockHeight?: 
             .orderBy("height", "desc")
             .orderBy("created_at", "desc")
             .first();
-        return ecosystemHistory?.corporation || null;
+        return resolveAddressByCorporationId(Number(ecosystemHistory?.corporation_id ?? 0) || 0);
     }
     const ec = await Ecosystem.query().findById(ecosystemId);
-    return ec?.corporation || null;
+    return resolveAddressByCorporationId(Number(ec?.corporation_id ?? 0) || 0);
 }
 
 export async function getParticipantsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {

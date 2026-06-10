@@ -359,7 +359,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     const participantParticipantCol = await resolveParticipantsParticipantColumn(knex);
     const activeParticipantsBase = () =>
       knex("participants")
-        .whereNotNull(participantParticipantCol)
+        .where(participantParticipantCol, ">", 0)
         .whereNull("repaid")
         .whereNull("slashed")
         .andWhere(function () {
@@ -542,7 +542,8 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       },
       asOfTime
     );
-    const corp = (historyRecord as { corporation?: string }).corporation;
+    const corpId = Number((historyRecord as { corporation_id?: number }).corporation_id ?? 0) || 0;
+    const corp = corpId > 0 ? String(corpId) : "";
     if (participantState === "ACTIVE" && corp) {
       allParticipantsSet.add(corp);
       if (historyRecord.role === "ECOSYSTEM") participantsEcosystemSet.add(corp);
