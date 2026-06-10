@@ -7,7 +7,6 @@ import { formatTimestamp } from "../../../../src/common/utils/date_utils";
 jest.mock("../../../../src/common/utils/db_connection", () => {
   const mockQuery: any = jest.fn(() => mockQuery);
   mockQuery.where = jest.fn(() => mockQuery);
-  mockQuery.select = jest.fn(() => mockQuery);
   mockQuery.first = jest.fn(() => mockQuery);
   mockQuery.insert = jest.fn(() => mockQuery);
   mockQuery.update = jest.fn(() => mockQuery);
@@ -114,9 +113,7 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
   describe("handleRevokeParticipant", () => {
     it("should revoke participant if caller is grantee", async () => {
       (knex.first as jest.Mock)
-        // applicant participant (owned by corporation_id 3)
         .mockResolvedValueOnce({ id: 10, corporation_id: 3, schema_id: 1 })
-        // resolveCorporationIdByAddress("user1") -> corporation row id 3
         .mockResolvedValueOnce({ id: 3 });
       (knex.transaction as jest.Mock).mockImplementation((fn) => fn(knex));
 
