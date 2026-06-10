@@ -7,6 +7,7 @@ import { formatTimestamp } from "../../../../src/common/utils/date_utils";
 jest.mock("../../../../src/common/utils/db_connection", () => {
   const mockQuery: any = jest.fn(() => mockQuery);
   mockQuery.where = jest.fn(() => mockQuery);
+  mockQuery.select = jest.fn(() => mockQuery);
   mockQuery.first = jest.fn(() => mockQuery);
   mockQuery.insert = jest.fn(() => mockQuery);
   mockQuery.update = jest.fn(() => mockQuery);
@@ -51,6 +52,7 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
         schema_id: 99,
         did: "did:test:123",
         creator: "grantee1",
+        corporation_id: 5,
         timestamp: "2025-10-08T00:00:00Z",
         effective_from: "2025-10-09T00:00:00Z",
         effective_until: "2025-12-31T00:00:00Z",
@@ -67,7 +69,7 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
           schema_id: 99,
           role: "ECOSYSTEM",
           did: "did:test:123",
-          corporation: "grantee1",
+          corporation_id: 5,
           validation_fees: 10,
           issuance_fees: 5,
           verification_fees: 2,
@@ -93,6 +95,7 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
         schema_id: 99,
         did: "did:test:123",
         creator: "issuer1",
+        corporation_id: 7,
         role: 1,
       };
 
@@ -102,7 +105,7 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
         expect.objectContaining({
           validator_participant_id: 1,
           schema_id: 99,
-          corporation: "issuer1",
+          corporation_id: 7,
         })
       );
     });
@@ -110,11 +113,11 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
 
   describe("handleRevokeParticipant", () => {
     it("should revoke participant if caller is grantee", async () => {
-      (knex.first as jest.Mock).mockResolvedValueOnce({
-        id: 10,
-        corporation: "user1",
-        schema_id: 1,
-      });
+      (knex.first as jest.Mock)
+        // applicant participant (owned by corporation_id 3)
+        .mockResolvedValueOnce({ id: 10, corporation_id: 3, schema_id: 1 })
+        // resolveCorporationIdByAddress("user1") -> corporation row id 3
+        .mockResolvedValueOnce({ id: 3 });
       (knex.transaction as jest.Mock).mockImplementation((fn) => fn(knex));
 
       const result = await service.handleRevokeParticipant({
@@ -163,26 +166,26 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
     });
   });
 
-  describe("mapLedgerParticipantToDbRow (VPR v4 corporation)", () => {
-    it("maps corporation from ledger", () => {
+  describe("mapLedgerParticipantToDbRow (VPR v4 corporation_id)", () => {
+    it("maps corporation_id from ledger", () => {
       const row = mapLedgerParticipantToDbRow({
         id: 1,
         schema_id: 2,
         role: "ECOSYSTEM",
         did: "did:example:x",
-        corporation: "verana1corp",
+        corporation_id: 7,
       });
-      expect(row.corporation).toBe("verana1corp");
+      expect(row.corporation_id).toBe(7);
     });
 
-    it("uses empty string when corporation is missing (NOT NULL column)", () => {
+    it("defaults corporation_id to 0 when missing (NOT NULL column)", () => {
       const row = mapLedgerParticipantToDbRow({
         id: 1,
         schema_id: 2,
         role: "ECOSYSTEM",
         did: "did:x",
       });
-      expect(row.corporation).toBe("");
+      expect(row.corporation_id).toBe(0);
     });
   });
 
@@ -207,7 +210,7 @@ describe("🧪 ParticipantIngestService Unit Tests", () => {
         schema_id: "48",
         role: "ISSUER",
         did: "did:test:issuer",
-        corporation: "verana1test",
+        corporation_id: 5,
         created: "2026-01-29T20:27:06.725Z",
         modified: "2026-01-29T20:27:23.422Z",
         effective_from: "2026-01-29T20:27:23.422Z",
