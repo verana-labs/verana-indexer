@@ -12,6 +12,7 @@ import {
 type ClientState = {
   established: boolean;
   dids: Set<string> | null;
+  corporationId: number | null;
 };
 
 export class SubscribeBroadcaster {
@@ -56,7 +57,7 @@ export class SubscribeBroadcaster {
         return;
       }
 
-      this.clients.set(ws, { established: false, dids: null });
+      this.clients.set(ws, { established: false, dids: null, corporationId: null });
       this.clientAlive.set(ws, true);
 
       this.logger.info(
@@ -121,11 +122,13 @@ export class SubscribeBroadcaster {
     if (result.message.action === "unsubscribe") {
       state.established = false;
       state.dids = null;
+      state.corporationId = null;
       return;
     }
 
     state.established = true;
     state.dids = result.message.dids === null ? null : new Set(result.message.dids);
+    state.corporationId = result.message.corporationId;
   }
 
   broadcastBlockEnvelope(args: {
@@ -138,7 +141,13 @@ export class SubscribeBroadcaster {
     let sent = 0;
     this.clients.forEach((state, ws) => {
       if (!state.established) return;
-      const envelope = buildBlockEnvelope(args.block, args.blockTime, args.events, state.dids);
+      const envelope = buildBlockEnvelope(
+        args.block,
+        args.blockTime,
+        args.events,
+        state.dids,
+        state.corporationId
+      );
       if (this.sendJson(ws, envelope as unknown as Record<string, unknown>)) sent++;
     });
 

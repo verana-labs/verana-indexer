@@ -805,6 +805,8 @@ export default class ParticipantIngestService extends Service {
     const nowIso = new Date().toISOString();
 
     const corporation = String(ledgerParticipant.corporation ?? "").trim();
+    const corporationId =
+      Number(ledgerParticipant.corporation_id ?? ledgerParticipant.corporationId ?? 0) || 0;
 
     return {
       id,
@@ -812,6 +814,7 @@ export default class ParticipantIngestService extends Service {
       role: normalizeParticipantType(ledgerParticipant.role),
       did: ledgerParticipant.did ?? null,
       corporation,
+      corporation_id: corporationId,
       created: toIsoOrNull(ledgerParticipant.created) ?? nowIso,
       modified: toIsoOrNull(ledgerParticipant.modified) ?? nowIso,
       slashed: toIsoOrNull(ledgerParticipant.slashed),
@@ -867,6 +870,7 @@ export default class ParticipantIngestService extends Service {
 
     await db.raw(`
       ALTER TABLE IF EXISTS participants
+        ADD COLUMN IF NOT EXISTS corporation_id bigint NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,

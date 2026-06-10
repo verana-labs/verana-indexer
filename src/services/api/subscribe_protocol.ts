@@ -7,7 +7,7 @@ export const CHAIN_BLOCK_INTERVAL_MS = 6000;
 export type SubscribeControl = {
   action: "subscribe";
   dids: string[] | null;
-  corporationId?: number; // TODO: Currently ignored, but must be implemented once we have update @verana-labs/verana-types
+  corporationId: number | null;
 };
 
 export type UnsubscribeControl = {
@@ -55,9 +55,15 @@ export function parseControlMessage(raw: string): ControlParseResult {
     return { ok: true, message: { action: "unsubscribe" } };
   }
 
+  const corporationIdResult = parseCorporationId((json as Record<string, unknown>).corporationId);
+  if (!corporationIdResult.ok) {
+    return { ok: false, error: corporationIdResult.error };
+  }
+  const corporationId = corporationIdResult.value;
+
   const rawDids = (json as Record<string, unknown>).dids;
   if (rawDids === undefined || rawDids === null) {
-    return { ok: true, message: { action: "subscribe", dids: null } };
+    return { ok: true, message: { action: "subscribe", dids: null, corporationId } };
   }
 
   if (!Array.isArray(rawDids)) {
@@ -65,7 +71,7 @@ export function parseControlMessage(raw: string): ControlParseResult {
   }
 
   if (rawDids.length === 0) {
-    return { ok: true, message: { action: "subscribe", dids: null } };
+    return { ok: true, message: { action: "subscribe", dids: null, corporationId } };
   }
 
   for (const candidate of rawDids) {
@@ -79,7 +85,18 @@ export function parseControlMessage(raw: string): ControlParseResult {
     return { ok: false, error: "No valid DIDs after normalization" };
   }
 
-  return { ok: true, message: { action: "subscribe", dids: normalized } };
+  return { ok: true, message: { action: "subscribe", dids: normalized, corporationId } };
+}
+
+function parseCorporationId(
+  raw: unknown
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    return { ok: false, error: `'corporationId' must be a positive integer; got ${String(raw)}` };
+  }
+  return { ok: true, value: n };
 }
 
 export function buildReadyMessage(lastProcessedBlock: number, lastBlockTime: string): ReadyMessage {
@@ -95,20 +112,35 @@ export function buildBlockEnvelope(
   block: number,
   blockTime: string,
   events: IndexerEventRecord[],
-  filter: Set<string> | null
+  didFilter: Set<string> | null,
+  corporationId: number | null
 ): BlockEnvelope {
-  if (filter === null) {
+  // Both absent → wildcard: deliver every event (spec §1233).
+  if (didFilter === null && corporationId === null) {
     return { type: "block", block, blockTime, events };
   }
 
   const filtered = events.filter((event) => {
-    if (filter.has(event.did)) return true;
-    const related = event.payload?.related_dids ?? [];
-    for (const candidate of related) {
-      if (filter.has(candidate)) return true;
-    }
-    return false;
+    const matchesDids = didFilter === null || eventMatchesDids(event, didFilter);
+    const matchesCorporation =
+      corporationId === null || eventMatchesCorporation(event, corporationId);
+    return matchesDids && matchesCorporation;
   });
 
   return { type: "block", block, blockTime, events: filtered };
+}
+
+function eventMatchesDids(event: IndexerEventRecord, didFilter: Set<string>): boolean {
+  if (didFilter.has(event.did)) return true;
+  const related = event.payload?.related_dids ?? [];
+  for (const candidate of related) {
+    if (didFilter.has(candidate)) return true;
+  }
+  return false;
+}
+
+function eventMatchesCorporation(event: IndexerEventRecord, corporationId: number): boolean {
+  if (event.payload?.corporation_id === corporationId) return true;
+  const related = event.payload?.related_corporation_ids ?? [];
+  return related.includes(corporationId);
 }

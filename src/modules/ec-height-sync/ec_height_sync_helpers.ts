@@ -97,7 +97,6 @@ export function mapEcosystemToLedgerEcosystem(
   return {
     id: eco.id,
     did: eco.did,
-    corporation: eco.corporationId ?? null,
     corporation_id: eco.corporationId ?? null,
     created: dateToIsoOrNull(eco.created) ?? undefined,
     modified: dateToIsoOrNull(eco.modified) ?? undefined,
