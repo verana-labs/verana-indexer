@@ -7,6 +7,7 @@ import { formatTimestamp } from "../../../../src/common/utils/date_utils";
 jest.mock("../../../../src/common/utils/db_connection", () => {
   const mockQuery: any = jest.fn(() => mockQuery);
   mockQuery.where = jest.fn(() => mockQuery);
+  mockQuery.select = jest.fn(() => mockQuery);
   mockQuery.first = jest.fn(() => mockQuery);
   mockQuery.insert = jest.fn(() => mockQuery);
   mockQuery.update = jest.fn(() => mockQuery);
