@@ -93,7 +93,7 @@ last_prop()   { v query group proposals-by-group-policy "$1" -o json | jq -r '.p
 last_eco()    { v query ec list-ecosystems   -o json | jq -r '.ecosystems  | max_by(.id|tonumber) | .id'; }
 last_schema() { v query cs list-schemas      -o json | jq -r '(.schemas // []) | max_by(.id|tonumber) | .id'; }
 # dev.13: pp returns `.participants[]` with a `.role` (not `.permissions[]`/`.type`).
-last_perm()   { v query pp list-permissions  -o json | jq -r --arg t "$1" '[(.participants // [])[]|select(.role==$t)] | max_by(.id|tonumber) | .id'; }
+last_perm()   { v query pp list-participants  -o json | jq -r --arg t "$1" '[(.participants // [])[]|select(.role==$t)] | max_by(.id|tonumber) | .id'; }
 
 # ---- Preflight ----------------------------------------------------
 if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
@@ -226,7 +226,7 @@ submit "Self-create an ISSUER participant under root ${ROOT_PERM_ID}" \
   tx pp self-create-participant issuer "$ROOT_PERM_ID" "$ISSUER_DID" \
      --corporation "$CORP" --effective-from "$EFFECTIVE_FROM" --from "$KEY"
 ISSUER_PERM_ID="$(last_perm ISSUER)"; echo "   ISSUER participant ID = ${ISSUER_PERM_ID}"
-v query pp get-perm "$ISSUER_PERM_ID" -o json | jq '(.participant // .) | {id, schema_id, role, did, validator_participant_id, grantee}'
+v query pp get-participant "$ISSUER_PERM_ID" -o json | jq '(.participant // .) | {id, schema_id, role, did, validator_participant_id, grantee}'
 # Revocation requires the participant to be active. Validation uses the chain's block
 # time (which can lag wall-clock), so poll latest_block_time until it passes effective_from.
 EFF_EPOCH="$(date -u -d "$EFFECTIVE_FROM" +%s)"
@@ -248,6 +248,6 @@ v query ec get-ecosystem "$ECO_ID" -o json | jq '(.ecosystem // .) | {id, did, a
 echo "Credential Schema ${SCHEMA_ID}:"
 v query cs get-schema "$SCHEMA_ID" -o json | jq '(.schema // .) | {id, ecosystem_id, archived}'
 echo "Participants for schema ${SCHEMA_ID}:"
-v query pp list-permissions -o json | jq --argjson s "$SCHEMA_ID" '(.participants // [])[] | select((.schema_id|tonumber)==$s) | {id, role, did}'
+v query pp list-participants -o json | jq --argjson s "$SCHEMA_ID" '(.participants // [])[] | select((.schema_id|tonumber)==$s) | {id, role, did}'
 echo
 echo "All steps completed."
