@@ -1,31 +1,31 @@
 import knex from "./db_connection";
 import {
-  VeranaTrustRegistryMessageTypes,
+  VeranaEcosystemMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaPermissionMessageTypes,
+  VeranaParticipantMessageTypes,
 } from "../verana-message-types";
-import { normalizePermissionEmptyStringsToNull } from "./utils";
+import { normalizeParticipantEmptyStringsToNull } from "./utils";
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
-  [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: "CreateTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry]: "UpdateTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: "ArchiveTrustRegistry",
-  [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: "AddGovernanceFrameworkDocument",
-  [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion]: "IncreaseGovernanceFrameworkVersion",
+  [VeranaEcosystemMessageTypes.CreateEcosystem]: "CreateEcosystem",
+  [VeranaEcosystemMessageTypes.UpdateEcosystem]: "UpdateEcosystem",
+  [VeranaEcosystemMessageTypes.ArchiveEcosystem]: "ArchiveEcosystem",
+  [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: "AddGovernanceFrameworkDocument",
+  [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: "IncreaseGovernanceFrameworkVersion",
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: "CreateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: "UpdateCredentialSchema",
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: "ArchiveCredentialSchema",
-  [VeranaPermissionMessageTypes.CreateRootPermission]: "CreateRootPermission",
-  [VeranaPermissionMessageTypes.SelfCreatePermission]: "SelfCreatePermission",
-  [VeranaPermissionMessageTypes.StartPermissionVP]: "StartPermissionVP",
-  [VeranaPermissionMessageTypes.RenewPermissionVP]: "RenewPermissionVP",
-  [VeranaPermissionMessageTypes.RevokePermission]: "RevokePermission",
-  [VeranaPermissionMessageTypes.AdjustPermission]: "AdjustPermission",
-  [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: "SetPermissionVPToValidated",
-  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: "CreateOrUpdatePermissionSession",
-  [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: "SlashPermissionTrustDeposit",
-  [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit]: "RepayPermissionSlashedTrustDeposit",
-  [VeranaPermissionMessageTypes.CancelPermissionVPLastRequest]: "CancelPermissionVPLastRequest",
+  [VeranaParticipantMessageTypes.CreateRootParticipant]: "CreateRootParticipant",
+  [VeranaParticipantMessageTypes.SelfCreateParticipant]: "SelfCreateParticipant",
+  [VeranaParticipantMessageTypes.StartParticipantOP]: "StartParticipantOP",
+  [VeranaParticipantMessageTypes.RenewParticipantOP]: "RenewParticipantOP",
+  [VeranaParticipantMessageTypes.RevokeParticipant]: "RevokeParticipant",
+  [VeranaParticipantMessageTypes.SetParticipantEffectiveUntil]: "SetParticipantEffectiveUntil",
+  [VeranaParticipantMessageTypes.SetParticipantOPToValidated]: "SetParticipantOPToValidated",
+  [VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession]: "CreateOrUpdateParticipantSession",
+  [VeranaParticipantMessageTypes.SlashParticipantTrustDeposit]: "SlashParticipantTrustDeposit",
+  [VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit]: "RepayParticipantSlashedTrustDeposit",
+  [VeranaParticipantMessageTypes.CancelParticipantOPLastRequest]: "CancelParticipantOPLastRequest",
 };
 
 function normalizeEventType(eventType: string): string {
@@ -306,8 +306,8 @@ export async function buildActivityTimeline(
 
   for (const r of limitedRecords) {
     const atype = r.activity_entity_type;
-    const trId = r.tr_id ?? null;
-    const key = `${r.height ?? ""}::${trId ?? ""}`;
+    const ecosystemId = r.ecosystem_id ?? null;
+    const key = `${r.height ?? ""}::${ecosystemId ?? ""}`;
 
     if (atype === "GovernanceFrameworkVersion") {
       const entry = {
@@ -450,7 +450,7 @@ export async function buildActivityTimeline(
             }
           }
         }
-      } else if (activityEntityType === "TrustRegistry") {
+      } else if (activityEntityType === "Ecosystem") {
         const numericFields = [
           "id",
           "deposit",
@@ -491,8 +491,8 @@ export async function buildActivityTimeline(
       changes = filterChangedValues(changes);
     }
 
-    if (activityEntityType === "TrustRegistry") {
-      const key = `${record.height ?? ""}::${record.tr_id ?? activityEntityIdStr ?? ""}`;
+    if (activityEntityType === "Ecosystem") {
+      const key = `${record.height ?? ""}::${record.ecosystem_id ?? activityEntityIdStr ?? ""}`;
       const relatedGfvs = gfvByKey.get(key) || [];
       const relatedGfds = gfdByKey.get(key) || [];
       if ((relatedGfvs && relatedGfvs.length > 0) || (relatedGfds && relatedGfds.length > 0)) {
@@ -530,8 +530,8 @@ export async function buildActivityTimeline(
       }
     }
 
-    if (changes && activityEntityType === "Permission") {
-      changes = normalizePermissionEmptyStringsToNull(changes);
+    if (changes && activityEntityType === "Participant") {
+      changes = normalizeParticipantEmptyStringsToNull(changes);
     }
 
     const activityItem: any = {

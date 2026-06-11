@@ -1,13 +1,11 @@
 import knex from "../../common/utils/db_connection";
 import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
-import { calculatePermState } from "../crawl-perm/perm_state_utils";
+import { calculateParticipantState } from "../crawl-pp/pp_state_utils";
 
 function participantFromTrRow(row: Record<string, unknown> | null | undefined): string | null {
     if (!row) return null;
-    const v = row.corporation;
-    if (v === null || v === undefined) return null;
-    const s = String(v).trim();
-    return s === "" ? null : s;
+    const n = Number(row.corporation_id ?? 0) || 0;
+    return n > 0 ? String(n) : null;
 }
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
@@ -24,7 +22,7 @@ function getSessionCounterCacheKey(blockHeight?: number): string {
     return typeof blockHeight === "number" ? `h:${blockHeight}` : "live";
 }
 
-export async function getPermissionSessionCounters(blockHeight?: number): Promise<SessionCounters> {
+export async function getParticipantSessionCounters(blockHeight?: number): Promise<SessionCounters> {
     const cacheKey = getSessionCounterCacheKey(blockHeight);
     const cached = sessionCountersCache.get(cacheKey);
     if (cached) return cached;
@@ -37,7 +35,7 @@ export async function getPermissionSessionCounters(blockHeight?: number): Promis
 
         if (typeof blockHeight === "number") {
             if (IS_PG_CLIENT) {
-                sessionRows = await knex("permission_session_history as psh")
+                sessionRows = await knex("participant_session_history as psh")
                     .distinctOn("psh.session_id")
                     .select("psh.session_records")
                     .where("psh.height", "<=", blockHeight)
@@ -46,7 +44,7 @@ export async function getPermissionSessionCounters(blockHeight?: number): Promis
                     .orderBy("psh.created_at", "desc")
                     .orderBy("psh.id", "desc");
             } else {
-                const ranked = knex("permission_session_history as psh")
+                const ranked = knex("participant_session_history as psh")
                     .select(
                         "psh.session_records",
                         knex.raw("ROW_NUMBER() OVER (PARTITION BY psh.session_id ORDER BY psh.height DESC, psh.created_at DESC, psh.id DESC) as rn")
@@ -56,7 +54,7 @@ export async function getPermissionSessionCounters(blockHeight?: number): Promis
                 sessionRows = await knex.from(ranked).select("session_records").where("rn", 1);
             }
         } else {
-            sessionRows = await knex("permission_sessions").select("session_records");
+            sessionRows = await knex("participant_sessions").select("session_records");
         }
 
         const issuer = new Map<number, number>();
@@ -68,16 +66,16 @@ export async function getPermissionSessionCounters(blockHeight?: number): Promis
                 : (session as any).session_records;
             if (!Array.isArray(recordsRaw)) continue;
             for (const entry of recordsRaw) {
-                if (entry?.issuer_perm_id !== undefined && entry?.issuer_perm_id !== null) {
-                    const issuerPermId = Number(entry.issuer_perm_id);
-                    if (Number.isFinite(issuerPermId) && issuerPermId > 0) {
-                        issuer.set(issuerPermId, (issuer.get(issuerPermId) || 0) + 1);
+                if (entry?.issuer_participant_id !== undefined && entry?.issuer_participant_id !== null) {
+                    const issuerParticipantId = Number(entry.issuer_participant_id);
+                    if (Number.isFinite(issuerParticipantId) && issuerParticipantId > 0) {
+                        issuer.set(issuerParticipantId, (issuer.get(issuerParticipantId) || 0) + 1);
                     }
                 }
-                if (entry?.verifier_perm_id !== undefined && entry?.verifier_perm_id !== null) {
-                    const verifierPermId = Number(entry.verifier_perm_id);
-                    if (Number.isFinite(verifierPermId) && verifierPermId > 0) {
-                        verifier.set(verifierPermId, (verifier.get(verifierPermId) || 0) + 1);
+                if (entry?.verifier_participant_id !== undefined && entry?.verifier_participant_id !== null) {
+                    const verifierParticipantId = Number(entry.verifier_participant_id);
+                    if (Number.isFinite(verifierParticipantId) && verifierParticipantId > 0) {
+                        verifier.set(verifierParticipantId, (verifier.get(verifierParticipantId) || 0) + 1);
                     }
                 }
             }
@@ -122,14 +120,14 @@ export async function getSchemaController(schemaId: number, blockHeight?: number
             return null;
         }
 
-        const trHistory = await knex("trust_registry_history")
-            .where("tr_id", schemaHistory.tr_id)
+        const ecosystemHistory = await knex("ecosystem_history")
+            .where("ecosystem_id", schemaHistory.ecosystem_id)
             .where("height", "<=", blockHeight)
             .orderBy("height", "desc")
             .orderBy("created_at", "desc")
             .first();
         
-        return participantFromTrRow(trHistory as Record<string, unknown>) ?? null;
+        return participantFromTrRow(ecosystemHistory as Record<string, unknown>) ?? null;
     }
     
     const schema = await knex("credential_schemas")
@@ -140,57 +138,57 @@ export async function getSchemaController(schemaId: number, blockHeight?: number
         return null;
     }
 
-    const tr = await knex("trust_registry")
-        .where("id", schema.tr_id)
+    const ec = await knex("ecosystem")
+        .where("id", schema.ecosystem_id)
         .first();
     
-    return participantFromTrRow(tr as Record<string, unknown>) ?? null;
+    return participantFromTrRow(ec as Record<string, unknown>) ?? null;
 }
 
-export async function getPermissionsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
+export async function getParticipantsForSchema(schemaId: number, blockHeight?: number): Promise<any[]> {
     if (typeof blockHeight === "number") {
         if (IS_PG_CLIENT) {
-            return await knex("permission_history as ph")
-                .distinctOn("ph.permission_id")
+            return await knex("participant_history as ph")
+                .distinctOn("ph.participant_id")
                 .select("ph.*")
                 .where("ph.schema_id", Number(schemaId))
                 .where("ph.height", "<=", blockHeight)
-                .orderBy("ph.permission_id", "asc")
+                .orderBy("ph.participant_id", "asc")
                 .orderBy("ph.height", "desc")
                 .orderBy("ph.created_at", "desc")
                 .orderBy("ph.id", "desc");
         }
-        const ranked = knex("permission_history as ph")
+        const ranked = knex("participant_history as ph")
             .select(
                 "ph.*",
-                knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+                knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.participant_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
             )
             .where("ph.schema_id", Number(schemaId))
             .where("ph.height", "<=", blockHeight)
             .as("ranked");
         return await knex.from(ranked).select("*").where("rn", 1);
     }
-    return await knex("permissions")
+    return await knex("participants")
         .where("schema_id", Number(schemaId))
         .select("*");
 }
 
 export async function calculateIssuedVerifiedForSchema(
     _schemaId: number,
-    permissionIds: Set<number>,
+    participantIds: Set<number>,
     blockHeight?: number
 ): Promise<{ issued: number; verified: number }> {
     let totalIssued = 0;
     let totalVerified = 0;
 
-    if (permissionIds.size === 0) {
+    if (participantIds.size === 0) {
         return { issued: 0, verified: 0 };
     }
 
-    const counters = await getPermissionSessionCounters(blockHeight);
-    for (const permissionId of permissionIds) {
-        totalIssued += counters.issuer.get(Number(permissionId)) || 0;
-        totalVerified += counters.verifier.get(Number(permissionId)) || 0;
+    const counters = await getParticipantSessionCounters(blockHeight);
+    for (const participantId of participantIds) {
+        totalIssued += counters.issuer.get(Number(participantId)) || 0;
+        totalVerified += counters.verifier.get(Number(participantId)) || 0;
     }
 
     return { issued: totalIssued, verified: totalVerified };
@@ -198,7 +196,7 @@ export async function calculateIssuedVerifiedForSchema(
 
 export async function calculateSlashStatsForSchema(
     schemaId: number,
-    permissionIds: Set<number>,
+    participantIds: Set<number>,
     _trController: string | null,
     blockHeight?: number
 ): Promise<{
@@ -216,7 +214,7 @@ export async function calculateSlashStatsForSchema(
     let networkSlashedAmount = 0;
     let networkSlashedAmountRepaid = 0;
 
-    if (permissionIds.size === 0) {
+    if (participantIds.size === 0) {
         return {
             ecosystem_slash_events: 0,
             ecosystem_slashed_amount: 0,
@@ -227,26 +225,26 @@ export async function calculateSlashStatsForSchema(
         };
     }
 
-    const permissionIdArray = Array.from(permissionIds);
+    const participantIdArray = Array.from(participantIds);
 
     let slashEvents: any[];
     if (typeof blockHeight === "number") {
-        slashEvents = await knex("permission_history")
-            .whereIn("permission_id", permissionIdArray)
+        slashEvents = await knex("participant_history")
+            .whereIn("participant_id", participantIdArray)
             .whereRaw("schema_id = ?", [Number(schemaId)])
-            .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
+            .where("event_type", "SLASH_PARTICIPANT_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
-            .orderBy("permission_id", "asc")
+            .select("participant_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .orderBy("participant_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
     } else {
-        slashEvents = await knex("permission_history")
-            .whereIn("permission_id", permissionIdArray)
+        slashEvents = await knex("participant_history")
+            .whereIn("participant_id", participantIdArray)
             .whereRaw("schema_id = ?", [Number(schemaId)])
-            .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
-            .select("permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at")
-            .orderBy("permission_id", "asc")
+            .where("event_type", "SLASH_PARTICIPANT_TRUST_DEPOSIT")
+            .select("participant_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at")
+            .orderBy("participant_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc");
     }
@@ -255,26 +253,26 @@ export async function calculateSlashStatsForSchema(
     const prevRepaidDeposits = new Map<string, number>();
 
     for (const event of slashEvents) {
-        const permIdStr = String(event.permission_id);
-        const prevSlashed = prevSlashedDeposits.get(permIdStr) || 0;
+        const participantIdStr = String(event.participant_id);
+        const prevSlashed = prevSlashedDeposits.get(participantIdStr) || 0;
         const currentSlashed = typeof event.slashed_deposit === 'number' ? event.slashed_deposit : Number(event.slashed_deposit);
         const incrementalSlashed = currentSlashed - prevSlashed;
 
         if (incrementalSlashed <= 0) {
-            prevSlashedDeposits.set(permIdStr, currentSlashed);
+            prevSlashedDeposits.set(participantIdStr, currentSlashed);
             const currentRepaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-            prevRepaidDeposits.set(permIdStr, currentRepaid);
+            prevRepaidDeposits.set(participantIdStr, currentRepaid);
             continue;
         }
 
-        prevSlashedDeposits.set(permIdStr, currentSlashed);
+        prevSlashedDeposits.set(participantIdStr, currentSlashed);
 
-        const isEcosystemSlash = event.type === "ECOSYSTEM";
+        const isEcosystemSlash = event.role === "ECOSYSTEM";
 
         const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit);
-        const prevRepaid = prevRepaidDeposits.get(permIdStr) || 0;
+        const prevRepaid = prevRepaidDeposits.get(participantIdStr) || 0;
         const incrementalRepaid = repaid - prevRepaid;
-        prevRepaidDeposits.set(permIdStr, repaid);
+        prevRepaidDeposits.set(participantIdStr, repaid);
 
         if (isEcosystemSlash) {
             ecosystemSlashEvents++;
@@ -335,34 +333,34 @@ export async function calculateCredentialSchemaStatsBatch(
         now = await getBlockChainTimeAsOf(blockHeight, { logContext: "[cs_stats]" });
     }
 
-    let permissions: any[] = [];
+    let participants: any[] = [];
     if (typeof blockHeight === "number") {
         if (IS_PG_CLIENT) {
-            permissions = await knex("permission_history as ph")
-                .distinctOn("ph.permission_id")
+            participants = await knex("participant_history as ph")
+                .distinctOn("ph.participant_id")
                 .select("ph.*")
                 .whereIn("ph.schema_id", schemaIds)
                 .where("ph.height", "<=", blockHeight)
-                .orderBy("ph.permission_id", "asc")
+                .orderBy("ph.participant_id", "asc")
                 .orderBy("ph.height", "desc")
                 .orderBy("ph.created_at", "desc")
                 .orderBy("ph.id", "desc");
         } else {
-            const rankedPerms = knex("permission_history as ph")
+            const rankedParticipants = knex("participant_history as ph")
                 .select(
                     "ph.*",
-                    knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.permission_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
+                    knex.raw("ROW_NUMBER() OVER (PARTITION BY ph.participant_id ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC) as rn")
                 )
                 .whereIn("ph.schema_id", schemaIds)
                 .where("ph.height", "<=", blockHeight)
                 .as("ranked");
-            permissions = await knex.from(rankedPerms).select("*").where("rn", 1);
+            participants = await knex.from(rankedParticipants).select("*").where("rn", 1);
         }
     } else {
-        permissions = await knex("permissions").whereIn("schema_id", schemaIds).select("*");
+        participants = await knex("participants").whereIn("schema_id", schemaIds).select("*");
     }
 
-    const counters = await getPermissionSessionCounters(blockHeight);
+    const counters = await getParticipantSessionCounters(blockHeight);
     // Key = numeric schema id, value = unique participant account identifier (address string).
     const activeParticipantsBySchema = new Map<number, Set<string>>();
     const activeParticipantsEcosystemBySchema = new Map<number, Set<string>>();
@@ -371,7 +369,7 @@ export async function calculateCredentialSchemaStatsBatch(
     const activeParticipantsVerifierGrantorBySchema = new Map<number, Set<string>>();
     const activeParticipantsVerifierBySchema = new Map<number, Set<string>>();
     const activeParticipantsHolderBySchema = new Map<number, Set<string>>();
-    const permissionIdsBySchema = new Map<number, Set<number>>();
+    const participantIdsBySchema = new Map<number, Set<number>>();
 
     for (const schemaId of schemaIds) {
         result.set(schemaId, {
@@ -399,74 +397,73 @@ export async function calculateCredentialSchemaStatsBatch(
         activeParticipantsVerifierGrantorBySchema.set(schemaId, new Set<string>());
         activeParticipantsVerifierBySchema.set(schemaId, new Set<string>());
         activeParticipantsHolderBySchema.set(schemaId, new Set<string>());
-        permissionIdsBySchema.set(schemaId, new Set<number>());
+        participantIdsBySchema.set(schemaId, new Set<number>());
     }
 
-    for (const perm of permissions) {
-        const schemaId = Number(perm.schema_id);
+    for (const participant of participants) {
+        const schemaId = Number(participant.schema_id);
         if (!result.has(schemaId)) continue;
 
-        const permId = Number(perm.permission_id || perm.id);
-        if (!Number.isFinite(permId) || permId <= 0) continue;
+        const participantId = Number(participant.participant_id || participant.id);
+        if (!Number.isFinite(participantId) || participantId <= 0) continue;
 
-        permissionIdsBySchema.get(schemaId)?.add(permId);
+        participantIdsBySchema.get(schemaId)?.add(participantId);
 
-        const permState = calculatePermState(
+        const participantState = calculateParticipantState(
             {
-                repaid: perm.repaid,
-                slashed: perm.slashed,
-                revoked: perm.revoked,
-                effective_from: perm.effective_from,
-                effective_until: perm.effective_until,
-                type: perm.type,
-                vp_state: perm.vp_state,
-                vp_exp: perm.vp_exp,
-                validator_perm_id: perm.validator_perm_id,
+                repaid: participant.repaid,
+                slashed: participant.slashed,
+                revoked: participant.revoked,
+                effective_from: participant.effective_from,
+                effective_until: participant.effective_until,
+                role: participant.role,
+                op_state: participant.op_state,
+                op_exp: participant.op_exp,
+                validator_participant_id: participant.validator_participant_id,
             },
             now
         );
 
-        const permRow = perm as Record<string, unknown>;
-        const corpRaw = permRow.corporation;
-        const corp =
-            corpRaw === null || corpRaw === undefined ? "" : String(corpRaw).trim();
-        if (permState === "ACTIVE" && corp) {
+        const participantRow = participant as Record<string, unknown>;
+        const corpId = Number(participantRow.corporation_id ?? 0) || 0;
+        const corp = corpId > 0 ? String(corpId) : "";
+        if (participantState === "ACTIVE" && corp) {
             activeParticipantsBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "ISSUER_GRANTOR") activeParticipantsIssuerGrantorBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "ISSUER") activeParticipantsIssuerBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "VERIFIER_GRANTOR") activeParticipantsVerifierGrantorBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "VERIFIER") activeParticipantsVerifierBySchema.get(schemaId)?.add(corp);
-            if (perm.type === "HOLDER") activeParticipantsHolderBySchema.get(schemaId)?.add(corp);
+            if (participant.role === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(corp);
+            if (participant.role === "ISSUER_GRANTOR") activeParticipantsIssuerGrantorBySchema.get(schemaId)?.add(corp);
+            if (participant.role === "ISSUER") activeParticipantsIssuerBySchema.get(schemaId)?.add(corp);
+            if (participant.role === "VERIFIER_GRANTOR") activeParticipantsVerifierGrantorBySchema.get(schemaId)?.add(corp);
+            if (participant.role === "VERIFIER") activeParticipantsVerifierBySchema.get(schemaId)?.add(corp);
+            if (participant.role === "HOLDER") activeParticipantsHolderBySchema.get(schemaId)?.add(corp);
         }
 
         const stats = result.get(schemaId)!;
-        if (perm.weight != null) {
-            stats.weight += typeof perm.weight === "number" ? perm.weight : Number(perm.weight || 0);
-        } else if (perm.deposit != null) {
-            stats.weight += typeof perm.deposit === "number" ? perm.deposit : Number(perm.deposit || 0);
+        if (participant.weight != null) {
+            stats.weight += typeof participant.weight === "number" ? participant.weight : Number(participant.weight || 0);
+        } else if (participant.deposit != null) {
+            stats.weight += typeof participant.deposit === "number" ? participant.deposit : Number(participant.deposit || 0);
         }
 
-        stats.issued += counters.issuer.get(permId) || 0;
-        stats.verified += counters.verifier.get(permId) || 0;
+        stats.issued += counters.issuer.get(participantId) || 0;
+        stats.verified += counters.verifier.get(participantId) || 0;
 
         if (typeof blockHeight === "undefined") {
-            stats.ecosystem_slash_events += Number(perm.ecosystem_slash_events ?? 0);
-            stats.ecosystem_slashed_amount += Number(perm.ecosystem_slashed_amount ?? 0);
-            stats.ecosystem_slashed_amount_repaid += Number(perm.ecosystem_slashed_amount_repaid ?? 0);
-            stats.network_slash_events += Number(perm.network_slash_events ?? 0);
-            stats.network_slashed_amount += Number(perm.network_slashed_amount ?? 0);
-            stats.network_slashed_amount_repaid += Number(perm.network_slashed_amount_repaid ?? 0);
+            stats.ecosystem_slash_events += Number(participant.ecosystem_slash_events ?? 0);
+            stats.ecosystem_slashed_amount += Number(participant.ecosystem_slashed_amount ?? 0);
+            stats.ecosystem_slashed_amount_repaid += Number(participant.ecosystem_slashed_amount_repaid ?? 0);
+            stats.network_slash_events += Number(participant.network_slash_events ?? 0);
+            stats.network_slashed_amount += Number(participant.network_slashed_amount ?? 0);
+            stats.network_slashed_amount_repaid += Number(participant.network_slashed_amount_repaid ?? 0);
         }
     }
 
     const slashEvents: any[] = typeof blockHeight === "number"
-        ? await knex("permission_history")
-            .select("schema_id", "permission_id", "type", "slashed_deposit", "repaid_deposit", "height", "created_at", "id")
+        ? await knex("participant_history")
+            .select("schema_id", "participant_id", "role", "slashed_deposit", "repaid_deposit", "height", "created_at", "id")
             .whereIn("schema_id", schemaIds)
-            .where("event_type", "SLASH_PERMISSION_TRUST_DEPOSIT")
+            .where("event_type", "SLASH_PARTICIPANT_TRUST_DEPOSIT")
             .where("height", "<=", blockHeight)
-            .orderBy("permission_id", "asc")
+            .orderBy("participant_id", "asc")
             .orderBy("height", "asc")
             .orderBy("created_at", "asc")
             .orderBy("id", "asc")
@@ -477,25 +474,25 @@ export async function calculateCredentialSchemaStatsBatch(
 
     for (const event of slashEvents) {
         const schemaId = Number(event.schema_id);
-        const permId = Number(event.permission_id);
-        if (!result.has(schemaId) || !Number.isFinite(permId)) continue;
+        const participantId = Number(event.participant_id);
+        if (!result.has(schemaId) || !Number.isFinite(participantId)) continue;
 
-        if (!(permissionIdsBySchema.get(schemaId)?.has(permId))) continue;
+        if (!(participantIdsBySchema.get(schemaId)?.has(participantId))) continue;
 
-        const prevSlashed = prevSlashedDeposits.get(permId) || 0;
+        const prevSlashed = prevSlashedDeposits.get(participantId) || 0;
         const currentSlashed = typeof event.slashed_deposit === "number" ? event.slashed_deposit : Number(event.slashed_deposit || 0);
         const incrementalSlashed = currentSlashed - prevSlashed;
-        prevSlashedDeposits.set(permId, currentSlashed);
+        prevSlashedDeposits.set(participantId, currentSlashed);
 
         const repaid = typeof event.repaid_deposit === "number" ? event.repaid_deposit : Number(event.repaid_deposit || 0);
-        const prevRepaid = prevRepaidDeposits.get(permId) || 0;
+        const prevRepaid = prevRepaidDeposits.get(participantId) || 0;
         const incrementalRepaid = repaid - prevRepaid;
-        prevRepaidDeposits.set(permId, repaid);
+        prevRepaidDeposits.set(participantId, repaid);
 
         if (incrementalSlashed <= 0) continue;
 
         const stats = result.get(schemaId)!;
-        const isEcosystemSlash = event.type === "ECOSYSTEM";
+        const isEcosystemSlash = event.role === "ECOSYSTEM";
 
         if (isEcosystemSlash) {
             stats.ecosystem_slash_events += 1;

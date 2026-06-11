@@ -61,7 +61,7 @@ function extractHolderOnboardingMode(content: Record<string, unknown>): string |
 }
 
 interface CredentialSchemaMessage {
-  tr_id: number;
+  ecosystem_id: number;
   id: number;
   type: string;
   content?: Record<string, unknown>;
@@ -156,7 +156,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
     try {
       const timestamp = formatTimestamp(schemaMessage.timestamp);
       const content = schemaMessage?.content ?? {};
-      const trId = content.tr_id ?? content.trId ?? "";
+      const ecosystemId = content.ecosystem_id ?? content.ecosystemId ?? "";
 
       const blockchainSchemaId = schemaMessage.id ?? content.id ?? null;
 
@@ -165,7 +165,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
         typeof jsonSchema === "string" ? jsonSchema : JSON.stringify(jsonSchema ?? {});
 
       const payload: Record<string, any> = {
-        tr_id: trId,
+        ecosystem_id: ecosystemId,
         json_schema: jsonSchemaForDb,
         created: timestamp ?? null,
         modified: timestamp ?? null,
@@ -222,7 +222,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       }
 
       this.logger.info(
-        `✅ Stored credential schema tr_id=${trId} with blockchain_id=${blockchainSchemaId} and database ID=${generatedId}`
+        `✅ Stored credential schema ecosystem_id=${ecosystemId} with blockchain_id=${blockchainSchemaId} and database ID=${generatedId}`
       );
     } catch (err) {
       this.logger.error("❌ Error storing credential schema:", err);

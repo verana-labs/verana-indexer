@@ -1,5 +1,5 @@
 import knex from "../../../../src/common/utils/db_connection";
-import { VeranaPermissionMessageTypes } from "../../../../src/common/verana-message-types";
+import { VeranaParticipantMessageTypes } from "../../../../src/common/verana-message-types";
 import { up as createIndexerEventsTable } from "../../../../src/migrations/20260420000000_create_indexer_events";
 import { up as hardenIndexerEventsTable } from "../../../../src/migrations/20260421000000_harden_indexer_events_replay";
 import { listIndexerEvents, persistIndexerEventsForBlock } from "../../../../src/services/api/indexer_events_query";
@@ -68,30 +68,30 @@ describe("indexer_events_query", () => {
       createdTables.push("transaction_message");
     }
 
-    if (!(await knex.schema.hasTable("trust_registry"))) {
-      await knex.schema.createTable("trust_registry", (table) => {
+    if (!(await knex.schema.hasTable("ecosystem"))) {
+      await knex.schema.createTable("ecosystem", (table) => {
         table.bigInteger("id").primary();
         table.text("did").notNullable();
       });
-      createdTables.push("trust_registry");
+      createdTables.push("ecosystem");
     }
 
     if (!(await knex.schema.hasTable("credential_schemas"))) {
       await knex.schema.createTable("credential_schemas", (table) => {
         table.bigInteger("id").primary();
-        table.bigInteger("tr_id").notNullable();
+        table.bigInteger("ecosystem_id").notNullable();
       });
       createdTables.push("credential_schemas");
     }
 
-    if (!(await knex.schema.hasTable("permissions"))) {
-      await knex.schema.createTable("permissions", (table) => {
+    if (!(await knex.schema.hasTable("participants"))) {
+      await knex.schema.createTable("participants", (table) => {
         table.bigInteger("id").primary();
         table.bigInteger("schema_id").nullable();
         table.text("did").nullable();
-        table.bigInteger("validator_perm_id").nullable();
+        table.bigInteger("validator_participant_id").nullable();
       });
-      createdTables.push("permissions");
+      createdTables.push("participants");
     }
   }
 
@@ -138,7 +138,7 @@ describe("indexer_events_query", () => {
       id: messageId,
       tx_id: typeof tx === "object" ? tx.id : tx,
       index: args.messageIndex,
-      type: VeranaPermissionMessageTypes.StartPermissionVP,
+      type: VeranaParticipantMessageTypes.StartParticipantOP,
       sender: args.sender ?? did,
       content: args.content ?? { id: 42, applicant: did },
     });
@@ -154,26 +154,26 @@ describe("indexer_events_query", () => {
   }): Promise<void> {
     txHashes.push(args.txHash);
     await knex("indexer_events").insert({
-      event_type: "StartPermissionVP",
+      event_type: "StartParticipantOP",
       did: args.did,
       block_height: args.height,
       tx_hash: args.txHash,
       tx_index: args.txIndex ?? 0,
       message_index: args.messageIndex ?? 0,
-      message_type: VeranaPermissionMessageTypes.StartPermissionVP,
-      module: "permission",
-      entity_type: "Permission",
+      message_type: VeranaParticipantMessageTypes.StartParticipantOP,
+      module: "participant",
+      entity_type: "Participant",
       entity_id: "42",
       timestamp: new Date("2025-01-15T10:30:00Z"),
       payload: {
-        module: "permission",
-        action: "StartPermissionVP",
-        message_type: VeranaPermissionMessageTypes.StartPermissionVP,
+        module: "participant",
+        action: "StartParticipantOP",
+        message_type: VeranaParticipantMessageTypes.StartParticipantOP,
         tx_index: args.txIndex ?? 0,
         message_index: args.messageIndex ?? 0,
         sender: otherDid,
         related_dids: args.relatedDids,
-        entity_type: "Permission",
+        entity_type: "Participant",
         entity_id: "42",
       },
     });

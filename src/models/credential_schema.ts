@@ -4,7 +4,7 @@ export default class CredentialSchema extends BaseModel {
   static tableName = "credential_schemas";
 
   id!: number;
-  tr_id!: number;
+  ecosystem_id!: number;
   json_schema!: object;
   issuer_grantor_validation_validity_period!: number;
   verifier_grantor_validation_validity_period!: number;
@@ -44,7 +44,7 @@ export default class CredentialSchema extends BaseModel {
     return {
       type: "object",
       required: [
-        "tr_id",
+        "ecosystem_id",
         "json_schema",
         "issuer_grantor_validation_validity_period",
         "verifier_grantor_validation_validity_period",
@@ -57,7 +57,7 @@ export default class CredentialSchema extends BaseModel {
       ],
       properties: {
         id: { type: "integer" },
-        tr_id: { type: "integer" },
+        ecosystem_id: { type: "integer" },
         json_schema: { type: "object" },
 
         issuer_grantor_validation_validity_period: { type: "integer" },

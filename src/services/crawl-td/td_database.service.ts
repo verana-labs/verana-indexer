@@ -357,7 +357,7 @@ export default class TrustDepositDatabaseService extends BullableService {
   }
 
   @Action({
-    name: "slash_perm_trust_deposit",
+    name: "slash_participant_trust_deposit",
     params: {
       corporation: { type: "string", min: 5, optional: true },
       account: { type: "string", min: 5, optional: true },
@@ -366,19 +366,19 @@ export default class TrustDepositDatabaseService extends BullableService {
       height: { type: "number", optional: true },
     },
   })
-  public async slashPermTrustDeposit(ctx: any) {
+  public async slashParticipantTrustDeposit(ctx: any) {
     const corporation = String(ctx.params.corporation ?? ctx.params.account ?? "").trim();
     const { amount, ts, height } = ctx.params;
     const amountBig = toBigIntSafe(amount);
     const blockHeight = Number(height) || 0;
 
     if (!corporation) {
-      this.logger.warn("[SlashPermTD] ❌ Missing corporation parameter");
+      this.logger.warn("[SlashParticipantTD] ❌ Missing corporation parameter");
       return { success: false, message: "corporation required" };
     }
 
     if (amountBig <= BigInt(0)) {
-      this.logger.warn("[SlashPermTD] ❌ amount must be > 0");
+      this.logger.warn("[SlashParticipantTD] ❌ amount must be > 0");
       return { success: false, message: "amount must be > 0" };
     }
 
@@ -393,7 +393,7 @@ export default class TrustDepositDatabaseService extends BullableService {
         const td = await TrustDeposit.query(trx).findOne({ corporation });
         if (!td) {
           this.logger.warn(
-            `[SlashPermTD] ❌ No trust deposit found for ${corporation}`
+            `[SlashParticipantTD] ❌ No trust deposit found for ${corporation}`
           );
           return {
             success: false,
@@ -405,7 +405,7 @@ export default class TrustDepositDatabaseService extends BullableService {
         const currentAmount = toBigIntSafe(td.deposit);
         if (amountBig > currentAmount) {
           this.logger.warn(
-            `[SlashPermTD] ❌ Slash amount ${amountBig} exceeds deposit ${currentAmount}`
+            `[SlashParticipantTD] ❌ Slash amount ${amountBig} exceeds deposit ${currentAmount}`
           );
           return { success: false, message: "Slash amount exceeds deposit" };
         }
@@ -432,24 +432,24 @@ export default class TrustDepositDatabaseService extends BullableService {
         await recordTrustDepositHistory(
           trx,
           updated,
-          "SLASH_PERM_TRUST_DEPOSIT",
+          "SLASH_PARTICIPANT_TRUST_DEPOSIT",
           blockHeight,
           previousRecord
         );
 
         this.logger.info(
-          `[SlashPermTD] ⚔️ Permission slash: ${corporation} slashed ${amountBig.toString()}`
+          `[SlashParticipantTD] ⚔️ Participant slash: ${corporation} slashed ${amountBig.toString()}`
         );
 
         return {
           success: true,
-          message: "Slash permission trust deposit completed",
+          message: "Slash participant trust deposit completed",
         };
       });
 
       return result;
     } catch (err) {
-      this.logger.error("[SlashPermTD] ❌ Transaction failed:", err);
+      this.logger.error("[SlashParticipantTD] ❌ Transaction failed:", err);
       return { success: false, message: "Database transaction failed" };
     }
   }

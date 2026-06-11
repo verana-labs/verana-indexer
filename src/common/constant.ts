@@ -120,24 +120,26 @@ export const BULL_JOB_NAME = {
 export enum ModulesParamsNamesTypes {
   AUTH = "auth",
   BANK = "bank",
+  CO = "co",
   CS = "cs",
   DISTRIBUTION = "distribution",
+  GF = "gf",
   GOV = "gov",
   MINT = "mint",
-  PERM = "perm",
+  PP = "pp",
   PROTOCOLPOOL = "protocolpool",
   SLASHING = "slashing",
   STAKING = "staking",
   TD = "td",
-  TR = "tr",
+  EC = "ec",
   TRANSFER = "transfer",
 }
 
 export const MODULE_DISPLAY_NAMES = {
-  TRUST_REGISTRY: "trustregistry",
+  ECOSYSTEM: "ecosystem",
   CREDENTIAL_SCHEMA: "credentialschema",
   TRUST_DEPOSIT: "trustdeposit",
-  PERMISSION: "permission",
+  PARTICIPANT: "participant",
 } as const;
 
 export enum TrustDepositEventType {
@@ -204,17 +206,25 @@ export const SERVICE = {
       key: "CrawlTrustDepositService",
       path: "v1.CrawlTrustDepositService",
     },
-    TrustRegistryMessageProcessorService: {
-      key: "TrustRegistryMessageProcessorService",
-      path: "v1.TrustRegistryMessageProcessorService",
+    EcosystemMessageProcessorService: {
+      key: "EcosystemMessageProcessorService",
+      path: "v1.EcosystemMessageProcessorService",
     },
-    TrustRegistryHistoryService: {
-      key: "TrustRegistryHistoryService",
-      path: "v1.TrustRegistryHistoryService",
+    EcosystemHistoryService: {
+      key: "EcosystemHistoryService",
+      path: "v1.EcosystemHistoryService",
     },
-    TrustRegistryDatabaseService: {
-      key: "TrustRegistryDatabaseService",
-      path: "v1.TrustRegistryDatabaseService",
+    EcosystemDatabaseService: {
+      key: "EcosystemDatabaseService",
+      path: "v1.EcosystemDatabaseService",
+    },
+    CorporationMessageProcessorService: {
+      key: "CorporationMessageProcessorService",
+      path: "v1.CorporationMessageProcessorService",
+    },
+    CorporationApiService: {
+      key: "CorporationApiService",
+      path: "v1.CorporationApiService",
     },
     IndexerMetaService: {
       key: "IndexerMetaService",
@@ -244,13 +254,13 @@ export const SERVICE = {
       key: "GenesisParamsService",
       path: "v1.GenesisParamsService",
     },
-    PermissionProcessService: {
-      key: "PermissionProcessService",
-      path: "v1.PermissionProcessService",
+    ParticipantProcessService: {
+      key: "ParticipantProcessService",
+      path: "v1.ParticipantProcessService",
     },
-    PermAPIService: {
-      key: "PermAPIService",
-      path: "v1.PermAPIService",
+    ParticipantAPIService: {
+      key: "ParticipantAPIService",
+      path: "v1.ParticipantAPIService",
     },
     CredentialSchemaDatabaseService: {
       key: "CredentialSchemaDatabaseService",
@@ -260,9 +270,9 @@ export const SERVICE = {
       key: "ProcessCredentialSchemaService",
       path: "v1.ProcessCredentialSchemaService",
     },
-    PermProcessorService: {
-      key: "PermProcessorService",
-      path: "v1.PermProcessorService",
+    ParticipantProcessorService: {
+      key: "ParticipantProcessorService",
+      path: "v1.ParticipantProcessorService",
     },
     MetricsApiService: {
       key: "MetricsApiService",

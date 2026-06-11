@@ -24,7 +24,7 @@ export function normalizeHolderOnboardingModeV4(mode: string | null | undefined)
   if (mode == null || mode === "") return null;
   const m = String(mode).trim();
   if (m === "ISSUER_VALIDATION" || m === "ISSUER_VALIDATION_PROCESS") return "ISSUER_VALIDATION_PROCESS";
-  if (m === "PERMISSIONLESS" || m === "HOLDER_PERMISSIONLESS") return "PERMISSIONLESS";
+  if (m === "PARTICIPANTLESS" || m === "HOLDER_PARTICIPANTLESS") return "PARTICIPANTLESS";
   return m;
 }
 
@@ -56,16 +56,17 @@ export function mapCredentialSchemaApiFields(
     holderRaw != null && holderRaw !== ""
       ? normalizeHolderOnboardingModeV4(String(holderRaw))
       : null;
-  delete out.issuer_perm_management_mode;
-  delete out.verifier_perm_management_mode;
+  delete out.issuer_participant_management_mode;
+  delete out.verifier_participant_management_mode;
   return out;
 }
 
-export function mapTrustRegistryApiFields(
+export function mapEcosystemApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
-  out.corporation = out.corporation ?? null;
+  out.corporation_id = Number(out.corporation_id ?? 0) || 0;
+  delete out.corporation;
   delete out.controller;
   return out;
 }
@@ -77,7 +78,7 @@ export function normalizeVprFeeDiscountRatio(v: unknown): number {
   return Math.min(1, Math.max(0, n));
 }
 
-const PERMISSION_V3_STRIP = [
+const PARTICIPANT_V3_STRIP = [
   "grantee",
   "authority",
   "created_by",
@@ -86,17 +87,18 @@ const PERMISSION_V3_STRIP = [
   "repaid_by",
   "extended",
   "extended_by",
-  "vp_term_requested",
-  "vp_summary_digest_sri",
+  "op_term_requested",
+  "op_summary_digest_sri",
   "country",
 ] as const;
 
-export function mapPermissionApiFields(
+export function mapParticipantApiFields(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row };
-  out.corporation = out.corporation ?? null;
-  for (const k of PERMISSION_V3_STRIP) {
+  out.corporation_id = Number(out.corporation_id ?? 0) || 0;
+  delete out.corporation;
+  for (const k of PARTICIPANT_V3_STRIP) {
     delete out[k];
   }
   if ("issuance_fee_discount" in out) {

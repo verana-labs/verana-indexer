@@ -1,8 +1,6 @@
 import {
-  InMemoryCache,
   resolveDID,
   type TrustResolution,
-  type TrustResolutionCache,
   type VerifiablePublicRegistry,
 } from "@verana-labs/verre";
 import { BULL_JOB_NAME } from "../../common";
@@ -10,7 +8,6 @@ import knex from "../../common/utils/db_connection";
 import { applySpeedToBatchSize, applySpeedToDelay, getRecommendedConcurrency } from "../../common/utils/crawl_speed_config";
 import { detectStartMode } from "../../common/utils/start_mode_detector";
 import config from "../../config.json" with { type: "json" };
-import { DbDerefCache } from "./db-cache";
 import {
   defaultVprRegistriesFromEnv,
   readBoolFromEnv,
@@ -33,7 +30,6 @@ export type ResolverRuntimeConfig = {
   useEmbeddedRegistryAdapter?: boolean;
   disableDigestSriVerification?: boolean;
   trustEvaluationTtlSeconds?: number;
-  dereferenceCacheTtlSeconds?: number;
   pollObjectCachingRetryDays?: number;
  
   txPrefilterEnabled?: boolean;
@@ -62,20 +58,12 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
     trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
-    dereferenceCacheTtlSeconds: next?.dereferenceCacheTtlSeconds ?? legacy?.dereferenceCacheTtlSeconds,
     pollObjectCachingRetryDays: next?.pollObjectCachingRetryDays ?? legacy?.pollObjectCachingRetryDays,
     didResolveConcurrency: next?.didResolveConcurrency ?? legacy?.didResolveConcurrency,
     maxDidsPerTrustBlock: next?.maxDidsPerTrustBlock ?? legacy?.maxDidsPerTrustBlock,
     freshStart: next?.freshStart ?? legacy?.freshStart,
     reindexing: next?.reindexing ?? legacy?.reindexing,
   };
-}
-
-export function getDeclaredDereferenceCacheTtlSeconds(): number | null {
-  const cfg = getResolverRuntimeConfig();
-  const c = Number(cfg?.dereferenceCacheTtlSeconds);
-  if (Number.isFinite(c) && c > 0) return Math.floor(c);
-  return null;
 }
 
 export function getTrustEvaluationTtlSeconds(): number {
@@ -181,9 +169,9 @@ export async function findHeightsWithTrustModuleMessages(fromExclusive: number, 
       AND t.height <= ?
       AND t.code = 0
       AND (
-        tm.type LIKE '/verana.tr%'
+        tm.type LIKE '/verana.ec%'
         OR tm.type LIKE '/verana.cs%'
-        OR tm.type LIKE '/verana.perm%'
+        OR tm.type LIKE '/verana.participant%'
       )
     ORDER BY t.height ASC
     `,
@@ -302,9 +290,9 @@ async function runPool<T>(items: T[], concurrency: number, fn: (item: T) => Prom
 
 const IMPACTED_DIDS_SQL = `
   SELECT DISTINCT d FROM (
-    SELECT did AS d FROM trust_registry_history WHERE height = ?
+    SELECT did AS d FROM ecosystem_history WHERE height = ?
     UNION ALL
-    SELECT did AS d FROM permission_history WHERE height = ? AND did IS NOT NULL
+    SELECT did AS d FROM participant_history WHERE height = ? AND did IS NOT NULL
   ) AS x
   WHERE d LIKE 'did:%'
   LIMIT ?
@@ -457,14 +445,9 @@ async function getImpactedDids(blockHeight: number, limit: number): Promise<stri
 
 export async function resolveTrustForDidAtHeight(
   did: string,
-  blockHeight: number,
-  verreCache?: TrustResolutionCache<string, Promise<TrustResolution>>
+  blockHeight: number
 ): Promise<void> {
   const { verifiablePublicRegistries, skipDigestSRICheck } = getVerreTrustEvaluationCallOptions();
-  const derefTtlSeconds = getDeclaredDereferenceCacheTtlSeconds() ?? 0;
-  const cache: any =
-    verreCache ??
-    (derefTtlSeconds > 0 ? new DbDerefCache(derefTtlSeconds * 1000) : new InMemoryCache(5 * 60 * 1000));
   const cfg = getResolverRuntimeConfig();
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0;
   const resourceId = `${did}@${blockHeight}`;
@@ -473,7 +456,6 @@ export async function resolveTrustForDidAtHeight(
     const result = (await resolveDID(did, {
       verifiablePublicRegistries,
       skipDigestSRICheck,
-      cache,
     })) as TrustResolution;
 
     const snap = snapshotFromResolution(result);
@@ -534,9 +516,8 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
 
   const tuning = await getResolverTuning();
   const impactedDids = await getImpactedDids(blockHeight, tuning.maxDidsPerBlock);
-  const verreCache = new InMemoryCache(20 * 60 * 1000);
 
-  await runPool(impactedDids, tuning.didConcurrency, async (did) => resolveTrustForDidAtHeight(did, blockHeight, verreCache));
+  await runPool(impactedDids, tuning.didConcurrency, async (did) => resolveTrustForDidAtHeight(did, blockHeight));
 }
 
 export type TrustSummaryPayload = {
@@ -609,11 +590,36 @@ export function extractQ1CredentialArrays(resolveResult: unknown): {
     return { credentials: [], failedCredentials: [] };
   }
   const r = resolveResult as Record<string, unknown>;
-  const credentials = Array.isArray(r.credentials)
+  const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : [];
+  const explicit = Array.isArray(r.credentials)
     ? r.credentials
     : Array.isArray(r.validCredentials)
       ? r.validCredentials
-      : [];
-  const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : [];
-  return { credentials, failedCredentials };
+      : null;
+  if (explicit && explicit.length > 0) {
+    return { credentials: explicit, failedCredentials };
+  }
+
+  const derived = deriveCredentialsFromVerreResolution(r);
+  return { credentials: derived.length > 0 ? derived : (explicit ?? []), failedCredentials };
+}
+
+function deriveCredentialsFromVerreResolution(r: Record<string, unknown>): unknown[] {
+  const result = r.verified === true ? "VALID" : "FAILED";
+  const out: unknown[] = [];
+  const push = (cred: unknown) => {
+    if (!cred || typeof cred !== "object") return;
+    const c = cred as Record<string, unknown>;
+    const schemaType = typeof c.schemaType === "string" ? c.schemaType : "";
+    out.push({
+      ...c,
+      result,
+      vtjscId: typeof c.vtjscId === "string" ? c.vtjscId : schemaType || undefined,
+      issuedBy: typeof c.issuer === "string" ? c.issuer : undefined,
+      claims: c.claims ?? c,
+    });
+  };
+  push(r.serviceProvider);
+  push(r.service);
+  return out;
 }
