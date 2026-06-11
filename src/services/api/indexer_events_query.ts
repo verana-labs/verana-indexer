@@ -5,7 +5,9 @@ import {
   VeranaDiMessageTypes,
   VeranaParticipantMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaCorporationMessageTypes,
 } from "../../common/verana-message-types";
+import { extractController } from "../../common/utils/extract_controller";
 import { applyBlockHeightFilter, toIsoSeconds } from "./api_shared";
 import {
   collectDidsDeep,
@@ -17,7 +19,7 @@ import {
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
-  module: "trust-registry" | "credential-schema" | "participant" | "digital-identity" | "delegation";
+  module: "ecosystem" | "credential-schema" | "participant" | "digital-identity" | "delegation" | "corporation";
   action: string;
   messageType: string;
   blockHeight: number;
@@ -83,27 +85,27 @@ type EventMeta = {
 
 const EVENT_META: Record<string, EventMeta> = {
   [VeranaEcosystemMessageTypes.CreateEcosystem]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "CreateNewEcosystem",
     entityType: "Ecosystem",
   },
   [VeranaEcosystemMessageTypes.UpdateEcosystem]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "UpdateEcosystem",
     entityType: "Ecosystem",
   },
   [VeranaEcosystemMessageTypes.ArchiveEcosystem]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "ArchiveEcosystem",
     entityType: "Ecosystem",
   },
   [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "AddGovernanceFrameworkDocument",
     entityType: "GovernanceFrameworkDocument",
   },
   [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "IncreaseActiveGFVersion",
     entityType: "GovernanceFrameworkVersion",
   },
@@ -192,6 +194,16 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "RevokeOperatorAuthorization",
     entityType: "OperatorAuthorization",
   },
+  [VeranaCorporationMessageTypes.CreateCorporation]: {
+    module: "corporation",
+    action: "CreateNewCorporation",
+    entityType: "Corporation",
+  },
+  [VeranaCorporationMessageTypes.UpdateCorporation]: {
+    module: "corporation",
+    action: "UpdateCorporation",
+    entityType: "Corporation",
+  },
 };
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
@@ -238,6 +250,19 @@ async function loadEcosystem(ecosystemId: number | null | undefined): Promise<{
   if (!ecosystemId) return {};
   const row = await knex("ecosystem").select("did", "corporation_id").where({ id: ecosystemId }).first();
   return { did: normalizeDid(row?.did), corporationId: toCorporationId(row?.corporation_id) };
+}
+
+async function loadCorporation(opts: { did?: string; address?: string }): Promise<{
+  did?: string;
+  corporationId?: number;
+}> {
+  const query = knex("corporation").select("id", "did");
+  if (opts.address) query.where({ corporation: opts.address });
+  else if (opts.did) query.where({ did: opts.did });
+  else return {};
+  const row = await query.first();
+  if (!row) return {};
+  return { did: normalizeDid(row.did), corporationId: toCorporationId(row.id) };
 }
 
 async function loadSchemaRelation(schemaId: number | null | undefined): Promise<{
@@ -325,7 +350,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     row.sender,
   ]);
 
-  if (meta.module === "trust-registry") {
+  if (meta.module === "ecosystem") {
     const rawEcosystemId = readNumber(row.content, ["ecosystem_id", "ecosystemId", "ecosystem_id", "ecosystemId", "id"]);
     ecosystemId = rawEcosystemId ? String(rawEcosystemId) : entityId;
     const ecosystem = await loadEcosystem(rawEcosystemId);
@@ -375,6 +400,15 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
         if (did) collected.add(did);
       });
     }
+  }
+
+  if (meta.module === "corporation") {
+    const relation = await loadCorporation({
+      did: firstNormalizedDid([content.did]),
+      address: extractController(content),
+    });
+    corporationId = relation.corporationId;
+    if (relation.did) collected.add(relation.did);
   }
 
   const relatedDids = uniqueNormalizedDids(collected);

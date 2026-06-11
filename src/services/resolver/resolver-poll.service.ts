@@ -142,10 +142,7 @@ const ResolverPollService = {
     async processBlock(this: any, blockHeight: number): Promise<void> {
       if (!Number.isInteger(blockHeight) || blockHeight < 0) return;
       await resolveTrustForBlock(blockHeight);
-      await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockResolved`, {
-        height: blockHeight,
-        timestamp: new Date().toISOString(),
-      });
+      // TODO: broadcast resolved block when /v4/verifiable-trust/subscribe (IDX-VT-SUB-1) lands.
     },
 
     async pollOnce(this: any): Promise<void> {
