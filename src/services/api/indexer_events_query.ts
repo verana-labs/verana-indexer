@@ -17,7 +17,7 @@ import {
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
-  module: "trust-registry" | "credential-schema" | "participant" | "digital-identity" | "delegation";
+  module: "ecosystem" | "credential-schema" | "participant" | "digital-identity" | "delegation";
   action: string;
   messageType: string;
   blockHeight: number;
@@ -79,27 +79,27 @@ type EventMeta = {
 
 const EVENT_META: Record<string, EventMeta> = {
   [VeranaEcosystemMessageTypes.CreateEcosystem]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "CreateNewEcosystem",
     entityType: "Ecosystem",
   },
   [VeranaEcosystemMessageTypes.UpdateEcosystem]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "UpdateEcosystem",
     entityType: "Ecosystem",
   },
   [VeranaEcosystemMessageTypes.ArchiveEcosystem]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "ArchiveEcosystem",
     entityType: "Ecosystem",
   },
   [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "AddGovernanceFrameworkDocument",
     entityType: "GovernanceFrameworkDocument",
   },
   [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: {
-    module: "trust-registry",
+    module: "ecosystem",
     action: "IncreaseActiveGFVersion",
     entityType: "GovernanceFrameworkVersion",
   },
@@ -192,25 +192,63 @@ const EVENT_META: Record<string, EventMeta> = {
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
 
-function readNumber(content: unknown, keys: string[]): number | null {
+function readNumber(content: unknown, keys: readonly string[]): number | null {
   return readFirstPositiveInteger(content, keys);
 }
 
-function getEntityId(row: EventRow, meta: EventMeta): string | undefined {
+const ID_ALIASES = {
+  ecosystem: ["ecosystem_id", "ecosystemId"],
+  credentialSchema: ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"],
+  participant: ["participant_id", "participantId"],
+  validatorParticipant: ["validator_participant_id", "validatorParticipantId"],
+  governanceFramework: ["gfv_id", "gfvId", "gfd_id", "gfdId"],
+} as const;
+
+async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
   if (meta.module === "participant") {
-    const participantId = readNumber(row.content, ["id", "participant_id", "participantId", "participant_id", "participantId"]);
-    return participantId ? String(participantId) : undefined;
+    const participantId = readNumber(row.content, ["id", ...ID_ALIASES.participant]);
+    return participantId ? String(participantId) : resolveEntityIdFromDomain(row, meta);
   }
 
   if (meta.module === "credential-schema") {
-    const schemaId = readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    return schemaId ? String(schemaId) : undefined;
+    const schemaId = readNumber(row.content, ["id", ...ID_ALIASES.credentialSchema]);
+    return schemaId ? String(schemaId) : resolveEntityIdFromDomain(row, meta);
   }
 
   const ecosystemId =
-    readNumber(row.content, ["id", "ecosystem_id", "ecosystemId", "ecosystem_id", "ecosystemId"]) ??
-    readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]);
-  return ecosystemId ? String(ecosystemId) : undefined;
+    readNumber(row.content, ["id", ...ID_ALIASES.ecosystem]) ??
+    readNumber(row.content, ID_ALIASES.governanceFramework);
+  return ecosystemId ? String(ecosystemId) : resolveEntityIdFromDomain(row, meta);
+}
+
+async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promise<string | undefined> {
+  const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
+  const height = Number(row.block_height);
+
+  if (meta.module === "ecosystem") {
+    const did = normalizeDid(content.did);
+    if (!did) return undefined;
+    const ec = await knex("ecosystem").select("id").where({ did }).first();
+    return ec?.id != null ? String(ec.id) : undefined;
+  }
+
+  if (meta.module === "credential-schema") {
+    const ecosystemId = readNumber(content, ID_ALIASES.ecosystem);
+    const query = knex("credential_schema_history").select("credential_schema_id").where({ height });
+    if (ecosystemId) query.andWhere({ ecosystem_id: ecosystemId });
+    const cs = await query.orderBy("credential_schema_id", "desc").first();
+    return cs?.credential_schema_id != null ? String(cs.credential_schema_id) : undefined;
+  }
+
+  if (meta.module === "participant") {
+    const did = normalizeDid(content.did);
+    const query = knex("participant_history").select("participant_id").where({ height });
+    if (did) query.andWhere({ did });
+    const pp = await query.orderBy("participant_id", "desc").first();
+    return pp?.participant_id != null ? String(pp.participant_id) : undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeRequestedDid(value: unknown): string | undefined {
@@ -280,7 +318,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const meta = EVENT_META[row.message_type];
   if (!meta) return null;
 
-  const entityId = getEntityId(row, meta);
+  const entityId = await getEntityId(row, meta);
   const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
   const collected = collectDidsDeep([row.sender, row.content]);
   let ecosystemId: string | undefined;
@@ -292,22 +330,20 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     content.ecosystemDid,
     content.participant_did,
     content.participantDid,
-    content.participant_did,
-    content.participantDid,
     content.sender,
     row.sender,
   ]);
 
-  if (meta.module === "trust-registry") {
-    const rawEcosystemId = readNumber(row.content, ["ecosystem_id", "ecosystemId", "ecosystem_id", "ecosystemId", "id"]);
+  if (meta.module === "ecosystem") {
+    const rawEcosystemId = readNumber(row.content, [...ID_ALIASES.ecosystem, "id"]);
     ecosystemId = rawEcosystemId ? String(rawEcosystemId) : entityId;
     const ecosystemDid = await loadEcosystemDid(rawEcosystemId);
     if (ecosystemDid) collected.add(ecosystemDid);
   }
 
   if (meta.module === "credential-schema") {
-    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId", "id"]);
-    const rawEcosystemId = readNumber(row.content, ["ecosystem_id", "ecosystemId", "ecosystem_id", "ecosystemId"]);
+    const rawSchemaId = readNumber(row.content, [...ID_ALIASES.credentialSchema, "id"]);
+    const rawEcosystemId = readNumber(row.content, ID_ALIASES.ecosystem);
     const relation = await loadSchemaRelation(rawSchemaId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : entityId);
     ecosystemId = relation.ecosystemId ?? (rawEcosystemId ? String(rawEcosystemId) : undefined);
@@ -316,9 +352,9 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   }
 
   if (meta.module === "participant") {
-    const rawParticipantId = readNumber(row.content, ["participant_id", "participantId", "participant_id", "participantId", "id"]);
-    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const rawValidatorParticipantId = readNumber(row.content, ["validator_participant_id", "validatorParticipantId"]);
+    const rawParticipantId = readNumber(row.content, [...ID_ALIASES.participant, "id"]);
+    const rawSchemaId = readNumber(row.content, ID_ALIASES.credentialSchema);
+    const rawValidatorParticipantId = readNumber(row.content, ID_ALIASES.validatorParticipant);
     const relation = await loadParticipantRelation(rawParticipantId);
     participantId = relation.participantId ?? (rawParticipantId ? String(rawParticipantId) : entityId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
