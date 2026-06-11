@@ -197,9 +197,9 @@ function readNumber(content: unknown, keys: readonly string[]): number | null {
 }
 
 const ID_ALIASES = {
-  ecosystem: ["ecosystem_id", "ecosystemId", "ecosystem_id", "ecosystemId"],
+  ecosystem: ["ecosystem_id", "ecosystemId"],
   credentialSchema: ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"],
-  participant: ["participant_id", "participantId", "participant_id", "participantId"],
+  participant: ["participant_id", "participantId"],
   validatorParticipant: ["validator_participant_id", "validatorParticipantId"],
   governanceFramework: ["gfv_id", "gfvId", "gfd_id", "gfdId"],
 } as const;
@@ -228,14 +228,14 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   if (meta.module === "ecosystem") {
     const did = normalizeDid(content.did);
     if (!did) return undefined;
-    const tr = await knex("ecosystem").select("id").where({ did }).first();
-    return tr?.id != null ? String(tr.id) : undefined;
+    const ec = await knex("ecosystem").select("id").where({ did }).first();
+    return ec?.id != null ? String(ec.id) : undefined;
   }
 
   if (meta.module === "credential-schema") {
     const ecosystemId = readNumber(content, ID_ALIASES.ecosystem);
     const query = knex("credential_schema_history").select("credential_schema_id").where({ height });
-    if (ecosystemId) query.andWhere({ tr_id: ecosystemId });
+    if (ecosystemId) query.andWhere({ ecosystem_id: ecosystemId });
     const cs = await query.orderBy("credential_schema_id", "desc").first();
     return cs?.credential_schema_id != null ? String(cs.credential_schema_id) : undefined;
   }
@@ -328,8 +328,6 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     content.did,
     content.ecosystem_did,
     content.ecosystemDid,
-    content.participant_did,
-    content.participantDid,
     content.participant_did,
     content.participantDid,
     content.sender,
