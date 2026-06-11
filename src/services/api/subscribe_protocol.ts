@@ -115,7 +115,6 @@ export function buildBlockEnvelope(
   didFilter: Set<string> | null,
   corporationId: number | null
 ): BlockEnvelope {
-  // Both absent → wildcard: deliver every event (spec §1233).
   if (didFilter === null && corporationId === null) {
     return { type: "block", block, blockTime, events };
   }

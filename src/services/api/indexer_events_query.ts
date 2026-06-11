@@ -381,7 +381,6 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
     ecosystemId = relation.ecosystemId;
     corporationId = relation.corporationId;
-    // One-hop validator-tree match: the validator's owning Corporation also receives this event.
     if (relation.validatorCorporationId !== undefined) relatedCorporationIds.add(relation.validatorCorporationId);
     [relation.participantDid, relation.ecosystemDid, relation.validatorParticipantDid].forEach((did) => {
       if (did) collected.add(did);

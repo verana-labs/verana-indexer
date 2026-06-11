@@ -110,7 +110,6 @@ export class SubscribeBroadcaster {
       try {
         ws.close(1008, result.error);
       } catch {
-        // best effort close
       }
       this.cleanupClient(ws);
       return;
@@ -201,7 +200,6 @@ export class SubscribeBroadcaster {
       try {
         ws.terminate();
       } catch {
-        // best effort
       }
       this.cleanupClient(ws);
     });
@@ -224,7 +222,6 @@ export class SubscribeBroadcaster {
           ws.terminate();
         }
       } catch {
-        // best effort
       }
     });
     this.clients.clear();
