@@ -131,11 +131,6 @@ export default class EcosystemDatabaseService extends BaseService {
                         ? (Number((raw as any).corporation_id ?? 0) || 0)
                         : (Number((existingTr as any)?.corporation_id ?? 0) || 0);
 
-                const corporationIdValue =
-                    ledgerHasKey(rawObj, "corporation_id")
-                        ? (Number((raw as any).corporation_id ?? 0) || 0)
-                        : (Number((existingTr as any)?.corporation_id ?? 0) || 0);
-
                 const basePayload: Record<string, unknown> = {
                     corporation_id: corporationIdValue,
                     did: ledgerHasKey(rawObj, "did") ? ((raw as any).did ?? null) : (existingTr?.did ?? null),
@@ -153,7 +148,6 @@ export default class EcosystemDatabaseService extends BaseService {
                         ? ((raw as any).language ?? null)
                         : (existingTr?.language ?? null),
                     active_version: activeVersionFromLedger,
-                    corporation_id: corporationIdValue,
                     height: blockHeightNum,
                 };
 
