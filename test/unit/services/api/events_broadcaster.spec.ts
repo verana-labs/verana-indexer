@@ -263,7 +263,7 @@ describe("SubscribeBroadcaster", () => {
 
     expect(envelope.events).toHaveLength(1);
     expect(envelope.events[0].did).toBe(did);
-    expect(envelope.events[0].event_type).toBe("StartPermissionVP");
+    expect(envelope.events[0].event_type).toBe("StartParticipantOP");
     expect(otherReceivedEvent).toBe(false);
 
     closeSocket(wsMatch);
