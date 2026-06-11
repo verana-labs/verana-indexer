@@ -244,8 +244,8 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
     const did = normalizeDid(content.did);
     const query = knex("participant_history").select("participant_id").where({ height });
     if (did) query.andWhere({ did });
-    const perm = await query.orderBy("participant_id", "desc").first();
-    return perm?.participant_id != null ? String(perm.participant_id) : undefined;
+    const pp = await query.orderBy("participant_id", "desc").first();
+    return pp?.participant_id != null ? String(pp.participant_id) : undefined;
   }
 
   return undefined;
