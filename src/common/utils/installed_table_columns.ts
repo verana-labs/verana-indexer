@@ -20,14 +20,15 @@ export function finalizeEcosystemHistoryInsert(
     }
   }
 
-  if (historyColumns.has("corporation")) {
+  if (historyColumns.has("corporation_id")) {
     const v =
-      (ecosystemRow.corporation as string | undefined) ??
-      (nextPayload.corporation as string | undefined) ??
-      null;
-    if (v != null) nextPayload.corporation = v;
+      (ecosystemRow.corporation_id as number | undefined) ??
+      (nextPayload.corporation_id as number | undefined) ??
+      0;
+    nextPayload.corporation_id = Number(v ?? 0) || 0;
   }
   delete nextPayload.controller;
+  delete nextPayload.corporation;
 
   if (historyColumns.has("deposit")) {
     const dep = nextPayload.deposit ?? ecosystemRow.deposit ?? 0;
@@ -53,26 +54,26 @@ async function tableColumnNames(db: KnexWithTable, table: string): Promise<Set<s
 
 export async function resolveEcosystemParticipantColumn(
   _db: KnexWithTable
-): Promise<"corporation"> {
-  return "corporation";
+): Promise<"corporation_id"> {
+  return "corporation_id";
 }
 
 export async function resolveEcosystemHistoryParticipantColumn(
   _db: KnexWithTable
-): Promise<"corporation"> {
-  return "corporation";
+): Promise<"corporation_id"> {
+  return "corporation_id";
 }
 
 export async function resolveParticipantsParticipantColumn(
   _db: KnexWithTable
-): Promise<"corporation"> {
-  return "corporation";
+): Promise<"corporation_id"> {
+  return "corporation_id";
 }
 
 export async function resolveParticipantHistoryParticipantColumn(
   _db: KnexWithTable
-): Promise<"corporation"> {
-  return "corporation";
+): Promise<"corporation_id"> {
+  return "corporation_id";
 }
 
 export async function resolveTrustDepositTableOwnerColumn(
@@ -104,22 +105,6 @@ export async function ensureDepositDefaultIfColumnExists(
   Object.assign(row, { deposit });
 }
 
-function firstNonEmptyString(
-  sources: Array<Record<string, unknown> | undefined>,
-  keys: string[]
-): string | undefined {
-  for (const src of sources) {
-    if (!src) continue;
-    for (const k of keys) {
-      const v = src[k];
-      if (v === null || v === undefined) continue;
-      const s = String(v).trim();
-      if (s !== "") return s;
-    }
-  }
-  return undefined;
-}
-
 export async function prepareEcosystemSnapshotRowForInsert(
   db: KnexWithTable,
   row: Record<string, unknown>,
@@ -128,16 +113,12 @@ export async function prepareEcosystemSnapshotRowForInsert(
   const next: Record<string, unknown> = { ...row };
   const info = await db("ecosystem_snapshot").columnInfo();
   const cols = new Set(Object.keys(info || {}));
-  if (!cols.has("corporation") && (await db.schema.hasColumn("ecosystem_snapshot", "corporation"))) {
-    cols.add("corporation");
-  }
-  const { ecosystemRow, rawLedger } = opts;
-  const raw = rawLedger as Record<string, unknown> | undefined;
-  const participant = firstNonEmptyString([ecosystemRow, raw], ["corporation"]);
-  const didStr = String(ecosystemRow.did ?? "").trim();
-  const pStr = participant ?? didStr;
+  const { ecosystemRow } = opts;
 
-  if (cols.has("corporation")) next.corporation = pStr;
+  if (cols.has("corporation_id")) {
+    next.corporation_id = Number(ecosystemRow.corporation_id ?? 0) || 0;
+  }
+  delete next.corporation;
 
   await ensureDepositDefaultIfColumnExists(db, "ecosystem_snapshot", next, ecosystemRow.deposit);
 

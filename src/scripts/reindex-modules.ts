@@ -61,6 +61,11 @@ const TABLES_TO_DROP = [
   "entity_participant_changes",
   "trust_results",
   "indexer_events",
+  "co_governance_framework_document",
+  "co_governance_framework_version",
+  "corporation_member",
+  "corporation_history",
+  "corporation",
 ];
 
 const SEQUENCES_TO_RESET = [
@@ -89,6 +94,11 @@ const SEQUENCES_TO_RESET = [
   "account_id_seq",
   "stats_id_seq",
   "indexer_events_id_seq",
+  "corporation_id_seq",
+  "corporation_member_id_seq",
+  "corporation_history_id_seq",
+  "co_governance_framework_version_id_seq",
+  "co_governance_framework_document_id_seq",
 ];
 
 async function waitForDatabase(config: Knex.Config, maxRetries = 30, delayMs = 2000): Promise<void> {

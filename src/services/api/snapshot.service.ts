@@ -105,17 +105,17 @@ async function fetchParticipantsAtHeight(args: {
   did: string;
   blockHeight: number;
   schemaEcosystemIds?: number[];
-  corporationAddresses: string[];
+  corporationIds: number[];
   tables: SnapshotTables;
 }): Promise<SnapshotRow[]> {
-  const { did, schemaEcosystemIds = [], corporationAddresses, tables, blockHeight } = args;
+  const { did, schemaEcosystemIds = [], corporationIds, tables, blockHeight } = args;
   if (!tables.hasParticipants) return [];
 
   const query = knex("participants")
     .select("*")
     .where((qb) => {
       qb.where("did", did);
-      if (corporationAddresses.length > 0) qb.orWhere((q) => q.whereIn("corporation", corporationAddresses));
+      if (corporationIds.length > 0) qb.orWhere((q) => q.whereIn("corporation_id", corporationIds));
       if (tables.hasCredentialSchemas && schemaEcosystemIds.length > 0) {
         const schemaQuery = knex("credential_schemas")
           .select("id")
@@ -144,12 +144,11 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     .map((row) => Number(row.id))
     .filter((id) => Number.isInteger(id) && id >= 0);
 
-  const corporationAddresses = Array.from(
+  const corporationIds = Array.from(
     new Set(
       ecosystems
-        .map((row) => row.corporation)
-        .filter((corp): corp is string => typeof corp === "string" && corp.trim().length > 0)
-        .map((corp) => corp.trim())
+        .map((row) => Number((row as { corporation_id?: unknown }).corporation_id ?? 0))
+        .filter((id) => Number.isInteger(id) && id > 0)
     )
   );
 
@@ -159,7 +158,7 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
       did,
       blockHeight,
       schemaEcosystemIds: ecosystemIds,
-      corporationAddresses,
+      corporationIds,
       tables,
     }),
   ]);

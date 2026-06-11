@@ -4,10 +4,8 @@ import { calculateParticipantState } from "../crawl-pp/pp_state_utils";
 
 function participantFromTrRow(row: Record<string, unknown> | null | undefined): string | null {
     if (!row) return null;
-    const v = row.corporation;
-    if (v === null || v === undefined) return null;
-    const s = String(v).trim();
-    return s === "" ? null : s;
+    const n = Number(row.corporation_id ?? 0) || 0;
+    return n > 0 ? String(n) : null;
 }
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || "").includes("pg");
@@ -427,9 +425,8 @@ export async function calculateCredentialSchemaStatsBatch(
         );
 
         const participantRow = participant as Record<string, unknown>;
-        const corpRaw = participantRow.corporation;
-        const corp =
-            corpRaw === null || corpRaw === undefined ? "" : String(corpRaw).trim();
+        const corpId = Number(participantRow.corporation_id ?? 0) || 0;
+        const corp = corpId > 0 ? String(corpId) : "";
         if (participantState === "ACTIVE" && corp) {
             activeParticipantsBySchema.get(schemaId)?.add(corp);
             if (participant.role === "ECOSYSTEM") activeParticipantsEcosystemBySchema.get(schemaId)?.add(corp);

@@ -29,7 +29,7 @@ export interface LedgerEcosystem {
   id?: number | string;
   ecosystem_id?: number | string;
   did?: string;
-  controller?: string;
+  corporation_id?: number;
   created?: string;
   modified?: string;
   archived?: string | null;
@@ -97,8 +97,7 @@ export function mapEcosystemToLedgerEcosystem(
   return {
     id: eco.id,
     did: eco.did,
-    corporation: eco.corporationId ?? null,
-    corporation_id: eco.corporationId ?? null,
+    corporation_id: Number(eco.corporationId ?? 0) || 0,
     created: dateToIsoOrNull(eco.created) ?? undefined,
     modified: dateToIsoOrNull(eco.modified) ?? undefined,
     archived: eco.archived ? (dateToIsoOrNull(eco.modified) ?? new Date().toISOString()) : null,

@@ -43,7 +43,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
       await knex.schema.createTable("ecosystem", (table) => {
         table.increments("id").primary();
         table.string("did").notNullable();
-        table.string("corporation").notNullable();
+        table.bigInteger("corporation_id").notNullable().defaultTo(0);
         table.timestamp("created").notNullable();
         table.timestamp("modified").notNullable();
         table.timestamp("archived").nullable();
@@ -85,7 +85,7 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
         table.integer("schema_id").notNullable();
         table.string("role").nullable();
         table.string("did").nullable();
-        table.string("corporation").nullable();
+        table.bigInteger("corporation_id").notNullable().defaultTo(0);
       });
       createdTables.push("participants");
     }
@@ -98,11 +98,11 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     }
   });
 
-  async function insertEcosystem(args: { did: string; corporation: string; height: number }): Promise<number> {
+  async function insertEcosystem(args: { did: string; corporationId: number; height: number }): Promise<number> {
     const [idRow] = await knex("ecosystem")
       .insert({
       did: args.did,
-      corporation: args.corporation,
+      corporation_id: args.corporationId,
       created: createdAt,
       modified: createdAt,
       archived: null,
@@ -163,13 +163,13 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     return schemaRowId;
   }
 
-  async function insertParticipant(args: { schemaId: number; did?: string | null; corporation: string }): Promise<number> {
+  async function insertParticipant(args: { schemaId: number; did?: string | null; corporationId: number }): Promise<number> {
     const [idRow] = await knex("participants")
       .insert({
         schema_id: args.schemaId,
         role: "ISSUER",
         did: args.did ?? null,
-        corporation: args.corporation,
+        corporation_id: args.corporationId,
       })
       .returning("id");
     const participantRowId = Number(typeof idRow === "object" ? (idRow as any).id : idRow);
@@ -250,9 +250,9 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
 
   it("returns DID-linked snapshot objects from current tables", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
-    const ecosystemId = await insertEcosystem({ did: didA, corporation: "cosmos1corp", height: baseHeight });
+    const ecosystemId = await insertEcosystem({ did: didA, corporationId: 1, height: baseHeight });
     const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, ecosystemId });
-    await insertParticipant({ schemaId: schemaRowId + 100000, did: didA, corporation: "cosmos1other-corp" });
+    await insertParticipant({ schemaId: schemaRowId + 100000, did: didA, corporationId: 999 });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
     expect(snap.count.ecosystems).toBe(1);
@@ -264,9 +264,9 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
 
   it("returns schema-linked participants", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
-    const ecosystemId = await insertEcosystem({ did: didA, corporation: "cosmos1corp", height: baseHeight });
+    const ecosystemId = await insertEcosystem({ did: didA, corporationId: 1, height: baseHeight });
     const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, ecosystemId });
-    await insertParticipant({ schemaId: schemaRowId, did: otherDid, corporation: "cosmos1other-corp" });
+    await insertParticipant({ schemaId: schemaRowId, did: otherDid, corporationId: 999 });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
     expect(snap.count.participants).toBe(1);
@@ -274,16 +274,16 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     expect(snap.participants[0]?.did).toBe(otherDid);
   });
 
-  it("returns corporation-linked participants from derived corporation addresses", async () => {
+  it("returns corporation-linked participants from derived corporation_id", async () => {
     const schemaIdSeed = 88000000 + Math.floor(Math.random() * 100000);
-    const corporation = "cosmos1derived-corp";
-    const ecosystemId = await insertEcosystem({ did: didA, corporation, height: baseHeight });
+    const corporationId = 4242;
+    const ecosystemId = await insertEcosystem({ did: didA, corporationId, height: baseHeight });
     const schemaRowId = await insertCredentialSchema({ schemaId: schemaIdSeed, ecosystemId });
-    await insertParticipant({ schemaId: schemaRowId + 100000, did: null, corporation });
+    await insertParticipant({ schemaId: schemaRowId + 100000, did: null, corporationId });
 
     const snap = await getDidSnapshotAtHeight({ did: didA, blockHeight: baseHeight });
     expect(snap.count.participants).toBe(1);
-    expect(snap.participants[0]?.corporation).toBe(corporation);
+    expect(Number(snap.participants[0]?.corporation_id)).toBe(corporationId);
     expect(snap.participants[0]?.schema_id).not.toBe(schemaRowId);
   });
 });

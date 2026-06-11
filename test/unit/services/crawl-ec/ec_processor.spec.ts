@@ -58,6 +58,7 @@ describe("EcosystemMessageProcessorService Tests", () => {
         content: {
           did: "did:example:insert",
           creator: "creator_test",
+          corporation_id: 1,
           aka: "Test EC",
           language: "en",
           height,
@@ -76,7 +77,7 @@ describe("EcosystemMessageProcessorService Tests", () => {
       .where({ did: "did:example:insert" })
       .first();
     expect(ec).toBeDefined();
-    expect(ec.corporation).toBe("creator_test");
+    expect(Number(ec.corporation_id)).toBe(1);
 
     const gfv = await knex("governance_framework_version")
       .where({ ecosystem_id: ec.id })
@@ -116,7 +117,7 @@ describe("EcosystemMessageProcessorService Tests", () => {
     const [ecosystemId] = await knex("ecosystem")
       .insert({
         did: "did:example:update",
-        corporation: "creator_update",
+        corporation_id: 2,
         created: timestamp,
         modified: timestamp,
         aka: "Old EC",
@@ -174,7 +175,7 @@ describe("EcosystemMessageProcessorService Tests", () => {
     const [ecosystemId] = await knex("ecosystem")
       .insert({
         did: "did:example:archive",
-        corporation: "creator_archive",
+        corporation_id: 3,
         created: timestamp,
         modified: timestamp,
         aka: "EC Archive",
