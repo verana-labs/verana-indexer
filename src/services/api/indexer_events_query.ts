@@ -207,12 +207,12 @@ const ID_ALIASES = {
 async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
   if (meta.module === "participant") {
     const participantId = readNumber(row.content, ["id", ...ID_ALIASES.participant]);
-    return participantId ? String(participantId) : undefined;
+    return participantId ? String(participantId) : resolveEntityIdFromDomain(row, meta);
   }
 
   if (meta.module === "credential-schema") {
     const schemaId = readNumber(row.content, ["id", ...ID_ALIASES.credentialSchema]);
-    return schemaId ? String(schemaId) : undefined;
+    return schemaId ? String(schemaId) : resolveEntityIdFromDomain(row, meta);
   }
 
   const ecosystemId =
