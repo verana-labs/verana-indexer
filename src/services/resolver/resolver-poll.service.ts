@@ -113,19 +113,10 @@ const ResolverPollService = {
         return Number.isFinite(h) ? Math.trunc(h) : 0;
       }
 
-      try {
-        await BlockCheckpoint.query().insert({ job_name: BULL_JOB_NAME.HANDLE_TRUST_RESOLVE, height: 0 });
-      } catch (err: unknown) {
-        const code =
-          (err as { nativeError?: { code?: string }; code?: string })?.nativeError?.code ??
-          (err as { code?: string })?.code;
-        if (code === "23505") {
-          const row = await BlockCheckpoint.query().where("job_name", BULL_JOB_NAME.HANDLE_TRUST_RESOLVE).first();
-          const h = Number(row?.height ?? 0);
-          return Number.isFinite(h) ? Math.trunc(h) : 0;
-        }
-        throw err;
-      }
+      await BlockCheckpoint.query()
+        .insert({ job_name: BULL_JOB_NAME.HANDLE_TRUST_RESOLVE, height: 0 })
+        .onConflict("job_name")
+        .ignore();
 
       const created = await BlockCheckpoint.query().where("job_name", BULL_JOB_NAME.HANDLE_TRUST_RESOLVE).first();
       return Number(created?.height ?? 0);
@@ -142,10 +133,7 @@ const ResolverPollService = {
     async processBlock(this: any, blockHeight: number): Promise<void> {
       if (!Number.isInteger(blockHeight) || blockHeight < 0) return;
       await resolveTrustForBlock(blockHeight);
-      await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockResolved`, {
-        height: blockHeight,
-        timestamp: new Date().toISOString(),
-      });
+      // TODO: broadcast resolved block when /v4/verifiable-trust/subscribe (IDX-VT-SUB-1) lands.
     },
 
     async pollOnce(this: any): Promise<void> {

@@ -169,9 +169,9 @@ export async function findHeightsWithTrustModuleMessages(fromExclusive: number, 
       AND t.height <= ?
       AND t.code = 0
       AND (
-        tm.type LIKE '/verana.tr%'
+        tm.type LIKE '/verana.ec%'
         OR tm.type LIKE '/verana.cs%'
-        OR tm.type LIKE '/verana.perm%'
+        OR tm.type LIKE '/verana.participant%'
       )
     ORDER BY t.height ASC
     `,
@@ -290,9 +290,9 @@ async function runPool<T>(items: T[], concurrency: number, fn: (item: T) => Prom
 
 const IMPACTED_DIDS_SQL = `
   SELECT DISTINCT d FROM (
-    SELECT did AS d FROM trust_registry_history WHERE height = ?
+    SELECT did AS d FROM ecosystem_history WHERE height = ?
     UNION ALL
-    SELECT did AS d FROM permission_history WHERE height = ? AND did IS NOT NULL
+    SELECT did AS d FROM participant_history WHERE height = ? AND did IS NOT NULL
   ) AS x
   WHERE d LIKE 'did:%'
   LIMIT ?

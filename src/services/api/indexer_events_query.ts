@@ -3,9 +3,11 @@ import {
   VeranaCredentialSchemaMessageTypes,
   VeranaDelegationMessageTypes,
   VeranaDiMessageTypes,
-  VeranaPermissionMessageTypes,
-  VeranaTrustRegistryMessageTypes,
+  VeranaParticipantMessageTypes,
+  VeranaEcosystemMessageTypes,
+  VeranaCorporationMessageTypes,
 } from "../../common/verana-message-types";
+import { extractController } from "../../common/utils/extract_controller";
 import { applyBlockHeightFilter, toIsoSeconds } from "./api_shared";
 import {
   collectDidsDeep,
@@ -17,7 +19,7 @@ import {
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
-  module: "trust-registry" | "credential-schema" | "permission" | "digital-identity" | "delegation";
+  module: "ecosystem" | "credential-schema" | "participant" | "digital-identity" | "delegation" | "corporation";
   action: string;
   messageType: string;
   blockHeight: number;
@@ -29,9 +31,11 @@ export type IndexerTxEvent = {
   relatedDids: string[];
   entityType?: string;
   entityId?: string;
-  trId?: string;
+  ecosystemId?: string;
   schemaId?: string;
-  permissionId?: string;
+  participantId?: string;
+  corporationId?: number;
+  relatedCorporationIds: number[];
   timestamp: string;
 };
 
@@ -52,9 +56,11 @@ export type IndexerEventRecord = {
     related_dids: string[];
     entity_type?: string;
     entity_id?: string;
-    tr_id?: string;
+    ecosystem_id?: string;
     schema_id?: string;
-    permission_id?: string;
+    participant_id?: string;
+    corporation_id?: number;
+    related_corporation_ids?: number[];
   };
 };
 
@@ -78,28 +84,28 @@ type EventMeta = {
 };
 
 const EVENT_META: Record<string, EventMeta> = {
-  [VeranaTrustRegistryMessageTypes.CreateTrustRegistry]: {
-    module: "trust-registry",
-    action: "CreateNewTrustRegistry",
-    entityType: "TrustRegistry",
+  [VeranaEcosystemMessageTypes.CreateEcosystem]: {
+    module: "ecosystem",
+    action: "CreateNewEcosystem",
+    entityType: "Ecosystem",
   },
-  [VeranaTrustRegistryMessageTypes.UpdateTrustRegistry]: {
-    module: "trust-registry",
-    action: "UpdateTrustRegistry",
-    entityType: "TrustRegistry",
+  [VeranaEcosystemMessageTypes.UpdateEcosystem]: {
+    module: "ecosystem",
+    action: "UpdateEcosystem",
+    entityType: "Ecosystem",
   },
-  [VeranaTrustRegistryMessageTypes.ArchiveTrustRegistry]: {
-    module: "trust-registry",
-    action: "ArchiveTrustRegistry",
-    entityType: "TrustRegistry",
+  [VeranaEcosystemMessageTypes.ArchiveEcosystem]: {
+    module: "ecosystem",
+    action: "ArchiveEcosystem",
+    entityType: "Ecosystem",
   },
-  [VeranaTrustRegistryMessageTypes.AddGovernanceFrameworkDoc]: {
-    module: "trust-registry",
+  [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: {
+    module: "ecosystem",
     action: "AddGovernanceFrameworkDocument",
     entityType: "GovernanceFrameworkDocument",
   },
-  [VeranaTrustRegistryMessageTypes.IncreaseGovernanceFrameworkVersion]: {
-    module: "trust-registry",
+  [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: {
+    module: "ecosystem",
     action: "IncreaseActiveGFVersion",
     entityType: "GovernanceFrameworkVersion",
   },
@@ -118,60 +124,60 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "ArchiveCredentialSchema",
     entityType: "CredentialSchema",
   },
-  [VeranaPermissionMessageTypes.StartPermissionVP]: {
-    module: "permission",
-    action: "StartPermissionVP",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.StartParticipantOP]: {
+    module: "participant",
+    action: "StartParticipantOP",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.CreateRootPermission]: {
-    module: "permission",
-    action: "CreateRootPermission",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.CreateRootParticipant]: {
+    module: "participant",
+    action: "CreateRootParticipant",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.SelfCreatePermission]: {
-    module: "permission",
-    action: "SelfCreatePermission",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.SelfCreateParticipant]: {
+    module: "participant",
+    action: "SelfCreateParticipant",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.RenewPermissionVP]: {
-    module: "permission",
-    action: "RenewPermissionVP",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.RenewParticipantOP]: {
+    module: "participant",
+    action: "RenewParticipantOP",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.SetPermissionVPToValidated]: {
-    module: "permission",
-    action: "SetPermissionVPToValidated",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.SetParticipantOPToValidated]: {
+    module: "participant",
+    action: "SetParticipantOPToValidated",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.AdjustPermission]: {
-    module: "permission",
-    action: "AdjustPermission",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.SetParticipantEffectiveUntil]: {
+    module: "participant",
+    action: "SetParticipantEffectiveUntil",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.RevokePermission]: {
-    module: "permission",
-    action: "RevokePermission",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.RevokeParticipant]: {
+    module: "participant",
+    action: "RevokeParticipant",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.SlashPermissionTrustDeposit]: {
-    module: "permission",
-    action: "SlashPermissionTrustDeposit",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.SlashParticipantTrustDeposit]: {
+    module: "participant",
+    action: "SlashParticipantTrustDeposit",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.RepayPermissionSlashedTrustDeposit]: {
-    module: "permission",
-    action: "RepayPermissionSlashedTrustDeposit",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit]: {
+    module: "participant",
+    action: "RepayParticipantSlashedTrustDeposit",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.CancelPermissionVPLastRequest]: {
-    module: "permission",
-    action: "CancelPermissionVPLastRequest",
-    entityType: "Permission",
+  [VeranaParticipantMessageTypes.CancelParticipantOPLastRequest]: {
+    module: "participant",
+    action: "CancelParticipantOPLastRequest",
+    entityType: "Participant",
   },
-  [VeranaPermissionMessageTypes.CreateOrUpdatePermissionSession]: {
-    module: "permission",
-    action: "CreateOrUpdatePermissionSession",
-    entityType: "PermissionSession",
+  [VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession]: {
+    module: "participant",
+    action: "CreateOrUpdateParticipantSession",
+    entityType: "ParticipantSession",
   },
   [VeranaDiMessageTypes.StoreDigest]: {
     module: "digital-identity",
@@ -188,91 +194,168 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "RevokeOperatorAuthorization",
     entityType: "OperatorAuthorization",
   },
+  [VeranaCorporationMessageTypes.CreateCorporation]: {
+    module: "corporation",
+    action: "CreateNewCorporation",
+    entityType: "Corporation",
+  },
+  [VeranaCorporationMessageTypes.UpdateCorporation]: {
+    module: "corporation",
+    action: "UpdateCorporation",
+    entityType: "Corporation",
+  },
 };
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
 
-function readNumber(content: unknown, keys: string[]): number | null {
+function readNumber(content: unknown, keys: readonly string[]): number | null {
   return readFirstPositiveInteger(content, keys);
 }
 
-function getEntityId(row: EventRow, meta: EventMeta): string | undefined {
-  if (meta.module === "permission") {
-    const permissionId = readNumber(row.content, ["id", "permission_id", "permissionId", "perm_id", "permId"]);
-    return permissionId ? String(permissionId) : undefined;
+const ID_ALIASES = {
+  ecosystem: ["ecosystem_id", "ecosystemId"],
+  credentialSchema: ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"],
+  participant: ["participant_id", "participantId"],
+  validatorParticipant: ["validator_participant_id", "validatorParticipantId"],
+  governanceFramework: ["gfv_id", "gfvId", "gfd_id", "gfdId"],
+} as const;
+
+async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
+  if (meta.module === "participant") {
+    const participantId = readNumber(row.content, ["id", ...ID_ALIASES.participant]);
+    return participantId ? String(participantId) : resolveEntityIdFromDomain(row, meta);
   }
 
   if (meta.module === "credential-schema") {
-    const schemaId = readNumber(row.content, ["id", "schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    return schemaId ? String(schemaId) : undefined;
+    const schemaId = readNumber(row.content, ["id", ...ID_ALIASES.credentialSchema]);
+    return schemaId ? String(schemaId) : resolveEntityIdFromDomain(row, meta);
   }
 
-  const trId =
-    readNumber(row.content, ["id", "tr_id", "trId", "trust_registry_id", "trustRegistryId"]) ??
-    readNumber(row.content, ["gfv_id", "gfvId", "gfd_id", "gfdId"]);
-  return trId ? String(trId) : undefined;
+  const ecosystemId =
+    readNumber(row.content, ["id", ...ID_ALIASES.ecosystem]) ??
+    readNumber(row.content, ID_ALIASES.governanceFramework);
+  return ecosystemId ? String(ecosystemId) : resolveEntityIdFromDomain(row, meta);
+}
+
+async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promise<string | undefined> {
+  const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
+  const height = Number(row.block_height);
+
+  if (meta.module === "ecosystem") {
+    const did = normalizeDid(content.did);
+    if (!did) return undefined;
+    const ec = await knex("ecosystem").select("id").where({ did }).first();
+    return ec?.id != null ? String(ec.id) : undefined;
+  }
+
+  if (meta.module === "credential-schema") {
+    const ecosystemId = readNumber(content, ID_ALIASES.ecosystem);
+    const query = knex("credential_schema_history").select("credential_schema_id").where({ height });
+    if (ecosystemId) query.andWhere({ ecosystem_id: ecosystemId });
+    const cs = await query.orderBy("credential_schema_id", "desc").first();
+    return cs?.credential_schema_id != null ? String(cs.credential_schema_id) : undefined;
+  }
+
+  if (meta.module === "participant") {
+    const did = normalizeDid(content.did);
+    const query = knex("participant_history").select("participant_id").where({ height });
+    if (did) query.andWhere({ did });
+    const pp = await query.orderBy("participant_id", "desc").first();
+    return pp?.participant_id != null ? String(pp.participant_id) : undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeRequestedDid(value: unknown): string | undefined {
   return normalizeDid(value);
 }
 
-async function loadTrustRegistryDid(trId: number | null | undefined): Promise<string | undefined> {
-  if (!trId) return undefined;
-  const row = await knex("trust_registry").select("did").where({ id: trId }).first();
-  return normalizeDid(row?.did);
+function toCorporationId(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+async function loadEcosystem(ecosystemId: number | null | undefined): Promise<{
+  did?: string;
+  corporationId?: number;
+}> {
+  if (!ecosystemId) return {};
+  const row = await knex("ecosystem").select("did", "corporation_id").where({ id: ecosystemId }).first();
+  return { did: normalizeDid(row?.did), corporationId: toCorporationId(row?.corporation_id) };
+}
+
+async function loadCorporation(opts: { did?: string; address?: string }): Promise<{
+  did?: string;
+  corporationId?: number;
+}> {
+  const query = knex("corporation").select("id", "did");
+  if (opts.address) query.where({ corporation: opts.address });
+  else if (opts.did) query.where({ did: opts.did });
+  else return {};
+  const row = await query.first();
+  if (!row) return {};
+  return { did: normalizeDid(row.did), corporationId: toCorporationId(row.id) };
 }
 
 async function loadSchemaRelation(schemaId: number | null | undefined): Promise<{
   schemaId?: string;
-  trId?: string;
-  trDid?: string;
+  ecosystemId?: string;
+  ecosystemDid?: string;
+  corporationId?: number;
 }> {
   if (!schemaId) return {};
   const schema = await knex("credential_schemas as cs")
-    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
+    .leftJoin("ecosystem as ec", "ec.id", "cs.ecosystem_id")
     .where("cs.id", schemaId)
-    .select("cs.id as schema_id", "cs.tr_id", "tr.did as tr_did")
+    .select("cs.id as schema_id", "cs.ecosystem_id", "ec.did as tr_did", "ec.corporation_id as corporation_id")
     .first();
   if (!schema) return { schemaId: String(schemaId) };
   return {
     schemaId: String(schema.schema_id ?? schemaId),
-    trId: schema.tr_id != null ? String(schema.tr_id) : undefined,
-    trDid: normalizeDid(schema.tr_did),
+    ecosystemId: schema.ecosystem_id != null ? String(schema.ecosystem_id) : undefined,
+    ecosystemDid: normalizeDid(schema.tr_did),
+    corporationId: toCorporationId(schema.corporation_id),
   };
 }
 
-async function loadPermissionRelation(permissionId: number | null | undefined): Promise<{
-  permissionId?: string;
-  permissionDid?: string;
+async function loadParticipantRelation(participantId: number | null | undefined): Promise<{
+  participantId?: string;
+  participantDid?: string;
   schemaId?: string;
-  trId?: string;
-  trDid?: string;
-  validatorPermissionDid?: string;
+  ecosystemId?: string;
+  ecosystemDid?: string;
+  validatorParticipantDid?: string;
+  corporationId?: number;
+  validatorCorporationId?: number;
 }> {
-  if (!permissionId) return {};
-  const perm = await knex("permissions as p")
+  if (!participantId) return {};
+  const participant = await knex("participants as p")
     .leftJoin("credential_schemas as cs", "cs.id", "p.schema_id")
-    .leftJoin("trust_registry as tr", "tr.id", "cs.tr_id")
-    .leftJoin("permissions as validator", "validator.id", "p.validator_perm_id")
-    .where("p.id", permissionId)
+    .leftJoin("ecosystem as ec", "ec.id", "cs.ecosystem_id")
+    .leftJoin("participants as validator", "validator.id", "p.validator_participant_id")
+    .where("p.id", participantId)
     .select(
-      "p.id as permission_id",
-      "p.did as permission_did",
+      "p.id as participant_id",
+      "p.did as participant_did",
       "p.schema_id",
-      "cs.tr_id",
-      "tr.did as tr_did",
-      "validator.did as validator_permission_did"
+      "p.corporation_id as corporation_id",
+      "cs.ecosystem_id",
+      "ec.did as tr_did",
+      "validator.did as validator_participant_did",
+      "validator.corporation_id as validator_corporation_id"
     )
     .first();
-  if (!perm) return { permissionId: String(permissionId) };
+  if (!participant) return { participantId: String(participantId) };
   return {
-    permissionId: String(perm.permission_id ?? permissionId),
-    permissionDid: normalizeDid(perm.permission_did),
-    schemaId: perm.schema_id != null ? String(perm.schema_id) : undefined,
-    trId: perm.tr_id != null ? String(perm.tr_id) : undefined,
-    trDid: normalizeDid(perm.tr_did),
-    validatorPermissionDid: normalizeDid(perm.validator_permission_did),
+    participantId: String(participant.participant_id ?? participantId),
+    participantDid: normalizeDid(participant.participant_did),
+    schemaId: participant.schema_id != null ? String(participant.schema_id) : undefined,
+    ecosystemId: participant.ecosystem_id != null ? String(participant.ecosystem_id) : undefined,
+    ecosystemDid: normalizeDid(participant.tr_did),
+    validatorParticipantDid: normalizeDid(participant.validator_participant_did),
+    corporationId: toCorporationId(participant.corporation_id),
+    validatorCorporationId: toCorporationId(participant.validator_corporation_id),
   };
 }
 
@@ -280,70 +363,88 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const meta = EVENT_META[row.message_type];
   if (!meta) return null;
 
-  const entityId = getEntityId(row, meta);
+  const entityId = await getEntityId(row, meta);
   const content = row.content && typeof row.content === "object" ? (row.content as Record<string, unknown>) : {};
   const collected = collectDidsDeep([row.sender, row.content]);
-  let trId: string | undefined;
+  let ecosystemId: string | undefined;
   let schemaId: string | undefined;
-  let permissionId: string | undefined;
+  let participantId: string | undefined;
+  let corporationId: number | undefined;
+  const relatedCorporationIds = new Set<number>();
   const explicitPrimaryDid = firstNormalizedDid([
     content.did,
-    content.trust_registry_did,
-    content.trustRegistryDid,
-    content.permission_did,
-    content.permissionDid,
+    content.ecosystem_did,
+    content.ecosystemDid,
     content.participant_did,
     content.participantDid,
     content.sender,
     row.sender,
   ]);
 
-  if (meta.module === "trust-registry") {
-    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId", "id"]);
-    trId = rawTrId ? String(rawTrId) : entityId;
-    const trDid = await loadTrustRegistryDid(rawTrId);
-    if (trDid) collected.add(trDid);
+  if (meta.module === "ecosystem") {
+    const rawEcosystemId = readNumber(row.content, [...ID_ALIASES.ecosystem, "id"]);
+    ecosystemId = rawEcosystemId ? String(rawEcosystemId) : entityId;
+    const ecosystem = await loadEcosystem(rawEcosystemId);
+    if (ecosystem.did) collected.add(ecosystem.did);
+    corporationId = ecosystem.corporationId;
   }
 
   if (meta.module === "credential-schema") {
-    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId", "id"]);
-    const rawTrId = readNumber(row.content, ["trust_registry_id", "trustRegistryId", "tr_id", "trId"]);
+    const rawSchemaId = readNumber(row.content, [...ID_ALIASES.credentialSchema, "id"]);
+    const rawEcosystemId = readNumber(row.content, ID_ALIASES.ecosystem);
     const relation = await loadSchemaRelation(rawSchemaId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : entityId);
-    trId = relation.trId ?? (rawTrId ? String(rawTrId) : undefined);
-    const trDid = relation.trDid ?? (await loadTrustRegistryDid(rawTrId));
-    if (trDid) collected.add(trDid);
+    ecosystemId = relation.ecosystemId ?? (rawEcosystemId ? String(rawEcosystemId) : undefined);
+    corporationId = relation.corporationId;
+    const ecosystem = relation.ecosystemDid ? { did: relation.ecosystemDid } : await loadEcosystem(rawEcosystemId);
+    if (ecosystem.did) collected.add(ecosystem.did);
+    if (corporationId === undefined && "corporationId" in ecosystem) {
+      corporationId = (ecosystem as { corporationId?: number }).corporationId;
+    }
   }
 
-  if (meta.module === "permission") {
-    const rawPermissionId = readNumber(row.content, ["permission_id", "permissionId", "perm_id", "permId", "id"]);
-    const rawSchemaId = readNumber(row.content, ["schema_id", "schemaId", "credential_schema_id", "credentialSchemaId"]);
-    const rawValidatorPermId = readNumber(row.content, ["validator_perm_id", "validatorPermId"]);
-    const relation = await loadPermissionRelation(rawPermissionId);
-    permissionId = relation.permissionId ?? (rawPermissionId ? String(rawPermissionId) : entityId);
+  if (meta.module === "participant") {
+    const rawParticipantId = readNumber(row.content, [...ID_ALIASES.participant, "id"]);
+    const rawSchemaId = readNumber(row.content, ID_ALIASES.credentialSchema);
+    const rawValidatorParticipantId = readNumber(row.content, ID_ALIASES.validatorParticipant);
+    const relation = await loadParticipantRelation(rawParticipantId);
+    participantId = relation.participantId ?? (rawParticipantId ? String(rawParticipantId) : entityId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
-    trId = relation.trId;
-    [relation.permissionDid, relation.trDid, relation.validatorPermissionDid].forEach((did) => {
+    ecosystemId = relation.ecosystemId;
+    corporationId = relation.corporationId;
+    if (relation.validatorCorporationId !== undefined) relatedCorporationIds.add(relation.validatorCorporationId);
+    [relation.participantDid, relation.ecosystemDid, relation.validatorParticipantDid].forEach((did) => {
       if (did) collected.add(did);
     });
-    if (rawSchemaId && !relation.trDid) {
+    if (rawSchemaId && !relation.ecosystemDid) {
       const schemaRelation = await loadSchemaRelation(rawSchemaId);
       schemaId = schemaId ?? schemaRelation.schemaId;
-      trId = trId ?? schemaRelation.trId;
-      if (schemaRelation.trDid) collected.add(schemaRelation.trDid);
+      ecosystemId = ecosystemId ?? schemaRelation.ecosystemId;
+      if (corporationId === undefined) corporationId = schemaRelation.corporationId;
+      if (schemaRelation.ecosystemDid) collected.add(schemaRelation.ecosystemDid);
     }
-    if (rawValidatorPermId) {
-      const validatorRelation = await loadPermissionRelation(rawValidatorPermId);
-      [validatorRelation.permissionDid, validatorRelation.trDid].forEach((did) => {
+    if (rawValidatorParticipantId) {
+      const validatorRelation = await loadParticipantRelation(rawValidatorParticipantId);
+      if (validatorRelation.corporationId !== undefined) relatedCorporationIds.add(validatorRelation.corporationId);
+      [validatorRelation.participantDid, validatorRelation.ecosystemDid].forEach((did) => {
         if (did) collected.add(did);
       });
     }
   }
 
+  if (meta.module === "corporation") {
+    const relation = await loadCorporation({
+      did: firstNormalizedDid([content.did]),
+      address: extractController(content),
+    });
+    corporationId = relation.corporationId;
+    if (relation.did) collected.add(relation.did);
+  }
+
   const relatedDids = uniqueNormalizedDids(collected);
   const primaryDid =
     explicitPrimaryDid ??
-    (meta.module === "permission" ? firstNormalizedDid(relatedDids) : undefined) ??
+    (meta.module === "participant" ? firstNormalizedDid(relatedDids) : undefined) ??
     firstNormalizedDid(relatedDids);
   if (!primaryDid) return null;
 
@@ -361,9 +462,11 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     relatedDids,
     entityType: meta.entityType,
     entityId,
-    trId,
+    ecosystemId,
     schemaId,
-    permissionId,
+    participantId,
+    corporationId,
+    relatedCorporationIds: [...relatedCorporationIds],
     timestamp: toIsoSeconds(row.timestamp),
   };
 }
@@ -391,9 +494,11 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
       related_dids: event.relatedDids,
       entity_type: event.entityType,
       entity_id: event.entityId,
-      tr_id: event.trId,
+      ecosystem_id: event.ecosystemId,
       schema_id: event.schemaId,
-      permission_id: event.permissionId,
+      participant_id: event.participantId,
+      corporation_id: event.corporationId,
+      related_corporation_ids: event.relatedCorporationIds,
     },
   };
 }
@@ -421,9 +526,19 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
           : [String(row.did)],
       entity_type: row.payload?.entity_type ?? row.payload?.entityType ?? row.entity_type ?? undefined,
       entity_id: row.payload?.entity_id ?? row.payload?.entityId ?? row.entity_id ?? undefined,
-      tr_id: row.payload?.tr_id ?? row.payload?.trId ?? undefined,
+      ecosystem_id: row.payload?.ecosystem_id ?? row.payload?.ecosystemId ?? undefined,
       schema_id: row.payload?.schema_id ?? row.payload?.schemaId ?? undefined,
-      permission_id: row.payload?.permission_id ?? row.payload?.permissionId ?? undefined,
+      participant_id: row.payload?.participant_id ?? row.payload?.participantId ?? undefined,
+      corporation_id: toCorporationId(row.payload?.corporation_id ?? row.payload?.corporationId),
+      related_corporation_ids: Array.isArray(row.payload?.related_corporation_ids)
+        ? row.payload.related_corporation_ids
+            .map((v: unknown) => Number(v))
+            .filter((n: number) => Number.isInteger(n) && n > 0)
+        : Array.isArray(row.payload?.relatedCorporationIds)
+          ? row.payload.relatedCorporationIds
+              .map((v: unknown) => Number(v))
+              .filter((n: number) => Number.isInteger(n) && n > 0)
+          : undefined,
     },
   };
 }

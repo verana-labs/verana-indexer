@@ -18,12 +18,12 @@ type QueryState = {
 };
 
 const tableHeights: Record<string, number[]> = {
-  trust_registry_history: [150],
+  ecosystem_history: [150],
   governance_framework_version_history: [],
   governance_framework_document_history: [],
   credential_schema_history: [],
-  permission_history: [],
-  permission_session_history: [],
+  participant_history: [],
+  participant_session_history: [],
   trust_deposit_history: [],
   module_params_history: [],
   block_checkpoint: [200],
@@ -132,15 +132,15 @@ describe("IndexerMetaService next_change_at", () => {
   });
 
   it("returns null when the next height is above current indexed checkpoint (reindex safety)", async () => {
-    const prevTrustRegistry = tableHeights.trust_registry_history;
+    const prevEcosystem = tableHeights.ecosystem_history;
     const prevCheckpoint = tableHeights.block_checkpoint;
     try {
-      tableHeights.trust_registry_history = [9999];
+      tableHeights.ecosystem_history = [9999];
       tableHeights.block_checkpoint = [200];
       const next = await service.getNextChangeAt(105);
       expect(next).toBeNull();
     } finally {
-      tableHeights.trust_registry_history = prevTrustRegistry;
+      tableHeights.ecosystem_history = prevEcosystem;
       tableHeights.block_checkpoint = prevCheckpoint;
     }
   });

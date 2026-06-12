@@ -484,7 +484,7 @@ export default class CrawlGenesisService extends BullableService {
                   code.code_info.code_hash,
                   'base64'
                 ).toString('hex'),
-                instantiate_permission: code.code_info.instantiate_config,
+                instantiate_participant: code.code_info.instantiate_config,
                 type: null,
                 status: null,
                 store_hash: '',

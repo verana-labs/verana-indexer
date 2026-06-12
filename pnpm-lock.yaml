@@ -72,8 +72,8 @@ importers:
         specifier: 3.30.6
         version: 3.30.6
       '@verana-labs/verana-types':
-        specifier: 0.10.1-dev.11
-        version: 0.10.1-dev.11(@cosmjs/proto-signing@0.29.5)(@cosmjs/stargate@0.31.3(debug@4.4.3))
+        specifier: 0.10.1-dev.13
+        version: 0.10.1-dev.13(@cosmjs/proto-signing@0.29.5)(@cosmjs/stargate@0.31.3(debug@4.4.3))
       '@verana-labs/verre':
         specifier: 0.3.0
         version: 0.3.0(web-streams-polyfill@3.3.3)
@@ -2596,8 +2596,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@verana-labs/verana-types@0.10.1-dev.11':
-    resolution: {integrity: sha512-Sq/QxSmplDZTnsRCMGETiQ0ZQxtn8NGuYHhV3teUr/Cq5YVoBylwkbxbvRHy1OsDXaSgQ6LH53heOMZ3B/LRkw==}
+  '@verana-labs/verana-types@0.10.1-dev.13':
+    resolution: {integrity: sha512-9spWjf8NPQlRTVf1ChGUGicym1iGQQiX2+g12HvwhVMPc3PIJV0960OV1pZXk7eXuDrF+w5Q3MRFJ2kaY1mhkg==}
     peerDependencies:
       '@cosmjs/proto-signing': ^0.32.3
       '@cosmjs/stargate': ^0.32.3
@@ -11290,7 +11290,7 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
-  '@verana-labs/verana-types@0.10.1-dev.11(@cosmjs/proto-signing@0.29.5)(@cosmjs/stargate@0.31.3(debug@4.4.3))':
+  '@verana-labs/verana-types@0.10.1-dev.13(@cosmjs/proto-signing@0.29.5)(@cosmjs/stargate@0.31.3(debug@4.4.3))':
     dependencies:
       '@cosmjs/proto-signing': 0.29.5
       '@cosmjs/stargate': 0.31.3(debug@4.4.3)

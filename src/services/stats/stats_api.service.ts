@@ -120,7 +120,7 @@ export default class StatsAPIService extends BaseService {
       id: { type: "number", integer: true, positive: true, optional: true, convert: true },
       granularity: { type: "enum", values: ["HOUR", "DAY", "MONTH"], optional: true },
       timestamp: { type: "string", optional: true },
-      entity_type: { type: "enum", values: ["GLOBAL", "TRUST_REGISTRY", "CREDENTIAL_SCHEMA", "PERMISSION"], optional: true },
+      entity_type: { type: "enum", values: ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"], optional: true },
       entity_id: { type: "string", optional: true },
     },
   })
@@ -223,7 +223,7 @@ export default class StatsAPIService extends BaseService {
       granularity: { type: "enum", values: ["HOUR", "DAY", "MONTH"], optional: true },
       timestamp_from: { type: "string", convert: true },
       timestamp_until: { type: "string", convert: true },
-      entity_type: { type: "enum", values: ["GLOBAL", "TRUST_REGISTRY", "CREDENTIAL_SCHEMA", "PERMISSION"], convert: true },
+      entity_type: { type: "enum", values: ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"], convert: true },
       entity_ids: { type: "any", optional: true },
       result_type: { type: "enum", values: ["BUCKETS", "TOTAL", "BUCKETS_AND_TOTAL"], optional: true, default: "BUCKETS_AND_TOTAL" },
     },

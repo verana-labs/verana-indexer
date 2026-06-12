@@ -8,7 +8,7 @@ import BaseService from "../../base/base.service";
 import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
-import { eventsBroadcaster } from "./events_broadcaster";
+import { subscribeBroadcaster } from "./subscribe_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import { isUnknownMessageError } from "./api_shared";
 
@@ -367,21 +367,26 @@ function createRoute(
         "GET list": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
         "GET params": `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
       }),
-      createRoute("/verana/tr/v1", {
-        "GET get/:tr_id": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getTrustRegistry`,
-        "GET list": `${SERVICE.V1.TrustRegistryDatabaseService.path}.listTrustRegistries`,
-        "GET params": `${SERVICE.V1.TrustRegistryDatabaseService.path}.getParams`,
-        "GET history/:tr_id": `${SERVICE.V1.TrustRegistryHistoryService.path}.getTRHistory`,
+      createRoute("/verana/ec/v1", {
+        "GET get/:ecosystem_id": `${SERVICE.V1.EcosystemDatabaseService.path}.getEcosystem`,
+        "GET list": `${SERVICE.V1.EcosystemDatabaseService.path}.listEcosystems`,
+        "GET params": `${SERVICE.V1.EcosystemDatabaseService.path}.getParams`,
+        "GET history/:ecosystem_id": `${SERVICE.V1.EcosystemHistoryService.path}.getTRHistory`,
       }),
-      createRoute("/verana/perm/v1", {
-        "GET get/:id": `${SERVICE.V1.PermAPIService.path}.getPermission`,
-        "GET list": `${SERVICE.V1.PermAPIService.path}.listPermissions`,
-        "GET pending/flat": `${SERVICE.V1.PermAPIService.path}.pendingFlat`,
-        "GET beneficiaries": `${SERVICE.V1.PermAPIService.path}.findBeneficiaries`,
-        "GET history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionHistory`,
-        "GET permission-session/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSession`,
-        "GET permission-sessions": `${SERVICE.V1.PermAPIService.path}.listPermissionSessions`,
-        "GET permission-session-history/:id": `${SERVICE.V1.PermAPIService.path}.getPermissionSessionHistory`,
+      createRoute("/verana/co/v1", {
+        "GET get/:id": `${SERVICE.V1.CorporationApiService.path}.getCorporation`,
+        "GET list": `${SERVICE.V1.CorporationApiService.path}.listCorporations`,
+        "GET history/:id": `${SERVICE.V1.CorporationApiService.path}.getCorporationHistory`,
+      }),
+      createRoute("/verana/pp/v1", {
+        "GET get/:id": `${SERVICE.V1.ParticipantAPIService.path}.getParticipant`,
+        "GET list": `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
+        "GET pending/flat": `${SERVICE.V1.ParticipantAPIService.path}.pendingFlat`,
+        "GET beneficiaries": `${SERVICE.V1.ParticipantAPIService.path}.findBeneficiaries`,
+        "GET history/:id": `${SERVICE.V1.ParticipantAPIService.path}.getParticipantHistory`,
+        "GET participant-session/:id": `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSession`,
+        "GET participant-sessions": `${SERVICE.V1.ParticipantAPIService.path}.listParticipantSessions`,
+        "GET participant-session-history/:id": `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSessionHistory`,
       }),
       createRoute("/verana/metrics/v1", {
         "GET all": `${SERVICE.V1.MetricsApiService.path}.getAll`,
@@ -437,16 +442,16 @@ export default class ApiService extends BaseService {
     const server = (this as unknown as { server?: Server }).server;
     if (server) {
       attachRequestTimingHook(server);
-      eventsBroadcaster.setLogger(this.logger);
-      eventsBroadcaster.initialize(server);
-      this.logger.info("✅ WebSocket events broadcaster initialized on /verana/indexer/v1/events");
+      subscribeBroadcaster.setLogger(this.logger);
+      subscribeBroadcaster.initialize(server);
+      this.logger.info("WebSocket subscribe broadcaster initialized on /v4/indexer/subscribe");
     } else {
-      this.logger.warn("⚠️ HTTP server not found, WebSocket events broadcaster not initialized");
+      this.logger.warn("HTTP server not found, WebSocket subscribe broadcaster not initialized");
     }
   }
 
   async stopped() {
-    eventsBroadcaster.close();
-    this.logger.info("🔌 WebSocket events broadcaster closed");
+    subscribeBroadcaster.close();
+    this.logger.info("🔌 WebSocket broadcasters closed");
   }
 }

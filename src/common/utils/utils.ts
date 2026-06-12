@@ -233,7 +233,7 @@ export default class Utils {
   }
 }
 
-export function mapPermissionType(input: string | number): string {
+export function mapParticipantType(input: string | number): string {
   if (typeof input === 'number') {
     const typeMap: Record<number, string> = {
       0: "UNSPECIFIED",
@@ -250,31 +250,31 @@ export function mapPermissionType(input: string | number): string {
   const upperInput = String(input).toUpperCase();
   
   switch (upperInput) {
-    case "PERMISSION_TYPE_ISSUER":
+    case "PARTICIPANT_TYPE_ISSUER":
     case "1":
     case "ISSUER":
       return "ISSUER";
-    case "PERMISSION_TYPE_VERIFIER":
+    case "PARTICIPANT_TYPE_VERIFIER":
     case "2":
     case "VERIFIER":
       return "VERIFIER";
-    case "PERMISSION_TYPE_ECOSYSTEM":
+    case "PARTICIPANT_TYPE_ECOSYSTEM":
     case "5":
     case "ECOSYSTEM":
       return "ECOSYSTEM";
-    case "PERMISSION_TYPE_HOLDER":
+    case "PARTICIPANT_TYPE_HOLDER":
     case "6":
     case "HOLDER":
       return "HOLDER";
-    case "PERMISSION_TYPE_ISSUER_GRANTOR":
+    case "PARTICIPANT_TYPE_ISSUER_GRANTOR":
     case "3":
     case "ISSUER_GRANTOR":
       return "ISSUER_GRANTOR";
-    case "PERMISSION_TYPE_VERIFIER_GRANTOR":
+    case "PARTICIPANT_TYPE_VERIFIER_GRANTOR":
     case "4":
     case "VERIFIER_GRANTOR":
       return "VERIFIER_GRANTOR";
-    case "PERMISSION_TYPE_UNSPECIFIED":
+    case "PARTICIPANT_TYPE_UNSPECIFIED":
     case "0":
     case "UNSPECIFIED":
       return "UNSPECIFIED";
@@ -284,13 +284,13 @@ export function mapPermissionType(input: string | number): string {
 }
 
 
-export function normalizePermissionEmptyStringsToNull(obj: Record<string, any>): Record<string, any> {
+export function normalizeParticipantEmptyStringsToNull(obj: Record<string, any>): Record<string, any> {
   if (!obj || typeof obj !== "object") return obj;
 
-  const PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS: string[] = [];
+  const PARTICIPANT_API_EMPTY_STRING_TO_NULL_KEYS: string[] = [];
 
   const normalized: Record<string, any> = { ...obj };
-  for (const key of PERMISSION_API_EMPTY_STRING_TO_NULL_KEYS) {
+  for (const key of PARTICIPANT_API_EMPTY_STRING_TO_NULL_KEYS) {
     if (Object.prototype.hasOwnProperty.call(normalized, key) && normalized[key] === "") {
       normalized[key] = null;
     }

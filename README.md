@@ -8,9 +8,9 @@ It not only indexes blocks, transactions, and accounts from Cosmos SDK-based blo
 
 While Horoscope V2 provides the base crawling and indexing capabilities, the Verana Indexer’s scope is broader:
 
-- **Verana-Exclusive Integration** – Adapted to Verana’s governance, trust registries, credential schemas, and permissions.
+- **Verana-Exclusive Integration** – Adapted to Verana’s governance, ecosystems, credential schemas, and participants.
 - **Trust Resolution Support** – Integrates with the Trust Resolver to validate credentials and return concise Proof-of-Trust results.
-- **Indexed trust state** – Exposes trust registries, schemas, permissions, and deposits via HTTP APIs for wallets and applications.
+- **Indexed trust state** – Exposes ecosystems, schemas, participants, and deposits via HTTP APIs for wallets and applications.
 - **Off-chain Enriched Index** – Bridges minimal on-chain records with rich off-chain metadata for high-performance queries.
 
 ## Overview Architecture
@@ -31,7 +31,7 @@ flowchart LR
     subgraph INDEXER["Verana Indexer"]
         API["API Gateway"]
         CRAWLERS["Crawler Services<br/>(block, tx, account, etc.)"]
-        PROCESSORS["Verana Processors<br/>(TR, CS, Perm, TD)"]
+        PROCESSORS["Verana Processors<br/>(EC, CS, Participant, TD)"]
         DB_SERVICES["Database Services<br/>(Query APIs)"]
     end
 
@@ -89,11 +89,11 @@ A list of services is shown below:
 - [**crawl-proposal**](./docs/services/crawl-proposal/crawl-proposal.md): get proposal and its status
 - [**crawl-validator**](./docs/services/crawl-validator/crawl-validator.md): get validator and their power event, signing info
 - [**crawl-genesis**](./docs/services/crawl-genesis/crawl-genesis.md): get state from genesis chunk
-- [**crawl-tr**](./docs/services/crawl-tr/crawl-tr.md): Crawl Trust Registry, governance frameworks, and track version changes.
+- [**crawl-ec**](./docs/services/crawl-ec/crawl-ec.md): Crawl Ecosystem, governance frameworks, and track version changes.
 - [**crawl-cs**](./docs/services/crawl-cs//crawl-cs.md): Crawl all credential schema–related transactions and update their state in the database.
 - [**crawl-cs height-sync refactor**](./docs/services/crawl-cs/cs-height-sync.md): Height-based Credential Schema synchronization path (ledger-backed CS sync).
-- [**crawl-perm**](./docs/services/crawl-perm/crawl-perm.md): Crawl all permissions related to Trust Registry and Credential Schema transactions, and synchronize their current state in the database.
-- [**crawl-perm height-sync refactor**](./docs/services/crawl-perm/crawl-perm.md#permission-height-sync-refactor): Height-based Permission synchronization path (ledger-backed Permission sync with runtime verification).
+- [**crawl-pp**](./docs/services/crawl-pp/crawl-pp.md): Crawl all participants related to Ecosystem and Credential Schema transactions, and synchronize their current state in the database.
+- [**crawl-pp height-sync refactor**](./docs/services/crawl-pp/crawl-pp.md#participant-height-sync-refactor): Height-based Participant synchronization path (ledger-backed Participant sync with runtime verification).
 - [**crawl-td**](./docs/services/crawl-td/crawl-td.md):This service is responsible for crawling and indexing all Trust Deposit states in the database to keep the data up to date.
 - [**handle-vote**](./docs/services/handle-vote/handle-vote.md): parse vote message
 
@@ -206,17 +206,17 @@ Beyond the required variables, the indexer lets you fine‑tune most runtime beh
 - `METRICS_ENABLED`, `METRICS_TYPE`, `METRICS_PORT`, `METRICS_PATH` – Control Prometheus/Console metrics exposure.
 - `TRACING_ENABLED`, `TRACING_TYPE`, `TRACING_ZIPKIN_URL`, `TRACING_COLORS`, `TRACING_WIDTH`, `TRACING_GUAGEWIDTH` – Trace exporters (Console/Zipkin) and formatting.
 
-**Height Sync Mode (CS & Trust Registry)**
+**Height Sync Mode (CS & Ecosystem)**
 - `USE_HEIGHT_SYNC_CS` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Credential Schema (CS) synchronization by block height. When `false`, the indexer uses the legacy CS message-processor path.
-- `USE_HEIGHT_SYNC_TR` – Set to `true` to enable the Trust Registry (TR) height-sync reconciliation path. When `true`, TR message handlers will reconcile their state against the authoritative ledger `/verana/tr/v1/get/{id}` response at the processed block height and then compute indexer-only aggregates (participants, stats, ecosystem/network counters). When `false` or unset, the indexer uses the legacy TR message-processor logic only.
-- See `docs/services/crawl-cs/cs-height-sync.md` for the CS flow, routing, and verification logs. A corresponding TR height-sync document can be added under `docs/services/crawl-tr/` following the same structure.
+- `USE_HEIGHT_SYNC_TR` – Set to `true` to enable the Ecosystem (EC) height-sync reconciliation path. When `true`, EC message handlers will reconcile their state against the authoritative ledger `/verana/ec/v1/get/{id}` response at the processed block height and then compute indexer-only aggregates (participants, stats, ecosystem/network counters). When `false` or unset, the indexer uses the legacy EC message-processor logic only.
+- See `docs/services/crawl-cs/cs-height-sync.md` for the CS flow, routing, and verification logs. A corresponding EC height-sync document can be added under `docs/services/crawl-ec/` following the same structure.
 
-**Permission (PERM) Height-Sync Refactor**
-- `USE_HEIGHT_SYNC_PERM` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Permission synchronization by block height. When `false`, the indexer uses the legacy message-by-message Permission processor path.
+**Participant (PP) Height-Sync Refactor**
+- `USE_HEIGHT_SYNC_PARTICIPANT` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Participant synchronization by block height. When `false`, the indexer uses the legacy message-by-message Participant processor path.
 - Runtime verification is enabled in this mode:
   - immediate compare at processed block height
   - rolling multi-height verification window (3 heights)
-- See `docs/services/crawl-perm/crawl-perm.md` for flow and verification details.
+- See `docs/services/crawl-pp/crawl-pp.md` for flow and verification details.
 
 **Trust Deposit (TD) Height-Sync Refactor**
 - `USE_HEIGHT_SYNC_TD` – Set to `true` (recommended/default in `.env.example`) to enable ledger-backed Trust Deposit synchronization by block height (GET `/verana/td/v1/get/{id}` with `x-cosmos-block-height`). When unset or `false`, the indexer uses the legacy event/message processor path.
@@ -425,7 +425,7 @@ Both scripts use optimized Node.js flags:
 ### Process Flow
 
 1. **Connect to database** (waits up to 60s)
-2. **Drop module tables** (tables including transaction, trust_registry, trust_deposits, permissions, etc.)
+2. **Drop module tables** (tables including transaction, ecosystem, trust_deposits, participants, etc.)
 3. **Clear checkpoints** (backs up migration checkpoints, sets crawl:block to highest block)
 4. **Run migrations** (recreates all tables)
 5. **Reset sequences** (IDs start from 1)
@@ -465,114 +465,114 @@ For detailed information about the reindexing process, architecture, and trouble
 
 ## Real-Time Event API (WebSocket)
 
-The Verana Indexer exposes a single **WebSocket** path that supports two concerns at once: **trust-resolver pipeline signals** (`block-indexed` and `block-resolved`), and an optional **DID-scoped stream** plus HTTP replay for persisted indexer events.
+The Verana Indexer streams persisted indexer events over a **WebSocket** following the `IDX-INDEXER-SUB-1` spec.
+The client opens the socket, sends a JSON `subscribe` control message, and then receives one
+`block` envelope per processed block. HTTP replay for catch-up lives at `GET /verana/indexer/v1/events`.
 
-**Base URL:** `ws://localhost:3001/verana/indexer/v1/events` (WebSocket only — use a WebSocket client, not a plain HTTP GET).
+**WebSocket URL:** `ws://localhost:3001/v4/indexer/subscribe` (use a WebSocket client, not a plain HTTP GET).
 
-### Global stream (no `did` query)
+### Connect / `ready`
 
-After `connected`, global subscribers (clients that did **not** pass `did=`) receive:
+Immediately after the upgrade, before any `subscribe`, the server sends a `ready` message. `block`
+is the height of the **next** block it will deliver (`lastProcessedBlock + 1`); use `block - 1` as the
+catch-up cursor. `blockIntervalMs` is the expected block interval (treat `2 ×` it as the liveness timeout).
 
-2. **`block-indexed`** — transaction / indexer pipeline finished for that height; refresh DID directory, credentials, modules, etc.
-3. **`block-resolved`** — trust resolver finished materializing that height (when trust resolution is enabled and has caught up).
+```json
+{ "type": "ready", "block": 123457, "blockTime": "2025-01-15T10:30:00Z", "blockIntervalMs": 6000 }
+```
 
+### Subscribe control message
+
+The first control message MUST be a `subscribe`. Both filters are optional:
+
+```json
+{ "action": "subscribe", "dids": ["did:web:agent.example"], "corporationId": 42 }
+```
+
+- **`dids[]`** — union of DIDs: delivers events for any resource whose primary DID is in the list
+  (`Corporation.did`, `Ecosystem.did`, `Participant.did`), plus one-hop validator-tree matches.
+- **`corporationId`** — delivers every event owned by that Corporation (its entities + one-hop validator match).
+- **Both present** → **intersection** (events matching both). **Both absent** → **wildcard** (every event).
+
+Send `{ "action": "unsubscribe" }` (or close the socket) to stop. A new `subscribe` replaces the active filter.
+
+### Block message (server → client)
+
+One `block` envelope is sent **per processed block**, in strictly increasing `block` order. `events[]` is
+empty when nothing matches — an empty envelope still acts as a per-block **heartbeat** for gap detection.
+Each entry is an `IndexerTransactionEvent`, ordered by `(payload.tx_index, payload.message_index)`.
 
 ```json
 {
-  "type": "block-indexed",
-  "height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
+  "type": "block",
+  "block": 123457,
+  "blockTime": "2025-01-15T10:31:00Z",
+  "events": [
+    {
+      "type": "indexer-event",
+      "event_type": "StartParticipantOP",
+      "did": "did:web:agent.example",
+      "block_height": 123457,
+      "tx_hash": "A1B2C3",
+      "timestamp": "2025-01-15T10:31:00Z",
+      "payload": {
+        "module": "participant",
+        "action": "StartParticipantOP",
+        "message_type": "/verana.pp.v1.MsgStartParticipantOP",
+        "tx_index": 0,
+        "message_index": 0,
+        "sender": "verana1...",
+        "related_dids": ["did:web:agent.example"],
+        "entity_type": "Participant",
+        "corporation_id": 42,
+        "related_corporation_ids": []
+      }
+    }
+  ]
 }
 ```
 
-```json
-{
-  "type": "block-resolved",
-  "height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
-}
-```
+### Catch-up / replay (HTTP)
 
-### DID room (`?did=<DID>`)
-
-Connect with `ws://localhost:3001/verana/indexer/v1/events?did=<URL-encoded-DID>`. The first message is `connected` and includes `did` and `block_height`. Persisted transaction-level events for that DID are pushed live as `indexer-event` messages (same snake_case fields as the HTTP replay API).
-
-```json
-{
-  "type": "connected",
-  "did": "did:web:agent.example",
-  "block_height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
-}
-```
-
-```json
-{
-  "type": "indexer-event",
-  "event_type": "StartPermissionVP",
-  "did": "did:web:agent.example",
-  "block_height": 123457,
-  "tx_hash": "A1B2C3",
-  "timestamp": "2025-01-15T10:31:00Z",
-  "payload": {
-    "module": "permission",
-    "action": "StartPermissionVP",
-    "message_type": "/verana.perm.v1.MsgStartPermissionVP",
-    "related_dids": ["did:web:agent.example"]
-  }
-}
-```
-
-Replay missed DID events over HTTP:
+The stream does not deliver history on connect. Bootstrap (or resume after a gap) by replaying persisted
+events over HTTP, then connect the WebSocket and `subscribe`:
 
 ```bash
 curl "http://localhost:3001/verana/indexer/v1/events?did=did:web:agent.example&after_block_height=123456&limit=100"
 ```
 
-Manual checks:
-
-```bash
-node --import=tsx test/manual/test-websocket.ts
-DID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts
-```
-
 ### Client examples
 
-**Global listener (indexing + trust stages):**
+**Quick check with `wscat`:**
 
-```javascript
-const ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');
+```bash
+# wildcard (every event + heartbeats)
+npx wscat -c ws://localhost:3001/v4/indexer/subscribe -x '{"action":"subscribe"}'
 
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.type === 'block-indexed') {
-    console.log(`Block ${data.height} indexed at ${data.timestamp}`);
-    fetchIndexedData();
-  }
-  if (data.type === 'block-resolved') {
-    console.log(`Block ${data.height} trust-resolved at ${data.timestamp}`);
-    fetchTrustData();
-  }
-};
+# filter by DID(s)
+npx wscat -c ws://localhost:3001/v4/indexer/subscribe -x '{"action":"subscribe","dids":["did:web:agent.example"]}'
 ```
 
-**DID room + replay:**
+**DID-scoped listener + replay:**
 
 ```javascript
 const did = 'did:web:agent.example';
 let lastSeenBlockHeight = 0;
-const ws = new WebSocket(`wss://idx.testnet.verana.network/verana/indexer/v1/events?did=${encodeURIComponent(did)}`);
+const ws = new WebSocket('wss://idx.testnet.verana.network/v4/indexer/subscribe');
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
 
-  if (data.type === 'connected') {
+  if (data.type === 'ready') {
     await fetch(`/verana/indexer/v1/events?did=${encodeURIComponent(did)}&after_block_height=${lastSeenBlockHeight}`);
+    ws.send(JSON.stringify({ action: 'subscribe', dids: [did] }));
   }
 
-  if (data.type === 'indexer-event') {
-    console.log(data.event_type, data.block_height, data.payload);
-    lastSeenBlockHeight = Math.max(lastSeenBlockHeight, data.block_height);
+  if (data.type === 'block') {
+    for (const ev of data.events) {
+      console.log(ev.event_type, ev.block_height, ev.payload);
+    }
+    lastSeenBlockHeight = Math.max(lastSeenBlockHeight, data.block);
   }
 };
 ```

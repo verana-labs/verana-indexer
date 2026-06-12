@@ -40,14 +40,14 @@ const TABLES_TO_DROP = [
   "credential_schemas",
   "governance_framework_document_history",
   "governance_framework_version_history",
-  "trust_registry_history",
+  "ecosystem_history",
   "governance_framework_document",
   "governance_framework_version",
-  "trust_registry",
-  "permission_session_history",
-  "permission_history",
-  "permission_sessions",
-  "permissions",
+  "ecosystem",
+  "participant_session_history",
+  "participant_history",
+  "participant_sessions",
+  "participants",
   "trust_deposit_history",
   "trust_deposits",
   "module_params_history",
@@ -57,10 +57,15 @@ const TABLES_TO_DROP = [
   "account_statistics",
   "daily_statistics",
   "account",
-  "permission_scheduled_flips",
+  "participant_scheduled_flips",
   "entity_participant_changes",
   "trust_results",
   "indexer_events",
+  "co_governance_framework_document",
+  "co_governance_framework_version",
+  "corporation_member",
+  "corporation_history",
+  "corporation",
 ];
 
 const SEQUENCES_TO_RESET = [
@@ -70,14 +75,14 @@ const SEQUENCES_TO_RESET = [
   "credential_schemas_id_seq",
   "governance_framework_document_history_id_seq",
   "governance_framework_version_history_id_seq",
-  "trust_registry_history_id_seq",
+  "ecosystem_history_id_seq",
   "governance_framework_document_id_seq",
   "governance_framework_version_id_seq",
-  "trust_registry_id_seq",
-  "permission_session_history_id_seq",
-  "permission_history_id_seq",
-  "permission_sessions_id_seq",
-  "permissions_id_seq",
+  "ecosystem_id_seq",
+  "participant_session_history_id_seq",
+  "participant_history_id_seq",
+  "participant_sessions_id_seq",
+  "participants_id_seq",
   "trust_deposit_history_id_seq",
   "trust_deposits_id_seq",
   "module_params_history_id_seq",
@@ -89,6 +94,11 @@ const SEQUENCES_TO_RESET = [
   "account_id_seq",
   "stats_id_seq",
   "indexer_events_id_seq",
+  "corporation_id_seq",
+  "corporation_member_id_seq",
+  "corporation_history_id_seq",
+  "co_governance_framework_version_id_seq",
+  "co_governance_framework_document_id_seq",
 ];
 
 async function waitForDatabase(config: Knex.Config, maxRetries = 30, delayMs = 2000): Promise<void> {
@@ -548,17 +558,17 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   "20231226102519_add_balances_to_account": ["account_balance"],
   "20250915120000_create_module_params": ["module_params"],
   "20250919_create_credential_schema": ["credential_schemas"],
-  "20250905_create_trust_registry_tables": ["trust_registry", "governance_framework_version", "governance_framework_document"],
-  "20240924_create_permissions_table": ["permissions"],
+  "20250905_create_ecosystem_tables": ["ecosystem", "governance_framework_version", "governance_framework_document"],
+  "20240924_create_participants_table": ["participants"],
   "0123_create_trust_deposit_tables": ["trust_deposits"],
   "20250919_create_credential_schema_history": ["credential_schema_history"],
-  "20250922_create_trust_registry_history": ["trust_registry_history", "governance_framework_version_history", "governance_framework_document_history"],
-  "20251125000000_create_permission_history": ["permission_history"],
-  "20251125000001_create_permission_session_history": ["permission_session_history"],
+  "20250922_create_ecosystem_history": ["ecosystem_history", "governance_framework_version_history", "governance_framework_document_history"],
+  "20251125000000_create_participant_history": ["participant_history"],
+  "20251125000001_create_participant_session_history": ["participant_session_history"],
   "20251125000002_create_trust_deposit_history": ["trust_deposit_history"],
   "20251125000003_create_module_params_history": ["module_params_history"],
   "20260202020000_create_global_metrics": ["global_metrics"],
-  "20260317000000_add_permission_flips": ["permission_scheduled_flips", "permissions"],
+  "20260317000000_add_participant_flips": ["participant_scheduled_flips", "participants"],
   "20260420000000_create_indexer_events": ["indexer_events"],
   "partition-transaction-table": ["transaction"],
   "20260402000000_create_trust_results": ["trust_results"],
@@ -566,7 +576,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
 };
 
 const ALTER_MIGRATIONS = [
-  "20260226000000_add_permissions_lookup_index_for_perm_list",
+  "20260226000000_add_participants_lookup_index_for_participant_list",
   "20260402000000_create_trust_results",
 ];
 
@@ -620,23 +630,23 @@ async function runMigrations(db: Knex): Promise<void> {
       "20231226102519_add_balances_to_account",
       "20250915120000_create_module_params",
       "20250919_create_credential_schema",
-      "20250905_create_trust_registry_tables",
-      "20240924_create_permissions_table",
+      "20250905_create_ecosystem_tables",
+      "20240924_create_participants_table",
       "0123_create_trust_deposit_tables",
       "20250919_create_credential_schema_history",
-      "20250922_create_trust_registry_history",
-      "20260314000000_trust_registry_blockchain_id_and_snapshots",
-      "20251125000000_create_permission_history",
-      "20251125000001_create_permission_session_history",
+      "20250922_create_ecosystem_history",
+      "20260314000000_ecosystem_blockchain_id_and_snapshots",
+      "20251125000000_create_participant_history",
+      "20251125000001_create_participant_session_history",
       "20251125000002_create_trust_deposit_history",
       "20251125000003_create_module_params_history",
       "20260202020000_create_global_metrics",
       "20251124120000_add_height_to_credential_schema_history",
       "20251125113000_add_height_indexes_to_history_tables",
-      "20251210000000_add_permission_statistics",
-      "20250115000000_add_permission_new_attributes",
+      "20251210000000_add_participant_statistics",
+      "20250115000000_add_participant_new_attributes",
       "20260305000000_add_participant_role_counters",
-      "20260126000000_add_trust_registry_statistics",
+      "20260126000000_add_ecosystem_statistics",
       "20260126000002_add_credential_schema_statistics",
       "20260420000000_create_indexer_events"
     ];
@@ -726,13 +736,13 @@ async function runMigrations(db: Knex): Promise<void> {
             if (!tableExists) {
               shouldClear = true;
             }
-          } else if (recordedName.includes("permission") && !recordedName.includes("history")) {
-            const tableExists = await checkTableExists(db, "permissions");
+          } else if (recordedName.includes("participant") && !recordedName.includes("history")) {
+            const tableExists = await checkTableExists(db, "participants");
             if (!tableExists) {
               shouldClear = true;
             }
-          } else if (recordedName.includes("trust_registry") && !recordedName.includes("history")) {
-            const tableExists = await checkTableExists(db, "trust_registry");
+          } else if (recordedName.includes("ecosystem") && !recordedName.includes("history")) {
+            const tableExists = await checkTableExists(db, "ecosystem");
             if (!tableExists) {
               shouldClear = true;
             }
@@ -819,21 +829,21 @@ async function runMigrations(db: Knex): Promise<void> {
         throw new Error(`Tables still missing after migrations: ${tablesAfterMigration.join(", ")}`);
       }
       
-      const hasParticipantsColumn = await db.schema.hasColumn("permissions", "participants");
-      const hasParticipantsEcosystemColumn = await db.schema.hasColumn("permissions", "participants_ecosystem");
+      const hasParticipantsColumn = await db.schema.hasColumn("participants", "participants");
+      const hasParticipantsEcosystemColumn = await db.schema.hasColumn("participants", "participants_ecosystem");
       if (hasParticipantsColumn && hasParticipantsEcosystemColumn) {
-        console.log("   ✓ New permission attributes (participants + role counters + slash stats) verified in permissions table");
+        console.log("   ✓ New participant attributes (participants + role counters + slash stats) verified in participants table");
       } else {
-        console.warn("   ⚠ Warning: participant columns missing in permissions table after migrations");
+        console.warn("   ⚠ Warning: participant columns missing in participants table after migrations");
         if (!hasParticipantsColumn) console.warn("     - Missing: participants");
         if (!hasParticipantsEcosystemColumn) console.warn("     - Missing: participants_ecosystem");
       }
 
-      const hasTrustRegistryParticipantsColumn = await db.schema.hasColumn("trust_registry", "participants");
-      if (hasTrustRegistryParticipantsColumn) {
-        console.log("   ✓ New trust registry statistics attributes (participants, active_schemas, weight, etc.) verified in trust_registry table");
+      const hasEcosystemParticipantsColumn = await db.schema.hasColumn("ecosystem", "participants");
+      if (hasEcosystemParticipantsColumn) {
+        console.log("   ✓ New trust registry statistics attributes (participants, active_schemas, weight, etc.) verified in ecosystem table");
       } else {
-        console.warn("   ⚠ Warning: participants column not found in trust_registry table after migrations");
+        console.warn("   ⚠ Warning: participants column not found in ecosystem table after migrations");
       }
     } catch (migrateError: unknown) {
       const err = migrateError as Error;
@@ -951,16 +961,16 @@ async function runMigrations(db: Knex): Promise<void> {
       console.log("  ✓ All tables verified and recreated successfully");
     }
     
-    const permissionsTableExists = await checkTableExists(db, "permissions");
-    if (permissionsTableExists) {
-      const hasParticipants = await db.schema.hasColumn("permissions", "participants");
-      const hasEcosystemSlashEvents = await db.schema.hasColumn("permissions", "ecosystem_slash_events");
-      const hasNetworkSlashEvents = await db.schema.hasColumn("permissions", "network_slash_events");
+    const participantsTableExists = await checkTableExists(db, "participants");
+    if (participantsTableExists) {
+      const hasParticipants = await db.schema.hasColumn("participants", "participants");
+      const hasEcosystemSlashEvents = await db.schema.hasColumn("participants", "ecosystem_slash_events");
+      const hasNetworkSlashEvents = await db.schema.hasColumn("participants", "network_slash_events");
       
       if (hasParticipants && hasEcosystemSlashEvents && hasNetworkSlashEvents) {
-        console.log("  ✓ Permission table has all new attributes (participants, ecosystem_slash_events, network_slash_events, etc.)");
+        console.log("  ✓ Participant table has all new attributes (participants, ecosystem_slash_events, network_slash_events, etc.)");
       } else {
-        console.warn("  ⚠ Warning: Permission table is missing some new attributes:");
+        console.warn("  ⚠ Warning: Participant table is missing some new attributes:");
         if (!hasParticipants) console.warn("     - Missing: participants");
         if (!hasEcosystemSlashEvents) console.warn("     - Missing: ecosystem_slash_events");
         if (!hasNetworkSlashEvents) console.warn("     - Missing: network_slash_events");
@@ -968,13 +978,13 @@ async function runMigrations(db: Knex): Promise<void> {
       }
     }
 
-    const trustRegistryTableExists = await checkTableExists(db, "trust_registry");
-    if (trustRegistryTableExists) {
-      const hasParticipants = await db.schema.hasColumn("trust_registry", "participants");
-      const hasActiveSchemas = await db.schema.hasColumn("trust_registry", "active_schemas");
-      const hasWeight = await db.schema.hasColumn("trust_registry", "weight");
-      const hasEcosystemSlashEvents = await db.schema.hasColumn("trust_registry", "ecosystem_slash_events");
-      const hasNetworkSlashEvents = await db.schema.hasColumn("trust_registry", "network_slash_events");
+    const ecosystemTableExists = await checkTableExists(db, "ecosystem");
+    if (ecosystemTableExists) {
+      const hasParticipants = await db.schema.hasColumn("ecosystem", "participants");
+      const hasActiveSchemas = await db.schema.hasColumn("ecosystem", "active_schemas");
+      const hasWeight = await db.schema.hasColumn("ecosystem", "weight");
+      const hasEcosystemSlashEvents = await db.schema.hasColumn("ecosystem", "ecosystem_slash_events");
+      const hasNetworkSlashEvents = await db.schema.hasColumn("ecosystem", "network_slash_events");
       
       if (hasParticipants && hasActiveSchemas && hasWeight && hasEcosystemSlashEvents && hasNetworkSlashEvents) {
         console.log("  ✓ Trust registry table has all new statistics attributes (participants, active_schemas, archived_schemas, weight, issued, verified, slash stats, etc.)");
@@ -1324,7 +1334,7 @@ async function verifyBlocksTable(db: Knex): Promise<void> {
     if (!isStepComplete('indexes')) {
       console.log("Step X: Applying index migration (if columns exist)...");
       try {
-        const migrationFile = await importMigrationByName("20260203000000_add_indexes_permissions_history");
+        const migrationFile = await importMigrationByName("20260203000000_add_indexes_participants_history");
         if (migrationFile && typeof migrationFile.up === "function") {
           await migrationFile.up(db);
           console.log("  Index migration applied (or skipped for missing columns).");
