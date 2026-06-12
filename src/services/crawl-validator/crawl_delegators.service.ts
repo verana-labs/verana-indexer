@@ -229,8 +229,6 @@ export default class CrawlDelegatorsService extends BullableService {
         height: oldestTransactionMessage[0].id - 1,
       });
 
-      // checkpoint-init may insert this same row concurrently on startup;
-      // ignore the conflict, then re-read the canonical row.
       await BlockCheckpoint.query()
         .insert(checkpointDelegator)
         .onConflict('job_name')
