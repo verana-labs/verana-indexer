@@ -10,13 +10,11 @@ export function toIso(value: unknown): string | undefined {
 }
 
 export function formatTimestamp(rawTimestamp: any): string {
-    const d = toDate(rawTimestamp);
-    if (d) return d.toISOString();
-    return String(rawTimestamp);
+    return toIso(rawTimestamp) ?? String(rawTimestamp);
 }
 
 
-export function addYearsToDate(dateStr: string | undefined, years: number | number): any {
+export function addYearsToDate(dateStr: string | undefined, years: string | number): any {
     if (!dateStr) return null;
     const date = new Date(dateStr);
     const yearsToAdd = typeof years === 'string' ? parseInt(years, 10) : years;

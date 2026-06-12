@@ -97,12 +97,6 @@ function computeSri(algorithm: string, canonicalJson: string): string {
   return `${hashAlg}-${digest}`;
 }
 
-function formatDeposit(n: unknown): string {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "0";
-  return `${v}uvna`;
-}
-
 function toParticipantChainLink(p: Record<string, unknown>): ParticipantChainLink {
   const id = Number(p.id);
   const state = String(p.participant_state ?? p.participantState ?? "").toUpperCase() || "UNKNOWN";
@@ -110,7 +104,7 @@ function toParticipantChainLink(p: Record<string, unknown>): ParticipantChainLin
     participant_id: Number.isFinite(id) ? id : 0,
     type: String(p.role ?? ""),
     did: (p.did as string) ?? (p.grantee as string) ?? null,
-    deposit: formatDeposit(p.deposit),
+    deposit: toCoin(p.deposit),
     participant_state: state,
     effective_from: p.effective_from != null ? String(p.effective_from) : p.effective != null ? String(p.effective) : null,
     effective_until:
@@ -584,7 +578,7 @@ export class TrustApiService extends BaseService {
   }
 
   @Action({
-    rest: "POST /resolve",
+    rest: "POST /v4/verifiable-trust/resolve",
     params: {
       did: { type: "string" },
       corporation: { type: "boolean", optional: true },

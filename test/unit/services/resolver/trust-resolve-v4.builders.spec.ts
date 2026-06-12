@@ -238,7 +238,7 @@ describe("buildEcsCredentials", () => {
     expect(out[0].credentialSubject).not.toHaveProperty("issuer");
   });
 
-  it("still surfaces the credential with 0 ids when no permission is indexed", async () => {
+  it("still surfaces the credential with 0 ids when no participant is indexed", async () => {
     const out = await buildEcsCredentials({ service });
     expect(out[0]).toMatchObject({
       ecsSchema: "ServiceCredential",

@@ -162,10 +162,10 @@ function safeParse(s: string): unknown {
   }
 }
 
-async function buildGovernanceFramework(trId: number, activeVersion: number | null | undefined) {
+async function buildGovernanceFramework(ecosystemId: number, activeVersion: number | null | undefined) {
   if (activeVersion == null) return undefined;
   const gfv = (await knex("governance_framework_version")
-    .where({ ecosystem_id: trId, version: activeVersion })
+    .where({ ecosystem_id: ecosystemId, version: activeVersion })
     .first()) as { id: number; version: number; active_since?: Date | string } | undefined;
   if (!gfv) return undefined;
 
@@ -184,10 +184,10 @@ async function buildGovernanceFramework(trId: number, activeVersion: number | nu
 }
 
 async function buildEcosystemSchemas(
-  trId: number,
+  ecosystemId: number,
   includeArchived: boolean
 ): Promise<Array<Record<string, unknown>>> {
-  const q = knex("credential_schemas").where({ ecosystem_id: trId });
+  const q = knex("credential_schemas").where({ ecosystem_id: ecosystemId });
   if (!includeArchived) q.whereNull("archived");
   const rows = (await q.orderBy("id", "asc")) as Array<Record<string, unknown>>;
 
@@ -209,30 +209,30 @@ async function buildEcosystemSchemas(
 }
 
 /**
- * Builds `ecosystems[]` for the ecosystems the DID controls (trust_registry
+ * Builds `ecosystems[]` for the ecosystems the DID controls (`ecosystem`
  * rows whose `did` equals the resolved DID).
  */
 export async function buildEcosystems(
   did: string,
   opts: EcosystemsOptions
 ): Promise<Array<Record<string, unknown>>> {
-  const q = knex("trust_registry").where({ did });
+  const q = knex("ecosystem").where({ did });
   if (!opts.includeArchived) q.whereNull("archived");
   const rows = (await q.orderBy("id", "asc")) as Array<Record<string, unknown>>;
   if (rows.length === 0) return [];
 
   const out: Array<Record<string, unknown>> = [];
   for (const row of rows) {
-    const trId = Number(row.id);
+    const ecosystemId = Number(row.id);
     const entry: Record<string, unknown> = {
-      id: trId,
-      corporationId: 0,
+      id: ecosystemId,
+      corporationId: Number.isFinite(Number(row.corporation_id)) ? Number(row.corporation_id) : 0,
       archived: row.archived != null,
     };
-    const egf = await buildGovernanceFramework(trId, row.active_version as number | null);
+    const egf = await buildGovernanceFramework(ecosystemId, row.active_version as number | null);
     if (egf) entry.egf = egf;
     if (opts.credentialSchemas.include) {
-      entry.credentialSchemas = await buildEcosystemSchemas(trId, opts.credentialSchemas.includeArchived);
+      entry.credentialSchemas = await buildEcosystemSchemas(ecosystemId, opts.credentialSchemas.includeArchived);
     }
     const pbr = participantsByRole(row);
     if (pbr) entry.participants = pbr;
