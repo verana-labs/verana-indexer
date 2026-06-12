@@ -11,7 +11,6 @@ import { detectStartMode } from "../../common/utils/start_mode_detector";
 import { runHeightSyncParticipant } from "../../modules/pp-height-sync/pp_height_sync_service";
 import type { ParticipantMessagePayload } from "../../modules/pp-height-sync/pp_height_sync_helpers";
 import {
-  extractImpactedParticipantIds,
   extractStartParticipantOpNewParticipantId,
 } from "../../modules/pp-height-sync/pp_height_sync_helpers";
 
@@ -115,9 +114,11 @@ export default class ParticipantProcessorService extends BullableService {
             || msg.type === VeranaParticipantMessageTypes.SelfCreateParticipant)
           && (payload as any)?.id == null
         ) {
-          const impacted = extractImpactedParticipantIds(msg as ParticipantMessagePayload);
-          if (impacted.length === 1) {
-            (payload as any).id = impacted[0];
+          const newId = extractStartParticipantOpNewParticipantId(
+            msg as ParticipantMessagePayload
+          );
+          if (newId != null) {
+            (payload as any).id = newId;
           }
         }
         if (
