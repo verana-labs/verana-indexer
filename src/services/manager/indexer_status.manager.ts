@@ -23,6 +23,7 @@ export interface IndexerStatus {
   };
   stoppedReason?: string;
   lastProcessedBlock?: number;
+  lastBlockTime?: string;
   blockchainApiHealthy?: boolean;
   blockchainApiLastCheckAt?: string;
 }
@@ -103,6 +104,7 @@ class IndexerStatusManager {
   public async getDetailedStatus(): Promise<IndexerStatus> {
     const base = this.getStatus();
     let lastProcessedBlock: number | undefined;
+    let lastBlockTime: string | undefined;
     try {
       const row = await knex("block_checkpoint")
         .where("job_name", BULL_JOB_NAME.CRAWL_BLOCK)
@@ -112,10 +114,26 @@ class IndexerStatusManager {
     } catch {
       // ignore
     }
+    if (lastProcessedBlock != null) {
+      try {
+        const blockRow = await knex("block")
+          .where("height", lastProcessedBlock)
+          .select("time")
+          .first();
+        if (blockRow?.time != null) {
+          lastBlockTime = blockRow.time instanceof Date
+            ? blockRow.time.toISOString()
+            : new Date(blockRow.time).toISOString();
+        }
+      } catch {
+        // ignore
+      }
+    }
     const monitor = getBlockchainHealthMonitorStatus();
     return {
       ...base,
       lastProcessedBlock,
+      lastBlockTime,
       blockchainApiHealthy: monitor.running ? monitor.isHealthy : undefined,
       blockchainApiLastCheckAt: monitor.lastCheckAt,
     };

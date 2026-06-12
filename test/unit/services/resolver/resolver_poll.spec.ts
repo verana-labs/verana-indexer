@@ -1,5 +1,4 @@
 import { ServiceBroker } from "moleculer";
-import { SERVICE } from "../../../../src/common";
 
 jest.mock("../../../../src/services/manager/indexer_status.manager", () => ({
   indexerStatusManager: {
@@ -97,7 +96,7 @@ describe("ResolverPollService", () => {
   });
 
   describe("pollOnce", () => {
-    it("runs pipeline for new heights, advances checkpoint, emits block-resolved", async () => {
+    it("runs pipeline for new heights, advances checkpoint", async () => {
       const { ResolverPollService } = await import("../../../../src/services/resolver/resolver-poll.service");
       const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
 
@@ -114,15 +113,11 @@ describe("ResolverPollService", () => {
       expect(TrustResolve.resolveTrustForBlock).toHaveBeenCalledWith(10);
       expect(mockBlockCheckpointQuery.insert).toHaveBeenCalled();
       expect(mockBlockCheckpointQuery.merge).toHaveBeenCalled();
-      expect(broker.call).toHaveBeenCalledWith(
-        `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockResolved`,
-        expect.objectContaining({ height: 10, timestamp: expect.any(String) })
-      );
     });
   });
 
   describe("handleTrustResolveJob", () => {
-    it("invokes block resolution and emits block-resolved", async () => {
+    it("invokes block resolution", async () => {
       const [{ ResolverPollService }, TrustResolve] = await Promise.all([
         import("../../../../src/services/resolver/resolver-poll.service"),
         import("../../../../src/services/resolver/trust-resolve"),
@@ -131,13 +126,6 @@ describe("ResolverPollService", () => {
       mockBlockCheckpointQuery.first.mockResolvedValue({ height: 1 });
 
       const broker = new ServiceBroker({ logger: false });
-      broker.createService({
-        name: SERVICE.V1.IndexerEventsService.key,
-        version: 1,
-        actions: {
-          broadcastBlockResolved: async () => ({ ok: true }),
-        },
-      });
       const resolver: any = broker.createService(ResolverPollService);
 
       await broker.start();

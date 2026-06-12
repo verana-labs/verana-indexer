@@ -93,10 +93,13 @@ export default class CheckpointInitService extends BullableService {
 
       for (const jobName of missingJobs) {
         try {
-          const checkpoint = await BlockCheckpoint.query().insert({
-            job_name: jobName,
-            height: startBlock,
-          });
+          await BlockCheckpoint.query()
+            .insert({
+              job_name: jobName,
+              height: startBlock,
+            })
+            .onConflict('job_name')
+            .ignore();
 
           createdCheckpoints.push({
             job_name: jobName,
@@ -104,18 +107,12 @@ export default class CheckpointInitService extends BullableService {
           });
 
           this.logger.info(
-            `Created checkpoint for ${jobName} at height ${startBlock}`
+            `Ensured checkpoint for ${jobName} at height ${startBlock}`
           );
         } catch (error: any) {
-          if (error?.code === '23505' || error?.constraint === 'block_checkpoint_job_name_unique') {
-            this.logger.info(
-              ` Checkpoint for ${jobName} already exists (race condition handled)`
-            );
-          } else {
-            this.logger.error(
-              `❌ Failed to create checkpoint for ${jobName}: ${error?.message || error}`
-            );
-          }
+          this.logger.error(
+            `❌ Failed to ensure checkpoint for ${jobName}: ${error?.message || error}`
+          );
         }
       }
 

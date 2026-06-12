@@ -5,7 +5,7 @@ export async function up(knex: Knex): Promise<void> {
     table.bigIncrements("id").primary();
     table.enum("granularity", ["HOUR", "DAY", "MONTH"]).notNullable();
     table.timestamp("timestamp", { useTz: true }).notNullable();
-    table.enum("entity_type", ["GLOBAL", "TRUST_REGISTRY", "CREDENTIAL_SCHEMA", "PERMISSION"]).notNullable();
+    table.enum("entity_type", ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"]).notNullable();
     table.bigInteger("entity_id").nullable();
 
     table.bigInteger("cumulative_participants").defaultTo(0).notNullable();

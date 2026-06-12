@@ -132,8 +132,14 @@ export default class MigrateDataEventTableJob extends BullableService {
       const newBlockCheckPoint = new BlockCheckpoint();
       newBlockCheckPoint.height = config.migrationEventToPartition.startId;
       newBlockCheckPoint.job_name = BULL_JOB_NAME.CP_MIGRATE_DATA_EVENT_TABLE;
-      await BlockCheckpoint.query().insert(newBlockCheckPoint);
-      currentCheckPointJob = newBlockCheckPoint;
+      await BlockCheckpoint.query()
+        .insert(newBlockCheckPoint)
+        .onConflict('job_name')
+        .ignore();
+      currentCheckPointJob =
+        (await BlockCheckpoint.query()
+          .where('job_name', BULL_JOB_NAME.CP_MIGRATE_DATA_EVENT_TABLE)
+          .first()) ?? newBlockCheckPoint;
     } else {
       currentCheckPointJob = blockCheckpointMigrate;
     }
