@@ -999,7 +999,7 @@ export class TrustApiService extends BaseService {
           schema_id: schemaId,
           vtjsc_id: vtjscId,
           deposit: toCoin(p.deposit),
-          perm_state: permState,
+          perm_state: participantState,
           effective_from: p.effective_from ?? p.effective ?? null,
           effective_until: p.effective_until ?? p.expiration ?? null,
         });

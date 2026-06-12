@@ -72,7 +72,7 @@ function normalizeRole(type: unknown): ParticipantRole | null {
 }
 
 /**
- * Builds `participations[]` from the `permissions` table for the resolved DID,
+ * Builds `participations[]` from the `participants` table for the resolved DID,
  * filtered to the requested participant states.
  */
 export async function buildParticipations(
@@ -82,18 +82,18 @@ export async function buildParticipations(
 ): Promise<Array<Record<string, unknown>>> {
   const stateSet = new Set(states.length > 0 ? states : ["ACTIVE"]);
 
-  const rows = (await knex("permissions").where({ did }).orderBy("id", "asc")) as Array<
+  const rows = (await knex("participants").where({ did }).orderBy("id", "asc")) as Array<
     Record<string, unknown>
   >;
   if (rows.length === 0) return [];
 
   const schemaIds = [...new Set(rows.map((r) => Number(r.schema_id)).filter((n) => Number.isFinite(n)))];
-  const schemaToTr = new Map<number, number>();
+  const schemaToEcosystemId = new Map<number, number>();
   if (schemaIds.length > 0) {
     const csRows = (await knex("credential_schemas")
-      .select("id", "tr_id")
-      .whereIn("id", schemaIds)) as Array<{ id: number; tr_id: number }>;
-    for (const cs of csRows) schemaToTr.set(Number(cs.id), Number(cs.tr_id));
+      .select("id", "ecosystem_id")
+      .whereIn("id", schemaIds)) as Array<{ id: number; ecosystem_id: number }>;
+    for (const cs of csRows) schemaToEcosystemId.set(Number(cs.id), Number(cs.ecosystem_id));
   }
 
   const out: Array<Record<string, unknown>> = [];
@@ -104,7 +104,7 @@ export async function buildParticipations(
     if (!stateSet.has(state)) continue;
 
     const schemaId = Number(row.schema_id);
-    const ecosystemId = schemaToTr.get(schemaId);
+    const ecosystemId = schemaToEcosystemId.get(schemaId);
     const isEcosystem = role === "ECOSYSTEM";
 
     const entry: Record<string, unknown> = {
@@ -117,8 +117,8 @@ export async function buildParticipations(
       weight: toCoin(row.weight ?? row.deposit),
       validatorParticipantId: isEcosystem
         ? null
-        : row.validator_perm_id != null
-          ? Number(row.validator_perm_id)
+        : row.validator_participant_id != null
+          ? Number(row.validator_participant_id)
           : 0,
     };
 
@@ -165,7 +165,7 @@ function safeParse(s: string): unknown {
 async function buildGovernanceFramework(trId: number, activeVersion: number | null | undefined) {
   if (activeVersion == null) return undefined;
   const gfv = (await knex("governance_framework_version")
-    .where({ tr_id: trId, version: activeVersion })
+    .where({ ecosystem_id: trId, version: activeVersion })
     .first()) as { id: number; version: number; active_since?: Date | string } | undefined;
   if (!gfv) return undefined;
 
@@ -187,7 +187,7 @@ async function buildEcosystemSchemas(
   trId: number,
   includeArchived: boolean
 ): Promise<Array<Record<string, unknown>>> {
-  const q = knex("credential_schemas").where({ tr_id: trId });
+  const q = knex("credential_schemas").where({ ecosystem_id: trId });
   if (!includeArchived) q.whereNull("archived");
   const rows = (await q.orderBy("id", "asc")) as Array<Record<string, unknown>>;
 
@@ -332,7 +332,7 @@ function ecsSchemaVersionFromId(schemaJson: unknown): string {
 }
 
 function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
-  const { schemaType: _schemaType, issuer: _issuer, ...subject } = cred;
+  const { schemaType, issuer, ...subject } = cred;
   return subject;
 }
 
@@ -344,24 +344,24 @@ type EcsSchemaLink = {
 };
 
 async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string): Promise<EcsSchemaLink | null> {
-  const perms = (await knex("permissions")
+  const participants = (await knex("participants")
     .where({ did: subjectDid, type: "HOLDER" })
     .select("id", "schema_id")) as Array<{ id: number; schema_id: number }>;
-  if (perms.length === 0) return null;
+  if (participants.length === 0) return null;
 
-  const schemaIds = [...new Set(perms.map((p) => Number(p.schema_id)).filter((n) => Number.isFinite(n)))];
+  const schemaIds = [...new Set(participants.map((p) => Number(p.schema_id)).filter((n) => Number.isFinite(n)))];
   if (schemaIds.length === 0) return null;
   const schemas = (await knex("credential_schemas")
     .whereIn("id", schemaIds)
-    .select("id", "tr_id", "json_schema")) as Array<{ id: number; tr_id: number; json_schema: unknown }>;
+    .select("id", "ecosystem_id", "json_schema")) as Array<{ id: number; ecosystem_id: number; json_schema: unknown }>;
 
-  for (const p of perms) {
+  for (const p of participants) {
     const cs = schemas.find((s) => Number(s.id) === Number(p.schema_id));
     if (cs && parseSchemaJson(cs.json_schema)?.title === ecsSchemaTitle) {
       return {
         participantId: Number(p.id) || 0,
         credentialSchemaId: Number(cs.id) || 0,
-        ecosystemId: Number(cs.tr_id) || 0,
+        ecosystemId: Number(cs.ecosystem_id) || 0,
         ecsSchemaVersion: ecsSchemaVersionFromId(cs.json_schema),
       };
     }
@@ -371,7 +371,7 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
 
 async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId: number): Promise<number> {
   if (!issuerDid || credentialSchemaId <= 0) return 0;
-  const row = (await knex("permissions")
+  const row = (await knex("participants")
     .where({ did: issuerDid, schema_id: credentialSchemaId, type: "ISSUER" })
     .select("id")
     .first()) as { id?: number } | undefined;

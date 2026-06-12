@@ -71,8 +71,8 @@ describe("buildParticipations", () => {
     for (const k of Object.keys(tableRows)) delete tableRows[k];
   });
 
-  it("maps permission rows to Participant entries and filters by state", async () => {
-    tableRows.permissions = [
+  it("maps participant rows to Participant entries and filters by state", async () => {
+    tableRows.participants = [
       {
         id: 501,
         schema_id: 1234,
@@ -80,7 +80,7 @@ describe("buildParticipations", () => {
         did: "did:example:1",
         vs_operator: "verana1op",
         weight: 10000000,
-        validator_perm_id: 401,
+        validator_participant_id: 401,
         issued: 2345,
         verified: 0,
         participants_holder: 75,
@@ -93,11 +93,11 @@ describe("buildParticipations", () => {
         type: "VERIFIER",
         did: "did:example:1",
         weight: 5000000,
-        validator_perm_id: 402,
+        validator_participant_id: 402,
         revoked: past, // -> REVOKED, filtered out when only ACTIVE requested
       },
     ];
-    tableRows.credential_schemas = [{ id: 1234, tr_id: 9876 }];
+    tableRows.credential_schemas = [{ id: 1234, ecosystem_id: 9876 }];
 
     const active = await buildParticipations("did:example:1", NOW, ["ACTIVE"]);
     expect(active).toHaveLength(1);
@@ -119,10 +119,10 @@ describe("buildParticipations", () => {
   });
 
   it("emits validatorParticipantId null only for ECOSYSTEM role", async () => {
-    tableRows.permissions = [
-      { id: 1, schema_id: 7, type: "ECOSYSTEM", did: "did:example:eco", validator_perm_id: null },
+    tableRows.participants = [
+      { id: 1, schema_id: 7, type: "ECOSYSTEM", did: "did:example:eco", validator_participant_id: null },
     ];
-    tableRows.credential_schemas = [{ id: 7, tr_id: 70 }];
+    tableRows.credential_schemas = [{ id: 7, ecosystem_id: 70 }];
     const out = await buildParticipations("did:example:eco", NOW, ["ACTIVE"]);
     expect(out[0].role).toBe("ECOSYSTEM");
     expect(out[0].validatorParticipantId).toBeNull();
@@ -218,10 +218,10 @@ describe("buildEcsCredentials", () => {
     type: "VerifiableService",
   };
 
-  it("surfaces the subject and resolves stable ids from permissions/schemas", async () => {
-    tableRows.permissions = [{ id: 501, schema_id: 1, did: "did:example:sub", type: "HOLDER" }];
+  it("surfaces the subject and resolves stable ids from participants/schemas", async () => {
+    tableRows.participants = [{ id: 501, schema_id: 1, did: "did:example:sub", type: "HOLDER" }];
     tableRows.credential_schemas = [
-      { id: 1, tr_id: 9, json_schema: { title: "ServiceCredential", $id: "vpr:verana:net/cs/v1/js/1" } },
+      { id: 1, ecosystem_id: 9, json_schema: { title: "ServiceCredential", $id: "vpr:verana:net/cs/v1/js/1" } },
     ];
 
     const out = await buildEcsCredentials({ service });
