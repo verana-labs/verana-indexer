@@ -102,12 +102,15 @@ export default class CrawlDelegatorsService extends BullableService {
     );
 
     if (!blockCheckPoint) {
-      await BlockCheckpoint.query().insert(
-        BlockCheckpoint.fromJson({
-          job_name: BULL_JOB_NAME.CHECKPOINT_UPDATE_DELEGATOR,
-          height: latestTransactionMessage?.id,
-        })
-      );
+      await BlockCheckpoint.query()
+        .insert(
+          BlockCheckpoint.fromJson({
+            job_name: BULL_JOB_NAME.CHECKPOINT_UPDATE_DELEGATOR,
+            height: latestTransactionMessage?.id,
+          })
+        )
+        .onConflict('job_name')
+        .ignore();
     } else {
       await BlockCheckpoint.query()
         .update({
@@ -226,7 +229,14 @@ export default class CrawlDelegatorsService extends BullableService {
         height: oldestTransactionMessage[0].id - 1,
       });
 
-      await BlockCheckpoint.query().insert(checkpointDelegator);
+      await BlockCheckpoint.query()
+        .insert(checkpointDelegator)
+        .onConflict('job_name')
+        .ignore();
+      checkpointDelegator =
+        (await BlockCheckpoint.query().findOne({
+          job_name: BULL_JOB_NAME.CHECKPOINT_UPDATE_DELEGATOR,
+        })) ?? checkpointDelegator;
     }
 
     return checkpointDelegator;

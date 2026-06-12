@@ -5,7 +5,9 @@ import {
   VeranaDiMessageTypes,
   VeranaParticipantMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaCorporationMessageTypes,
 } from "../../common/verana-message-types";
+import { extractController } from "../../common/utils/extract_controller";
 import { applyBlockHeightFilter, toIsoSeconds } from "./api_shared";
 import {
   collectDidsDeep,
@@ -17,7 +19,7 @@ import {
 
 export type IndexerTxEvent = {
   type: "transaction-executed";
-  module: "ecosystem" | "credential-schema" | "participant" | "digital-identity" | "delegation";
+  module: "ecosystem" | "credential-schema" | "participant" | "digital-identity" | "delegation" | "corporation";
   action: string;
   messageType: string;
   blockHeight: number;
@@ -32,6 +34,8 @@ export type IndexerTxEvent = {
   ecosystemId?: string;
   schemaId?: string;
   participantId?: string;
+  corporationId?: number;
+  relatedCorporationIds: number[];
   timestamp: string;
 };
 
@@ -55,6 +59,8 @@ export type IndexerEventRecord = {
     ecosystem_id?: string;
     schema_id?: string;
     participant_id?: string;
+    corporation_id?: number;
+    related_corporation_ids?: number[];
   };
 };
 
@@ -188,6 +194,16 @@ const EVENT_META: Record<string, EventMeta> = {
     action: "RevokeOperatorAuthorization",
     entityType: "OperatorAuthorization",
   },
+  [VeranaCorporationMessageTypes.CreateCorporation]: {
+    module: "corporation",
+    action: "CreateNewCorporation",
+    entityType: "Corporation",
+  },
+  [VeranaCorporationMessageTypes.UpdateCorporation]: {
+    module: "corporation",
+    action: "UpdateCorporation",
+    entityType: "Corporation",
+  },
 };
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META);
@@ -255,28 +271,51 @@ function normalizeRequestedDid(value: unknown): string | undefined {
   return normalizeDid(value);
 }
 
-async function loadEcosystemDid(ecosystemId: number | null | undefined): Promise<string | undefined> {
-  if (!ecosystemId) return undefined;
-  const row = await knex("ecosystem").select("did").where({ id: ecosystemId }).first();
-  return normalizeDid(row?.did);
+function toCorporationId(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+async function loadEcosystem(ecosystemId: number | null | undefined): Promise<{
+  did?: string;
+  corporationId?: number;
+}> {
+  if (!ecosystemId) return {};
+  const row = await knex("ecosystem").select("did", "corporation_id").where({ id: ecosystemId }).first();
+  return { did: normalizeDid(row?.did), corporationId: toCorporationId(row?.corporation_id) };
+}
+
+async function loadCorporation(opts: { did?: string; address?: string }): Promise<{
+  did?: string;
+  corporationId?: number;
+}> {
+  const query = knex("corporation").select("id", "did");
+  if (opts.address) query.where({ corporation: opts.address });
+  else if (opts.did) query.where({ did: opts.did });
+  else return {};
+  const row = await query.first();
+  if (!row) return {};
+  return { did: normalizeDid(row.did), corporationId: toCorporationId(row.id) };
 }
 
 async function loadSchemaRelation(schemaId: number | null | undefined): Promise<{
   schemaId?: string;
   ecosystemId?: string;
   ecosystemDid?: string;
+  corporationId?: number;
 }> {
   if (!schemaId) return {};
   const schema = await knex("credential_schemas as cs")
     .leftJoin("ecosystem as ec", "ec.id", "cs.ecosystem_id")
     .where("cs.id", schemaId)
-    .select("cs.id as schema_id", "cs.ecosystem_id", "ec.did as tr_did")
+    .select("cs.id as schema_id", "cs.ecosystem_id", "ec.did as tr_did", "ec.corporation_id as corporation_id")
     .first();
   if (!schema) return { schemaId: String(schemaId) };
   return {
     schemaId: String(schema.schema_id ?? schemaId),
     ecosystemId: schema.ecosystem_id != null ? String(schema.ecosystem_id) : undefined,
     ecosystemDid: normalizeDid(schema.tr_did),
+    corporationId: toCorporationId(schema.corporation_id),
   };
 }
 
@@ -287,6 +326,8 @@ async function loadParticipantRelation(participantId: number | null | undefined)
   ecosystemId?: string;
   ecosystemDid?: string;
   validatorParticipantDid?: string;
+  corporationId?: number;
+  validatorCorporationId?: number;
 }> {
   if (!participantId) return {};
   const participant = await knex("participants as p")
@@ -298,9 +339,11 @@ async function loadParticipantRelation(participantId: number | null | undefined)
       "p.id as participant_id",
       "p.did as participant_did",
       "p.schema_id",
+      "p.corporation_id as corporation_id",
       "cs.ecosystem_id",
       "ec.did as tr_did",
-      "validator.did as validator_participant_did"
+      "validator.did as validator_participant_did",
+      "validator.corporation_id as validator_corporation_id"
     )
     .first();
   if (!participant) return { participantId: String(participantId) };
@@ -311,6 +354,8 @@ async function loadParticipantRelation(participantId: number | null | undefined)
     ecosystemId: participant.ecosystem_id != null ? String(participant.ecosystem_id) : undefined,
     ecosystemDid: normalizeDid(participant.tr_did),
     validatorParticipantDid: normalizeDid(participant.validator_participant_did),
+    corporationId: toCorporationId(participant.corporation_id),
+    validatorCorporationId: toCorporationId(participant.validator_corporation_id),
   };
 }
 
@@ -324,6 +369,8 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   let ecosystemId: string | undefined;
   let schemaId: string | undefined;
   let participantId: string | undefined;
+  let corporationId: number | undefined;
+  const relatedCorporationIds = new Set<number>();
   const explicitPrimaryDid = firstNormalizedDid([
     content.did,
     content.ecosystem_did,
@@ -337,8 +384,9 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   if (meta.module === "ecosystem") {
     const rawEcosystemId = readNumber(row.content, [...ID_ALIASES.ecosystem, "id"]);
     ecosystemId = rawEcosystemId ? String(rawEcosystemId) : entityId;
-    const ecosystemDid = await loadEcosystemDid(rawEcosystemId);
-    if (ecosystemDid) collected.add(ecosystemDid);
+    const ecosystem = await loadEcosystem(rawEcosystemId);
+    if (ecosystem.did) collected.add(ecosystem.did);
+    corporationId = ecosystem.corporationId;
   }
 
   if (meta.module === "credential-schema") {
@@ -347,8 +395,12 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     const relation = await loadSchemaRelation(rawSchemaId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : entityId);
     ecosystemId = relation.ecosystemId ?? (rawEcosystemId ? String(rawEcosystemId) : undefined);
-    const ecosystemDid = relation.ecosystemDid ?? (await loadEcosystemDid(rawEcosystemId));
-    if (ecosystemDid) collected.add(ecosystemDid);
+    corporationId = relation.corporationId;
+    const ecosystem = relation.ecosystemDid ? { did: relation.ecosystemDid } : await loadEcosystem(rawEcosystemId);
+    if (ecosystem.did) collected.add(ecosystem.did);
+    if (corporationId === undefined && "corporationId" in ecosystem) {
+      corporationId = (ecosystem as { corporationId?: number }).corporationId;
+    }
   }
 
   if (meta.module === "participant") {
@@ -359,6 +411,8 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     participantId = relation.participantId ?? (rawParticipantId ? String(rawParticipantId) : entityId);
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined);
     ecosystemId = relation.ecosystemId;
+    corporationId = relation.corporationId;
+    if (relation.validatorCorporationId !== undefined) relatedCorporationIds.add(relation.validatorCorporationId);
     [relation.participantDid, relation.ecosystemDid, relation.validatorParticipantDid].forEach((did) => {
       if (did) collected.add(did);
     });
@@ -366,14 +420,25 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
       const schemaRelation = await loadSchemaRelation(rawSchemaId);
       schemaId = schemaId ?? schemaRelation.schemaId;
       ecosystemId = ecosystemId ?? schemaRelation.ecosystemId;
+      if (corporationId === undefined) corporationId = schemaRelation.corporationId;
       if (schemaRelation.ecosystemDid) collected.add(schemaRelation.ecosystemDid);
     }
     if (rawValidatorParticipantId) {
       const validatorRelation = await loadParticipantRelation(rawValidatorParticipantId);
+      if (validatorRelation.corporationId !== undefined) relatedCorporationIds.add(validatorRelation.corporationId);
       [validatorRelation.participantDid, validatorRelation.ecosystemDid].forEach((did) => {
         if (did) collected.add(did);
       });
     }
+  }
+
+  if (meta.module === "corporation") {
+    const relation = await loadCorporation({
+      did: firstNormalizedDid([content.did]),
+      address: extractController(content),
+    });
+    corporationId = relation.corporationId;
+    if (relation.did) collected.add(relation.did);
   }
 
   const relatedDids = uniqueNormalizedDids(collected);
@@ -400,6 +465,8 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     ecosystemId,
     schemaId,
     participantId,
+    corporationId,
+    relatedCorporationIds: [...relatedCorporationIds],
     timestamp: toIsoSeconds(row.timestamp),
   };
 }
@@ -430,6 +497,8 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
       ecosystem_id: event.ecosystemId,
       schema_id: event.schemaId,
       participant_id: event.participantId,
+      corporation_id: event.corporationId,
+      related_corporation_ids: event.relatedCorporationIds,
     },
   };
 }
@@ -460,6 +529,16 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
       ecosystem_id: row.payload?.ecosystem_id ?? row.payload?.ecosystemId ?? undefined,
       schema_id: row.payload?.schema_id ?? row.payload?.schemaId ?? undefined,
       participant_id: row.payload?.participant_id ?? row.payload?.participantId ?? undefined,
+      corporation_id: toCorporationId(row.payload?.corporation_id ?? row.payload?.corporationId),
+      related_corporation_ids: Array.isArray(row.payload?.related_corporation_ids)
+        ? row.payload.related_corporation_ids
+            .map((v: unknown) => Number(v))
+            .filter((n: number) => Number.isInteger(n) && n > 0)
+        : Array.isArray(row.payload?.relatedCorporationIds)
+          ? row.payload.relatedCorporationIds
+              .map((v: unknown) => Number(v))
+              .filter((n: number) => Number.isInteger(n) && n > 0)
+          : undefined,
     },
   };
 }

@@ -465,114 +465,114 @@ For detailed information about the reindexing process, architecture, and trouble
 
 ## Real-Time Event API (WebSocket)
 
-The Verana Indexer exposes a single **WebSocket** path that supports two concerns at once: **trust-resolver pipeline signals** (`block-indexed` and `block-resolved`), and an optional **DID-scoped stream** plus HTTP replay for persisted indexer events.
+The Verana Indexer streams persisted indexer events over a **WebSocket** following the `IDX-INDEXER-SUB-1` spec.
+The client opens the socket, sends a JSON `subscribe` control message, and then receives one
+`block` envelope per processed block. HTTP replay for catch-up lives at `GET /verana/indexer/v1/events`.
 
-**Base URL:** `ws://localhost:3001/verana/indexer/v1/events` (WebSocket only — use a WebSocket client, not a plain HTTP GET).
+**WebSocket URL:** `ws://localhost:3001/v4/indexer/subscribe` (use a WebSocket client, not a plain HTTP GET).
 
-### Global stream (no `did` query)
+### Connect / `ready`
 
-After `connected`, global subscribers (clients that did **not** pass `did=`) receive:
+Immediately after the upgrade, before any `subscribe`, the server sends a `ready` message. `block`
+is the height of the **next** block it will deliver (`lastProcessedBlock + 1`); use `block - 1` as the
+catch-up cursor. `blockIntervalMs` is the expected block interval (treat `2 ×` it as the liveness timeout).
 
-2. **`block-indexed`** — transaction / indexer pipeline finished for that height; refresh DID directory, credentials, modules, etc.
-3. **`block-resolved`** — trust resolver finished materializing that height (when trust resolution is enabled and has caught up).
+```json
+{ "type": "ready", "block": 123457, "blockTime": "2025-01-15T10:30:00Z", "blockIntervalMs": 6000 }
+```
 
+### Subscribe control message
+
+The first control message MUST be a `subscribe`. Both filters are optional:
+
+```json
+{ "action": "subscribe", "dids": ["did:web:agent.example"], "corporationId": 42 }
+```
+
+- **`dids[]`** — union of DIDs: delivers events for any resource whose primary DID is in the list
+  (`Corporation.did`, `Ecosystem.did`, `Participant.did`), plus one-hop validator-tree matches.
+- **`corporationId`** — delivers every event owned by that Corporation (its entities + one-hop validator match).
+- **Both present** → **intersection** (events matching both). **Both absent** → **wildcard** (every event).
+
+Send `{ "action": "unsubscribe" }` (or close the socket) to stop. A new `subscribe` replaces the active filter.
+
+### Block message (server → client)
+
+One `block` envelope is sent **per processed block**, in strictly increasing `block` order. `events[]` is
+empty when nothing matches — an empty envelope still acts as a per-block **heartbeat** for gap detection.
+Each entry is an `IndexerTransactionEvent`, ordered by `(payload.tx_index, payload.message_index)`.
 
 ```json
 {
-  "type": "block-indexed",
-  "height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
+  "type": "block",
+  "block": 123457,
+  "blockTime": "2025-01-15T10:31:00Z",
+  "events": [
+    {
+      "type": "indexer-event",
+      "event_type": "StartParticipantOP",
+      "did": "did:web:agent.example",
+      "block_height": 123457,
+      "tx_hash": "A1B2C3",
+      "timestamp": "2025-01-15T10:31:00Z",
+      "payload": {
+        "module": "participant",
+        "action": "StartParticipantOP",
+        "message_type": "/verana.pp.v1.MsgStartParticipantOP",
+        "tx_index": 0,
+        "message_index": 0,
+        "sender": "verana1...",
+        "related_dids": ["did:web:agent.example"],
+        "entity_type": "Participant",
+        "corporation_id": 42,
+        "related_corporation_ids": []
+      }
+    }
+  ]
 }
 ```
 
-```json
-{
-  "type": "block-resolved",
-  "height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
-}
-```
+### Catch-up / replay (HTTP)
 
-### DID room (`?did=<DID>`)
-
-Connect with `ws://localhost:3001/verana/indexer/v1/events?did=<URL-encoded-DID>`. The first message is `connected` and includes `did` and `block_height`. Persisted transaction-level events for that DID are pushed live as `indexer-event` messages (same snake_case fields as the HTTP replay API).
-
-```json
-{
-  "type": "connected",
-  "did": "did:web:agent.example",
-  "block_height": 123456,
-  "timestamp": "2025-01-15T10:30:00Z"
-}
-```
-
-```json
-{
-  "type": "indexer-event",
-  "event_type": "StartParticipantOP",
-  "did": "did:web:agent.example",
-  "block_height": 123457,
-  "tx_hash": "A1B2C3",
-  "timestamp": "2025-01-15T10:31:00Z",
-  "payload": {
-    "module": "participant",
-    "action": "StartParticipantOP",
-    "message_type": "/verana.pp.v1.MsgStartParticipantOP",
-    "related_dids": ["did:web:agent.example"]
-  }
-}
-```
-
-Replay missed DID events over HTTP:
+The stream does not deliver history on connect. Bootstrap (or resume after a gap) by replaying persisted
+events over HTTP, then connect the WebSocket and `subscribe`:
 
 ```bash
 curl "http://localhost:3001/verana/indexer/v1/events?did=did:web:agent.example&after_block_height=123456&limit=100"
 ```
 
-Manual checks:
-
-```bash
-node --import=tsx test/manual/test-websocket.ts
-DID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts
-```
-
 ### Client examples
 
-**Global listener (indexing + trust stages):**
+**Quick check with `wscat`:**
 
-```javascript
-const ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events');
+```bash
+# wildcard (every event + heartbeats)
+npx wscat -c ws://localhost:3001/v4/indexer/subscribe -x '{"action":"subscribe"}'
 
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.type === 'block-indexed') {
-    console.log(`Block ${data.height} indexed at ${data.timestamp}`);
-    fetchIndexedData();
-  }
-  if (data.type === 'block-resolved') {
-    console.log(`Block ${data.height} trust-resolved at ${data.timestamp}`);
-    fetchTrustData();
-  }
-};
+# filter by DID(s)
+npx wscat -c ws://localhost:3001/v4/indexer/subscribe -x '{"action":"subscribe","dids":["did:web:agent.example"]}'
 ```
 
-**DID room + replay:**
+**DID-scoped listener + replay:**
 
 ```javascript
 const did = 'did:web:agent.example';
 let lastSeenBlockHeight = 0;
-const ws = new WebSocket(`wss://idx.testnet.verana.network/verana/indexer/v1/events?did=${encodeURIComponent(did)}`);
+const ws = new WebSocket('wss://idx.testnet.verana.network/v4/indexer/subscribe');
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
 
-  if (data.type === 'connected') {
+  if (data.type === 'ready') {
     await fetch(`/verana/indexer/v1/events?did=${encodeURIComponent(did)}&after_block_height=${lastSeenBlockHeight}`);
+    ws.send(JSON.stringify({ action: 'subscribe', dids: [did] }));
   }
 
-  if (data.type === 'indexer-event') {
-    console.log(data.event_type, data.block_height, data.payload);
-    lastSeenBlockHeight = Math.max(lastSeenBlockHeight, data.block_height);
+  if (data.type === 'block') {
+    for (const ev of data.events) {
+      console.log(ev.event_type, ev.block_height, ev.payload);
+    }
+    lastSeenBlockHeight = Math.max(lastSeenBlockHeight, data.block);
   }
 };
 ```

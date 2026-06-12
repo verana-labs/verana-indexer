@@ -175,10 +175,13 @@ export default class UpdateSenderInTxMessages extends BullableService {
       job_name: BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
     });
     if (!blockCheckpoint) {
-      await BlockCheckpoint.query().insert({
-        job_name: BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
-        height: config.crawlBlock.startBlock,
-      });
+      await BlockCheckpoint.query()
+        .insert({
+          job_name: BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
+          height: config.crawlBlock.startBlock,
+        })
+        .onConflict('job_name')
+        .ignore();
       const crawlBlockCheckpoint = await BlockCheckpoint.query().findOne({
         job_name: BULL_JOB_NAME.CRAWL_BLOCK,
       });
