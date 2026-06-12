@@ -36,4 +36,3 @@ export * from "./ecosystem_history";
 export * from "./governance_framework_version_history";
 export * from "./governance_framework_document_history";
 export * from "./stats";
-export * from "./corporation";
