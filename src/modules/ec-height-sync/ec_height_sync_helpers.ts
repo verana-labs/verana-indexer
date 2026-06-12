@@ -1,12 +1,11 @@
-import { Tendermint37Client } from "@cosmjs/tendermint-rpc";
-import { QueryClient } from "@cosmjs/stargate";
 import {
   QueryClientImpl as EcQueryClientImpl,
   QueryGetEcosystemRequest,
 } from "@verana-labs/verana-types/codec/verana/ec/v1/query";
 import type { EcosystemWithVersions } from "@verana-labs/verana-types/codec/verana/ec/v1/types";
 import { VeranaEcosystemMessageTypes } from "../../common/verana-message-types";
-import { Network } from "../../network";
+import { withAbciQueryClient } from "../../common/utils/grpc_query";
+import { dateToIsoOrNull } from "../../common/utils/date_utils";
 
 export interface LedgerEcosystemVersion {
   id?: number | string;
@@ -62,21 +61,6 @@ const TR_MESSAGE_TYPES = new Set<string>([
   VeranaEcosystemMessageTypes.UpdateParams,
 ]);
 
-function getRpcBaseUrl(): string {
-  const envRpc =
-    (typeof process !== "undefined" && process.env?.RPC_ENDPOINT?.trim()) || "";
-  const base = envRpc || Network?.RPC || "";
-  return base.replace(/\/$/, "");
-}
-
-function dateToIsoOrNull(value: unknown): string | null {
-  if (!value) return null;
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-  return typeof value === "string" ? value : null;
-}
-
 export function mapEcosystemToLedgerEcosystem(
   eco: EcosystemWithVersions
 ): LedgerEcosystem {
@@ -111,33 +95,7 @@ export async function getEcosystem(
   ecosystemId: number,
   blockHeight?: number
 ): Promise<LedgerEcosystemResponse | null> {
-  const rpcUrl = getRpcBaseUrl();
-  if (!rpcUrl) {
-    throw new Error(
-      `[EC Height-Sync] Missing RPC base URL for gRPC ec query. Set RPC_ENDPOINT or Network.RPC.`
-    );
-  }
-
-  const tmClient = await Tendermint37Client.connect(rpcUrl);
-  try {
-    const queryClient = new QueryClient(tmClient as any);
-    const withHeight = typeof blockHeight === "number" && blockHeight > 0;
-    const rpc = {
-      request: async (
-        service: string,
-        method: string,
-        data: Uint8Array
-      ): Promise<Uint8Array> => {
-        const path = `/${service}/${method}`;
-        const response = await queryClient.queryAbci(
-          path,
-          data,
-          withHeight ? blockHeight : undefined
-        );
-        return response.value;
-      },
-    };
-
+  return withAbciQueryClient(blockHeight, async (rpc) => {
     const ecQuery = new EcQueryClientImpl(rpc);
     const res = await ecQuery.GetEcosystem(
       QueryGetEcosystemRequest.fromPartial({
@@ -148,13 +106,7 @@ export async function getEcosystem(
     );
     if (!res?.ecosystem) return null;
     return { ecosystem: mapEcosystemToLedgerEcosystem(res.ecosystem) };
-  } finally {
-    try {
-      tmClient.disconnect();
-    } catch {
-      // ignore disconnect errors
-    }
-  }
+  });
 }
 
 export function isTrMessageType(type: string): boolean {

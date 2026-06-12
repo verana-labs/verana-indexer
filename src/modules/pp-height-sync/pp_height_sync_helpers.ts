@@ -1,4 +1,13 @@
-import { Network } from "../../network";
+import {
+  QueryClientImpl as PpQueryClientImpl,
+  QueryGetParticipantRequest,
+  QueryGetParticipantSessionRequest,
+} from "@verana-labs/verana-types/codec/verana/pp/v1/query";
+import {
+  Participant,
+  ParticipantSession,
+} from "@verana-labs/verana-types/codec/verana/pp/v1/types";
+import { withAbciQueryClient } from "../../common/utils/grpc_query";
 
 export type ParticipantMessagePayload = {
   type: string;
@@ -10,15 +19,6 @@ export type ParticipantMessagePayload = {
   msgIndex?: number;
   txEvents?: Array<{ type?: string; attributes?: Array<{ key?: string; value?: string }> }>;
 };
-
-const HEIGHT_HEADER = "x-cosmos-block-height";
-
-export function getParticipantLedgerBaseUrl(): string {
-  const envLedger =
-    (typeof process !== "undefined" && process.env?.LCD_ENDPOINT?.trim()) || "";
-  const base = envLedger || Network?.LCD || "";
-  return base.replace(/\/$/, "");
-}
 
 function decodeEventValue(raw: string | undefined): string {
   if (!raw) return "";
@@ -217,41 +217,42 @@ export function extractImpactedSessionIds(
   return [...ids];
 }
 
-export async function fetchParticipantLedgerJson(
-  path: string,
+export async function fetchParticipant(
+  participantId: number,
   blockHeight?: number
-): Promise<any | null> {
-  const base = getParticipantLedgerBaseUrl();
-  if (!base) return null;
-  const withHeight = typeof blockHeight === "number" && blockHeight > 0;
-  const headers: Record<string, string> = {};
-  if (withHeight) {
-    headers[HEIGHT_HEADER] = String(blockHeight);
-  }
-
+): Promise<{ participant: Record<string, unknown> } | null> {
   try {
-    const res = await fetch(`${base}${path}`, { headers });
-    if (res.ok) {
-      return await res.json();
-    }
-
-    if (withHeight) {
-      const fallback = await fetch(`${base}${path}`);
-      if (!fallback.ok) return null;
-      return await fallback.json();
-    }
-
-    return null;
+    return await withAbciQueryClient(blockHeight, async (rpc) => {
+      const query = new PpQueryClientImpl(rpc);
+      const res = await query.GetParticipant(
+        QueryGetParticipantRequest.fromPartial({ id: participantId })
+      );
+      if (!res?.participant) return null;
+      return {
+        participant: Participant.toJSON(res.participant) as Record<string, unknown>,
+      };
+    });
   } catch {
-    if (withHeight) {
-      try {
-        const fallback = await fetch(`${base}${path}`);
-        if (!fallback.ok) return null;
-        return await fallback.json();
-      } catch {
-        //
-      }
-    }
+    return null;
+  }
+}
+
+export async function fetchParticipantSession(
+  sessionId: string,
+  blockHeight?: number
+): Promise<{ session: Record<string, unknown> } | null> {
+  try {
+    return await withAbciQueryClient(blockHeight, async (rpc) => {
+      const query = new PpQueryClientImpl(rpc);
+      const res = await query.GetParticipantSession(
+        QueryGetParticipantSessionRequest.fromPartial({ id: sessionId })
+      );
+      if (!res?.session) return null;
+      return {
+        session: ParticipantSession.toJSON(res.session) as Record<string, unknown>,
+      };
+    });
+  } catch {
     return null;
   }
 }

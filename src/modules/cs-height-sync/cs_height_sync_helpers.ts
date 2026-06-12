@@ -1,9 +1,11 @@
+import {
+  QueryClientImpl as CsQueryClientImpl,
+  QueryGetCredentialSchemaRequest,
+} from "@verana-labs/verana-types/codec/verana/cs/v1/query";
+import { CredentialSchema } from "@verana-labs/verana-types/codec/verana/cs/v1/types";
 import { VeranaCredentialSchemaMessageTypes } from "../../common/verana-message-types";
-import { Network } from "../../network";
+import { withAbciQueryClient } from "../../common/utils/grpc_query";
 import { CS_EVENT_TYPES } from "../../services/crawl-cs/cs_event_mapper";
-
-const CS_GET_PATH = "/verana/cs/v1/get";
-const HEIGHT_HEADER = "x-cosmos-block-height";
 
 const CS_MESSAGE_TYPES = new Set<string>([
   VeranaCredentialSchemaMessageTypes.CreateCredentialSchema,
@@ -101,58 +103,28 @@ function applyLedgerV4Normalization(
   return res;
 }
 
-export function getLedgerBaseUrl(): string {
-  const envLedger =
-    (typeof process !== "undefined" && process.env?.LCD_ENDPOINT?.trim()) || "";
-  const base = envLedger || Network?.LCD || "";
-  return base.replace(/\/$/, "");
-}
-
 export async function getCredentialSchema(
   id: number,
   blockHeight?: number
 ): Promise<LedgerCredentialSchemaResponse | null> {
-  const baseUrl = getLedgerBaseUrl();
-  if (!baseUrl) return null;
-  const url = `${baseUrl}${CS_GET_PATH}/${id}`;
-  const withHeight = typeof blockHeight === "number" && blockHeight > 0;
-  const headers: Record<string, string> = {};
-  if (withHeight) headers[HEIGHT_HEADER] = String(blockHeight);
-
   try {
-    const res = await fetch(url, { headers });
-    const data = res.ok ? await res.json().catch(() => null) : null;
-    if (data) {
-      return applyLedgerV4Normalization(
-        normalizeLedgerResponse(data) ?? (data as LedgerCredentialSchemaResponse)
-      ) ?? null;
-    }
-
-    if (withHeight && (res.status >= 400 || res.status < 200)) {
-      const fallback = await fetch(url);
-      const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
-      if (fallbackData) {
-        return applyLedgerV4Normalization(
-          normalizeLedgerResponse(fallbackData) ?? (fallbackData as LedgerCredentialSchemaResponse)
-        ) ?? null;
-      }
-    }
-
-    return null;
+    return await withAbciQueryClient(blockHeight, async (rpc) => {
+      const query = new CsQueryClientImpl(rpc);
+      const res = await query.GetCredentialSchema(
+        QueryGetCredentialSchemaRequest.fromPartial({ id })
+      );
+      if (!res?.schema) return null;
+      // toJSON emits camelCase keys; the downstream sync reader accepts both
+      // snake_case and camelCase, so the codec JSON is consumed as-is.
+      const schema = CredentialSchema.toJSON(res.schema) as Record<string, unknown>;
+      return (
+        applyLedgerV4Normalization(
+          normalizeLedgerResponse({ schema }) ??
+            ({ schema } as LedgerCredentialSchemaResponse)
+        ) ?? null
+      );
+    });
   } catch {
-    if (withHeight) {
-      try {
-        const fallback = await fetch(url);
-        const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
-        if (fallbackData) {
-          return applyLedgerV4Normalization(
-            normalizeLedgerResponse(fallbackData) ?? (fallbackData as LedgerCredentialSchemaResponse)
-          ) ?? null;
-        }
-      } catch {
-        //
-      }
-    }
     return null;
   }
 }
