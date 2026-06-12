@@ -114,8 +114,6 @@ export async function getCredentialSchema(
         QueryGetCredentialSchemaRequest.fromPartial({ id })
       );
       if (!res?.schema) return null;
-      // toJSON emits camelCase keys; the downstream sync reader accepts both
-      // snake_case and camelCase, so the codec JSON is consumed as-is.
       const schema = CredentialSchema.toJSON(res.schema) as Record<string, unknown>;
       return (
         applyLedgerV4Normalization(

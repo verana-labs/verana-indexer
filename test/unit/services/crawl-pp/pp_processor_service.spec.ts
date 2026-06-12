@@ -4,10 +4,26 @@ import {
   SERVICE,
 } from "../../../../src/common/constant";
 import { VeranaParticipantMessageTypes as ParticipantMessageTypes } from "../../../../src/common/verana-message-types";
+import {
+  fetchParticipant,
+  fetchParticipantSession,
+} from "../../../../src/modules/pp-height-sync/pp_height_sync_helpers";
 
 jest.mock("../../../../src/common/utils/start_mode_detector", () => ({
   detectStartMode: jest.fn().mockResolvedValue({ isFreshStart: false })
 }));
+
+jest.mock("../../../../src/modules/pp-height-sync/pp_height_sync_helpers", () => {
+  const actual = jest.requireActual(
+    "../../../../src/modules/pp-height-sync/pp_height_sync_helpers"
+  );
+  return {
+    __esModule: true,
+    ...actual,
+    fetchParticipant: jest.fn(),
+    fetchParticipantSession: jest.fn(),
+  };
+});
 
 describe("🧪 ParticipantProcessorService", () => {
   let broker: ServiceBroker;
@@ -147,44 +163,28 @@ describe("🧪 ParticipantProcessorService", () => {
 
   it("✅ should use height-sync strategy when USE_HEIGHT_SYNC_PARTICIPANT=true", async () => {
     process.env.USE_HEIGHT_SYNC_PARTICIPANT = "true";
-    const fetchSpy = jest.spyOn(global as any, "fetch").mockImplementation(async (url: string) => {
-      const textUrl = String(url);
-      if (textUrl.includes("/verana/pp/v1/get/101")) {
-        return {
-          ok: true,
-          json: async () => ({
-            participant: {
-              id: 101,
-              schema_id: 7,
-              role: "ISSUER",
-              grantee: "verana1grantee",
-              created_by: "verana1creator",
-              created: "2026-03-01T00:00:00Z",
-              modified: "2026-03-01T00:00:00Z",
-              validation_fees: 0,
-              issuance_fees: 0,
-              verification_fees: 0,
-              deposit: 0,
-              slashed_deposit: 0,
-              repaid_deposit: 0,
-              op_state: "VALIDATED",
-              op_validator_deposit: 0,
-              op_current_fees: 0,
-              op_current_deposit: 0,
-            },
-          }),
-        } as any;
-      }
-      if (textUrl.includes("/verana/cs/v1/get/7")) {
-        return {
-          ok: true,
-          json: async () => ({
-            schema: { id: 7, ecosystem_id: 3 },
-          }),
-        } as any;
-      }
-      return { ok: false, json: async () => ({}) } as any;
+    (fetchParticipant as jest.Mock).mockResolvedValue({
+      participant: {
+        id: 101,
+        schema_id: 7,
+        role: "ISSUER",
+        grantee: "verana1grantee",
+        created_by: "verana1creator",
+        created: "2026-03-01T00:00:00Z",
+        modified: "2026-03-01T00:00:00Z",
+        validation_fees: 0,
+        issuance_fees: 0,
+        verification_fees: 0,
+        deposit: 0,
+        slashed_deposit: 0,
+        repaid_deposit: 0,
+        op_state: "VALIDATED",
+        op_validator_deposit: 0,
+        op_current_fees: 0,
+        op_current_deposit: 0,
+      },
     });
+    (fetchParticipantSession as jest.Mock).mockResolvedValue(null);
 
     await broker.call(
       `v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`,
@@ -203,7 +203,8 @@ describe("🧪 ParticipantProcessorService", () => {
     expect(syncParticipantFromLedgerSpy).toHaveBeenCalled();
     expect(compareParticipantWithLedgerSpy).toHaveBeenCalled();
 
-    fetchSpy.mockRestore();
+    (fetchParticipant as jest.Mock).mockReset();
+    (fetchParticipantSession as jest.Mock).mockReset();
     process.env.USE_HEIGHT_SYNC_PARTICIPANT = "false";
   });
 });
