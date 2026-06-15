@@ -1,9 +1,11 @@
-import { Network } from "../../network";
+import {
+  QueryClientImpl as TdQueryClientImpl,
+  QueryGetTrustDepositRequest,
+} from "@verana-labs/verana-types/codec/verana/td/v1/query";
 import { TrustDepositEventType } from "../../common/constant";
 import { VeranaTrustDepositMessageTypes } from "../../common/verana-message-types";
-
-const TD_GET_PATH = "/verana/td/v1/get";
-const HEIGHT_HEADER = "x-cosmos-block-height";
+import { withAbciQueryClient } from "../../common/utils/grpc_query";
+import { dateToIsoOrNull } from "../../common/utils/date_utils";
 
 const TD_MESSAGE_TYPES = new Set<string>([
   VeranaTrustDepositMessageTypes.UpdateParams,
@@ -148,13 +150,6 @@ export function blockchainEventTypeToHistoryEventType(blockchainEventType: strin
   }
 }
 
-export function getTdLedgerBaseUrl(): string {
-  const envLedger =
-    (typeof process !== "undefined" && process.env?.LCD_ENDPOINT?.trim()) || "";
-  const base = envLedger || Network?.LCD || "";
-  return base.replace(/\/$/, "");
-}
-
 export function normalizeLedgerResponse(data: unknown): NormalizedLedgerTrustDeposit | null {
   if (!data || typeof data !== "object") return null;
   const obj = data as Record<string, unknown>;
@@ -184,46 +179,27 @@ export async function fetchTrustDeposit(
   id: string,
   blockHeight?: number
 ): Promise<NormalizedLedgerTrustDeposit | null> {
-  const baseUrl = getTdLedgerBaseUrl();
-  if (!baseUrl) return null;
-  const encodedId = encodeURIComponent(id);
-  const url = `${baseUrl}${TD_GET_PATH}/${encodedId}`;
-  const withHeight = typeof blockHeight === "number" && blockHeight > 0;
-  const headers: Record<string, string> = {};
-  if (withHeight) headers[HEIGHT_HEADER] = String(blockHeight);
-
   try {
-    const res = await fetch(url, { headers });
-    const data = res.ok ? await res.json().catch(() => null) : null;
-    if (data) {
-      const normalized = normalizeLedgerResponse(data);
-      if (normalized) return normalized;
-      return data as NormalizedLedgerTrustDeposit;
-    }
-    if (withHeight && (res.status >= 400 || res.status < 200)) {
-      const fallback = await fetch(url);
-      const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
-      if (fallbackData) {
-        const normalized = normalizeLedgerResponse(fallbackData);
-        if (normalized) return normalized;
-        return fallbackData as NormalizedLedgerTrustDeposit;
-      }
-    }
-    return null;
+    return await withAbciQueryClient(blockHeight, async (rpc) => {
+      const query = new TdQueryClientImpl(rpc);
+      const res = await query.GetTrustDeposit(
+        QueryGetTrustDepositRequest.fromPartial({ corporation: id })
+      );
+      const td = res?.trustDeposit;
+      if (!td) return null;
+      return {
+        corporation: String(td.corporation ?? id),
+        deposit: Number(td.deposit ?? 0),
+        share: Number(td.share ?? 0),
+        claimable: Number(td.claimable ?? 0),
+        slashed_deposit: Number(td.slashedDeposit ?? 0),
+        repaid_deposit: Number(td.repaidDeposit ?? 0),
+        last_slashed: dateToIsoOrNull(td.lastSlashed),
+        last_repaid: dateToIsoOrNull(td.lastRepaid),
+        slash_count: Number(td.slashCount ?? 0),
+      };
+    });
   } catch {
-    if (withHeight) {
-      try {
-        const fallback = await fetch(url);
-        const fallbackData = fallback.ok ? await fallback.json().catch(() => null) : null;
-        if (fallbackData) {
-          const normalized = normalizeLedgerResponse(fallbackData);
-          if (normalized) return normalized;
-          return fallbackData as NormalizedLedgerTrustDeposit;
-        }
-      } catch {
-        //
-      }
-    }
     return null;
   }
 }
