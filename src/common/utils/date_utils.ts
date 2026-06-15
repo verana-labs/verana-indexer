@@ -50,3 +50,15 @@ export function isValidISO8601UTC(timestamp: string): boolean {
     return normalizedInput === normalizedReconstructed;
 }
 
+/**
+ * Normalizes a date-like value to an ISO 8601 string, or null.
+ * Accepts `Date` instances and strings.
+ */
+export function dateToIsoOrNull(value: unknown): string | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value.toISOString();
+    }
+    return typeof value === "string" ? value : null;
+}
+

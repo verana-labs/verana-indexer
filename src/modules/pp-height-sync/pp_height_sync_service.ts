@@ -3,7 +3,8 @@ import {
   ParticipantMessagePayload,
   extractImpactedParticipantIds,
   extractImpactedSessionIds,
-  fetchParticipantLedgerJson,
+  fetchParticipant,
+  fetchParticipantSession,
 } from "./pp_height_sync_helpers";
 
 const PARTICIPANT_INGEST_SERVICE = "participantIngest";
@@ -54,11 +55,11 @@ export async function runHeightSyncParticipant(
     const impactedParticipantIds = new Set<number>();
 
     for (const participantId of participantIds) {
-      const ledgerParticipantResponse = await fetchParticipantLedgerJson(
-        `/verana/pp/v1/get/${participantId}`,
+      const ledgerParticipantResponse = await fetchParticipant(
+        participantId,
         blockHeight
       );
-      const ledgerParticipant = ledgerParticipantResponse?.participant ?? ledgerParticipantResponse?.participant;
+      const ledgerParticipant = ledgerParticipantResponse?.participant;
       if (!ledgerParticipant) continue;
       impactedParticipantIds.add(participantId);
 
@@ -99,8 +100,8 @@ export async function runHeightSyncParticipant(
     }
 
     for (const sessionId of sessionIds) {
-      const sessionResponse = await fetchParticipantLedgerJson(
-        `/verana/pp/v1/get_session/${encodeURIComponent(sessionId)}`,
+      const sessionResponse = await fetchParticipantSession(
+        sessionId,
         blockHeight
       );
       const ledgerSession = sessionResponse?.session;
@@ -141,11 +142,11 @@ export async function runHeightSyncParticipant(
       }
 
       for (const h of heightsToCheck) {
-        const ledgerParticipantResponse = await fetchParticipantLedgerJson(
-          `/verana/pp/v1/get/${participantId}`,
+        const ledgerParticipantResponse = await fetchParticipant(
+          participantId,
           h
         );
-        const ledgerParticipant = ledgerParticipantResponse?.participant ?? ledgerParticipantResponse?.participant;
+        const ledgerParticipant = ledgerParticipantResponse?.participant;
         if (!ledgerParticipant) continue;
 
         const compare = (await broker.call(
