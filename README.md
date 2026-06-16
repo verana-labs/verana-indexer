@@ -469,19 +469,6 @@ The Verana Indexer exposes the Verifiable Trust resolver following the `IDX-VT-Q
 
 **Endpoint:** `POST /v4/verifiable-trust/resolve`
 
-The response always carries the trust-core fields; every other section is opt-in through a request selector.
-
-### Core fields (always present)
-
-| Field | Type | Description |
-|---|---|---|
-| `did` | string | Echo of the resolved DID. |
-| `trusted` | boolean | Whether the DID qualifies as a Verifiable Service at the evaluation point-in-time. |
-| `evaluatedAtTime` | ISO 8601 UTC | Wall-clock time of the evaluation. |
-| `evaluatedAtBlock` | integer | Block height of the evaluation. |
-| `expiresAtTime` | ISO 8601 UTC | Time after which the result MUST be re-evaluated. |
-| `corporationId` | integer | Stable id of the Corporation that owns the DID. |
-
 ### Selectors (opt-in sections)
 
 Set in the JSON request body; each section is omitted unless its selector is provided:
@@ -492,15 +479,6 @@ Set in the JSON request body; each section is omitted unless its selector is pro
 - `services` (boolean) — non-`LinkedVerifiablePresentation` service entries from the DID Document.
 - `presentations` (boolean | `{ unresolvableCredentialIds, invalidCredentialIds }`) — per-VP credential summaries.
 - `ecosystems` (boolean | `{ includeArchived, credentialSchemas }`) — aggregate metrics for the Ecosystems the DID controls.
-
-### Point-in-time & live re-evaluation
-
-`At-Block-Height` HTTP header selects a point-in-time query (capped to the last processed trust block). When omitted, the latest indexed block is used.
-
-- **Live queries** (no `At-Block-Height`) re-evaluate trust against the resolver when the stored result is missing, expired (past `expiresAtTime`), or untrusted; a fresh trusted result within its TTL is served from the indexed state.
-- **Historical queries** (`At-Block-Height` set) are read-only and never re-evaluate.
-
-The trust-evaluation TTL is `trustEvaluationTtlSeconds` in `src/config.json` (default `3600`).
 
 ### Example request
 
