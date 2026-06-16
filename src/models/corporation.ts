@@ -8,6 +8,7 @@ export class Corporation extends BaseModel {
 
   id!: number;
   did!: string;
+  policy_address?: string | null;
   corporation?: string | null;
   creator?: string | null;
   language?: string | null;

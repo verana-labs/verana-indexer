@@ -1,9 +1,8 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, ServiceBroker } from "moleculer";
-import { ECS, PermissionType, verifyPermissions } from "@verana-labs/verre";
-import { createHash } from "node:crypto";
+import { PermissionType, verifyPermissions } from "@verana-labs/verre";
 import BaseService from "../../base/base.service";
-import { BULL_JOB_NAME, SERVICE } from "../../common";
+import { BULL_JOB_NAME, SERVICE, toCoin } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import knex from "../../common/utils/db_connection";
 import { BlockCheckpoint } from "../../models";
@@ -11,10 +10,21 @@ import {
   getTrustEvaluationTtlSeconds,
   getVerreTrustEvaluationCallOptions,
   buildTrustSummaryFromStoredRow,
-  extractQ1CredentialArrays,
   getTrustResultLatestByDidAtOrBeforeHeight,
   resolveTrustForDidAtHeight,
 } from "./trust-resolve";
+import {
+  buildCorporation,
+  buildEcosystems,
+  buildEcsCredentials,
+  buildParticipations,
+  buildPresentations,
+  buildServices,
+  resolveCorporationId,
+  type EcosystemsOptions,
+  type PresentationsOptions,
+} from "./trust-resolve-v4.builders";
+import { ALL_PARTICIPANT_STATES, type ParticipantState } from "../../common/types/types";
 
 function isDidParam(did: string): did is string {
   return did.startsWith("did:");
@@ -30,80 +40,6 @@ type ParticipantChainLink = {
   effective_until?: string | null;
 };
 
-type Q1Credential = {
-  result: "VALID" | "IGNORED" | "FAILED";
-  ecs_type: "ECS-SERVICE" | "ECS-ORG" | "ECS-PERSONA" | "ECS-UA" | null;
-  presented_by: string | null;
-  issued_by: string | null;
-  id?: string;
-  type?: string;
-  format?: string;
-  issued_at?: string;
-  valid_until?: string;
-  digest_sri?: string;
-  effective_issuance_time?: string;
-  vtjsc_id?: string;
-  claims?: unknown;
-  schema?: unknown;
-  participant_chain?: Array<Record<string, unknown>>;
-  digest_algorithm?: string;
-};
-
-const RESOLVE_RESULT_STATUS_BY_OUTCOME: Record<string, { trustStatus: string; production: boolean }> = {
-  verified: { trustStatus: "TRUSTED", production: true },
-  "verified-test": { trustStatus: "PARTIAL", production: false },
-};
-
-const VERRE_ECS = ECS ?? {
-  SERVICE: "ecs-service",
-  ORG: "ecs-org",
-  PERSONA: "ecs-persona",
-  USER_AGENT: "ecs-user-agent",
-};
-const ecsLookupKey = (value: string): string => value.trim().toLowerCase();
-const ECS_BY_LOOKUP_KEY: Record<string, string> = {
-  [ecsLookupKey(VERRE_ECS.SERVICE)]: VERRE_ECS.SERVICE,
-  [ecsLookupKey(VERRE_ECS.ORG)]: VERRE_ECS.ORG,
-  [ecsLookupKey(VERRE_ECS.PERSONA)]: VERRE_ECS.PERSONA,
-  [ecsLookupKey(VERRE_ECS.USER_AGENT)]: VERRE_ECS.USER_AGENT,
-};
-
-function detectEcsFromVtjscId(vtjscId: string): string | null {
-  const normalized = ecsLookupKey(vtjscId);
-  if (ECS_BY_LOOKUP_KEY[normalized]) return ECS_BY_LOOKUP_KEY[normalized];
-
-  const tokens = normalized.split(/[^a-z0-9-]+/).filter(Boolean);
-  for (const token of tokens) {
-    if (ECS_BY_LOOKUP_KEY[token]) return ECS_BY_LOOKUP_KEY[token];
-  }
-  return null;
-}
-
-function computeSri(algorithm: string, canonicalJson: string): string {
-  const alg = algorithm.trim().toLowerCase();
-  const hashAlg = alg === "sha-256" || alg === "sha256" ? "sha256" : alg === "sha-512" || alg === "sha512" ? "sha512" : null;
-  if (!hashAlg) throw new Error(`Unsupported digest algorithm: ${algorithm}`);
-  const digest = createHash(hashAlg).update(canonicalJson, "utf8").digest("base64");
-  return `${hashAlg}-${digest}`;
-}
-
-let canonicalizeLoader: Promise<(v: unknown) => string> | null = null;
-async function canonicalizeJson(value: unknown): Promise<string> {
-  if (!canonicalizeLoader) {
-    canonicalizeLoader = import("canonicalize").then((mod: any) => mod?.default ?? mod);
-  }
-  const fn = await canonicalizeLoader;
-  const out = fn(value);
-  if (typeof out !== "string") throw new Error("canonicalize did not return a string");
-  return out;
-}
-
-function formatDeposit(n: unknown): string {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "0";
-  return `${v}uvna`;
-}
-
 function toParticipantChainLink(p: Record<string, unknown>): ParticipantChainLink {
   const id = Number(p.id);
   const state = String(p.participant_state ?? p.participantState ?? "").toUpperCase() || "UNKNOWN";
@@ -111,7 +47,7 @@ function toParticipantChainLink(p: Record<string, unknown>): ParticipantChainLin
     participant_id: Number.isFinite(id) ? id : 0,
     type: String(p.role ?? ""),
     did: (p.did as string) ?? (p.grantee as string) ?? null,
-    deposit: formatDeposit(p.deposit),
+    deposit: toCoin(p.deposit),
     participant_state: state,
     effective_from: p.effective_from != null ? String(p.effective_from) : p.effective != null ? String(p.effective) : null,
     effective_until:
@@ -170,44 +106,64 @@ export class TrustApiService extends BaseService {
     super(broker);
   }
 
-  private vtjscToSchemaId = new Map<string, number>();
-  private schemaIdToDigestAlg = new Map<number, string | null>();
-  private trustedVsAtHeight = new Map<string, boolean>();
+  private async didExistsAtHeight(did: string, atHeight?: number): Promise<boolean> {
+    const blockTime = atHeight != null ? await this.blockTimeAtHeight(atHeight) : null;
+    const byHeight = (q: any) => (atHeight != null ? q.andWhere("height", "<=", atHeight) : q);
+    const byCreated = (q: any) => (blockTime != null ? q.andWhere("created", "<=", blockTime) : q);
 
-  private async ensureDidExistsOr404(ctx: Context, did: string) {
-    try {
-      const hitTrust = await knex("trust_results").select("did").where({ did }).first();
-      if (hitTrust) return null;
-    } catch {
-      this.logger.warn(`Failed to query trust_results table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
-    try {
-      const hitParticipant = await knex("participants").select("id").where({ did }).first();
-      if (hitParticipant) return null;
-    } catch {
-      this.logger.warn(`Failed to query participants table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
+    const checks: Array<[string, (q: any) => any, string]> = [
+      ["trust_results", byHeight, "did"],
+      ["corporation", byCreated, "id"],
+      ["participants", byCreated, "id"],
+      ["participant_history", byHeight, "id"],
+      ["ecosystem", byCreated, "id"],
+      ["ecosystem_history", byHeight, "id"],
+    ];
 
-    try {
-      const hitParticipantH = await knex("participant_history").select("id").where({ did }).first();
-      if (hitParticipantH) return null;
-    } catch {
-      this.logger.warn(`Failed to query participant_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
+    for (const [table, scope, column] of checks) {
+      try {
+        const hit = await scope(knex(table).select(column).where({ did })).first();
+        if (hit) return true;
+      } catch {
+        this.logger.warn(`Failed to query ${table} for existence check of DID ${did}.`, { did });
+      }
     }
-    try {
-      const hitTr = await knex("ecosystem").select("id").where({ did }).first();
-      if (hitTr) return null;
-    } catch {
-      this.logger.warn(`Failed to query ecosystem table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
-    try {
-      const hitTrH = await knex("ecosystem_history").select("id").where({ did }).first();
-      if (hitTrH) return null;
-    } catch {
-      this.logger.warn(`Failed to query ecosystem_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
+    return false;
+  }
 
+  private async ensureDidExistsOr404(ctx: Context, did: string, atHeight?: number) {
+    if (await this.didExistsAtHeight(did, atHeight)) return null;
     return ApiResponder.error(ctx, "DID not found", 404);
+  }
+
+  private isTrustRowExpired(row: { evaluated_at?: unknown; created_at?: unknown } | null | undefined): boolean {
+    if (!row) return true;
+    const ttlSeconds = getTrustEvaluationTtlSeconds();
+    const evaluatedAtSource = row.evaluated_at ?? row.created_at;
+    if (evaluatedAtSource == null) return true;
+    const evaluatedMs = new Date(evaluatedAtSource as Date | string).getTime();
+    if (!Number.isFinite(evaluatedMs)) return true;
+    return Date.now() >= evaluatedMs + ttlSeconds * 1000;
+  }
+
+  private isTrustRowTrusted(
+    row: { did?: string; resolve_result?: unknown; height?: number; evaluated_at?: unknown; created_at?: unknown } | null | undefined
+  ): boolean {
+    if (!row) return false;
+    const summary = buildTrustSummaryFromStoredRow({
+      did: row.did as string,
+      resolveResult: row.resolve_result ?? null,
+      evaluatedAtBlock: row.height as number,
+      createdAt: (row.evaluated_at ?? row.created_at) as Date | string | undefined,
+      trustTtlSeconds: getTrustEvaluationTtlSeconds(),
+    });
+    return summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
+  }
+
+  private shouldReevaluateTrustRow(
+    row: { did?: string; resolve_result?: unknown; height?: number; evaluated_at?: unknown; created_at?: unknown } | null | undefined
+  ): boolean {
+    return this.isTrustRowExpired(row) || !this.isTrustRowTrusted(row);
   }
 
   private async getLastProcessedTrustBlockHeight(): Promise<number> {
@@ -269,263 +225,6 @@ export class TrustApiService extends BaseService {
     return undefined;
   }
 
-  private isIsoDateTime(s: string): boolean {
-    if (!s) return false;
-    const d = new Date(s);
-    return Number.isFinite(d.getTime());
-  }
-
-  private async blockHeightAtOrBeforeTime(atIso: string): Promise<number | undefined> {
-    const d = new Date(atIso);
-    if (!Number.isFinite(d.getTime())) return undefined;
-    const row = await knex("block").select("height").where("time", "<=", d).orderBy("height", "desc").first();
-    const h = Number((row as any)?.height);
-    return Number.isInteger(h) && h >= 0 ? h : undefined;
-  }
-
-  private async parseAtToHeight(atParam?: string): Promise<number | undefined> {
-    if (atParam === undefined || atParam === "") return undefined;
-    const asHeight = this.parseBlockHeightQuery(undefined, atParam);
-    if (asHeight !== undefined) return asHeight;
-    if (this.isIsoDateTime(atParam)) return this.blockHeightAtOrBeforeTime(atParam);
-    return undefined;
-  }
-
-  private ecsTypeFromCredential(c: Record<string, unknown>): Q1Credential["ecs_type"] {
-    const vtjscId =
-      (typeof c.vtjscId === "string" && c.vtjscId) ||
-      (typeof (c.schema as any)?.jsonSchema === "string" && (c.schema as any).jsonSchema) ||
-      "";
-    const ecsType = detectEcsFromVtjscId(vtjscId);
-    if (ecsType === VERRE_ECS.SERVICE) return "ECS-SERVICE";
-    if (ecsType === VERRE_ECS.ORG) return "ECS-ORG";
-    if (ecsType === VERRE_ECS.PERSONA) return "ECS-PERSONA";
-    if (ecsType === VERRE_ECS.USER_AGENT) return "ECS-UA";
-    return null;
-  }
-
-  private extractDigestAlgorithmFromSchemaJson(schemaJson: unknown): string | null {
-    if (!schemaJson) return null;
-    try {
-      const js = typeof schemaJson === "string" ? (JSON.parse(schemaJson) as any) : (schemaJson as any);
-      const direct =
-        (typeof js?.digest_algorithm === "string" && js.digest_algorithm) ||
-        (typeof js?.digestAlgorithm === "string" && js.digestAlgorithm) ||
-        (typeof js?.digest === "object" && typeof js?.digest?.algorithm === "string" && js.digest.algorithm) ||
-        null;
-      return direct ? String(direct) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private extractW3cCredentialJson(raw: Record<string, unknown>): unknown | null {
-    const vc =
-      (raw.credential as any) ??
-      (raw.verifiableCredential as any) ??
-      (raw.vc as any) ??
-      (raw.rawCredential as any) ??
-      null;
-    if (vc && typeof vc === "object") return vc;
-    if (typeof vc === "string") {
-      try {
-        return JSON.parse(vc);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  private async tryComputeDigestSriForCredential(vtjscId: string | undefined, rawCredential: unknown): Promise<{
-    digest_sri?: string;
-    digest_algorithm?: string;
-  }> {
-    if (!vtjscId || !rawCredential) return {};
-    let schemaId = this.vtjscToSchemaId.get(vtjscId);
-    if (!schemaId) {
-      const schemaIds = await findCredentialSchemaIdsByVtjscUri(vtjscId);
-      if (schemaIds.length === 0) return {};
-      schemaId = schemaIds[0];
-      this.vtjscToSchemaId.set(vtjscId, schemaId);
-    }
-
-    let alg = this.schemaIdToDigestAlg.get(schemaId);
-    if (alg === undefined) {
-      const row = await knex("credential_schemas").select("json_schema").where("id", schemaId).first();
-      alg = this.extractDigestAlgorithmFromSchemaJson((row as any)?.json_schema) ?? null;
-      this.schemaIdToDigestAlg.set(schemaId, alg);
-    }
-    if (!alg) return {};
-    try {
-      const canonical = await canonicalizeJson(rawCredential);
-      return { digest_sri: computeSri(alg, canonical), digest_algorithm: alg };
-    } catch {
-      return { digest_algorithm: alg };
-    }
-  }
-
-  private resultFromCredential(c: Record<string, unknown>): Q1Credential["result"] {
-    const r = String(c.result ?? c.status ?? "").toUpperCase();
-    if (r === "VALID") return "VALID";
-    if (r === "FAILED") return "FAILED";
-    if (r === "IGNORED") return "IGNORED";
-    return "VALID";
-  }
-
-  private normalizeQ1Credential(raw: unknown, did: string): Q1Credential | null {
-    if (!raw || typeof raw !== "object") return null;
-    const c = raw as Record<string, unknown>;
-    const schema = (c.schema as any) ?? undefined;
-    const vtjscId =
-      (typeof c.vtjscId === "string" && c.vtjscId) ||
-      (typeof schema?.jsonSchema === "string" && schema.jsonSchema) ||
-      undefined;
-    const presentedBy =
-      (typeof c.presentedBy === "string" && c.presentedBy) ||
-      (typeof c.presented_by === "string" && (c as any).presented_by) ||
-      did;
-    const issuedBy =
-      (typeof c.issuedBy === "string" && c.issuedBy) ||
-      (typeof c.issuer === "string" && c.issuer) ||
-      (typeof c.issued_by === "string" && (c as any).issued_by) ||
-      null;
-    const claims = c.claims ?? c.credentialSubject ?? c.subjectClaims ?? undefined;
-    const w3c = this.extractW3cCredentialJson(c);
-    return {
-      result: this.resultFromCredential(c),
-      ecs_type: this.ecsTypeFromCredential({ ...c, vtjscId }),
-      presented_by: presentedBy,
-      issued_by: issuedBy,
-      id: typeof c.id === "string" ? c.id : undefined,
-      type: typeof c.type === "string" ? c.type : undefined,
-      format: typeof c.format === "string" ? c.format : undefined,
-      issued_at:
-        typeof c.issuedAt === "string"
-          ? c.issuedAt
-          : typeof (c as any).issuanceDate === "string"
-            ? (c as any).issuanceDate
-            : undefined,
-      valid_until:
-        typeof c.validUntil === "string"
-          ? c.validUntil
-          : typeof (c as any).expirationDate === "string"
-            ? (c as any).expirationDate
-            : undefined,
-      digest_sri: typeof c.digestSri === "string" ? c.digestSri : undefined,
-      effective_issuance_time: typeof c.effectiveIssuanceTime === "string" ? c.effectiveIssuanceTime : undefined,
-      vtjsc_id: vtjscId,
-      claims,
-      schema: c.schema,
-      participant_chain: Array.isArray((c as any).participantChain) ? ((c as any).participantChain as any[]) : undefined,
-      ...(w3c ? { credential: w3c } : {}),
-    };
-  }
-
-  private ecosystemKeyFromCredential(c: Q1Credential): string {
-    const eco = (c.schema as any)?.ecosystemDid;
-    return typeof eco === "string" && eco ? eco : "unknown";
-  }
-
-  private computeVsReqTrustStatus(did: string, credentials: Q1Credential[]): { trustStatus: string; production: boolean } {
-    const valid = credentials.filter((c) => c.result === "VALID");
-    const services = valid.filter((c) => c.ecs_type === "ECS-SERVICE" && c.presented_by === did);
-    if (services.length === 0) return { trustStatus: "UNTRUSTED", production: false };
-
-    const byEco = new Map<string, { services: Q1Credential[]; orgPersonaByDid: Map<string, Q1Credential[]> }>();
-    for (const c of valid) {
-      const key = this.ecosystemKeyFromCredential(c);
-      const cur = byEco.get(key) ?? { services: [], orgPersonaByDid: new Map<string, Q1Credential[]>() };
-      if (c.ecs_type === "ECS-SERVICE" && c.presented_by === did) cur.services.push(c);
-      if ((c.ecs_type === "ECS-ORG" || c.ecs_type === "ECS-PERSONA") && c.presented_by) {
-        const arr = cur.orgPersonaByDid.get(c.presented_by) ?? [];
-        arr.push(c);
-        cur.orgPersonaByDid.set(c.presented_by, arr);
-      }
-      byEco.set(key, cur);
-    }
-
-    let ecosystemsWithService = 0;
-    let ecosystemsSatisfied = 0;
-    for (const cur of byEco.values()) {
-      if (cur.services.length === 0) continue;
-      ecosystemsWithService += 1;
-      let ok = false;
-      for (const svc of cur.services) {
-        const issuer = svc.issued_by;
-        if (!issuer) continue;
-        if (issuer === did) {
-          const arr = cur.orgPersonaByDid.get(did) ?? [];
-          if (arr.length === 1) ok = true;
-        } else {
-          const arr = cur.orgPersonaByDid.get(issuer) ?? [];
-          if (arr.length === 1) ok = true;
-        }
-        if (ok) break;
-      }
-      if (ok) ecosystemsSatisfied += 1;
-    }
-
-    if (ecosystemsSatisfied <= 0) return { trustStatus: "UNTRUSTED", production: false };
-    if (ecosystemsSatisfied < ecosystemsWithService) return { trustStatus: "PARTIAL", production: false };
-    return { trustStatus: "TRUSTED", production: true };
-  }
-
-  private trustStatusFallbackFromResolveResult(resolveResult: unknown): { trustStatus: string; production: boolean } {
-    if (!resolveResult || typeof resolveResult !== "object" || (resolveResult as any).error) {
-      return { trustStatus: "UNTRUSTED", production: false };
-    }
-    const { verified, outcome } = resolveResult as { verified?: unknown; outcome?: unknown };
-    if (!verified) return { trustStatus: "UNTRUSTED", production: false };
-    if (typeof outcome === "string" && RESOLVE_RESULT_STATUS_BY_OUTCOME[outcome]) {
-      return RESOLVE_RESULT_STATUS_BY_OUTCOME[outcome];
-    }
-    return { trustStatus: "UNTRUSTED", production: false };
-  }
-
-  private async isTrustedVsAtHeight(did: string, height: number, visited: Set<string>): Promise<boolean> {
-    const key = `${did}@${height}`;
-    const cached = this.trustedVsAtHeight.get(key);
-    if (cached !== undefined) return cached;
-    if (visited.has(key)) return false;
-    visited.add(key);
-    const row = await getTrustResultLatestByDidAtOrBeforeHeight(did, height);
-    if (!row) {
-      this.trustedVsAtHeight.set(key, false);
-      return false;
-    }
-    const summary = buildTrustSummaryFromStoredRow({
-      did,
-      resolveResult: row.resolve_result,
-      evaluatedAtBlock: row.height,
-      createdAt: row.evaluated_at ?? row.created_at,
-      trustTtlSeconds: getTrustEvaluationTtlSeconds(),
-    });
-    const ok = summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
-    this.trustedVsAtHeight.set(key, ok);
-    return ok;
-  }
-
-  private async enrichCredentialParticipantChain(
-    cred: Q1Credential,
-    blockHeight: number
-  ): Promise<Array<Record<string, unknown>>> {
-    const raw = cred.participant_chain;
-    if (!Array.isArray(raw) || raw.length === 0) return [];
-    const visited = new Set<string>();
-    const out: Array<Record<string, unknown>> = [];
-    for (const link of raw) {
-      if (!link || typeof link !== "object") continue;
-      const did = typeof (link as any).did === "string" ? (link as any).did : null;
-      const didIsTrustedVS = did ? await this.isTrustedVsAtHeight(did, blockHeight, visited) : false;
-      out.push({
-        ...link,
-        did_is_trusted_vs: didIsTrustedVS,
-      });
-    }
-    return out;
-  }
-
   private async walkParticipantChainUp(leafId: number, blockHeight: number): Promise<ParticipantChainLink[]> {
     const chain: ParticipantChainLink[] = [];
     let id: number | null = leafId;
@@ -547,97 +246,170 @@ export class TrustApiService extends BaseService {
     return chain;
   }
 
-  private formatUvnaAmount(n: unknown): string {
-    const v = Number(n);
-    if (!Number.isFinite(v)) return "0uvna";
-    return `${Math.trunc(v)}uvna`;
+  private async blockTimeAtHeight(height: number): Promise<Date | null> {
+    if (!Number.isInteger(height) || height < 0) return null;
+    const row = await knex("block").select("time").where("height", height).first();
+    const t = (row as { time?: Date | string } | undefined)?.time;
+    const d = t != null ? new Date(t as Date | string) : null;
+    return d && Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  private parseParticipationsSelector(value: unknown): ParticipantState[] | null {
+    if (value === undefined || value === false || value === null) return null;
+    if (value === true) return ["ACTIVE"];
+    if (typeof value === "object") {
+      const states = (value as { states?: unknown }).states;
+      if (Array.isArray(states)) {
+        const valid = states
+          .map((s) => String(s).toUpperCase())
+          .filter((s): s is ParticipantState => (ALL_PARTICIPANT_STATES as string[]).includes(s));
+        return valid.length > 0 ? [...new Set(valid)] : ["ACTIVE"];
+      }
+      return ["ACTIVE"];
+    }
+    return null;
+  }
+
+  private parsePresentationsSelector(value: unknown): PresentationsOptions | null {
+    if (value === undefined || value === false || value === null) return null;
+    if (value === true) return { unresolvableCredentialIds: false, invalidCredentialIds: false };
+    if (typeof value === "object") {
+      const obj = value as { unresolvableCredentialIds?: unknown; invalidCredentialIds?: unknown };
+      return {
+        unresolvableCredentialIds: obj.unresolvableCredentialIds === true,
+        invalidCredentialIds: obj.invalidCredentialIds === true,
+      };
+    }
+    return null;
+  }
+
+  private parseEcosystemsSelector(value: unknown): EcosystemsOptions | null {
+    if (value === undefined || value === false || value === null) return null;
+    if (value === true) {
+      return { includeArchived: false, credentialSchemas: { include: false, includeArchived: false } };
+    }
+    if (typeof value === "object") {
+      const obj = value as { includeArchived?: unknown; credentialSchemas?: unknown };
+      const cs = obj.credentialSchemas;
+      let credentialSchemas = { include: false, includeArchived: false };
+      if (cs === true) {
+        credentialSchemas = { include: true, includeArchived: false };
+      } else if (cs && typeof cs === "object") {
+        credentialSchemas = {
+          include: true,
+          includeArchived: (cs as { includeArchived?: unknown }).includeArchived === true,
+        };
+      }
+      return { includeArchived: obj.includeArchived === true, credentialSchemas };
+    }
+    return null;
   }
 
   @Action({
-    rest: "GET /resolve",
+    rest: "POST /v4/verifiable-trust/resolve",
     params: {
       did: { type: "string" },
-      detail: { type: "string", optional: true },
-      at: { type: "string", optional: true },
+      corporation: { type: "boolean", optional: true },
+      ecsCredentials: { type: "boolean", optional: true },
+      services: { type: "boolean", optional: true },
+      participations: { type: "any", optional: true },
+      presentations: { type: "any", optional: true },
+      ecosystems: { type: "any", optional: true },
     },
   })
-  public async resolve(ctx: Context<{ did: string; detail?: string; at?: string }>) {
+  public async resolveV4(
+    ctx: Context<{
+      did: string;
+      corporation?: boolean;
+      ecsCredentials?: boolean;
+      services?: boolean;
+      participations?: unknown;
+      presentations?: unknown;
+      ecosystems?: unknown;
+    }>
+  ) {
     const did = ctx.params.did;
     if (!isDidParam(did)) return ApiResponder.error(ctx, 'Missing or invalid "did". Must start with "did:".', 400);
 
-    const detailRaw = (ctx.params.detail ?? "full").toLowerCase();
-    if (detailRaw !== "summary" && detailRaw !== "full") {
-      return ApiResponder.error(ctx, 'Invalid "detail". Use "summary" or "full".', 400);
+    const metaBlockHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
+    const requestedHeight = typeof metaBlockHeight === "number" ? metaBlockHeight : undefined;
+    const isLive = requestedHeight == null;
+    const effectiveHeight =
+      requestedHeight != null && Number.isInteger(requestedHeight) && requestedHeight >= 0
+        ? requestedHeight
+        : await this.getLastProcessedTrustBlockHeight();
+    let row = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
+
+    if (isLive && this.shouldReevaluateTrustRow(row)) {
+      try {
+        await resolveTrustForDidAtHeight(did, effectiveHeight);
+        const refreshed = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
+        if (refreshed) row = refreshed;
+      } catch (err) {
+        this.logger.warn(`Live trust re-evaluation failed for DID ${did}.`, { did, err });
+      }
     }
 
-    const requestedHeight = await this.parseAtToHeight(ctx.params.at);
-    const effectiveHeight = await this.clampQueryBlockHeight(requestedHeight);
-    const row = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
-    if (!row) return ApiResponder.error(ctx, `No trust evaluation found for DID: ${did}`, 404);
+    if (!row) {
+      const didErr = await this.ensureDidExistsOr404(ctx, did, requestedHeight);
+      if (didErr) return didErr;
+    }
 
-    const evaluatedAtSource = row.evaluated_at ?? row.created_at;
-    const summary = buildTrustSummaryFromStoredRow({
-      did,
-      resolveResult: row.resolve_result,
-      evaluatedAtBlock: row.height,
-      createdAt: evaluatedAtSource,
-      trustTtlSeconds: getTrustEvaluationTtlSeconds(),
-    });
+    const resolveResult = row?.resolve_result ?? null;
+    const ttlSeconds = getTrustEvaluationTtlSeconds();
+    const blockTime = await this.blockTimeAtHeight(effectiveHeight);
 
-    if (detailRaw === "full") {
-      const evaluatedAtIso =
+    let evaluatedAtTime: string;
+    let evaluatedAtBlock: number;
+    let expiresAtTime: string;
+    let trusted: boolean;
+
+    if (row) {
+      const evaluatedAtSource = row.evaluated_at ?? row.created_at;
+      const summary = buildTrustSummaryFromStoredRow({
+        did,
+        resolveResult,
+        evaluatedAtBlock: row.height,
+        createdAt: evaluatedAtSource,
+        trustTtlSeconds: ttlSeconds,
+      });
+      evaluatedAtTime =
         evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at;
-      const { credentials: rawCreds, failedCredentials } = extractQ1CredentialArrays(row.resolve_result);
-      const credentials = (rawCreds as unknown[])
-        .map((c) => this.normalizeQ1Credential(c, did))
-        .filter(Boolean) as Q1Credential[];
-    
-      const withDigest = await Promise.all(
-        credentials.map(async (cred, idx) => {
-          if (cred.digest_sri) return cred;
-          const raw = (rawCreds as unknown[])[idx];
-          const rawObj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-          const w3c = rawObj ? this.extractW3cCredentialJson(rawObj) : null;
-          const computed = await this.tryComputeDigestSriForCredential(cred.vtjsc_id, w3c);
-          return { ...cred, ...computed };
-        })
-      );
-      const enrichedCredentials = await Promise.all(
-        withDigest.map(async (c) => ({
-          ...c,
-          participant_chain: await this.enrichCredentialParticipantChain(c, row.height),
-        }))
-      );
-      const vsReq = (() => {
-        const computed = this.computeVsReqTrustStatus(did, enrichedCredentials);
-        if (computed.trustStatus === "UNTRUSTED") {
-          const fb = this.trustStatusFallbackFromResolveResult(row.resolve_result);
-          return fb.trustStatus !== "UNTRUSTED" ? fb : computed;
-        }
-        return computed;
-      })();
-      const body: Record<string, unknown> = {
-        did: summary.did,
-        trust_status: vsReq.trustStatus,
-        production: vsReq.production,
-        evaluated_at: evaluatedAtIso,
-        evaluated_at_block: row.height,
-        credentials: enrichedCredentials,
-        failed_credentials: failedCredentials,
-      };
-      if (summary.expires_at !== undefined) body.expires_at = summary.expires_at;
-      return ApiResponder.success(ctx, body, 200);
+      expiresAtTime =
+        summary.expires_at ?? new Date(new Date(evaluatedAtTime).getTime() + ttlSeconds * 1000).toISOString();
+      evaluatedAtBlock = row.height;
+      trusted = summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
+    } else {
+      evaluatedAtTime = (blockTime ?? new Date()).toISOString();
+      evaluatedAtBlock = effectiveHeight;
+      expiresAtTime = new Date(new Date(evaluatedAtTime).getTime() + ttlSeconds * 1000).toISOString();
+      trusted = false;
     }
 
-    const summaryBody: Record<string, unknown> = {
-      did: summary.did,
-      trust_status: summary.trust_status,
-      production: summary.production,
-      evaluated_at: summary.evaluated_at,
-      evaluated_at_block: row.height,
+    const body: Record<string, unknown> = {
+      did,
+      trusted,
+      evaluatedAtTime,
+      evaluatedAtBlock,
+      expiresAtTime,
+      corporationId: await resolveCorporationId(did, requestedHeight),
     };
-    if (summary.expires_at !== undefined) summaryBody.expires_at = summary.expires_at;
-    return ApiResponder.success(ctx, summaryBody, 200);
+
+    if (ctx.params.corporation === true) {
+      const corporation = await buildCorporation(did, requestedHeight);
+      if (corporation) body.corporation = corporation;
+    }
+
+    const now = blockTime ?? new Date(evaluatedAtTime);
+    const states = this.parseParticipationsSelector(ctx.params.participations);
+    if (states) body.participations = await buildParticipations(did, now, states, requestedHeight);
+    const ecosystemsOpts = this.parseEcosystemsSelector(ctx.params.ecosystems);
+    if (ecosystemsOpts) body.ecosystems = await buildEcosystems(did, ecosystemsOpts, requestedHeight);
+    if (ctx.params.ecsCredentials === true) body.ecsCredentials = await buildEcsCredentials(resolveResult);
+    const presentationsOpts = this.parsePresentationsSelector(ctx.params.presentations);
+    if (presentationsOpts) body.presentations = await buildPresentations(resolveResult, presentationsOpts);
+    if (ctx.params.services === true) body.services = buildServices(resolveResult);
+    return ApiResponder.success(ctx, body, 200);
   }
 
   private async vtjscAuthorizationResponse(
@@ -725,11 +497,11 @@ export class TrustApiService extends BaseService {
       if (isIssuer) {
         const iss = Number(p.issuance_fees ?? 0);
         totalFeeUnits += iss;
-        return { participant_id: pid, type: typ, issuance_fees: this.formatUvnaAmount(iss) };
+        return { permission_id: pid, type: typ, issuance_fees: toCoin(iss) };
       }
       const vf = Number(p.verification_fees ?? 0);
       totalFeeUnits += vf;
-      return { participant_id: pid, type: typ, verification_fees: this.formatUvnaAmount(vf) };
+      return { permission_id: pid, type: typ, verification_fees: toCoin(vf) };
     });
 
     const feesRequired = totalFeeUnits > 0;
@@ -747,7 +519,7 @@ export class TrustApiService extends BaseService {
           fees: {
             pricingAssetType: "COIN",
             pricingAsset: "uvna",
-            total_beneficiary_fees: this.formatUvnaAmount(totalFeeUnits),
+            total_beneficiary_fees: toCoin(totalFeeUnits),
             beneficiaries,
           },
         },
@@ -800,8 +572,8 @@ export class TrustApiService extends BaseService {
       type: leaf.role,
       schema_id: resolvedSchemaId,
       did: (leaf.did as string) ?? (leaf.grantee as string),
-      deposit: this.formatUvnaAmount(leaf.deposit),
-      participant_state: String(leaf.participant_state ?? "").toUpperCase(),
+      deposit: toCoin(leaf.deposit),
+      perm_state: String(leaf.perm_state ?? "").toUpperCase(),
       effective_from: leaf.effective_from ?? leaf.effective ?? null,
       effective_until: leaf.effective_until ?? leaf.expiration ?? null,
     };
@@ -816,7 +588,7 @@ export class TrustApiService extends BaseService {
           required: true,
           pricingAssetType: "COIN",
           pricingAsset: "uvna",
-          total_beneficiary_fees: this.formatUvnaAmount(totalFeeUnits),
+          total_beneficiary_fees: toCoin(totalFeeUnits),
           beneficiaries,
           paid: sessionOk,
         }
@@ -981,8 +753,8 @@ export class TrustApiService extends BaseService {
           type: String(p.role ?? ""),
           schema_id: schemaId,
           vtjsc_id: vtjscId,
-          deposit: this.formatUvnaAmount(p.deposit),
-          participant_state: participantState,
+          deposit: toCoin(p.deposit),
+          perm_state: participantState,
           effective_from: p.effective_from ?? p.effective ?? null,
           effective_until: p.effective_until ?? p.expiration ?? null,
         });

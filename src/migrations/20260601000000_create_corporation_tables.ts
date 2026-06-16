@@ -4,6 +4,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("corporation", (table) => {
     table.bigIncrements("id").primary();
     table.string("did").notNullable().unique();
+    table.text("policy_address").nullable();
     table.string("corporation").nullable();
     table.string("creator").nullable();
     table.string("language", 8).nullable();
@@ -41,6 +42,7 @@ export async function up(knex: Knex): Promise<void> {
     table.bigIncrements("id").primary();
     table.bigInteger("corporation_id").notNullable();
     table.string("did").nullable();
+    table.text("policy_address").nullable();
     table.string("corporation").nullable();
     table.string("language", 8).nullable();
     table.string("event_type").notNullable();

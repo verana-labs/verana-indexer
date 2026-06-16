@@ -463,6 +463,60 @@ The script will:
 For detailed information about the reindexing process, architecture, and troubleshooting, see:
 - [Reindexing Architecture Documentation](./docs/reindexing-architecture.md)
 
+## Verifiable Trust Resolve API (HTTP)
+
+The Verana Indexer exposes the Verifiable Trust resolver following the `IDX-VT-QRY-1` spec.
+
+**Endpoint:** `POST /v4/verifiable-trust/resolve`
+
+### Selectors (opt-in sections)
+
+Set in the JSON request body; each section is omitted unless its selector is provided:
+
+- `corporation` (boolean) — the Corporation whose `did` equals the resolved DID (`id`, `policyAddress`, `deposit`, slash history, active CGF).
+- `participations` (boolean | `{ states[] }`) — Credential Schemas the DID participates in. Defaults to `ACTIVE`; filter via `states` (`ACTIVE`, `FUTURE`, `INACTIVE`, `EXPIRED`, `REVOKED`, `SLASHED`, `REPAID`).
+- `ecsCredentials` (boolean) — ECS credentials extracted from the DID's linked-VPs, with `credentialSubject` claims, `validFrom`/`validUntil`.
+- `services` (boolean) — non-`LinkedVerifiablePresentation` service entries from the DID Document.
+- `presentations` (boolean | `{ unresolvableCredentialIds, invalidCredentialIds }`) — per-VP credential summaries.
+- `ecosystems` (boolean | `{ includeArchived, credentialSchemas }`) — aggregate metrics for the Ecosystems the DID controls.
+
+### Example request
+
+```bash
+curl -X POST http://localhost:3001/v4/verifiable-trust/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "did": "did:webvh:Qm...:dm.chatbot.demos.2060.io",
+    "corporation": true,
+    "ecsCredentials": true,
+    "services": true,
+    "participations": { "states": ["ACTIVE"] },
+    "presentations": true,
+    "ecosystems": true
+  }'
+```
+
+### Example response (trimmed)
+
+```json
+{
+  "did": "did:webvh:Qm...:dm.chatbot.demos.2060.io",
+  "trusted": true,
+  "evaluatedAtTime": "2026-06-16T19:25:04.222Z",
+  "evaluatedAtBlock": 2254,
+  "expiresAtTime": "2026-06-16T20:25:04.222Z",
+  "corporationId": 3,
+  "corporation": { "id": 3, "policyAddress": "verana1...", "deposit": "0uvna", "cgf": { "version": 1, "documents": [], "activeSince": "2026-06-16T16:18:08.593Z" } },
+  "participations": [],
+  "ecosystems": [ { "id": 3, "corporationId": 3, "archived": false, "egf": { "version": 1, "documents": [] }, "issuedCredentials": 0, "verifiedCredentials": 0 } ],
+  "ecsCredentials": [ { "ecsSchema": "ServiceCredential", "ecsSchemaVersion": "", "credentialSchemaId": 0, "issuerParticipantId": 0, "ecosystemId": 0, "participantId": 0, "validFrom": "2026-06-16T19:25:04.222Z", "validUntil": "2026-06-17T19:25:04.222Z", "credentialSubject": { "id": "did:webvh:Qm...", "name": "Chatbot Agent", "type": "VerifiableService" } } ],
+  "presentations": [ { "id": "https://.../vp.json", "serviceId": "did:webvh:Qm...#whois", "vtcCredentials": [] } ],
+  "services": [ { "id": "did:webvh:Qm...#did-communication", "type": "did-communication", "serviceEndpoint": "wss://dm.chatbot.demos.2060.io" } ]
+}
+```
+
+The full request/response contract is published in [`docs/api/openapi.json`](./docs/api/openapi.json) (`ResolutionResponse`) and the normative JSON Schemas under [`docs/api/schemas/v4/vt/`](./docs/api/schemas/v4/vt/).
+
 ## Real-Time Event API (WebSocket)
 
 The Verana Indexer streams persisted indexer events over a **WebSocket** following the `IDX-INDEXER-SUB-1` spec.
