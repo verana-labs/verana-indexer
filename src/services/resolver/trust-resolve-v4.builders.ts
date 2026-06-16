@@ -10,12 +10,6 @@ import {
 import { canonicalizeJson, toCoin } from "../../common";
 
 /**
- * Builders for the VPR v4 Verifiable Trust resolve response
- * (`POST /v4/verifiable-trust/resolve`). Each builder maps indexer tables onto
- * the normative shapes.
- */
-
-/**
  * Derives the single `participant_state` enum from a permission row's
  * lifecycle timestamps, following the priority order defined in the indexer
  * spec (Participant state derivation table).
