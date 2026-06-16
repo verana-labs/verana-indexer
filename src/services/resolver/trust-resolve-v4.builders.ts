@@ -149,7 +149,7 @@ export async function buildParticipations(
 
   const out: Array<Record<string, unknown>> = [];
   for (const row of rows) {
-    const role = normalizeRole(row.type);
+    const role = normalizeRole(row.role);
     if (!role) continue;
     const state = deriveParticipantState(row, now);
     if (!stateSet.has(state)) continue;
