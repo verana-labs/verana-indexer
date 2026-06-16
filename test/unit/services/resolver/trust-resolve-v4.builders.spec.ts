@@ -80,7 +80,7 @@ describe("buildParticipations", () => {
       {
         id: 501,
         schema_id: 1234,
-        type: "ISSUER",
+        role: "ISSUER",
         did: "did:example:1",
         vs_operator: "verana1op",
         weight: 10000000,
@@ -94,7 +94,7 @@ describe("buildParticipations", () => {
       {
         id: 502,
         schema_id: 1234,
-        type: "VERIFIER",
+        role: "VERIFIER",
         did: "did:example:1",
         weight: 5000000,
         validator_participant_id: 402,
@@ -124,7 +124,7 @@ describe("buildParticipations", () => {
 
   it("emits validatorParticipantId null only for ECOSYSTEM role", async () => {
     tableRows.participants = [
-      { id: 1, schema_id: 7, type: "ECOSYSTEM", did: "did:example:eco", validator_participant_id: null },
+      { id: 1, schema_id: 7, role: "ECOSYSTEM", did: "did:example:eco", validator_participant_id: null },
     ];
     tableRows.credential_schemas = [{ id: 7, ecosystem_id: 70 }];
     const out = await buildParticipations("did:example:eco", NOW, ["ACTIVE"]);
@@ -223,7 +223,7 @@ describe("buildEcsCredentials", () => {
   };
 
   it("surfaces the subject and resolves stable ids from participants/schemas", async () => {
-    tableRows.participants = [{ id: 501, schema_id: 1, did: "did:example:sub", type: "HOLDER" }];
+    tableRows.participants = [{ id: 501, schema_id: 1, did: "did:example:sub", role: "HOLDER" }];
     tableRows.credential_schemas = [
       { id: 1, ecosystem_id: 9, json_schema: { title: "ServiceCredential", $id: "vpr:verana:net/cs/v1/js/1" } },
     ];
