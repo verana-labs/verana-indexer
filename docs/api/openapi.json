@@ -3704,68 +3704,135 @@
         }
       }
     },
-    "/verana/resolver/v1/resolve": {
-      "get": {
+    "/v4/verifiable-trust/resolve": {
+      "post": {
         "tags": [
           "Resolver"
         ],
-        "summary": "Resolve trust for a DID",
-        "description": "Returns the cached trust evaluation result for a DID. Use `detail=full` for the complete evaluation tree. `at` is an optional ISO 8601 datetime or block height for point-in-time queries (capped to the last processed trust block).",
-        "operationId": "trustResolve",
+        "summary": "Resolve (IDX-VT-QRY-1)",
+        "description": "Resolves the Verifiable Trust state for a DID. Always returns the trust-core fields (`did`, `trusted`, `evaluatedAtTime`, `evaluatedAtBlock`, `expiresAtTime`, `corporationId`); every other section is opt-in via its request selector. Point-in-time is selected via the `At-Block-Height` header.",
+        "operationId": "trustResolveV4",
         "parameters": [
           {
-            "name": "did",
-            "in": "query",
-            "required": true,
-            "description": "DID (`did:`…)",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "detail",
-            "in": "query",
+            "name": "At-Block-Height",
+            "in": "header",
             "required": false,
-            "description": "Level of detail: `summary` or `full`.",
+            "description": "Optional block height for a point-in-time query (capped to the last processed trust block). When omitted, the latest indexed block is used.",
             "schema": {
-              "type": "string",
-              "enum": [
-                "summary",
-                "full"
-              ],
-              "default": "full"
-            }
-          },
-          {
-            "name": "at",
-            "in": "query",
-            "required": false,
-            "description": "Optional ISO 8601 datetime or block height for point-in-time query.",
-            "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 0
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "did"
+                ],
+                "properties": {
+                  "did": {
+                    "type": "string",
+                    "pattern": "^did:",
+                    "description": "DID to resolve."
+                  },
+                  "corporation": {
+                    "type": "boolean",
+                    "description": "Include the full `corporation` object (the Corporation whose `did` equals the resolved DID)."
+                  },
+                  "ecsCredentials": {
+                    "type": "boolean",
+                    "description": "Include the full ECS credentials with subject claims."
+                  },
+                  "services": {
+                    "type": "boolean",
+                    "description": "Include non-LinkedVerifiablePresentation service entries from the DID Document."
+                  },
+                  "participations": {
+                    "description": "Include participations. `true` defaults to state `ACTIVE`; pass an object with `states[]` to filter.",
+                    "oneOf": [
+                      { "type": "boolean" },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "states": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": ["ACTIVE", "FUTURE", "INACTIVE", "EXPIRED", "REVOKED", "SLASHED", "REPAID"]
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "presentations": {
+                    "description": "Include per-VP credential summaries. Sub-flags additionally surface unresolvable/invalid credential ids per VP.",
+                    "oneOf": [
+                      { "type": "boolean" },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "unresolvableCredentialIds": { "type": "boolean" },
+                          "invalidCredentialIds": { "type": "boolean" }
+                        }
+                      }
+                    ]
+                  },
+                  "ecosystems": {
+                    "description": "Include aggregate metrics for the Ecosystems the DID controls. Sub-flags control archived inclusion and embedded credential schemas.",
+                    "oneOf": [
+                      { "type": "boolean" },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "includeArchived": { "type": "boolean" },
+                          "credentialSchemas": {
+                            "oneOf": [
+                              { "type": "boolean" },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "includeArchived": { "type": "boolean" }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "OK — body is `TrustQ1Summary` or `TrustQ1Full` per `detail`.",
+            "description": "OK — the Verifiable Trust resolution response. Optional sections appear only when their selector was set.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/TrustQ1Summary"
-                    },
-                    {
-                      "$ref": "#/components/schemas/TrustQ1Full"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ResolutionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid `did`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "404": {
-            "description": "No trust row for this DID at the effective height",
+            "description": "No trust evaluation found for this DID at the effective height.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6515,6 +6582,166 @@
             ],
             "description": "Resolver poll interval (ms)."
           }
+        }
+      },
+      "VtGovernanceFramework": {
+        "type": "object",
+        "required": ["version", "documents"],
+        "description": "Active Governance Framework (CGF on a Corporation, EGF on an Ecosystem).",
+        "properties": {
+          "version": { "type": "integer", "minimum": 1 },
+          "activeSince": { "type": "string", "format": "date-time" },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["language", "url", "digestSri"],
+              "properties": {
+                "language": { "type": "string" },
+                "url": { "type": "string", "format": "uri" },
+                "digestSri": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "VtParticipantsByRole": {
+        "type": "object",
+        "description": "Participant counts keyed by role. Roles with zero participants MAY be omitted.",
+        "properties": {
+          "HOLDER": { "type": "integer", "minimum": 0 },
+          "ISSUER": { "type": "integer", "minimum": 0 },
+          "VERIFIER": { "type": "integer", "minimum": 0 },
+          "ISSUER_GRANTOR": { "type": "integer", "minimum": 0 },
+          "VERIFIER_GRANTOR": { "type": "integer", "minimum": 0 },
+          "ECOSYSTEM": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "VtCorporation": {
+        "type": "object",
+        "required": ["id", "policyAddress", "deposit"],
+        "description": "The Corporation the DID represents (whose `did` equals the resolved DID).",
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "policyAddress": { "type": "string" },
+          "deposit": { "type": "string" },
+          "lastSlashedAtTime": { "type": "string", "format": "date-time" },
+          "slashedEvents": { "type": "integer", "minimum": 0 },
+          "slashedValue": { "type": "string" },
+          "cgf": { "$ref": "#/components/schemas/VtGovernanceFramework" }
+        }
+      },
+      "VtParticipation": {
+        "type": "object",
+        "required": ["id", "vsOperator", "role", "state", "credentialSchemaId", "ecosystemId", "weight", "validatorParticipantId"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "vsOperator": { "type": ["string", "null"] },
+          "role": { "type": "string", "enum": ["HOLDER", "ISSUER", "VERIFIER", "ISSUER_GRANTOR", "VERIFIER_GRANTOR", "ECOSYSTEM"] },
+          "state": { "type": "string", "enum": ["ACTIVE", "FUTURE", "INACTIVE", "EXPIRED", "REVOKED", "SLASHED", "REPAID"] },
+          "credentialSchemaId": { "type": "integer", "minimum": 0 },
+          "ecosystemId": { "type": "integer", "minimum": 0 },
+          "weight": { "type": "string" },
+          "issuedCredentials": { "type": "integer", "minimum": 0 },
+          "verifiedCredentials": { "type": "integer", "minimum": 0 },
+          "participants": { "$ref": "#/components/schemas/VtParticipantsByRole" },
+          "validatorParticipantId": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      },
+      "VtEcsCredential": {
+        "type": "object",
+        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "credentialSubject"],
+        "properties": {
+          "ecsSchema": { "type": "string", "enum": ["ServiceCredential", "OrganizationCredential", "PersonaCredential", "UserAgentCredential"] },
+          "ecsSchemaVersion": { "type": "string" },
+          "credentialSchemaId": { "type": "integer", "minimum": 0 },
+          "issuerParticipantId": { "type": "integer", "minimum": 0 },
+          "ecosystemId": { "type": "integer", "minimum": 0 },
+          "participantId": { "type": "integer", "minimum": 0 },
+          "id": { "type": "string" },
+          "validFrom": { "type": "string", "format": "date-time" },
+          "validUntil": { "type": "string", "format": "date-time" },
+          "credentialSubject": { "type": "object" }
+        }
+      },
+      "VtPresentation": {
+        "type": "object",
+        "required": ["id", "vtcCredentials", "serviceId"],
+        "properties": {
+          "id": { "type": "string", "format": "uri" },
+          "serviceId": { "type": "string", "pattern": "^did:" },
+          "vtcCredentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "credentialSchemaId", "ecosystemId", "participantId", "issuerParticipantId"],
+              "properties": {
+                "id": { "type": "string" },
+                "credentialSchemaId": { "type": "integer", "minimum": 0 },
+                "ecosystemId": { "type": "integer", "minimum": 0 },
+                "participantId": { "type": "integer", "minimum": 0 },
+                "issuerParticipantId": { "type": "integer", "minimum": 0 }
+              }
+            }
+          },
+          "unresolvableCredentialIds": { "type": "array", "items": { "type": "string" } },
+          "invalidCredentialIds": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "VtServiceEndpoint": {
+        "type": "object",
+        "required": ["id", "type", "serviceEndpoint"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^did:" },
+          "type": { "type": "string" },
+          "serviceEndpoint": { "oneOf": [{ "type": "string" }, { "type": "object" }] },
+          "accept": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "VtEcosystemSchema": {
+        "type": "object",
+        "required": ["id", "type", "digestSri", "archived"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "type": { "type": "string", "enum": ["JsonSchema"] },
+          "digestSri": { "type": "string" },
+          "archived": { "type": "boolean" },
+          "participants": { "$ref": "#/components/schemas/VtParticipantsByRole" },
+          "issuedCredentials": { "type": "integer", "minimum": 0 },
+          "verifiedCredentials": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "VtEcosystem": {
+        "type": "object",
+        "required": ["id", "corporationId", "archived"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "corporationId": { "type": "integer", "minimum": 0 },
+          "archived": { "type": "boolean" },
+          "egf": { "$ref": "#/components/schemas/VtGovernanceFramework" },
+          "credentialSchemas": { "type": "array", "items": { "$ref": "#/components/schemas/VtEcosystemSchema" } },
+          "participants": { "$ref": "#/components/schemas/VtParticipantsByRole" },
+          "issuedCredentials": { "type": "integer", "minimum": 0 },
+          "verifiedCredentials": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "ResolutionResponse": {
+        "type": "object",
+        "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
+        "description": "Response of `POST /v4/verifiable-trust/resolve` (IDX-VT-QRY-1). Core fields are always present; optional sections appear only when their request selector was set.",
+        "properties": {
+          "did": { "type": "string", "pattern": "^did:" },
+          "trusted": { "type": "boolean" },
+          "evaluatedAtTime": { "type": "string", "format": "date-time" },
+          "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
+          "expiresAtTime": { "type": "string", "format": "date-time" },
+          "corporationId": { "type": "integer", "minimum": 0 },
+          "corporation": { "$ref": "#/components/schemas/VtCorporation" },
+          "participations": { "type": "array", "items": { "$ref": "#/components/schemas/VtParticipation" } },
+          "ecsCredentials": { "type": "array", "items": { "$ref": "#/components/schemas/VtEcsCredential" } },
+          "presentations": { "type": "array", "items": { "$ref": "#/components/schemas/VtPresentation" } },
+          "services": { "type": "array", "items": { "$ref": "#/components/schemas/VtServiceEndpoint" } },
+          "ecosystems": { "type": "array", "items": { "$ref": "#/components/schemas/VtEcosystem" } }
         }
       },
       "TrustQ1Summary": {

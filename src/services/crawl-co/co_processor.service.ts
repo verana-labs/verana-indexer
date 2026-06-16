@@ -91,6 +91,7 @@ function extractCreateCorporationEvent(txEvents: CoTxEvent[] | undefined): {
 interface CorporationRow {
   id: number;
   did: string;
+  policy_address: string | null;
   corporation: string | null;
   creator: string | null;
   language: string | null;
@@ -250,6 +251,7 @@ export default class CorporationMessageProcessorService extends BullableService 
     await trx("corporation_history").insert({
       corporation_id: corporationId,
       did: newData.did ?? null,
+      policy_address: newData.policy_address ?? null,
       corporation: newData.corporation ?? null,
       language: newData.language ?? null,
       event_type: eventType,
@@ -284,6 +286,7 @@ export default class CorporationMessageProcessorService extends BullableService 
 
       const row = {
         did,
+        policy_address: policyAddress,
         corporation: policyAddress,
         creator: message.signer ?? message.creator ?? null,
         language: message.language ?? null,

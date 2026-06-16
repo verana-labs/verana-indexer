@@ -23,12 +23,17 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
   return knexMock;
 });
 
+jest.mock("@verana-labs/verre", () => ({
+  fetchJson: jest.fn(async () => ({})),
+}));
+
 import {
   deriveParticipantState,
   buildParticipations,
   buildServices,
   buildPresentations,
   buildEcsCredentials,
+  buildCorporation,
 } from "../../../../src/services/resolver/trust-resolve-v4.builders";
 
 const NOW = new Date("2026-06-02T00:00:00Z");
@@ -175,22 +180,22 @@ describe("buildPresentations", () => {
     },
   };
 
-  it("maps LinkedVerifiablePresentation entries, resolving relative service ids", () => {
-    expect(buildPresentations(resolution, noFlags)).toEqual([
+  it("maps LinkedVerifiablePresentation entries, resolving relative service ids", async () => {
+    expect(await buildPresentations(resolution, noFlags)).toEqual([
       { id: "https://x/vp1.json", serviceId: "did:example:x#whois", vtcCredentials: [] },
       { id: "https://x/vp2.json", serviceId: "did:example:x#vp2", vtcCredentials: [] },
     ]);
   });
 
-  it("includes the empty sub-lists only when their flags are set", () => {
-    const [first] = buildPresentations(resolution, {
+  it("includes the empty sub-lists only when their flags are set", async () => {
+    const [first] = await buildPresentations(resolution, {
       unresolvableCredentialIds: true,
       invalidCredentialIds: true,
     });
     expect(first).toMatchObject({ unresolvableCredentialIds: [], invalidCredentialIds: [] });
   });
 
-  it("dedupes by resolved serviceId and returns [] without a DID Document", () => {
+  it("dedupes by resolved serviceId and returns [] without a DID Document", async () => {
     const dup = {
       didDocument: {
         id: "did:example:x",
@@ -200,8 +205,8 @@ describe("buildPresentations", () => {
         ],
       },
     };
-    expect(buildPresentations(dup, noFlags)).toHaveLength(1);
-    expect(buildPresentations({ error: true }, noFlags)).toEqual([]);
+    expect(await buildPresentations(dup, noFlags)).toHaveLength(1);
+    expect(await buildPresentations({ error: true }, noFlags)).toEqual([]);
   });
 });
 
@@ -254,5 +259,56 @@ describe("buildEcsCredentials", () => {
   it("ignores non-ECS resolutions", async () => {
     expect(await buildEcsCredentials({ service: { schemaType: "unknown", id: "did:x" } })).toEqual([]);
     expect(await buildEcsCredentials({ error: true })).toEqual([]);
+  });
+});
+
+describe("buildCorporation", () => {
+  beforeEach(() => {
+    for (const k of Object.keys(tableRows)) delete tableRows[k];
+  });
+
+  it("returns null when no Corporation owns the DID", async () => {
+    expect(await buildCorporation("did:example:none")).toBeNull();
+  });
+
+  it("joins the Corporation with its trust deposit and active CGF", async () => {
+    tableRows.corporation = [{ id: 42, did: "did:example:corp", policy_address: "verana1policy" }];
+    tableRows.trust_deposits = [
+      {
+        corporation: "verana1policy",
+        deposit: 40000000,
+        slashed_deposit: 1000000,
+        slash_count: 1,
+        last_slashed: "2026-01-01T03:00:00Z",
+      },
+    ];
+    tableRows.co_governance_framework_version = [{ id: 7, version: 3, active_since: "2026-02-15T09:00:00Z" }];
+    tableRows.co_governance_framework_document = [
+      { language: "en", url: "https://corp/cgf/v3/en.html", digest_sri: "sha384-x" },
+    ];
+
+    expect(await buildCorporation("did:example:corp")).toMatchObject({
+      id: 42,
+      policyAddress: "verana1policy",
+      deposit: "40000000uvna",
+      slashedEvents: 1,
+      slashedValue: "1000000uvna",
+      lastSlashedAtTime: "2026-01-01T03:00:00.000Z",
+      cgf: {
+        version: 3,
+        activeSince: "2026-02-15T09:00:00.000Z",
+        documents: [{ language: "en", url: "https://corp/cgf/v3/en.html", digestSri: "sha384-x" }],
+      },
+    });
+  });
+
+  it("omits slash fields and cgf when absent", async () => {
+    tableRows.corporation = [{ id: 5, did: "did:example:corp2", policy_address: "verana1p2" }];
+    tableRows.trust_deposits = [{ corporation: "verana1p2", deposit: 0, slash_count: 0 }];
+
+    const out = await buildCorporation("did:example:corp2");
+    expect(out).toMatchObject({ id: 5, policyAddress: "verana1p2", deposit: "0uvna" });
+    expect(out).not.toHaveProperty("slashedEvents");
+    expect(out).not.toHaveProperty("cgf");
   });
 });

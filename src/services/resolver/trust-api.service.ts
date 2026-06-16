@@ -15,6 +15,7 @@ import {
   resolveTrustForDidAtHeight,
 } from "./trust-resolve";
 import {
+  buildCorporation,
   buildEcosystems,
   buildEcsCredentials,
   buildParticipations,
@@ -167,40 +168,64 @@ export class TrustApiService extends BaseService {
   private schemaIdToDigestAlg = new Map<number, string | null>();
   private trustedVsAtHeight = new Map<string, boolean>();
 
-  private async ensureDidExistsOr404(ctx: Context, did: string) {
-    try {
-      const hitTrust = await knex("trust_results").select("did").where({ did }).first();
-      if (hitTrust) return null;
-    } catch {
-      this.logger.warn(`Failed to query trust_results table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
-    try {
-      const hitParticipant = await knex("participants").select("id").where({ did }).first();
-      if (hitParticipant) return null;
-    } catch {
-      this.logger.warn(`Failed to query participants table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
+  private async didExistsAtHeight(did: string, atHeight?: number): Promise<boolean> {
+    const blockTime = atHeight != null ? await this.blockTimeAtHeight(atHeight) : null;
+    const byHeight = (q: any) => (atHeight != null ? q.andWhere("height", "<=", atHeight) : q);
+    const byCreated = (q: any) => (blockTime != null ? q.andWhere("created", "<=", blockTime) : q);
 
-    try {
-      const hitParticipantH = await knex("participant_history").select("id").where({ did }).first();
-      if (hitParticipantH) return null;
-    } catch {
-      this.logger.warn(`Failed to query participant_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
-    try {
-      const hitTr = await knex("ecosystem").select("id").where({ did }).first();
-      if (hitTr) return null;
-    } catch {
-      this.logger.warn(`Failed to query ecosystem table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
-    try {
-      const hitTrH = await knex("ecosystem_history").select("id").where({ did }).first();
-      if (hitTrH) return null;
-    } catch {
-      this.logger.warn(`Failed to query ecosystem_history table for existence check of DID ${did}. Proceeding with additional checks.`, { did });
-    }
+    const checks: Array<[string, (q: any) => any, string]> = [
+      ["trust_results", byHeight, "did"],
+      ["corporation", byCreated, "id"],
+      ["participants", byCreated, "id"],
+      ["participant_history", byHeight, "id"],
+      ["ecosystem", byCreated, "id"],
+      ["ecosystem_history", byHeight, "id"],
+    ];
 
+    for (const [table, scope, column] of checks) {
+      try {
+        const hit = await scope(knex(table).select(column).where({ did })).first();
+        if (hit) return true;
+      } catch {
+        this.logger.warn(`Failed to query ${table} for existence check of DID ${did}.`, { did });
+      }
+    }
+    return false;
+  }
+
+  private async ensureDidExistsOr404(ctx: Context, did: string, atHeight?: number) {
+    if (await this.didExistsAtHeight(did, atHeight)) return null;
     return ApiResponder.error(ctx, "DID not found", 404);
+  }
+
+  private isTrustRowExpired(row: { evaluated_at?: unknown; created_at?: unknown } | null | undefined): boolean {
+    if (!row) return true;
+    const ttlSeconds = getTrustEvaluationTtlSeconds();
+    const evaluatedAtSource = row.evaluated_at ?? row.created_at;
+    if (evaluatedAtSource == null) return true;
+    const evaluatedMs = new Date(evaluatedAtSource as Date | string).getTime();
+    if (!Number.isFinite(evaluatedMs)) return true;
+    return Date.now() >= evaluatedMs + ttlSeconds * 1000;
+  }
+
+  private isTrustRowTrusted(
+    row: { did?: string; resolve_result?: unknown; height?: number; evaluated_at?: unknown; created_at?: unknown } | null | undefined
+  ): boolean {
+    if (!row) return false;
+    const summary = buildTrustSummaryFromStoredRow({
+      did: row.did as string,
+      resolveResult: row.resolve_result ?? null,
+      evaluatedAtBlock: row.height as number,
+      createdAt: (row.evaluated_at ?? row.created_at) as Date | string | undefined,
+      trustTtlSeconds: getTrustEvaluationTtlSeconds(),
+    });
+    return summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
+  }
+
+  private shouldReevaluateTrustRow(
+    row: { did?: string; resolve_result?: unknown; height?: number; evaluated_at?: unknown; created_at?: unknown } | null | undefined
+  ): boolean {
+    return this.isTrustRowExpired(row) || !this.isTrustRowTrusted(row);
   }
 
   private async getLastProcessedTrustBlockHeight(): Promise<number> {
@@ -605,49 +630,82 @@ export class TrustApiService extends BaseService {
 
     const metaBlockHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
     const requestedHeight = typeof metaBlockHeight === "number" ? metaBlockHeight : undefined;
-    const effectiveHeight = await this.clampQueryBlockHeight(requestedHeight);
-    const row = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
-    if (!row) {
-      const didErr = await this.ensureDidExistsOr404(ctx, did);
-      if (didErr) return didErr;
-      return ApiResponder.error(ctx, `No trust evaluation found for DID: ${did}`, 404);
+    const isLive = requestedHeight == null;
+    const effectiveHeight =
+      requestedHeight != null && Number.isInteger(requestedHeight) && requestedHeight >= 0
+        ? requestedHeight
+        : await this.getLastProcessedTrustBlockHeight();
+    let row = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
+
+    if (isLive && this.shouldReevaluateTrustRow(row)) {
+      try {
+        await resolveTrustForDidAtHeight(did, effectiveHeight);
+        const refreshed = await getTrustResultLatestByDidAtOrBeforeHeight(did, effectiveHeight);
+        if (refreshed) row = refreshed;
+      } catch (err) {
+        this.logger.warn(`Live trust re-evaluation failed for DID ${did}.`, { did, err });
+      }
     }
 
-    const evaluatedAtSource = row.evaluated_at ?? row.created_at;
-    const summary = buildTrustSummaryFromStoredRow({
-      did,
-      resolveResult: row.resolve_result,
-      evaluatedAtBlock: row.height,
-      createdAt: evaluatedAtSource,
-      trustTtlSeconds: getTrustEvaluationTtlSeconds(),
-    });
+    if (!row) {
+      const didErr = await this.ensureDidExistsOr404(ctx, did, requestedHeight);
+      if (didErr) return didErr;
+    }
 
-    const evaluatedAtTime =
-      evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at;
-    const expiresAtTime =
-      summary.expires_at ??
-      new Date(new Date(evaluatedAtTime).getTime() + getTrustEvaluationTtlSeconds() * 1000).toISOString();
+    const resolveResult = row?.resolve_result ?? null;
+    const ttlSeconds = getTrustEvaluationTtlSeconds();
+    const blockTime = await this.blockTimeAtHeight(effectiveHeight);
 
-    const trusted = summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
+    let evaluatedAtTime: string;
+    let evaluatedAtBlock: number;
+    let expiresAtTime: string;
+    let trusted: boolean;
+
+    if (row) {
+      const evaluatedAtSource = row.evaluated_at ?? row.created_at;
+      const summary = buildTrustSummaryFromStoredRow({
+        did,
+        resolveResult,
+        evaluatedAtBlock: row.height,
+        createdAt: evaluatedAtSource,
+        trustTtlSeconds: ttlSeconds,
+      });
+      evaluatedAtTime =
+        evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at;
+      expiresAtTime =
+        summary.expires_at ?? new Date(new Date(evaluatedAtTime).getTime() + ttlSeconds * 1000).toISOString();
+      evaluatedAtBlock = row.height;
+      trusted = summary.trust_status === "TRUSTED" || summary.trust_status === "PARTIAL";
+    } else {
+      evaluatedAtTime = (blockTime ?? new Date()).toISOString();
+      evaluatedAtBlock = effectiveHeight;
+      expiresAtTime = new Date(new Date(evaluatedAtTime).getTime() + ttlSeconds * 1000).toISOString();
+      trusted = false;
+    }
 
     const body: Record<string, unknown> = {
       did,
       trusted,
       evaluatedAtTime,
-      evaluatedAtBlock: row.height,
+      evaluatedAtBlock,
       expiresAtTime,
-      corporationId: await resolveCorporationId(did),
+      corporationId: await resolveCorporationId(did, requestedHeight),
     };
 
-    const now = (await this.blockTimeAtHeight(effectiveHeight)) ?? new Date(evaluatedAtTime);
+    if (ctx.params.corporation === true) {
+      const corporation = await buildCorporation(did, requestedHeight);
+      if (corporation) body.corporation = corporation;
+    }
+
+    const now = blockTime ?? new Date(evaluatedAtTime);
     const states = this.parseParticipationsSelector(ctx.params.participations);
-    if (states) body.participations = await buildParticipations(did, now, states);
+    if (states) body.participations = await buildParticipations(did, now, states, requestedHeight);
     const ecosystemsOpts = this.parseEcosystemsSelector(ctx.params.ecosystems);
-    if (ecosystemsOpts) body.ecosystems = await buildEcosystems(did, ecosystemsOpts);
-    if (ctx.params.ecsCredentials === true) body.ecsCredentials = await buildEcsCredentials(row.resolve_result);
+    if (ecosystemsOpts) body.ecosystems = await buildEcosystems(did, ecosystemsOpts, requestedHeight);
+    if (ctx.params.ecsCredentials === true) body.ecsCredentials = await buildEcsCredentials(resolveResult);
     const presentationsOpts = this.parsePresentationsSelector(ctx.params.presentations);
-    if (presentationsOpts) body.presentations = buildPresentations(row.resolve_result, presentationsOpts);
-    if (ctx.params.services === true) body.services = buildServices(row.resolve_result);
+    if (presentationsOpts) body.presentations = await buildPresentations(resolveResult, presentationsOpts);
+    if (ctx.params.services === true) body.services = buildServices(resolveResult);
     return ApiResponder.success(ctx, body, 200);
   }
 
