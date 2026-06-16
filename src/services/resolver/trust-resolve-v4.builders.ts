@@ -673,6 +673,10 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const credentialSchemaId = link?.credentialSchemaId ?? 0;
     const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0;
 
+    // TODO: validFrom/validUntil should mirror the VC body's validity window. verre's flattened
+    // ICredential does not expose them and TrustResolution carries no raw VC, so we fall back to
+    // now / now+1d. Pending to define the real source (raw VC via the VP, or a verre upgrade).
+    const nowMs = Date.now();
     const entry: Record<string, unknown> = {
       ecsSchema,
       ecsSchemaVersion: link?.ecsSchemaVersion ?? "",
@@ -680,10 +684,11 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
       issuerParticipantId,
       ecosystemId: link?.ecosystemId ?? 0,
       participantId: link?.participantId ?? 0,
+      validFrom: typeof c.validFrom === "string" ? c.validFrom : new Date(nowMs).toISOString(),
+      validUntil:
+        typeof c.validUntil === "string" ? c.validUntil : new Date(nowMs + 24 * 60 * 60 * 1000).toISOString(),
       credentialSubject: toCredentialSubject(c),
     };
-    if (typeof c.validFrom === "string") entry.validFrom = c.validFrom;
-    if (typeof c.validUntil === "string") entry.validUntil = c.validUntil;
     out.push(entry);
   }
   return out;

@@ -167,7 +167,7 @@ describe("TrustV1ApiService POST /v4/verifiable-trust/resolve (resolveV4)", () =
     };
     const res = await service.resolveV4(ctx);
 
-    expect(partSpy).toHaveBeenCalledWith("did:verana:test123", expect.any(Date), ["ACTIVE", "REVOKED"]);
+    expect(partSpy).toHaveBeenCalledWith("did:verana:test123", expect.any(Date), ["ACTIVE", "REVOKED"], undefined);
     expect(res.participations).toEqual([{ id: 501, role: "ISSUER", state: "ACTIVE" }]);
   });
 
@@ -184,10 +184,14 @@ describe("TrustV1ApiService POST /v4/verifiable-trust/resolve (resolveV4)", () =
     const ctx: any = { params: { did: "did:verana:test123", ecosystems: true }, meta: {} };
     const res = await service.resolveV4(ctx);
 
-    expect(ecoSpy).toHaveBeenCalledWith("did:verana:test123", {
-      includeArchived: false,
-      credentialSchemas: { include: false, includeArchived: false },
-    });
+    expect(ecoSpy).toHaveBeenCalledWith(
+      "did:verana:test123",
+      {
+        includeArchived: false,
+        credentialSchemas: { include: false, includeArchived: false },
+      },
+      undefined
+    );
     expect(res.ecosystems).toEqual([{ id: 1234, corporationId: 0, archived: false }]);
   });
 
