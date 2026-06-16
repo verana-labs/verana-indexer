@@ -141,7 +141,7 @@
       "maxDidsPerTrustBlock": 800
     },
     "useEmbeddedRegistryAdapter": true,
-    "disableDigestSriVerification": true,
+    "disableDigestSriVerification": false,
     "txPrefilterEnabled": true,
     "verifiablePublicRegistries": [],
     "trustEvaluationTtlSeconds": 3600,
