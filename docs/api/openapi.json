@@ -6650,7 +6650,7 @@
       },
       "VtEcsCredential": {
         "type": "object",
-        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "credentialSubject"],
+        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "validFrom", "validUntil", "credentialSubject"],
         "properties": {
           "ecsSchema": { "type": "string", "enum": ["ServiceCredential", "OrganizationCredential", "PersonaCredential", "UserAgentCredential"] },
           "ecsSchemaVersion": { "type": "string" },

@@ -12,7 +12,6 @@ jest.mock("../../../../src/common/utils/db_connection", () => {
     for (const m of ["select", "where", "whereIn", "whereNull", "andWhere", "orderBy", "first"]) {
       chain[m] = jest.fn(passthrough);
     }
-    // `.first()` resolves to a single row; everything else resolves to the array.
     chain.first = jest.fn(() => Promise.resolve((tableRows[table] ?? [])[0]));
     chain.then = (resolve: any, reject: any) =>
       Promise.resolve(tableRows[table] ?? []).then(resolve, reject);
