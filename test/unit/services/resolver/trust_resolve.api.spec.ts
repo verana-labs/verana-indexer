@@ -202,28 +202,3 @@ describe("TrustV1ApiService POST /v4/verifiable-trust/resolve (resolveV4)", () =
     expect(res.error).toMatch(/did:/);
   });
 });
-
-describe("TrustV1ApiService POST /refresh", () => {
-  let broker: ServiceBroker;
-  let service: any;
-
-  beforeAll(async () => {
-    const { TrustV1ApiService } = await import("../../../../src/services/resolver/trust-api.service");
-    broker = new ServiceBroker({ logger: false });
-    service = broker.createService(TrustV1ApiService);
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it("returns { did, result: ok } when refresh is triggered", async () => {
-    const TrustResolve = await import("../../../../src/services/resolver/trust-resolve");
-    jest.spyOn(TrustResolve, "resolveTrustForDidAtHeight").mockResolvedValue(undefined);
-
-    const ctx: any = { params: { did: "did:verana:test123" }, meta: {} };
-    const res = await service.refresh(ctx);
-    expect(ctx.meta.$statusCode).toBe(200);
-    expect(res).toEqual({ did: "did:verana:test123", result: "ok" });
-  });
-});

@@ -396,13 +396,6 @@ function createRoute(
         "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
         "GET history/:corporation": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
       }),
-      createRoute("/verana/resolver/v1", {
-        "GET block-height": `${SERVICE.V1.TrustV1ApiService.path}.blockHeight`,
-        "GET issuer-authorization": `${SERVICE.V1.TrustV1ApiService.path}.issuerAuthorization`,
-        "GET verifier-authorization": `${SERVICE.V1.TrustV1ApiService.path}.verifierAuthorization`,
-        "GET ecosystem-participant": `${SERVICE.V1.TrustV1ApiService.path}.ecosystemParticipant`,
-        "POST refresh": `${SERVICE.V1.TrustV1ApiService.path}.refresh`,
-      }),
       createRoute("/v4/verifiable-trust", {
         "POST resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolveV4`,
       }),
