@@ -75,12 +75,30 @@ async function getSnapshotTables(): Promise<SnapshotTables> {
   return value;
 }
 
-async function fetchEcosystemsAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+function uniquePositiveIds(values: unknown[]): number[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value ?? 0))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  );
+}
+
+async function fetchEcosystemsByDidOrIds(
+  did: string,
+  ids: number[],
+  height: number,
+  tables: SnapshotTables
+): Promise<SnapshotRow[]> {
   if (!tables.hasEcosystem) return [];
 
   const query = knex("ecosystem")
     .select("*")
-    .where("did", did);
+    .where((qb) => {
+      qb.where("did", did);
+      if (ids.length > 0) qb.orWhereIn("id", ids);
+    });
 
   if (tables.ecosystemHasHeight) {
     query.andWhere("height", "<=", height);
@@ -89,46 +107,58 @@ async function fetchEcosystemsAtHeight(did: string, height: number, tables: Snap
   return query.orderBy("id", "asc");
 }
 
-async function fetchCredentialSchemasAtHeight(ecosystemIds: number[], _height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+async function fetchParticipantsByDid(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+  if (!tables.hasParticipants) return [];
+
+  const query = knex("participants").select("*").where("did", did);
+  if (tables.participantsHasHeight) {
+    query.andWhere("height", "<=", height);
+  }
+
+  return query.orderBy("id", "asc");
+}
+
+async function fetchCredentialSchemas(args: {
+  ecosystemIds: number[];
+  schemaIds: number[];
+  height: number;
+  tables: SnapshotTables;
+}): Promise<SnapshotRow[]> {
+  const { ecosystemIds, schemaIds, height, tables } = args;
   if (!tables.hasCredentialSchemas) return [];
-  if (ecosystemIds.length === 0) return [];
+  if (ecosystemIds.length === 0 && schemaIds.length === 0) return [];
 
   const query = knex("credential_schemas")
     .select("*")
-    .whereIn("ecosystem_id", ecosystemIds)
+    .where((qb) => {
+      if (ecosystemIds.length > 0) qb.orWhereIn("ecosystem_id", ecosystemIds);
+      if (schemaIds.length > 0) qb.orWhereIn("id", schemaIds);
+    })
     .orderBy("id", "asc");
 
   if (tables.credentialSchemasHasHeight) {
-    query.andWhere("height", "<=", _height);
+    query.andWhere("height", "<=", height);
   }
 
   return query;
 }
 
-async function fetchParticipantsAtHeight(args: {
+async function fetchParticipants(args: {
   did: string;
   blockHeight: number;
-  schemaEcosystemIds?: number[];
+  schemaIds: number[];
   corporationIds: number[];
   tables: SnapshotTables;
 }): Promise<SnapshotRow[]> {
-  const { did, schemaEcosystemIds = [], corporationIds, tables, blockHeight } = args;
+  const { did, schemaIds, corporationIds, tables, blockHeight } = args;
   if (!tables.hasParticipants) return [];
 
   const query = knex("participants")
     .select("*")
     .where((qb) => {
       qb.where("did", did);
-      if (corporationIds.length > 0) qb.orWhere((q) => q.whereIn("corporation_id", corporationIds));
-      if (tables.hasCredentialSchemas && schemaEcosystemIds.length > 0) {
-        const schemaQuery = knex("credential_schemas")
-          .select("id")
-          .whereIn("ecosystem_id", schemaEcosystemIds);
-        if (tables.credentialSchemasHasHeight) {
-          schemaQuery.andWhere("height", "<=", blockHeight);
-        }
-        qb.orWhereIn("schema_id", schemaQuery);
-      }
+      if (corporationIds.length > 0) qb.orWhereIn("corporation_id", corporationIds);
+      if (schemaIds.length > 0) qb.orWhereIn("schema_id", schemaIds);
     })
     .orderBy("id", "asc");
 
@@ -143,39 +173,52 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
   const { did, blockHeight } = args;
   const tables = await getSnapshotTables();
 
-  const ecosystems = await fetchEcosystemsAtHeight(did, blockHeight, tables);
-  const ecosystemIds = ecosystems
-    .map((row) => Number(row.id))
-    .filter((id) => Number.isInteger(id) && id >= 0);
+  // Seed the graph from the two places a DID can appear directly: an ecosystem's
+  // controller DID and a participant's DID.
+  const [ecosystemsByDid, participantsByDid] = await Promise.all([
+    fetchEcosystemsByDidOrIds(did, [], blockHeight, tables),
+    fetchParticipantsByDid(did, blockHeight, tables),
+  ]);
 
-  const corporationIds = Array.from(
-    new Set(
-      ecosystems
-        .map((row) => Number((row as { corporation_id?: unknown }).corporation_id ?? 0))
-        .filter((id) => Number.isInteger(id) && id > 0)
-    )
+  // Schemas reachable either forward (under a DID-matched ecosystem) or in reverse
+  // (referenced by a DID-matched participant's schema_id).
+  const schemas = await fetchCredentialSchemas({
+    ecosystemIds: uniquePositiveIds(ecosystemsByDid.map((row) => row.id)),
+    schemaIds: uniquePositiveIds(participantsByDid.map((row) => row.schema_id)),
+    height: blockHeight,
+    tables,
+  });
+
+  // Ecosystems owning those schemas (reverse link), merged with the DID-matched ones.
+  const ecosystems = await fetchEcosystemsByDidOrIds(
+    did,
+    uniquePositiveIds(schemas.map((row) => row.ecosystem_id)),
+    blockHeight,
+    tables
   );
 
-  const [credentialSchemas, participants] = await Promise.all([
-    fetchCredentialSchemasAtHeight(ecosystemIds, blockHeight, tables),
-    fetchParticipantsAtHeight({
-      did,
-      blockHeight,
-      schemaEcosystemIds: ecosystemIds,
-      corporationIds,
-      tables,
-    }),
+  const corporationIds = uniquePositiveIds([
+    ...ecosystems.map((row) => (row as { corporation_id?: unknown }).corporation_id),
+    ...participantsByDid.map((row) => (row as { corporation_id?: unknown }).corporation_id),
   ]);
+
+  const participants = await fetchParticipants({
+    did,
+    blockHeight,
+    schemaIds: uniquePositiveIds(schemas.map((row) => row.id)),
+    corporationIds,
+    tables,
+  });
 
   return {
     did,
     block_height: blockHeight,
-    ecosystems: ecosystems,
-    schemas: credentialSchemas,
+    ecosystems,
+    schemas,
     participants,
     count: {
       ecosystems: ecosystems.length,
-      schemas: credentialSchemas.length,
+      schemas: schemas.length,
       participants: participants.length,
     },
   };
