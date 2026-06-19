@@ -175,19 +175,19 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
   const acc = new VtChangeAccumulator();
 
   const participantRows = (await knex("participant_history")
-    .select("did", "corporation_id", "validator_perm_id", "changes")
+    .select("did", "corporation_id", "validator_participant_id", "changes")
     .where("height", blockHeight)
     .whereNotNull("did")) as Array<{
     did: string;
     corporation_id: number | null;
-    validator_perm_id: number | null;
+    validator_participant_id: number | null;
     changes: unknown;
   }>;
 
   const validatorIds = [
     ...new Set(
       participantRows
-        .map((r) => Number(r.validator_perm_id))
+        .map((r) => Number(r.validator_participant_id))
         .filter((id) => Number.isInteger(id) && id > 0)
     ),
   ];
@@ -206,7 +206,7 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
     const rc = acc.ensure(row.did);
     rc.participations = mergeParticipations(rc.participations, classifyParticipations(row.changes));
     addCorporationId(rc.corporationIds, row.corporation_id);
-    const vid = Number(row.validator_perm_id);
+    const vid = Number(row.validator_participant_id);
     const validator = Number.isInteger(vid) ? validatorById.get(vid) : undefined;
     if (validator) {
       if (validator.did) rc.relatedDids.add(validator.did);
