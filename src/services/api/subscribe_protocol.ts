@@ -1,5 +1,4 @@
-import { isValidDid } from "./api_shared";
-import { uniqueNormalizedDids } from "./indexer_event_utils";
+import { matchesMembership, parseSubscribeMembership } from "./api_shared";
 import type { IndexerEventRecord } from "./indexer_events_query";
 
 export const CHAIN_BLOCK_INTERVAL_MS = 6000;
@@ -55,48 +54,15 @@ export function parseControlMessage(raw: string): ControlParseResult {
     return { ok: true, message: { action: "unsubscribe" } };
   }
 
-  const corporationIdResult = parseCorporationId((json as Record<string, unknown>).corporationId);
-  if (!corporationIdResult.ok) {
-    return { ok: false, error: corporationIdResult.error };
-  }
-  const corporationId = corporationIdResult.value;
-
-  const rawDids = (json as Record<string, unknown>).dids;
-  if (rawDids === undefined || rawDids === null) {
-    return { ok: true, message: { action: "subscribe", dids: null, corporationId } };
+  const base = parseSubscribeMembership(json as Record<string, unknown>);
+  if (!base.ok) {
+    return { ok: false, error: base.error };
   }
 
-  if (!Array.isArray(rawDids)) {
-    return { ok: false, error: "'dids' must be an array of DID strings" };
-  }
-
-  if (rawDids.length === 0) {
-    return { ok: true, message: { action: "subscribe", dids: null, corporationId } };
-  }
-
-  for (const candidate of rawDids) {
-    if (!isValidDid(candidate)) {
-      return { ok: false, error: `Invalid DID in 'dids': ${String(candidate)}` };
-    }
-  }
-
-  const normalized = uniqueNormalizedDids(rawDids);
-  if (normalized.length === 0) {
-    return { ok: false, error: "No valid DIDs after normalization" };
-  }
-
-  return { ok: true, message: { action: "subscribe", dids: normalized, corporationId } };
-}
-
-function parseCorporationId(
-  raw: unknown
-): { ok: true; value: number | null } | { ok: false; error: string } {
-  if (raw === undefined || raw === null) return { ok: true, value: null };
-  const n = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isInteger(n) || n <= 0) {
-    return { ok: false, error: `'corporationId' must be a positive integer; got ${String(raw)}` };
-  }
-  return { ok: true, value: n };
+  return {
+    ok: true,
+    message: { action: "subscribe", dids: base.value.dids, corporationId: base.value.corporationId },
+  };
 }
 
 export function buildReadyMessage(lastProcessedBlock: number, lastBlockTime: string): ReadyMessage {
@@ -119,27 +85,20 @@ export function buildBlockEnvelope(
     return { type: "block", block, blockTime, events };
   }
 
-  const filtered = events.filter((event) => {
-    const matchesDids = didFilter === null || eventMatchesDids(event, didFilter);
-    const matchesCorporation =
-      corporationId === null || eventMatchesCorporation(event, corporationId);
-    return matchesDids && matchesCorporation;
-  });
+  const filtered = events.filter((event) =>
+    matchesMembership(didFilter, corporationId, {
+      did: event.did,
+      relatedDids: event.payload?.related_dids ?? [],
+      corporationIds: eventCorporationIds(event),
+    })
+  );
 
   return { type: "block", block, blockTime, events: filtered };
 }
 
-function eventMatchesDids(event: IndexerEventRecord, didFilter: Set<string>): boolean {
-  if (didFilter.has(event.did)) return true;
-  const related = event.payload?.related_dids ?? [];
-  for (const candidate of related) {
-    if (didFilter.has(candidate)) return true;
-  }
-  return false;
-}
-
-function eventMatchesCorporation(event: IndexerEventRecord, corporationId: number): boolean {
-  if (event.payload?.corporation_id === corporationId) return true;
-  const related = event.payload?.related_corporation_ids ?? [];
-  return related.includes(corporationId);
+function eventCorporationIds(event: IndexerEventRecord): number[] {
+  const ids: number[] = [];
+  if (typeof event.payload?.corporation_id === "number") ids.push(event.payload.corporation_id);
+  if (event.payload?.related_corporation_ids) ids.push(...event.payload.related_corporation_ids);
+  return ids;
 }
