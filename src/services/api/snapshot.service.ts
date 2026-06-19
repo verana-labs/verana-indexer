@@ -173,15 +173,11 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
   const { did, blockHeight } = args;
   const tables = await getSnapshotTables();
 
-  // Seed the graph from the two places a DID can appear directly: an ecosystem's
-  // controller DID and a participant's DID.
   const [ecosystemsByDid, participantsByDid] = await Promise.all([
     fetchEcosystemsByDidOrIds(did, [], blockHeight, tables),
     fetchParticipantsByDid(did, blockHeight, tables),
   ]);
 
-  // Schemas reachable either forward (under a DID-matched ecosystem) or in reverse
-  // (referenced by a DID-matched participant's schema_id).
   const schemas = await fetchCredentialSchemas({
     ecosystemIds: uniquePositiveIds(ecosystemsByDid.map((row) => row.id)),
     schemaIds: uniquePositiveIds(participantsByDid.map((row) => row.schema_id)),
@@ -189,7 +185,6 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     tables,
   });
 
-  // Ecosystems owning those schemas (reverse link), merged with the DID-matched ones.
   const ecosystems = await fetchEcosystemsByDidOrIds(
     did,
     uniquePositiveIds(schemas.map((row) => row.ecosystem_id)),
