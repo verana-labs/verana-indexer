@@ -310,7 +310,7 @@
         }
       }
     },
-    "/verana/indexer/v1/snapshot": {
+    "/v4/indexer/snapshot": {
       "get": {
         "tags": [
           "Indexer"
