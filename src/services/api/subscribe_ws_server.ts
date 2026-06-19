@@ -1,4 +1,5 @@
-import { Server } from "http";
+import { Server, type IncomingMessage } from "http";
+import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import { createLogger, toIsoSeconds, type LoggerLike } from "./api_shared";
@@ -10,6 +11,8 @@ export type ControlParseResult<TMessage> =
 
 export abstract class BaseSubscribeServer<TControl, TState> {
   private wss: WebSocketServer | null = null;
+  private server: Server | null = null;
+  private upgradeHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null = null;
   protected clients: Map<WebSocket, TState> = new Map();
   private clientAlive: Map<WebSocket, boolean> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
@@ -37,20 +40,34 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     }
 
     this.wss = new WebSocketServer({
-      server,
-      path: this.path,
+      noServer: true,
       perMessageDeflate: false,
       maxPayload: this.MAX_CONTROL_MESSAGE_BYTES,
-      verifyClient: () => {
-        if (this.clients.size >= this.MAX_CLIENTS) {
-          this.logger.warn(
-            `[${this.constructor.name}] Max clients reached (${this.MAX_CLIENTS}), rejecting connection`
-          );
-          return false;
-        }
-        return true;
-      },
     });
+
+    this.server = server;
+    this.upgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      let pathname: string;
+      try {
+        pathname = new URL(req.url ?? "", "http://localhost").pathname;
+      } catch {
+        return;
+      }
+      if (pathname !== this.path) return;
+
+      if (this.clients.size >= this.MAX_CLIENTS) {
+        this.logger.warn(
+          `[${this.constructor.name}] Max clients reached (${this.MAX_CLIENTS}), rejecting connection`
+        );
+        socket.destroy();
+        return;
+      }
+
+      this.wss!.handleUpgrade(req, socket, head, (ws) => {
+        this.wss!.emit("connection", ws, req);
+      });
+    };
+    server.on("upgrade", this.upgradeHandler);
 
     this.wss.on("connection", async (ws: WebSocket) => {
       if (this.clients.size >= this.MAX_CLIENTS) {
@@ -195,6 +212,12 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     });
     this.clients.clear();
     this.clientAlive.clear();
+
+    if (this.server && this.upgradeHandler) {
+      this.server.off("upgrade", this.upgradeHandler);
+    }
+    this.server = null;
+    this.upgradeHandler = null;
 
     if (this.wss) {
       this.wss.close(() => {
