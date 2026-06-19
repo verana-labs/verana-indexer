@@ -191,13 +191,14 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
         .filter((id) => Number.isInteger(id) && id > 0)
     ),
   ];
-  const validatorDidById = new Map<number, string>();
+  const validatorById = new Map<number, { did: string | null; corporation_id: number | null }>();
   if (validatorIds.length > 0) {
     const validators = (await knex("participants")
-      .select("id", "did")
-      .whereIn("id", validatorIds)
-      .whereNotNull("did")) as Array<{ id: number; did: string }>;
-    for (const v of validators) validatorDidById.set(Number(v.id), v.did);
+      .select("id", "did", "corporation_id")
+      .whereIn("id", validatorIds)) as Array<{ id: number; did: string | null; corporation_id: number | null }>;
+    for (const v of validators) {
+      validatorById.set(Number(v.id), { did: v.did, corporation_id: v.corporation_id });
+    }
   }
 
   for (const row of participantRows) {
@@ -206,8 +207,11 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
     rc.participations = mergeParticipations(rc.participations, classifyParticipations(row.changes));
     addCorporationId(rc.corporationIds, row.corporation_id);
     const vid = Number(row.validator_perm_id);
-    const vdid = Number.isInteger(vid) ? validatorDidById.get(vid) : undefined;
-    if (vdid) rc.relatedDids.add(vdid);
+    const validator = Number.isInteger(vid) ? validatorById.get(vid) : undefined;
+    if (validator) {
+      if (validator.did) rc.relatedDids.add(validator.did);
+      addCorporationId(rc.corporationIds, validator.corporation_id);
+    }
   }
 
   const ecosystemRows = (await knex("ecosystem_history")
