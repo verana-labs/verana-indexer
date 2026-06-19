@@ -171,7 +171,9 @@ export async function findHeightsWithTrustModuleMessages(fromExclusive: number, 
       AND (
         tm.type LIKE '/verana.ec%'
         OR tm.type LIKE '/verana.cs%'
-        OR tm.type LIKE '/verana.participant%'
+        OR tm.type LIKE '/verana.pp%'
+        OR tm.type LIKE '/verana.co%'
+        OR tm.type LIKE '/verana.td%'
       )
     ORDER BY t.height ASC
     `,

@@ -9,6 +9,7 @@ import { BULL_JOB_NAME, SERVICE } from "../../common";
 import knex from "../../common/utils/db_connection";
 import { swaggerUiComponent } from "./swagger_ui";
 import { subscribeBroadcaster } from "./subscribe_broadcaster";
+import { vtSubscribeBroadcaster } from "./vt_subscribe_broadcaster";
 import { indexerStatusManager } from "../manager/indexer_status.manager";
 import { isUnknownMessageError } from "./api_shared";
 
@@ -440,13 +441,17 @@ export default class ApiService extends BaseService {
       subscribeBroadcaster.setLogger(this.logger);
       subscribeBroadcaster.initialize(server);
       this.logger.info("WebSocket subscribe broadcaster initialized on /v4/indexer/subscribe");
+      vtSubscribeBroadcaster.setLogger(this.logger);
+      vtSubscribeBroadcaster.initialize(server);
+      this.logger.info("WebSocket subscribe broadcaster initialized on /v4/verifiable-trust/subscribe");
     } else {
-      this.logger.warn("HTTP server not found, WebSocket subscribe broadcaster not initialized");
+      this.logger.warn("HTTP server not found, WebSocket subscribe broadcasters not initialized");
     }
   }
 
   async stopped() {
     subscribeBroadcaster.close();
+    vtSubscribeBroadcaster.close();
     this.logger.info("🔌 WebSocket broadcasters closed");
   }
 }

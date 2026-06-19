@@ -14,6 +14,9 @@ import {
   resolveTrustForDidAtHeight,
   resolveTrustForBlock,
 } from "./trust-resolve";
+import { buildVtChangesForBlock } from "./vt_change_detection";
+import { vtSubscribeBroadcaster } from "../api/vt_subscribe_broadcaster";
+import { toIsoSeconds } from "../api/api_shared";
 
 const checkCrawlingStatusPromise = import("../../common/utils/error_handler");
 
@@ -133,7 +136,20 @@ const ResolverPollService = {
     async processBlock(this: any, blockHeight: number): Promise<void> {
       if (!Number.isInteger(blockHeight) || blockHeight < 0) return;
       await resolveTrustForBlock(blockHeight);
-      // TODO: broadcast resolved block when /v4/verifiable-trust/subscribe (IDX-VT-SUB-1) lands.
+      await this.broadcastResolvedBlock(blockHeight);
+    },
+
+    async broadcastResolvedBlock(this: any, blockHeight: number): Promise<void> {
+      try {
+        const changes = await buildVtChangesForBlock(blockHeight);
+        const blockRow = await knex("block").select("time").where("height", blockHeight).first();
+        const blockTime = toIsoSeconds(
+          (blockRow as { time?: Date | string } | undefined)?.time ?? new Date()
+        );
+        vtSubscribeBroadcaster.broadcastChangesEnvelope({ block: blockHeight, blockTime, changes });
+      } catch (err) {
+        this.logger.warn(`[RESOLVER] Failed to broadcast trust changes for block ${blockHeight}:`, err);
+      }
     },
 
     async pollOnce(this: any): Promise<void> {
