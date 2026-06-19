@@ -192,6 +192,18 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     tables
   );
 
+  // TODO: Height filtering currently relies on Ecosystem because IDX-INDEXER-QRY-4 does not permit querying history tables.
+  if (ecosystems.length === 0) {
+    return {
+      did,
+      block_height: blockHeight,
+      ecosystems: [],
+      schemas: [],
+      participants: [],
+      count: { ecosystems: 0, schemas: 0, participants: 0 },
+    };
+  }
+
   const corporationIds = uniquePositiveIds([
     ...ecosystems.map((row) => (row as { corporation_id?: unknown }).corporation_id),
     ...participantsByDid.map((row) => (row as { corporation_id?: unknown }).corporation_id),
