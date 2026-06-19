@@ -1,10 +1,21 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, Errors, ServiceBroker } from "moleculer";
 import knex from "../../common/utils/db_connection";
-import { SERVICE } from "../../common";
+import { BULL_JOB_NAME, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import BaseService from "../../base/base.service";
 import { isValidDid } from "./api_shared";
+
+const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
+
+async function fetchLatestIndexedHeight(): Promise<number> {
+  const checkpoint = await knex("block_checkpoint")
+    .select("height")
+    .where("job_name", BLOCK_CHECKPOINT_JOB)
+    .first();
+  const height = Number(checkpoint?.height ?? 0);
+  return Number.isInteger(height) && height >= 0 ? height : 0;
+}
 
 type SnapshotRow = Record<string, unknown>;
 
@@ -62,13 +73,6 @@ async function getSnapshotTables(): Promise<SnapshotTables> {
 
   cachedTables = { expiresAt: now + TABLE_CHECK_TTL_MS, value };
   return value;
-}
-
-function parseNonNegativeInteger(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const n = typeof value === "number" ? value : Number(String(value).trim());
-  if (!Number.isInteger(n) || n < 0) return null;
-  return n;
 }
 
 async function fetchEcosystemsAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
@@ -190,23 +194,20 @@ export default class IndexerSnapshotService extends BaseService {
     name: "getSnapshot",
     params: {
       did: { type: "string", optional: true, trim: true },
-      block_height: { type: "any", optional: true },
     },
     rest: "GET /snapshot",
   })
-  public async getSnapshot(ctx: Context<{ did?: string; block_height?: unknown }>) {
+  public async getSnapshot(ctx: Context<{ did?: string }>) {
     try {
       const did = typeof ctx.params.did === "string" ? ctx.params.did.trim() : "";
       if (!did) return ApiResponder.error(ctx, "Missing did", 400);
       if (!isValidDid(did)) return ApiResponder.error(ctx, "Invalid did", 400);
 
-      const blockHeight = parseNonNegativeInteger(ctx.params.block_height);
-      if (blockHeight === null) {
-        if (ctx.params.block_height === undefined || ctx.params.block_height === null || String(ctx.params.block_height).trim() === "") {
-          return ApiResponder.error(ctx, "Missing block_height", 400);
-        }
-        return ApiResponder.error(ctx, "Invalid block_height", 400);
-      }
+      const headerHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
+      const blockHeight =
+        typeof headerHeight === "number" && Number.isInteger(headerHeight) && headerHeight >= 0
+          ? headerHeight
+          : await fetchLatestIndexedHeight();
 
       const snapshot = await getDidSnapshotAtHeight({ did, blockHeight });
       return ApiResponder.success(ctx, snapshot, 200);
