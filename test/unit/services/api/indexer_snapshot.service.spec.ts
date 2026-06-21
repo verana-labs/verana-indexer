@@ -214,26 +214,30 @@ describe("IndexerSnapshotService snapshot endpoint", () => {
     expect(String(res.error)).toContain("Invalid did");
   });
 
-  it("returns 400 for missing block_height", async () => {
+  it("uses the block height from the At-Block-Height header (ctx.meta.blockHeight)", async () => {
+    const broker = new ServiceBroker({ logger: false });
+    const svc = new IndexerSnapshotService(broker as any);
+    (svc as any).logger = { error: () => {} };
+
+    await insertEcosystem({ did: didA, corporationId: 1, height: baseHeight });
+
+    const ctx: any = { params: { did: didA }, meta: { blockHeight: baseHeight } };
+    const res: any = await svc.getSnapshot(ctx);
+    expect(res).toMatchObject({ did: didA, block_height: baseHeight });
+    expect(res.count.ecosystems).toBe(1);
+  });
+
+  it("defaults to the latest indexed block when At-Block-Height header is omitted", async () => {
     const broker = new ServiceBroker({ logger: false });
     const svc = new IndexerSnapshotService(broker as any);
     (svc as any).logger = { error: () => {} };
 
     const ctx: any = { params: { did: didA }, meta: {} };
-    const res = await svc.getSnapshot(ctx);
-    expect(res).toMatchObject({ code: 400 });
-    expect(String(res.error)).toContain("Missing block_height");
-  });
-
-  it("returns 400 for invalid block_height", async () => {
-    const broker = new ServiceBroker({ logger: false });
-    const svc = new IndexerSnapshotService(broker as any);
-    (svc as any).logger = { error: () => {} };
-
-    const ctx: any = { params: { did: didA, block_height: -1 }, meta: {} };
-    const res = await svc.getSnapshot(ctx);
-    expect(res).toMatchObject({ code: 400 });
-    expect(String(res.error)).toContain("Invalid block_height");
+    const res: any = await svc.getSnapshot(ctx);
+    expect(res.code).toBeUndefined();
+    expect(res.did).toBe(didA);
+    expect(Number.isInteger(res.block_height)).toBe(true);
+    expect(res.block_height).toBeGreaterThanOrEqual(0);
   });
 
   it("returns empty arrays for unknown DID", async () => {

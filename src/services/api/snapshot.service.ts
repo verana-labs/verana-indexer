@@ -1,10 +1,21 @@
 import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
 import { Context, Errors, ServiceBroker } from "moleculer";
 import knex from "../../common/utils/db_connection";
-import { SERVICE } from "../../common";
+import { BULL_JOB_NAME, SERVICE } from "../../common";
 import ApiResponder from "../../common/utils/apiResponse";
 import BaseService from "../../base/base.service";
 import { isValidDid } from "./api_shared";
+
+const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION;
+
+async function fetchLatestIndexedHeight(): Promise<number> {
+  const checkpoint = await knex("block_checkpoint")
+    .select("height")
+    .where("job_name", BLOCK_CHECKPOINT_JOB)
+    .first();
+  const height = Number(checkpoint?.height ?? 0);
+  return Number.isInteger(height) && height >= 0 ? height : 0;
+}
 
 type SnapshotRow = Record<string, unknown>;
 
@@ -64,19 +75,30 @@ async function getSnapshotTables(): Promise<SnapshotTables> {
   return value;
 }
 
-function parseNonNegativeInteger(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const n = typeof value === "number" ? value : Number(String(value).trim());
-  if (!Number.isInteger(n) || n < 0) return null;
-  return n;
+function uniquePositiveIds(values: unknown[]): number[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value ?? 0))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  );
 }
 
-async function fetchEcosystemsAtHeight(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+async function fetchEcosystemsByDidOrIds(
+  did: string,
+  ids: number[],
+  height: number,
+  tables: SnapshotTables
+): Promise<SnapshotRow[]> {
   if (!tables.hasEcosystem) return [];
 
   const query = knex("ecosystem")
     .select("*")
-    .where("did", did);
+    .where((qb) => {
+      qb.where("did", did);
+      if (ids.length > 0) qb.orWhereIn("id", ids);
+    });
 
   if (tables.ecosystemHasHeight) {
     query.andWhere("height", "<=", height);
@@ -85,46 +107,58 @@ async function fetchEcosystemsAtHeight(did: string, height: number, tables: Snap
   return query.orderBy("id", "asc");
 }
 
-async function fetchCredentialSchemasAtHeight(ecosystemIds: number[], _height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+async function fetchParticipantsByDid(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
+  if (!tables.hasParticipants) return [];
+
+  const query = knex("participants").select("*").where("did", did);
+  if (tables.participantsHasHeight) {
+    query.andWhere("height", "<=", height);
+  }
+
+  return query.orderBy("id", "asc");
+}
+
+async function fetchCredentialSchemas(args: {
+  ecosystemIds: number[];
+  schemaIds: number[];
+  height: number;
+  tables: SnapshotTables;
+}): Promise<SnapshotRow[]> {
+  const { ecosystemIds, schemaIds, height, tables } = args;
   if (!tables.hasCredentialSchemas) return [];
-  if (ecosystemIds.length === 0) return [];
+  if (ecosystemIds.length === 0 && schemaIds.length === 0) return [];
 
   const query = knex("credential_schemas")
     .select("*")
-    .whereIn("ecosystem_id", ecosystemIds)
+    .where((qb) => {
+      if (ecosystemIds.length > 0) qb.orWhereIn("ecosystem_id", ecosystemIds);
+      if (schemaIds.length > 0) qb.orWhereIn("id", schemaIds);
+    })
     .orderBy("id", "asc");
 
   if (tables.credentialSchemasHasHeight) {
-    query.andWhere("height", "<=", _height);
+    query.andWhere("height", "<=", height);
   }
 
   return query;
 }
 
-async function fetchParticipantsAtHeight(args: {
+async function fetchParticipants(args: {
   did: string;
   blockHeight: number;
-  schemaEcosystemIds?: number[];
+  schemaIds: number[];
   corporationIds: number[];
   tables: SnapshotTables;
 }): Promise<SnapshotRow[]> {
-  const { did, schemaEcosystemIds = [], corporationIds, tables, blockHeight } = args;
+  const { did, schemaIds, corporationIds, tables, blockHeight } = args;
   if (!tables.hasParticipants) return [];
 
   const query = knex("participants")
     .select("*")
     .where((qb) => {
       qb.where("did", did);
-      if (corporationIds.length > 0) qb.orWhere((q) => q.whereIn("corporation_id", corporationIds));
-      if (tables.hasCredentialSchemas && schemaEcosystemIds.length > 0) {
-        const schemaQuery = knex("credential_schemas")
-          .select("id")
-          .whereIn("ecosystem_id", schemaEcosystemIds);
-        if (tables.credentialSchemasHasHeight) {
-          schemaQuery.andWhere("height", "<=", blockHeight);
-        }
-        qb.orWhereIn("schema_id", schemaQuery);
-      }
+      if (corporationIds.length > 0) qb.orWhereIn("corporation_id", corporationIds);
+      if (schemaIds.length > 0) qb.orWhereIn("schema_id", schemaIds);
     })
     .orderBy("id", "asc");
 
@@ -139,39 +173,59 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
   const { did, blockHeight } = args;
   const tables = await getSnapshotTables();
 
-  const ecosystems = await fetchEcosystemsAtHeight(did, blockHeight, tables);
-  const ecosystemIds = ecosystems
-    .map((row) => Number(row.id))
-    .filter((id) => Number.isInteger(id) && id >= 0);
+  const [ecosystemsByDid, participantsByDid] = await Promise.all([
+    fetchEcosystemsByDidOrIds(did, [], blockHeight, tables),
+    fetchParticipantsByDid(did, blockHeight, tables),
+  ]);
 
-  const corporationIds = Array.from(
-    new Set(
-      ecosystems
-        .map((row) => Number((row as { corporation_id?: unknown }).corporation_id ?? 0))
-        .filter((id) => Number.isInteger(id) && id > 0)
-    )
+  const schemas = await fetchCredentialSchemas({
+    ecosystemIds: uniquePositiveIds(ecosystemsByDid.map((row) => row.id)),
+    schemaIds: uniquePositiveIds(participantsByDid.map((row) => row.schema_id)),
+    height: blockHeight,
+    tables,
+  });
+
+  const ecosystems = await fetchEcosystemsByDidOrIds(
+    did,
+    uniquePositiveIds(schemas.map((row) => row.ecosystem_id)),
+    blockHeight,
+    tables
   );
 
-  const [credentialSchemas, participants] = await Promise.all([
-    fetchCredentialSchemasAtHeight(ecosystemIds, blockHeight, tables),
-    fetchParticipantsAtHeight({
+  // TODO: Height filtering currently relies on Ecosystem because IDX-INDEXER-QRY-4 does not permit querying history tables.
+  if (ecosystems.length === 0) {
+    return {
       did,
-      blockHeight,
-      schemaEcosystemIds: ecosystemIds,
-      corporationIds,
-      tables,
-    }),
+      block_height: blockHeight,
+      ecosystems: [],
+      schemas: [],
+      participants: [],
+      count: { ecosystems: 0, schemas: 0, participants: 0 },
+    };
+  }
+
+  const corporationIds = uniquePositiveIds([
+    ...ecosystems.map((row) => (row as { corporation_id?: unknown }).corporation_id),
+    ...participantsByDid.map((row) => (row as { corporation_id?: unknown }).corporation_id),
   ]);
+
+  const participants = await fetchParticipants({
+    did,
+    blockHeight,
+    schemaIds: uniquePositiveIds(schemas.map((row) => row.id)),
+    corporationIds,
+    tables,
+  });
 
   return {
     did,
     block_height: blockHeight,
-    ecosystems: ecosystems,
-    schemas: credentialSchemas,
+    ecosystems,
+    schemas,
     participants,
     count: {
       ecosystems: ecosystems.length,
-      schemas: credentialSchemas.length,
+      schemas: schemas.length,
       participants: participants.length,
     },
   };
@@ -190,23 +244,20 @@ export default class IndexerSnapshotService extends BaseService {
     name: "getSnapshot",
     params: {
       did: { type: "string", optional: true, trim: true },
-      block_height: { type: "any", optional: true },
     },
     rest: "GET /snapshot",
   })
-  public async getSnapshot(ctx: Context<{ did?: string; block_height?: unknown }>) {
+  public async getSnapshot(ctx: Context<{ did?: string }>) {
     try {
       const did = typeof ctx.params.did === "string" ? ctx.params.did.trim() : "";
       if (!did) return ApiResponder.error(ctx, "Missing did", 400);
       if (!isValidDid(did)) return ApiResponder.error(ctx, "Invalid did", 400);
 
-      const blockHeight = parseNonNegativeInteger(ctx.params.block_height);
-      if (blockHeight === null) {
-        if (ctx.params.block_height === undefined || ctx.params.block_height === null || String(ctx.params.block_height).trim() === "") {
-          return ApiResponder.error(ctx, "Missing block_height", 400);
-        }
-        return ApiResponder.error(ctx, "Invalid block_height", 400);
-      }
+      const headerHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
+      const blockHeight =
+        typeof headerHeight === "number" && Number.isInteger(headerHeight) && headerHeight >= 0
+          ? headerHeight
+          : await fetchLatestIndexedHeight();
 
       const snapshot = await getDidSnapshotAtHeight({ did, blockHeight });
       return ApiResponder.success(ctx, snapshot, 200);

@@ -400,11 +400,13 @@ function createRoute(
       createRoute("/v4/verifiable-trust", {
         "POST resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolveV4`,
       }),
+      createRoute("/v4/indexer", {
+        "GET snapshot": `${SERVICE.V1.IndexerSnapshotService.path}.getSnapshot`,
+      }),
       createRoute("/verana/indexer/v1", {
         "GET block-height": `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
         "GET changes/:block_height": `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
         "GET events": `${SERVICE.V1.IndexerEventsService.path}.listEvents`,
-        "GET snapshot": `${SERVICE.V1.IndexerSnapshotService.path}.getSnapshot`,
         "GET version": `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         "GET status": `${SERVICE.V1.IndexerStatusService.path}.getDetailedStatus`,
         "GET errors/download": `v1.LogsService.downloadErrors`,
