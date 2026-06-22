@@ -332,7 +332,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     });
 
     itIf('should expose participant role counters in global metrics', async () => {
-      const response = await testEndpoint('GET', '/verana/metrics/v1/all');
+      const response = await testEndpoint('GET', '/v4/metrics/all');
       expect(response.status).toBeLessThan(500);
       if (response.status === 200) {
         expect(response.data).toHaveProperty("participants_ecosystem");
@@ -1133,14 +1133,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
   describe('Metrics Endpoints - All Parameters Tested', () => {
     itIf('should get all metrics - basic', async () => {
-      const response = await testEndpoint('GET', '/verana/metrics/v1/all');
+      const response = await testEndpoint('GET', '/v4/metrics/all');
       expect(response.status).not.toBeGreaterThanOrEqual(500);
     });
 
     itIf('should get all metrics - with At-Block-Height header', async () => {
       const heightResponse = await testEndpoint('GET', '/verana/indexer/v1/block-height');
       const currentHeight = Number(heightResponse?.data?.height || SAMPLE_BLOCK_HEIGHT);
-      const response = await testEndpoint('GET', '/verana/metrics/v1/all', {}, {
+      const response = await testEndpoint('GET', '/v4/metrics/all', {}, {
         'At-Block-Height': currentHeight,
       });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
