@@ -639,84 +639,6 @@
         }
       }
     },
-    "/verana/indexer/v1/changes/{block_height}": {
-      "get": {
-        "400": {
-          "$ref": "#/components/responses/BadRequest"
-        },
-        "500": {
-          "$ref": "#/components/responses/ServerError"
-        },
-        "tags": [
-          "Indexer"
-        ],
-        "summary": "List entity changes at a block height",
-        "description": "Return all indexed entity changes for the requested block height.",
-        "operationId": "listChanges",
-        "parameters": [
-          {
-            "name": "block_height",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "description": "The block height to query changes for. Must be a positive integer not exceeding the current indexed block height."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Entity changes recorded at the requested block height",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "block_height": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "next_change_at": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "nullable": true,
-                      "description": "The next block height greater than the requested block_height that has any indexed change events. Null when there is no later change."
-                    },
-                    "activity": {
-                      "type": "array",
-                      "description": "List of activity items at this block height (same format as history endpoints)",
-                      "items": {
-                        "$ref": "#/components/schemas/ActivityItem"
-                      }
-                    }
-                  }
-                },
-                "example": {
-                  "block_height": 63120,
-                  "next_change_at": 63121,
-                  "activity": [
-                    {
-                      "timestamp": "2025-10-06T08:46:20.686Z",
-                      "block_height": 63120,
-                      "entity_type": "Ecosystem",
-                      "entity_id": "42",
-                      "msg": "CreateEcosystem",
-                      "changes": {
-                        "ecosystem_id": 42,
-                        "corporation": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
-                        "event_type": "/verana.ec.v1.MsgCreateEcosystem"
-                      },
-                      "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/verana/ec/v1/get/{id}": {
       "get": {
         "tags": [
@@ -3834,6 +3756,147 @@
               }
             }
           }
+        }
+      }
+    },
+    "/v4/verifiable-trust/changes": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "List Changes (IDX-VT-QRY-2)",
+        "description": "WebSocket-companion catch-up for the Verifiable Trust subscribe stream. Returns the same change envelopes as the `/v4/verifiable-trust/subscribe` WS `block` messages, compressed: blocks with no subscribed change are omitted. Use after a disconnection or a detected gap, looping with `nextFromBlock` until it is `null`.",
+        "operationId": "listVtChanges",
+        "parameters": [
+          {
+            "name": "fromBlock",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0 },
+            "description": "Smallest block height to return changes from (inclusive)."
+          },
+          {
+            "name": "dids",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Comma-separated DIDs to filter. Same membership semantics as the WS subscribe (includes the one-hop validator-tree branch). Omit for the wildcard set."
+          },
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "format": "int64" },
+            "description": "Restrict to the Corporation's expanded membership set. When combined with `dids`, the response is the intersection of both filters."
+          },
+          {
+            "name": "channels",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Comma-separated channel names: trust, ecsCredentials, presentations, services, corporation, participations, ecosystems. At least one must be enabled."
+          },
+          {
+            "name": "includeParticipantCounts",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean" },
+            "description": "For the participations and ecosystems channels, also signal participant-count-only changes."
+          },
+          {
+            "name": "includeIssuedCredentials",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean" },
+            "description": "For the participations and ecosystems channels, also signal issued-credential-count-only changes."
+          },
+          {
+            "name": "includeVerifiedCredentials",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean" },
+            "description": "For the participations and ecosystems channels, also signal verified-credential-count-only changes."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 },
+            "description": "Maximum number of changed blocks to return. Defaults to 100, capped at 1000."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Compressed list of changed blocks matching the filters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["currentBlock", "fromBlock", "blocks", "nextFromBlock"],
+                  "properties": {
+                    "currentBlock": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Latest block the indexer has processed at response time."
+                    },
+                    "fromBlock": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Echo of the requested fromBlock."
+                    },
+                    "blocks": {
+                      "type": "array",
+                      "description": "Up to `limit` blocks in increasing order that contain at least one matching change. Blocks with no subscribed change are omitted.",
+                      "items": {
+                        "type": "object",
+                        "required": ["block", "blockTime", "changes"],
+                        "properties": {
+                          "block": { "type": "integer", "minimum": 0 },
+                          "blockTime": { "type": "string", "format": "date-time" },
+                          "changes": {
+                            "type": "array",
+                            "description": "Same shape as `changes[]` in the WS block messages.",
+                            "items": { "type": "object" }
+                          }
+                        }
+                      }
+                    },
+                    "nextFromBlock": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true,
+                      "description": "Smallest block height strictly greater than the last returned block for which further changes are known to exist. Null once the response has reached currentBlock."
+                    }
+                  }
+                },
+                "example": {
+                  "currentBlock": 1500300,
+                  "fromBlock": 1500005,
+                  "blocks": [
+                    {
+                      "block": 1500005,
+                      "blockTime": "2026-05-11T13:00:05Z",
+                      "changes": [
+                        {
+                          "did": "did:web:agent.example",
+                          "trust": {
+                            "trusted": true,
+                            "evaluatedAtTime": "2026-05-11T13:00:05Z",
+                            "evaluatedAtBlock": 1500005,
+                            "expiresAtTime": "2026-05-12T13:00:05Z",
+                            "corporationId": 42
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "nextFromBlock": 1500050
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/ServerError" }
         }
       }
     }
