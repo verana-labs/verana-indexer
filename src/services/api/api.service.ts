@@ -389,7 +389,7 @@ function createRoute(
         "GET participant-sessions": `${SERVICE.V1.ParticipantAPIService.path}.listParticipantSessions`,
         "GET participant-session-history/:id": `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSessionHistory`,
       }),
-      createRoute("/verana/metrics/v1", {
+      createRoute("/v4/metrics", {
         "GET all": `${SERVICE.V1.MetricsApiService.path}.getAll`,
       }),
       createRoute("/verana/td/v1", {

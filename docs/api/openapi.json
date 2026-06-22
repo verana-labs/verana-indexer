@@ -2800,7 +2800,7 @@
         }
       }
     },
-    "/verana/metrics/v1/all": {
+    "/v4/metrics/all": {
       "get": {
         "tags": [
           "Metrics"

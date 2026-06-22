@@ -456,25 +456,25 @@ export default class MetricsApiService extends BaseService {
         participantsAgg = await activeParticipantBaseQuery
           .clone()
           .select(
-            knex.raw("COUNT(DISTINCT corporation_id) as participants"),
-            knex.raw("COUNT(DISTINCT corporation_id) FILTER (WHERE role = 'ECOSYSTEM') as participants_ecosystem"),
-            knex.raw("COUNT(DISTINCT corporation_id) FILTER (WHERE role = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
-            knex.raw("COUNT(DISTINCT corporation_id) FILTER (WHERE role = 'ISSUER') as participants_issuer"),
-            knex.raw("COUNT(DISTINCT corporation_id) FILTER (WHERE role = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
-            knex.raw("COUNT(DISTINCT corporation_id) FILTER (WHERE role = 'VERIFIER') as participants_verifier"),
-            knex.raw("COUNT(DISTINCT corporation_id) FILTER (WHERE role = 'HOLDER') as participants_holder")
+            knex.raw("COUNT(*) as participants"),
+            knex.raw("COUNT(*) FILTER (WHERE role = 'ECOSYSTEM') as participants_ecosystem"),
+            knex.raw("COUNT(*) FILTER (WHERE role = 'ISSUER_GRANTOR') as participants_issuer_grantor"),
+            knex.raw("COUNT(*) FILTER (WHERE role = 'ISSUER') as participants_issuer"),
+            knex.raw("COUNT(*) FILTER (WHERE role = 'VERIFIER_GRANTOR') as participants_verifier_grantor"),
+            knex.raw("COUNT(*) FILTER (WHERE role = 'VERIFIER') as participants_verifier"),
+            knex.raw("COUNT(*) FILTER (WHERE role = 'HOLDER') as participants_holder")
           )
           .first();
       } else {
         participantsAgg = await activeParticipantBaseQuery
           .clone()
-          .countDistinct("corporation_id as participants")
+          .count("* as participants")
           .first();
         participantsByTypeAgg = await activeParticipantBaseQuery
           .clone()
           .groupBy("role")
           .select("role")
-          .countDistinct("corporation_id as participants");
+          .count("* as participants");
       }
 
       const participantsByType = {
