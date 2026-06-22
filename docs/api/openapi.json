@@ -639,7 +639,7 @@
         }
       }
     },
-    "/verana/indexer/v1/changes/{block_height}": {
+    "/v4/indexer/changes": {
       "get": {
         "400": {
           "$ref": "#/components/responses/BadRequest"
@@ -651,18 +651,11 @@
           "Indexer"
         ],
         "summary": "List entity changes at a block height",
-        "description": "Return all indexed entity changes for the requested block height.",
+        "description": "Return all indexed entity changes committed at the block selected by the At-Block-Height header (or the latest indexed block when omitted).",
         "operationId": "listChanges",
         "parameters": [
           {
-            "name": "block_height",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "description": "The block height to query changes for. Must be a positive integer not exceeding the current indexed block height."
+            "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
