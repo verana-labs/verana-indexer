@@ -208,10 +208,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       expect(response.status).not.toBeGreaterThanOrEqual(500);
     });
 
-    itIf('should get changes by block height - valid height', async () => {
-      const response = await testEndpoint('GET', `/verana/indexer/v1/changes/${SAMPLE_BLOCK_HEIGHT}`);
+    itIf('should list changes at block height via At-Block-Height header', async () => {
+      const response = await testEndpoint('GET', '/v4/indexer/changes', {}, {
+        'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
+      });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
       if (response.status === 200) {
+        expect(response.data).toHaveProperty('block_height');
+        expect(response.data.block_height).toBe(SAMPLE_BLOCK_HEIGHT);
         expect(response.data).toHaveProperty('next_change_at');
         const nextChangeAt = response.data?.next_change_at;
         expect(nextChangeAt === null || Number.isInteger(nextChangeAt)).toBe(true);
@@ -221,23 +225,32 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       }
     });
 
-    itIf('should get changes by block height - edge case: height 0', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/changes/0');
-      expect(response.status).not.toBeGreaterThanOrEqual(500);
-    });
-
-    itIf('should get changes by block height - edge case: very large height', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/changes/999999999');
+    itIf('should list changes at latest block when At-Block-Height is omitted', async () => {
+      const response = await testEndpoint('GET', '/v4/indexer/changes');
       expect(response.status).not.toBeGreaterThanOrEqual(500);
       if (response.status === 200) {
+        expect(response.data).toHaveProperty('block_height');
+        expect(Number.isInteger(response.data.block_height)).toBe(true);
         expect(response.data).toHaveProperty('next_change_at');
-        expect(response.data.next_change_at).toBeNull();
+        expect(response.data).toHaveProperty('activity');
+        expect(Array.isArray(response.data.activity)).toBe(true);
       }
     });
 
-    itIf('should get changes by block height - invalid: non-numeric', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/changes/invalid');
+    itIf('should reject At-Block-Height above latest indexed height', async () => {
+      const response = await testEndpoint('GET', '/v4/indexer/changes', {}, {
+        'At-Block-Height': 999999999,
+      });
       expect(response.status).not.toBeGreaterThanOrEqual(500);
+      expect([400, 409]).toContain(response.status);
+    });
+
+    itIf('should reject non-numeric At-Block-Height', async () => {
+      const response = await testEndpoint('GET', '/v4/indexer/changes', {}, {
+        'At-Block-Height': 'invalid',
+      });
+      expect(response.status).not.toBeGreaterThanOrEqual(500);
+      expect(response.status).toBe(400);
     });
 
     itIf('should list VT changes - valid fromBlock with a channel', async () => {

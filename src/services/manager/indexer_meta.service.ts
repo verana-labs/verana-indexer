@@ -258,21 +258,22 @@ export default class IndexerMetaService extends BaseService {
     );
   }
 
-  @Action({
-    params: {
-      block_height: { type: "number", integer: true, positive: true, convert: true },
-    },
-  })
-  public async listChanges(ctx: Context<{ block_height: number }>) {
-    const blockHeight = ctx.params.block_height;
+  private async getLatestIndexedHeight(): Promise<number> {
+    const checkpoint = await knex("block_checkpoint")
+      .select("height")
+      .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
+      .first();
+    const height = Number(checkpoint?.height ?? 0);
+    return Number.isInteger(height) && height >= 0 ? height : 0;
+  }
 
-    if (!Number.isInteger(blockHeight) || blockHeight < 0) {
-      return ApiResponder.error(
-        ctx,
-        "block_height parameter is required and must be a positive integer",
-        400
-      );
-    }
+  @Action()
+  public async listChanges(ctx: Context<unknown>) {
+    const headerHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
+    const blockHeight =
+      typeof headerHeight === "number" && Number.isInteger(headerHeight) && headerHeight >= 0
+        ? headerHeight
+        : await this.getLatestIndexedHeight();
 
     const heightTimestampPromise = knex("transaction")
       .select("timestamp")
