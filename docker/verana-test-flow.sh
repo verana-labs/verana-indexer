@@ -153,7 +153,7 @@ cat <<JSON | put /tmp/grant-prop.json
     "corporation": "${CORP}", "operator": "", "grantee": "${ADDR}",
     "msg_types": [$(echo "$GRANT_MSGS" | awk -F, '{for(i=1;i<=NF;i++){printf "%s\"%s\"",(i>1?",":""),$i}}')],
     "expiration": null, "authz_spend_limit": [], "authz_spend_limit_period": null,
-    "with_feegrant": false, "feegrant_spend_limit": [], "feegrant_spend_limit_period": null, "fee_spend_limit": []
+    "with_feegrant": false, "feegrant_spend_limit": [], "feegrant_spend_limit_period": null
   }],
   "metadata": "grant-operator-authz", "title": "Grant operator authz to ${KEY}",
   "summary": "Authorize ${KEY} to run VPR messages on behalf of the corporation",

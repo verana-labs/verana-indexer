@@ -51,7 +51,7 @@ services:
   # If using a version other than `main`, verify any initialization or CLI commands 
   # against the corresponding Verana documentation.
   verana-node:
-    image: veranalabs/verana-node:${VERANA_VERSION:-v0.10.1-dev.16}
+    image: veranalabs/verana-node:${VERANA_VERSION:-main}
     platform: linux/amd64
     container_name: verana-node
     restart: unless-stopped
