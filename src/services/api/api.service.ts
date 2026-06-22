@@ -124,7 +124,7 @@ async function parseAtBlockHeight(
   if (checkpoint && checkpoint.height > 0 && parsedHeight > checkpoint.height) {
     throw new Errors.MoleculerError(
       `Requested height ${parsedHeight} exceeds indexed height ${checkpoint.height}`,
-      409,
+      400,
       "AT_BLOCK_HEIGHT_AHEAD"
     );
   }
@@ -400,6 +400,7 @@ function createRoute(
       createRoute("/v4/verifiable-trust", {
         "POST resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolveV4`,
         "GET changes": `${SERVICE.V1.IndexerMetaService.path}.listVtChanges`,
+        "GET dids": `${SERVICE.V1.IndexerMetaService.path}.listIndexedDids`,
       }),
       createRoute("/v4/indexer", {
         "GET snapshot": `${SERVICE.V1.IndexerSnapshotService.path}.getSnapshot`,

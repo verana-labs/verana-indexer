@@ -13,13 +13,18 @@ import {
   VeranaCredentialSchemaMessageTypes,
   VeranaParticipantMessageTypes,
 } from "../../common/verana-message-types";
-import { toIsoSeconds } from "../api/api_shared";
+import { parseCorporationId, toIsoSeconds } from "../api/api_shared";
 import {
   buildVtChangesEnvelope,
   parseVtChangesQuery,
   type VtChange,
 } from "../api/vt_subscribe_protocol";
 import { buildVtChangesForBlock, listVtChangeHeights } from "../resolver/vt_change_detection";
+import {
+  decodeOffsetCursor,
+  listIndexedDidsPage,
+  parseIndexedDidsLimit,
+} from "../resolver/vt_indexed_dids";
 
 const VT_CHANGES_SCAN_PAGE = 500;
 
@@ -557,6 +562,39 @@ export default class IndexerMetaService extends BaseService {
       { currentBlock, fromBlock, blocks, nextFromBlock },
       200
     );
+  }
+
+  @Action({
+    params: {
+      cursor: { type: "any", optional: true },
+      corporation_id: { type: "any", optional: true },
+      limit: { type: "any", optional: true },
+    },
+  })
+  public async listIndexedDids(ctx: Context<Record<string, unknown>>) {
+    const params = ctx.params ?? {};
+
+    const corp = parseCorporationId(params.corporation_id);
+    if (!corp.ok) return ApiResponder.error(ctx, corp.error, 400);
+
+    const limit = parseIndexedDidsLimit(params.limit);
+    if (!limit.ok) return ApiResponder.error(ctx, limit.error, 400);
+
+    const cursor = decodeOffsetCursor(params.cursor);
+    if (!cursor.ok) return ApiResponder.error(ctx, cursor.error, 400);
+
+    const metaBlockHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight;
+    const atBlock =
+      typeof metaBlockHeight === "number" ? metaBlockHeight : await this.getLatestIndexedHeight();
+
+    const { dids, nextCursor } = await listIndexedDidsPage({
+      atBlock,
+      corporationId: corp.value,
+      offset: cursor.value,
+      limit: limit.value,
+    });
+
+    return ApiResponder.success(ctx, { atBlock, dids, nextCursor }, 200);
   }
 
   private async blockTimesForHeights(heights: number[]): Promise<Map<number, string>> {
