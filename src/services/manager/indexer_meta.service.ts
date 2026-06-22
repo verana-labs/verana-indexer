@@ -130,12 +130,8 @@ export default class IndexerMetaService extends BaseService {
   }
 
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
-    const checkpoint = await knex("block_checkpoint")
-      .select("height")
-      .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
-      .first();
-    const maxHeight = Number(checkpoint?.height);
-    if (!Number.isFinite(maxHeight) || maxHeight <= 0) return null;
+    const maxHeight = await this.getLatestIndexedHeight();
+    if (maxHeight <= 0) return null;
     if (!Number.isFinite(blockHeight) || blockHeight >= maxHeight) return null;
 
     // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
@@ -504,7 +500,7 @@ export default class IndexerMetaService extends BaseService {
     if (!parsed.ok) return ApiResponder.error(ctx, parsed.error, 400);
 
     const { fromBlock, dids, corporationId, channels, limit } = parsed.value;
-    const currentBlock = await this.getLastIndexedBlockHeight();
+    const currentBlock = await this.getLatestIndexedHeight();
     const didFilter = dids === null ? null : new Set(dids);
 
     const blocks: Array<{ block: number; blockTime: string; changes: VtChange[] }> = [];
@@ -561,14 +557,6 @@ export default class IndexerMetaService extends BaseService {
       { currentBlock, fromBlock, blocks, nextFromBlock },
       200
     );
-  }
-
-  private async getLastIndexedBlockHeight(): Promise<number> {
-    const checkpoint = await knex("block_checkpoint")
-      .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
-      .first();
-    const height = Number((checkpoint as { height?: number } | undefined)?.height ?? 0);
-    return Number.isFinite(height) ? Math.trunc(height) : 0;
   }
 
   private async blockTimesForHeights(heights: number[]): Promise<Map<number, string>> {
