@@ -639,6 +639,84 @@
         }
       }
     },
+    "/verana/indexer/v1/changes/{block_height}": {
+      "get": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "500": {
+          "$ref": "#/components/responses/ServerError"
+        },
+        "tags": [
+          "Indexer"
+        ],
+        "summary": "List entity changes at a block height",
+        "description": "Return all indexed entity changes for the requested block height.",
+        "operationId": "listChanges",
+        "parameters": [
+          {
+            "name": "block_height",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "The block height to query changes for. Must be a positive integer not exceeding the current indexed block height."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity changes recorded at the requested block height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "block_height": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "next_change_at": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true,
+                      "description": "The next block height greater than the requested block_height that has any indexed change events. Null when there is no later change."
+                    },
+                    "activity": {
+                      "type": "array",
+                      "description": "List of activity items at this block height (same format as history endpoints)",
+                      "items": {
+                        "$ref": "#/components/schemas/ActivityItem"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "block_height": 63120,
+                  "next_change_at": 63121,
+                  "activity": [
+                    {
+                      "timestamp": "2025-10-06T08:46:20.686Z",
+                      "block_height": 63120,
+                      "entity_type": "Ecosystem",
+                      "entity_id": "42",
+                      "msg": "CreateEcosystem",
+                      "changes": {
+                        "ecosystem_id": 42,
+                        "corporation": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st",
+                        "event_type": "/verana.ec.v1.MsgCreateEcosystem"
+                      },
+                      "account": "verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/verana/ec/v1/get/{id}": {
       "get": {
         "tags": [
