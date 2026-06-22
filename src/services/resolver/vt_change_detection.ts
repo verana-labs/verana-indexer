@@ -170,6 +170,36 @@ function addCorporationId(ids: Set<number>, value: unknown): void {
   if (Number.isInteger(n) && n > 0) ids.add(n);
 }
 
+const VT_CHANGE_HEIGHT_TABLES = [
+  "participant_history",
+  "ecosystem_history",
+  "credential_schema_history",
+  "corporation_history",
+  "trust_deposit_history",
+  "trust_results",
+];
+
+export async function listVtChangeHeights(
+  fromBlock: number,
+  toBlock: number,
+  limit: number
+): Promise<number[]> {
+  if (!Number.isInteger(fromBlock) || !Number.isInteger(toBlock) || fromBlock > toBlock) return [];
+  if (!Number.isInteger(limit) || limit <= 0) return [];
+
+  const subqueries = VT_CHANGE_HEIGHT_TABLES.map((table) =>
+    knex(table).distinct("height").where("height", ">=", fromBlock).andWhere("height", "<=", toBlock)
+  );
+  const union = knex.union(subqueries, true);
+  const rows = (await knex
+    .from(union.as("t"))
+    .distinct("height")
+    .orderBy("height", "asc")
+    .limit(limit)) as Array<{ height: number | string }>;
+
+  return rows.map((r) => Number(r.height)).filter((h) => Number.isInteger(h));
+}
+
 export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRawChange[]> {
   if (!Number.isInteger(blockHeight) || blockHeight < 0) return [];
   const acc = new VtChangeAccumulator();

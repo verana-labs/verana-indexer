@@ -1,4 +1,10 @@
-import { matchesMembership, parseSubscribeMembership } from "./api_shared";
+import { isValidDid, matchesMembership, parseCorporationId, parseSubscribeMembership } from "./api_shared";
+import {
+  parseCsvList,
+  readBooleanFlag,
+  readPositiveInteger,
+  uniqueNormalizedDids,
+} from "./indexer_event_utils";
 
 export type VtTrustCore = {
   trusted: boolean;
@@ -204,6 +210,103 @@ export function parseVtControlMessage(raw: string): VtControlParseResult {
       corporationId: base.value.corporationId,
       channels,
     },
+  };
+}
+
+export type VtChangesQuery = {
+  fromBlock: number;
+  dids: string[] | null;
+  corporationId: number | null;
+  channels: VtChannelOptions;
+  limit: number;
+};
+
+export type VtChangesQueryParseResult =
+  | { ok: true; value: VtChangesQuery }
+  | { ok: false; error: string };
+
+const VT_CHANNEL_NAMES = new Set([
+  "trust",
+  "ecsCredentials",
+  "presentations",
+  "services",
+  "corporation",
+  "participations",
+  "ecosystems",
+]);
+
+const VT_CHANGES_DEFAULT_LIMIT = 100;
+const VT_CHANGES_MAX_LIMIT = 1000;
+
+export function parseVtChangesQuery(params: Record<string, unknown>): VtChangesQueryParseResult {
+  const fromBlock = Number(params.fromBlock);
+  if (!Number.isInteger(fromBlock) || fromBlock < 0) {
+    return { ok: false, error: "'fromBlock' is required and must be a non-negative integer" };
+  }
+
+  let limit = VT_CHANGES_DEFAULT_LIMIT;
+  if (params.limit !== undefined && params.limit !== null && params.limit !== "") {
+    const parsedLimit = readPositiveInteger(params.limit);
+    if (parsedLimit === null) {
+      return { ok: false, error: "'limit' must be a positive integer" };
+    }
+    limit = Math.min(parsedLimit, VT_CHANGES_MAX_LIMIT);
+  }
+
+  const corp = parseCorporationId(params.corporation_id);
+  if (!corp.ok) return { ok: false, error: corp.error };
+
+  const didList = parseCsvList(params.dids);
+  let dids: string[] | null = null;
+  if (didList.length > 0) {
+    for (const candidate of didList) {
+      if (!isValidDid(candidate)) {
+        return { ok: false, error: `Invalid DID in 'dids': ${candidate}` };
+      }
+    }
+    const normalized = uniqueNormalizedDids(didList);
+    dids = normalized.length > 0 ? normalized : null;
+  }
+
+  const channelNames = parseCsvList(params.channels);
+  for (const name of channelNames) {
+    if (!VT_CHANNEL_NAMES.has(name)) {
+      return { ok: false, error: `Unknown channel in 'channels': ${name}` };
+    }
+  }
+  const has = (name: string) => channelNames.includes(name);
+  const includeParticipantCounts = readBooleanFlag(params.includeParticipantCounts);
+  const includeIssuedCredentials = readBooleanFlag(params.includeIssuedCredentials);
+  const includeVerifiedCredentials = readBooleanFlag(params.includeVerifiedCredentials);
+
+  const channels: VtChannelOptions = {
+    trust: has("trust"),
+    ecsCredentials: has("ecsCredentials"),
+    presentations: has("presentations"),
+    services: has("services"),
+    corporation: { include: has("corporation"), includeDepositChanges: false },
+    participations: {
+      include: has("participations"),
+      includeWeightChanges: false,
+      includeParticipantCounts,
+      includeIssuedCredentials,
+      includeVerifiedCredentials,
+    },
+    ecosystems: {
+      include: has("ecosystems"),
+      includeParticipantCounts,
+      includeIssuedCredentials,
+      includeVerifiedCredentials,
+    },
+  };
+
+  if (!hasAnyChannel(channels)) {
+    return { ok: false, error: "'channels' must enable at least one channel" };
+  }
+
+  return {
+    ok: true,
+    value: { fromBlock, dids, corporationId: corp.value, limit, channels },
   };
 }
 

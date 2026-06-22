@@ -252,6 +252,33 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       expect(response.status).not.toBeGreaterThanOrEqual(500);
       expect(response.status).toBe(400);
     });
+
+    itIf('should list VT changes - valid fromBlock with a channel', async () => {
+      const response = await testEndpoint('GET', `/v4/verifiable-trust/changes?fromBlock=${SAMPLE_BLOCK_HEIGHT}&channels=trust`);
+      expect(response.status).not.toBeGreaterThanOrEqual(500);
+      if (response.status === 200) {
+        expect(response.data).toHaveProperty('currentBlock');
+        expect(response.data).toHaveProperty('fromBlock', SAMPLE_BLOCK_HEIGHT);
+        expect(Array.isArray(response.data.blocks)).toBe(true);
+        const nextFromBlock = response.data?.nextFromBlock;
+        expect(nextFromBlock === null || Number.isInteger(nextFromBlock)).toBe(true);
+      }
+    });
+
+    itIf('should list VT changes - edge case: fromBlock 0', async () => {
+      const response = await testEndpoint('GET', '/v4/verifiable-trust/changes?fromBlock=0&channels=trust');
+      expect(response.status).not.toBeGreaterThanOrEqual(500);
+    });
+
+    itIf('should list VT changes - invalid: missing fromBlock', async () => {
+      const response = await testEndpoint('GET', '/v4/verifiable-trust/changes?channels=trust');
+      expect(response.status).toBe(400);
+    });
+
+    itIf('should list VT changes - invalid: no channel enabled', async () => {
+      const response = await testEndpoint('GET', `/v4/verifiable-trust/changes?fromBlock=${SAMPLE_BLOCK_HEIGHT}`);
+      expect(response.status).toBe(400);
+    });
   });
 
   describe('API Response Timing Headers', () => {

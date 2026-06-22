@@ -1,5 +1,6 @@
 import {
   parseVtControlMessage,
+  parseVtChangesQuery,
   projectVtChange,
   buildVtChangesEnvelope,
   type VtChannelOptions,
@@ -197,5 +198,65 @@ describe("buildVtChangesEnvelope (membership filter)", () => {
   it("emits an empty changes array as a heartbeat", () => {
     const env = buildVtChangesEnvelope(10, "t", [], null, null, channels({ trust: true }));
     expect(env.changes).toEqual([]);
+  });
+});
+
+describe("parseVtChangesQuery", () => {
+  it("requires fromBlock", () => {
+    const res = parseVtChangesQuery({ channels: "trust" });
+    expect(res.ok).toBe(false);
+  });
+
+  it("requires at least one channel", () => {
+    const res = parseVtChangesQuery({ fromBlock: "100" });
+    expect(res.ok).toBe(false);
+  });
+
+  it("parses fromBlock, channels CSV and include flags", () => {
+    const res = parseVtChangesQuery({
+      fromBlock: "1500005",
+      channels: "trust,participations,ecosystems",
+      includeParticipantCounts: "true",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.fromBlock).toBe(1500005);
+    expect(res.value.limit).toBe(100);
+    expect(res.value.channels.trust).toBe(true);
+    expect(res.value.channels.participations.include).toBe(true);
+    expect(res.value.channels.participations.includeParticipantCounts).toBe(true);
+    expect(res.value.channels.ecosystems.includeParticipantCounts).toBe(true);
+  });
+
+  it("defaults limit to 100 and caps it at 1000", () => {
+    const capped = parseVtChangesQuery({ fromBlock: "0", channels: "trust", limit: "5000" });
+    expect(capped.ok).toBe(true);
+    if (capped.ok) expect(capped.value.limit).toBe(1000);
+  });
+
+  it("parses dids CSV and corporation_id", () => {
+    const res = parseVtChangesQuery({
+      fromBlock: "10",
+      channels: "trust",
+      dids: "did:web:a.example,did:web:b.example",
+      corporation_id: "42",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.dids).toEqual(["did:web:a.example", "did:web:b.example"]);
+    expect(res.value.corporationId).toBe(42);
+  });
+
+  it("treats both dids and corporation_id omitted as the wildcard set", () => {
+    const res = parseVtChangesQuery({ fromBlock: "10", channels: "trust" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.dids).toBeNull();
+    expect(res.value.corporationId).toBeNull();
+  });
+
+  it("rejects unknown channel names and invalid dids", () => {
+    expect(parseVtChangesQuery({ fromBlock: "10", channels: "bogus" }).ok).toBe(false);
+    expect(parseVtChangesQuery({ fromBlock: "10", channels: "trust", dids: "not-a-did" }).ok).toBe(false);
   });
 });
