@@ -16,6 +16,7 @@ import {
 } from "./trust-resolve";
 import { buildVtChangesForBlock } from "./vt_change_detection";
 import { vtSubscribeBroadcaster } from "../api/vt_subscribe_broadcaster";
+import type { VtRawChange } from "../api/vt_subscribe_protocol";
 import { toIsoSeconds } from "../api/api_shared";
 
 const checkCrawlingStatusPromise = import("../../common/utils/error_handler");
@@ -140,16 +141,30 @@ const ResolverPollService = {
     },
 
     async broadcastResolvedBlock(this: any, blockHeight: number): Promise<void> {
+      if (vtSubscribeBroadcaster.getClientCount() === 0) return;
       try {
         const changes = await buildVtChangesForBlock(blockHeight);
-        const blockRow = await knex("block").select("time").where("height", blockHeight).first();
-        const blockTime = toIsoSeconds(
-          (blockRow as { time?: Date | string } | undefined)?.time ?? new Date()
-        );
-        vtSubscribeBroadcaster.broadcastChangesEnvelope({ block: blockHeight, blockTime, changes });
+        await this.broadcastBlockEnvelope(blockHeight, changes);
       } catch (err) {
         this.logger.warn(`[RESOLVER] Failed to broadcast trust changes for block ${blockHeight}:`, err);
       }
+    },
+
+    async broadcastHeartbeat(this: any, blockHeight: number): Promise<void> {
+      if (vtSubscribeBroadcaster.getClientCount() === 0) return;
+      try {
+        await this.broadcastBlockEnvelope(blockHeight, []);
+      } catch (err) {
+        this.logger.warn(`[RESOLVER] Failed to broadcast heartbeat for block ${blockHeight}:`, err);
+      }
+    },
+
+    async broadcastBlockEnvelope(this: any, blockHeight: number, changes: VtRawChange[]): Promise<void> {
+      const blockRow = await knex("block").select("time").where("height", blockHeight).first();
+      const blockTime = toIsoSeconds(
+        (blockRow as { time?: Date | string } | undefined)?.time ?? new Date()
+      );
+      vtSubscribeBroadcaster.broadcastChangesEnvelope({ block: blockHeight, blockTime, changes });
     },
 
     async pollOnce(this: any): Promise<void> {
@@ -180,8 +195,15 @@ const ResolverPollService = {
 
       if (trustTxPrefilterEnabled()) {
         const activeHeights = await findHeightsWithTrustModuleMessages(currentHeight, targetEnd);
+        const activeSet = new Set<number>(activeHeights.map((h) => Number(h)));
         try {
-          for (const height of activeHeights) await this.processBlock(height);
+          for (let height = currentHeight + 1; height <= targetEnd; height++) {
+            if (activeSet.has(height)) {
+              await this.processBlock(height);
+            } else {
+              await this.broadcastHeartbeat(height);
+            }
+          }
           await this.advanceResolverCheckpoint(targetEnd);
         } catch (err) {
           this.logger.warn(`[RESOLVER] Failed to resolve batch up to ${targetEnd}:`, err);
@@ -217,6 +239,7 @@ const ResolverPollService = {
         if (trustTxPrefilterEnabled()) {
           const active = await findHeightsWithTrustModuleMessages(height - 1, height);
           if (active.length === 0) {
+            await this.broadcastHeartbeat(height);
             await this.advanceResolverCheckpoint(height);
             return { accepted: true, height };
           }

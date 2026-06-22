@@ -49,6 +49,21 @@ export function firstNormalizedDid(values: Iterable<unknown>): string | undefine
   return undefined;
 }
 
+export function parseCsvList(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (Array.isArray(raw)) return raw.map((item) => String(item).trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function readBooleanFlag(raw: unknown): boolean {
+  if (raw === true) return true;
+  if (raw === undefined || raw === null) return false;
+  return String(raw).trim().toLowerCase() === "true";
+}
+
 export function readPositiveInteger(value: unknown): number | null {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : null;

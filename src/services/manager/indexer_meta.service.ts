@@ -13,6 +13,15 @@ import {
   VeranaCredentialSchemaMessageTypes,
   VeranaParticipantMessageTypes,
 } from "../../common/verana-message-types";
+import { toIsoSeconds } from "../api/api_shared";
+import {
+  buildVtChangesEnvelope,
+  parseVtChangesQuery,
+  type VtChange,
+} from "../api/vt_subscribe_protocol";
+import { buildVtChangesForBlock, listVtChangeHeights } from "../resolver/vt_change_detection";
+
+const VT_CHANGES_SCAN_PAGE = 500;
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaEcosystemMessageTypes.CreateEcosystem]: "CreateEcosystem",
@@ -121,12 +130,8 @@ export default class IndexerMetaService extends BaseService {
   }
 
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
-    const checkpoint = await knex("block_checkpoint")
-      .select("height")
-      .where("job_name", BULL_JOB_NAME.HANDLE_TRANSACTION)
-      .first();
-    const maxHeight = Number(checkpoint?.height);
-    if (!Number.isFinite(maxHeight) || maxHeight <= 0) return null;
+    const maxHeight = await this.getLatestIndexedHeight();
+    if (maxHeight <= 0) return null;
     if (!Number.isFinite(blockHeight) || blockHeight >= maxHeight) return null;
 
     // Query each history table with index-friendly pattern: WHERE height > ? ORDER BY height ASC LIMIT 1.
@@ -476,6 +481,94 @@ export default class IndexerMetaService extends BaseService {
       response,
       200
     );
+  }
+
+  @Action({
+    params: {
+      fromBlock: { type: "any", optional: true },
+      dids: { type: "any", optional: true },
+      corporation_id: { type: "any", optional: true },
+      channels: { type: "any", optional: true },
+      includeParticipantCounts: { type: "any", optional: true },
+      includeIssuedCredentials: { type: "any", optional: true },
+      includeVerifiedCredentials: { type: "any", optional: true },
+      limit: { type: "any", optional: true },
+    },
+  })
+  public async listVtChanges(ctx: Context<Record<string, unknown>>) {
+    const parsed = parseVtChangesQuery(ctx.params ?? {});
+    if (!parsed.ok) return ApiResponder.error(ctx, parsed.error, 400);
+
+    const { fromBlock, dids, corporationId, channels, limit } = parsed.value;
+    const currentBlock = await this.getLatestIndexedHeight();
+    const didFilter = dids === null ? null : new Set(dids);
+
+    const blocks: Array<{ block: number; blockTime: string; changes: VtChange[] }> = [];
+    let nextFromBlock: number | null = null;
+    let cursor = fromBlock;
+
+    while (blocks.length < limit) {
+      const heights = await listVtChangeHeights(cursor, currentBlock, VT_CHANGES_SCAN_PAGE);
+      if (heights.length === 0) {
+        nextFromBlock = null;
+        break;
+      }
+
+      const blockTimeByHeight = await this.blockTimesForHeights(heights);
+      let stopped = false;
+
+      for (let i = 0; i < heights.length; i++) {
+        const height = heights[i];
+        const raw = await buildVtChangesForBlock(height);
+        const blockTime = blockTimeByHeight.get(height) ?? toIsoSeconds(new Date());
+        const envelope = buildVtChangesEnvelope(
+          height,
+          blockTime,
+          raw,
+          didFilter,
+          corporationId,
+          channels
+        );
+        if (envelope.changes.length === 0) continue;
+
+        blocks.push({ block: height, blockTime, changes: envelope.changes });
+        if (blocks.length >= limit) {
+          if (i + 1 < heights.length) {
+            nextFromBlock = heights[i + 1];
+          } else {
+            const more = await listVtChangeHeights(height + 1, currentBlock, 1);
+            nextFromBlock = more.length > 0 ? more[0] : null;
+          }
+          stopped = true;
+          break;
+        }
+      }
+
+      if (stopped) break;
+      if (heights.length < VT_CHANGES_SCAN_PAGE) {
+        nextFromBlock = null;
+        break;
+      }
+      cursor = heights[heights.length - 1] + 1;
+    }
+
+    return ApiResponder.success(
+      ctx,
+      { currentBlock, fromBlock, blocks, nextFromBlock },
+      200
+    );
+  }
+
+  private async blockTimesForHeights(heights: number[]): Promise<Map<number, string>> {
+    const map = new Map<number, string>();
+    if (heights.length === 0) return map;
+    const rows = (await knex("block")
+      .select("height", "time")
+      .whereIn("height", heights)) as Array<{ height: number; time: Date | string }>;
+    for (const row of rows) {
+      map.set(Number(row.height), toIsoSeconds(row.time));
+    }
+    return map;
   }
 }
 

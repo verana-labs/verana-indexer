@@ -399,6 +399,7 @@ function createRoute(
       }),
       createRoute("/v4/verifiable-trust", {
         "POST resolve": `${SERVICE.V1.TrustV1ApiService.path}.resolveV4`,
+        "GET changes": `${SERVICE.V1.IndexerMetaService.path}.listVtChanges`,
       }),
       createRoute("/v4/indexer", {
         "GET snapshot": `${SERVICE.V1.IndexerSnapshotService.path}.getSnapshot`,
