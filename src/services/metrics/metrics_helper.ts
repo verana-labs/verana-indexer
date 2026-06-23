@@ -373,13 +373,13 @@ export async function computeGlobalMetrics(blockHeight?: number) {
         });
 
     const participantsResult = await activeParticipantsBase()
-      .countDistinct(`${participantParticipantCol} as count`)
+      .count(`* as count`)
       .first();
     const participants = Number((participantsResult as any)?.count ?? 0);
 
     const activeParticipantsByType = await activeParticipantsBase()
       .select("role")
-      .countDistinct(`${participantParticipantCol} as count`)
+      .count(`* as count`)
       .groupBy("role");
 
     const participantsByType = {
@@ -490,13 +490,13 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     }
   }
 
-  const allParticipantsSet = new Set<string>();
-  const participantsEcosystemSet = new Set<string>();
-  const participantsIssuerGrantorSet = new Set<string>();
-  const participantsIssuerSet = new Set<string>();
-  const participantsVerifierGrantorSet = new Set<string>();
-  const participantsVerifierSet = new Set<string>();
-  const participantsHolderSet = new Set<string>();
+  let participantsTotal = 0;
+  let participantsEcosystem = 0;
+  let participantsIssuerGrantor = 0;
+  let participantsIssuer = 0;
+  let participantsVerifierGrantor = 0;
+  let participantsVerifier = 0;
+  let participantsHolder = 0;
   const latestHistorySubquery = knex("participant_history")
     .select("participant_id")
     .select(
@@ -543,25 +543,16 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       asOfTime
     );
     const corpId = Number((historyRecord as { corporation_id?: number }).corporation_id ?? 0) || 0;
-    const corp = corpId > 0 ? String(corpId) : "";
-    if (participantState === "ACTIVE" && corp) {
-      allParticipantsSet.add(corp);
-      if (historyRecord.role === "ECOSYSTEM") participantsEcosystemSet.add(corp);
-      if (historyRecord.role === "ISSUER_GRANTOR") participantsIssuerGrantorSet.add(corp);
-      if (historyRecord.role === "ISSUER") participantsIssuerSet.add(corp);
-      if (historyRecord.role === "VERIFIER_GRANTOR") participantsVerifierGrantorSet.add(corp);
-      if (historyRecord.role === "VERIFIER") participantsVerifierSet.add(corp);
-      if (historyRecord.role === "HOLDER") participantsHolderSet.add(corp);
+    if (participantState === "ACTIVE" && corpId > 0) {
+      participantsTotal++;
+      if (historyRecord.role === "ECOSYSTEM") participantsEcosystem++;
+      if (historyRecord.role === "ISSUER_GRANTOR") participantsIssuerGrantor++;
+      if (historyRecord.role === "ISSUER") participantsIssuer++;
+      if (historyRecord.role === "VERIFIER_GRANTOR") participantsVerifierGrantor++;
+      if (historyRecord.role === "VERIFIER") participantsVerifier++;
+      if (historyRecord.role === "HOLDER") participantsHolder++;
     }
   }
-
-  const participantsEcosystem = participantsEcosystemSet.size;
-  const participantsIssuerGrantor = participantsIssuerGrantorSet.size;
-  const participantsIssuer = participantsIssuerSet.size;
-  const participantsVerifierGrantor = participantsVerifierGrantorSet.size;
-  const participantsVerifier = participantsVerifierSet.size;
-  const participantsHolder = participantsHolderSet.size;
-  const participantsTotal = allParticipantsSet.size;
 
   return {
     participants: participantsTotal,
