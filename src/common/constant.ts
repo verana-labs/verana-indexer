@@ -39,6 +39,7 @@ export const MODULE_PARAM = {
 export const BULL_JOB_NAME = {
   CRAWL_VALIDATOR: "crawl:validator",
   HANDLE_TRUST_DEPOSIT: "handle:trust-deposit",
+  HANDLE_EXCHANGE_RATE: "handle:exchange-rate",
   CRAWL_GENESIS_VALIDATOR: "crawl:genesis-validator",
   CRAWL_SIGNING_INFO: "crawl:signing-info",
   HANDLE_ADDRESS: "handle:address",
@@ -285,6 +286,14 @@ export const SERVICE = {
     MetricsSnapshotService: {
       key: "MetricsSnapshotService",
       path: "v1.MetricsSnapshotService",
+    },
+    ExchangeRateDatabaseService: {
+      key: "ExchangeRateDatabaseService",
+      path: "v1.ExchangeRateDatabaseService",
+    },
+    ExchangeRateProcessorService: {
+      key: "ExchangeRateProcessorService",
+      path: "v1.ExchangeRateProcessorService",
     },
     CrawlAccountService: {
       key: "CrawlAccountService",
