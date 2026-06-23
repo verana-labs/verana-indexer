@@ -278,6 +278,10 @@ export const SERVICE = {
       key: "MetricsApiService",
       path: "v1.MetricsApiService",
     },
+    ExchangeRateApiService: {
+      key: "ExchangeRateApiService",
+      path: "v1.ExchangeRateApiService",
+    },
     MetricsSnapshotService: {
       key: "MetricsSnapshotService",
       path: "v1.MetricsSnapshotService",
