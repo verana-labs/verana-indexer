@@ -3970,6 +3970,83 @@
           "500": { "$ref": "#/components/responses/ServerError" }
         }
       }
+    },
+    "/v4/verifiable-trust/dids": {
+      "get": {
+        "tags": [
+          "Resolver"
+        ],
+        "summary": "List Indexed DIDs (IDX-VT-QRY-3)",
+        "description": "Enumerates the universe of DIDs the indexer can resolve at a frozen snapshot block, so a client with an empty mirror can bootstrap by resolving each via `/v4/verifiable-trust/resolve`. The snapshot block is selected via the `At-Block-Height` header (latest indexed block when omitted). The DID universe is the union of every Corporation `did`, every Ecosystem `did`, the DID of every in-scope Participant, and any DID previously evaluated by the resolver that the indexer still tracks.",
+        "operationId": "listIndexedDids",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Opaque pagination cursor returned as `nextCursor` by a previous page. Omit for the first page."
+          },
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "format": "int64" },
+            "description": "Restrict the enumeration to the Corporation's expanded membership set at the snapshot block (direct ownership plus the one-hop validator-tree branch, same semantics as the WS subscribe of IDX-VT-SUB-1)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 1000 },
+            "description": "Maximum number of DIDs to return. Defaults to 1000, capped at 10000."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of indexed DIDs at the resolved snapshot block.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["atBlock", "dids", "nextCursor"],
+                  "properties": {
+                    "atBlock": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Echo of the resolved snapshot block (the `At-Block-Height` value if provided, otherwise the latest indexed block)."
+                    },
+                    "dids": {
+                      "type": "array",
+                      "description": "Page of indexed DIDs in stable sort order across pages.",
+                      "items": { "type": "string" }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Opaque cursor for the next page; null (or absent) on the last page."
+                    }
+                  }
+                },
+                "example": {
+                  "atBlock": 1500004,
+                  "dids": [
+                    "did:webvh:QmRhJBzLMF6L3REha9xFpLgxui9X5tFm4TDxHoEHpA8Kpr:organization.vs.hologram.zone",
+                    "did:webvh:QmZ8Y3xRkH2pV4qTw9nL7sFmJg6cN5dB1aWxKvE3uPyT8r:corp.acme.example",
+                    "did:web:ecosystem.eu-passport.example"
+                  ],
+                  "nextCursor": "eyJvZmZzZXQiOjEwMDB9"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
     }
   },
   "components": {
