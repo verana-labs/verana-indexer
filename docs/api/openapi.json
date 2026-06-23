@@ -2852,6 +2852,133 @@
         }
       }
     },
+    "/v4/exchange-rate/price": {
+      "get": {
+        "tags": [
+          "Exchange Rate"
+        ],
+        "summary": "Get Price",
+        "description": "Convert an amount of a base asset to its equivalent in a quote asset using the relevant active, non-expired ExchangeRate entry. Aligned with VPR MOD-XR-QRY-3. When (base_asset_type, base_asset) == (quote_asset_type, quote_asset), price == amount and rate fields are omitted. Otherwise price = floor(amount * rate / 10^rate_scale).",
+        "operationId": "getPrice",
+        "parameters": [
+          {
+            "name": "base_asset_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TU",
+                "COIN",
+                "FIAT"
+              ]
+            },
+            "description": "Base asset type"
+          },
+          {
+            "name": "base_asset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Base asset identifier (\"tu\" for TU; on-chain denom for COIN; ISO-4217 currency code for FIAT)"
+          },
+          {
+            "name": "quote_asset_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TU",
+                "COIN",
+                "FIAT"
+              ]
+            },
+            "description": "Quote asset type"
+          },
+          {
+            "name": "quote_asset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Quote asset identifier (same rules as base_asset)"
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Base-asset amount expressed as a base-10 unsigned integer string, in the base asset's base units"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Computed price",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPriceResponse"
+                },
+                "example": {
+                  "price": "1234",
+                  "base_asset_type": "COIN",
+                  "base_asset": "uvna",
+                  "quote_asset_type": "FIAT",
+                  "quote_asset": "USD",
+                  "rate": "12345",
+                  "rate_scale": 4,
+                  "expires": "2026-01-15T10:30:00Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "No matching ExchangeRate entry exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Exchange rate not found",
+                  "code": 404
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The matching ExchangeRate entry is disabled or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Exchange rate is disabled or expired",
+                  "code": 410
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/verana/pp/v1/participant-sessions": {
       "get": {
         "tags": [
@@ -6382,6 +6509,58 @@
           }
         }
       },
+      "GetPriceResponse": {
+        "type": "object",
+        "required": [
+          "price",
+          "base_asset_type",
+          "base_asset",
+          "quote_asset_type",
+          "quote_asset"
+        ],
+        "properties": {
+          "price": {
+            "type": "string",
+            "description": "Base-10 unsigned integer string in the quote asset's base units"
+          },
+          "base_asset_type": {
+            "type": "string",
+            "enum": [
+              "TU",
+              "COIN",
+              "FIAT"
+            ]
+          },
+          "base_asset": {
+            "type": "string"
+          },
+          "quote_asset_type": {
+            "type": "string",
+            "enum": [
+              "TU",
+              "COIN",
+              "FIAT"
+            ]
+          },
+          "quote_asset": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string",
+            "description": "Base-10 unsigned integer rate. Omitted when base and quote asset are identical."
+          },
+          "rate_scale": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of decimal digits used to scale rate. Omitted when base and quote asset are identical."
+          },
+          "expires": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiry timestamp of the ExchangeRate entry. Omitted when base and quote asset are identical."
+          }
+        }
+      },
       "VtGovernanceFramework": {
         "type": "object",
         "required": ["version", "documents"],
@@ -6605,6 +6784,10 @@
     },
     {
       "name": "Metrics"
+    },
+    {
+      "name": "Exchange Rate",
+      "description": "Exchange Rate oracle queries (verana.xr.v1)."
     },
     {
       "name": "Statistics",

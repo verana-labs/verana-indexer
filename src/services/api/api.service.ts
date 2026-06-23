@@ -392,6 +392,9 @@ function createRoute(
       createRoute("/v4/metrics", {
         "GET all": `${SERVICE.V1.MetricsApiService.path}.getAll`,
       }),
+      createRoute("/v4/exchange-rate", {
+        "GET price": `${SERVICE.V1.ExchangeRateApiService.path}.getPrice`,
+      }),
       createRoute("/verana/td/v1", {
         "GET get/:corporation": `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         "GET params": `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
