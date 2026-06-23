@@ -31,6 +31,7 @@
     "test-watch": "pnpm run jest --watch",
     "test-coverage": "pnpm run jest --coverage",
     "test-api-integration": "jest --testPathPattern=integration/api-endpoints --verbose --runInBand --forceExit",
+    "test:local": "bash ./scripts/test-local.sh",
     "lint": "eslint \"src/**/*.{ts,tsx,js}\" --cache --cache-location .eslintcache --no-error-on-unmatched-pattern --quiet && node -e \"console.log('✅ Lint check passed - no errors found')\""
   },
   "nodemonConfig": {
