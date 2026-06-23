@@ -1,111 +1,104 @@
-import { isValidDid, matchesMembership, parseCorporationId, parseSubscribeMembership } from "./api_shared";
-import {
-  parseCsvList,
-  readBooleanFlag,
-  readPositiveInteger,
-  uniqueNormalizedDids,
-} from "./indexer_event_utils";
+import { isValidDid, matchesMembership, parseCorporationId, parseSubscribeMembership } from './api_shared'
+import { parseCsvList, readBooleanFlag, readPositiveInteger, uniqueNormalizedDids } from './indexer_event_utils'
 
 export type VtTrustCore = {
-  trusted: boolean;
-  evaluatedAtTime: string;
-  evaluatedAtBlock: number;
-  expiresAtTime: string;
-  corporationId: number | null;
-};
+  trusted: boolean
+  evaluatedAtTime: string
+  evaluatedAtBlock: number
+  expiresAtTime: string
+  corporationId: number | null
+}
 
 export type CorporationChannelOptions = {
-  include: boolean;
-  includeDepositChanges: boolean;
-};
+  include: boolean
+  includeDepositChanges: boolean
+}
 
 export type ParticipationsChannelOptions = {
-  include: boolean;
-  includeWeightChanges: boolean;
-  includeParticipantCounts: boolean;
-  includeIssuedCredentials: boolean;
-  includeVerifiedCredentials: boolean;
-};
+  include: boolean
+  includeWeightChanges: boolean
+  includeParticipantCounts: boolean
+  includeIssuedCredentials: boolean
+  includeVerifiedCredentials: boolean
+}
 
 export type EcosystemsChannelOptions = {
-  include: boolean;
-  includeParticipantCounts: boolean;
-  includeIssuedCredentials: boolean;
-  includeVerifiedCredentials: boolean;
-};
+  include: boolean
+  includeParticipantCounts: boolean
+  includeIssuedCredentials: boolean
+  includeVerifiedCredentials: boolean
+}
 
 export type VtChannelOptions = {
-  trust: boolean;
-  ecsCredentials: boolean;
-  presentations: boolean;
-  services: boolean;
-  corporation: CorporationChannelOptions;
-  participations: ParticipationsChannelOptions;
-  ecosystems: EcosystemsChannelOptions;
-};
+  trust: boolean
+  ecsCredentials: boolean
+  presentations: boolean
+  services: boolean
+  corporation: CorporationChannelOptions
+  participations: ParticipationsChannelOptions
+  ecosystems: EcosystemsChannelOptions
+}
 
 export type VtSubscribeControl = {
-  action: "subscribe";
-  dids: string[] | null;
-  corporationId: number | null;
-  channels: VtChannelOptions;
-};
+  action: 'subscribe'
+  dids: string[] | null
+  corporationId: number | null
+  channels: VtChannelOptions
+}
 
-export type VtUnsubscribeControl = { action: "unsubscribe" };
+export type VtUnsubscribeControl = { action: 'unsubscribe' }
 
-export type VtControlMessage = VtSubscribeControl | VtUnsubscribeControl;
+export type VtControlMessage = VtSubscribeControl | VtUnsubscribeControl
 
 export type VtRawChange = {
-  did: string;
-  relatedDids: Set<string>;
-  corporationIds: Set<number>;
-  trust: VtTrustCore | null;
-  corporation: { structural: boolean; deposit: boolean } | null;
+  did: string
+  relatedDids: Set<string>
+  corporationIds: Set<number>
+  trust: VtTrustCore | null
+  corporation: { structural: boolean; deposit: boolean } | null
   participations: {
-    structural: boolean;
-    weight: boolean;
-    counts: boolean;
-    issued: boolean;
-    verified: boolean;
-  } | null;
-  ecosystems: { structural: boolean; counts: boolean; issued: boolean; verified: boolean } | null;
-  content: boolean;
-};
+    structural: boolean
+    weight: boolean
+    counts: boolean
+    issued: boolean
+    verified: boolean
+  } | null
+  ecosystems: { structural: boolean; counts: boolean; issued: boolean; verified: boolean } | null
+  content: boolean
+}
 
 export type VtChange = {
-  did: string;
-  trust?: VtTrustCore;
-  corporation?: boolean;
-  participations?: boolean;
-  ecsCredentials?: boolean;
-  presentations?: boolean;
-  services?: boolean;
-  ecosystems?: boolean;
-};
+  did: string
+  trust?: VtTrustCore
+  corporation?: boolean
+  participations?: boolean
+  ecsCredentials?: boolean
+  presentations?: boolean
+  services?: boolean
+  ecosystems?: boolean
+}
 
 export type VtBlockEnvelope = {
-  type: "block";
-  block: number;
-  blockTime: string;
-  changes: VtChange[];
-};
+  type: 'block'
+  block: number
+  blockTime: string
+  changes: VtChange[]
+}
 
-export type VtControlParseResult =
-  | { ok: true; message: VtControlMessage }
-  | { ok: false; error: string };
+export type VtControlParseResult = { ok: true; message: VtControlMessage } | { ok: false; error: string }
 
 function boolOption(raw: unknown, key: string, fallback = false): boolean {
-  if (raw === undefined || raw === null) return fallback;
-  const v = (raw as Record<string, unknown>)[key];
-  return v === true;
+  if (raw === undefined || raw === null) return fallback
+  const v = (raw as Record<string, unknown>)[key]
+  return v === true
 }
 
 function parseCorporationChannel(raw: unknown): CorporationChannelOptions {
-  if (raw === true) return { include: true, includeDepositChanges: false };
-  if (raw && typeof raw === "object") {
-    return { include: true, includeDepositChanges: boolOption(raw, "includeDepositChanges") };
+  if (raw === true) return { include: true, includeDepositChanges: false }
+  if (raw && typeof raw === 'object') {
+    return { include: true, includeDepositChanges: boolOption(raw, 'includeDepositChanges') }
   }
-  return { include: false, includeDepositChanges: false };
+  return { include: false, includeDepositChanges: false }
 }
 
 function parseParticipationsChannel(raw: unknown): ParticipationsChannelOptions {
@@ -114,18 +107,18 @@ function parseParticipationsChannel(raw: unknown): ParticipationsChannelOptions 
     includeParticipantCounts: false,
     includeIssuedCredentials: false,
     includeVerifiedCredentials: false,
-  };
-  if (raw === true) return { include: true, ...base };
-  if (raw && typeof raw === "object") {
+  }
+  if (raw === true) return { include: true, ...base }
+  if (raw && typeof raw === 'object') {
     return {
       include: true,
-      includeWeightChanges: boolOption(raw, "includeWeightChanges"),
-      includeParticipantCounts: boolOption(raw, "includeParticipantCounts"),
-      includeIssuedCredentials: boolOption(raw, "includeIssuedCredentials"),
-      includeVerifiedCredentials: boolOption(raw, "includeVerifiedCredentials"),
-    };
+      includeWeightChanges: boolOption(raw, 'includeWeightChanges'),
+      includeParticipantCounts: boolOption(raw, 'includeParticipantCounts'),
+      includeIssuedCredentials: boolOption(raw, 'includeIssuedCredentials'),
+      includeVerifiedCredentials: boolOption(raw, 'includeVerifiedCredentials'),
+    }
   }
-  return { include: false, ...base };
+  return { include: false, ...base }
 }
 
 function parseEcosystemsChannel(raw: unknown): EcosystemsChannelOptions {
@@ -133,21 +126,21 @@ function parseEcosystemsChannel(raw: unknown): EcosystemsChannelOptions {
     includeParticipantCounts: false,
     includeIssuedCredentials: false,
     includeVerifiedCredentials: false,
-  };
-  if (raw === true) return { include: true, ...base };
-  if (raw && typeof raw === "object") {
+  }
+  if (raw === true) return { include: true, ...base }
+  if (raw && typeof raw === 'object') {
     return {
       include: true,
-      includeParticipantCounts: boolOption(raw, "includeParticipantCounts"),
-      includeIssuedCredentials: boolOption(raw, "includeIssuedCredentials"),
-      includeVerifiedCredentials: boolOption(raw, "includeVerifiedCredentials"),
-    };
+      includeParticipantCounts: boolOption(raw, 'includeParticipantCounts'),
+      includeIssuedCredentials: boolOption(raw, 'includeIssuedCredentials'),
+      includeVerifiedCredentials: boolOption(raw, 'includeVerifiedCredentials'),
+    }
   }
-  return { include: false, ...base };
+  return { include: false, ...base }
 }
 
 function parseChannels(raw: unknown): VtChannelOptions {
-  const map = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const map = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   return {
     trust: map.trust === true,
     ecsCredentials: map.ecsCredentials === true,
@@ -156,7 +149,7 @@ function parseChannels(raw: unknown): VtChannelOptions {
     corporation: parseCorporationChannel(map.corporation),
     participations: parseParticipationsChannel(map.participations),
     ecosystems: parseEcosystemsChannel(map.ecosystems),
-  };
+  }
 }
 
 function hasAnyChannel(channels: VtChannelOptions): boolean {
@@ -168,168 +161,164 @@ function hasAnyChannel(channels: VtChannelOptions): boolean {
     channels.corporation.include ||
     channels.participations.include ||
     channels.ecosystems.include
-  );
+  )
 }
 
 export function parseVtControlMessage(raw: string): VtControlParseResult {
-  let json: unknown;
+  let json: unknown
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(raw)
   } catch {
-    return { ok: false, error: "Invalid JSON" };
+    return { ok: false, error: 'Invalid JSON' }
   }
 
-  if (!json || typeof json !== "object") {
-    return { ok: false, error: "Control message must be an object" };
+  if (!json || typeof json !== 'object') {
+    return { ok: false, error: 'Control message must be an object' }
   }
 
-  const action = (json as Record<string, unknown>).action;
-  if (action !== "subscribe" && action !== "unsubscribe") {
-    return { ok: false, error: "Unknown action. Expected 'subscribe' or 'unsubscribe'" };
+  const action = (json as Record<string, unknown>).action
+  if (action !== 'subscribe' && action !== 'unsubscribe') {
+    return { ok: false, error: "Unknown action. Expected 'subscribe' or 'unsubscribe'" }
   }
 
-  if (action === "unsubscribe") {
-    return { ok: true, message: { action: "unsubscribe" } };
+  if (action === 'unsubscribe') {
+    return { ok: true, message: { action: 'unsubscribe' } }
   }
 
-  const channels = parseChannels((json as Record<string, unknown>).channels);
+  const channels = parseChannels((json as Record<string, unknown>).channels)
   if (!hasAnyChannel(channels)) {
-    return { ok: false, error: "'channels' must enable at least one channel" };
+    return { ok: false, error: "'channels' must enable at least one channel" }
   }
 
-  const base = parseSubscribeMembership(json as Record<string, unknown>);
+  const base = parseSubscribeMembership(json as Record<string, unknown>)
   if (!base.ok) {
-    return { ok: false, error: base.error };
+    return { ok: false, error: base.error }
   }
 
   return {
     ok: true,
     message: {
-      action: "subscribe",
+      action: 'subscribe',
       dids: base.value.dids,
       corporationId: base.value.corporationId,
       channels,
     },
-  };
+  }
 }
 
 export type VtChangesQuery = {
-  fromBlock: number;
-  dids: string[] | null;
-  corporationId: number | null;
-  channels: VtChannelOptions;
-  limit: number;
-};
+  fromBlock: number
+  dids: string[] | null
+  corporationId: number | null
+  channels: VtChannelOptions
+  limit: number
+}
 
-export type VtChangesQueryParseResult =
-  | { ok: true; value: VtChangesQuery }
-  | { ok: false; error: string };
+export type VtChangesQueryParseResult = { ok: true; value: VtChangesQuery } | { ok: false; error: string }
 
 const VT_CHANNEL_NAMES = new Set([
-  "trust",
-  "ecsCredentials",
-  "presentations",
-  "services",
-  "corporation",
-  "participations",
-  "ecosystems",
-]);
+  'trust',
+  'ecsCredentials',
+  'presentations',
+  'services',
+  'corporation',
+  'participations',
+  'ecosystems',
+])
 
-const VT_CHANGES_DEFAULT_LIMIT = 100;
-const VT_CHANGES_MAX_LIMIT = 1000;
+const VT_CHANGES_DEFAULT_LIMIT = 100
+const VT_CHANGES_MAX_LIMIT = 1000
 
 export function parseVtChangesQuery(params: Record<string, unknown>): VtChangesQueryParseResult {
-  const fromBlock = Number(params.fromBlock);
+  const fromBlock = Number(params.fromBlock)
   if (!Number.isInteger(fromBlock) || fromBlock < 0) {
-    return { ok: false, error: "'fromBlock' is required and must be a non-negative integer" };
+    return { ok: false, error: "'fromBlock' is required and must be a non-negative integer" }
   }
 
-  let limit = VT_CHANGES_DEFAULT_LIMIT;
-  if (params.limit !== undefined && params.limit !== null && params.limit !== "") {
-    const parsedLimit = readPositiveInteger(params.limit);
+  let limit = VT_CHANGES_DEFAULT_LIMIT
+  if (params.limit !== undefined && params.limit !== null && params.limit !== '') {
+    const parsedLimit = readPositiveInteger(params.limit)
     if (parsedLimit === null) {
-      return { ok: false, error: "'limit' must be a positive integer" };
+      return { ok: false, error: "'limit' must be a positive integer" }
     }
-    limit = Math.min(parsedLimit, VT_CHANGES_MAX_LIMIT);
+    limit = Math.min(parsedLimit, VT_CHANGES_MAX_LIMIT)
   }
 
-  const corp = parseCorporationId(params.corporation_id);
-  if (!corp.ok) return { ok: false, error: corp.error };
+  const corp = parseCorporationId(params.corporation_id)
+  if (!corp.ok) return { ok: false, error: corp.error }
 
-  const didList = parseCsvList(params.dids);
-  let dids: string[] | null = null;
+  const didList = parseCsvList(params.dids)
+  let dids: string[] | null = null
   if (didList.length > 0) {
     for (const candidate of didList) {
       if (!isValidDid(candidate)) {
-        return { ok: false, error: `Invalid DID in 'dids': ${candidate}` };
+        return { ok: false, error: `Invalid DID in 'dids': ${candidate}` }
       }
     }
-    const normalized = uniqueNormalizedDids(didList);
-    dids = normalized.length > 0 ? normalized : null;
+    const normalized = uniqueNormalizedDids(didList)
+    dids = normalized.length > 0 ? normalized : null
   }
 
-  const channelNames = parseCsvList(params.channels);
+  const channelNames = parseCsvList(params.channels)
   for (const name of channelNames) {
     if (!VT_CHANNEL_NAMES.has(name)) {
-      return { ok: false, error: `Unknown channel in 'channels': ${name}` };
+      return { ok: false, error: `Unknown channel in 'channels': ${name}` }
     }
   }
-  const has = (name: string) => channelNames.includes(name);
-  const includeParticipantCounts = readBooleanFlag(params.includeParticipantCounts);
-  const includeIssuedCredentials = readBooleanFlag(params.includeIssuedCredentials);
-  const includeVerifiedCredentials = readBooleanFlag(params.includeVerifiedCredentials);
+  const has = (name: string) => channelNames.includes(name)
+  const includeParticipantCounts = readBooleanFlag(params.includeParticipantCounts)
+  const includeIssuedCredentials = readBooleanFlag(params.includeIssuedCredentials)
+  const includeVerifiedCredentials = readBooleanFlag(params.includeVerifiedCredentials)
 
   const channels: VtChannelOptions = {
-    trust: has("trust"),
-    ecsCredentials: has("ecsCredentials"),
-    presentations: has("presentations"),
-    services: has("services"),
-    corporation: { include: has("corporation"), includeDepositChanges: false },
+    trust: has('trust'),
+    ecsCredentials: has('ecsCredentials'),
+    presentations: has('presentations'),
+    services: has('services'),
+    corporation: { include: has('corporation'), includeDepositChanges: false },
     participations: {
-      include: has("participations"),
+      include: has('participations'),
       includeWeightChanges: false,
       includeParticipantCounts,
       includeIssuedCredentials,
       includeVerifiedCredentials,
     },
     ecosystems: {
-      include: has("ecosystems"),
+      include: has('ecosystems'),
       includeParticipantCounts,
       includeIssuedCredentials,
       includeVerifiedCredentials,
     },
-  };
+  }
 
   if (!hasAnyChannel(channels)) {
-    return { ok: false, error: "'channels' must enable at least one channel" };
+    return { ok: false, error: "'channels' must enable at least one channel" }
   }
 
   return {
     ok: true,
     value: { fromBlock, dids, corporationId: corp.value, limit, channels },
-  };
+  }
 }
 
 export function projectVtChange(raw: VtRawChange, channels: VtChannelOptions): VtChange | null {
-  const change: VtChange = { did: raw.did };
-  let any = false;
+  const change: VtChange = { did: raw.did }
+  let any = false
 
   if (channels.trust && raw.trust) {
-    change.trust = raw.trust;
-    any = true;
+    change.trust = raw.trust
+    any = true
   }
 
   if (channels.corporation.include) {
-    const c = raw.corporation;
-    const signal = Boolean(
-      c && (c.structural || (channels.corporation.includeDepositChanges && c.deposit))
-    );
-    change.corporation = signal;
-    if (signal) any = true;
+    const c = raw.corporation
+    const signal = Boolean(c && (c.structural || (channels.corporation.includeDepositChanges && c.deposit)))
+    change.corporation = signal
+    if (signal) any = true
   }
 
   if (channels.participations.include) {
-    const p = raw.participations;
+    const p = raw.participations
     const signal = Boolean(
       p &&
         (p.structural ||
@@ -337,38 +326,38 @@ export function projectVtChange(raw: VtRawChange, channels: VtChannelOptions): V
           (channels.participations.includeParticipantCounts && p.counts) ||
           (channels.participations.includeIssuedCredentials && p.issued) ||
           (channels.participations.includeVerifiedCredentials && p.verified))
-    );
-    change.participations = signal;
-    if (signal) any = true;
+    )
+    change.participations = signal
+    if (signal) any = true
   }
 
   if (channels.ecosystems.include) {
-    const e = raw.ecosystems;
+    const e = raw.ecosystems
     const signal = Boolean(
       e &&
         (e.structural ||
           (channels.ecosystems.includeParticipantCounts && e.counts) ||
           (channels.ecosystems.includeIssuedCredentials && e.issued) ||
           (channels.ecosystems.includeVerifiedCredentials && e.verified))
-    );
-    change.ecosystems = signal;
-    if (signal) any = true;
+    )
+    change.ecosystems = signal
+    if (signal) any = true
   }
 
   if (channels.ecsCredentials) {
-    change.ecsCredentials = raw.content;
-    if (raw.content) any = true;
+    change.ecsCredentials = raw.content
+    if (raw.content) any = true
   }
   if (channels.presentations) {
-    change.presentations = raw.content;
-    if (raw.content) any = true;
+    change.presentations = raw.content
+    if (raw.content) any = true
   }
   if (channels.services) {
-    change.services = raw.content;
-    if (raw.content) any = true;
+    change.services = raw.content
+    if (raw.content) any = true
   }
 
-  return any ? change : null;
+  return any ? change : null
 }
 
 export function buildVtChangesEnvelope(
@@ -379,16 +368,16 @@ export function buildVtChangesEnvelope(
   corporationId: number | null,
   channels: VtChannelOptions
 ): VtBlockEnvelope {
-  const changes: VtChange[] = [];
+  const changes: VtChange[] = []
   for (const raw of rawChanges) {
     const inMembership = matchesMembership(didFilter, corporationId, {
       did: raw.did,
       relatedDids: raw.relatedDids,
       corporationIds: raw.corporationIds,
-    });
-    if (!inMembership) continue;
-    const projected = projectVtChange(raw, channels);
-    if (projected) changes.push(projected);
+    })
+    if (!inMembership) continue
+    const projected = projectVtChange(raw, channels)
+    if (projected) changes.push(projected)
   }
-  return { type: "block", block, blockTime, changes };
+  return { type: 'block', block, blockTime, changes }
 }

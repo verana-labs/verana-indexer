@@ -1,20 +1,20 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-await-in-loop */
-import { ibc } from '@aura-nw/aurajs';
-import { QueryDenomTraceRequest } from '@aura-nw/aurajs/types/codegen/ibc/applications/transfer/v1/query';
-import { fromBase64, fromUtf8, toHex } from '@cosmjs/encoding';
-import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
-import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import fs from 'fs';
-import _ from 'lodash';
-import { ServiceBroker } from 'moleculer';
-import Chain from 'stream-chain';
-import Pick from 'stream-json/filters/Pick';
-import StreamArr from 'stream-json/streamers/StreamArray';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
+import { Buffer } from 'node:buffer'
+import { ibc } from '@aura-nw/aurajs'
+import { QueryDenomTraceRequest } from '@aura-nw/aurajs/types/codegen/ibc/applications/transfer/v1/query'
+import { fromBase64, fromUtf8, toHex } from '@cosmjs/encoding'
+import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc'
+import { HttpBatchClient } from '@cosmjs/tendermint-rpc'
+import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import fs from 'fs'
+import _ from 'lodash'
+import { ServiceBroker } from 'moleculer'
+import Chain from 'stream-chain'
+import Pick from 'stream-json/filters/Pick'
+import StreamArr from 'stream-json/streamers/StreamArray'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
 import {
   ABCI_QUERY_PATH,
   AccountType,
@@ -24,9 +24,11 @@ import {
   MSG_TYPE,
   REDIS_KEY,
   SERVICE,
-} from '../../common';
-import knex from '../../common/utils/db_connection';
-import Utils from '../../common/utils/utils';
+} from '../../common'
+import knex from '../../common/utils/db_connection'
+import { isTableMissingError } from '../../common/utils/db_health'
+import Utils from '../../common/utils/utils'
+import config from '../../config.json' with { type: 'json' }
 import {
   Account,
   BlockCheckpoint,
@@ -38,16 +40,15 @@ import {
   Proposal,
   SmartContract,
   Validator,
-} from '../../models';
-import { ALLOWANCE_TYPE, FEEGRANT_STATUS } from '../feegrant/feegrant.service';
-import { isTableMissingError } from '../../common/utils/db_health';
+} from '../../models'
+import { ALLOWANCE_TYPE, FEEGRANT_STATUS } from '../feegrant/feegrant.service'
 
 @Service({
   name: SERVICE.V1.CrawlGenesisService.key,
   version: 1,
 })
 export default class CrawlGenesisService extends BullableService {
-  private _httpBatchClient: HttpBatchClient;
+  private _httpBatchClient: HttpBatchClient
 
   private genesisJobs: string[] = [
     BULL_JOB_NAME.CRAWL_GENESIS_ACCOUNT,
@@ -57,11 +58,11 @@ export default class CrawlGenesisService extends BullableService {
     BULL_JOB_NAME.CRAWL_GENESIS_CONTRACT,
     BULL_JOB_NAME.CRAWL_GENESIS_FEEGRANT,
     BULL_JOB_NAME.CRAWL_GENESIS_IBC_TAO,
-  ];
+  ]
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
-    this._httpBatchClient = getHttpBatchClient();
+    super(broker)
+    this._httpBatchClient = getHttpBatchClient()
   }
 
   @QueueHandler({
@@ -70,103 +71,89 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async handleGenesis(_payload: object): Promise<void> {
-    const genesisBlkCheck: BlockCheckpoint | undefined =
-      await BlockCheckpoint.query()
-        .select('*')
-        .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS);
+    const genesisBlkCheck: BlockCheckpoint | undefined = await BlockCheckpoint.query()
+      .select('*')
+      .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS)
 
     if (genesisBlkCheck && genesisBlkCheck.height > 0) {
-      this.logger.info('Genesis job had already been processed');
-      await this.terminateProcess();
-      return;
+      this.logger.info('Genesis job had already been processed')
+      await this.terminateProcess()
+      return
     }
 
-    const genesisPath = 'genesis.json';
-    if (fs.existsSync(genesisPath)) fs.unlinkSync(genesisPath);
+    const genesisPath = 'genesis.json'
+    if (fs.existsSync(genesisPath)) fs.unlinkSync(genesisPath)
 
     try {
-      const genesisResponse = await this._httpBatchClient.execute(
-        createJsonRpcRequest('genesis')
-      );
+      const genesisResponse = await this._httpBatchClient.execute(createJsonRpcRequest('genesis'))
 
-      fs.writeFileSync(
-        genesisPath,
-        JSON.stringify(genesisResponse.result.genesis, null, 2),
-        'utf-8'
-      );
-      this.logger.info('✅ Full genesis fetched successfully (no chunks).');
+      fs.writeFileSync(genesisPath, JSON.stringify(genesisResponse.result.genesis, null, 2), 'utf-8')
+      this.logger.info('✅ Full genesis fetched successfully (no chunks).')
     } catch (error: any) {
-      let errCode = 0;
+      let errCode = 0
       try {
-        errCode = JSON.parse(error.message).code;
+        errCode = JSON.parse(error.message).code
       } catch {
-        errCode = 0;
+        errCode = 0
       }
 
       if (errCode !== -32603) {
-        this.logger.error('❌ Unexpected error while fetching genesis:', error);
-        return;
+        this.logger.error('❌ Unexpected error while fetching genesis:', error)
+        return
       }
 
-      this.logger.warn('⚙️ Falling back to chunked genesis fetch...');
-      let index = 0;
-      let done = false;
-      const chunks: string[] = [];
+      this.logger.warn('⚙️ Falling back to chunked genesis fetch...')
+      let index = 0
+      let done = false
+      const chunks: string[] = []
 
       while (!done) {
         try {
-          this.logger.info(`📦 Fetching genesis_chunked: chunk ${index}`);
+          this.logger.info(`📦 Fetching genesis_chunked: chunk ${index}`)
           const resultChunk = await this._httpBatchClient.execute(
             createJsonRpcRequest('genesis_chunked', { chunk: index.toString() })
-          );
+          )
 
-          const decoded = fromUtf8(fromBase64(resultChunk.result.data));
-          chunks.push(decoded);
-          index += 1;
+          const decoded = fromUtf8(fromBase64(resultChunk.result.data))
+          chunks.push(decoded)
+          index += 1
         } catch (chunkError: any) {
           try {
-            const parsed = JSON.parse(chunkError.message || '{}');
+            const parsed = JSON.parse(chunkError.message || '{}')
             if (parsed.code !== -32603) {
-              this.logger.error('❌ Chunk fetch failed:', chunkError);
-              return;
+              this.logger.error('❌ Chunk fetch failed:', chunkError)
+              return
             }
           } catch {
-            this.logger.error('❌ Unknown error while parsing chunk error:', chunkError);
+            this.logger.error('❌ Unknown error while parsing chunk error:', chunkError)
           }
-          done = true;
+          done = true
         }
       }
 
-      this.logger.info(`✅ Retrieved ${chunks.length} genesis chunks. Combining...`);
-      const combinedData = chunks.join('');
+      this.logger.info(`✅ Retrieved ${chunks.length} genesis chunks. Combining...`)
+      const combinedData = chunks.join('')
 
       try {
-        const parsedGenesis = JSON.parse(combinedData);
-        fs.writeFileSync(
-          genesisPath,
-          JSON.stringify(parsedGenesis, null, 2),
-          'utf-8'
-        );
-        this.logger.info('✅ Chunked genesis combined & saved successfully.');
+        const parsedGenesis = JSON.parse(combinedData)
+        fs.writeFileSync(genesisPath, JSON.stringify(parsedGenesis, null, 2), 'utf-8')
+        this.logger.info('✅ Chunked genesis combined & saved successfully.')
       } catch (parseErr) {
-        this.logger.error('❌ Failed to parse combined genesis data. Possibly corrupted chunks.', parseErr);
-        return;
+        this.logger.error('❌ Failed to parse combined genesis data. Possibly corrupted chunks.', parseErr)
+        return
       }
     }
 
     const updateBlkCheck =
-      genesisBlkCheck ?? BlockCheckpoint.fromJson({
+      genesisBlkCheck ??
+      BlockCheckpoint.fromJson({
         job_name: BULL_JOB_NAME.CRAWL_GENESIS,
         height: 1,
-      });
+      })
 
-    updateBlkCheck.height = 1;
+    updateBlkCheck.height = 1
 
-    await BlockCheckpoint.query()
-      .insert(updateBlkCheck)
-      .onConflict('job_name')
-      .merge()
-      .returning('id');
+    await BlockCheckpoint.query().insert(updateBlkCheck).onConflict('job_name').merge().returning('id')
 
     for (const job of this.genesisJobs) {
       if (job !== BULL_JOB_NAME.CRAWL_GENESIS_CONTRACT) {
@@ -182,7 +169,7 @@ export default class CrawlGenesisService extends BullableService {
             attempts: config.jobRetryAttempt,
             backoff: config.jobRetryBackoff,
           }
-        );
+        )
       }
     }
   }
@@ -193,50 +180,46 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisAccounts(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis accounts');
+    this.logger.info('Crawl genesis accounts')
 
-    let accounts: Account[] = [];
-    let done = false;
+    let accounts: Account[] = []
+    let done = false
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_ACCOUNT
-    );
-    if (genesisProcess !== 0) return;
-    
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_ACCOUNT)
+    if (genesisProcess !== 0) return
+
     try {
-      const accountTableExists = await knex.schema.hasTable('account');
+      const accountTableExists = await knex.schema.hasTable('account')
       if (!accountTableExists) {
-        this.logger.warn('Account table does not exist yet, waiting for migrations...');
-        return;
+        this.logger.warn('Account table does not exist yet, waiting for migrations...')
+        return
       }
-    } catch (error: any) {
-      this.logger.warn('Error checking account table existence, waiting for migrations...');
-      return;
+    } catch (_error: any) {
+      this.logger.warn('Error checking account table existence, waiting for migrations...')
+      return
     }
-    
+
     try {
-      const accountsInDb = await Account.query().findOne({});
+      const accountsInDb = await Account.query().findOne({})
       if (accountsInDb) {
-        this.logger.warn('DB already contains some accounts; skipping genesis account import');
-        done = true;
+        this.logger.warn('DB already contains some accounts; skipping genesis account import')
+        done = true
       }
     } catch (error: any) {
       if (error?.nativeError?.code === '42P01') {
-        this.logger.warn('Account table does not exist yet, waiting for migrations...');
-        return;
+        this.logger.warn('Account table does not exist yet, waiting for migrations...')
+        return
       }
-      throw error;
+      throw error
     }
 
     if (!done) {
-      const balances: any[] = await this.readStreamGenesis(
-        'app_state.bank.balances'
-      );
-      let auths: any = await this.readStreamGenesis('app_state.auth.accounts');
+      const balances: any[] = await this.readStreamGenesis('app_state.bank.balances')
+      let auths: any = await this.readStreamGenesis('app_state.auth.accounts')
       auths = _.keyBy(
         auths.map((acc: any) => Utils.flattenObject(acc)),
         'address'
-      );
+      )
 
       balances.forEach((bal: any) => {
         const account: any = {
@@ -245,12 +228,9 @@ export default class CrawlGenesisService extends BullableService {
           spendable_balances: bal.coins,
           type: auths[bal.address]['@type'],
           pubkey: auths[bal.address].pub_key,
-          account_number: Number.parseInt(
-            auths[bal.address].account_number,
-            10
-          ),
+          account_number: Number.parseInt(auths[bal.address].account_number, 10),
           sequence: Number.parseInt(auths[bal.address].sequence, 10),
-        };
+        }
         if (
           account.type === AccountType.CONTINUOUS_VESTING ||
           account.type === AccountType.DELAYED_VESTING ||
@@ -260,47 +240,41 @@ export default class CrawlGenesisService extends BullableService {
             original_vesting: auths[bal.address].original_vesting,
             delegated_free: auths[bal.address].delegated_free,
             delegated_vesting: auths[bal.address].delegated_vesting,
-            start_time: auths[bal.address].start_time
-              ? Number.parseInt(auths[bal.address].start_time, 10)
-              : null,
+            start_time: auths[bal.address].start_time ? Number.parseInt(auths[bal.address].start_time, 10) : null,
             end_time: auths[bal.address].end_time,
-          };
+          }
 
-        accounts.push(account);
-      });
+        accounts.push(account)
+      })
 
-      accounts = await this.handleIbcDenom(accounts);
+      accounts = await this.handleIbcDenom(accounts)
     }
 
-    const accountTableExists = await knex.schema.hasTable('account');
+    const accountTableExists = await knex.schema.hasTable('account')
     if (!accountTableExists) {
-      this.logger.warn('Account table does not exist yet, cannot insert genesis accounts');
-      return;
+      this.logger.warn('Account table does not exist yet, cannot insert genesis accounts')
+      return
     }
 
     await knex
       .transaction(async (trx) => {
         if (accounts.length > 0)
           await Promise.all(
-            _.chunk(accounts, config.crawlGenesis.accountsPerBatch).map(
-              async (chunkAccounts, index) => {
-                this.logger.info(
-                  `Insert batch of ${config.crawlGenesis.accountsPerBatch} genesis accounts number ${index}`
-                );
-                try {
-                  await Account.query()
-                    .insertGraph(chunkAccounts)
-                    .transacting(trx);
-                } catch (error: any) {
-                  if (error?.nativeError?.code === '42P01') {
-                    this.logger.warn('Account table does not exist yet, skipping insert');
-                    throw new Error('Account table does not exist');
-                  }
-                  throw error;
+            _.chunk(accounts, config.crawlGenesis.accountsPerBatch).map(async (chunkAccounts, index) => {
+              this.logger.info(
+                `Insert batch of ${config.crawlGenesis.accountsPerBatch} genesis accounts number ${index}`
+              )
+              try {
+                await Account.query().insertGraph(chunkAccounts).transacting(trx)
+              } catch (error: any) {
+                if (error?.nativeError?.code === '42P01') {
+                  this.logger.warn('Account table does not exist yet, skipping insert')
+                  throw new Error('Account table does not exist')
                 }
+                throw error
               }
-            )
-          );
+            })
+          )
 
         await BlockCheckpoint.query()
           .insert(
@@ -312,14 +286,14 @@ export default class CrawlGenesisService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
+        this.logger.error(error)
+        throw error
+      })
 
-    await this.terminateProcess();
+    await this.terminateProcess()
   }
 
   @QueueHandler({
@@ -328,49 +302,42 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisValidators(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis validators');
+    this.logger.info('Crawl genesis validators')
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_VALIDATOR
-    );
-    if (genesisProcess !== 0) return;
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_VALIDATOR)
+    if (genesisProcess !== 0) return
 
-    let genValidators: any[] = await this.readStreamGenesis(
-      'app_state.genutil.gen_txs',
-      this.filterTx
-    );
+    let genValidators: any[] = await this.readStreamGenesis('app_state.genutil.gen_txs', this.filterTx)
     if (genValidators.length === 0) {
-      genValidators = await this.readStreamGenesis(
-        'app_state.staking.validators'
-      );
+      genValidators = await this.readStreamGenesis('app_state.staking.validators')
     } else {
-      genValidators = genValidators.flat();
+      genValidators = genValidators.flat()
       genValidators.forEach((genVal: any) => {
-        genVal.consensus_pubkey = genVal.pubkey;
-        genVal.operator_address = genVal.validator_address;
-        genVal.jailed = false;
-        genVal.status = 'BOND_STATUS_BONDED';
-        genVal.tokens = genVal.value.amount;
-        genVal.delegator_shares = genVal.value.amount;
-        genVal.unbonding_height = '0';
-        genVal.unbonding_time = new Date(0).toISOString();
-      });
+        genVal.consensus_pubkey = genVal.pubkey
+        genVal.operator_address = genVal.validator_address
+        genVal.jailed = false
+        genVal.status = 'BOND_STATUS_BONDED'
+        genVal.tokens = genVal.value.amount
+        genVal.delegator_shares = genVal.value.amount
+        genVal.unbonding_height = '0'
+        genVal.unbonding_time = new Date(0).toISOString()
+      })
     }
 
-    const validators: Validator[] = [];
+    const validators: Validator[] = []
     genValidators.forEach((genVal: any) => {
-      validators.push(Validator.createNewValidator(genVal));
-    });
+      validators.push(Validator.createNewValidator(genVal))
+    })
 
     await knex
       .transaction(async (trx) => {
-        this.logger.info('Insert genesis validators');
+        this.logger.info('Insert genesis validators')
         await Validator.query()
           .insert(validators)
           .onConflict('operator_address')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
 
         await BlockCheckpoint.query()
           .insert(
@@ -382,14 +349,14 @@ export default class CrawlGenesisService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
+        this.logger.error(error)
+        throw error
+      })
 
-    await this.terminateProcess();
+    await this.terminateProcess()
   }
 
   @QueueHandler({
@@ -398,38 +365,30 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisProposals(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis proposals');
+    this.logger.info('Crawl genesis proposals')
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_PROPOSAL
-    );
-    if (genesisProcess !== 0) return;
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_PROPOSAL)
+    if (genesisProcess !== 0) return
 
-    const genProposals: any[] = await this.readStreamGenesis(
-      'app_state.gov.proposals'
-    );
+    const genProposals: any[] = await this.readStreamGenesis('app_state.gov.proposals')
 
     await knex
       .transaction(async (trx) => {
         if (genProposals.length > 0) {
-          const proposals: Proposal[] = genProposals.map((propose: any) =>
-            Proposal.createNewProposal(propose)
-          );
+          const proposals: Proposal[] = genProposals.map((propose: any) => Proposal.createNewProposal(propose))
           await Promise.all(
-            _.chunk(proposals, config.crawlGenesis.proposalsPerBatch).map(
-              async (chunkProposals, index) => {
-                this.logger.info(
-                  `Insert batch of ${config.crawlGenesis.proposalsPerBatch} genesis proposals number ${index}`
-                );
-                await Proposal.query()
-                  .insert(chunkProposals)
-                  .onConflict('proposal_id')
-                  .merge()
-                  .returning('proposal_id')
-                  .transacting(trx);
-              }
-            )
-          );
+            _.chunk(proposals, config.crawlGenesis.proposalsPerBatch).map(async (chunkProposals, index) => {
+              this.logger.info(
+                `Insert batch of ${config.crawlGenesis.proposalsPerBatch} genesis proposals number ${index}`
+              )
+              await Proposal.query()
+                .insert(chunkProposals)
+                .onConflict('proposal_id')
+                .merge()
+                .returning('proposal_id')
+                .transacting(trx)
+            })
+          )
         }
 
         await BlockCheckpoint.query()
@@ -442,14 +401,14 @@ export default class CrawlGenesisService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
+        this.logger.error(error)
+        throw error
+      })
 
-    await this.terminateProcess();
+    await this.terminateProcess()
   }
 
   @QueueHandler({
@@ -458,20 +417,16 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisCodes(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis codes');
+    this.logger.info('Crawl genesis codes')
 
-    let done = false;
+    let done = false
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_CODE
-    );
-    if (genesisProcess === 2) done = true;
-    else if (genesisProcess === 1) return;
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_CODE)
+    if (genesisProcess === 2) done = true
+    else if (genesisProcess === 1) return
 
     if (!done) {
-      const genCodes: any[] = await this.readStreamGenesis(
-        'app_state.wasm.codes'
-      );
+      const genCodes: any[] = await this.readStreamGenesis('app_state.wasm.codes')
 
       await knex
         .transaction(async (trx) => {
@@ -480,33 +435,26 @@ export default class CrawlGenesisService extends BullableService {
               Code.fromJson({
                 code_id: parseInt(code.code_id, 10),
                 creator: code.code_info.creator,
-                data_hash: Buffer.from(
-                  code.code_info.code_hash,
-                  'base64'
-                ).toString('hex'),
+                data_hash: Buffer.from(code.code_info.code_hash, 'base64').toString('hex'),
                 instantiate_participant: code.code_info.instantiate_config,
                 type: null,
                 status: null,
                 store_hash: '',
                 store_height: 0,
               })
-            );
+            )
 
             await Promise.all(
-              _.chunk(codes, config.crawlGenesis.codesPerBatch).map(
-                async (chunkCodes, index) => {
-                  this.logger.info(
-                    `Insert batch of ${config.crawlGenesis.codesPerBatch} genesis codes number ${index}`
-                  );
-                  await Code.query()
-                    .insert(chunkCodes)
-                    .onConflict('code_id')
-                    .merge()
-                    .returning('code_id')
-                    .transacting(trx);
-                }
-              )
-            );
+              _.chunk(codes, config.crawlGenesis.codesPerBatch).map(async (chunkCodes, index) => {
+                this.logger.info(`Insert batch of ${config.crawlGenesis.codesPerBatch} genesis codes number ${index}`)
+                await Code.query()
+                  .insert(chunkCodes)
+                  .onConflict('code_id')
+                  .merge()
+                  .returning('code_id')
+                  .transacting(trx)
+              })
+            )
           }
 
           await BlockCheckpoint.query()
@@ -519,12 +467,12 @@ export default class CrawlGenesisService extends BullableService {
             .onConflict('job_name')
             .merge()
             .returning('id')
-            .transacting(trx);
+            .transacting(trx)
         })
         .catch((error) => {
-          this.logger.error(error);
-          throw error;
-        });
+          this.logger.error(error)
+          throw error
+        })
     }
 
     await this.createJob(
@@ -539,9 +487,9 @@ export default class CrawlGenesisService extends BullableService {
         attempts: config.jobRetryAttempt,
         backoff: config.jobRetryBackoff,
       }
-    );
+    )
 
-    await this.terminateProcess();
+    await this.terminateProcess()
   }
 
   @QueueHandler({
@@ -550,16 +498,12 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisContracts(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis contracts');
+    this.logger.info('Crawl genesis contracts')
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_CONTRACT
-    );
-    if (genesisProcess !== 0) return;
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_CONTRACT)
+    if (genesisProcess !== 0) return
 
-    const genContracts: any[] = await this.readStreamGenesis(
-      'app_state.wasm.contracts'
-    );
+    const genContracts: any[] = await this.readStreamGenesis('app_state.wasm.contracts')
 
     await knex
       .transaction(async (trx) => {
@@ -575,55 +519,44 @@ export default class CrawlGenesisService extends BullableService {
               instantiate_height: 0,
               version: null,
             })
-          );
+          )
 
-          const updateContractTypes: any[] = [];
-          const [contractCw2s, contractInfos]: [any, any] =
-            await SmartContract.getContractData(
-              genContracts.map((contract: any) => contract.contract_address),
-              this._httpBatchClient
-            );
+          const updateContractTypes: any[] = []
+          const [contractCw2s, contractInfos]: [any, any] = await SmartContract.getContractData(
+            genContracts.map((contract: any) => contract.contract_address),
+            this._httpBatchClient
+          )
           contracts.forEach((contract, index) => {
             if (contractCw2s[index]?.data) {
-              const data = JSON.parse(
-                fromUtf8(contractCw2s[index]?.data || new Uint8Array())
-              );
-              contract.name = data.contract;
-              contract.version = data.version;
+              const data = JSON.parse(fromUtf8(contractCw2s[index]?.data || new Uint8Array()))
+              contract.name = data.contract
+              contract.version = data.version
 
-              const codeTypes = Code.detectCodeType(data.contract);
+              const codeTypes = Code.detectCodeType(data.contract)
               if (codeTypes !== '')
                 updateContractTypes.push(
                   Code.query().patch({ type: codeTypes }).where({
-                    code_id:
-                      contractInfos[index]?.contractInfo?.codeId.toString(),
+                    code_id: contractInfos[index]?.contractInfo?.codeId.toString(),
                   })
-                );
+                )
             }
             if (contractInfos[index]?.contractInfo)
               contract.instantiate_height = parseInt(
-                contractInfos[
-                  index
-                ]?.contractInfo?.created.blockHeight.toString() || '0',
+                contractInfos[index]?.contractInfo?.created.blockHeight.toString() || '0',
                 10
-              );
-          });
+              )
+          })
 
-          if (updateContractTypes.length > 0)
-            await Promise.all(updateContractTypes);
+          if (updateContractTypes.length > 0) await Promise.all(updateContractTypes)
 
           await Promise.all(
-            _.chunk(contracts, config.crawlGenesis.smartContractsPerBatch).map(
-              async (chunkContracts, index) => {
-                this.logger.info(
-                  `Insert batch of ${config.crawlGenesis.smartContractsPerBatch} genesis contracts number ${index}`
-                );
-                await SmartContract.query()
-                  .insert(chunkContracts)
-                  .transacting(trx);
-              }
-            )
-          );
+            _.chunk(contracts, config.crawlGenesis.smartContractsPerBatch).map(async (chunkContracts, index) => {
+              this.logger.info(
+                `Insert batch of ${config.crawlGenesis.smartContractsPerBatch} genesis contracts number ${index}`
+              )
+              await SmartContract.query().insert(chunkContracts).transacting(trx)
+            })
+          )
         }
 
         await BlockCheckpoint.query()
@@ -636,14 +569,14 @@ export default class CrawlGenesisService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
+        this.logger.error(error)
+        throw error
+      })
 
-    await this.terminateProcess();
+    await this.terminateProcess()
   }
 
   @QueueHandler({
@@ -652,30 +585,23 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisFeeGrants(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis feegrants');
+    this.logger.info('Crawl genesis feegrants')
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_FEEGRANT
-    );
-    if (genesisProcess !== 0) return;
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_FEEGRANT)
+    if (genesisProcess !== 0) return
 
-    const genFeegrants: any[] = await this.readStreamGenesis(
-      'app_state.feegrant.allowances'
-    );
+    const genFeegrants: any[] = await this.readStreamGenesis('app_state.feegrant.allowances')
 
-    const feeGrants: Feegrant[] = [];
+    const feeGrants: Feegrant[] = []
     genFeegrants.forEach((genFee: any) => {
-      let basicAllowance = genFee.allowance;
-      let type = basicAllowance['@type'];
-      while (
-        type !== ALLOWANCE_TYPE.BASIC_ALLOWANCE &&
-        type !== ALLOWANCE_TYPE.PERIODIC_ALLOWANCE
-      ) {
-        basicAllowance = basicAllowance.allowance;
-        type = basicAllowance['@type'];
+      let basicAllowance = genFee.allowance
+      let type = basicAllowance['@type']
+      while (type !== ALLOWANCE_TYPE.BASIC_ALLOWANCE && type !== ALLOWANCE_TYPE.PERIODIC_ALLOWANCE) {
+        basicAllowance = basicAllowance.allowance
+        type = basicAllowance['@type']
       }
       if (type === ALLOWANCE_TYPE.PERIODIC_ALLOWANCE) {
-        basicAllowance = basicAllowance.basic;
+        basicAllowance = basicAllowance.basic
       }
       if (basicAllowance.spend_limit.length > 0)
         basicAllowance.spend_limit.forEach((limit: ICoin) => {
@@ -691,8 +617,8 @@ export default class CrawlGenesisService extends BullableService {
               spend_limit: limit.amount,
               denom: limit.denom,
             })
-          );
-        });
+          )
+        })
       else
         feeGrants.push(
           Feegrant.fromJson({
@@ -706,18 +632,14 @@ export default class CrawlGenesisService extends BullableService {
             spend_limit: null,
             denom: null,
           })
-        );
-    });
+        )
+    })
 
     await knex
       .transaction(async (trx) => {
-        this.logger.info('Insert genesis feegrants');
-        const chunkSize = config.crawlGenesis.chunkSize || config.crawlGenesis.feeGrantsPerBatch || 5000;
-        await trx.batchInsert(
-          'feegrant',
-          feeGrants,
-          chunkSize
-        );
+        this.logger.info('Insert genesis feegrants')
+        const chunkSize = config.crawlGenesis.chunkSize || config.crawlGenesis.feeGrantsPerBatch || 5000
+        await trx.batchInsert('feegrant', feeGrants, chunkSize)
 
         await BlockCheckpoint.query()
           .insert(
@@ -729,14 +651,14 @@ export default class CrawlGenesisService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
+        this.logger.error(error)
+        throw error
+      })
 
-    await this.terminateProcess();
+    await this.terminateProcess()
   }
 
   @QueueHandler({
@@ -745,79 +667,55 @@ export default class CrawlGenesisService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async crawlGenesisIbcTao(_payload: object): Promise<void> {
-    this.logger.info('Crawl genesis Ibc Tao');
+    this.logger.info('Crawl genesis Ibc Tao')
 
-    const genesisProcess = await this.checkGenesisJobProcess(
-      BULL_JOB_NAME.CRAWL_GENESIS_IBC_TAO
-    );
-    if (genesisProcess !== 0) return;
+    const genesisProcess = await this.checkGenesisJobProcess(BULL_JOB_NAME.CRAWL_GENESIS_IBC_TAO)
+    if (genesisProcess !== 0) return
     await knex
       .transaction(async (trx) => {
         // crawl genesis ibc client
-        const genClients: any[] = await this.readStreamGenesis(
-          'app_state.ibc.client_genesis.clients'
-        );
+        const genClients: any[] = await this.readStreamGenesis('app_state.ibc.client_genesis.clients')
         const genClientsConsensus: any[] = await this.readStreamGenesis(
           'app_state.ibc.client_genesis.clients_consensus'
-        );
+        )
         const ibcClients: IbcClient[] = genClients.map((genClient: any) => {
           const consensusStates = genClientsConsensus.find(
-            (clientConsensus) =>
-              clientConsensus.client_id === genClient.client_id
-          );
+            (clientConsensus) => clientConsensus.client_id === genClient.client_id
+          )
           return IbcClient.fromJson({
             client_id: genClient.client_id,
             counterparty_chain_id: genClient.client_state.chain_id,
             client_state: genClient.client_state,
-            consensus_state:
-              consensusStates.consensus_states[
-              consensusStates.consensus_states.length - 1
-              ],
-            client_type: genClient.client_id.substring(
-              0,
-              genClient.client_id.lastIndexOf('-')
-            ),
-          });
-        });
-        let newClients: IbcClient[] = [];
+            consensus_state: consensusStates.consensus_states[consensusStates.consensus_states.length - 1],
+            client_type: genClient.client_id.substring(0, genClient.client_id.lastIndexOf('-')),
+          })
+        })
+        let newClients: IbcClient[] = []
         if (ibcClients.length > 0) {
-          newClients = await IbcClient.query()
-            .insert(ibcClients)
-            .transacting(trx);
+          newClients = await IbcClient.query().insert(ibcClients).transacting(trx)
         }
-        this.logger.info('Done client');
+        this.logger.info('Done client')
         // crawl genesis ibc connections
-        const genConnections: any[] = await this.readStreamGenesis(
-          'app_state.ibc.connection_genesis.connections'
-        );
-        const ibcConnections: IbcConnection[] = genConnections.map(
-          (genConnection: any) =>
-            IbcConnection.fromJson({
-              ibc_client_id: newClients.find(
-                (client) => client.client_id === genConnection.client_id
-              )?.id,
-              connection_id: genConnection.id,
-              counterparty_client_id: genConnection.counterparty.client_id,
-              counterparty_connection_id:
-                genConnection.counterparty.connection_id,
-            })
-        );
-        let newConnections: IbcConnection[] = [];
+        const genConnections: any[] = await this.readStreamGenesis('app_state.ibc.connection_genesis.connections')
+        const ibcConnections: IbcConnection[] = genConnections.map((genConnection: any) =>
+          IbcConnection.fromJson({
+            ibc_client_id: newClients.find((client) => client.client_id === genConnection.client_id)?.id,
+            connection_id: genConnection.id,
+            counterparty_client_id: genConnection.counterparty.client_id,
+            counterparty_connection_id: genConnection.counterparty.connection_id,
+          })
+        )
+        let newConnections: IbcConnection[] = []
         if (ibcConnections.length > 0) {
-          newConnections = await IbcConnection.query()
-            .insert(ibcConnections)
-            .transacting(trx);
+          newConnections = await IbcConnection.query().insert(ibcConnections).transacting(trx)
         }
-        this.logger.info('Done connections');
+        this.logger.info('Done connections')
         // crawl genesis ibc channels
-        const genChannels: any[] = await this.readStreamGenesis(
-          'app_state.ibc.channel_genesis.channels'
-        );
+        const genChannels: any[] = await this.readStreamGenesis('app_state.ibc.channel_genesis.channels')
         const IbcChannels: IbcChannel[] = genChannels.map((genChannel: any) =>
           IbcChannel.fromJson({
             ibc_connection_id: newConnections.find(
-              (connection) =>
-                connection.connection_id === genChannel.connection_hops[0]
+              (connection) => connection.connection_id === genChannel.connection_hops[0]
             )?.id,
             channel_id: genChannel.channel_id,
             port_id: genChannel.port_id,
@@ -825,11 +723,11 @@ export default class CrawlGenesisService extends BullableService {
             counterparty_channel_id: genChannel.counterparty.channel_id,
             state: genChannel.state,
           })
-        );
+        )
         if (IbcChannels.length > 0) {
-          await IbcChannel.query().insert(IbcChannels).transacting(trx);
+          await IbcChannel.query().insert(IbcChannels).transacting(trx)
         }
-        this.logger.info('Done channel');
+        this.logger.info('Done channel')
         await BlockCheckpoint.query()
           .insert(
             BlockCheckpoint.fromJson({
@@ -840,47 +738,41 @@ export default class CrawlGenesisService extends BullableService {
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
-    await this.terminateProcess();
+        this.logger.error(error)
+        throw error
+      })
+    await this.terminateProcess()
   }
 
   private async handleIbcDenom(accounts: Account[]): Promise<Account[]> {
-    if (accounts.length === 0) return [];
+    if (accounts.length === 0) return []
 
-    this.logger.info('Handle IBC denom');
-    let ibcDenomRedis = await this.broker.cacher?.get(REDIS_KEY.IBC_DENOM);
-    if (ibcDenomRedis === undefined || ibcDenomRedis === null)
-      ibcDenomRedis = {};
+    this.logger.info('Handle IBC denom')
+    let ibcDenomRedis = await this.broker.cacher?.get(REDIS_KEY.IBC_DENOM)
+    if (ibcDenomRedis === undefined || ibcDenomRedis === null) ibcDenomRedis = {}
 
-    let ibcDenoms: string[] = [];
-    const batchQueries: any[] = [];
+    let ibcDenoms: string[] = []
+    const batchQueries: any[] = []
 
     accounts.forEach((account) => {
       account.balances.forEach((balance) => {
         if (balance.denom.startsWith('ibc/')) {
-          if (ibcDenomRedis && !ibcDenomRedis[balance.denom])
-            ibcDenoms.push(balance.denom);
+          if (ibcDenomRedis && !ibcDenomRedis[balance.denom]) ibcDenoms.push(balance.denom)
         }
-      });
-    });
+      })
+    })
 
     if (ibcDenoms.length > 0) {
       // Filter unique hashes
-      ibcDenoms = Array.from(new Set(ibcDenoms));
+      ibcDenoms = Array.from(new Set(ibcDenoms))
       ibcDenoms.forEach((hash) => {
         const request: QueryDenomTraceRequest = {
           hash,
-        };
-        const data = toHex(
-          ibc.applications.transfer.v1.QueryDenomTraceRequest.encode(
-            request
-          ).finish()
-        );
+        }
+        const data = toHex(ibc.applications.transfer.v1.QueryDenomTraceRequest.encode(request).finish())
         batchQueries.push(
           this._httpBatchClient.execute(
             createJsonRpcRequest('abci_query', {
@@ -888,117 +780,94 @@ export default class CrawlGenesisService extends BullableService {
               data,
             })
           )
-        );
-      });
+        )
+      })
 
-      const resultIbcDenom: JsonRpcSuccessResponse[] = await Promise.all(
-        batchQueries
-      );
+      const resultIbcDenom: JsonRpcSuccessResponse[] = await Promise.all(batchQueries)
       const ibcDenomResponses = resultIbcDenom.map((res, index) => ({
         hash: ibcDenoms[index],
-        ...ibc.applications.transfer.v1.QueryDenomTraceResponse.decode(
-          fromBase64(res.result.response.value)
-        ).denomTrace,
-      }));
+        ...ibc.applications.transfer.v1.QueryDenomTraceResponse.decode(fromBase64(res.result.response.value))
+          .denomTrace,
+      }))
 
       ibcDenomResponses.forEach((denomTrace) => {
-        if (ibcDenomRedis)
-          ibcDenomRedis[denomTrace.hash] = denomTrace.baseDenom;
-      });
-      await this.broker.cacher?.set(REDIS_KEY.IBC_DENOM, ibcDenomRedis);
+        if (ibcDenomRedis) ibcDenomRedis[denomTrace.hash] = denomTrace.baseDenom
+      })
+      await this.broker.cacher?.set(REDIS_KEY.IBC_DENOM, ibcDenomRedis)
     }
 
     accounts.forEach((account) => {
       account.balances.forEach((balance) => {
         if (balance.denom.startsWith('ibc/') && ibcDenomRedis) {
-          balance.base_denom = ibcDenomRedis[balance.denom];
+          balance.base_denom = ibcDenomRedis[balance.denom]
         }
-      });
-    });
+      })
+    })
 
-    return accounts;
+    return accounts
   }
 
   private async checkGenesisJobProcess(jobName: string): Promise<number> {
     const genesisCheckpoint = await BlockCheckpoint.query()
       .select('*')
-      .whereIn('job_name', [BULL_JOB_NAME.CRAWL_GENESIS, jobName]);
-    if (
-      genesisCheckpoint.find(
-        (check) => check.job_name === BULL_JOB_NAME.CRAWL_GENESIS
-      )?.height !== 1
-    ) {
-      this.logger.info('Job crawl genesis is still processing');
-      return 1;
+      .whereIn('job_name', [BULL_JOB_NAME.CRAWL_GENESIS, jobName])
+    if (genesisCheckpoint.find((check) => check.job_name === BULL_JOB_NAME.CRAWL_GENESIS)?.height !== 1) {
+      this.logger.info('Job crawl genesis is still processing')
+      return 1
     }
-    if (
-      genesisCheckpoint.find((check) => check.job_name === jobName)?.height ===
-      1
-    ) {
-      this.logger.info(`Job ${jobName} had already been processed`);
-      return 2;
+    if (genesisCheckpoint.find((check) => check.job_name === jobName)?.height === 1) {
+      this.logger.info(`Job ${jobName} had already been processed`)
+      return 2
     }
-    return 0;
+    return 0
   }
 
   private filterTx(data: any) {
-    return data.value.body.messages.filter(
-      (msg: any) => msg['@type'] === MSG_TYPE.MSG_CREATE_VALIDATOR
-    );
+    return data.value.body.messages.filter((msg: any) => msg['@type'] === MSG_TYPE.MSG_CREATE_VALIDATOR)
   }
 
-  private async readStreamGenesis(
-    data: string,
-    filter?: (data: any) => void
-  ): Promise<any> {
+  private async readStreamGenesis(data: string, filter?: (data: any) => void): Promise<any> {
     const pipeline = Chain.chain([
       fs.createReadStream('genesis.json'),
       Pick.withParser({ filter: data }),
       StreamArr.streamArray(),
-    ]);
+    ])
     return new Promise((resolve, reject) => {
-      const bal: any[] = [];
+      const bal: any[] = []
       pipeline
         .on('data', (data) => {
-          bal.push(filter ? filter(data) : data.value);
+          bal.push(filter ? filter(data) : data.value)
         })
         .on('end', () => resolve(bal))
-        .on('error', (error) => reject(error));
-    });
+        .on('error', (error) => reject(error))
+    })
   }
 
   private async terminateProcess() {
     try {
-      const checkpoint = await BlockCheckpoint.query().whereIn(
-        'job_name',
-        this.genesisJobs
-      );
+      const checkpoint = await BlockCheckpoint.query().whereIn('job_name', this.genesisJobs)
 
-      if (
-        checkpoint.length < this.genesisJobs.length ||
-        checkpoint.find((check) => check.height !== 1)
-      ) {
-        this.logger.info('Crawl genesis jobs are still processing');
-        return;
+      if (checkpoint.length < this.genesisJobs.length || checkpoint.find((check) => check.height !== 1)) {
+        this.logger.info('Crawl genesis jobs are still processing')
+        return
       }
-      this.logger.info('✅ All genesis jobs finished successfully');
+      this.logger.info('✅ All genesis jobs finished successfully')
     } catch (error: any) {
       if (isTableMissingError(error)) {
-        this.logger.warn("block_checkpoint table does not exist yet, skipping termination check");
-        return;
+        this.logger.warn('block_checkpoint table does not exist yet, skipping termination check')
+        return
       }
-      throw error;
+      throw error
     }
   }
   public async _start() {
     try {
-      const genesisBlkCheck: BlockCheckpoint | undefined =
-        await BlockCheckpoint.query()
-          .select('*')
-          .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS);
+      const genesisBlkCheck: BlockCheckpoint | undefined = await BlockCheckpoint.query()
+        .select('*')
+        .findOne('job_name', BULL_JOB_NAME.CRAWL_GENESIS)
 
       if (!genesisBlkCheck || genesisBlkCheck.height === 0) {
-        this.logger.info("Scheduling initial Crawl Genesis job...");
+        this.logger.info('Scheduling initial Crawl Genesis job...')
         await this.createJob(
           BULL_JOB_NAME.CRAWL_GENESIS,
           BULL_JOB_NAME.CRAWL_GENESIS,
@@ -1009,20 +878,19 @@ export default class CrawlGenesisService extends BullableService {
             attempts: config.jobRetryAttempt,
             backoff: config.jobRetryBackoff,
           }
-        );
-        this.handleGenesis({});
+        )
+        this.handleGenesis({})
       } else {
-        this.logger.info("Genesis job already processed, skipping scheduling");
+        this.logger.info('Genesis job already processed, skipping scheduling')
       }
     } catch (error: any) {
       if (isTableMissingError(error)) {
-        this.logger.warn("block_checkpoint table does not exist yet, waiting for migrations...");
-        return super._start();
+        this.logger.warn('block_checkpoint table does not exist yet, waiting for migrations...')
+        return super._start()
       }
-      throw error;
+      throw error
     }
 
-    return super._start();
+    return super._start()
   }
-
 }

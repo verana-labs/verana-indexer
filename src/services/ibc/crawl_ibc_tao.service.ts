@@ -1,21 +1,14 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import { Knex } from 'knex';
-import _ from 'lodash';
-import knex from '../../common/utils/db_connection';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import {
-  BlockCheckpoint,
-  Event,
-  EventAttribute,
-  IbcChannel,
-  IbcClient,
-  IbcConnection,
-} from '../../models';
-import { getAttributeFrom } from '../../common/utils/smart_contract';
-import { tableExists, isTableMissingError } from '../../common/utils/db_health';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Knex } from 'knex'
+import _ from 'lodash'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import { isTableMissingError, tableExists } from '../../common/utils/db_health'
+import { getAttributeFrom } from '../../common/utils/smart_contract'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, Event, EventAttribute, IbcChannel, IbcClient, IbcConnection } from '../../models'
 
 @Service({
   name: SERVICE.V1.CrawlIBCTaoService.key,
@@ -23,7 +16,7 @@ import { tableExists, isTableMissingError } from '../../common/utils/db_health';
 })
 export default class CrawlIbcTaoService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
@@ -32,81 +25,73 @@ export default class CrawlIbcTaoService extends BullableService {
   })
   public async crawlIbcTao(): Promise<void> {
     try {
-      if (!(await tableExists("event")) || !(await tableExists("transaction_message"))) {
-        this.logger.warn("Event or transaction_message tables do not exist yet, waiting for migrations...");
-        return;
+      if (!(await tableExists('event')) || !(await tableExists('transaction_message'))) {
+        this.logger.warn('Event or transaction_message tables do not exist yet, waiting for migrations...')
+        return
       }
 
-      const [startHeight, endHeight, updateBlockCheckpoint] =
-        await BlockCheckpoint.getCheckpoint(
-          BULL_JOB_NAME.CRAWL_IBC_TAO,
-          [BULL_JOB_NAME.HANDLE_TRANSACTION],
-          config.crawlIbcTao.key
-        );
-      this.logger.info(
-        `Handle IBC/TAO, startHeight: ${startHeight}, endHeight: ${endHeight}`
-      );
-      if (startHeight > endHeight) return;
+      const [startHeight, endHeight, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+        BULL_JOB_NAME.CRAWL_IBC_TAO,
+        [BULL_JOB_NAME.HANDLE_TRANSACTION],
+        config.crawlIbcTao.key
+      )
+      this.logger.info(`Handle IBC/TAO, startHeight: ${startHeight}, endHeight: ${endHeight}`)
+      if (startHeight > endHeight) return
       const events = await Event.query()
         .withGraphFetched('attributes')
         .joinRelated('message')
         .select('event.id', 'event.type', 'message.content')
-      .whereIn('event.type', [
-        Event.EVENT_TYPE.CREATE_CLIENT,
-        Event.EVENT_TYPE.CONNECTION_OPEN_ACK,
-        Event.EVENT_TYPE.CONNECTION_OPEN_CONFIRM,
-        Event.EVENT_TYPE.CHANNEL_OPEN_ACK,
-        Event.EVENT_TYPE.CHANNEL_OPEN_CONFIRM,
-        Event.EVENT_TYPE.CHANNEL_CLOSE_INIT,
-        Event.EVENT_TYPE.CHANNEL_CLOSE_CONFIRM,
-        Event.EVENT_TYPE.CHANNEL_CLOSE,
-      ])
-      .andWhere('event.block_height', '>', startHeight)
-      .andWhere('event.block_height', '<=', endHeight)
-      .orderBy('event.id');
-    await knex.transaction(async (trx) => {
-      await this.handleNewIbcClient(
-        events.filter((event) => event.type === Event.EVENT_TYPE.CREATE_CLIENT),
-        trx
-      );
-      await this.handleNewIbcConnection(
-        events.filter(
-          (event) =>
-            event.type === Event.EVENT_TYPE.CONNECTION_OPEN_CONFIRM ||
-            event.type === Event.EVENT_TYPE.CONNECTION_OPEN_ACK
-        ),
-        trx
-      );
-      await this.handleNewIbcChannel(
-        events.filter(
-          (event) =>
-            event.type === Event.EVENT_TYPE.CHANNEL_OPEN_ACK ||
-            event.type === Event.EVENT_TYPE.CHANNEL_OPEN_CONFIRM
-        ),
-        trx
-      );
-      await this.handleCloseIbcChannel(
-        events.filter(
-          (event) =>
-            event.type === Event.EVENT_TYPE.CHANNEL_CLOSE ||
-            event.type === Event.EVENT_TYPE.CHANNEL_CLOSE_CONFIRM ||
-            event.type === Event.EVENT_TYPE.CHANNEL_CLOSE_INIT
-        ),
-        trx
-      );
-      updateBlockCheckpoint.height = endHeight;
-      await BlockCheckpoint.query()
-        .transacting(trx)
-        .insert(updateBlockCheckpoint)
-        .onConflict('job_name')
-        .merge();
-    });
+        .whereIn('event.type', [
+          Event.EVENT_TYPE.CREATE_CLIENT,
+          Event.EVENT_TYPE.CONNECTION_OPEN_ACK,
+          Event.EVENT_TYPE.CONNECTION_OPEN_CONFIRM,
+          Event.EVENT_TYPE.CHANNEL_OPEN_ACK,
+          Event.EVENT_TYPE.CHANNEL_OPEN_CONFIRM,
+          Event.EVENT_TYPE.CHANNEL_CLOSE_INIT,
+          Event.EVENT_TYPE.CHANNEL_CLOSE_CONFIRM,
+          Event.EVENT_TYPE.CHANNEL_CLOSE,
+        ])
+        .andWhere('event.block_height', '>', startHeight)
+        .andWhere('event.block_height', '<=', endHeight)
+        .orderBy('event.id')
+      await knex.transaction(async (trx) => {
+        await this.handleNewIbcClient(
+          events.filter((event) => event.type === Event.EVENT_TYPE.CREATE_CLIENT),
+          trx
+        )
+        await this.handleNewIbcConnection(
+          events.filter(
+            (event) =>
+              event.type === Event.EVENT_TYPE.CONNECTION_OPEN_CONFIRM ||
+              event.type === Event.EVENT_TYPE.CONNECTION_OPEN_ACK
+          ),
+          trx
+        )
+        await this.handleNewIbcChannel(
+          events.filter(
+            (event) =>
+              event.type === Event.EVENT_TYPE.CHANNEL_OPEN_ACK || event.type === Event.EVENT_TYPE.CHANNEL_OPEN_CONFIRM
+          ),
+          trx
+        )
+        await this.handleCloseIbcChannel(
+          events.filter(
+            (event) =>
+              event.type === Event.EVENT_TYPE.CHANNEL_CLOSE ||
+              event.type === Event.EVENT_TYPE.CHANNEL_CLOSE_CONFIRM ||
+              event.type === Event.EVENT_TYPE.CHANNEL_CLOSE_INIT
+          ),
+          trx
+        )
+        updateBlockCheckpoint.height = endHeight
+        await BlockCheckpoint.query().transacting(trx).insert(updateBlockCheckpoint).onConflict('job_name').merge()
+      })
     } catch (error: any) {
       if (isTableMissingError(error)) {
-        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
-        return;
+        this.logger.warn('Database tables do not exist yet, waiting for migrations...')
+        return
       }
-      throw error;
+      throw error
     }
   }
 
@@ -114,25 +99,19 @@ export default class CrawlIbcTaoService extends BullableService {
     if (events.length > 0) {
       const newClients: IbcClient[] = events.map((event) =>
         IbcClient.fromJson({
-          client_id: getAttributeFrom(
-            event.attributes,
-            EventAttribute.ATTRIBUTE_KEY.CLIENT_ID
-          ),
+          client_id: getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CLIENT_ID),
           counterparty_chain_id: event.content.client_state.chain_id,
           client_state: event.content.client_state,
           consensus_state: event.content.consensus_state,
-          client_type: getAttributeFrom(
-            event.attributes,
-            EventAttribute.ATTRIBUTE_KEY.CLIENT_TYPE
-          ),
+          client_type: getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CLIENT_TYPE),
         })
-      );
-      this.logger.info('New IBC Clients:');
-      this.logger.info(newClients);
-      const chunkSize = config.crawlIbcTao.chunkSize || 5000;
+      )
+      this.logger.info('New IBC Clients:')
+      this.logger.info(newClients)
+      const chunkSize = config.crawlIbcTao.chunkSize || 5000
       for (let i = 0; i < newClients.length; i += chunkSize) {
-        const chunk = newClients.slice(i, i + chunkSize);
-        await IbcClient.query().insert(chunk).transacting(trx);
+        const chunk = newClients.slice(i, i + chunkSize)
+        await IbcClient.query().insert(chunk).transacting(trx)
       }
     }
   }
@@ -143,29 +122,16 @@ export default class CrawlIbcTaoService extends BullableService {
         await IbcClient.query()
           .whereIn(
             'client_id',
-            events.map((event) =>
-              getAttributeFrom(
-                event.attributes,
-                EventAttribute.ATTRIBUTE_KEY.CLIENT_ID
-              )
-            )
+            events.map((event) => getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CLIENT_ID))
           )
           .transacting(trx),
         'client_id'
-      );
+      )
       const newConnections: IbcConnection[] = events.map((event) =>
         IbcConnection.fromJson({
           ibc_client_id:
-            ibcClientsByClientId[
-              getAttributeFrom(
-                event.attributes,
-                EventAttribute.ATTRIBUTE_KEY.CLIENT_ID
-              )
-            ].id,
-          connection_id: getAttributeFrom(
-            event.attributes,
-            EventAttribute.ATTRIBUTE_KEY.CONNECTION_ID
-          ),
+            ibcClientsByClientId[getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CLIENT_ID)].id,
+          connection_id: getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CONNECTION_ID),
           counterparty_client_id: getAttributeFrom(
             event.attributes,
             EventAttribute.ATTRIBUTE_KEY.COUNTERPARTY_CLIENT_ID
@@ -175,13 +141,13 @@ export default class CrawlIbcTaoService extends BullableService {
             EventAttribute.ATTRIBUTE_KEY.COUNTERPARTY_CONNECTION_ID
           ),
         })
-      );
-      this.logger.info('New IBC Connections:');
-      this.logger.info(newConnections);
-      const chunkSize = config.crawlIbcTao.chunkSize || 5000;
+      )
+      this.logger.info('New IBC Connections:')
+      this.logger.info(newConnections)
+      const chunkSize = config.crawlIbcTao.chunkSize || 5000
       for (let i = 0; i < newConnections.length; i += chunkSize) {
-        const chunk = newConnections.slice(i, i + chunkSize);
-        await IbcConnection.query().insert(chunk).transacting(trx);
+        const chunk = newConnections.slice(i, i + chunkSize)
+        await IbcConnection.query().insert(chunk).transacting(trx)
       }
     }
   }
@@ -192,50 +158,32 @@ export default class CrawlIbcTaoService extends BullableService {
         await IbcConnection.query()
           .whereIn(
             'connection_id',
-            events.map((event) =>
-              getAttributeFrom(
-                event.attributes,
-                EventAttribute.ATTRIBUTE_KEY.CONNECTION_ID
-              )
-            )
+            events.map((event) => getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CONNECTION_ID))
           )
           .transacting(trx),
         'connection_id'
-      );
+      )
       const newChannels: IbcChannel[] = events.map((event) =>
         IbcChannel.fromJson({
           ibc_connection_id:
-            ibcConnectionsByConnetionId[
-              getAttributeFrom(
-                event.attributes,
-                EventAttribute.ATTRIBUTE_KEY.CONNECTION_ID
-              )
-            ].id,
-          channel_id: getAttributeFrom(
-            event.attributes,
-            EventAttribute.ATTRIBUTE_KEY.CHANNEL_ID
-          ),
-          port_id: getAttributeFrom(
-            event.attributes,
-            EventAttribute.ATTRIBUTE_KEY.PORT_ID
-          ),
-          counterparty_port_id: getAttributeFrom(
-            event.attributes,
-            EventAttribute.ATTRIBUTE_KEY.COUNTERPARTY_PORT_ID
-          ),
+            ibcConnectionsByConnetionId[getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CONNECTION_ID)]
+              .id,
+          channel_id: getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CHANNEL_ID),
+          port_id: getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.PORT_ID),
+          counterparty_port_id: getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.COUNTERPARTY_PORT_ID),
           counterparty_channel_id: getAttributeFrom(
             event.attributes,
             EventAttribute.ATTRIBUTE_KEY.COUNTERPARTY_CHANNEL_ID
           ),
           state: IbcChannel.STATUS.OPEN,
         })
-      );
-      this.logger.info('New IBC Channels:');
-      this.logger.info(newChannels);
-      const chunkSize = config.crawlIbcTao.chunkSize || 5000;
+      )
+      this.logger.info('New IBC Channels:')
+      this.logger.info(newChannels)
+      const chunkSize = config.crawlIbcTao.chunkSize || 5000
       for (let i = 0; i < newChannels.length; i += chunkSize) {
-        const chunk = newChannels.slice(i, i + chunkSize);
-        await IbcChannel.query().insert(chunk).transacting(trx);
+        const chunk = newChannels.slice(i, i + chunkSize)
+        await IbcChannel.query().insert(chunk).transacting(trx)
       }
     }
   }
@@ -243,14 +191,9 @@ export default class CrawlIbcTaoService extends BullableService {
   async handleCloseIbcChannel(events: Event[], trx: Knex.Transaction) {
     if (events.length > 0) {
       const queries = events.map((event) => {
-        const channelId = getAttributeFrom(
-          event.attributes,
-          EventAttribute.ATTRIBUTE_KEY.CHANNEL_ID
-        );
+        const channelId = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.CHANNEL_ID)
         if (!channelId) {
-          throw new Error(
-            `Event close channel not found channelId: ${event.id}`
-          );
+          throw new Error(`Event close channel not found channelId: ${event.id}`)
         }
         return IbcChannel.query()
           .patch({
@@ -259,9 +202,9 @@ export default class CrawlIbcTaoService extends BullableService {
           .where({
             channel_id: channelId,
           })
-          .transacting(trx);
-      });
-      await Promise.all(queries);
+          .transacting(trx)
+      })
+      await Promise.all(queries)
     }
   }
 
@@ -279,7 +222,7 @@ export default class CrawlIbcTaoService extends BullableService {
           every: config.crawlIbcTao.millisecondRepeatJob,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

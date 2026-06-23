@@ -1,12 +1,12 @@
 /* eslint-disable no-await-in-loop */
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import BigNumber from 'bignumber.js';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import knex from '../../common/utils/db_connection';
-import config from '../../config.json' with { type: 'json' };
-import { TransactionMessage } from '../../models';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import BigNumber from 'bignumber.js'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { TransactionMessage } from '../../models'
 
 @Service({
   name: SERVICE.V1.JobService.CreateConstraintInTransactionMessagePartition.key,
@@ -14,28 +14,26 @@ import { TransactionMessage } from '../../models';
 })
 export default class CreateConstraintInTransactionMessagePartitionJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   public createConstraintTxMsgStatus = {
     currentPartitionEmpty: 'currentPartitionEmpty',
     currentPartitionDoneOrInserting: 'currentPartitionDoneOrInserting',
     constraintUpdated: 'constraintUpdated',
-  };
+  }
 
   public insertionStatus = {
     empty: 'empty',
     done: 'done',
     inserting: 'inserting',
-  };
+  }
 
-  public async getLatestTxMsgByPartition(
-    partitionName: string
-  ): Promise<TransactionMessage> {
+  public async getLatestTxMsgByPartition(partitionName: string): Promise<TransactionMessage> {
     const latestTxMsg = await knex.raw(`
       SELECT * FROM ${partitionName} ORDER BY id DESC LIMIT 1
-    `);
-    return latestTxMsg.rows[0];
+    `)
+    return latestTxMsg.rows[0]
   }
 
   /**
@@ -43,20 +41,20 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
    * @param partitionName
    */
   public async getMaxMinTxIdByPartition(partitionName: string): Promise<{
-    min_tx_id: number;
-    max_tx_id: number;
+    min_tx_id: number
+    max_tx_id: number
   }> {
     await knex.raw(
       `set statement_timeout to ${config.jobCreateConstraintInTransactionMessagePartition.statementTimeout}`
-    );
+    )
     const boundariesResult = await knex.raw(`
         SELECT
-            min(tx_id) min_tx_id, max(tx_id) max_tx_id FROM ${partitionName}`);
+            min(tx_id) min_tx_id, max(tx_id) max_tx_id FROM ${partitionName}`)
 
     return {
       min_tx_id: boundariesResult.rows[0].min_tx_id,
       max_tx_id: boundariesResult.rows[0].max_tx_id,
-    };
+    }
   }
 
   /**
@@ -65,22 +63,16 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
    * @param toId
    * @public
    */
-  public async getPartitionInsertionInfo(
-    partitionName: string,
-    toId: string
-  ): Promise<string> {
-    const latestTxMsgPartition = await this.getLatestTxMsgByPartition(
-      partitionName
-    );
+  public async getPartitionInsertionInfo(partitionName: string, toId: string): Promise<string> {
+    const latestTxMsgPartition = await this.getLatestTxMsgByPartition(partitionName)
 
-    if (!latestTxMsgPartition) return this.insertionStatus.empty;
+    if (!latestTxMsgPartition) return this.insertionStatus.empty
 
-    const endValueOfPartition = BigNumber(toId).minus(1);
+    const endValueOfPartition = BigNumber(toId).minus(1)
 
-    if (endValueOfPartition.eq(latestTxMsgPartition.id))
-      return this.insertionStatus.done;
+    if (endValueOfPartition.eq(latestTxMsgPartition.id)) return this.insertionStatus.done
 
-    return this.insertionStatus.inserting;
+    return this.insertionStatus.inserting
   }
 
   /**
@@ -96,11 +88,9 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
             pg_get_constraintdef(oid) "definition"
         FROM pg_constraint
         WHERE conrelid = '${partitionName}'::regclass and conname like 'txmsg_ct%'
-    `);
-    const result = constraintResult.rows.map(
-      (constraint: { constraint: string }) => constraint.constraint
-    );
-    return result[0];
+    `)
+    const result = constraintResult.rows.map((constraint: { constraint: string }) => constraint.constraint)
+    return result[0]
   }
 
   /**
@@ -116,13 +106,13 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
     currentConstraintName: string
   ): Promise<{ createConstraint: any; dropConstraint: any } | null> {
     // Don't need to create constraint because current partition is empty
-    if (insertionStatus === this.insertionStatus.empty) return null;
+    if (insertionStatus === this.insertionStatus.empty) return null
 
-    const maxMinTxId = await this.getMaxMinTxIdByPartition(partitionName);
+    const maxMinTxId = await this.getMaxMinTxIdByPartition(partitionName)
 
     if (insertionStatus === this.insertionStatus.inserting) {
       // Current inserting and having constraint so do nothing
-      if (currentConstraintName) return null;
+      if (currentConstraintName) return null
 
       return {
         createConstraint: {
@@ -130,14 +120,14 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
           toTxId: null,
         },
         dropConstraint: null,
-      };
+      }
     }
 
     if (currentConstraintName) {
       // Naming like constraintName_status, so pop() will get current status of constraint
-      const constraintStatus = currentConstraintName.split('_').pop();
+      const constraintStatus = currentConstraintName.split('_').pop()
       // Current done and having full constraint so do nothing
-      if (constraintStatus === this.insertionStatus.done) return null;
+      if (constraintStatus === this.insertionStatus.done) return null
     }
 
     return {
@@ -146,7 +136,7 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
         toTxId: maxMinTxId.max_tx_id,
       },
       dropConstraint: currentConstraintName,
-    };
+    }
   }
 
   /**
@@ -154,9 +144,9 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
    */
   public async getTxMsgPartitionInfo(): Promise<
     {
-      name: string;
-      fromId: string;
-      toId: string;
+      name: string
+      fromId: string
+      toId: string
     }[]
   > {
     const partitionTable = await knex.raw(`
@@ -168,15 +158,15 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
             JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
             JOIN pg_class child ON pg_inherits.inhrelid   = child.oid
         WHERE parent.relname = 'transaction_message';
-    `);
+    `)
     return partitionTable.rows.map((partition: any) => {
-      const partitionBounds = partition.bounds;
+      const partitionBounds = partition.bounds
       return {
         name: partition.child,
         fromId: partitionBounds.match(/\d+/g)[0],
         toId: partitionBounds.match(/\d+/g)[1],
-      };
-    });
+      }
+    })
   }
 
   public async createConstraint(
@@ -185,25 +175,21 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
     toTxId: number | null,
     currentConstraintName: string
   ): Promise<void> {
-    let constraintName: string;
-    let checkConstraint: string;
+    let constraintName: string
+    let checkConstraint: string
 
     if (toTxId === null) {
-      constraintName = `txmsg_ct_${partitionName}_${this.insertionStatus.inserting}`;
-      checkConstraint = `(tx_id >= ${fromTxId})`;
+      constraintName = `txmsg_ct_${partitionName}_${this.insertionStatus.inserting}`
+      checkConstraint = `(tx_id >= ${fromTxId})`
     } else {
-      constraintName = `txmsg_ct_${partitionName}_${this.insertionStatus.done}`;
-      checkConstraint = `(tx_id >= ${fromTxId} AND tx_id <= ${toTxId})`;
+      constraintName = `txmsg_ct_${partitionName}_${this.insertionStatus.done}`
+      checkConstraint = `(tx_id >= ${fromTxId} AND tx_id <= ${toTxId})`
     }
 
     await knex.transaction(async (trx) => {
       if (currentConstraintName) {
-        this.logger.info(`DROP constraint ${currentConstraintName}`);
-        await knex
-          .raw(
-            `ALTER TABLE ${partitionName} DROP CONSTRAINT ${currentConstraintName}`
-          )
-          .transacting(trx);
+        this.logger.info(`DROP constraint ${currentConstraintName}`)
+        await knex.raw(`ALTER TABLE ${partitionName} DROP CONSTRAINT ${currentConstraintName}`).transacting(trx)
       }
       await knex
         .raw(
@@ -212,16 +198,16 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
         ADD CONSTRAINT ${constraintName} check ${checkConstraint} not valid
       `
         )
-        .transacting(trx);
+        .transacting(trx)
       await knex
         .raw(
           `
         ALTER TABLE ${partitionName} validate constraint ${constraintName}
       `
         )
-        .transacting(trx);
-      this.logger.info(`Constraint created with name ${constraintName}`);
-    });
+        .transacting(trx)
+      this.logger.info(`Constraint created with name ${constraintName}`)
+    })
   }
 
   @QueueHandler({
@@ -229,35 +215,29 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
     jobName: BULL_JOB_NAME.JOB_CREATE_TRANSACTION_MESSAGE_CONSTRAINT,
   })
   public async createTransactionMessageConstraint(_payload: {
-    name: string;
-    fromId: string;
-    toId: string;
+    name: string
+    fromId: string
+    toId: string
   }): Promise<string> {
-    const partitionInsertionStatus = await this.getPartitionInsertionInfo(
-      _payload.name,
-      _payload.toId
-    );
+    const partitionInsertionStatus = await this.getPartitionInsertionInfo(_payload.name, _payload.toId)
     if (partitionInsertionStatus === this.insertionStatus.empty) {
-      this.logger.info(
-        "Current partition is empty, so don't need to create constraint",
-        _payload.name
-      );
-      return this.createConstraintTxMsgStatus.currentPartitionEmpty;
+      this.logger.info("Current partition is empty, so don't need to create constraint", _payload.name)
+      return this.createConstraintTxMsgStatus.currentPartitionEmpty
     }
 
-    const currentConstraint = await this.getCurrentConstrainInfo(_payload.name);
+    const currentConstraint = await this.getCurrentConstrainInfo(_payload.name)
     const prepareConstraintCreation = await this.prepareConstrainInformation(
       _payload.name,
       partitionInsertionStatus,
       currentConstraint
-    );
+    )
 
     if (!prepareConstraintCreation) {
       this.logger.info(
         "Current partition is not done and already having constraint or already having full constraint, so don't need to create constraint",
         _payload.name
-      );
-      return this.createConstraintTxMsgStatus.currentPartitionDoneOrInserting;
+      )
+      return this.createConstraintTxMsgStatus.currentPartitionDoneOrInserting
     }
 
     await this.createConstraint(
@@ -265,8 +245,8 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
       prepareConstraintCreation.createConstraint.fromTxId,
       prepareConstraintCreation.createConstraint.toTxId,
       prepareConstraintCreation.dropConstraint
-    );
-    return this.createConstraintTxMsgStatus.constraintUpdated;
+    )
+    return this.createConstraintTxMsgStatus.constraintUpdated
   }
 
   @QueueHandler({
@@ -274,23 +254,21 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
     jobName: BULL_JOB_NAME.JOB_CHECK_TRANSACTION_MESSAGE_CONSTRAINT,
   })
   public async createConstraintInTxMsgPartition() {
-    const listPartition = await this.getTxMsgPartitionInfo();
-    listPartition.forEach(
-      (partition: { name: string; fromId: string; toId: string }) => {
-        this.createJob(
-          BULL_JOB_NAME.JOB_CREATE_TRANSACTION_MESSAGE_CONSTRAINT,
-          BULL_JOB_NAME.JOB_CREATE_TRANSACTION_MESSAGE_CONSTRAINT,
-          partition,
-          {
-            jobId: partition.name,
-            removeOnComplete: true,
-            removeOnFail: {
-              count: 3,
-            },
-          }
-        );
-      }
-    );
+    const listPartition = await this.getTxMsgPartitionInfo()
+    listPartition.forEach((partition: { name: string; fromId: string; toId: string }) => {
+      this.createJob(
+        BULL_JOB_NAME.JOB_CREATE_TRANSACTION_MESSAGE_CONSTRAINT,
+        BULL_JOB_NAME.JOB_CREATE_TRANSACTION_MESSAGE_CONSTRAINT,
+        partition,
+        {
+          jobId: partition.name,
+          removeOnComplete: true,
+          removeOnFail: {
+            count: 3,
+          },
+        }
+      )
+    })
   }
 
   public async _start(): Promise<void> {
@@ -305,11 +283,11 @@ export default class CreateConstraintInTransactionMessagePartitionJob extends Bu
         },
         repeat: {
           every:
-            config.jobCreateConstraintInTransactionMessagePartition
-              .jobRepeatCheckNeedCreateConstraint.millisecondRepeatJob,
+            config.jobCreateConstraintInTransactionMessagePartition.jobRepeatCheckNeedCreateConstraint
+              .millisecondRepeatJob,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

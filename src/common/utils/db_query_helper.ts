@@ -1,53 +1,54 @@
 export interface QueryOptions {
-  timeout?: number;
-  retries?: number;
-  retryDelay?: number;
+  timeout?: number
+  retries?: number
+  retryDelay?: number
 }
 
-const DEFAULT_QUERY_TIMEOUT = 120000;
-const DEFAULT_RETRIES = 3;
-const DEFAULT_RETRY_DELAY = 2000;
+const DEFAULT_QUERY_TIMEOUT = 120000
+const DEFAULT_RETRIES = 3
+const DEFAULT_RETRY_DELAY = 2000
 
 export function getDbQueryTimeoutMs(fallback: number = DEFAULT_QUERY_TIMEOUT): number {
-  const fromEnv = process.env.DB_QUERY_TIMEOUT_MS ||
-    process.env.POSTGRES_QUERY_TIMEOUT ||
-    process.env.POSTGRES_STATEMENT_TIMEOUT;
-  const parsed = parseInt(String(fromEnv ?? ''), 10);
+  const fromEnv =
+    process.env.DB_QUERY_TIMEOUT_MS || process.env.POSTGRES_QUERY_TIMEOUT || process.env.POSTGRES_STATEMENT_TIMEOUT
+  const parsed = parseInt(String(fromEnv ?? ''), 10)
   if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed;
+    return parsed
   }
-  return fallback;
+  return fallback
 }
 
-
 export function getHeavyBrokerCallTimeoutMs(): number {
-  const override = parseInt(String(process.env.HEAVY_BROKER_CALL_TIMEOUT_MS ?? ''), 10);
+  const override = parseInt(String(process.env.HEAVY_BROKER_CALL_TIMEOUT_MS ?? ''), 10)
   if (Number.isFinite(override) && override > 0) {
-    return override;
+    return override
   }
-  const req = parseInt(String(process.env.REQUEST_TIMEOUT ?? ''), 10);
-  const base = Number.isFinite(req) && req > 0 ? req : 300000;
-  return Math.max(base * 2, 600000);
+  const req = parseInt(String(process.env.REQUEST_TIMEOUT ?? ''), 10)
+  const base = Number.isFinite(req) && req > 0 ? req : 300000
+  return Math.max(base * 2, 600000)
 }
 
 export function isStatementTimeoutError(error: any): boolean {
-  const errorCode = error?.code;
-  const errorMessage = (error?.message || String(error) || '').toLowerCase();
-  
-  return errorCode === '57014' ||
+  const errorCode = error?.code
+  const errorMessage = (error?.message || String(error) || '').toLowerCase()
+
+  return (
+    errorCode === '57014' ||
     errorMessage.includes('statement timeout') ||
     errorMessage.includes('canceling statement') ||
     errorMessage.includes('query read timeout') ||
-    errorMessage.includes('query timeout');
+    errorMessage.includes('query timeout')
+  )
 }
 
 export function isPoolExhaustionError(error: any): boolean {
-  const errorCode = error?.code;
-  const errorMessageRaw = error?.message || String(error);
-  const errorMessage = errorMessageRaw.toLowerCase();
-  const errorName = String(error?.name ?? "").toLowerCase();
-  
-  return errorCode === 'ECONNREFUSED' ||
+  const errorCode = error?.code
+  const errorMessageRaw = error?.message || String(error)
+  const errorMessage = errorMessageRaw.toLowerCase()
+  const errorName = String(error?.name ?? '').toLowerCase()
+
+  return (
+    errorCode === 'ECONNREFUSED' ||
     errorMessage.includes('timeout acquiring a connection') ||
     errorMessage.includes('timeout acquiring connection') ||
     errorMessage.includes('acquiring a connection') ||
@@ -58,22 +59,25 @@ export function isPoolExhaustionError(error: any): boolean {
     errorMessage.includes('query read timeout') ||
     errorMessage.includes('knex timeout') ||
     errorMessage.includes('knex: timeout') ||
-    errorMessage.includes('timeouterror');
+    errorMessage.includes('timeouterror')
+  )
 }
 
 export function isConnectionTerminatedError(error: any): boolean {
-  const errorMessage = (error?.message || String(error) || '').toLowerCase();
-  return errorMessage.includes('connection terminated unexpectedly') ||
+  const errorMessage = (error?.message || String(error) || '').toLowerCase()
+  return (
+    errorMessage.includes('connection terminated unexpectedly') ||
     errorMessage.includes('connection closed') ||
     errorMessage.includes('server closed the connection') ||
     errorMessage.includes('not queryable') ||
-    errorMessage.includes('connection error and is not queryable');
+    errorMessage.includes('connection error and is not queryable')
+  )
 }
 
 export function delay(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(resolve, ms);
-  });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
 }
 
 export async function executeWithRetry<T>(
@@ -81,89 +85,80 @@ export async function executeWithRetry<T>(
   options: QueryOptions = {},
   logger?: any
 ): Promise<T> {
-  const timeout = options.timeout || DEFAULT_QUERY_TIMEOUT;
-  const maxRetries = options.retries || DEFAULT_RETRIES;
-  const retryDelay = options.retryDelay || DEFAULT_RETRY_DELAY;
-  
-  let lastError: any;
-  
+  const timeout = options.timeout || DEFAULT_QUERY_TIMEOUT
+  const maxRetries = options.retries || DEFAULT_RETRIES
+  const retryDelay = options.retryDelay || DEFAULT_RETRY_DELAY
+
+  let lastError: any
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const queryPromise = queryFn();
+      const queryPromise = queryFn()
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
-          reject(new Error(`Query timeout after ${timeout}ms`));
-        }, timeout);
-      });
-      
-      return await Promise.race([queryPromise, timeoutPromise]);
+          reject(new Error(`Query timeout after ${timeout}ms`))
+        }, timeout)
+      })
+
+      return await Promise.race([queryPromise, timeoutPromise])
     } catch (error: any) {
-      lastError = error;
-      
+      lastError = error
+
       if (isStatementTimeoutError(error)) {
         if (logger) {
-          logger.warn(`Query timeout (attempt ${attempt}/${maxRetries}): ${error?.message || error}`);
+          logger.warn(`Query timeout (attempt ${attempt}/${maxRetries}): ${error?.message || error}`)
         }
-        
+
         if (attempt < maxRetries) {
-          const backoffDelay = retryDelay * (2 ** (attempt - 1));
+          const backoffDelay = retryDelay * 2 ** (attempt - 1)
           if (logger) {
-            logger.info(`Retrying query after ${backoffDelay}ms...`);
+            logger.info(`Retrying query after ${backoffDelay}ms...`)
           }
-          await delay(backoffDelay);
-          continue;
+          await delay(backoffDelay)
         }
       } else if (isPoolExhaustionError(error)) {
         if (logger) {
-          logger.warn(`Pool exhaustion or query timeout (attempt ${attempt}/${maxRetries}): ${error?.message || error}`);
+          logger.warn(`Pool exhaustion or query timeout (attempt ${attempt}/${maxRetries}): ${error?.message || error}`)
         }
-        
+
         if (attempt < maxRetries) {
-          const backoffDelay = Math.min(retryDelay * (2 ** (attempt - 1)), 10000);
+          const backoffDelay = Math.min(retryDelay * 2 ** (attempt - 1), 10000)
           if (logger) {
-            logger.info(`Waiting for pool availability, retrying after ${backoffDelay}ms...`);
+            logger.info(`Waiting for pool availability, retrying after ${backoffDelay}ms...`)
           }
-          await delay(backoffDelay);
-          continue;
+          await delay(backoffDelay)
         }
       } else if (isConnectionTerminatedError(error)) {
         if (logger) {
-          logger.warn(`Database connection terminated (attempt ${attempt}/${maxRetries}): ${error?.message || error}`);
+          logger.warn(`Database connection terminated (attempt ${attempt}/${maxRetries}): ${error?.message || error}`)
         }
-        
+
         if (attempt < maxRetries) {
-          const backoffDelay = Math.min(retryDelay * (2 ** (attempt - 1)), 5000);
+          const backoffDelay = Math.min(retryDelay * 2 ** (attempt - 1), 5000)
           if (logger) {
-            logger.info(`Reconnecting to database, retrying after ${backoffDelay}ms...`);
+            logger.info(`Reconnecting to database, retrying after ${backoffDelay}ms...`)
           }
-          await delay(backoffDelay);
-          continue;
+          await delay(backoffDelay)
         }
       } else {
-        throw error;
+        throw error
       }
     }
   }
-  
-  throw lastError;
+
+  throw lastError
 }
 
-export function withQueryTimeout(
-  queryBuilder: any,
-  timeout: number = DEFAULT_QUERY_TIMEOUT
-): any {
-  return queryBuilder.timeout(timeout);
+export function withQueryTimeout(queryBuilder: any, timeout: number = DEFAULT_QUERY_TIMEOUT): any {
+  return queryBuilder.timeout(timeout)
 }
 
-export async function throttleBetweenBatches(
-  delayMs: number = 100,
-  logger?: any
-): Promise<void> {
+export async function throttleBetweenBatches(delayMs: number = 100, logger?: any): Promise<void> {
   if (delayMs > 0) {
     if (logger?.debug) {
-      logger.debug(`Throttling batch processing for ${delayMs}ms to reduce DB pool pressure`);
+      logger.debug(`Throttling batch processing for ${delayMs}ms to reduce DB pool pressure`)
     }
-    await delay(delayMs);
+    await delay(delayMs)
   }
 }
 
@@ -173,21 +168,22 @@ export function createQueryWithTimeout<T>(
   logger?: any
 ): Promise<T> {
   return executeWithRetry(
-    () => Promise.race([
-      queryFn(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Query timeout after ${timeout}ms`));
-        }, timeout);
-      })
-    ]),
+    () =>
+      Promise.race([
+        queryFn(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Query timeout after ${timeout}ms`))
+          }, timeout)
+        }),
+      ]),
     { timeout, retries: 1 },
     logger
-  );
+  )
 }
 
 export function shouldRetryQuery(error: any): boolean {
-  return isStatementTimeoutError(error) || isPoolExhaustionError(error);
+  return isStatementTimeoutError(error) || isPoolExhaustionError(error)
 }
 
 export async function queryWithAutoRetry<T>(
@@ -195,5 +191,5 @@ export async function queryWithAutoRetry<T>(
   options: QueryOptions = {},
   logger?: any
 ): Promise<T> {
-  return executeWithRetry(queryFn, options, logger);
+  return executeWithRetry(queryFn, options, logger)
 }

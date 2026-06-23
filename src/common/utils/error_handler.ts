@@ -1,29 +1,25 @@
-import { indexerStatusManager } from '../../services/manager/indexer_status.manager';
-import { isPoolExhaustionError, isStatementTimeoutError } from './db_query_helper';
+import { indexerStatusManager } from '../../services/manager/indexer_status.manager'
+import { isPoolExhaustionError, isStatementTimeoutError } from './db_query_helper'
 
 export interface ErrorInfo {
-  isNetworkError: boolean;
-  isServerError: boolean;
-  isTimeoutError: boolean;
-  shouldStopIndexer: boolean;
-  errorCode?: string;
-  statusCode?: number;
-  statusText?: string;
-  errorMessage: string;
+  isNetworkError: boolean
+  isServerError: boolean
+  isTimeoutError: boolean
+  shouldStopIndexer: boolean
+  errorCode?: string
+  statusCode?: number
+  statusText?: string
+  errorMessage: string
 }
 
-
 export function analyzeError(error: any): ErrorInfo {
-  const rawErrorCode = error?.code;
-  const errorCode = rawErrorCode == null ? '' : String(rawErrorCode);
-  const statusCode = error?.response?.status;
-  const statusText = error?.response?.statusText || '';
+  const rawErrorCode = error?.code
+  const errorCode = rawErrorCode == null ? '' : String(rawErrorCode)
+  const statusCode = error?.response?.status
+  const statusText = error?.response?.statusText || ''
   const errorMessage = String(
-    error?.response?.data?.message ||
-    error?.response?.statusText ||
-    error?.message ||
-    String(error)
-  );
+    error?.response?.data?.message || error?.response?.statusText || error?.message || String(error)
+  )
 
   const networkErrorCodes = [
     'EACCES',
@@ -37,14 +33,9 @@ export function analyzeError(error: any): ErrorInfo {
     'EPIPE',
     'ECANCELED',
     'EBUSY',
-  ];
+  ]
 
-  const httpErrorCodes = [
-    'ERR_BAD_RESPONSE',
-    'ERR_BAD_REQUEST',
-    'ERR_NETWORK',
-    'ERR_INTERNET_DISCONNECTED',
-  ];
+  const httpErrorCodes = ['ERR_BAD_RESPONSE', 'ERR_BAD_REQUEST', 'ERR_NETWORK', 'ERR_INTERNET_DISCONNECTED']
 
   const timeoutPatterns = [
     'timeout',
@@ -57,9 +48,9 @@ export function analyzeError(error: any): ErrorInfo {
     'query read timeout',
     'canceling statement',
     'Connection terminated unexpectedly',
-  ];
-  
-  const postgresTimeoutCodes = ['57014'];
+  ]
+
+  const postgresTimeoutCodes = ['57014']
 
   const serverErrorPatterns = [
     'Bad Gateway',
@@ -70,50 +61,39 @@ export function analyzeError(error: any): ErrorInfo {
     '503',
     '504',
     '500',
-  ];
+  ]
 
   const isNetworkError =
     networkErrorCodes.includes(errorCode) ||
     httpErrorCodes.includes(errorCode) ||
-    timeoutPatterns.some(pattern =>
-      errorMessage.toLowerCase().includes(pattern.toLowerCase()) ||
-      errorCode.toLowerCase().includes(pattern.toLowerCase())
-    );
+    timeoutPatterns.some(
+      (pattern) =>
+        errorMessage.toLowerCase().includes(pattern.toLowerCase()) ||
+        errorCode.toLowerCase().includes(pattern.toLowerCase())
+    )
 
   const isServerError =
     (statusCode && statusCode >= 500) ||
     statusCode === 502 ||
     statusCode === 503 ||
     statusCode === 504 ||
-    serverErrorPatterns.some(pattern =>
-      errorMessage.includes(pattern) ||
-      statusText.includes(pattern)
-    );
+    serverErrorPatterns.some((pattern) => errorMessage.includes(pattern) || statusText.includes(pattern))
 
   const isTimeoutError =
     errorCode === 'ETIMEDOUT' ||
     errorCode === 'ECONNABORTED' ||
     postgresTimeoutCodes.includes(errorCode) ||
-    timeoutPatterns.some(pattern =>
-      errorMessage.toLowerCase().includes(pattern.toLowerCase())
-    );
+    timeoutPatterns.some((pattern) => errorMessage.toLowerCase().includes(pattern.toLowerCase()))
 
-  const isNonCritical = errorMessage.toLowerCase().includes('non-critical') ||
-    errorMessage.toLowerCase().includes('service will continue');
+  const isNonCritical =
+    errorMessage.toLowerCase().includes('non-critical') || errorMessage.toLowerCase().includes('service will continue')
 
-  const isMoleculerRequestTimeout =
-    error?.type === 'REQUEST_TIMEOUT' ||
-    error?.name === 'RequestTimeoutError';
+  const isMoleculerRequestTimeout = error?.type === 'REQUEST_TIMEOUT' || error?.name === 'RequestTimeoutError'
 
   const shouldStopIndexer =
     !isNonCritical &&
     !isMoleculerRequestTimeout &&
-    (
-      isNetworkError ||
-      isServerError ||
-      isTimeoutError ||
-      (statusCode && statusCode >= 500)
-    );
+    (isNetworkError || isServerError || isTimeoutError || (statusCode && statusCode >= 500))
 
   return {
     isNetworkError,
@@ -124,32 +104,31 @@ export function analyzeError(error: any): ErrorInfo {
     statusCode,
     statusText: statusText || undefined,
     errorMessage,
-  };
+  }
 }
 
 export function createEnhancedError(error: any, context?: string): Error {
-  const errorMessage = error?.message || error?.response?.data?.message || error?.response?.statusText || String(error);
-  const errorCode = error?.code || (error?.response?.status ? `HTTP_${error.response.status}` : 'UNKNOWN_ERROR');
-  const statusCode = error?.response?.status;
-  const statusText = error?.response?.statusText;
+  const errorMessage = error?.message || error?.response?.data?.message || error?.response?.statusText || String(error)
+  const errorCode = error?.code || (error?.response?.status ? `HTTP_${error.response.status}` : 'UNKNOWN_ERROR')
+  const statusCode = error?.response?.status
+  const statusText = error?.response?.statusText
 
-  let message = errorMessage;
+  let message = errorMessage
   if (statusCode) {
-    message = `HTTP ${statusCode}: ${message}`;
+    message = `HTTP ${statusCode}: ${message}`
   }
   if (context) {
-    message = `${context} - ${message}`;
+    message = `${context} - ${message}`
   }
 
-  const enhancedError = new Error(message);
-  (enhancedError as any).code = errorCode;
-  (enhancedError as any).statusCode = statusCode;
-  (enhancedError as any).statusText = statusText;
-  (enhancedError as any).originalError = error;
+  const enhancedError = new Error(message)
+  ;(enhancedError as any).code = errorCode
+  ;(enhancedError as any).statusCode = statusCode
+  ;(enhancedError as any).statusText = statusText
+  ;(enhancedError as any).originalError = error
 
-  return enhancedError;
+  return enhancedError
 }
-
 
 export async function handleErrorGracefully(
   error: any,
@@ -157,63 +136,60 @@ export async function handleErrorGracefully(
   context?: string,
   stopCrawlingOnly: boolean = false
 ): Promise<boolean> {
-  const errorInfo = analyzeError(error);
-  const errorMessage = error?.message || error?.response?.data?.message || error?.response?.statusText || String(error);
+  const errorInfo = analyzeError(error)
+  const errorMessage = error?.message || error?.response?.data?.message || error?.response?.statusText || String(error)
 
-  const isNonCritical = errorMessage.toLowerCase().includes('non-critical') ||
-    errorMessage.toLowerCase().includes('service will continue');
-  
-  const isTimeoutError = errorInfo.isTimeoutError || 
+  const isNonCritical =
+    errorMessage.toLowerCase().includes('non-critical') || errorMessage.toLowerCase().includes('service will continue')
+
+  const isTimeoutError =
+    errorInfo.isTimeoutError ||
     errorMessage.toLowerCase().includes('timeout') ||
     errorMessage.toLowerCase().includes('exceeded') ||
     errorMessage.toLowerCase().includes('timed out') ||
     error?.code === 'ETIMEDOUT' ||
-    error?.code === 'ECONNABORTED';
+    error?.code === 'ECONNABORTED'
 
-  const logger = (global as any).logger || console;
-  
+  const logger = (global as any).logger || console
+
   if (isNonCritical && isTimeoutError) {
     if (logger.warn) {
-      logger.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+      logger.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`)
     } else {
-      console.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+      console.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`)
     }
-    return false;
+    return false
   }
 
   if (stopCrawlingOnly && !isNonCritical) {
-    const enhancedError = createEnhancedError(error, context);
+    const enhancedError = createEnhancedError(error, context)
     if (logger.error) {
-      logger.error(`Error in ${serviceName}: ${errorMessage}`);
-      logger.error('Stopping crawling only - APIs remain available...');
+      logger.error(`Error in ${serviceName}: ${errorMessage}`)
+      logger.error('Stopping crawling only - APIs remain available...')
     } else {
-      console.error(`Error in ${serviceName}: ${errorMessage}`);
-      console.error('Stopping crawling only - APIs remain available...');
+      console.error(`Error in ${serviceName}: ${errorMessage}`)
+      console.error('Stopping crawling only - APIs remain available...')
     }
-    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);
+    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName)
     if (logger.warn) {
-      logger.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`);
+      logger.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`)
     } else {
-      console.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`);
+      console.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`)
     }
-    return true;
+    return true
   }
 
-  if (
-    !isNonCritical &&
-    !stopCrawlingOnly &&
-    (isStatementTimeoutError(error) || isPoolExhaustionError(error))
-  ) {
-    const enhancedError = createEnhancedError(error, context);
+  if (!isNonCritical && !stopCrawlingOnly && (isStatementTimeoutError(error) || isPoolExhaustionError(error))) {
+    const enhancedError = createEnhancedError(error, context)
     if (logger.error) {
-      logger.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`);
-      logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+      logger.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`)
+      logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...')
     } else {
-      console.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`);
-      console.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+      console.error(`Database timeout or pool pressure in ${serviceName}: ${errorMessage}`)
+      console.error('Pausing crawling (APIs stay up); automatic recovery will retry...')
     }
-    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);
-    return true;
+    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName)
+    return true
   }
 
   if (
@@ -221,73 +197,71 @@ export async function handleErrorGracefully(
     !stopCrawlingOnly &&
     (error?.type === 'REQUEST_TIMEOUT' || error?.name === 'RequestTimeoutError')
   ) {
-    const enhancedError = createEnhancedError(error, context);
+    const enhancedError = createEnhancedError(error, context)
     if (logger.error) {
-      logger.error(`Moleculer request timeout in ${serviceName}: ${errorMessage}`);
-      logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+      logger.error(`Moleculer request timeout in ${serviceName}: ${errorMessage}`)
+      logger.error('Pausing crawling (APIs stay up); automatic recovery will retry...')
     } else {
-      console.error(`Moleculer request timeout in ${serviceName}: ${errorMessage}`);
-      console.error('Pausing crawling (APIs stay up); automatic recovery will retry...');
+      console.error(`Moleculer request timeout in ${serviceName}: ${errorMessage}`)
+      console.error('Pausing crawling (APIs stay up); automatic recovery will retry...')
     }
-    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName);
-    return true;
+    await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName)
+    return true
   }
 
   if (errorInfo.shouldStopIndexer && !isNonCritical) {
-    const enhancedError = createEnhancedError(error, context);
+    const enhancedError = createEnhancedError(error, context)
     const logMessage = errorInfo.statusCode
       ? `Error (${errorInfo.errorCode || 'NETWORK_ERROR'} HTTP ${errorInfo.statusCode}): ${errorInfo.errorMessage}`
-      : `Error (${errorInfo.errorCode || 'NETWORK_ERROR'}): ${errorInfo.errorMessage}`;
+      : `Error (${errorInfo.errorCode || 'NETWORK_ERROR'}): ${errorInfo.errorMessage}`
     if (logger.error) {
-      logger.error(logMessage);
-      logger.error('Stopping indexer gracefully due to error...');
+      logger.error(logMessage)
+      logger.error('Stopping indexer gracefully due to error...')
     } else {
-      console.error(logMessage);
-      console.error('Stopping indexer gracefully due to error...');
+      console.error(logMessage)
+      console.error('Stopping indexer gracefully due to error...')
     }
-    await indexerStatusManager.stopIndexer(enhancedError, serviceName);
-    return true;
+    await indexerStatusManager.stopIndexer(enhancedError, serviceName)
+    return true
   }
 
   if (isNonCritical) {
     if (logger.warn) {
-      logger.warn(`Non-critical error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+      logger.warn(`Non-critical error in ${serviceName}: ${errorMessage}. Crawling will continue.`)
     } else {
-      console.warn(`Non-critical error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
+      console.warn(`Non-critical error in ${serviceName}: ${errorMessage}. Crawling will continue.`)
     }
-    return false;
+    return false
   }
 
   if (logger.warn) {
-    logger.warn(`Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`);
+    logger.warn(`Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`)
   } else {
-    console.warn(`Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`);
+    console.warn(`Non-critical error in ${serviceName}: ${errorInfo.errorMessage}`)
   }
-  return false;
+  return false
 }
 
 export function checkIndexerStatus(): void {
   if (!indexerStatusManager.isIndexerRunning()) {
-    const status = indexerStatusManager.getStatus();
+    const status = indexerStatusManager.getStatus()
     const error = new Error(
       `Indexer is not responding. ${status.stoppedReason || 'Indexer stopped crawling.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`
-    );
-    (error as any).code = 'INDEXER_STOPPED';
-    (error as any).status = 503;
-    throw error;
+    )
+    ;(error as any).code = 'INDEXER_STOPPED'
+    ;(error as any).status = 503
+    throw error
   }
 }
 
 export function checkCrawlingStatus(): void {
   if (!indexerStatusManager.isCrawlingActive()) {
-    const status = indexerStatusManager.getStatus();
+    const status = indexerStatusManager.getStatus()
     const error = new Error(
       `Crawling is stopped. ${status.stoppedReason || 'Crawling stopped.'} ${status.lastError ? `Error: ${status.lastError.message}` : ''}`
-    );
-    (error as any).code = 'CRAWLING_STOPPED';
-    (error as any).status = 503;
-    throw error;
+    )
+    ;(error as any).code = 'CRAWLING_STOPPED'
+    ;(error as any).status = 503
+    throw error
   }
 }
-
-

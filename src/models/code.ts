@@ -1,43 +1,43 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { SmartContract } from './smart_contract';
-import { CodeIdVerification } from './code_id_verification';
-import codeType from '../code-type.json' with { type: 'json' };
+import { Model } from 'objection'
+import codeType from '../code-type.json' with { type: 'json' }
+import BaseModel from './base'
+import { CodeIdVerification } from './code_id_verification'
+import { SmartContract } from './smart_contract'
 
 export interface IInstantiateParticipant {
-  participant: string;
-  address: string;
-  addresses: string[];
+  participant: string
+  address: string
+  addresses: string[]
 }
 
 export class Code extends BaseModel {
-  code_id!: number;
+  code_id!: number
 
-  creator!: string;
+  creator!: string
 
-  data_hash!: string;
+  data_hash!: string
 
-  instantiate_participant!: IInstantiateParticipant[];
+  instantiate_participant!: IInstantiateParticipant[]
 
-  type: string | undefined;
+  type: string | undefined
 
-  status: string | undefined;
+  status: string | undefined
 
-  store_hash!: string;
+  store_hash!: string
 
-  store_height!: number;
+  store_height!: number
 
   static get tableName() {
-    return 'code';
+    return 'code'
   }
 
   static get jsonAttributes() {
-    return ['instantiate_participant'];
+    return ['instantiate_participant']
   }
 
   static get idColumn(): string | string[] {
-    return 'code_id';
+    return 'code_id'
   }
 
   static get TYPES() {
@@ -46,20 +46,13 @@ export class Code extends BaseModel {
       CW721: 'CW721',
       CW4973: 'CW4973',
       CW2981: 'CW2981',
-    };
+    }
   }
 
   static get jsonSchema() {
     return {
       type: 'object',
-      required: [
-        'code_id',
-        'creator',
-        'data_hash',
-        'instantiate_participant',
-        'store_hash',
-        'store_height',
-      ],
+      required: ['code_id', 'creator', 'data_hash', 'instantiate_participant', 'store_hash', 'store_height'],
       properties: {
         code_id: { type: 'number' },
         creator: { type: 'string' },
@@ -77,7 +70,7 @@ export class Code extends BaseModel {
         store_hash: { type: 'string' },
         store_height: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -98,14 +91,14 @@ export class Code extends BaseModel {
           to: 'code_id_verification.code_id',
         },
       },
-    };
+    }
   }
 
   static detectCodeType(contract: string) {
-    let codeTypes = '';
-    if (codeType.CW20.includes(contract)) codeTypes = Code.TYPES.CW20;
-    else if (codeType.CW721.includes(contract)) codeTypes = Code.TYPES.CW721;
-    else if (codeType.CW4973.includes(contract)) codeTypes = Code.TYPES.CW4973;
-    return codeTypes;
+    let codeTypes = ''
+    if (codeType.CW20.includes(contract)) codeTypes = Code.TYPES.CW20
+    else if (codeType.CW721.includes(contract)) codeTypes = Code.TYPES.CW721
+    else if (codeType.CW4973.includes(contract)) codeTypes = Code.TYPES.CW4973
+    return codeTypes
   }
 }

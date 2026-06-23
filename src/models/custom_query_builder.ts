@@ -1,56 +1,48 @@
 /* eslint-disable @typescript-eslint/dot-notation */
 /* eslint-disable max-classes-per-file */
 // import {Knex} from 'knex';
-import { MaybeCompositeId, Model, QueryBuilder } from 'objection';
-import knex from '../common/utils/db_connection';
+import { MaybeCompositeId, Model, QueryBuilder } from 'objection'
+import knex from '../common/utils/db_connection'
 // import BaseModel from './BaseModel';
 
 //
-export default class CustomQueryBuilder<
-  M extends Model,
-  R = M[]
-> extends QueryBuilder<M, R> {
-
+export default class CustomQueryBuilder<M extends Model, R = M[]> extends QueryBuilder<M, R> {
   delete(forceDelete = false) {
-    if (this.isHardDel(forceDelete)) return super.delete();
-    return this.softDel();
+    if (this.isHardDel(forceDelete)) return super.delete()
+    return this.softDel()
   }
 
   deleteById(id: MaybeCompositeId, forceDelete = false) {
-    if (this.isHardDel(forceDelete)) return super.deleteById(id);
+    if (this.isHardDel(forceDelete)) return super.deleteById(id)
 
-    return this.softDel().whereRaw(`id = ${id}`);
+    return this.softDel().whereRaw(`id = ${id}`)
   }
 
   whereDeleted() {
-    return this.whereNotNull(
-      `${this.modelClass().tableName}.${this.getDelColum()}`
-    );
+    return this.whereNotNull(`${this.modelClass().tableName}.${this.getDelColum()}`)
   }
 
   whereNotDeleted() {
-    return this.whereNull(
-      `${this.modelClass().tableName}.${this.getDelColum()}`
-    );
+    return this.whereNull(`${this.modelClass().tableName}.${this.getDelColum()}`)
   }
 
   // Private ultility functions
   private isHardDel(forceFlag: boolean) {
     // TODO: Need to refactor how to access property/method of modelClass
-    return forceFlag || !(this.modelClass() as any).softDelete;
+    return forceFlag || !(this.modelClass() as any).softDelete
   }
 
   private getDelColum() {
-    return (this.modelClass() as any).delColumn;
+    return (this.modelClass() as any).delColumn
   }
 
   /**
    * Soft delte a record by update it's 'delete_at' column
    */
   private softDel() {
-    const patchData: { [key: string]: any } = {};
-    patchData[this.getDelColum()] = knex.fn.now();
-    return this.patch(patchData as any);
+    const patchData: { [key: string]: any } = {}
+    patchData[this.getDelColum()] = knex.fn.now()
+    return this.patch(patchData as any)
     // const res = this.patch(patchData);
     // console.log(JSON.stringify(res));
     // return res;

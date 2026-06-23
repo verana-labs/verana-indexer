@@ -1,18 +1,18 @@
 export interface IAddressesParam {
-  addresses: string[];
+  addresses: string[]
 }
 
 export interface IProposalIdParam {
-  proposalId: number;
+  proposalId: number
 }
 export interface ITxIdsParam {
-  txIds: number[];
+  txIds: number[]
 }
 
 export interface IStatisticsParam {
-  date: string;
+  date: string
 }
 
 export interface ICreateSpecificDateJob {
-  date: string;
+  date: string
 }

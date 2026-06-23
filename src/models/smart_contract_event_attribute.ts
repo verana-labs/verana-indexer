@@ -1,19 +1,19 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { SmartContract } from './smart_contract';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { SmartContract } from './smart_contract'
 
 export class SmartContractEventAttribute extends BaseModel {
-  id!: number;
+  id!: number
 
-  smart_contract_event_id!: number;
+  smart_contract_event_id!: number
 
-  key!: string;
+  key!: string
 
-  value!: number;
+  value!: number
 
   static get tableName() {
-    return 'smart_contract_event_attribute';
+    return 'smart_contract_event_attribute'
   }
 
   static get jsonSchema() {
@@ -25,7 +25,7 @@ export class SmartContractEventAttribute extends BaseModel {
         key: { type: 'string' },
         value: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -38,12 +38,12 @@ export class SmartContractEventAttribute extends BaseModel {
           to: 'smart_contract_event.id',
         },
       },
-    };
+    }
   }
 
   static modifiers = {
     selectAttribute(query: any) {
-      query.select('key', 'value');
+      query.select('key', 'value')
     },
-  };
+  }
 }

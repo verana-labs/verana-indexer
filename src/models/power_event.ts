@@ -1,27 +1,27 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Block } from './block';
-import { Transaction } from './transaction';
-import { Validator } from './validator';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { Block } from './block'
+import { Transaction } from './transaction'
+import { Validator } from './validator'
 
 export class PowerEvent extends BaseModel {
-  tx_id!: number;
+  tx_id!: number
 
-  height!: number;
+  height!: number
 
-  type!: string;
+  type!: string
 
-  validator_src_id: number | undefined;
+  validator_src_id: number | undefined
 
-  validator_dst_id: number | undefined;
+  validator_dst_id: number | undefined
 
-  amount!: string;
+  amount!: string
 
-  time!: string;
+  time!: string
 
   static get tableName() {
-    return 'power_event';
+    return 'power_event'
   }
 
   static get TYPES() {
@@ -30,7 +30,7 @@ export class PowerEvent extends BaseModel {
       REDELEGATE: 'redelegate',
       UNBOND: 'unbond',
       CREATE_VALIDATOR: 'create_validator',
-    };
+    }
   }
 
   static get jsonSchema() {
@@ -40,13 +40,13 @@ export class PowerEvent extends BaseModel {
       properties: {
         tx_id: { type: 'number' },
         height: { type: 'number' },
-        type: { type: 'string', enum: Object.values(this.TYPES) },
+        type: { type: 'string', enum: Object.values(PowerEvent.TYPES) },
         validator_src_id: { type: ['number', 'null'] },
         validator_dst_id: { type: ['number', 'null'] },
         amount: { type: 'string' },
         time: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -83,6 +83,6 @@ export class PowerEvent extends BaseModel {
           to: 'validator.id',
         },
       },
-    };
+    }
   }
 }

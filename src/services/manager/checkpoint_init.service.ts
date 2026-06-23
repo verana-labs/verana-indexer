@@ -1,12 +1,9 @@
-import {
-  Action,
-  Service,
-} from '@ourparentcenter/moleculer-decorators-extended';
-import { Context, ServiceBroker } from 'moleculer';
-import BullableService from '../../base/bullable.service';
-import { BULL_JOB_NAME } from '../../common';
-import { BlockCheckpoint } from '../../models';
-import config from '../../config.json' with { type: 'json' };
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Context, ServiceBroker } from 'moleculer'
+import BullableService from '../../base/bullable.service'
+import { BULL_JOB_NAME } from '../../common'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint } from '../../models'
 
 @Service({
   name: 'checkpoint-init',
@@ -14,7 +11,7 @@ import config from '../../config.json' with { type: 'json' };
 })
 export default class CheckpointInitService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   private readonly REQUIRED_CHECKPOINT_JOBS = [
@@ -48,7 +45,7 @@ export default class CheckpointInitService extends BullableService {
     BULL_JOB_NAME.JOB_UPDATE_TX_COUNT_IN_BLOCK,
     BULL_JOB_NAME.JOB_CREATE_EVENT_ATTR_PARTITION,
     BULL_JOB_NAME.CP_MIGRATE_DATA_EVENT_TABLE,
-  ];
+  ]
 
   @Action({
     name: 'initializeCheckpoints',
@@ -58,38 +55,30 @@ export default class CheckpointInitService extends BullableService {
   })
   public async initializeCheckpoints(ctx: Context<{ force?: boolean }>) {
     try {
-      const { force = false } = ctx.params;
-      this.logger.info(' Starting checkpoint initialization...');
+      this.logger.info(' Starting checkpoint initialization...')
 
       const existingCheckpoints = await BlockCheckpoint.query()
         .select('job_name')
-        .whereIn('job_name', this.REQUIRED_CHECKPOINT_JOBS);
+        .whereIn('job_name', this.REQUIRED_CHECKPOINT_JOBS)
 
-      const existingJobNames = new Set(
-        existingCheckpoints.map((cp) => cp.job_name)
-      );
+      const existingJobNames = new Set(existingCheckpoints.map((cp) => cp.job_name))
 
-      const missingJobs = this.REQUIRED_CHECKPOINT_JOBS.filter(
-        (jobName) => !existingJobNames.has(jobName)
-      );
+      const missingJobs = this.REQUIRED_CHECKPOINT_JOBS.filter((jobName) => !existingJobNames.has(jobName))
 
       if (missingJobs.length === 0) {
-        this.logger.info('All required checkpoints already exist');
+        this.logger.info('All required checkpoints already exist')
         return {
           success: true,
           message: 'All checkpoints exist',
           created: 0,
           existing: existingCheckpoints.length,
-        };
+        }
       }
 
-      this.logger.info(
-        ` Found ${missingJobs.length} missing checkpoints: ${missingJobs.join(', ')}`
-      );
+      this.logger.info(` Found ${missingJobs.length} missing checkpoints: ${missingJobs.join(', ')}`)
 
-      const startBlock = config.crawlBlock?.startBlock || 0;
-      const createdCheckpoints: Array<{ job_name: string; height: number }> =
-        [];
+      const startBlock = config.crawlBlock?.startBlock || 0
+      const createdCheckpoints: Array<{ job_name: string; height: number }> = []
 
       for (const jobName of missingJobs) {
         try {
@@ -99,26 +88,20 @@ export default class CheckpointInitService extends BullableService {
               height: startBlock,
             })
             .onConflict('job_name')
-            .ignore();
+            .ignore()
 
           createdCheckpoints.push({
             job_name: jobName,
             height: startBlock,
-          });
+          })
 
-          this.logger.info(
-            `Ensured checkpoint for ${jobName} at height ${startBlock}`
-          );
+          this.logger.info(`Ensured checkpoint for ${jobName} at height ${startBlock}`)
         } catch (error: any) {
-          this.logger.error(
-            `❌ Failed to ensure checkpoint for ${jobName}: ${error?.message || error}`
-          );
+          this.logger.error(`❌ Failed to ensure checkpoint for ${jobName}: ${error?.message || error}`)
         }
       }
 
-      this.logger.info(
-        `Checkpoint initialization complete. Created ${createdCheckpoints.length} checkpoints`
-      );
+      this.logger.info(`Checkpoint initialization complete. Created ${createdCheckpoints.length} checkpoints`)
 
       return {
         success: true,
@@ -126,12 +109,10 @@ export default class CheckpointInitService extends BullableService {
         created: createdCheckpoints.length,
         existing: existingCheckpoints.length,
         createdCheckpoints,
-      };
+      }
     } catch (error: any) {
-      this.logger.error(
-        `❌ Error initializing checkpoints: ${error?.message || error}`
-      );
-      throw error;
+      this.logger.error(`❌ Error initializing checkpoints: ${error?.message || error}`)
+      throw error
     }
   }
 
@@ -140,19 +121,15 @@ export default class CheckpointInitService extends BullableService {
   })
   public async verifyCheckpoints(ctx: Context) {
     try {
-      this.logger.info(' Verifying all required checkpoints...');
+      this.logger.info(' Verifying all required checkpoints...')
 
       const existingCheckpoints = await BlockCheckpoint.query()
         .select('job_name', 'height')
-        .whereIn('job_name', this.REQUIRED_CHECKPOINT_JOBS);
+        .whereIn('job_name', this.REQUIRED_CHECKPOINT_JOBS)
 
-      const existingJobNames = new Set(
-        existingCheckpoints.map((cp) => cp.job_name)
-      );
+      const existingJobNames = new Set(existingCheckpoints.map((cp) => cp.job_name))
 
-      const missingJobs = this.REQUIRED_CHECKPOINT_JOBS.filter(
-        (jobName) => !existingJobNames.has(jobName)
-      );
+      const missingJobs = this.REQUIRED_CHECKPOINT_JOBS.filter((jobName) => !existingJobNames.has(jobName))
 
       const result = {
         totalRequired: this.REQUIRED_CHECKPOINT_JOBS.length,
@@ -163,22 +140,18 @@ export default class CheckpointInitService extends BullableService {
           job_name: cp.job_name,
           height: cp.height,
         })),
-      };
-
-      if (missingJobs.length > 0) {
-        this.logger.warn(
-          ` Found ${missingJobs.length} missing checkpoints: ${missingJobs.join(', ')}`
-        );
-      } else {
-        this.logger.info('All required checkpoints exist');
       }
 
-      return result;
+      if (missingJobs.length > 0) {
+        this.logger.warn(` Found ${missingJobs.length} missing checkpoints: ${missingJobs.join(', ')}`)
+      } else {
+        this.logger.info('All required checkpoints exist')
+      }
+
+      return result
     } catch (error: any) {
-      this.logger.error(
-        `❌ Error verifying checkpoints: ${error?.message || error}`
-      );
-      throw error;
+      this.logger.error(`❌ Error verifying checkpoints: ${error?.message || error}`)
+      throw error
     }
   }
 
@@ -190,119 +163,114 @@ export default class CheckpointInitService extends BullableService {
     },
   })
   public async resetForReindex(ctx: Context<{ clearCache?: boolean; resetModules?: boolean }>) {
-    const { clearCache = true, resetModules = true } = ctx.params;
-    const results: any = { 
-      checkpointsReset: 0, 
-      cacheCleared: false, 
+    const { clearCache = true, resetModules = true } = ctx.params
+    const results: any = {
+      checkpointsReset: 0,
+      cacheCleared: false,
       modulesCleared: [],
-      crawlBlockHeight: 0
-    };
+      crawlBlockHeight: 0,
+    }
 
     try {
-      this.logger.info('Starting reindex reset');
-      const { default: knex } = await import('../../common/utils/db_connection');
+      this.logger.info('Starting reindex reset')
+      const { default: knex } = await import('../../common/utils/db_connection')
 
-      const migrationJobNames = ['job:create-event-attr-partition'];
-      
+      const migrationJobNames = ['job:create-event-attr-partition']
+
       const genesisJobNames = [
         'crawl:genesis',
-        'crawl:genesis-account', 
+        'crawl:genesis-account',
         'crawl:genesis-validator',
         'crawl:genesis-proposal',
         'crawl:genesis-code',
         'crawl:genesis-contract',
         'crawl:genesis-feegrant',
-        'crawl:genesis-ibc-tao'
-      ];
+        'crawl:genesis-ibc-tao',
+      ]
 
-      let highestBlock = 0;
+      let highestBlock = 0
       try {
-        const result = await knex('block').max('height as max').first();
-        highestBlock = result && (result as { max: string | number | null }).max 
-          ? parseInt(String((result as { max: string | number }).max), 10) 
-          : 0;
-        this.logger.info(`Highest block in database: ${highestBlock}`);
+        const result = await knex('block').max('height as max').first()
+        highestBlock =
+          result && (result as { max: string | number | null }).max
+            ? parseInt(String((result as { max: string | number }).max), 10)
+            : 0
+        this.logger.info(`Highest block in database: ${highestBlock}`)
       } catch (err: any) {
-        this.logger.warn(`Could not get highest block: ${err.message}`);
+        this.logger.warn(`Could not get highest block: ${err.message}`)
       }
 
-      const genesisReset = await BlockCheckpoint.query()
-        .patch({ height: 0 })
-        .whereIn('job_name', genesisJobNames);
-      this.logger.info(`Reset ${genesisReset} genesis checkpoints to 0`);
+      const genesisReset = await BlockCheckpoint.query().patch({ height: 0 }).whereIn('job_name', genesisJobNames)
+      this.logger.info(`Reset ${genesisReset} genesis checkpoints to 0`)
 
       const otherReset = await BlockCheckpoint.query()
         .patch({ height: 0 })
-        .whereNotIn('job_name', [...migrationJobNames, ...genesisJobNames, 'crawl:block']);
-      this.logger.info(`Reset ${otherReset} module checkpoints to 0`);
-      results.checkpointsReset = genesisReset + otherReset;
+        .whereNotIn('job_name', [...migrationJobNames, ...genesisJobNames, 'crawl:block'])
+      this.logger.info(`Reset ${otherReset} module checkpoints to 0`)
+      results.checkpointsReset = genesisReset + otherReset
 
       if (highestBlock > 0) {
         const crawlBlockUpdated = await BlockCheckpoint.query()
           .patch({ height: highestBlock })
-          .where('job_name', 'crawl:block');
+          .where('job_name', 'crawl:block')
         if (crawlBlockUpdated === 0) {
           await BlockCheckpoint.query().insert({
             job_name: 'crawl:block',
-            height: highestBlock
-          });
+            height: highestBlock,
+          })
         }
-        results.crawlBlockHeight = highestBlock;
-        this.logger.info(`Set crawl:block checkpoint to ${highestBlock}`);
+        results.crawlBlockHeight = highestBlock
+        this.logger.info(`Set crawl:block checkpoint to ${highestBlock}`)
       }
 
       if (clearCache) {
         try {
-          const { clearCacheForReindex } = await import('../../common/utils/start_mode_detector');
-          const cacheResult = await clearCacheForReindex(this.logger);
-          results.cacheCleared = cacheResult;
-          this.logger.info(`Redis cache cleared: ${cacheResult}`);
+          const { clearCacheForReindex } = await import('../../common/utils/start_mode_detector')
+          const cacheResult = await clearCacheForReindex(this.logger)
+          results.cacheCleared = cacheResult
+          this.logger.info(`Redis cache cleared: ${cacheResult}`)
         } catch (err: any) {
-          this.logger.warn(`Could not clear cache: ${err.message}`);
+          this.logger.warn(`Could not clear cache: ${err.message}`)
         }
       }
 
       if (resetModules) {
-        const moduleTables = ['transaction_message', 'event'];
-        
+        const moduleTables = ['transaction_message', 'event']
+
         for (const table of moduleTables) {
           try {
-            const result = await knex(table).del();
-            results.modulesCleared.push({ table, deleted: result });
-            this.logger.info(`Cleared ${table}: ${result} rows deleted`);
+            const result = await knex(table).del()
+            results.modulesCleared.push({ table, deleted: result })
+            this.logger.info(`Cleared ${table}: ${result} rows deleted`)
           } catch (err: any) {
-            this.logger.warn(`Could not clear ${table}: ${err.message}`);
+            this.logger.warn(`Could not clear ${table}: ${err.message}`)
           }
         }
       }
 
-      this.logger.info('Reindex reset complete');
-      return results;
+      this.logger.info('Reindex reset complete')
+      return results
     } catch (error: any) {
-      this.logger.error(`Error during reindex reset: ${error?.message || error}`);
-      throw error;
+      this.logger.error(`Error during reindex reset: ${error?.message || error}`)
+      throw error
     }
   }
 
   public async _start() {
     try {
-      this.logger.info(' CheckpointInitService starting...');
-      
+      this.logger.info(' CheckpointInitService starting...')
+
       const result = await this.initializeCheckpoints({
         params: { force: false },
-      } as Context<{ force?: boolean }>);
+      } as Context<{ force?: boolean }>)
 
       if (result.created > 0) {
-        this.logger.info(
-          `Auto-initialized ${result.created} missing checkpoints on startup`
-        );
+        this.logger.info(`Auto-initialized ${result.created} missing checkpoints on startup`)
       }
     } catch (error: any) {
-      this.logger.error(
-        `❌ Failed to auto-initialize checkpoints on startup: ${error?.message || error}`
-      );
+      this.logger.error(`❌ Failed to auto-initialize checkpoints on startup: ${error?.message || error}`)
     }
 
-    return super._start();
+    return super._start()
   }
 }

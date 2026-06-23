@@ -1,45 +1,36 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
+import { Model } from 'objection'
+import BaseModel from './base'
 
 export class CoinTransfer extends BaseModel {
-  block_height!: number;
+  block_height!: number
 
-  tx_id!: number;
+  tx_id!: number
 
-  tx_msg_id!: number;
+  tx_msg_id!: number
 
-  from!: string | null;
+  from!: string | null
 
-  to!: string;
+  to!: string
 
-  amount!: string;
+  amount!: string
 
-  denom!: string;
+  denom!: string
 
-  timestamp!: Date;
+  timestamp!: Date
 
   static get tableName() {
-    return 'coin_transfer';
+    return 'coin_transfer'
   }
 
   static get idColumn(): string | string[] {
-    return 'id';
+    return 'id'
   }
 
   static get jsonSchema() {
     return {
       type: 'object',
-      required: [
-        'block_height',
-        'tx_id',
-        'tx_msg_id',
-        'from',
-        'to',
-        'amount',
-        'denom',
-        'timestamp',
-      ],
+      required: ['block_height', 'tx_id', 'tx_msg_id', 'from', 'to', 'amount', 'denom', 'timestamp'],
       properties: {
         id: { type: 'number' },
         tx_id: { type: 'number' },
@@ -50,7 +41,7 @@ export class CoinTransfer extends BaseModel {
         denom: { type: 'string' },
         timestamp: { type: 'string', format: 'date-time' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -71,6 +62,6 @@ export class CoinTransfer extends BaseModel {
           to: 'transaction_message.id',
         },
       },
-    };
+    }
   }
 }

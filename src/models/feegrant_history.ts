@@ -1,32 +1,32 @@
-import { Model } from 'objection';
-import BaseModel from './base';
+import { Model } from 'objection'
+import BaseModel from './base'
 // eslint-disable-next-line import/no-cycle
-import { Feegrant } from './feegrant';
-import { Transaction } from './transaction';
+import { Feegrant } from './feegrant'
+import { Transaction } from './transaction'
 
 export class FeegrantHistory extends BaseModel {
-  [relation: string]: any;
+  [relation: string]: any
 
-  id!: number;
+  id!: number
 
-  tx_id!: number;
+  tx_id!: number
 
-  feegrant_id?: number;
+  feegrant_id?: number
 
-  action!: string;
+  action!: string
 
-  amount?: string;
+  amount?: string
 
-  granter!: string;
+  granter!: string
 
-  grantee!: string;
+  grantee!: string
 
-  denom?: string;
+  denom?: string
 
-  processed?: boolean;
+  processed?: boolean
 
   static get tableName() {
-    return 'feegrant_history';
+    return 'feegrant_history'
   }
 
   static get jsonSchema() {
@@ -38,7 +38,7 @@ export class FeegrantHistory extends BaseModel {
         grantee: { type: 'string' },
         tx_id: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -59,6 +59,6 @@ export class FeegrantHistory extends BaseModel {
           to: 'transaction.id',
         },
       },
-    };
+    }
   }
 }

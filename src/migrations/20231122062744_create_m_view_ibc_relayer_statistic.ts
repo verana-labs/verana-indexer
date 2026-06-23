@@ -1,4 +1,4 @@
-import { Knex } from 'knex';
+import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
@@ -32,11 +32,9 @@ export async function up(knex: Knex): Promise<void> {
       GROUP BY ibc_channel.channel_id
     ) AS ics20 ON ibc_channel.channel_id = ics20.channel_id
   GROUP BY ibc_client.counterparty_chain_id
-`);
+`)
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropMaterializedViewIfExists(
-    'm_view_ibc_relayer_statistic'
-  );
+  await knex.schema.dropMaterializedViewIfExists('m_view_ibc_relayer_statistic')
 }

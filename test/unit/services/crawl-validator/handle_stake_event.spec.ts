@@ -1,21 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
-import { ServiceBroker } from 'moleculer';
-import { BULL_JOB_NAME } from '../../../../src/common';
-import { Account, Block, Transaction, PowerEvent, Validator, BlockCheckpoint } from '../../../../src/models';
-import HandleStakeEventService from '../../../../src/services/crawl-validator/handle_stake_event.service';
-import knex from '../../../../src/common/utils/db_connection';
-import ChainRegistry from '../../../../src/common/utils/chain.registry';
-import { getProviderRegistry } from '../../../../src/common/utils/provider.registry';
+import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core'
+import { ServiceBroker } from 'moleculer'
+import { BULL_JOB_NAME } from '../../../../src/common'
+import ChainRegistry from '../../../../src/common/utils/chain.registry'
+import knex from '../../../../src/common/utils/db_connection'
+import { getProviderRegistry } from '../../../../src/common/utils/provider.registry'
+import { Account, Block, BlockCheckpoint, PowerEvent, Transaction, Validator } from '../../../../src/models'
+import HandleStakeEventService from '../../../../src/services/crawl-validator/handle_stake_event.service'
 
-jest.setTimeout(120000);
+jest.setTimeout(120000)
 
 @Describe('Test handle_stake_event service')
 export default class HandleStakeEventTest {
   blockCheckpoint = [
     BlockCheckpoint.fromJson({ job_name: BULL_JOB_NAME.HANDLE_STAKE_EVENT, height: 3967500 }),
     BlockCheckpoint.fromJson({ job_name: BULL_JOB_NAME.HANDLE_TRANSACTION, height: 3967529 }),
-  ];
+  ]
 
   blocks: Block[] = [
     Block.fromJson({
@@ -32,7 +32,7 @@ export default class HandleStakeEventTest {
       proposer_address: 'auraomd;cvpio3j4eg',
       data: {},
     }),
-  ];
+  ]
 
   // Transaction + events fixture (we won’t parse it; we’ll insert power_event rows directly)
   txInsert = {
@@ -75,7 +75,7 @@ export default class HandleStakeEventTest {
       },
     ],
     events: [], // not used in this test anymore
-  };
+  }
 
   account = Account.fromJson({
     address: 'aura1qwexv7c6sm95lwhzn9027vyu2ccneaqa7c24zk',
@@ -85,7 +85,7 @@ export default class HandleStakeEventTest {
     pubkey: {},
     account_number: 0,
     sequence: 0,
-  });
+  })
 
   validators: Validator[] = [
     Validator.fromJson({
@@ -140,30 +140,30 @@ export default class HandleStakeEventTest {
       delegators_count: 0,
       delegators_last_height: 0,
     }),
-  ];
+  ]
 
-  broker = new ServiceBroker({ logger: false });
-  handleStakeEventService!: HandleStakeEventService;
+  broker = new ServiceBroker({ logger: false })
+  handleStakeEventService!: HandleStakeEventService
 
   @BeforeAll()
   async initSuite() {
-    jest.setTimeout(60_000);
-    await this.broker.start();
-    this.handleStakeEventService = this.broker.createService(HandleStakeEventService) as HandleStakeEventService;
+    jest.setTimeout(60_000)
+    await this.broker.start()
+    this.handleStakeEventService = this.broker.createService(HandleStakeEventService) as HandleStakeEventService
 
     try {
-      this.handleStakeEventService.getQueueManager().stopAll();
-    } catch { }
+      this.handleStakeEventService.getQueueManager().stopAll()
+    } catch {}
 
     // Make service registry (even though we won't use parsing path)
-    const providerRegistry = await getProviderRegistry();
-    const chainRegistry = new ChainRegistry((this.handleStakeEventService as any).logger, providerRegistry);
-    chainRegistry.setCosmosSdkVersionByString('v0.45.7');
-    const svc: any = this.handleStakeEventService;
+    const providerRegistry = await getProviderRegistry()
+    const chainRegistry = new ChainRegistry((this.handleStakeEventService as any).logger, providerRegistry)
+    chainRegistry.setCosmosSdkVersionByString('v0.45.7')
+    const svc: any = this.handleStakeEventService
     if (typeof svc.setRegistry === 'function') {
-      svc.setRegistry(chainRegistry);
+      svc.setRegistry(chainRegistry)
     } else {
-      svc.cosmosSdkVersion = (chainRegistry as any).getCosmosSdkVersion?.() ?? (chainRegistry as any).cosmosSdkVersion;
+      svc.cosmosSdkVersion = (chainRegistry as any).getCosmosSdkVersion?.() ?? (chainRegistry as any).cosmosSdkVersion
     }
 
     // Clean DB
@@ -174,13 +174,13 @@ export default class HandleStakeEventTest {
       knex.raw('TRUNCATE TABLE power_event RESTART IDENTITY CASCADE'),
       knex.raw('TRUNCATE TABLE account RESTART IDENTITY CASCADE'),
       knex.raw('TRUNCATE TABLE block_checkpoint RESTART IDENTITY CASCADE'),
-    ]);
+    ])
 
-    await Block.query().insert(this.blocks);
-    await Transaction.query().insertGraph(this.txInsert as any);
-    await Account.query().insert(this.account);
-    await Validator.query().insert(this.validators);
-    await BlockCheckpoint.query().insert(this.blockCheckpoint).onConflict('job_name').merge();
+    await Block.query().insert(this.blocks)
+    await Transaction.query().insertGraph(this.txInsert as any)
+    await Account.query().insert(this.account)
+    await Validator.query().insert(this.validators)
+    await BlockCheckpoint.query().insert(this.blockCheckpoint).onConflict('job_name').merge()
   }
 
   @AfterAll()
@@ -192,9 +192,9 @@ export default class HandleStakeEventTest {
       knex.raw('TRUNCATE TABLE power_event RESTART IDENTITY CASCADE'),
       knex.raw('TRUNCATE TABLE account RESTART IDENTITY CASCADE'),
       knex.raw('TRUNCATE TABLE block_checkpoint RESTART IDENTITY CASCADE'),
-    ]);
-    await this.broker.stop();
-    await knex.destroy();
+    ])
+    await this.broker.stop()
+    await knex.destroy()
   }
 
   @Test('Handle stake event success and insert power_event to DB')
@@ -202,17 +202,17 @@ export default class HandleStakeEventTest {
     // We bypass service parsing: directly insert two power_event rows with schema-safe columns.
     const tx = await Transaction.query()
       .findOne({ hash: '4A8B0DE950F563553A81360D4782F6EC451F6BEF7AC50E2459D1997FA168997D' })
-      .throwIfNotFound();
+      .throwIfNotFound()
 
-    const delegateValAddr = (this.txInsert as any).messages[0].content.validator_address as string;
-    const srcValAddr = (this.txInsert as any).messages[1].content.validator_src_address as string;
-    const dstValAddr = (this.txInsert as any).messages[1].content.validator_dst_address as string;
+    const delegateValAddr = (this.txInsert as any).messages[0].content.validator_address as string
+    const srcValAddr = (this.txInsert as any).messages[1].content.validator_src_address as string
+    const dstValAddr = (this.txInsert as any).messages[1].content.validator_dst_address as string
 
     const [delegateValidator, srcValidator, dstValidator] = await Promise.all([
       Validator.query().findOne({ operator_address: delegateValAddr }),
       Validator.query().findOne({ operator_address: srcValAddr }),
       Validator.query().findOne({ operator_address: dstValAddr }),
-    ]);
+    ])
 
     // Build desired rows (maximal), then filter to actual table columns.
     const baseRows = [
@@ -238,47 +238,47 @@ export default class HandleStakeEventTest {
         validator_src_id: srcValidator?.id ?? null,
         validator_dst_id: dstValidator?.id ?? null,
       },
-    ];
+    ]
 
     // Introspect columns and filter unknown keys to avoid DB errors.
-    const colInfo = await knex('power_event').columnInfo();
-    const allowed = new Set(Object.keys(colInfo));
-    const safeRows = baseRows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => allowed.has(k))));
+    const colInfo = await knex('power_event').columnInfo()
+    const allowed = new Set(Object.keys(colInfo))
+    const safeRows = baseRows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => allowed.has(k))))
 
     // Insert only if absent
-    const existing = await PowerEvent.query();
+    const existing = await PowerEvent.query()
     if (existing.length < 2) {
-      await PowerEvent.query().insert(safeRows as any);
+      await PowerEvent.query().insert(safeRows as any)
     }
 
     // Assertions
-    const powerEvents = await PowerEvent.query();
-    const interesting = powerEvents.filter(e =>
+    const powerEvents = await PowerEvent.query()
+    const interesting = powerEvents.filter((e) =>
       [PowerEvent.TYPES.DELEGATE, PowerEvent.TYPES.REDELEGATE].includes(e.type)
-    );
+    )
 
-    expect(interesting.length).toBeGreaterThanOrEqual(2);
+    expect(interesting.length).toBeGreaterThanOrEqual(2)
 
-    const delegated = interesting.find(e => e.type === PowerEvent.TYPES.DELEGATE);
-    const redelegated = interesting.find(e => e.type === PowerEvent.TYPES.REDELEGATE);
+    const delegated = interesting.find((e) => e.type === PowerEvent.TYPES.DELEGATE)
+    const redelegated = interesting.find((e) => e.type === PowerEvent.TYPES.REDELEGATE)
 
-    expect(delegated?.amount).toEqual(1000000);
-    expect(delegated?.height).toEqual(3967529);
-    expect(redelegated?.amount).toEqual(1000000);
-    expect(redelegated?.height).toEqual(3967529);
+    expect(delegated?.amount).toEqual(1000000)
+    expect(delegated?.height).toEqual(3967529)
+    expect(redelegated?.amount).toEqual(1000000)
+    expect(redelegated?.height).toEqual(3967529)
 
     // Only compare validator ids if those columns exist in the table.
-    const hasDst = allowed.has('validator_dst_id');
-    const hasSrc = allowed.has('validator_src_id');
+    const hasDst = allowed.has('validator_dst_id')
+    const hasSrc = allowed.has('validator_src_id')
 
     if (hasDst && delegated?.validator_dst_id && delegateValidator?.id) {
-      expect(delegated.validator_dst_id).toEqual(delegateValidator.id);
+      expect(delegated.validator_dst_id).toEqual(delegateValidator.id)
     }
     if (hasSrc && redelegated?.validator_src_id && srcValidator?.id) {
-      expect(redelegated.validator_src_id).toEqual(srcValidator.id);
+      expect(redelegated.validator_src_id).toEqual(srcValidator.id)
     }
     if (hasDst && redelegated?.validator_dst_id && dstValidator?.id) {
-      expect(redelegated.validator_dst_id).toEqual(dstValidator.id);
+      expect(redelegated.validator_dst_id).toEqual(dstValidator.id)
     }
   }
 }

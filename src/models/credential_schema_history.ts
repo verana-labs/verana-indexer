@@ -1,73 +1,71 @@
-import BaseModel from "./base";
+import BaseModel from './base'
 
 export default class CredentialSchemaHistory extends BaseModel {
-  static tableName = "credential_schema_history";
+  static tableName = 'credential_schema_history'
 
-  id!: number;
-  credential_schema_id!: number;
+  id!: number
+  credential_schema_id!: number
 
+  ecosystem_id!: number
+  json_schema!: object
+  issuer_grantor_validation_validity_period!: number
+  verifier_grantor_validation_validity_period!: number
+  issuer_validation_validity_period!: number
+  verifier_validation_validity_period!: number
+  holder_validation_validity_period!: number
 
-  ecosystem_id!: number;
-  json_schema!: object;
-  issuer_grantor_validation_validity_period!: number;
-  verifier_grantor_validation_validity_period!: number;
-  issuer_validation_validity_period!: number;
-  verifier_validation_validity_period!: number;
-  holder_validation_validity_period!: number;
+  issuer_onboarding_mode!: string
+  verifier_onboarding_mode!: string
+  holder_onboarding_mode?: string | null
+  pricing_asset_type?: string | null
+  pricing_asset?: string | null
+  digest_algorithm?: string | null
+  deposit!: number
+  height!: number
 
-  issuer_onboarding_mode!: string;
-  verifier_onboarding_mode!: string;
-  holder_onboarding_mode?: string | null;
-  pricing_asset_type?: string | null;
-  pricing_asset?: string | null;
-  digest_algorithm?: string | null;
-  deposit!: number;
-  height!: number;
+  archived!: Date | null
+  is_active!: boolean
+  created!: Date
+  modified!: Date
 
-  archived!: Date | null;
-  is_active!: boolean;
-  created!: Date;
-  modified!: Date;
+  changes!: object | null
 
-  changes!: object | null;
+  action!: string
+  created_at!: Date
 
-  action!: string;
-  created_at!: Date;
+  static useTimestamps = false
 
-  static useTimestamps = false;
-  
   static get jsonSchema() {
     return {
-      type: "object",
-      required: ["credential_schema_id", "action"],
+      type: 'object',
+      required: ['credential_schema_id', 'action'],
       properties: {
-        id: { type: "integer" },
-        credential_schema_id: { type: "integer" },
+        id: { type: 'integer' },
+        credential_schema_id: { type: 'integer' },
 
-        ecosystem_id: { type: "integer" },
-        deposit: { type: "integer" },
-        json_schema: { type: "object" },
+        ecosystem_id: { type: 'integer' },
+        deposit: { type: 'integer' },
+        json_schema: { type: 'object' },
 
-        issuer_grantor_validation_validity_period: { type: "integer" },
-        verifier_grantor_validation_validity_period: { type: "integer" },
-        issuer_validation_validity_period: { type: "integer" },
-        verifier_validation_validity_period: { type: "integer" },
-        holder_validation_validity_period: { type: "integer" },
+        issuer_grantor_validation_validity_period: { type: 'integer' },
+        verifier_grantor_validation_validity_period: { type: 'integer' },
+        issuer_validation_validity_period: { type: 'integer' },
+        verifier_validation_validity_period: { type: 'integer' },
+        holder_validation_validity_period: { type: 'integer' },
 
-        issuer_onboarding_mode: { type: "string" },
-        verifier_onboarding_mode: { type: "string" },
+        issuer_onboarding_mode: { type: 'string' },
+        verifier_onboarding_mode: { type: 'string' },
 
-        height: { type: "integer" },
-        archived: { type: ["string", "null"], format: "date-time" },
-        created: { type: "string", format: "date-time" },
-        modified: { type: "string", format: "date-time" },
+        height: { type: 'integer' },
+        archived: { type: ['string', 'null'], format: 'date-time' },
+        created: { type: 'string', format: 'date-time' },
+        modified: { type: 'string', format: 'date-time' },
 
-        changes: { type: ["object", "null"] },
-        is_active: { type: "boolean" },
-        action: { type: "string" },
-        created_at: { type: "string", format: "date-time" },
+        changes: { type: ['object', 'null'] },
+        is_active: { type: 'boolean' },
+        action: { type: 'string' },
+        created_at: { type: 'string', format: 'date-time' },
       },
-    };
+    }
   }
 }
-
