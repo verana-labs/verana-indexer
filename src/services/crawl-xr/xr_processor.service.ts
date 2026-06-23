@@ -37,17 +37,17 @@ export default class ExchangeRateProcessorService extends BullableService {
   public async started() {
     try {
       await detectStartMode((BULL_JOB_NAME as any).HANDLE_EXCHANGE_RATE);
-      const checkpoint = await this.ensureCheckpoint();
+      await this.ensureCheckpoint();
       const crawlInterval = config.crawlExchangeRate.millisecondCrawl;
 
-      this.processBlocks(checkpoint).catch((err) => {
+      this.processBlocks().catch((err) => {
         this.logger.error("[ExchangeRateProcessorService] Error in initial processBlocks:", err);
       });
 
       this.timer = setInterval(() => {
         if (!indexerStatusManager.isCrawlingActive()) return;
         if (!this.isProcessing) {
-          this.processBlocks(checkpoint).catch((err) => {
+          this.processBlocks().catch((err) => {
             this.logger.error("[ExchangeRateProcessorService] Error in scheduled processBlocks:", err);
           });
         }
@@ -55,13 +55,13 @@ export default class ExchangeRateProcessorService extends BullableService {
 
       this.logger.info(`[ExchangeRateProcessorService] Service started | Interval: ${crawlInterval}ms`);
     } catch (err) {
-      this.logger.error("[ExchangeRateProcessorService] ❌ Failed to start", err);
+      this.logger.error("[ExchangeRateProcessorService] Failed to start", err);
     }
   }
 
   public async stopped() {
     if (this.timer) clearInterval(this.timer);
-    this.logger.info("[ExchangeRateProcessorService] ⏹️ Service stopped");
+    this.logger.info("[ExchangeRateProcessorService] Service stopped");
   }
 
   private async ensureCheckpoint() {
@@ -71,7 +71,7 @@ export default class ExchangeRateProcessorService extends BullableService {
   }
 
   @Action({ name: "processBlocks" })
-  public async processBlocks(blockCheckpointRow?: any) {
+  public async processBlocks() {
     if (this.isProcessing) return;
     if (!indexerStatusManager.isCrawlingActive()) return;
 
