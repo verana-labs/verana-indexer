@@ -128,6 +128,19 @@ This will start the PostgreSQL and Redis containers in the background.
 
 > **Note:** Make sure the required ports aren't already in use on your machine.
 
+## Testing
+
+```bash
+pnpm run test:local
+```
+
+This is the recommended way to run the test suite locally. The script
+([scripts/test-local.sh](scripts/test-local.sh)) spins up an ephemeral PostgreSQL container on port
+`5433`, runs migrations, executes the suite (same as CI), and removes the container when it finishes —
+so it never touches your dev database. It was added because the plain `pnpm run test` / `pnpm run test-ci`
+commands expect a pre-existing, migrated test database (which CI provides as a service) and otherwise
+hang on connection timeouts.
+
 ## Configuration
 
 ### Environment Variables
