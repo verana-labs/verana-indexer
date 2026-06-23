@@ -4,6 +4,7 @@ import BaseService from "../../base/base.service";
 import ApiResponder from "../../common/utils/apiResponse";
 import { getBlockHeight } from "../../common/utils/blockHeight";
 import { dateToIsoOrNull } from "../../common/utils/date_utils";
+import knex from "../../common/utils/db_connection";
 import ExchangeRate from "../../models/exchange_rate";
 import ExchangeRateHistory from "../../models/exchange_rate_history";
 
@@ -49,6 +50,19 @@ interface GetPriceParams {
   quote_asset_type: string;
   quote_asset: string;
   amount: string;
+}
+
+interface ListExchangeRatesParams {
+  base_asset_type?: string;
+  base_asset?: string;
+  quote_asset_type?: string;
+  quote_asset?: string;
+  state?: boolean;
+  expire?: string;
+  limit?: number;
+  min_id?: number;
+  max_id?: number;
+  sort?: string;
 }
 
 type AssetPair = {
@@ -188,6 +202,96 @@ export default class ExchangeRateApiService extends BaseService {
         500
       );
     }
+  }
+
+  @Action({
+    rest: "GET list",
+    params: {
+      base_asset_type: { type: "enum", values: ["TU", "COIN", "FIAT"], optional: true },
+      base_asset: { type: "string", optional: true },
+      quote_asset_type: { type: "enum", values: ["TU", "COIN", "FIAT"], optional: true },
+      quote_asset: { type: "string", optional: true },
+      state: { type: "boolean", optional: true, convert: true },
+      expire: { type: "string", optional: true },
+      limit: { type: "number", integer: true, optional: true, convert: true },
+      min_id: { type: "number", integer: true, optional: true, convert: true },
+      max_id: { type: "number", integer: true, optional: true, convert: true },
+      sort: { type: "string", optional: true },
+    },
+  })
+  async listExchangeRates(ctx: Context<ListExchangeRatesParams>) {
+    try {
+      const p = ctx.params;
+
+      const sortDir = this.parseSortDirection(p.sort);
+      if (sortDir === null) {
+        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400);
+      }
+
+      let expireDate: Date | undefined;
+      if (p.expire) {
+        expireDate = new Date(p.expire);
+        if (Number.isNaN(expireDate.getTime())) {
+          return ApiResponder.error(ctx, "Invalid expire datetime format", 400);
+        }
+      }
+
+      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024);
+      const blockHeight = getBlockHeight(ctx);
+
+      const query = blockHeight !== undefined
+        ? this.buildAtHeightListQuery(blockHeight)
+        : knex<any>("exchange_rates").select("*");
+      const idColumn = blockHeight !== undefined ? "exchange_rate_id" : "id";
+
+      this.applyListFilters(query, p, expireDate, idColumn);
+      const rows = await query.orderBy(idColumn, sortDir).limit(limit);
+
+      return ApiResponder.success(ctx, {
+        exchange_rates: rows.map(serializeExchangeRateRow),
+      });
+    } catch (err: any) {
+      this.logger.error("Error in ExchangeRate.listExchangeRates:", err);
+      return ApiResponder.error(
+        ctx,
+        `Failed to list exchange rates: ${err?.message || String(err)}`,
+        500
+      );
+    }
+  }
+
+  private parseSortDirection(sort?: string): "asc" | "desc" | null {
+    if (!sort || !sort.trim()) return "desc";
+    const normalized = sort.trim().toLowerCase();
+    if (normalized === "id" || normalized === "+id") return "asc";
+    if (normalized === "-id") return "desc";
+    return null;
+  }
+
+  private buildAtHeightListQuery(blockHeight: number) {
+    const latestPerId = knex("exchange_rate_history")
+      .distinctOn("exchange_rate_id")
+      .select("*")
+      .where("height", "<=", blockHeight)
+      .orderBy("exchange_rate_id", "asc")
+      .orderBy("height", "desc");
+    return knex.from(latestPerId.as("er")).select("*");
+  }
+
+  private applyListFilters(
+    query: any,
+    p: ListExchangeRatesParams,
+    expireDate: Date | undefined,
+    idColumn: string
+  ) {
+    if (p.base_asset_type) query.where("base_asset_type", p.base_asset_type);
+    if (p.base_asset) query.where("base_asset", p.base_asset);
+    if (p.quote_asset_type) query.where("quote_asset_type", p.quote_asset_type);
+    if (p.quote_asset) query.where("quote_asset", p.quote_asset);
+    if (p.state !== undefined) query.where("state", p.state);
+    if (expireDate) query.where("expires", ">", expireDate);
+    if (p.min_id !== undefined) query.where(idColumn, ">=", p.min_id);
+    if (p.max_id !== undefined) query.where(idColumn, "<", p.max_id);
   }
 
   @Action({
