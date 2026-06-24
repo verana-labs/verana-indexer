@@ -1,33 +1,30 @@
-import type { Knex } from "knex";
-import knex from "../../common/utils/db_connection";
-import {
-  calculateCredentialSchemaStats,
-  calculateCredentialSchemaStatsBatch,
-} from "../crawl-cs/cs_stats";
-import { calculateParticipantState } from "../crawl-pp/pp_state_utils";
-import { getBlockChainTimeAsOf } from "../../common/utils/block_time";
-import { resolveParticipantsParticipantColumn } from "../../common/utils/installed_table_columns";
+import type { Knex } from 'knex'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import knex from '../../common/utils/db_connection'
+import { resolveParticipantsParticipantColumn } from '../../common/utils/installed_table_columns'
+import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from '../crawl-cs/cs_stats'
+import { calculateParticipantState } from '../crawl-pp/pp_state_utils'
 
 function isMetricsPgClient(db: Knex): boolean {
-  return String((db as any)?.client?.config?.client || "").includes("pg");
+  return String((db as any)?.client?.config?.client || '').includes('pg')
 }
 
 async function pgTableColumnsLower(db: Knex, table: string): Promise<Set<string>> {
   if (!isMetricsPgClient(db)) {
-    return new Set();
+    return new Set()
   }
   const r = await db.raw(
     `SELECT column_name FROM information_schema.columns
      WHERE table_schema = current_schema() AND table_name = ?`,
     [table]
-  );
-  const rows = (r as { rows?: { column_name: string }[] }).rows ?? [];
-  return new Set(rows.map((x) => String(x.column_name).toLowerCase()));
+  )
+  const rows = (r as { rows?: { column_name: string }[] }).rows ?? []
+  return new Set(rows.map((x) => String(x.column_name).toLowerCase()))
 }
 
 async function aggregateLiveTrustWeightFromParticipants(db: Knex): Promise<{
-  totalWeight: number;
-  maxSingleParticipantWeight: number;
+  totalWeight: number
+  maxSingleParticipantWeight: number
 }> {
   const sumExpr = isMetricsPgClient(db)
     ? `COALESCE(SUM(
@@ -41,7 +38,7 @@ async function aggregateLiveTrustWeightFromParticipants(db: Knex): Promise<{
            WHEN p.weight IS NOT NULL THEN CAST(p.weight AS REAL)
            ELSE COALESCE(CAST(p.deposit AS REAL), 0)
          END
-       ), 0)`;
+       ), 0)`
 
   const maxExpr = isMetricsPgClient(db)
     ? `COALESCE(MAX(
@@ -55,332 +52,332 @@ async function aggregateLiveTrustWeightFromParticipants(db: Knex): Promise<{
            WHEN p.weight IS NOT NULL THEN CAST(p.weight AS REAL)
            ELSE COALESCE(CAST(p.deposit AS REAL), 0)
          END
-       ), 0)`;
+       ), 0)`
 
-  const row = await db("participants as p")
-    .join("credential_schemas as cs", "cs.id", "p.schema_id")
+  const row = await db('participants as p')
+    .join('credential_schemas as cs', 'cs.id', 'p.schema_id')
     .select(db.raw(`${sumExpr} as total_weight`), db.raw(`${maxExpr} as max_single`))
-    .first();
+    .first()
 
-  const totalWeight = parseMetricsNumeric((row as any)?.total_weight);
-  const maxSingleParticipantWeight = parseMetricsNumeric((row as any)?.max_single);
-  return { totalWeight, maxSingleParticipantWeight };
+  const totalWeight = parseMetricsNumeric((row as any)?.total_weight)
+  const maxSingleParticipantWeight = parseMetricsNumeric((row as any)?.max_single)
+  return { totalWeight, maxSingleParticipantWeight }
 }
 
 async function sumDenormalizedCredentialSchemaWeights(db: Knex): Promise<number> {
-  const row = await db("credential_schemas")
-    .select(db.raw("COALESCE(SUM(CAST(weight AS NUMERIC)), 0) as s"))
-    .first();
-  return parseMetricsNumeric((row as any)?.s);
+  const row = await db('credential_schemas').select(db.raw('COALESCE(SUM(CAST(weight AS NUMERIC)), 0) as s')).first()
+  return parseMetricsNumeric((row as any)?.s)
 }
 
 function parseMetricsNumeric(v: unknown): number {
-  if (v === null || v === undefined) return 0;
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  const n = Number(String(v).trim());
-  return Number.isFinite(n) ? n : 0;
+  if (v === null || v === undefined) return 0
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  const n = Number(String(v).trim())
+  return Number.isFinite(n) ? n : 0
 }
 
-async function resolveTrustDepositsAmountColumn(db: Knex): Promise<"deposit" | "amount"> {
+async function resolveTrustDepositsAmountColumn(db: Knex): Promise<'deposit' | 'amount'> {
   if (isMetricsPgClient(db)) {
-    const cols = await pgTableColumnsLower(db, "trust_deposits");
-    if (cols.has("deposit")) return "deposit";
-    if (cols.has("amount")) return "amount";
-    return "amount";
+    const cols = await pgTableColumnsLower(db, 'trust_deposits')
+    if (cols.has('deposit')) return 'deposit'
+    if (cols.has('amount')) return 'amount'
+    return 'amount'
   }
-  if (await db.schema.hasColumn("trust_deposits", "deposit")) return "deposit";
-  return "amount";
+  if (await db.schema.hasColumn('trust_deposits', 'deposit')) return 'deposit'
+  return 'amount'
 }
 
 async function resolveTrustDepositHistoryColumns(
   db: Knex
-): Promise<{ corp: "corporation" | "account"; amount: "deposit" | "amount" }> {
+): Promise<{ corp: 'corporation' | 'account'; amount: 'deposit' | 'amount' }> {
   if (isMetricsPgClient(db)) {
-    const cols = await pgTableColumnsLower(db, "trust_deposit_history");
+    const cols = await pgTableColumnsLower(db, 'trust_deposit_history')
     return {
-      corp: cols.has("corporation") ? "corporation" : "account",
-      amount: cols.has("deposit") ? "deposit" : "amount",
-    };
+      corp: cols.has('corporation') ? 'corporation' : 'account',
+      amount: cols.has('deposit') ? 'deposit' : 'amount',
+    }
   }
-  const hasCorp = await db.schema.hasColumn("trust_deposit_history", "corporation");
-  const hasDeposit = await db.schema.hasColumn("trust_deposit_history", "deposit");
+  const hasCorp = await db.schema.hasColumn('trust_deposit_history', 'corporation')
+  const hasDeposit = await db.schema.hasColumn('trust_deposit_history', 'deposit')
   return {
-    corp: hasCorp ? "corporation" : "account",
-    amount: hasDeposit ? "deposit" : "amount",
-  };
+    corp: hasCorp ? 'corporation' : 'account',
+    amount: hasDeposit ? 'deposit' : 'amount',
+  }
 }
 
 async function aggregateLiveTrustDepositWeight(db: Knex): Promise<{
-  totalWeight: number;
-  maxSingleDeposit: number;
+  totalWeight: number
+  maxSingleDeposit: number
 }> {
-  let amountCol = await resolveTrustDepositsAmountColumn(db);
-  const buildSelect = (col: "deposit" | "amount") => {
+  let amountCol = await resolveTrustDepositsAmountColumn(db)
+  const buildSelect = (col: 'deposit' | 'amount') => {
     const castTotalExpr = isMetricsPgClient(db)
       ? `COALESCE(SUM(${col}::numeric), 0)`
-      : `COALESCE(SUM(CAST(${col} AS REAL)), 0)`;
+      : `COALESCE(SUM(CAST(${col} AS REAL)), 0)`
     const castMaxExpr = isMetricsPgClient(db)
       ? `COALESCE(MAX(${col}::numeric), 0)`
-      : `COALESCE(MAX(CAST(${col} AS REAL)), 0)`;
-    return db("trust_deposits")
+      : `COALESCE(MAX(CAST(${col} AS REAL)), 0)`
+    return db('trust_deposits')
       .select(db.raw(`${castTotalExpr} as total_weight`), db.raw(`${castMaxExpr} as max_single`))
-      .first();
-  };
+      .first()
+  }
 
-  let row: unknown;
+  let row: unknown
   try {
-    row = await buildSelect(amountCol);
+    row = await buildSelect(amountCol)
   } catch (err: unknown) {
-    const msg = err && typeof err === "object" && "message" in err ? String((err as Error).message) : "";
-    const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
-    if (code === "42703" && amountCol === "deposit" && /column .*deposit/i.test(msg)) {
-      amountCol = "amount";
-      row = await buildSelect(amountCol);
+    const msg = err && typeof err === 'object' && 'message' in err ? String((err as Error).message) : ''
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : ''
+    if (code === '42703' && amountCol === 'deposit' && /column .*deposit/i.test(msg)) {
+      amountCol = 'amount'
+      row = await buildSelect(amountCol)
     } else {
-      throw err;
+      throw err
     }
   }
 
-  const totalWeight = parseMetricsNumeric((row as any)?.total_weight);
-  const maxSingleDeposit = parseMetricsNumeric((row as any)?.max_single);
-  return { totalWeight, maxSingleDeposit };
+  const totalWeight = parseMetricsNumeric((row as any)?.total_weight)
+  const maxSingleDeposit = parseMetricsNumeric((row as any)?.max_single)
+  return { totalWeight, maxSingleDeposit }
 }
 
 async function aggregateHistoricalTrustDepositWeight(
   db: Knex,
   blockHeight: number
 ): Promise<{
-  totalWeight: number;
-  maxSingleDeposit: number;
+  totalWeight: number
+  maxSingleDeposit: number
 }> {
   if (isMetricsPgClient(db)) {
-    const { corp, amount } = await resolveTrustDepositHistoryColumns(db);
-    const corpQualified = `tdh.${corp}`;
-    const amountQualified = `tdh.${amount}`;
-    const tdLatest = db("trust_deposit_history as tdh")
+    const { corp, amount } = await resolveTrustDepositHistoryColumns(db)
+    const corpQualified = `tdh.${corp}`
+    const amountQualified = `tdh.${amount}`
+    const tdLatest = db('trust_deposit_history as tdh')
       .distinctOn(corpQualified)
       .select(db.raw(`${corpQualified} as corporation`), db.raw(`${amountQualified} as deposit`))
-      .where("tdh.height", "<=", blockHeight)
-      .orderBy(corpQualified, "asc")
-      .orderBy("tdh.height", "desc")
-      .orderBy("tdh.created_at", "desc")
-      .orderBy("tdh.id", "desc")
-      .as("latest_td");
+      .where('tdh.height', '<=', blockHeight)
+      .orderBy(corpQualified, 'asc')
+      .orderBy('tdh.height', 'desc')
+      .orderBy('tdh.created_at', 'desc')
+      .orderBy('tdh.id', 'desc')
+      .as('latest_td')
 
-    const row = await db.from(tdLatest)
+    const row = await db
+      .from(tdLatest)
       .select(
         db.raw(`COALESCE(SUM(latest_td.deposit::numeric), 0) as total_weight`),
         db.raw(`COALESCE(MAX(latest_td.deposit::numeric), 0) as max_single`)
       )
-      .first();
+      .first()
 
     return {
       totalWeight: parseMetricsNumeric((row as any)?.total_weight),
       maxSingleDeposit: parseMetricsNumeric((row as any)?.max_single),
-    };
+    }
   }
 
-  const { corp, amount } = await resolveTrustDepositHistoryColumns(db);
-  const tdSub = db("trust_deposit_history as tdh")
+  const { corp, amount } = await resolveTrustDepositHistoryColumns(db)
+  const tdSub = db('trust_deposit_history as tdh')
     .select(db.raw(`tdh.${corp} as corporation`), db.raw(`tdh.${amount} as deposit`))
-    .select(db.raw(`ROW_NUMBER() OVER (PARTITION BY tdh.${corp} ORDER BY tdh.height DESC, tdh.created_at DESC, tdh.id DESC) as rn`))
-    .where("tdh.height", "<=", blockHeight)
-    .as("ranked_td");
+    .select(
+      db.raw(
+        `ROW_NUMBER() OVER (PARTITION BY tdh.${corp} ORDER BY tdh.height DESC, tdh.created_at DESC, tdh.id DESC) as rn`
+      )
+    )
+    .where('tdh.height', '<=', blockHeight)
+    .as('ranked_td')
 
-  const tdLatest = db.from(tdSub).select("corporation", "deposit").where("rn", 1).as("latest_td");
+  const tdLatest = db.from(tdSub).select('corporation', 'deposit').where('rn', 1).as('latest_td')
 
-  const row = await db.from(tdLatest)
+  const row = await db
+    .from(tdLatest)
     .select(
       db.raw(`COALESCE(SUM(CAST(latest_td.deposit AS REAL)), 0) as total_weight`),
       db.raw(`COALESCE(MAX(CAST(latest_td.deposit AS REAL)), 0) as max_single`)
     )
-    .first();
+    .first()
 
   return {
     totalWeight: parseMetricsNumeric((row as any)?.total_weight),
     maxSingleDeposit: parseMetricsNumeric((row as any)?.max_single),
-  };
+  }
 }
 
 export async function computeTotalLockedTrustDepositWeight(blockHeight?: number): Promise<{
-  weight: number;
-  maxSingleDeposit: number;
+  weight: number
+  maxSingleDeposit: number
 }> {
-  const db = knex;
+  const db = knex
   const result =
-    typeof blockHeight === "number"
+    typeof blockHeight === 'number'
       ? await aggregateHistoricalTrustDepositWeight(db, blockHeight)
-      : await aggregateLiveTrustDepositWeight(db);
+      : await aggregateLiveTrustDepositWeight(db)
 
   if (result.maxSingleDeposit > result.totalWeight + 1e-9) {
-    (global as any)?.logger?.warn?.(
-      "[metrics] Invariant failed: totalWeight < maxSingleDeposit",
-      result
-    );
+    ;(global as any)?.logger?.warn?.('[metrics] Invariant failed: totalWeight < maxSingleDeposit', result)
   }
 
-  return { weight: result.totalWeight, maxSingleDeposit: result.maxSingleDeposit };
+  return { weight: result.totalWeight, maxSingleDeposit: result.maxSingleDeposit }
 }
 
 function logGlobalWeightSanity(opts: {
-  totalWeightFromTrustDeposits: number;
-  maxSingleDeposit: number;
-  participantsDerivedTotalWeight?: number;
-  denormalizedCsSum?: number;
-  logger?: { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void };
+  totalWeightFromTrustDeposits: number
+  maxSingleDeposit: number
+  participantsDerivedTotalWeight?: number
+  denormalizedCsSum?: number
+  logger?: { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void }
 }): void {
-  const { totalWeightFromTrustDeposits, maxSingleDeposit, participantsDerivedTotalWeight, denormalizedCsSum, logger } = opts;
-  const log = logger?.warn ?? logger?.debug ?? ((...args: unknown[]) => console.warn(...args));
+  const { totalWeightFromTrustDeposits, maxSingleDeposit, participantsDerivedTotalWeight, denormalizedCsSum, logger } =
+    opts
+  const log = logger?.warn ?? logger?.debug ?? ((...args: unknown[]) => console.warn(...args))
 
   if (maxSingleDeposit > totalWeightFromTrustDeposits + 1e-6) {
-    log(
-      "[metrics] Invariant failed: max single deposit exceeds global total (aggregation bug?)",
-      { totalWeightFromTrustDeposits, maxSingleDeposit }
-    );
+    log('[metrics] Invariant failed: max single deposit exceeds global total (aggregation bug?)', {
+      totalWeightFromTrustDeposits,
+      maxSingleDeposit,
+    })
   }
 
   if (
-    typeof denormalizedCsSum === "number" &&
+    typeof denormalizedCsSum === 'number' &&
     Number.isFinite(denormalizedCsSum) &&
     denormalizedCsSum > 0 &&
     totalWeightFromTrustDeposits > 0
   ) {
-    const relDiff = Math.abs(totalWeightFromTrustDeposits - denormalizedCsSum) / Math.max(totalWeightFromTrustDeposits, denormalizedCsSum);
+    const relDiff =
+      Math.abs(totalWeightFromTrustDeposits - denormalizedCsSum) /
+      Math.max(totalWeightFromTrustDeposits, denormalizedCsSum)
     if (relDiff > 0.05) {
       log(
-        "[metrics] Global trust weight from trust deposits differs from SUM(credential_schemas.weight) by >5% — denormalized CS columns may be stale (reindex or crawl lag).",
+        '[metrics] Global trust weight from trust deposits differs from SUM(credential_schemas.weight) by >5% — denormalized CS columns may be stale (reindex or crawl lag).',
         { totalFromTrustDeposits: totalWeightFromTrustDeposits, sumCredentialSchemasWeight: denormalizedCsSum, relDiff }
-      );
+      )
     }
   }
 
   if (
-    typeof participantsDerivedTotalWeight === "number" &&
+    typeof participantsDerivedTotalWeight === 'number' &&
     Number.isFinite(participantsDerivedTotalWeight) &&
     participantsDerivedTotalWeight > 0 &&
     totalWeightFromTrustDeposits > 0
   ) {
-    const relDiff = Math.abs(participantsDerivedTotalWeight - totalWeightFromTrustDeposits) / Math.max(
-      participantsDerivedTotalWeight,
-      totalWeightFromTrustDeposits
-    );
+    const relDiff =
+      Math.abs(participantsDerivedTotalWeight - totalWeightFromTrustDeposits) /
+      Math.max(participantsDerivedTotalWeight, totalWeightFromTrustDeposits)
     if (relDiff > 0.05) {
       log(
-        "[metrics] Global trust weight from participants differs from trust_deposits SUM by >5% — participants denormalized columns may be stale (reindex or crawl lag).",
-        { totalFromParticipants: participantsDerivedTotalWeight, totalFromTrustDeposits: totalWeightFromTrustDeposits, relDiff }
-      );
+        '[metrics] Global trust weight from participants differs from trust_deposits SUM by >5% — participants denormalized columns may be stale (reindex or crawl lag).',
+        {
+          totalFromParticipants: participantsDerivedTotalWeight,
+          totalFromTrustDeposits: totalWeightFromTrustDeposits,
+          relDiff,
+        }
+      )
     }
   }
 }
 
 export async function computeGlobalMetrics(blockHeight?: number) {
-  const useHistory = typeof blockHeight === "number";
+  const useHistory = typeof blockHeight === 'number'
 
   if (!useHistory) {
-    const trCounts = await knex("ecosystem")
+    const trCounts = await knex('ecosystem')
       .select(
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_ecosystems"),
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_ecosystems")
+        knex.raw('COUNT(*) FILTER (WHERE archived IS NULL) as active_ecosystems'),
+        knex.raw('COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_ecosystems')
       )
-      .first();
-    let activeEcosystems = Number(trCounts?.active_ecosystems || 0);
-    let archivedEcosystems = Number(trCounts?.archived_ecosystems || 0);
+      .first()
+    let activeEcosystems = Number(trCounts?.active_ecosystems || 0)
+    let archivedEcosystems = Number(trCounts?.archived_ecosystems || 0)
 
     if (activeEcosystems + archivedEcosystems === 0) {
-      const ecosystemHistoryCount = await knex("ecosystem_history").count("* as count").first();
-      const hasHistory = Number((ecosystemHistoryCount as any)?.count || 0) > 0;
+      const ecosystemHistoryCount = await knex('ecosystem_history').count('* as count').first()
+      const hasHistory = Number((ecosystemHistoryCount as any)?.count || 0) > 0
       if (hasHistory) {
-        const trSub = knex("ecosystem_history")
-          .select("ecosystem_id", "archived")
-          .select(
-            knex.raw(
-              "ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn"
-            )
-          )
-          .as("ranked_tr");
-        const latest = await knex.from(trSub).select("archived").where("rn", 1);
-        activeEcosystems = latest.filter((r: any) => !r.archived).length;
-        archivedEcosystems = latest.filter((r: any) => r.archived).length;
+        const trSub = knex('ecosystem_history')
+          .select('ecosystem_id', 'archived')
+          .select(knex.raw('ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn'))
+          .as('ranked_tr')
+        const latest = await knex.from(trSub).select('archived').where('rn', 1)
+        activeEcosystems = latest.filter((r: any) => !r.archived).length
+        archivedEcosystems = latest.filter((r: any) => r.archived).length
       }
     }
 
-    const csAgg = await knex("credential_schemas")
+    const csAgg = await knex('credential_schemas')
       .select(
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NULL) as active_schemas"),
-        knex.raw("COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_schemas")
+        knex.raw('COUNT(*) FILTER (WHERE archived IS NULL) as active_schemas'),
+        knex.raw('COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_schemas')
       )
-      .first();
-    const schemaIdRows = await knex("credential_schemas").select("id");
+      .first()
+    const schemaIdRows = await knex('credential_schemas').select('id')
     const schemaIds = schemaIdRows
       .map((r: { id: unknown }) => Number(r.id))
-      .filter((id) => Number.isFinite(id) && id > 0);
+      .filter((id) => Number.isFinite(id) && id > 0)
 
-    const logger = (global as any).logger as { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void } | undefined;
+    const logger = (global as any).logger as
+      | { warn?: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void }
+      | undefined
 
     const [trustDepositWeightAgg, participantsWeightAgg, denormalizedCsWeightSum, csStatsBySchema] = await Promise.all([
       aggregateLiveTrustDepositWeight(knex),
       aggregateLiveTrustWeightFromParticipants(knex).catch(() => ({ totalWeight: 0, maxSingleParticipantWeight: 0 })),
       sumDenormalizedCredentialSchemaWeights(knex).catch(() => 0),
       calculateCredentialSchemaStatsBatch(schemaIds, undefined),
-    ]);
+    ])
 
-    const totalWeight = trustDepositWeightAgg.totalWeight;
+    const totalWeight = trustDepositWeightAgg.totalWeight
     logGlobalWeightSanity({
       totalWeightFromTrustDeposits: totalWeight,
       maxSingleDeposit: trustDepositWeightAgg.maxSingleDeposit,
       participantsDerivedTotalWeight: participantsWeightAgg.totalWeight,
       denormalizedCsSum: denormalizedCsWeightSum,
       logger,
-    });
+    })
 
-    let issuedSum = 0;
-    let verifiedSum = 0;
-    let ecosystemSlashEventsSum = 0;
-    let ecosystemSlashedAmountSum = 0;
-    let ecosystemSlashedAmountRepaidSum = 0;
-    let networkSlashEventsSum = 0;
-    let networkSlashedAmountSum = 0;
-    let networkSlashedAmountRepaidSum = 0;
+    let issuedSum = 0
+    let verifiedSum = 0
+    let ecosystemSlashEventsSum = 0
+    let ecosystemSlashedAmountSum = 0
+    let ecosystemSlashedAmountRepaidSum = 0
+    let networkSlashEventsSum = 0
+    let networkSlashedAmountSum = 0
+    let networkSlashedAmountRepaidSum = 0
 
     for (const sid of schemaIds) {
-      const s = csStatsBySchema.get(sid);
-      if (!s) continue;
-      issuedSum += Number(s.issued || 0);
-      verifiedSum += Number(s.verified || 0);
-      ecosystemSlashEventsSum += Number(s.ecosystem_slash_events || 0);
-      ecosystemSlashedAmountSum += Number(s.ecosystem_slashed_amount || 0);
-      ecosystemSlashedAmountRepaidSum += Number(s.ecosystem_slashed_amount_repaid || 0);
-      networkSlashEventsSum += Number(s.network_slash_events || 0);
-      networkSlashedAmountSum += Number(s.network_slashed_amount || 0);
-      networkSlashedAmountRepaidSum += Number(s.network_slashed_amount_repaid || 0);
+      const s = csStatsBySchema.get(sid)
+      if (!s) continue
+      issuedSum += Number(s.issued || 0)
+      verifiedSum += Number(s.verified || 0)
+      ecosystemSlashEventsSum += Number(s.ecosystem_slash_events || 0)
+      ecosystemSlashedAmountSum += Number(s.ecosystem_slashed_amount || 0)
+      ecosystemSlashedAmountRepaidSum += Number(s.ecosystem_slashed_amount_repaid || 0)
+      networkSlashEventsSum += Number(s.network_slash_events || 0)
+      networkSlashedAmountSum += Number(s.network_slashed_amount || 0)
+      networkSlashedAmountRepaidSum += Number(s.network_slashed_amount_repaid || 0)
     }
 
-    const nowIso = new Date().toISOString();
-    const participantParticipantCol = await resolveParticipantsParticipantColumn(knex);
+    const nowIso = new Date().toISOString()
+    const participantParticipantCol = await resolveParticipantsParticipantColumn(knex)
     const activeParticipantsBase = () =>
-      knex("participants")
-        .where(participantParticipantCol, ">", 0)
-        .whereNull("repaid")
-        .whereNull("slashed")
+      knex('participants')
+        .where(participantParticipantCol, '>', 0)
+        .whereNull('repaid')
+        .whereNull('slashed')
         .andWhere(function () {
-          this.whereNull("revoked").orWhere("revoked", ">=", nowIso);
+          this.whereNull('revoked').orWhere('revoked', '>=', nowIso)
         })
         .andWhere(function () {
-          this.whereNotNull("effective_from").andWhere("effective_from", "<=", nowIso);
+          this.whereNotNull('effective_from').andWhere('effective_from', '<=', nowIso)
         })
         .andWhere(function () {
-          this.whereNull("effective_until").orWhere("effective_until", ">=", nowIso);
-        });
+          this.whereNull('effective_until').orWhere('effective_until', '>=', nowIso)
+        })
 
-    const participantsResult = await activeParticipantsBase()
-      .count(`* as count`)
-      .first();
-    const participants = Number((participantsResult as any)?.count ?? 0);
+    const participantsResult = await activeParticipantsBase().count(`* as count`).first()
+    const participants = Number((participantsResult as any)?.count ?? 0)
 
-    const activeParticipantsByType = await activeParticipantsBase()
-      .select("role")
-      .count(`* as count`)
-      .groupBy("role");
+    const activeParticipantsByType = await activeParticipantsBase().select('role').count(`* as count`).groupBy('role')
 
     const participantsByType = {
       participants_ecosystem: 0,
@@ -389,15 +386,15 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       participants_verifier_grantor: 0,
       participants_verifier: 0,
       participants_holder: 0,
-    };
+    }
     for (const row of activeParticipantsByType as any[]) {
-      const count = Number(row?.count || row?.count_distinct || 0);
-      if (row.role === "ECOSYSTEM") participantsByType.participants_ecosystem = count;
-      if (row.role === "ISSUER_GRANTOR") participantsByType.participants_issuer_grantor = count;
-      if (row.role === "ISSUER") participantsByType.participants_issuer = count;
-      if (row.role === "VERIFIER_GRANTOR") participantsByType.participants_verifier_grantor = count;
-      if (row.role === "VERIFIER") participantsByType.participants_verifier = count;
-      if (row.role === "HOLDER") participantsByType.participants_holder = count;
+      const count = Number(row?.count || row?.count_distinct || 0)
+      if (row.role === 'ECOSYSTEM') participantsByType.participants_ecosystem = count
+      if (row.role === 'ISSUER_GRANTOR') participantsByType.participants_issuer_grantor = count
+      if (row.role === 'ISSUER') participantsByType.participants_issuer = count
+      if (row.role === 'VERIFIER_GRANTOR') participantsByType.participants_verifier_grantor = count
+      if (row.role === 'VERIFIER') participantsByType.participants_verifier = count
+      if (row.role === 'HOLDER') participantsByType.participants_holder = count
     }
 
     return {
@@ -416,118 +413,118 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       network_slash_events: networkSlashEventsSum,
       network_slashed_amount: networkSlashedAmountSum,
       network_slashed_amount_repaid: networkSlashedAmountRepaidSum,
-    };
-  }
-
-  const trSub = knex("ecosystem_history")
-    .select("ecosystem_id")
-    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn"))
-    .where("height", "<=", blockHeight)
-    .as("ranked_tr");
-
-  const trLatest = await knex.from(trSub).select("ecosystem_id").where("rn", 1);
-  const ecosystemIds = trLatest.map((r: any) => Number(r.ecosystem_id));
-  let activeEcosystems = 0;
-  let archivedEcosystems = 0;
-  for (const ecosystemId of ecosystemIds) {
-    const ecosystemHistory = await knex("ecosystem_history")
-      .where("ecosystem_id", ecosystemId)
-      .where("height", "<=", blockHeight)
-      .orderBy("height", "desc")
-      .orderBy("created_at", "desc")
-      .first();
-    if (ecosystemHistory) {
-      if (ecosystemHistory.archived) archivedEcosystems++;
-      else activeEcosystems++;
     }
   }
 
-  const csSub = knex("credential_schema_history")
-    .select("credential_schema_id")
-    .select(knex.raw("ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn"))
-    .where("height", "<=", blockHeight)
-    .as("ranked_cs");
+  const trSub = knex('ecosystem_history')
+    .select('ecosystem_id')
+    .select(knex.raw('ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn'))
+    .where('height', '<=', blockHeight)
+    .as('ranked_tr')
 
-  const csLatest = await knex.from(csSub).select("credential_schema_id").where("rn", 1);
-  const schemaIds = csLatest.map((r: any) => Number(r.credential_schema_id));
+  const trLatest = await knex.from(trSub).select('ecosystem_id').where('rn', 1)
+  const ecosystemIds = trLatest.map((r: any) => Number(r.ecosystem_id))
+  let activeEcosystems = 0
+  let archivedEcosystems = 0
+  for (const ecosystemId of ecosystemIds) {
+    const ecosystemHistory = await knex('ecosystem_history')
+      .where('ecosystem_id', ecosystemId)
+      .where('height', '<=', blockHeight)
+      .orderBy('height', 'desc')
+      .orderBy('created_at', 'desc')
+      .first()
+    if (ecosystemHistory) {
+      if (ecosystemHistory.archived) archivedEcosystems++
+      else activeEcosystems++
+    }
+  }
 
-  let activeSchemas = 0;
-  let archivedSchemas = 0;
-  const trustDepositWeightAgg = await aggregateHistoricalTrustDepositWeight(knex, blockHeight);
-  const totalWeight = trustDepositWeightAgg.totalWeight;
-  let issued = 0;
-  let verified = 0;
-  let ecosystemSlashEvents = 0;
-  let ecosystemSlashedAmount = BigInt(0);
-  let ecosystemSlashedAmountRepaid = BigInt(0);
-  let networkSlashEvents = 0;
-  let networkSlashedAmount = BigInt(0);
-  let networkSlashedAmountRepaid = BigInt(0);
+  const csSub = knex('credential_schema_history')
+    .select('credential_schema_id')
+    .select(
+      knex.raw('ROW_NUMBER() OVER (PARTITION BY credential_schema_id ORDER BY height DESC, created_at DESC) as rn')
+    )
+    .where('height', '<=', blockHeight)
+    .as('ranked_cs')
+
+  const csLatest = await knex.from(csSub).select('credential_schema_id').where('rn', 1)
+  const schemaIds = csLatest.map((r: any) => Number(r.credential_schema_id))
+
+  let activeSchemas = 0
+  let archivedSchemas = 0
+  const trustDepositWeightAgg = await aggregateHistoricalTrustDepositWeight(knex, blockHeight)
+  const totalWeight = trustDepositWeightAgg.totalWeight
+  let issued = 0
+  let verified = 0
+  let ecosystemSlashEvents = 0
+  let ecosystemSlashedAmount = BigInt(0)
+  let ecosystemSlashedAmountRepaid = BigInt(0)
+  let networkSlashEvents = 0
+  let networkSlashedAmount = BigInt(0)
+  let networkSlashedAmountRepaid = BigInt(0)
 
   for (const sid of schemaIds) {
-    const schHistory = await knex("credential_schema_history")
-      .where("credential_schema_id", sid)
-      .where("height", "<=", blockHeight)
-      .orderBy("height", "desc")
-      .orderBy("created_at", "desc")
-      .first();
-    if (!schHistory) continue;
-    if (schHistory.archived) archivedSchemas++;
-    else activeSchemas++;
+    const schHistory = await knex('credential_schema_history')
+      .where('credential_schema_id', sid)
+      .where('height', '<=', blockHeight)
+      .orderBy('height', 'desc')
+      .orderBy('created_at', 'desc')
+      .first()
+    if (!schHistory) continue
+    if (schHistory.archived) archivedSchemas++
+    else activeSchemas++
 
     try {
-      const stats = await calculateCredentialSchemaStats(sid, blockHeight);
-      issued += Number(stats.issued || 0);
-      verified += Number(stats.verified || 0);
-      ecosystemSlashEvents += Number(stats.ecosystem_slash_events || 0);
-      ecosystemSlashedAmount += BigInt(stats.ecosystem_slashed_amount || "0");
-      ecosystemSlashedAmountRepaid += BigInt(stats.ecosystem_slashed_amount_repaid || "0");
-      networkSlashEvents += Number(stats.network_slash_events || 0);
-      networkSlashedAmount += BigInt(stats.network_slashed_amount || "0");
-      networkSlashedAmountRepaid += BigInt(stats.network_slashed_amount_repaid || "0");
+      const stats = await calculateCredentialSchemaStats(sid, blockHeight)
+      issued += Number(stats.issued || 0)
+      verified += Number(stats.verified || 0)
+      ecosystemSlashEvents += Number(stats.ecosystem_slash_events || 0)
+      ecosystemSlashedAmount += BigInt(stats.ecosystem_slashed_amount || '0')
+      ecosystemSlashedAmountRepaid += BigInt(stats.ecosystem_slashed_amount_repaid || '0')
+      networkSlashEvents += Number(stats.network_slash_events || 0)
+      networkSlashedAmount += BigInt(stats.network_slashed_amount || '0')
+      networkSlashedAmountRepaid += BigInt(stats.network_slashed_amount_repaid || '0')
     } catch (err: any) {
-      console.warn(`Failed to calculate stats for schema ${sid} at height ${blockHeight}: ${err?.message || err}`);
+      console.warn(`Failed to calculate stats for schema ${sid} at height ${blockHeight}: ${err?.message || err}`)
     }
   }
 
-  let participantsTotal = 0;
-  let participantsEcosystem = 0;
-  let participantsIssuerGrantor = 0;
-  let participantsIssuer = 0;
-  let participantsVerifierGrantor = 0;
-  let participantsVerifier = 0;
-  let participantsHolder = 0;
-  const latestHistorySubquery = knex("participant_history")
-    .select("participant_id")
+  let participantsTotal = 0
+  let participantsEcosystem = 0
+  let participantsIssuerGrantor = 0
+  let participantsIssuer = 0
+  let participantsVerifierGrantor = 0
+  let participantsVerifier = 0
+  let participantsHolder = 0
+  const latestHistorySubquery = knex('participant_history')
+    .select('participant_id')
     .select(
-      knex.raw(
-        `ROW_NUMBER() OVER (PARTITION BY participant_id ORDER BY height DESC, created_at DESC, id DESC) as rn`
-      )
+      knex.raw(`ROW_NUMBER() OVER (PARTITION BY participant_id ORDER BY height DESC, created_at DESC, id DESC) as rn`)
     )
-    .where("height", "<=", blockHeight)
-    .as("ranked");
+    .where('height', '<=', blockHeight)
+    .as('ranked')
 
   const participantIdsAtHeight = await knex
     .from(latestHistorySubquery)
-    .select("participant_id")
-    .where("rn", 1)
-    .then((rows: any[]) => rows.map((r: any) => String(r.participant_id)));
+    .select('participant_id')
+    .where('rn', 1)
+    .then((rows: any[]) => rows.map((r: any) => String(r.participant_id)))
 
   const asOfTime = await getBlockChainTimeAsOf(blockHeight, {
     db: knex,
-    logContext: "[metrics_helper]",
+    logContext: '[metrics_helper]',
     atOrBefore: true,
     fallback: new Date(),
-  });
+  })
 
   for (const participantId of participantIdsAtHeight) {
-    const historyRecord = await knex("participant_history")
+    const historyRecord = await knex('participant_history')
       .where({ participant_id: String(participantId) })
-      .where("height", "<=", blockHeight)
-      .orderBy("height", "desc")
-      .orderBy("created_at", "desc")
-      .first();
-    if (!historyRecord) continue;
+      .where('height', '<=', blockHeight)
+      .orderBy('height', 'desc')
+      .orderBy('created_at', 'desc')
+      .first()
+    if (!historyRecord) continue
     const participantState = calculateParticipantState(
       {
         repaid: historyRecord.repaid,
@@ -541,16 +538,16 @@ export async function computeGlobalMetrics(blockHeight?: number) {
         validator_participant_id: historyRecord.validator_participant_id,
       },
       asOfTime
-    );
-    const corpId = Number((historyRecord as { corporation_id?: number }).corporation_id ?? 0) || 0;
-    if (participantState === "ACTIVE" && corpId > 0) {
-      participantsTotal++;
-      if (historyRecord.role === "ECOSYSTEM") participantsEcosystem++;
-      if (historyRecord.role === "ISSUER_GRANTOR") participantsIssuerGrantor++;
-      if (historyRecord.role === "ISSUER") participantsIssuer++;
-      if (historyRecord.role === "VERIFIER_GRANTOR") participantsVerifierGrantor++;
-      if (historyRecord.role === "VERIFIER") participantsVerifier++;
-      if (historyRecord.role === "HOLDER") participantsHolder++;
+    )
+    const corpId = Number((historyRecord as { corporation_id?: number }).corporation_id ?? 0) || 0
+    if (participantState === 'ACTIVE' && corpId > 0) {
+      participantsTotal++
+      if (historyRecord.role === 'ECOSYSTEM') participantsEcosystem++
+      if (historyRecord.role === 'ISSUER_GRANTOR') participantsIssuerGrantor++
+      if (historyRecord.role === 'ISSUER') participantsIssuer++
+      if (historyRecord.role === 'VERIFIER_GRANTOR') participantsVerifierGrantor++
+      if (historyRecord.role === 'VERIFIER') participantsVerifier++
+      if (historyRecord.role === 'HOLDER') participantsHolder++
     }
   }
 
@@ -575,5 +572,5 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     network_slash_events: networkSlashEvents,
     network_slashed_amount: Number(networkSlashedAmount),
     network_slashed_amount_repaid: Number(networkSlashedAmountRepaid),
-  };
+  }
 }

@@ -1,19 +1,19 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Validator } from './validator';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { Validator } from './validator'
 
 export class Delegator extends BaseModel {
-  id!: number;
+  id!: number
 
-  validator_id!: number;
+  validator_id!: number
 
-  delegator_address!: string;
+  delegator_address!: string
 
-  amount!: string;
+  amount!: string
 
   static get tableName() {
-    return 'delegator';
+    return 'delegator'
   }
 
   static get jsonSchema() {
@@ -25,7 +25,7 @@ export class Delegator extends BaseModel {
         delegator_address: { type: 'string' },
         amount: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -38,6 +38,6 @@ export class Delegator extends BaseModel {
           to: 'validator.id',
         },
       },
-    };
+    }
   }
 }

@@ -1,30 +1,30 @@
 /* eslint-disable import/no-cycle */
-import BaseModel from './base';
-import { IbcChannel } from './ibc_channel';
+import BaseModel from './base'
+import { IbcChannel } from './ibc_channel'
 
 export class Asset extends BaseModel {
-  id!: number;
+  id!: number
 
-  denom!: string;
+  denom!: string
 
-  decimal!: string;
+  decimal!: string
 
-  name!: string;
+  name!: string
 
-  type!: string;
+  type!: string
 
-  price!: string;
+  price!: string
 
-  total_supply!: string;
+  total_supply!: string
 
-  origin_id!: string;
+  origin_id!: string
 
-  updated_at!: Date;
+  updated_at!: Date
 
-  ibc_channel!: IbcChannel;
+  ibc_channel!: IbcChannel
 
   static get tableName() {
-    return 'asset';
+    return 'asset'
   }
 
   static TYPE = {
@@ -33,10 +33,10 @@ export class Asset extends BaseModel {
     IBC_TOKEN: 'IBC_TOKEN',
     FACTORY_TOKEN: 'FACTORY_TOKEN',
     ERC20_TOKEN: 'ERC20_TOKEN',
-  };
+  }
 
   static PREFIX = {
     IBC: 'ibc/',
     FACTORY: 'factory/',
-  };
+  }
 }

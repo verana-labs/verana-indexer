@@ -1,116 +1,97 @@
-import { fromBech32 } from '@cosmjs/encoding';
-import _ from 'lodash';
-import { SemVer } from 'semver';
+import { fromBech32 } from '@cosmjs/encoding'
+import _ from 'lodash'
+import { SemVer } from 'semver'
 
 export default class Utils {
   public static isValidAddress(address: string, length = -1) {
     try {
-      const decodeResult = fromBech32(address);
+      const decodeResult = fromBech32(address)
       if (length === -1) {
-        return true;
+        return true
       }
       if (decodeResult.data.length === length) {
-        return true;
+        return true
       }
-    } catch (error) {
-      return false;
+    } catch (_error) {
+      return false
     }
-    return false;
+    return false
   }
 
-  public static isValidAccountAddress(
-    address: string,
-    prefix: string,
-    length = -1
-  ) {
+  public static isValidAccountAddress(address: string, prefix: string, length = -1) {
     try {
-      const decodeResult = fromBech32(address);
+      const decodeResult = fromBech32(address)
       if (length === -1) {
-        return true;
+        return true
       }
-      if (
-        decodeResult.data.length === length &&
-        decodeResult.prefix === prefix
-      ) {
-        return true;
+      if (decodeResult.data.length === length && decodeResult.prefix === prefix) {
+        return true
       }
-    } catch (error) {
-      return false;
+    } catch (_error) {
+      return false
     }
-    return false;
+    return false
   }
 
   public static flattenObject(obj: any): Record<string, any> {
     return Object.keys(obj).reduce<Record<string, any>>((acc, k) => {
-      if (
-        typeof obj[k] === 'object' &&
-        !Array.isArray(obj[k]) &&
-        obj[k] &&
-        k !== 'pub_key'
-      ) {
-        Object.assign(acc, Utils.flattenObject(obj[k]));
+      if (typeof obj[k] === 'object' && !Array.isArray(obj[k]) && obj[k] && k !== 'pub_key') {
+        Object.assign(acc, Utils.flattenObject(obj[k]))
       } else {
-        acc[k] = obj[k];
+        acc[k] = obj[k]
       }
-      return acc;
-    }, {});
+      return acc
+    }, {})
   }
-
 
   public static camelizeKeys(obj: any): any {
     if (Array.isArray(obj)) {
-      return obj.map((v: any) => this.camelizeKeys(v));
+      return obj.map((v: any) => Utils.camelizeKeys(v))
     }
     if (obj != null && obj.constructor === Object) {
       return Object.keys(obj).reduce(
         (result, key) => ({
           ...result,
-          [key === '@type' ? '@type' : _.snakeCase(key)]: this.camelizeKeys(
-            obj[key]
-          ),
+          [key === '@type' ? '@type' : _.snakeCase(key)]: Utils.camelizeKeys(obj[key]),
         }),
         {}
-      );
+      )
     }
-    return obj;
+    return obj
   }
 
   public static isBase64(text: string): boolean {
-    const base64Regex =
-      /^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/;
-    return base64Regex.test(text);
+    const base64Regex = /^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/
+    return base64Regex.test(text)
   }
 
   public static getDepth(object: any): number {
     return Object(object) === object
-      ? (object.kind &&
-        object.kind === 'ObjectField' &&
-        !object.name.value.match('^_.')
-        ? 1
-        : 0) + Math.max(-1, ...Object.values(object).map(Utils.getDepth))
-      : 0;
+      ? (object.kind && object.kind === 'ObjectField' && !object.name.value.match('^_.') ? 1 : 0) +
+          Math.max(-1, ...Object.values(object).map(Utils.getDepth))
+      : 0
   }
 
   public static filterWhereQuery(object: any): any[] {
-    const result: any[] = [];
+    const result: any[] = []
 
     const iterate = (obj: any) => {
       if (!obj) {
-        return;
+        return
       }
       Object.keys(obj).forEach((key) => {
-        const value = obj[key];
+        const value = obj[key]
         if (typeof value === 'object' && value !== null) {
-          iterate(value);
+          iterate(value)
           if (value.kind === 'Argument' && value.name.value === 'where') {
-            result.push(value);
+            result.push(value)
           }
         }
-      });
-    };
+      })
+    }
 
-    iterate(object);
-    return result;
+    iterate(object)
+    return result
   }
 
   public static isQueryNeedCondition(
@@ -119,116 +100,99 @@ export default class Utils {
     relations: string[],
     condition: string[]
   ): [boolean, number] {
-    const result: any[] = [];
-    const resultRelations: any[] = [];
-    let whereHeight: any = null;
-    let response = true;
-    let heightRange = 0;
+    const result: any[] = []
+    const resultRelations: any[] = []
+    let whereHeight: any = null
+    let response = true
+    let heightRange = 0
 
     if (object.kind === 'Field' && models.includes(object.name.value)) {
-      result.push(object);
+      result.push(object)
     }
 
     const extractFieldNeedHeightArgument = (obj: any) => {
       if (!obj) {
-        return;
+        return
       }
       Object.keys(obj).forEach((key) => {
-        const value = obj[key];
+        const value = obj[key]
         if (typeof value === 'object' && value !== null) {
-          extractFieldNeedHeightArgument(value);
+          extractFieldNeedHeightArgument(value)
           if (value.kind === 'Field' && relations.includes(value.name.value)) {
-            result.push(value);
-          } else if (
-            value.kind === 'ObjectField' &&
-            relations.includes(value.name.value)
-          ) {
-            resultRelations.push(value);
+            result.push(value)
+          } else if (value.kind === 'ObjectField' && relations.includes(value.name.value)) {
+            resultRelations.push(value)
           }
         }
-      });
-    };
+      })
+    }
 
     const findConditionInObj = (res: any): any => {
       if (!res) {
-        return;
+        return
       }
       Object.keys(res).forEach((key) => {
-        const value = res[key];
+        const value = res[key]
         if (typeof value === 'object' && value !== null) {
-          findConditionInObj(value);
-          if (
-            value.kind === 'ObjectField' &&
-            condition.includes(value.name.value)
-          ) {
-            whereHeight = value;
+          findConditionInObj(value)
+          if (value.kind === 'ObjectField' && condition.includes(value.name.value)) {
+            whereHeight = value
           }
         }
-      });
-    };
+      })
+    }
 
     const checkCondition = (res: any) => {
-      findConditionInObj(res);
+      findConditionInObj(res)
       if (whereHeight) {
-        const isEqual = whereHeight.value.fields.find(
-          (field: any) => field.name.value === '_eq'
-        );
-        if (isEqual) return true;
+        const isEqual = whereHeight.value.fields.find((field: any) => field.name.value === '_eq')
+        if (isEqual) return true
 
         const upperLimit = whereHeight.value.fields.find(
-          (field: any) =>
-            field.name.value === '_lt' || field.name.value === '_lte'
-        );
+          (field: any) => field.name.value === '_lt' || field.name.value === '_lte'
+        )
         const lowerLimit = whereHeight.value.fields.find(
-          (field: any) =>
-            field.name.value === '_gt' || field.name.value === '_gte'
-        );
-        const isRange = lowerLimit && upperLimit;
+          (field: any) => field.name.value === '_gt' || field.name.value === '_gte'
+        )
+        const isRange = lowerLimit && upperLimit
         if (isRange) {
-          heightRange = Math.max(
-            Math.abs(
-              Number(upperLimit.value.value) - Number(lowerLimit.value.value)
-            ),
-            heightRange
-          );
-          return true;
+          heightRange = Math.max(Math.abs(Number(upperLimit.value.value) - Number(lowerLimit.value.value)), heightRange)
+          return true
         }
       }
-      return false;
-    };
+      return false
+    }
 
-    extractFieldNeedHeightArgument(object);
+    extractFieldNeedHeightArgument(object)
     if (result.length > 0) {
       response = result.some((res: any) => {
-        const where = res.arguments.find(
-          (arg: any) => arg.name.value === 'where'
-        );
-        if (where) return checkCondition(where);
-        return false;
-      });
+        const where = res.arguments.find((arg: any) => arg.name.value === 'where')
+        if (where) return checkCondition(where)
+        return false
+      })
     }
     if (resultRelations.length > 0) {
-      response = resultRelations.some(checkCondition);
+      response = resultRelations.some(checkCondition)
     }
 
-    return [response, heightRange];
+    return [response, heightRange]
   }
 
   public static compareVersion(version1: string, version2: string) {
-    const semver = new SemVer(version1);
-    return semver.compare(version2);
+    const semver = new SemVer(version1)
+    return semver.compare(version2)
   }
 
   public static getBigIntIfNotNull(value: any) {
     if (value === null || value === undefined) {
-      return null;
+      return null
     }
     try {
-      const result = BigInt(value);
-      return result;
+      const result = BigInt(value)
+      return result
     } catch (error) {
-      console.error(error);
-      throw error;
+      console.error(error)
+      throw error
     }
   }
 }
@@ -236,64 +200,63 @@ export default class Utils {
 export function mapParticipantType(input: string | number): string {
   if (typeof input === 'number') {
     const typeMap: Record<number, string> = {
-      0: "UNSPECIFIED",
-      1: "ISSUER",
-      2: "VERIFIER",
-      3: "ISSUER_GRANTOR",
-      4: "VERIFIER_GRANTOR",
-      5: "ECOSYSTEM",
-      6: "HOLDER",
-    };
-    return typeMap[input] || "UNSPECIFIED";
+      0: 'UNSPECIFIED',
+      1: 'ISSUER',
+      2: 'VERIFIER',
+      3: 'ISSUER_GRANTOR',
+      4: 'VERIFIER_GRANTOR',
+      5: 'ECOSYSTEM',
+      6: 'HOLDER',
+    }
+    return typeMap[input] || 'UNSPECIFIED'
   }
 
-  const upperInput = String(input).toUpperCase();
-  
+  const upperInput = String(input).toUpperCase()
+
   switch (upperInput) {
-    case "PARTICIPANT_TYPE_ISSUER":
-    case "1":
-    case "ISSUER":
-      return "ISSUER";
-    case "PARTICIPANT_TYPE_VERIFIER":
-    case "2":
-    case "VERIFIER":
-      return "VERIFIER";
-    case "PARTICIPANT_TYPE_ECOSYSTEM":
-    case "5":
-    case "ECOSYSTEM":
-      return "ECOSYSTEM";
-    case "PARTICIPANT_TYPE_HOLDER":
-    case "6":
-    case "HOLDER":
-      return "HOLDER";
-    case "PARTICIPANT_TYPE_ISSUER_GRANTOR":
-    case "3":
-    case "ISSUER_GRANTOR":
-      return "ISSUER_GRANTOR";
-    case "PARTICIPANT_TYPE_VERIFIER_GRANTOR":
-    case "4":
-    case "VERIFIER_GRANTOR":
-      return "VERIFIER_GRANTOR";
-    case "PARTICIPANT_TYPE_UNSPECIFIED":
-    case "0":
-    case "UNSPECIFIED":
-      return "UNSPECIFIED";
+    case 'PARTICIPANT_TYPE_ISSUER':
+    case '1':
+    case 'ISSUER':
+      return 'ISSUER'
+    case 'PARTICIPANT_TYPE_VERIFIER':
+    case '2':
+    case 'VERIFIER':
+      return 'VERIFIER'
+    case 'PARTICIPANT_TYPE_ECOSYSTEM':
+    case '5':
+    case 'ECOSYSTEM':
+      return 'ECOSYSTEM'
+    case 'PARTICIPANT_TYPE_HOLDER':
+    case '6':
+    case 'HOLDER':
+      return 'HOLDER'
+    case 'PARTICIPANT_TYPE_ISSUER_GRANTOR':
+    case '3':
+    case 'ISSUER_GRANTOR':
+      return 'ISSUER_GRANTOR'
+    case 'PARTICIPANT_TYPE_VERIFIER_GRANTOR':
+    case '4':
+    case 'VERIFIER_GRANTOR':
+      return 'VERIFIER_GRANTOR'
+    case 'PARTICIPANT_TYPE_UNSPECIFIED':
+    case '0':
+    case 'UNSPECIFIED':
+      return 'UNSPECIFIED'
     default:
-      return "UNSPECIFIED";
+      return 'UNSPECIFIED'
   }
 }
 
-
 export function normalizeParticipantEmptyStringsToNull(obj: Record<string, any>): Record<string, any> {
-  if (!obj || typeof obj !== "object") return obj;
+  if (!obj || typeof obj !== 'object') return obj
 
-  const PARTICIPANT_API_EMPTY_STRING_TO_NULL_KEYS: string[] = [];
+  const PARTICIPANT_API_EMPTY_STRING_TO_NULL_KEYS: string[] = []
 
-  const normalized: Record<string, any> = { ...obj };
+  const normalized: Record<string, any> = { ...obj }
   for (const key of PARTICIPANT_API_EMPTY_STRING_TO_NULL_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(normalized, key) && normalized[key] === "") {
-      normalized[key] = null;
+    if (Object.hasOwn(normalized, key) && normalized[key] === '') {
+      normalized[key] = null
     }
   }
-  return normalized;
+  return normalized
 }

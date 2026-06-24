@@ -1,218 +1,206 @@
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs')
+const path = require('path')
 
 // Recursively collect all .js files under a directory
 function findJsFiles(dir, files = []) {
-  const items = fs.readdirSync(dir);
+  const items = fs.readdirSync(dir)
   for (const item of items) {
-    const fullPath = path.join(dir, item);
-    const stat = fs.statSync(fullPath);
+    const fullPath = path.join(dir, item)
+    const stat = fs.statSync(fullPath)
     if (stat.isDirectory()) {
-      findJsFiles(fullPath, files);
-    } else if (item.endsWith(".js")) {
-      files.push(fullPath);
+      findJsFiles(fullPath, files)
+    } else if (item.endsWith('.js')) {
+      files.push(fullPath)
     }
   }
-  return files;
+  return files
 }
 
 // Check if path is a directory
 function isDirectory(basePath, importPath) {
   try {
-    const fullPath = path.resolve(basePath, importPath);
-    return fs.statSync(fullPath).isDirectory();
+    const fullPath = path.resolve(basePath, importPath)
+    return fs.statSync(fullPath).isDirectory()
   } catch {
-    return false;
+    return false
   }
 }
 
 // Determine if an import path needs a .js or /index.js extension
 function needsJsExtension(importPath) {
-  if (importPath === "@cosmjs/cosmwasm-stargate/build/modules") {
-    return "index";
+  if (importPath === '@cosmjs/cosmwasm-stargate/build/modules') {
+    return 'index'
   }
 
   const cosmjsPaths = [
-    "@cosmjs/tendermint-rpc/build/jsonrpc",
-    "@cosmjs/tendermint-rpc/build/rpcclients",
-    "@cosmjs/tendermint-rpc/build/tendermint34",
-    "@cosmjs/tendermint-rpc/build/tendermint37",
-    "@cosmjs/tendermint-rpc/build/types",
-    "@cosmjs/tendermint-rpc/build/addresses",
-    "@cosmjs/tendermint-rpc/build/dates",
-    "@cosmjs/tendermint-rpc/build/tendermintclient",
-  ];
-  if (cosmjsPaths.includes(importPath)) return "file";
+    '@cosmjs/tendermint-rpc/build/jsonrpc',
+    '@cosmjs/tendermint-rpc/build/rpcclients',
+    '@cosmjs/tendermint-rpc/build/tendermint34',
+    '@cosmjs/tendermint-rpc/build/tendermint37',
+    '@cosmjs/tendermint-rpc/build/types',
+    '@cosmjs/tendermint-rpc/build/addresses',
+    '@cosmjs/tendermint-rpc/build/dates',
+    '@cosmjs/tendermint-rpc/build/tendermintclient',
+  ]
+  if (cosmjsPaths.includes(importPath)) return 'file'
 
-  if (
-    importPath.startsWith("stream-json/") ||
-    importPath.startsWith("stream-chain/")
-  ) {
-    return "file";
+  if (importPath.startsWith('stream-json/') || importPath.startsWith('stream-chain/')) {
+    return 'file'
   }
 
-  if (importPath === "protobufjs/minimal") {
-    return "file";
+  if (importPath === 'protobufjs/minimal') {
+    return 'file'
   }
-  return false;
+  return false
 }
 
 function normalizeJsExtension(importPath) {
-  return importPath.replace(/(?:\.js)+$/u, ".js");
+  return importPath.replace(/(?:\.js)+$/u, '.js')
 }
 
 function withJsExtension(importPath) {
-  return normalizeJsExtension(`${importPath}.js`);
+  return normalizeJsExtension(`${importPath}.js`)
 }
 
 function normalizeVeranaTypesImport(match, importPath) {
-  if (!importPath.startsWith("@verana-labs/verana-types/")) {
-    return null;
+  if (!importPath.startsWith('@verana-labs/verana-types/')) {
+    return null
   }
 
-  const normalizedImportPath = importPath.replace(/(?:\.js)+$/u, "");
+  const normalizedImportPath = importPath.replace(/(?:\.js)+$/u, '')
   if (normalizedImportPath !== importPath) {
     return {
       match: match.replace(importPath, normalizedImportPath),
       modified: true,
-    };
+    }
   }
 
-  return { match, modified: false };
+  return { match, modified: false }
 }
 
 function normalizeAlreadyJsImport(match, importPath) {
-  if (importPath.endsWith(".json")) {
-    return { match, modified: false };
+  if (importPath.endsWith('.json')) {
+    return { match, modified: false }
   }
 
-  if (importPath.endsWith(".js")) {
-    const normalizedImportPath = normalizeJsExtension(importPath);
+  if (importPath.endsWith('.js')) {
+    const normalizedImportPath = normalizeJsExtension(importPath)
     if (normalizedImportPath !== importPath) {
       return {
         match: match.replace(importPath, normalizedImportPath),
         modified: true,
-      };
+      }
     }
-    return { match, modified: false };
+    return { match, modified: false }
   }
 
-  return null;
+  return null
 }
 
 // Fix imports/exports in a single file
 function fixImportsInFile(filePath) {
   try {
-    let content = fs.readFileSync(filePath, "utf8");
-    let modified = false;
-    const fileDir = path.dirname(filePath);
+    let content = fs.readFileSync(filePath, 'utf8')
+    let modified = false
+    const fileDir = path.dirname(filePath)
 
     // Match both import and export statements
-    const importExportRegex =
-      /\b(import|export)\s+(?:[\s\S]+?\s+from\s+)?['"]([^'"]+)['"]/g;
+    const importExportRegex = /\b(import|export)\s+(?:[\s\S]+?\s+from\s+)?['"]([^'"]+)['"]/g
 
-    const dynamicImportRegex = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+    const dynamicImportRegex = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 
-    content = content.replace(
-      importExportRegex,
-      (match, keyword, importPath) => {
-        const normalizedVeranaTypesImport = normalizeVeranaTypesImport(match, importPath);
-        if (normalizedVeranaTypesImport) {
-          modified = modified || normalizedVeranaTypesImport.modified;
-          return normalizedVeranaTypesImport.match;
-        }
-
-        const normalizedAlreadyJsImport = normalizeAlreadyJsImport(match, importPath);
-        if (normalizedAlreadyJsImport) {
-          modified = modified || normalizedAlreadyJsImport.modified;
-          return normalizedAlreadyJsImport.match;
-        }
-
-        // Handle known packages
-        const jsExtType = needsJsExtension(importPath);
-        if (jsExtType) {
-          modified = true;
-          if (jsExtType === "index") {
-            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
-          }
-          return match.replace(importPath, withJsExtension(importPath));
-        }
-
-        // Handle relative imports (./ or ../)
-        if (importPath.startsWith("./") || importPath.startsWith("../")) {
-          modified = true;
-          if (isDirectory(fileDir, importPath)) {
-            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
-          } else {
-            return match.replace(importPath, withJsExtension(importPath));
-          }
-        }
-        return match; // leave other imports untouched
+    content = content.replace(importExportRegex, (match, keyword, importPath) => {
+      const normalizedVeranaTypesImport = normalizeVeranaTypesImport(match, importPath)
+      if (normalizedVeranaTypesImport) {
+        modified = modified || normalizedVeranaTypesImport.modified
+        return normalizedVeranaTypesImport.match
       }
-    );
+
+      const normalizedAlreadyJsImport = normalizeAlreadyJsImport(match, importPath)
+      if (normalizedAlreadyJsImport) {
+        modified = modified || normalizedAlreadyJsImport.modified
+        return normalizedAlreadyJsImport.match
+      }
+
+      // Handle known packages
+      const jsExtType = needsJsExtension(importPath)
+      if (jsExtType) {
+        modified = true
+        if (jsExtType === 'index') {
+          return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`))
+        }
+        return match.replace(importPath, withJsExtension(importPath))
+      }
+
+      // Handle relative imports (./ or ../)
+      if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        modified = true
+        if (isDirectory(fileDir, importPath)) {
+          return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`))
+        } else {
+          return match.replace(importPath, withJsExtension(importPath))
+        }
+      }
+      return match // leave other imports untouched
+    })
 
     // Fix dynamic imports
-    content = content.replace(
-      dynamicImportRegex,
-      (match, importPath) => {
-        const normalizedVeranaTypesImport = normalizeVeranaTypesImport(match, importPath);
-        if (normalizedVeranaTypesImport) {
-          modified = modified || normalizedVeranaTypesImport.modified;
-          return normalizedVeranaTypesImport.match;
-        }
-
-        const normalizedAlreadyJsImport = normalizeAlreadyJsImport(match, importPath);
-        if (normalizedAlreadyJsImport) {
-          modified = modified || normalizedAlreadyJsImport.modified;
-          return normalizedAlreadyJsImport.match;
-        }
-
-        // Handle known packages
-        const jsExtType = needsJsExtension(importPath);
-        if (jsExtType) {
-          modified = true;
-          if (jsExtType === "index") {
-            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
-          }
-          return match.replace(importPath, withJsExtension(importPath));
-        }
-
-        // Handle relative imports (./ or ../)
-        if (importPath.startsWith("./") || importPath.startsWith("../")) {
-          modified = true;
-          if (isDirectory(fileDir, importPath)) {
-            return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`));
-          } else {
-            return match.replace(importPath, withJsExtension(importPath));
-          }
-        }
-        return match; // leave other imports untouched
+    content = content.replace(dynamicImportRegex, (match, importPath) => {
+      const normalizedVeranaTypesImport = normalizeVeranaTypesImport(match, importPath)
+      if (normalizedVeranaTypesImport) {
+        modified = modified || normalizedVeranaTypesImport.modified
+        return normalizedVeranaTypesImport.match
       }
-    );
+
+      const normalizedAlreadyJsImport = normalizeAlreadyJsImport(match, importPath)
+      if (normalizedAlreadyJsImport) {
+        modified = modified || normalizedAlreadyJsImport.modified
+        return normalizedAlreadyJsImport.match
+      }
+
+      // Handle known packages
+      const jsExtType = needsJsExtension(importPath)
+      if (jsExtType) {
+        modified = true
+        if (jsExtType === 'index') {
+          return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`))
+        }
+        return match.replace(importPath, withJsExtension(importPath))
+      }
+
+      // Handle relative imports (./ or ../)
+      if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        modified = true
+        if (isDirectory(fileDir, importPath)) {
+          return match.replace(importPath, normalizeJsExtension(`${importPath}/index.js`))
+        } else {
+          return match.replace(importPath, withJsExtension(importPath))
+        }
+      }
+      return match // leave other imports untouched
+    })
 
     if (modified) {
-      fs.writeFileSync(filePath, content, "utf8");
-      console.log(`Fixed imports in: ${filePath}`);
+      fs.writeFileSync(filePath, content, 'utf8')
+      console.log(`Fixed imports in: ${filePath}`)
     }
   } catch (err) {
-    console.error(`Error processing ${filePath}:`, err.message);
+    console.error(`Error processing ${filePath}:`, err.message)
   }
 }
 
 // --- Main execution ---
-console.log(
-  "🔧 Fixing missing .js or /index.js extensions in compiled files..."
-);
-const distDir = path.resolve(__dirname, "..", "..", "dist");
+console.log('🔧 Fixing missing .js or /index.js extensions in compiled files...')
+const distDir = path.resolve(__dirname, '..', '..', 'dist')
 
 if (!fs.existsSync(distDir)) {
-  console.error("❌ dist directory not found! Please run your build first.");
-  process.exit(1);
+  console.error('❌ dist directory not found! Please run your build first.')
+  process.exit(1)
 }
 
-const jsFiles = findJsFiles(distDir);
-console.log(`📁 Found ${jsFiles.length} JavaScript files to process`);
+const jsFiles = findJsFiles(distDir)
+console.log(`📁 Found ${jsFiles.length} JavaScript files to process`)
 
-jsFiles.forEach(fixImportsInFile);
+jsFiles.forEach(fixImportsInFile)
 
-console.log("✅ All files processed. Try running pnpm start again.");
+console.log('✅ All files processed. Try running pnpm start again.')

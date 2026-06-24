@@ -1,29 +1,25 @@
-import { Knex } from 'knex';
-import { PowerEvent } from '../models';
+import { Knex } from 'knex'
+import { PowerEvent } from '../models'
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('power_event', (table: any) => {
-    table.increments();
-    table.integer('tx_id').index().notNullable();
-    table.integer('height').index().notNullable();
-    table.integer('validator_src_id').index();
-    table.integer('validator_dst_id').index();
+    table.increments()
+    table.integer('tx_id').index().notNullable()
+    table.integer('height').index().notNullable()
+    table.integer('validator_src_id').index()
+    table.integer('validator_dst_id').index()
     table
-      .enum('type', [
-        PowerEvent.TYPES.DELEGATE,
-        PowerEvent.TYPES.REDELEGATE,
-        PowerEvent.TYPES.UNBOND,
-      ])
+      .enum('type', [PowerEvent.TYPES.DELEGATE, PowerEvent.TYPES.REDELEGATE, PowerEvent.TYPES.UNBOND])
       .index()
-      .notNullable();
-    table.decimal('amount', 30, 0).notNullable();
-    table.timestamp('time').notNullable();
-    table.foreign('tx_id').references('transaction.id');
-    table.foreign('validator_src_id').references('validator.id');
-    table.foreign('validator_dst_id').references('validator.id');
-  });
+      .notNullable()
+    table.decimal('amount', 30, 0).notNullable()
+    table.timestamp('time').notNullable()
+    table.foreign('tx_id').references('transaction.id')
+    table.foreign('validator_src_id').references('validator.id')
+    table.foreign('validator_dst_id').references('validator.id')
+  })
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropTable('power_event');
+  await knex.schema.dropTable('power_event')
 }

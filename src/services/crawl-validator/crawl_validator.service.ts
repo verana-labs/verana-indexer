@@ -1,45 +1,46 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-await-in-loop */
 /* eslint-disable import/no-extraneous-dependencies */
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import { ServiceBroker } from 'moleculer';
-import Long from 'long';
-import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
-import { cosmos } from '@aura-nw/aurajs';
-import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
+
+import { cosmos } from '@aura-nw/aurajs'
 import {
   QueryDelegationRequest,
   QueryDelegationResponse,
-} from '@aura-nw/aurajs/types/codegen/cosmos/staking/v1beta1/query';
-import { fromBase64, toHex } from '@cosmjs/encoding';
-import { Validator } from '../../models/validator';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import knex from '../../common/utils/db_connection';
-import config from '../../config.json' with { type: 'json' };
+} from '@aura-nw/aurajs/types/codegen/cosmos/staking/v1beta1/query'
+import { fromBase64, toHex } from '@cosmjs/encoding'
+import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc'
+import { HttpBatchClient } from '@cosmjs/tendermint-rpc'
+import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import Long from 'long'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
 import {
   ABCI_QUERY_PATH,
   BULL_JOB_NAME,
   getHttpBatchClient,
   getLcdClient,
-  IProviderJSClientFactory,
   IPagination,
+  IProviderJSClientFactory,
   SERVICE,
-} from '../../common';
-import { BlockCheckpoint, EventAttribute } from '../../models';
+} from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, EventAttribute } from '../../models'
+import { Validator } from '../../models/validator'
 
 @Service({
   name: SERVICE.V1.CrawlValidatorService.key,
   version: 1,
 })
 export default class CrawlValidatorService extends BullableService {
-  private _lcdClient!: IProviderJSClientFactory;
+  private _lcdClient!: IProviderJSClientFactory
 
-  private _httpBatchClient: HttpBatchClient;
+  private _httpBatchClient: HttpBatchClient
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
-    this._httpBatchClient = getHttpBatchClient();
+    super(broker)
+    this._httpBatchClient = getHttpBatchClient()
   }
 
   @QueueHandler({
@@ -48,19 +49,19 @@ export default class CrawlValidatorService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async handleCrawlAllValidator(_payload: object): Promise<void> {
-    const lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient()
     if (!lcdClient?.provider) {
-      this.logger.warn('LCD client not available, skipping validator crawl. Will retry on next job execution.');
-      return;
+      this.logger.warn('LCD client not available, skipping validator crawl. Will retry on next job execution.')
+      return
     }
-    this._lcdClient = lcdClient;
+    this._lcdClient = lcdClient
 
-    const [startHeight, endHeight, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(BULL_JOB_NAME.CRAWL_VALIDATOR, [
-        BULL_JOB_NAME.HANDLE_TRANSACTION,
-      ]);
-    this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`);
-    if (startHeight >= endHeight) return;
+    const [startHeight, endHeight, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.CRAWL_VALIDATOR,
+      [BULL_JOB_NAME.HANDLE_TRANSACTION]
+    )
+    this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`)
+    if (startHeight >= endHeight) return
 
     const resultTx = await EventAttribute.query()
       .whereIn('key', [
@@ -73,18 +74,18 @@ export default class CrawlValidatorService extends BullableService {
       .andWhere('block_height', '<=', endHeight)
       .select('value')
       .limit(1)
-      .offset(0);
-    let updateValidators: Validator[];
+      .offset(0)
+    let updateValidators: Validator[]
 
     if (resultTx.length > 0) {
-      updateValidators = await this.getFullInfoValidators();
+      updateValidators = await this.getFullInfoValidators()
     }
 
     await knex.transaction(async (trx) => {
       if (resultTx.length > 0 && updateValidators.length > 0) {
-        const chunkSize = config.crawlValidator.chunkSize || 5000;
+        const chunkSize = config.crawlValidator.chunkSize || 5000
         for (let i = 0; i < updateValidators.length; i += chunkSize) {
-          const chunk = updateValidators.slice(i, i + chunkSize);
+          const chunk = updateValidators.slice(i, i + chunkSize)
           await Validator.query()
             .insert(chunk)
             .onConflict('operator_address')
@@ -92,129 +93,115 @@ export default class CrawlValidatorService extends BullableService {
             .returning('id')
             .transacting(trx)
             .catch((error) => {
-              this.logger.error('Error insert or update validators');
-              this.logger.error(error);
-            });
+              this.logger.error('Error insert or update validators')
+              this.logger.error(error)
+            })
         }
       }
 
-      updateBlockCheckpoint.height = endHeight;
+      updateBlockCheckpoint.height = endHeight
       await BlockCheckpoint.query()
         .insert(updateBlockCheckpoint)
         .onConflict('job_name')
         .merge()
         .returning('id')
-        .transacting(trx);
-    });
-    this.logger.info('Crawl validator done');
+        .transacting(trx)
+    })
+    this.logger.info('Crawl validator done')
   }
 
   private async getFullInfoValidators(): Promise<Validator[]> {
-    let updateValidators: Validator[] = [];
-    const validators: any[] = [];
+    let updateValidators: Validator[] = []
+    const validators: any[] = []
 
-    let resultCallApi;
-    let done = false;
+    let resultCallApi: any
+    let done = false
     const pagination: IPagination = {
       limit: Long.fromInt(config.crawlValidator.queryPageLimit),
-    };
+    }
 
     while (!done) {
-      resultCallApi =
-        await this._lcdClient.provider.cosmos.staking.v1beta1.validators({
-          pagination,
-        });
+      resultCallApi = await this._lcdClient.provider.cosmos.staking.v1beta1.validators({
+        pagination,
+      })
 
-      validators.push(...resultCallApi.validators);
+      validators.push(...resultCallApi.validators)
       if (resultCallApi.pagination.next_key === null) {
-        done = true;
+        done = true
       } else {
-        pagination.key = fromBase64(resultCallApi.pagination.next_key);
+        pagination.key = fromBase64(resultCallApi.pagination.next_key)
       }
     }
 
-    let validatorInDB: Validator[] = [];
+    let validatorInDB: Validator[] = []
     await knex.transaction(async (trx) => {
       validatorInDB = await Validator.query()
         .select('*')
         .whereNot('status', Validator.STATUS.UNRECOGNIZED)
         .forUpdate()
-        .transacting(trx);
-    });
+        .transacting(trx)
+    })
 
-    const offchainMapped: Map<string, boolean> = new Map();
+    const offchainMapped: Map<string, boolean> = new Map()
     await Promise.all(
       validators.map(async (validator) => {
         const foundValidator = validatorInDB.find(
-          (val: Validator) =>
-            val.operator_address === validator.operator_address
-        );
+          (val: Validator) => val.operator_address === validator.operator_address
+        )
 
-        let validatorEntity: Validator;
+        let validatorEntity: Validator
         if (!foundValidator) {
-          validatorEntity = Validator.createNewValidator(validator);
+          validatorEntity = Validator.createNewValidator(validator)
         } else {
           // mark this offchain validator is mapped with onchain
-          offchainMapped.set(validator.operator_address, true);
+          offchainMapped.set(validator.operator_address, true)
 
-          validatorEntity = foundValidator;
-          validatorEntity.jailed = validator.jailed;
-          validatorEntity.status = validator.status;
-          validatorEntity.tokens = validator.tokens;
-          validatorEntity.delegator_shares = validator.delegator_shares;
-          validatorEntity.description = validator.description;
-          validatorEntity.unbonding_height = Number.parseInt(
-            validator.unbonding_height,
-            10
-          );
-          validatorEntity.unbonding_time = validator.unbonding_time;
-          validatorEntity.commission = validator.commission;
-          validatorEntity.jailed_until = (
-            foundValidator.jailed_until as unknown as Date
-          ).toISOString();
+          validatorEntity = foundValidator
+          validatorEntity.jailed = validator.jailed
+          validatorEntity.status = validator.status
+          validatorEntity.tokens = validator.tokens
+          validatorEntity.delegator_shares = validator.delegator_shares
+          validatorEntity.description = validator.description
+          validatorEntity.unbonding_height = Number.parseInt(validator.unbonding_height, 10)
+          validatorEntity.unbonding_time = validator.unbonding_time
+          validatorEntity.commission = validator.commission
+          validatorEntity.jailed_until = (foundValidator.jailed_until as unknown as Date).toISOString()
         }
 
-        updateValidators.push(validatorEntity);
+        updateValidators.push(validatorEntity)
       })
-    );
+    )
 
-    updateValidators = await this.loadCustomInfo(updateValidators);
+    updateValidators = await this.loadCustomInfo(updateValidators)
 
     // loop all validator not found onchain, update status is UNRECOGNIZED
     validatorInDB
       .filter((val: any) => !offchainMapped.get(val.operator_address))
       .forEach(async (validatorNotOnchain: any) => {
-        this.logger.debug(
-          'Account not found onchain: ',
-          validatorNotOnchain.operator_address
-        );
-        validatorNotOnchain.status = Validator.STATUS.UNRECOGNIZED;
-        validatorNotOnchain.tokens = 0;
-        validatorNotOnchain.delegator_shares = 0;
-        validatorNotOnchain.percent_voting_power = 0;
+        this.logger.debug('Account not found onchain: ', validatorNotOnchain.operator_address)
+        validatorNotOnchain.status = Validator.STATUS.UNRECOGNIZED
+        validatorNotOnchain.tokens = 0
+        validatorNotOnchain.delegator_shares = 0
+        validatorNotOnchain.percent_voting_power = 0
 
-        validatorNotOnchain.jailed_until =
-          validatorNotOnchain.jailed_until.toISOString();
-        validatorNotOnchain.unbonding_time =
-          validatorNotOnchain.unbonding_time.toISOString();
-        updateValidators.push(validatorNotOnchain);
-      });
-    return updateValidators;
+        validatorNotOnchain.jailed_until = validatorNotOnchain.jailed_until.toISOString()
+        validatorNotOnchain.unbonding_time = validatorNotOnchain.unbonding_time.toISOString()
+        updateValidators.push(validatorNotOnchain)
+      })
+    return updateValidators
   }
 
   private async loadCustomInfo(validators: Validator[]): Promise<Validator[]> {
-    const batchQueries: any[] = [];
+    const batchQueries: any[] = []
 
-    const pool = await this._lcdClient.provider.cosmos.staking.v1beta1.pool();
+    const pool = await this._lcdClient.provider.cosmos.staking.v1beta1.pool()
 
     validators.forEach((validator: Validator) => {
       const request: QueryDelegationRequest = {
         delegatorAddr: validator.account_address,
         validatorAddr: validator.operator_address,
-      };
-      const data = toHex(
-        cosmos.staking.v1beta1.QueryDelegationRequest.encode(request).finish()
-      );
+      }
+      const data = toHex(cosmos.staking.v1beta1.QueryDelegationRequest.encode(request).finish())
 
       batchQueries.push(
         this._httpBatchClient.execute(
@@ -223,36 +210,27 @@ export default class CrawlValidatorService extends BullableService {
             data,
           })
         )
-      );
-    });
+      )
+    })
 
-    const result: JsonRpcSuccessResponse[] = await Promise.all(batchQueries);
-    const delegations: (QueryDelegationResponse | null)[] = result.map(
-      (res: JsonRpcSuccessResponse) =>
-        res.result.response.value
-          ? cosmos.staking.v1beta1.QueryDelegationResponse.decode(
-            fromBase64(res.result.response.value)
-          )
-          : null
-    );
+    const result: JsonRpcSuccessResponse[] = await Promise.all(batchQueries)
+    const delegations: (QueryDelegationResponse | null)[] = result.map((res: JsonRpcSuccessResponse) =>
+      res.result.response.value
+        ? cosmos.staking.v1beta1.QueryDelegationResponse.decode(fromBase64(res.result.response.value))
+        : null
+    )
 
     validators.forEach((val: Validator) => {
       const delegation = delegations.find(
-        (dele) =>
-          dele?.delegationResponse?.delegation?.validatorAddress ===
-          val.operator_address
-      );
+        (dele) => dele?.delegationResponse?.delegation?.validatorAddress === val.operator_address
+      )
 
-      val.self_delegation_balance =
-        delegation?.delegationResponse?.balance?.amount ?? '0';
+      val.self_delegation_balance = delegation?.delegationResponse?.balance?.amount ?? '0'
       val.percent_voting_power =
-        Number(
-          (BigInt(val.tokens) * BigInt(100000000)) /
-          BigInt(pool.pool.bonded_tokens)
-        ) / 1000000;
-    });
+        Number((BigInt(val.tokens) * BigInt(100000000)) / BigInt(pool.pool.bonded_tokens)) / 1000000
+    })
 
-    return validators;
+    return validators
   }
 
   public async _start() {
@@ -270,7 +248,7 @@ export default class CrawlValidatorService extends BullableService {
           pattern: config.crawlValidator.patternCrawl ?? undefined,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

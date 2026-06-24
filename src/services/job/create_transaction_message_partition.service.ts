@@ -1,11 +1,11 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import BigNumber from 'bignumber.js';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import knex from '../../common/utils/db_connection';
-import { TransactionMessage } from '../../models';
-import config from '../../config.json' with { type: 'json' };
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import BigNumber from 'bignumber.js'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { TransactionMessage } from '../../models'
 
 @Service({
   name: SERVICE.V1.JobService.CreateTransactionMessagePartition.key,
@@ -13,7 +13,7 @@ import config from '../../config.json' with { type: 'json' };
 })
 export default class CreateTransactionMessagePartitionJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   /**
@@ -21,12 +21,10 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
    * partition exist then do nothing, partition not exist then return partition info that need to be created
    * @param latestTransaction
    */
-  public async createPartitionName(
-    latestTransactionMessage: TransactionMessage | undefined
-  ): Promise<{
-    fromTransactionMessageId: string;
-    toTransactionMessageId: string;
-    partitionName: string;
+  public async createPartitionName(latestTransactionMessage: TransactionMessage | undefined): Promise<{
+    fromTransactionMessageId: string
+    toTransactionMessageId: string
+    partitionName: string
   } | null> {
     if (
       !latestTransactionMessage ||
@@ -34,24 +32,18 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
         .mod(config.migrationTransactionMessageToPartition.step)
         .lt(config.migrationTransactionMessageToPartition.step / 2)
     )
-      return null;
+      return null
 
     // Calculate current partition step then add 1 step for feature partition creation
     const stepMultiple =
       Math.floor(
-        BigNumber(latestTransactionMessage.id)
-          .div(config.migrationTransactionMessageToPartition.step)
-          .toNumber()
-      ) + 1;
+        BigNumber(latestTransactionMessage.id).div(config.migrationTransactionMessageToPartition.step).toNumber()
+      ) + 1
 
     // Build partition name
-    const fromTxMsgId = BigNumber(
-      config.migrationTransactionMessageToPartition.step
-    ).multipliedBy(stepMultiple);
-    const toTxMsgId = fromTxMsgId.plus(
-      config.migrationTransactionMessageToPartition.step
-    );
-    const partitionName = `transaction_message_partition_${fromTxMsgId.toString()}_${toTxMsgId.toString()}`;
+    const fromTxMsgId = BigNumber(config.migrationTransactionMessageToPartition.step).multipliedBy(stepMultiple)
+    const toTxMsgId = fromTxMsgId.plus(config.migrationTransactionMessageToPartition.step)
+    const partitionName = `transaction_message_partition_${fromTxMsgId.toString()}_${toTxMsgId.toString()}`
 
     // Check partition exist or not
     const existPartition = await knex.raw(`
@@ -62,15 +54,15 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
       JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
       JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
       WHERE child.relname = '${partitionName}';
-    `);
+    `)
 
-    if (existPartition.rows.length > 0) return null;
+    if (existPartition.rows.length > 0) return null
 
     return {
       fromTransactionMessageId: fromTxMsgId.toString(),
       toTransactionMessageId: toTxMsgId.toString(),
       partitionName,
-    };
+    }
   }
 
   /**
@@ -78,9 +70,9 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
    * @param partitionInfo
    */
   public async createPartitionByPartitionInfo(partitionInfo: {
-    fromTransactionMessageId: string;
-    toTransactionMessageId: string;
-    partitionName: string;
+    fromTransactionMessageId: string
+    toTransactionMessageId: string
+    partitionName: string
   }): Promise<void> {
     await knex.transaction(async (trx) => {
       await knex
@@ -90,7 +82,7 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
             (LIKE ${config.jobCheckNeedCreateTransactionMessagePartition.templateTable} INCLUDING ALL EXCLUDING CONSTRAINTS)
         `
         )
-        .transacting(trx);
+        .transacting(trx)
       await knex
         .raw(
           `
@@ -98,8 +90,8 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
             FOR VALUES FROM (${partitionInfo.fromTransactionMessageId}) to (${partitionInfo.toTransactionMessageId})
         `
         )
-        .transacting(trx);
-    });
+        .transacting(trx)
+    })
   }
 
   /**
@@ -112,22 +104,17 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
     jobName: BULL_JOB_NAME.JOB_CREATE_TRANSACTION_MESSAGE_PARTITION,
   })
   async jobCreateTransactionMessagePartition(): Promise<boolean> {
-    const latestTransactionMessage = await TransactionMessage.query()
-      .limit(1)
-      .orderBy('id', 'DESC')
-      .first();
-    const partitionInfo = await this.createPartitionName(
-      latestTransactionMessage
-    );
+    const latestTransactionMessage = await TransactionMessage.query().limit(1).orderBy('id', 'DESC').first()
+    const partitionInfo = await this.createPartitionName(latestTransactionMessage)
 
     if (!partitionInfo) {
-      this.logger.info('Dont need to create partition');
-      return false;
+      this.logger.info('Dont need to create partition')
+      return false
     }
 
-    this.logger.info('Create partition on table', partitionInfo);
-    await this.createPartitionByPartitionInfo(partitionInfo);
-    return true;
+    this.logger.info('Create partition on table', partitionInfo)
+    await this.createPartitionByPartitionInfo(partitionInfo)
+    return true
   }
 
   public async _start(): Promise<void> {
@@ -141,12 +128,10 @@ export default class CreateTransactionMessagePartitionJob extends BullableServic
           count: 3,
         },
         repeat: {
-          every:
-            config.jobCheckNeedCreateTransactionMessagePartition
-              .millisecondCrawl,
+          every: config.jobCheckNeedCreateTransactionMessagePartition.millisecondCrawl,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

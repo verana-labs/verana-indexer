@@ -1,12 +1,12 @@
-import BaseModel from './base';
+import BaseModel from './base'
 
 export class Checkpoint extends BaseModel {
-  job_name!: string;
+  job_name!: string
 
-  data!: any;
+  data!: any
 
   static get tableName() {
-    return 'checkpoint';
+    return 'checkpoint'
   }
 
   static get jsonSchema() {
@@ -16,6 +16,6 @@ export class Checkpoint extends BaseModel {
       properties: {
         job_name: { type: 'string' },
       },
-    };
+    }
   }
 }

@@ -1,28 +1,28 @@
-import { AfterAll, BeforeAll, BeforeEach, Describe, Test } from '@jest-decorated/core';
-import { ServiceBroker } from 'moleculer';
-import knex from '../../../../src/common/utils/db_connection';
-import CrawlValidatorService from '../../../../src/services/crawl-validator/crawl_validator.service';
-import { BlockCheckpoint, Validator } from '../../../../src/models';
-import { BULL_JOB_NAME } from '../../../../src/common';
+import { AfterAll, BeforeAll, BeforeEach, Describe, Test } from '@jest-decorated/core'
+import { ServiceBroker } from 'moleculer'
+import { BULL_JOB_NAME } from '../../../../src/common'
+import knex from '../../../../src/common/utils/db_connection'
+import { BlockCheckpoint, Validator } from '../../../../src/models'
+import CrawlValidatorService from '../../../../src/services/crawl-validator/crawl_validator.service'
 
 @Describe('Test crawl_validator service')
 export default class CrawlValidatorTest {
-  broker = new ServiceBroker({ logger: false });
-  crawlValidatorService!: CrawlValidatorService;
+  broker = new ServiceBroker({ logger: false })
+  crawlValidatorService!: CrawlValidatorService
 
   @BeforeAll()
   async boot() {
-    await this.broker.start();
-    this.crawlValidatorService = this.broker.createService(CrawlValidatorService) as CrawlValidatorService;
+    await this.broker.start()
+    this.crawlValidatorService = this.broker.createService(CrawlValidatorService) as CrawlValidatorService
     // Stop queues so Jest can exit cleanly
     try {
-      this.crawlValidatorService.getQueueManager().stopAll();
+      this.crawlValidatorService.getQueueManager().stopAll()
     } catch {}
   }
 
   @BeforeEach()
   async resetDb() {
-    await knex.raw('TRUNCATE TABLE validator, block_checkpoint RESTART IDENTITY CASCADE;');
+    await knex.raw('TRUNCATE TABLE validator, block_checkpoint RESTART IDENTITY CASCADE;')
 
     // Ensure a checkpoint exists without violating unique/PK constraints
     await BlockCheckpoint.query()
@@ -33,17 +33,17 @@ export default class CrawlValidatorTest {
         })
       )
       .onConflict('job_name')
-      .merge();
+      .merge()
   }
 
   @AfterAll()
   async shutdown() {
     try {
-      this.crawlValidatorService.getQueueManager().stopAll();
+      this.crawlValidatorService.getQueueManager().stopAll()
     } catch {}
-    await knex.raw('TRUNCATE TABLE validator, block_checkpoint RESTART IDENTITY CASCADE;');
-    await this.broker.stop();
-    await knex.destroy();
+    await knex.raw('TRUNCATE TABLE validator, block_checkpoint RESTART IDENTITY CASCADE;')
+    await this.broker.stop()
+    await knex.destroy()
   }
 
   /** Utility: create a fully valid Validator row (all required fields present) */
@@ -83,29 +83,29 @@ export default class CrawlValidatorTest {
       delegators_count: 0,
       delegators_last_height: 0,
       ...partial,
-    } as any);
-    return Validator.query().insert(base);
+    } as any)
+    return Validator.query().insert(base)
   }
 
   @Test('Crawl validator info success')
   async crawlInfo() {
     // Seed one validator row (simulating what the service would write)
-    await this.seedValidator();
+    await this.seedValidator()
 
-    const validators = await Validator.query();
-    expect(validators.length).toBeGreaterThan(0);
+    const validators = await Validator.query()
+    expect(validators.length).toBeGreaterThan(0)
 
     const wanted = validators.find(
-      v =>
+      (v) =>
         v.operator_address === 'auravaloper1phaxpevm5wecex2jyaqty2a4v02qj7qmhyhvcg' ||
         v.operator_address === 'veranavaloper1phaxpevm5wecex2jyaqty2a4v02qj7qmhyhvcg'
-    );
+    )
 
-    expect(wanted).toBeDefined();
+    expect(wanted).toBeDefined()
     // Be tolerant across Aura/Verana. Only assert HRP and non-empty values.
-    expect(wanted!.account_address.startsWith('aura1') || wanted!.account_address.startsWith('verana1')).toBe(true);
-    expect(typeof wanted!.consensus_hex_address).toBe('string');
-    expect(wanted!.consensus_hex_address.length).toBeGreaterThan(0);
+    expect(wanted!.account_address.startsWith('aura1') || wanted!.account_address.startsWith('verana1')).toBe(true)
+    expect(typeof wanted!.consensus_hex_address).toBe('string')
+    expect(wanted!.consensus_hex_address.length).toBeGreaterThan(0)
   }
 
   @Test('Set validator not found onchain is UNRECOGNIZED')
@@ -117,7 +117,7 @@ export default class CrawlValidatorTest {
       consensus_hex_address: 'DEADBEEF',
       account_address: 'aura1notfoundxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       status: 'BOND_STATUS_BONDED',
-    } as any);
+    } as any)
 
     // Upsert the checkpoint again – safe due to onConflict
     await BlockCheckpoint.query()
@@ -128,18 +128,18 @@ export default class CrawlValidatorTest {
         })
       )
       .onConflict('job_name')
-      .merge();
+      .merge()
 
     // Simulate the "not found on-chain" transition
     await Validator.query()
       .patch({ status: 'BOND_STATUS_UNRECOGNIZED' })
-      .where('operator_address', 'auravaloper1notfoundxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+      .where('operator_address', 'auravaloper1notfoundxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
 
     const ghost = await Validator.query().findOne(
       'operator_address',
       'auravaloper1notfoundxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-    );
-    expect(ghost).toBeDefined();
-    expect(ghost!.status).toBe('BOND_STATUS_UNRECOGNIZED');
+    )
+    expect(ghost).toBeDefined()
+    expect(ghost!.status).toBe('BOND_STATUS_UNRECOGNIZED')
   }
 }

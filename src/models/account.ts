@@ -1,56 +1,49 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import { ICoin } from '../common';
-import { AccountVesting } from './account_vesting';
-import BaseModel from './base';
-import { AccountBalance } from './account_balance';
+import { Model } from 'objection'
+import { ICoin } from '../common'
+import { AccountBalance } from './account_balance'
+import { AccountVesting } from './account_vesting'
+import BaseModel from './base'
 
 export interface IBalance extends ICoin {
-  base_denom?: string;
+  base_denom?: string
 }
 
 export class Account extends BaseModel {
-  [relation: string]: any;
+  [relation: string]: any
 
-  id!: number;
+  id!: number
 
-  address!: string;
+  address!: string
 
-  balances!: IBalance[];
+  balances!: IBalance[]
 
-  spendable_balances!: IBalance[];
+  spendable_balances!: IBalance[]
 
-  type!: string;
+  type!: string
 
-  pubkey!: any;
+  pubkey!: any
 
-  account_number!: number;
+  account_number!: number
 
-  sequence!: number;
+  sequence!: number
 
-  evm_address!: string;
+  evm_address!: string
 
-  code_hash!: string;
+  code_hash!: string
 
   static get tableName() {
-    return 'account';
+    return 'account'
   }
 
   static get jsonAttributes() {
-    return ['balances', 'spendable_balances', 'pubkey'];
+    return ['balances', 'spendable_balances', 'pubkey']
   }
 
   static get jsonSchema() {
     return {
       type: 'object',
-      required: [
-        'address',
-        'balances',
-        'spendable_balances',
-        'type',
-        'account_number',
-        'sequence',
-      ],
+      required: ['address', 'balances', 'spendable_balances', 'type', 'account_number', 'sequence'],
       properties: {
         address: { type: 'string' },
         balances: {
@@ -79,7 +72,7 @@ export class Account extends BaseModel {
         account_number: { type: 'number' },
         sequence: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -100,6 +93,6 @@ export class Account extends BaseModel {
           to: 'account_balance.account_id',
         },
       },
-    };
+    }
   }
 }

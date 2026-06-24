@@ -1,15 +1,15 @@
-import fs from "fs";
-import { IncomingMessage, ServerResponse } from "http";
-import path from "path";
+import fs from 'fs'
+import { IncomingMessage, ServerResponse } from 'http'
+import path from 'path'
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { getAbsoluteFSPath as swaggerDistPath } from "swagger-ui-dist";
+import { getAbsoluteFSPath as swaggerDistPath } from 'swagger-ui-dist'
 
-export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json") {
-  const swaggerPath = swaggerDistPath();
+export function swaggerUiComponent(openApiRelativePath = 'docs/api/openapi.json') {
+  const swaggerPath = swaggerDistPath()
 
   return {
     aliases: {
-      "GET /": (_req: IncomingMessage, res: ServerResponse) => {
+      'GET /': (_req: IncomingMessage, res: ServerResponse) => {
         const html = `<!DOCTYPE html>
 <html>
   <head>
@@ -34,109 +34,105 @@ export function swaggerUiComponent(openApiRelativePath = "docs/api/openapi.json"
       };
     </script>
   </body>
-</html>`;
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-        res.end(html);
+</html>`
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+        res.setHeader('Pragma', 'no-cache')
+        res.setHeader('Expires', '0')
+        res.end(html)
       },
-      "GET /favicon.svg": (req: IncomingMessage, res: ServerResponse) => {
-        const localPath = path.join(process.cwd(), "docs", "favicon.svg");
+      'GET /favicon.svg': (req: IncomingMessage, res: ServerResponse) => {
+        const localPath = path.join(process.cwd(), 'docs', 'favicon.svg')
         if (!fs.existsSync(localPath)) {
-          res.statusCode = 404;
-          res.end("Not Found");
-          return;
+          res.statusCode = 404
+          res.end('Not Found')
+          return
         }
-        res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
-        fs.createReadStream(localPath).pipe(res);
+        res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8')
+        fs.createReadStream(localPath).pipe(res)
       },
 
-      "GET :file": (req: IncomingMessage, res: ServerResponse) => {
-        const file = (req.url || "").replace(/^\//, "");
-        const filePath = path.join(swaggerPath, file);
+      'GET :file': (req: IncomingMessage, res: ServerResponse) => {
+        const file = (req.url || '').replace(/^\//, '')
+        const filePath = path.join(swaggerPath, file)
 
         if (!fs.existsSync(filePath)) {
-          res.statusCode = 404;
-          res.end("Not Found");
-          return;
+          res.statusCode = 404
+          res.end('Not Found')
+          return
         }
 
-        const ext = path.extname(file);
-        const type =
-          ext === ".css"
-            ? "text/css"
-            : ext === ".js"
-              ? "application/javascript"
-              : "text/plain";
+        const ext = path.extname(file)
+        const type = ext === '.css' ? 'text/css' : ext === '.js' ? 'application/javascript' : 'text/plain'
 
-        res.setHeader("Content-Type", `${type}; charset=utf-8`);
-        fs.createReadStream(filePath).pipe(res);
+        res.setHeader('Content-Type', `${type}; charset=utf-8`)
+        fs.createReadStream(filePath).pipe(res)
       },
 
-      "GET openapi.json": async function (req: IncomingMessage, res: ServerResponse) {
-        const localPath = path.join(process.cwd(), openApiRelativePath);
+      'GET openapi.json': async function (req: IncomingMessage, res: ServerResponse) {
+        const localPath = path.join(process.cwd(), openApiRelativePath)
 
         const getServerUrl = (): string => {
           if (process.env.API_URL) {
-            return process.env.API_URL;
+            return process.env.API_URL
           }
           if (process.env.SERVER_URL) {
-            return process.env.SERVER_URL;
+            return process.env.SERVER_URL
           }
-          
-          const host = req.headers.host || `localhost:${process.env.PORT || 3001}`;
-          
-          const isSecure = req.headers['x-forwarded-proto'] === 'https' || 
-                          req.headers['x-forwarded-ssl'] === 'on' ||
-                          (req.connection as any)?.encrypted === true;
-          const protocol = isSecure ? 'https' : 'http';
-          
-          return `${protocol}://${host}`;
-        };
+
+          const host = req.headers.host || `localhost:${process.env.PORT || 3001}`
+
+          const isSecure =
+            req.headers['x-forwarded-proto'] === 'https' ||
+            req.headers['x-forwarded-ssl'] === 'on' ||
+            (req.connection as any)?.encrypted === true
+          const protocol = isSecure ? 'https' : 'http'
+
+          return `${protocol}://${host}`
+        }
 
         try {
-          let spec: any = null;
-          
+          let spec: any = null
+
           if (fs.existsSync(localPath)) {
-            const data = await fs.promises.readFile(localPath, "utf8");
-            spec = JSON.parse(data);
+            const data = await fs.promises.readFile(localPath, 'utf8')
+            spec = JSON.parse(data)
           }
 
           if (!spec) {
             // Fallback to service-generated spec
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const svc: any = this as any;
-            spec = svc?.settings?.openapi ?? svc?.schema?.openapi ?? null;
+            const svc: any = this as any
+            spec = svc?.settings?.openapi ?? svc?.schema?.openapi ?? null
           }
 
           if (!spec) {
-            res.statusCode = 404;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "OpenAPI spec not available", code: 404 }));
-            return;
+            res.statusCode = 404
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'OpenAPI spec not available', code: 404 }))
+            return
           }
 
           spec.servers = [
             {
               url: getServerUrl(),
-              description: "Current host",
+              description: 'Current host',
             },
-          ];
+          ]
 
-          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-          res.setHeader("Pragma", "no-cache");
-          res.setHeader("Expires", "0");
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(JSON.stringify(spec));
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+          res.setHeader('Pragma', 'no-cache')
+          res.setHeader('Expires', '0')
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify(spec))
         } catch (err: any) {
-          res.statusCode = 500;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: `Failed to load OpenAPI spec: ${err.message}`, code: 500 }));
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: `Failed to load OpenAPI spec: ${err.message}`, code: 500 }))
         }
       },
     },
 
-    mappingPolicy: "restrict" as const,
-  };
+    mappingPolicy: 'restrict' as const,
+  }
 }

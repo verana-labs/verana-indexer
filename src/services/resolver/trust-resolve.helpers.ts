@@ -1,25 +1,31 @@
-import type { VerifiablePublicRegistry } from "@verana-labs/verre";
+import type { VerifiablePublicRegistry } from '@verana-labs/verre'
 
 export function readBoolFromEnv(keys: string[]): boolean | null {
   for (const k of keys) {
-    const raw = (process.env[k] ?? "").trim().toLowerCase();
-    if (!raw) continue;
-    if (raw === "true" || raw === "1" || raw === "yes" || raw === "on") return true;
-    if (raw === "false" || raw === "0" || raw === "no" || raw === "off") return false;
+    const raw = (process.env[k] ?? '').trim().toLowerCase()
+    if (!raw) continue
+    if (raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on') return true
+    if (raw === 'false' || raw === '0' || raw === 'no' || raw === 'off') return false
   }
-  return null;
+  return null
 }
 
 export function guessProductionFromChainId(chainId: string): boolean {
-  const s = chainId.toLowerCase();
-  if (s.includes("devnet") || s.includes("testnet") || s.includes("local") || s.includes("test")) return true;
-  return true;
+  const s = chainId.toLowerCase()
+  if (s.includes('devnet') || s.includes('testnet') || s.includes('local') || s.includes('test')) return true
+  return true
 }
 
 export function defaultVprRegistriesFromEnv(): VerifiablePublicRegistry[] {
-  const chainId = (process.env.CHAIN_ID ?? "").trim();
-  if (!chainId) return [];
-  const id = `vpr:verana:${chainId}`;
-  const cleanedChainId = chainId.toLowerCase().replace(/^vna-/, "").replace(/-\d+$/, "");
-  return [{ id, baseUrls: [`https://idx.${cleanedChainId}.verana.network/verana`], production: guessProductionFromChainId(chainId) }];
+  const chainId = (process.env.CHAIN_ID ?? '').trim()
+  if (!chainId) return []
+  const id = `vpr:verana:${chainId}`
+  const cleanedChainId = chainId.toLowerCase().replace(/^vna-/, '').replace(/-\d+$/, '')
+  return [
+    {
+      id,
+      baseUrls: [`https://idx.${cleanedChainId}.verana.network/verana`],
+      production: guessProductionFromChainId(chainId),
+    },
+  ]
 }
