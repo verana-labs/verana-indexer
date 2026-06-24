@@ -33,7 +33,7 @@
     "test-api-integration": "jest --testPathPattern=integration/api-endpoints --verbose --runInBand --forceExit",
     "check-format": "biome check",
     "fix-format": "biome check --write",
-    "check-types": "tsc -p tsconfig.json --noEmit"
+    "check-types": "tsc -p tsconfig.build.json --noEmit"
   },
   "nodemonConfig": {
     "ignore": [
