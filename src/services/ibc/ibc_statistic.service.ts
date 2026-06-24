@@ -1,9 +1,9 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import knex from '../../common/utils/db_connection';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
 
 @Service({
   name: SERVICE.V1.IbcStatistic.key,
@@ -11,7 +11,7 @@ import { BULL_JOB_NAME, SERVICE } from '../../common';
 })
 export default class IbcStatisticService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
@@ -19,7 +19,7 @@ export default class IbcStatisticService extends BullableService {
     jobName: BULL_JOB_NAME.REFRESH_IBC_RELAYER_STATISTIC,
   })
   public async refreshIbcRelayerStatistic(): Promise<void> {
-    await knex.schema.refreshMaterializedView('m_view_ibc_relayer_statistic');
+    await knex.schema.refreshMaterializedView('m_view_ibc_relayer_statistic')
   }
 
   async _start(): Promise<void> {
@@ -36,7 +36,7 @@ export default class IbcStatisticService extends BullableService {
           pattern: config.ibcStatistic.timeRefreshIbcRelayerStats,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

@@ -1,16 +1,16 @@
-import { Knex } from 'knex';
+import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
-  console.log('create tx_id column in smart_contract_event');
-  const chunkSizeQuery = 10000;
-  let startId = 0;
+  console.log('create tx_id column in smart_contract_event')
+  const chunkSizeQuery = 10000
+  let startId = 0
 
   await knex.schema.alterTable('smart_contract_event', (table) => {
-    table.integer('tx_id').index();
-  });
-  let done = false;
+    table.integer('tx_id').index()
+  })
+  let done = false
   while (!done) {
-    console.log(`update tx_id column in smart_contract_event at id ${startId}`);
+    console.log(`update tx_id column in smart_contract_event at id ${startId}`)
     const smartContractEvents = await knex.raw(
       `select smart_contract_event.id smart_contract_event_id, 
         event.tx_id transaction_id from smart_contract_event
@@ -18,28 +18,23 @@ export async function up(knex: Knex): Promise<void> {
         where smart_contract_event.id > ${startId}
         order by smart_contract_event.id asc
         limit ${chunkSizeQuery};`
-    );
+    )
     if (smartContractEvents.rows.length === 0) {
-      done = true;
-      break;
+      done = true
+      break
     }
     const stringListUpdates = smartContractEvents.rows
-      .map(
-        (update: any) =>
-          `(${update.smart_contract_event_id}, ${update.transaction_id})`
-      )
-      .join(',');
+      .map((update: any) => `(${update.smart_contract_event_id}, ${update.transaction_id})`)
+      .join(',')
     await knex.raw(
       `UPDATE smart_contract_event SET tx_id = temp.tx_id from (VALUES ${stringListUpdates}) as temp(id, tx_id) where temp.id = smart_contract_event.id`
-    );
-    startId =
-      smartContractEvents.rows[smartContractEvents.rows.length - 1]
-        .smart_contract_event_id;
+    )
+    startId = smartContractEvents.rows[smartContractEvents.rows.length - 1].smart_contract_event_id
   }
 }
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.alterTable('smart_contract_event', (table) => {
-    table.dropColumn('tx_id');
-  });
+    table.dropColumn('tx_id')
+  })
 }

@@ -1,25 +1,25 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { IbcConnection } from './ibc_connection';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { IbcConnection } from './ibc_connection'
 
 export class IbcChannel extends BaseModel {
-  id!: number;
+  id!: number
 
-  ibc_connection_id!: number;
+  ibc_connection_id!: number
 
-  channel_id!: string;
+  channel_id!: string
 
-  port_id!: string;
+  port_id!: string
 
-  counterparty_port_id!: string;
+  counterparty_port_id!: string
 
-  counterparty_channel_id!: string;
+  counterparty_channel_id!: string
 
-  state!: string;
+  state!: string
 
   static get tableName() {
-    return 'ibc_channel';
+    return 'ibc_channel'
   }
 
   static get jsonSchema() {
@@ -41,7 +41,7 @@ export class IbcChannel extends BaseModel {
         counterparty_channel_id: { type: 'string' },
         state: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -54,11 +54,11 @@ export class IbcChannel extends BaseModel {
           to: 'ibc_connection.id',
         },
       },
-    };
+    }
   }
 
   static STATUS = {
     OPEN: 'OPEN',
     CLOSE: 'CLOSE',
-  };
+  }
 }

@@ -1,499 +1,508 @@
-import { Queue } from "bullmq";
-import Redis from "ioredis";
-import { LoggerInstance } from "moleculer";
-import { BULL_JOB_NAME } from "../../common/constant";
-import ConfigClass from "../../common/config";
-import { DEFAULT_PREFIX } from "../../base/bullable.service";
-import { getLcdClient } from "../../common/utils/verana_client";
-import { checkDatabaseHealth, getBlockchainHealthMonitorStatus } from "../../common/utils/health_check";
-import knex from "../../common/utils/db_connection";
-import type { IndexerStatusEvent } from "./indexer_status.events";
+import { Queue } from 'bullmq'
+import Redis from 'ioredis'
+import { LoggerInstance } from 'moleculer'
+import { DEFAULT_PREFIX } from '../../base/bullable.service'
+import ConfigClass from '../../common/config'
+import { BULL_JOB_NAME } from '../../common/constant'
+import knex from '../../common/utils/db_connection'
+import { checkDatabaseHealth, getBlockchainHealthMonitorStatus } from '../../common/utils/health_check'
+import { getLcdClient } from '../../common/utils/verana_client'
+import type { IndexerStatusEvent } from './indexer_status.events'
 
-const Config = new ConfigClass();
+const Config = new ConfigClass()
 
 export interface IndexerStatus {
-  isRunning: boolean;
-  isCrawling: boolean;
-  stoppedAt?: string;
+  isRunning: boolean
+  isCrawling: boolean
+  stoppedAt?: string
   lastError?: {
-    message: string;
-    stack?: string;
-    timestamp: string;
-    service?: string;
-  };
-  stoppedReason?: string;
-  lastProcessedBlock?: number;
-  lastBlockTime?: string;
-  blockchainApiHealthy?: boolean;
-  blockchainApiLastCheckAt?: string;
+    message: string
+    stack?: string
+    timestamp: string
+    service?: string
+  }
+  stoppedReason?: string
+  lastProcessedBlock?: number
+  lastBlockTime?: string
+  blockchainApiHealthy?: boolean
+  blockchainApiLastCheckAt?: string
 }
 
-type StatusChangeCallback = (status: IndexerStatusEvent) => void;
+type StatusChangeCallback = (status: IndexerStatusEvent) => void
 
 class IndexerStatusManager {
-  private static instance: IndexerStatusManager;
+  private static instance: IndexerStatusManager
   private status: IndexerStatus = {
     isRunning: true,
-    isCrawling: true, 
-  };
-  private statusChangeCallback: StatusChangeCallback | null = null;
-  private logger: LoggerInstance | null = null;
-  private recoveryCheckTimerId: ReturnType<typeof setTimeout> | null = null;
-  private readonly RECOVERY_CHECK_INTERVAL = 30000;
-  private readonly RECOVERY_CHECK_INTERVAL_MIN = 10000;
-  private readonly RECOVERY_CHECK_INTERVAL_MAX = 300000;
-  private readonly RECOVERY_BACKOFF_MULTIPLIER = 1.5;
-  private _recoveryCheckIntervalMs = 30000;
-  private readonly RECOVERY_CHECK_TIMEOUT = 10000;
-  private _memoryRecoveryFailures = 0;
-  private readonly EXIT_AFTER_RECOVERY_FAILURES = 5;
+    isCrawling: true,
+  }
+  private statusChangeCallback: StatusChangeCallback | null = null
+  private logger: LoggerInstance | null = null
+  private recoveryCheckTimerId: ReturnType<typeof setTimeout> | null = null
+  private readonly RECOVERY_CHECK_INTERVAL = 30000
+  private readonly RECOVERY_CHECK_INTERVAL_MIN = 10000
+  private readonly RECOVERY_CHECK_INTERVAL_MAX = 300000
+  private readonly RECOVERY_BACKOFF_MULTIPLIER = 1.5
+  private _recoveryCheckIntervalMs = 30000
+  private readonly RECOVERY_CHECK_TIMEOUT = 10000
+  private _memoryRecoveryFailures = 0
+  private readonly EXIT_AFTER_RECOVERY_FAILURES = 5
 
-  private dbStorageCheckInterval: NodeJS.Timeout | null = null;
-  private readonly DB_STORAGE_CHECK_INTERVAL_MS = 120000; // 2 minutes
+  private dbStorageCheckInterval: NodeJS.Timeout | null = null
+  private readonly DB_STORAGE_CHECK_INTERVAL_MS = 120000 // 2 minutes
 
   private constructor() {
     // Singleton pattern - private constructor to prevent instantiation
-    (global as any).__pauseCrawlingHook = async (error: Error, service?: string) => {
-      await this.stopCrawlingOnly(error, service);
-    };
+    ;(global as any).__pauseCrawlingHook = async (error: Error, service?: string) => {
+      await this.stopCrawlingOnly(error, service)
+    }
   }
 
   public static getInstance(): IndexerStatusManager {
     if (!IndexerStatusManager.instance) {
-      IndexerStatusManager.instance = new IndexerStatusManager();
+      IndexerStatusManager.instance = new IndexerStatusManager()
     }
-    return IndexerStatusManager.instance;
+    return IndexerStatusManager.instance
   }
 
   public setStatusChangeCallback(callback: StatusChangeCallback): void {
-    this.statusChangeCallback = callback;
+    this.statusChangeCallback = callback
   }
 
   public setLogger(logger: LoggerInstance): void {
-    this.logger = logger;
+    this.logger = logger
   }
 
   private notifyStatusChange(): void {
     if (this.statusChangeCallback) {
-      Promise.resolve(this.statusChangeCallback({
-        indexer_status: this.status.isRunning ? "running" : "stopped",
-        crawling_status: this.status.isCrawling ? "active" : "stopped",
-        stopped_at: this.status.stoppedAt,
-        stopped_reason: this.status.stoppedReason,
-        last_error: this.status.lastError
-          ? {
-              message: this.status.lastError.message,
-              timestamp: this.status.lastError.timestamp,
-              service: this.status.lastError.service,
-            }
-          : undefined,
-      })).catch((err) => {
+      Promise.resolve(
+        this.statusChangeCallback({
+          indexer_status: this.status.isRunning ? 'running' : 'stopped',
+          crawling_status: this.status.isCrawling ? 'active' : 'stopped',
+          stopped_at: this.status.stoppedAt,
+          stopped_reason: this.status.stoppedReason,
+          last_error: this.status.lastError
+            ? {
+                message: this.status.lastError.message,
+                timestamp: this.status.lastError.timestamp,
+                service: this.status.lastError.service,
+              }
+            : undefined,
+        })
+      ).catch((err) => {
         if (this.logger) {
-          this.logger.error("Error in status change callback:", err);
+          this.logger.error('Error in status change callback:', err)
         } else {
-          console.error("Error in status change callback:", err);
+          console.error('Error in status change callback:', err)
         }
-      });
+      })
     }
   }
 
   public getStatus(): IndexerStatus {
-    return { ...this.status };
+    return { ...this.status }
   }
 
   public async getDetailedStatus(): Promise<IndexerStatus> {
-    const base = this.getStatus();
-    let lastProcessedBlock: number | undefined;
-    let lastBlockTime: string | undefined;
+    const base = this.getStatus()
+    let lastProcessedBlock: number | undefined
+    let lastBlockTime: string | undefined
     try {
-      const row = await knex("block_checkpoint")
-        .where("job_name", BULL_JOB_NAME.CRAWL_BLOCK)
-        .select("height")
-        .first();
-      if (row?.height != null) lastProcessedBlock = Number(row.height);
+      const row = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.CRAWL_BLOCK).select('height').first()
+      if (row?.height != null) lastProcessedBlock = Number(row.height)
     } catch {
       // ignore
     }
     if (lastProcessedBlock != null) {
       try {
-        const blockRow = await knex("block")
-          .where("height", lastProcessedBlock)
-          .select("time")
-          .first();
+        const blockRow = await knex('block').where('height', lastProcessedBlock).select('time').first()
         if (blockRow?.time != null) {
-          lastBlockTime = blockRow.time instanceof Date
-            ? blockRow.time.toISOString()
-            : new Date(blockRow.time).toISOString();
+          lastBlockTime =
+            blockRow.time instanceof Date ? blockRow.time.toISOString() : new Date(blockRow.time).toISOString()
         }
       } catch {
         // ignore
       }
     }
-    const monitor = getBlockchainHealthMonitorStatus();
+    const monitor = getBlockchainHealthMonitorStatus()
     return {
       ...base,
       lastProcessedBlock,
       lastBlockTime,
       blockchainApiHealthy: monitor.running ? monitor.isHealthy : undefined,
       blockchainApiLastCheckAt: monitor.lastCheckAt,
-    };
+    }
   }
 
   public async stopIndexer(error: Error, service?: string): Promise<void> {
     if (!this.status.isRunning) {
-      return; 
+      return
     }
 
-    this.status.isRunning = false;
-    this.status.isCrawling = false;
-    this.status.stoppedAt = new Date().toISOString();
+    this.status.isRunning = false
+    this.status.isCrawling = false
+    this.status.stoppedAt = new Date().toISOString()
     this.status.lastError = {
       message: error.message || String(error),
       stack: error.stack,
       timestamp: new Date().toISOString(),
-      service: service || "unknown",
-    };
-    this.status.stoppedReason = `Indexer stopped due to error in ${service || "unknown"}: ${error.message}`;
+      service: service || 'unknown',
+    }
+    this.status.stoppedReason = `Indexer stopped due to error in ${service || 'unknown'}: ${error.message}`
 
-    await this.stopAllCrawlingJobs();
-    this.stopDbStorageChecker();
+    await this.stopAllCrawlingJobs()
+    this.stopDbStorageChecker()
 
-    const errorMessage = error.message || String(error);
-    const isNetworkError = errorMessage.toLowerCase().includes('timeout') ||
-                          errorMessage.toLowerCase().includes('network') ||
-                          errorMessage.toLowerCase().includes('connection') ||
-                          errorMessage.toLowerCase().includes('econnrefused') ||
-                          errorMessage.toLowerCase().includes('etimedout');
-    
+    const errorMessage = error.message || String(error)
+    const isNetworkError =
+      errorMessage.toLowerCase().includes('timeout') ||
+      errorMessage.toLowerCase().includes('network') ||
+      errorMessage.toLowerCase().includes('connection') ||
+      errorMessage.toLowerCase().includes('econnrefused') ||
+      errorMessage.toLowerCase().includes('etimedout')
+
     if (isNetworkError) {
-      this.startRecoveryChecker();
+      this.startRecoveryChecker()
     }
 
-    this.notifyStatusChange();
+    this.notifyStatusChange()
   }
 
   public async stopCrawlingOnly(error: Error, service?: string): Promise<void> {
     if (!this.status.isCrawling) {
-      return; 
+      return
     }
 
-    this.status.isCrawling = false;
-    this.status.stoppedAt = new Date().toISOString();
+    this.status.isCrawling = false
+    this.status.stoppedAt = new Date().toISOString()
     this.status.lastError = {
       message: error.message || String(error),
       stack: error.stack,
       timestamp: new Date().toISOString(),
-      service: service || "unknown",
-    };
-    this.status.stoppedReason = `Crawling stopped due to: ${error.message}. Indexer APIs remain available.`;
+      service: service || 'unknown',
+    }
+    this.status.stoppedReason = `Crawling stopped due to: ${error.message}. Indexer APIs remain available.`
 
     // stopCrawlingOnly should pause workers but keep repeatable definitions intact.
     // Removing repeatables during transient DB pressure can cause noisy lock/key errors
     // and breaks the "automatic recovery resumes crawling" contract.
-    await this.stopAllCrawlingJobs({ preserveRepeatableJobs: true });
-    this.stopDbStorageChecker();
+    await this.stopAllCrawlingJobs({ preserveRepeatableJobs: true })
+    this.stopDbStorageChecker()
 
     if (this.logger) {
-      this.logger.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`);
+      this.logger.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`)
     } else {
-      console.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`);
+      console.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`)
     }
-    this.startRecoveryChecker();
+    this.startRecoveryChecker()
 
-    this.notifyStatusChange();
+    this.notifyStatusChange()
   }
 
   public async resumeIndexer(): Promise<void> {
-    this.status.isRunning = true;
-    this.status.isCrawling = true;
-    this.status.stoppedAt = undefined;
-    this.status.lastError = undefined;
-    this.status.stoppedReason = undefined;
+    this.status.isRunning = true
+    this.status.isCrawling = true
+    this.status.stoppedAt = undefined
+    this.status.lastError = undefined
+    this.status.stoppedReason = undefined
 
-    this.stopRecoveryChecker();
-    this.startDbStorageChecker();
+    this.stopRecoveryChecker()
+    this.startDbStorageChecker()
 
-    await this.resumeAllCrawlingJobs();
+    await this.resumeAllCrawlingJobs()
 
-    this.notifyStatusChange();
+    this.notifyStatusChange()
   }
 
   private startRecoveryChecker(): void {
-    this.stopRecoveryChecker();
-    this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
+    this.stopRecoveryChecker()
+    this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN
 
     if (this.logger) {
-      this.logger.info(`Starting automatic recovery checker (initial interval ${this._recoveryCheckIntervalMs / 1000}s, exponential backoff up to ${this.RECOVERY_CHECK_INTERVAL_MAX / 1000}s)...`);
+      this.logger.info(
+        `Starting automatic recovery checker (initial interval ${this._recoveryCheckIntervalMs / 1000}s, exponential backoff up to ${this.RECOVERY_CHECK_INTERVAL_MAX / 1000}s)...`
+      )
     } else {
-      console.log(`Starting automatic recovery checker (initial interval ${this._recoveryCheckIntervalMs / 1000}s)...`);
+      console.log(`Starting automatic recovery checker (initial interval ${this._recoveryCheckIntervalMs / 1000}s)...`)
     }
 
     const run = async () => {
-      await this.checkAndRecover();
+      await this.checkAndRecover()
       if (this.recoveryCheckTimerId !== null) {
-        this.recoveryCheckTimerId = setTimeout(run, this._recoveryCheckIntervalMs);
+        this.recoveryCheckTimerId = setTimeout(run, this._recoveryCheckIntervalMs)
       }
-    };
-    this.recoveryCheckTimerId = setTimeout(run, this._recoveryCheckIntervalMs);
+    }
+    this.recoveryCheckTimerId = setTimeout(run, this._recoveryCheckIntervalMs)
   }
 
   private stopRecoveryChecker(): void {
     if (this.recoveryCheckTimerId !== null) {
-      clearTimeout(this.recoveryCheckTimerId);
-      this.recoveryCheckTimerId = null;
+      clearTimeout(this.recoveryCheckTimerId)
+      this.recoveryCheckTimerId = null
     }
-    this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL;
+    this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL
     if (this.logger) {
-      this.logger.info('Stopped automatic recovery checker');
+      this.logger.info('Stopped automatic recovery checker')
     } else {
-      console.log('Stopped automatic recovery checker');
+      console.log('Stopped automatic recovery checker')
     }
   }
 
   private async checkAndRecover(): Promise<void> {
     if (!this.status.isCrawling || !this.status.isRunning) {
       try {
-        const stoppedByDbPool = this.status.lastError?.service === 'DB_POOL';
-        const stoppedByMemory = this.status.lastError?.service === 'MEMORY';
+        const stoppedByDbPool = this.status.lastError?.service === 'DB_POOL'
+        const stoppedByMemory = this.status.lastError?.service === 'MEMORY'
 
         if (stoppedByDbPool) {
-          const { isPoolRecovered } = await import('../../common/utils/db_pool_guard');
+          const { isPoolRecovered } = await import('../../common/utils/db_pool_guard')
           if (isPoolRecovered()) {
             if (this.logger) {
-              this.logger.info('DB pool recovered (pending drained). Automatically resuming crawling...');
+              this.logger.info('DB pool recovered (pending drained). Automatically resuming crawling...')
             } else {
-              console.log('DB pool recovered. Automatically resuming crawling...');
+              console.log('DB pool recovered. Automatically resuming crawling...')
             }
-            this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
-            await this.resumeIndexer();
+            this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN
+            await this.resumeIndexer()
             if (this.logger) {
-              this.logger.info('Crawling resumed successfully');
+              this.logger.info('Crawling resumed successfully')
             }
-            return;
+            return
           }
           if (this.logger) {
-            this.logger.info(`DB pool not yet recovered, will retry in ${this._recoveryCheckIntervalMs / 1000}s...`);
+            this.logger.info(`DB pool not yet recovered, will retry in ${this._recoveryCheckIntervalMs / 1000}s...`)
           }
-          return;
+          return
         }
 
         if (stoppedByMemory) {
-          const parsedResume = parseInt(process.env.NODE_MEMORY_RESUME_MB || '1600', 10);
-          const resumeHeapMb = Number.isFinite(parsedResume) && parsedResume > 0 ? parsedResume : 1600;
+          const parsedResume = parseInt(process.env.NODE_MEMORY_RESUME_MB || '1600', 10)
+          const resumeHeapMb = Number.isFinite(parsedResume) && parsedResume > 0 ? parsedResume : 1600
 
           // Run multiple GC cycles for more effective reclamation
           for (let i = 0; i < 3; i++) {
             if (global.gc) {
-              try { global.gc(); } catch {}
+              try {
+                global.gc()
+              } catch {}
             }
             await new Promise<void>((r) => {
-              setTimeout(r, 200);
-            });
+              setTimeout(r, 200)
+            })
           }
 
-          const mem = process.memoryUsage();
-          const heapUsedMb = mem.heapUsed / (1024 * 1024);
-          const heapTotalMb = mem.heapTotal / (1024 * 1024);
-          const rssMb = mem.rss / (1024 * 1024);
+          const mem = process.memoryUsage()
+          const heapUsedMb = mem.heapUsed / (1024 * 1024)
+          const heapTotalMb = mem.heapTotal / (1024 * 1024)
+          const rssMb = mem.rss / (1024 * 1024)
 
           if (heapUsedMb < resumeHeapMb) {
             if (this.logger) {
-              this.logger.info(`Memory recovered (heap ${heapUsedMb.toFixed(0)}/${heapTotalMb.toFixed(0)} MB < ${resumeHeapMb} MB). Resuming crawling...`);
+              this.logger.info(
+                `Memory recovered (heap ${heapUsedMb.toFixed(0)}/${heapTotalMb.toFixed(0)} MB < ${resumeHeapMb} MB). Resuming crawling...`
+              )
             }
-            this._memoryRecoveryFailures = 0;
-            this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
-            await this.resumeIndexer();
-            return;
+            this._memoryRecoveryFailures = 0
+            this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN
+            await this.resumeIndexer()
+            return
           }
 
-          this._memoryRecoveryFailures++;
+          this._memoryRecoveryFailures++
 
           // Log diagnostics on every attempt
           if (this.logger) {
-            const handles = (process as any)._getActiveHandles?.()?.length ?? '?';
-            const requests = (process as any)._getActiveRequests?.()?.length ?? '?';
-            let v8Info = '';
+            const handles = (process as any)._getActiveHandles?.()?.length ?? '?'
+            const requests = (process as any)._getActiveRequests?.()?.length ?? '?'
+            let v8Info = ''
             try {
-              const v8 = await import('v8');
-              const hs = v8.getHeapStatistics();
-              v8Info = ` nativeCtx=${hs.number_of_native_contexts} detachedCtx=${hs.number_of_detached_contexts}`;
+              const v8 = await import('v8')
+              const hs = v8.getHeapStatistics()
+              v8Info = ` nativeCtx=${hs.number_of_native_contexts} detachedCtx=${hs.number_of_detached_contexts}`
             } catch {}
             this.logger.info(
               `[Recovery #${this._memoryRecoveryFailures}] heap=${heapUsedMb.toFixed(0)}/${heapTotalMb.toFixed(0)}MB rss=${rssMb.toFixed(0)}MB ` +
-              `handles=${handles} requests=${requests}${v8Info} ` +
-              `(need <${resumeHeapMb}MB to resume)`
-            );
+                `handles=${handles} requests=${requests}${v8Info} ` +
+                `(need <${resumeHeapMb}MB to resume)`
+            )
           }
 
           // Write heap snapshot on first failure — load in Chrome DevTools to see retained objects
           if (this._memoryRecoveryFailures === 1) {
             try {
-              const v8 = await import('v8');
-              const snapshotPath = v8.writeHeapSnapshot();
-              const msg = `[Recovery] Heap snapshot written to: ${snapshotPath}`;
-              if (this.logger) this.logger.warn(msg);
-              else console.warn(msg);
+              const v8 = await import('v8')
+              const snapshotPath = v8.writeHeapSnapshot()
+              const msg = `[Recovery] Heap snapshot written to: ${snapshotPath}`
+              if (this.logger) this.logger.warn(msg)
+              else console.warn(msg)
             } catch (snapErr: any) {
-              const msg = `[Recovery] Failed to write heap snapshot: ${snapErr?.message || snapErr}`;
-              if (this.logger) this.logger.warn(msg);
-              else console.warn(msg);
+              const msg = `[Recovery] Failed to write heap snapshot: ${snapErr?.message || snapErr}`
+              if (this.logger) this.logger.warn(msg)
+              else console.warn(msg)
             }
           }
 
           // After N failures, exit process gracefully so a fresh restart can continue
           // from DB checkpoints with a clean heap (pnpm start works fine for the same data)
           if (this._memoryRecoveryFailures >= this.EXIT_AFTER_RECOVERY_FAILURES) {
-            const exitMsg = `[Recovery] Memory did not recover after ${this._memoryRecoveryFailures} attempts ` +
+            const exitMsg =
+              `[Recovery] Memory did not recover after ${this._memoryRecoveryFailures} attempts ` +
               `(heap=${heapUsedMb.toFixed(0)}MB, need <${resumeHeapMb}MB). ` +
-              `Exiting process — restart with 'pnpm start' to continue from checkpoints with a fresh heap.`;
+              `Exiting process — restart with 'pnpm start' to continue from checkpoints with a fresh heap.`
             if (this.logger) {
-              this.logger.error(exitMsg);
+              this.logger.error(exitMsg)
             } else {
-              console.error(exitMsg);
+              console.error(exitMsg)
             }
             // Use exit code 3 to signal "memory recovery failed, please restart"
-            process.exit(3);
+            process.exit(3)
           }
 
-          return;
+          return
         }
 
         if (this.logger) {
-          this.logger.info(`Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`);
+          this.logger.info(
+            `Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`
+          )
         } else {
-          console.log(`Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`);
+          console.log(
+            `Checking if connection is restored... (stopped reason: ${this.status.stoppedReason || 'unknown'})`
+          )
         }
 
-        const isHealthy = await this.checkConnectionHealth();
+        const isHealthy = await this.checkConnectionHealth()
 
         if (isHealthy) {
           if (this.logger) {
-            this.logger.info('Connection restored! Automatically resuming indexer...');
+            this.logger.info('Connection restored! Automatically resuming indexer...')
           } else {
-            console.log('Connection restored! Automatically resuming indexer...');
+            console.log('Connection restored! Automatically resuming indexer...')
           }
-          await this.resumeIndexer();
-          this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
+          await this.resumeIndexer()
+          this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN
           if (this.logger) {
-            this.logger.info('Indexer resumed successfully');
+            this.logger.info('Indexer resumed successfully')
           } else {
-            console.log('Indexer resumed successfully');
+            console.log('Indexer resumed successfully')
           }
-          return;
+          return
         }
 
-        const timeSinceStopped = this.status.stoppedAt
-          ? Date.now() - new Date(this.status.stoppedAt).getTime()
-          : 0;
-        const minutesStopped = Math.floor(timeSinceStopped / 60000);
+        const timeSinceStopped = this.status.stoppedAt ? Date.now() - new Date(this.status.stoppedAt).getTime() : 0
+        const minutesStopped = Math.floor(timeSinceStopped / 60000)
 
         this._recoveryCheckIntervalMs = Math.min(
           Math.floor(this._recoveryCheckIntervalMs * this.RECOVERY_BACKOFF_MULTIPLIER),
           this.RECOVERY_CHECK_INTERVAL_MAX
-        );
+        )
         if (this.logger) {
-          this.logger.info(`Connection not yet restored (stopped ${minutesStopped} min ago), next check in ${this._recoveryCheckIntervalMs / 1000}s...`);
+          this.logger.info(
+            `Connection not yet restored (stopped ${minutesStopped} min ago), next check in ${this._recoveryCheckIntervalMs / 1000}s...`
+          )
         } else {
-          console.log(`Connection not yet restored, next check in ${this._recoveryCheckIntervalMs / 1000}s...`);
+          console.log(`Connection not yet restored, next check in ${this._recoveryCheckIntervalMs / 1000}s...`)
         }
       } catch (error: any) {
         if (this.logger) {
-          this.logger.warn(`Recovery check failed: ${error?.message || error}. Will retry...`);
+          this.logger.warn(`Recovery check failed: ${error?.message || error}. Will retry...`)
         } else {
-          console.warn(`Recovery check failed: ${error?.message || error}. Will retry...`);
+          console.warn(`Recovery check failed: ${error?.message || error}. Will retry...`)
         }
       }
     } else if (this.status.isCrawling && this.status.isRunning) {
-      this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN;
-      this.stopRecoveryChecker();
+      this._recoveryCheckIntervalMs = this.RECOVERY_CHECK_INTERVAL_MIN
+      this.stopRecoveryChecker()
     }
   }
 
   private startDbStorageChecker(): void {
-    this.stopDbStorageChecker();
+    this.stopDbStorageChecker()
     const configuredLimitMb = (() => {
-      const raw = process.env.DB_STORAGE_MAX_MB;
-      const parsed = Number(raw);
-      return raw == null || raw === '' || !Number.isFinite(parsed) || parsed <= 0 ? 20 * 1024 : parsed;
-    })();
+      const raw = process.env.DB_STORAGE_MAX_MB
+      const parsed = Number(raw)
+      return raw == null || raw === '' || !Number.isFinite(parsed) || parsed <= 0 ? 20 * 1024 : parsed
+    })()
     if (this.logger) {
-      this.logger.info(`Starting DB storage limit checker (every ${this.DB_STORAGE_CHECK_INTERVAL_MS / 1000}s, limit ${configuredLimitMb} MB)`);
+      this.logger.info(
+        `Starting DB storage limit checker (every ${this.DB_STORAGE_CHECK_INTERVAL_MS / 1000}s, limit ${configuredLimitMb} MB)`
+      )
     }
     const runCheck = async () => {
-      if (!this.status.isCrawling || !this.status.isRunning) return;
+      if (!this.status.isCrawling || !this.status.isRunning) return
       try {
-        const { checkDbStorageLimit } = await import('../../common/utils/db_storage_check');
-        const { overLimit, sizeMb, maxMb } = await checkDbStorageLimit();
+        const { checkDbStorageLimit } = await import('../../common/utils/db_storage_check')
+        const { overLimit, sizeMb, maxMb } = await checkDbStorageLimit()
         if (overLimit) {
-          const msg = `DB storage limit reached: ${sizeMb.toFixed(1)} MB >= ${maxMb} MB. Crawling stopped to avoid out-of-space.`;
+          const msg = `DB storage limit reached: ${sizeMb.toFixed(1)} MB >= ${maxMb} MB. Crawling stopped to avoid out-of-space.`
           if (this.logger) {
-            this.logger.error(msg);
+            this.logger.error(msg)
           } else {
-            console.error(msg);
+            console.error(msg)
           }
-          await this.stopCrawlingOnly(new Error(msg), 'DB_STORAGE');
+          await this.stopCrawlingOnly(new Error(msg), 'DB_STORAGE')
         }
       } catch (err: any) {
         if (this.logger) {
-          this.logger.warn(`DB storage check failed: ${err?.message || err}. Will retry.`);
+          this.logger.warn(`DB storage check failed: ${err?.message || err}. Will retry.`)
         }
       }
-    };
+    }
 
-    this.dbStorageCheckInterval = setInterval(runCheck, this.DB_STORAGE_CHECK_INTERVAL_MS);
-    setImmediate(runCheck);
+    this.dbStorageCheckInterval = setInterval(runCheck, this.DB_STORAGE_CHECK_INTERVAL_MS)
+    setImmediate(runCheck)
   }
 
   private stopDbStorageChecker(): void {
     if (this.dbStorageCheckInterval) {
-      clearInterval(this.dbStorageCheckInterval);
-      this.dbStorageCheckInterval = null;
+      clearInterval(this.dbStorageCheckInterval)
+      this.dbStorageCheckInterval = null
       if (this.logger) {
-        this.logger.info('Stopped DB storage limit checker');
+        this.logger.info('Stopped DB storage limit checker')
       }
     }
   }
 
   private async checkConnectionHealth(): Promise<boolean> {
     try {
-      const db = await checkDatabaseHealth(this.RECOVERY_CHECK_TIMEOUT);
+      const db = await checkDatabaseHealth(this.RECOVERY_CHECK_TIMEOUT)
       if (!db.ok) {
         if (this.logger) {
-          this.logger.debug(`Health check: database not ready: ${db.error ?? 'unknown'}`);
+          this.logger.debug(`Health check: database not ready: ${db.error ?? 'unknown'}`)
         }
-        return false;
+        return false
       }
 
-      const lcdClient = await getLcdClient();
+      const lcdClient = await getLcdClient()
       if (!lcdClient?.provider) {
         if (this.logger) {
-          this.logger.debug('LCD client not available for health check');
+          this.logger.debug('LCD client not available for health check')
         }
-        return false;
+        return false
       }
 
       const healthCheck = Promise.race([
         lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
         new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Health check timeout')), this.RECOVERY_CHECK_TIMEOUT);
+          setTimeout(() => reject(new Error('Health check timeout')), this.RECOVERY_CHECK_TIMEOUT)
         }),
-      ]);
+      ])
 
-      await healthCheck;
+      await healthCheck
       if (this.logger) {
-        this.logger.debug('Connection health check passed (database + blockchain)');
+        this.logger.debug('Connection health check passed (database + blockchain)')
       }
-      return true;
+      return true
     } catch (error: any) {
-      const errorMessage = error?.message || String(error);
+      const errorMessage = error?.message || String(error)
       if (!errorMessage.includes('timeout') && !errorMessage.includes('Health check timeout')) {
         if (this.logger) {
-          this.logger.debug(`Health check error: ${errorMessage}`);
+          this.logger.debug(`Health check error: ${errorMessage}`)
         } else {
-          console.log(`Health check error: ${errorMessage}`);
+          console.log(`Health check error: ${errorMessage}`)
         }
       }
-      return false;
+      return false
     }
   }
 
@@ -501,16 +510,16 @@ class IndexerStatusManager {
     try {
       if (!Config.QUEUE_JOB_REDIS) {
         if (this.logger) {
-          this.logger.warn("QUEUE_JOB_REDIS not configured, cannot resume jobs");
+          this.logger.warn('QUEUE_JOB_REDIS not configured, cannot resume jobs')
         } else {
-          console.warn("QUEUE_JOB_REDIS not configured, cannot resume jobs");
+          console.warn('QUEUE_JOB_REDIS not configured, cannot resume jobs')
         }
-        return;
+        return
       }
 
-      const redisClient = new Redis(Config.QUEUE_JOB_REDIS);
-      redisClient.setMaxListeners(Math.max(redisClient.getMaxListeners(), 100));
-      
+      const redisClient = new Redis(Config.QUEUE_JOB_REDIS)
+      redisClient.setMaxListeners(Math.max(redisClient.getMaxListeners(), 100))
+
       const crawlingJobs = [
         BULL_JOB_NAME.CRAWL_BLOCK,
         BULL_JOB_NAME.CRAWL_TRANSACTION,
@@ -522,32 +531,32 @@ class IndexerStatusManager {
         BULL_JOB_NAME.COUNT_VOTE_PROPOSAL,
         BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
         BULL_JOB_NAME.CALCULATE_STATS,
-      ];
+      ]
 
       for (const jobName of crawlingJobs) {
-        let queue: Queue | null = null;
+        let queue: Queue | null = null
         try {
           queue = new Queue(jobName, {
             prefix: DEFAULT_PREFIX,
             connection: redisClient,
-          });
+          })
 
-          await queue.resume();
+          await queue.resume()
           if (this.logger) {
-            this.logger.info(`Resumed queue: ${jobName}`);
+            this.logger.info(`Resumed queue: ${jobName}`)
           } else {
-            console.log(`Resumed queue: ${jobName}`);
+            console.log(`Resumed queue: ${jobName}`)
           }
         } catch (err) {
           if (this.logger) {
-            this.logger.error(`Failed to resume queue ${jobName}:`, err);
+            this.logger.error(`Failed to resume queue ${jobName}:`, err)
           } else {
-            console.error(`Failed to resume queue ${jobName}:`, err);
+            console.error(`Failed to resume queue ${jobName}:`, err)
           }
         } finally {
           if (queue) {
             try {
-              await queue.close();
+              await queue.close()
             } catch {
               // best effort; queue object is short-lived
             }
@@ -555,34 +564,34 @@ class IndexerStatusManager {
         }
       }
 
-      await redisClient.quit();
+      await redisClient.quit()
     } catch (error) {
       if (this.logger) {
-        this.logger.error("Error resuming crawling jobs:", error);
+        this.logger.error('Error resuming crawling jobs:', error)
       } else {
-        console.error("Error resuming crawling jobs:", error);
+        console.error('Error resuming crawling jobs:', error)
       }
     }
   }
 
   public isCrawlingActive(): boolean {
-    return this.status.isCrawling && this.status.isRunning;
+    return this.status.isCrawling && this.status.isRunning
   }
 
   private async stopAllCrawlingJobs(opts?: { preserveRepeatableJobs?: boolean }): Promise<void> {
     try {
       if (!Config.QUEUE_JOB_REDIS) {
         if (this.logger) {
-          this.logger.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
+          this.logger.warn('QUEUE_JOB_REDIS not configured, cannot stop jobs')
         } else {
-          console.warn("QUEUE_JOB_REDIS not configured, cannot stop jobs");
+          console.warn('QUEUE_JOB_REDIS not configured, cannot stop jobs')
         }
-        return;
+        return
       }
 
-      const redisClient = new Redis(Config.QUEUE_JOB_REDIS);
-      redisClient.setMaxListeners(Math.max(redisClient.getMaxListeners(), 100));
-      
+      const redisClient = new Redis(Config.QUEUE_JOB_REDIS)
+      redisClient.setMaxListeners(Math.max(redisClient.getMaxListeners(), 100))
+
       const crawlingJobs = [
         BULL_JOB_NAME.CRAWL_BLOCK,
         BULL_JOB_NAME.CRAWL_TRANSACTION,
@@ -596,34 +605,34 @@ class IndexerStatusManager {
         BULL_JOB_NAME.COUNT_VOTE_PROPOSAL,
         BULL_JOB_NAME.JOB_UPDATE_SENDER_IN_TX_MESSAGES,
         BULL_JOB_NAME.CALCULATE_STATS,
-      ];
+      ]
 
       for (const jobName of crawlingJobs) {
-        let queue: Queue | null = null;
+        let queue: Queue | null = null
         try {
           queue = new Queue(jobName, {
             prefix: DEFAULT_PREFIX,
             connection: redisClient,
-          });
+          })
 
           if (!opts?.preserveRepeatableJobs) {
-            const repeatableJobs = await queue.getRepeatableJobs();
+            const repeatableJobs = await queue.getRepeatableJobs()
             for (const job of repeatableJobs) {
-              await queue.removeRepeatableByKey(job.key);
+              await queue.removeRepeatableByKey(job.key)
             }
           }
 
-          await queue.pause();
+          await queue.pause()
         } catch (err) {
           if (this.logger) {
-            this.logger.error(`Failed to stop queue ${jobName}:`, err);
+            this.logger.error(`Failed to stop queue ${jobName}:`, err)
           } else {
-            console.error(`Failed to stop queue ${jobName}:`, err);
+            console.error(`Failed to stop queue ${jobName}:`, err)
           }
         } finally {
           if (queue) {
             try {
-              await queue.close();
+              await queue.close()
             } catch {
               // best effort; queue object is short-lived
             }
@@ -631,19 +640,19 @@ class IndexerStatusManager {
         }
       }
 
-      await redisClient.quit();
+      await redisClient.quit()
     } catch (error) {
       if (this.logger) {
-        this.logger.error("Error stopping crawling jobs:", error);
+        this.logger.error('Error stopping crawling jobs:', error)
       } else {
-        console.error("Error stopping crawling jobs:", error);
+        console.error('Error stopping crawling jobs:', error)
       }
     }
   }
 
   public isIndexerRunning(): boolean {
-    return this.status.isRunning;
+    return this.status.isRunning
   }
 }
 
-export const indexerStatusManager = IndexerStatusManager.getInstance();
+export const indexerStatusManager = IndexerStatusManager.getInstance()

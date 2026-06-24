@@ -1,15 +1,15 @@
-import { BrokerOptions, Errors, MetricRegistry, ServiceBroker } from "moleculer";
+import fs from 'fs'
+import { BrokerOptions, Errors, MetricRegistry, ServiceBroker } from 'moleculer'
+import * as os from 'os'
 // import 'reflect-metadata';
-import { inspect } from "util";
-import fs from "fs";
-import path from "path";
-import * as os from "os";
+import { inspect } from 'util'
+import { Config } from './common'
+import InterNamespaceMiddleware from './middlewares/internamespace'
 // import pick from 'lodash/pick';
 // import HotReloadMiddleware from './middlewares/HotReloadCHokidar';
-import { Network } from "./network";
-import { Config } from "./common";
-import InterNamespaceMiddleware from "./middlewares/internamespace";
-import MoleculerRetryableError = Errors.MoleculerRetryableError;
+import { Network } from './network'
+
+import MoleculerRetryableError = Errors.MoleculerRetryableError
 // TODO: Set default value for common config (TRACING_TYPE ...)
 
 /**
@@ -52,11 +52,11 @@ const brokerConfig: BrokerOptions = {
   // Enable/disable logging or use custom logger. More info: https://moleculer.services/docs/0.14/logging.html
   // Available logger types: "Console", "File", "Pino", "Winston", "Bunyan", "debug", "Log4js", "Datadog"
   logger: (() => {
-    const loggers: any[] = [];
+    const loggers: any[] = []
 
     if (Config.LOG_TO_CONSOLE) {
       loggers.push({
-        type: Config.LOGGERTYPE || "Console",
+        type: Config.LOGGERTYPE || 'Console',
         level: Config.LOGLEVEL,
         options: {
           // Using colors on the output
@@ -64,22 +64,20 @@ const brokerConfig: BrokerOptions = {
           // Print module names with different colors (like docker-compose for containers)
           moduleColors: Config.LOGGERMODULECOLORS || false,
           // Line formatter. It can be "json", "short", "simple", "full", a `Function` or a template string like "{timestamp} {level} {nodeID}/{mod}: {msg}"
-          formatter: Config.LOGGERFORMATTER || "full",
+          formatter: Config.LOGGERFORMATTER || 'full',
           // Custom object printer. If not defined, it uses the `util.inspect` method.
-          objectPrinter: (o: never) =>
-            inspect(o, { depth: 4, colors: true, breakLength: 100 }),
+          objectPrinter: (o: never) => inspect(o, { depth: 4, colors: true, breakLength: 100 }),
           // Auto-padding the module name in order to messages begin at the same column.
           autoPadding: Config.LOGGERAUTOPADDING || false,
         },
-      });
+      })
     }
-
 
     if (loggers.length === 0) {
-      return false;
+      return false
     }
 
-    return loggers.length === 1 ? loggers[0] : loggers;
+    return loggers.length === 1 ? loggers[0] : loggers
   })(),
   // Default log level for built-in console logger. It can be overwritten in logger options above.
   // Available values: trace, debug, info, warn, error, fatal
@@ -115,8 +113,7 @@ const brokerConfig: BrokerOptions = {
     // Backoff factor for delay. 2 means exponential backoff.
     factor: Config.RETRYFACTOR,
     // A function to check failed requests.
-    check: (err: Error): boolean =>
-      err && err instanceof MoleculerRetryableError && !!err.retryable,
+    check: (err: Error): boolean => err && err instanceof MoleculerRetryableError && !!err.retryable,
   },
 
   // Limit of calling level. If it reaches the limit, broker will throw an MaxCallLevelError error. (Infinite loop protection)
@@ -145,7 +142,7 @@ const brokerConfig: BrokerOptions = {
   registry: {
     // Define balancing strategy. More info: https://moleculer.services/docs/0.14/balancing.html
     // Available values: "RoundRobin", "Random", "CpuUsage", "Latency", "Shard"
-    strategy: Config.STRATEGY || "RoundRobin",
+    strategy: Config.STRATEGY || 'RoundRobin',
     // Enable local action call preferring. Always call the local action instance if available.
     preferLocal: Config.PREFERLOCAL || true,
   },
@@ -163,8 +160,7 @@ const brokerConfig: BrokerOptions = {
     // Number of milliseconds to switch from open to half-open state
     halfOpenTime: Config.HALFOPENTIME || 10 * 1000,
     // A function to check failed requests.
-    check: (err: Error): boolean =>
-      err && err instanceof MoleculerRetryableError && err.code >= 500,
+    check: (err: Error): boolean => err && err instanceof MoleculerRetryableError && err.code >= 500,
   },
 
   // Settings of bulkhead feature. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Bulkhead
@@ -180,7 +176,7 @@ const brokerConfig: BrokerOptions = {
   // Enable action & event parameter validation. More info: https://moleculer.services/docs/0.14/validating.html
   // validator: Config.VALIDATOR_ENABLED || true,
   validator: {
-    type: "Fastest",
+    type: 'Fastest',
     options: {
       defaults: {
         number: {
@@ -235,7 +231,7 @@ const brokerConfig: BrokerOptions = {
         // HTTP port
         port: Config.METRICS_PORT || 3030,
         // HTTP URL path
-        path: Config.METRICS_PATH || "/metrics",
+        path: Config.METRICS_PATH || '/metrics',
         // Default labels which are appended to all metrics labels
         defaultLabels: (registry: MetricRegistry) => ({
           namespace: registry.broker.namespace,
@@ -274,79 +270,77 @@ const brokerConfig: BrokerOptions = {
   },
 
   // Register custom middlewares
-  middlewares: [
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    // Config.ADD_INTER_NAMESPACE_MIDDLEWARE
-    true ? InterNamespaceMiddleware([Network?.moleculerNamespace]) : null,
-  ],
+  middlewares: [InterNamespaceMiddleware([Network?.moleculerNamespace])],
   // Register custom REPL commands.
   // replCommands: undefined,
-  
+
   created: (broker: ServiceBroker): void => {
     broker.logger?.info?.(
       `[Config Check] tracing=${Config.TRACING_ENABLED} metrics=${Config.METRICS_ENABLED} ` +
-      `cacher=${Config.CACHER ? 'redis' : 'none'} transporter=${Config.TRANSPORTER ? 'redis' : 'none'} ` +
-      `pid=${process.pid}`
-    );
+        `cacher=${Config.CACHER ? 'redis' : 'none'} transporter=${Config.TRANSPORTER ? 'redis' : 'none'} ` +
+        `pid=${process.pid}`
+    )
     // Write PID file for easy SIGUSR2 heap snapshot trigger
-    try { fs.writeFileSync('.indexer.pid', String(process.pid)); } catch {}
+    try {
+      fs.writeFileSync('.indexer.pid', String(process.pid))
+    } catch {}
 
     if (process.platform === 'win32') {
-      const originalNetworkInterfaces = os.networkInterfaces;
+      const originalNetworkInterfaces = os.networkInterfaces
       try {
         Object.defineProperty(os, 'networkInterfaces', {
-          value: function() {
+          value: () => {
             try {
-              return originalNetworkInterfaces.call(os);
+              return originalNetworkInterfaces.call(os)
             } catch (err: any) {
               if (err.code === 'ERR_SYSTEM_ERROR' || err.syscall === 'uv_interface_addresses') {
-                broker.logger?.warn('Failed to get network interfaces (Windows/Node.js v22 issue), continuing without OS metrics');
-                return {};
+                broker.logger?.warn(
+                  'Failed to get network interfaces (Windows/Node.js v22 issue), continuing without OS metrics'
+                )
+                return {}
               }
-              throw err;
+              throw err
             }
           },
           writable: true,
           configurable: true,
-          enumerable: true
-        });
-      } catch (patchError: any) {
-        broker.logger?.warn('Could not patch os.networkInterfaces, metrics may fail on Windows');
+          enumerable: true,
+        })
+      } catch (_patchError: any) {
+        broker.logger?.warn('Could not patch os.networkInterfaces, metrics may fail on Windows')
       }
     }
     try {
-      (global as any).logger = broker.logger;
+      ;(global as any).logger = broker.logger
     } catch (_) {}
   },
-  
-  started: async (broker: ServiceBroker): Promise<void> => {
-    broker.logger?.info(' Broker started successfully. Services will retry LCD connections if needed.');
-    try {
-      (global as any).logger = broker.logger;
-    } catch (_) {}
-    
-    process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-      const msg = reason?.message ?? String(reason);
-      const isMissingKeyJob = typeof msg === 'string' && msg.includes('Missing key for job');
-      if (isMissingKeyJob) {
-        broker.logger?.warn('BullMQ job key already removed (repeat/delayed):', msg);
-      } else {
-        broker.logger?.error('Unhandled Promise Rejection:', reason);
-        broker.logger?.error('Promise:', promise);
-        console.error('Unhandled Promise Rejection:', reason);
-      }
-    });
-    
-    process.on('uncaughtException', (error: Error) => {
-      broker.logger?.error('Uncaught Exception:', error);
-      console.error('Uncaught Exception:', error);
-      process.exit(1);
-    });
-  },
-  
-  stopped: async (_broker: ServiceBroker): Promise<void> => {
-  },
-};
 
-export default brokerConfig;
+  started: async (broker: ServiceBroker): Promise<void> => {
+    broker.logger?.info(' Broker started successfully. Services will retry LCD connections if needed.')
+    try {
+      ;(global as any).logger = broker.logger
+    } catch (_) {}
+
+    process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+      const msg = reason?.message ?? String(reason)
+      const isMissingKeyJob = typeof msg === 'string' && msg.includes('Missing key for job')
+      if (isMissingKeyJob) {
+        broker.logger?.warn('BullMQ job key already removed (repeat/delayed):', msg)
+      } else {
+        broker.logger?.error('Unhandled Promise Rejection:', reason)
+        broker.logger?.error('Promise:', promise)
+        console.error('Unhandled Promise Rejection:', reason)
+      }
+    })
+
+    process.on('uncaughtException', (error: Error) => {
+      broker.logger?.error('Uncaught Exception:', error)
+      console.error('Uncaught Exception:', error)
+      process.exit(1)
+    })
+  },
+
+  stopped: async (_broker: ServiceBroker): Promise<void> => {},
+}
+
+export default brokerConfig

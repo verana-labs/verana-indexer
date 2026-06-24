@@ -231,9 +231,7 @@
           },
           {
             "type": "withdraw_commission",
-            "attributes": [
-              { "key": "YW1vdW50", "value": "MjIzNTA5dWF1cmE=", "index": true }
-            ]
+            "attributes": [{ "key": "YW1vdW50", "value": "MjIzNTA5dWF1cmE=", "index": true }]
           },
           {
             "type": "message",

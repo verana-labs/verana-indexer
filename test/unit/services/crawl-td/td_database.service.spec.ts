@@ -1,113 +1,101 @@
-import { ServiceBroker } from "moleculer";
-import ModuleParams from "../../../../src/models/modules_params";
-import TrustDeposit from "../../../../src/models/trust_deposit";
-import TrustDepositDatabaseService from "../../../../src/services/crawl-td/td_database.service";
-import TrustDepositApiService from "../../../../src/services/crawl-td/td_apis.service";
-import { SERVICE } from "../../../../src/common";
+import { ServiceBroker } from 'moleculer'
+import { SERVICE } from '../../../../src/common'
+import TrustDeposit from '../../../../src/models/trust_deposit'
+import TrustDepositApiService from '../../../../src/services/crawl-td/td_apis.service'
+import TrustDepositDatabaseService from '../../../../src/services/crawl-td/td_database.service'
 
-jest.mock("../../../../src/models/trust_deposit");
-jest.mock("../../../../src/models/modules_params");
-jest.mock("../../../../src/common/utils/db_connection", () => ({
+jest.mock('../../../../src/models/trust_deposit')
+jest.mock('../../../../src/models/modules_params')
+jest.mock('../../../../src/common/utils/db_connection', () => ({
   transaction: jest.fn((fn) => fn({})),
-}));
-jest.mock("../../../../src/common/utils/params_service", () => {
-  const actual = jest.requireActual("../../../../src/common/utils/params_service");
+}))
+jest.mock('../../../../src/common/utils/params_service', () => {
+  const actual = jest.requireActual('../../../../src/common/utils/params_service')
   return {
     ...actual,
-    getModuleParamsAction: jest.fn()
-  };
-});
+    getModuleParamsAction: jest.fn(),
+  }
+})
 
-describe("🧪 TrustDepositDatabaseService", () => {
-  const broker = new ServiceBroker({ logger: false });
-  const dbService = broker.createService(TrustDepositDatabaseService);
-  const apiService = broker.createService(TrustDepositApiService);
+describe('🧪 TrustDepositDatabaseService', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const _dbService = broker.createService(TrustDepositDatabaseService)
+  const _apiService = broker.createService(TrustDepositApiService)
 
-  beforeAll(() => broker.start());
-  afterAll(() => broker.stop());
+  beforeAll(() => broker.start())
+  afterAll(() => broker.stop())
 
-  describe("Action: getTrustDeposit", () => {
-    it("✅ should return trust deposit successfully", async () => {
-      (TrustDeposit.query as any).mockReturnValue({
+  describe('Action: getTrustDeposit', () => {
+    it('✅ should return trust deposit successfully', async () => {
+      ;(TrustDeposit.query as any).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
-          corporation: "verana1testaccountxyz",
+          corporation: 'verana1testaccountxyz',
           share: 100000,
           deposit: 100000,
           claimable: 0,
           slashed_deposit: 1000,
           repaid_deposit: 500,
-          last_slashed: "2025-10-09T10:00:00Z",
-          last_repaid: "2025-10-09T12:00:00Z",
+          last_slashed: '2025-10-09T10:00:00Z',
+          last_repaid: '2025-10-09T12:00:00Z',
           slash_count: 1,
         }),
-      });
+      })
 
-      const res: any = await broker.call(
-        SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
-        {
-          corporation: "verana1testaccountxyz",
-        }
-      );
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
+        corporation: 'verana1testaccountxyz',
+      })
 
-      expect(res.trust_deposit).toBeDefined();
-      expect(res.trust_deposit.corporation).toBe("verana1testaccountxyz");
-      expect(res.trust_deposit.slashed_deposit).toBe(1000);
-    });
+      expect(res.trust_deposit).toBeDefined()
+      expect(res.trust_deposit.corporation).toBe('verana1testaccountxyz')
+      expect(res.trust_deposit.slashed_deposit).toBe(1000)
+    })
 
-    it("❌ should return 400 for invalid account", async () => {
-      const res: any = await broker.call(
-        SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
-        { corporation: "notavalidverana1addressformat123456789" }
-      );
-      expect(res.code).toBe(400);
-      expect(String(res.error)).toContain("Invalid corporation address format");
-    });
+    it('❌ should return 400 for invalid account', async () => {
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
+        corporation: 'notavalidverana1addressformat123456789',
+      })
+      expect(res.code).toBe(400)
+      expect(String(res.error)).toContain('Invalid corporation address format')
+    })
 
-    it("❌ should return 404 if not found", async () => {
-      (TrustDeposit.query as any).mockReturnValue({
+    it('❌ should return 404 if not found', async () => {
+      ;(TrustDeposit.query as any).mockReturnValue({
         findOne: jest.fn().mockResolvedValue(null),
-      });
+      })
 
-      const res: any = await broker.call(
-        SERVICE.V1.TrustDepositApiService.path + ".getTrustDeposit",
-        {
-          corporation: "verana1notfoundxyz",
-        }
-      );
-      expect(res.error).toContain("No trust deposit found");
-      expect(res.code).toBe(404);
-    });
-  });
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
+        corporation: 'verana1notfoundxyz',
+      })
+      expect(res.error).toContain('No trust deposit found')
+      expect(res.code).toBe(404)
+    })
+  })
 
-  describe("Action: getModuleParams", () => {
-    it("should return module params successfully", async () => {
-      const paramsService = await import("../../../../src/common/utils/params_service");
-      const mockGetModuleParamsAction = jest.fn().mockResolvedValue({ params: { key1: "value1", key2: "value2" } });
-      jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction);
+  describe('Action: getModuleParams', () => {
+    it('should return module params successfully', async () => {
+      const paramsService = await import('../../../../src/common/utils/params_service')
+      const mockGetModuleParamsAction = jest.fn().mockResolvedValue({ params: { key1: 'value1', key2: 'value2' } })
+      jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction)
 
-      const res: any = await broker.call(
-        SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
-      );
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getModuleParams')
 
-      expect(res).toBeDefined();
-      expect(res.params).toBeDefined();
-      expect(res.params.key1).toBe("value1");
-      expect(res.params.key2).toBe("value2");
-    });
+      expect(res).toBeDefined()
+      expect(res.params).toBeDefined()
+      expect(res.params.key1).toBe('value1')
+      expect(res.params.key2).toBe('value2')
+    })
 
-    it("should return 404 when params not found", async () => {
-      const paramsService = await import("../../../../src/common/utils/params_service");
+    it('should return 404 when params not found', async () => {
+      const paramsService = await import('../../../../src/common/utils/params_service')
       const mockGetModuleParamsAction = jest.fn().mockResolvedValue({
         status: 404,
-        error: "Module parameters not found: trustdeposit"
-      });
-      jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction);
+        error: 'Module parameters not found: trustdeposit',
+      })
+      jest.spyOn(paramsService, 'getModuleParamsAction').mockImplementation(mockGetModuleParamsAction)
 
-      const res: any = await broker.call(
-        SERVICE.V1.TrustDepositApiService.path + ".getModuleParams"
-      );
-      expect(res.status).toBe(404);
-      expect(res.error).toBe("Module parameters not found: trustdeposit");
-    });
-  });
-});
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getModuleParams')
+      expect(res.status).toBe(404)
+      expect(res.error).toBe('Module parameters not found: trustdeposit')
+    })
+  })
+})

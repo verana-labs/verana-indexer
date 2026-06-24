@@ -1,4 +1,4 @@
-import { Knex } from "knex";
+import { Knex } from 'knex'
 
 // dev.13 renamed the Participant (former Permission) fields:
 //   - PG enum types: permission_type -> participant_role, validation_state -> onboarding_state
@@ -8,36 +8,33 @@ import { Knex } from "knex";
 // on databases still on the dev.12 names.
 
 const ENUM_TYPE_RENAMES: Array<{ from: string; to: string }> = [
-  { from: "permission_type", to: "participant_role" },
-  { from: "validation_state", to: "onboarding_state" },
-];
+  { from: 'permission_type', to: 'participant_role' },
+  { from: 'validation_state', to: 'onboarding_state' },
+]
 
 const COLUMN_RENAMES: Array<{ from: string; to: string }> = [
-  { from: "type", to: "role" },
-  { from: "validator_perm_id", to: "validator_participant_id" },
-  { from: "vp_state", to: "op_state" },
-  { from: "vp_last_state_change", to: "op_last_state_change" },
-  { from: "vp_current_fees", to: "op_current_fees" },
-  { from: "vp_current_deposit", to: "op_current_deposit" },
-  { from: "vp_summary_digest", to: "op_summary_digest" },
-  { from: "vp_exp", to: "op_exp" },
-  { from: "vp_validator_deposit", to: "op_validator_deposit" },
-];
+  { from: 'type', to: 'role' },
+  { from: 'validator_perm_id', to: 'validator_participant_id' },
+  { from: 'vp_state', to: 'op_state' },
+  { from: 'vp_last_state_change', to: 'op_last_state_change' },
+  { from: 'vp_current_fees', to: 'op_current_fees' },
+  { from: 'vp_current_deposit', to: 'op_current_deposit' },
+  { from: 'vp_summary_digest', to: 'op_summary_digest' },
+  { from: 'vp_exp', to: 'op_exp' },
+  { from: 'vp_validator_deposit', to: 'op_validator_deposit' },
+]
 
 // Tables that carry the renamed Participant columns (sessions don't).
-const TABLES = ["permissions", "permission_history"];
+const TABLES = ['permissions', 'permission_history']
 
-async function renameEnumTypes(
-  knex: Knex,
-  renames: Array<{ from: string; to: string }>
-): Promise<void> {
+async function renameEnumTypes(knex: Knex, renames: Array<{ from: string; to: string }>): Promise<void> {
   for (const { from, to } of renames) {
     await knex.raw(`DO $$ BEGIN
       IF EXISTS (SELECT 1 FROM pg_type WHERE typname = '${from}')
          AND NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${to}') THEN
         ALTER TYPE ${from} RENAME TO ${to};
       END IF;
-    END $$;`);
+    END $$;`)
   }
 }
 
@@ -47,32 +44,32 @@ async function renameColumns(
   renames: Array<{ from: string; to: string }>
 ): Promise<void> {
   for (const table of tables) {
-    if (!(await knex.schema.hasTable(table))) continue;
+    if (!(await knex.schema.hasTable(table))) continue
     for (const { from, to } of renames) {
-      const hasFrom = await knex.schema.hasColumn(table, from);
-      const hasTo = await knex.schema.hasColumn(table, to);
+      const hasFrom = await knex.schema.hasColumn(table, from)
+      const hasTo = await knex.schema.hasColumn(table, to)
       if (hasFrom && !hasTo) {
-        await knex.schema.alterTable(table, (t) => t.renameColumn(from, to));
+        await knex.schema.alterTable(table, (t) => t.renameColumn(from, to))
       }
     }
   }
 }
 
 export async function up(knex: Knex): Promise<void> {
-  await knex.raw("SET lock_timeout = '5s'");
-  await renameEnumTypes(knex, ENUM_TYPE_RENAMES);
-  await renameColumns(knex, TABLES, COLUMN_RENAMES);
+  await knex.raw("SET lock_timeout = '5s'")
+  await renameEnumTypes(knex, ENUM_TYPE_RENAMES)
+  await renameColumns(knex, TABLES, COLUMN_RENAMES)
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.raw("SET lock_timeout = '5s'");
+  await knex.raw("SET lock_timeout = '5s'")
   await renameColumns(
     knex,
     TABLES,
     COLUMN_RENAMES.map(({ from, to }) => ({ from: to, to: from }))
-  );
+  )
   await renameEnumTypes(
     knex,
     ENUM_TYPE_RENAMES.map(({ from, to }) => ({ from: to, to: from }))
-  );
+  )
 }

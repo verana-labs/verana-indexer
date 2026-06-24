@@ -1,30 +1,30 @@
-import { Model } from 'objection';
-import BaseModel from './base';
+import { Model } from 'objection'
+import BaseModel from './base'
 // eslint-disable-next-line import/no-cycle
-import { Event } from './event';
-import { Transaction } from './transaction';
+import { Event } from './event'
+import { Transaction } from './transaction'
 
 export class EventAttribute extends BaseModel {
-  event_id!: string;
+  event_id!: string
 
-  key!: string;
+  key!: string
 
-  value!: string;
+  value!: string
 
-  composite_key!: string;
+  composite_key!: string
 
-  block_height!: number;
+  block_height!: number
 
-  tx_id!: number;
+  tx_id!: number
 
-  index!: number;
+  index!: number
 
   static get tableName() {
-    return 'event_attribute';
+    return 'event_attribute'
   }
 
   static get idColumn(): string[] {
-    return ['event_id', 'index', 'block_height'];
+    return ['event_id', 'index', 'block_height']
   }
 
   static get jsonSchema() {
@@ -40,7 +40,7 @@ export class EventAttribute extends BaseModel {
         tx_id: { type: 'number' },
         index: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -61,7 +61,7 @@ export class EventAttribute extends BaseModel {
           to: 'transaction.id',
         },
       },
-    };
+    }
   }
 
   static ATTRIBUTE_KEY = {
@@ -122,7 +122,7 @@ export class EventAttribute extends BaseModel {
     MEMO: 'memo',
     BLOOM: 'bloom',
     ERC20_TOKEN: 'erc20_token',
-  };
+  }
 
   static ATTRIBUTE_COMPOSITE_KEY = {
     COIN_SPENT_SPENDER: 'coin_spent.spender',
@@ -134,5 +134,5 @@ export class EventAttribute extends BaseModel {
     TX_FEE: 'tx.fee',
     TX_FEE_PAYER: 'tx.fee_payer',
     ETHEREUM_TX_ETHEREUM_TX_FAILED: 'ethereum_tx.ethereumTxFailed',
-  };
+  }
 }

@@ -1,10 +1,10 @@
-import knex from "../../common/utils/db_connection";
+import knex from '../../common/utils/db_connection'
 
-type FlipKind = 1 | 2; // 1=ENTER_ACTIVE, 2=EXIT_ACTIVE
+type FlipKind = 1 | 2 // 1=ENTER_ACTIVE, 2=EXIT_ACTIVE
 
 interface BlockContext {
-  height: number;
-  blockTime: Date;
+  height: number
+  blockTime: Date
 }
 
 const ENTITY_KIND = {
@@ -12,10 +12,10 @@ const ENTITY_KIND = {
   ECOSYSTEM: 1,
   CRED_SCHEMA: 2,
   PARTICIPANT: 3,
-} as const;
+} as const
 
-const GLOBAL_ENTITY_ID = 0;
-const ROLE_TYPE_ANY = 0;
+const GLOBAL_ENTITY_ID = 0
+const ROLE_TYPE_ANY = 0
 
 const ROLE_TYPE: Record<string, number> = {
   ECOSYSTEM: 1,
@@ -24,64 +24,62 @@ const ROLE_TYPE: Record<string, number> = {
   VERIFIER_GRANTOR: 4,
   VERIFIER: 5,
   HOLDER: 6,
-};
+}
 
-export async function applyScheduledParticipantFlipsForBlock(
-  ctx: BlockContext
-): Promise<void> {
-  const { height, blockTime } = ctx;
+export async function applyScheduledParticipantFlipsForBlock(ctx: BlockContext): Promise<void> {
+  const { height, blockTime } = ctx
 
-  const blockIso = blockTime.toISOString();
-  const hasDue = await knex("participant_scheduled_flips")
-    .where("status", 0)
-    .andWhere("flip_at_time", "<=", blockIso)
-    .first();
-  if (!hasDue) return;
+  const blockIso = blockTime.toISOString()
+  const hasDue = await knex('participant_scheduled_flips')
+    .where('status', 0)
+    .andWhere('flip_at_time', '<=', blockIso)
+    .first()
+  if (!hasDue) return
 
   await knex.transaction(async (trx) => {
-    const flips = await trx("participant_scheduled_flips")
-      .where("status", 0)
-      .andWhere("flip_at_time", "<=", blockIso)
-      .orderBy("flip_at_time", "asc")
-      .orderBy("participant_id", "asc");
+    const flips = await trx('participant_scheduled_flips')
+      .where('status', 0)
+      .andWhere('flip_at_time', '<=', blockIso)
+      .orderBy('flip_at_time', 'asc')
+      .orderBy('participant_id', 'asc')
 
-    if (!flips.length) return;
+    if (!flips.length) return
 
     for (const flip of flips) {
-      const hasIsActiveNow = await hasParticipantsIsActiveNowColumn(trx);
-      const participant = await trx("participants")
+      const hasIsActiveNow = await hasParticipantsIsActiveNowColumn(trx)
+      const participant = await trx('participants')
         .select(
-          "id",
-          "schema_id",
-          "validator_participant_id",
-          "role",
-          "last_valid_flip_version",
-          ...(hasIsActiveNow ? (["is_active_now"] as const) : [])
+          'id',
+          'schema_id',
+          'validator_participant_id',
+          'role',
+          'last_valid_flip_version',
+          ...(hasIsActiveNow ? (['is_active_now'] as const) : [])
         )
         .where({ id: flip.participant_id })
-        .first();
+        .first()
 
       if (!participant) {
-        await markFlipStale(trx, flip, height, blockTime);
-        continue;
+        await markFlipStale(trx, flip, height, blockTime)
+        continue
       }
 
       if (participant.last_valid_flip_version !== flip.version) {
-        await markFlipStale(trx, flip, height, blockTime);
-        continue;
+        await markFlipStale(trx, flip, height, blockTime)
+        continue
       }
 
-      const roleType = ROLE_TYPE[participant.role] ?? 0;
+      const roleType = ROLE_TYPE[participant.role] ?? 0
       if (!roleType) {
-        await markFlipStale(trx, flip, height, blockTime);
-        continue;
+        await markFlipStale(trx, flip, height, blockTime)
+        continue
       }
 
       if (hasIsActiveNow) {
-        const currentActive = Boolean((participant as any).is_active_now);
-        const targetActive = flip.flip_kind === (1 as FlipKind);
+        const currentActive = Boolean((participant as any).is_active_now)
+        const targetActive = flip.flip_kind === (1 as FlipKind)
         if (currentActive === targetActive) {
-          await trx("participant_scheduled_flips")
+          await trx('participant_scheduled_flips')
             .where({
               participant_id: flip.participant_id,
               version: flip.version,
@@ -92,50 +90,47 @@ export async function applyScheduledParticipantFlipsForBlock(
               status: 1,
               applied_height: height,
               applied_time: blockTime.toISOString(),
-            });
-          continue;
+            })
+          continue
         }
       }
 
-      const delta: number = flip.flip_kind === (1 as FlipKind) ? 1 : -1;
+      const delta: number = flip.flip_kind === (1 as FlipKind) ? 1 : -1
 
-      const participantChain: Array<{ id: number; schema_id: number }> = [];
-      let currentId: number | null = participant.id;
-      const visited = new Set<number>();
-      const MAX_VALIDATOR_CHAIN_DEPTH = 1000;
-      let traversalAborted = false;
+      const participantChain: Array<{ id: number; schema_id: number }> = []
+      let currentId: number | null = participant.id
+      const visited = new Set<number>()
+      const MAX_VALIDATOR_CHAIN_DEPTH = 1000
+      let traversalAborted = false
 
-      let depth = 0;
+      let depth = 0
       while (currentId) {
         if (depth++ >= MAX_VALIDATOR_CHAIN_DEPTH) {
-          traversalAborted = true;
-          break;
+          traversalAborted = true
+          break
         }
         if (visited.has(currentId)) {
-          traversalAborted = true;
-          break;
+          traversalAborted = true
+          break
         }
-        visited.add(currentId);
-        const p = await trx("participants")
-          .select("id", "schema_id", "validator_participant_id")
+        visited.add(currentId)
+        const p = await trx('participants')
+          .select('id', 'schema_id', 'validator_participant_id')
           .where({ id: currentId })
-          .first();
-        if (!p) break;
-        participantChain.push({ id: p.id, schema_id: p.schema_id });
-        currentId = p.validator_participant_id ?? null;
+          .first()
+        if (!p) break
+        participantChain.push({ id: p.id, schema_id: p.schema_id })
+        currentId = p.validator_participant_id ?? null
       }
 
       if (traversalAborted) {
-        await markFlipStale(trx, flip, height, blockTime);
-        continue;
+        await markFlipStale(trx, flip, height, blockTime)
+        continue
       }
 
-      const schemaId = participant.schema_id;
-      const schema = await trx("credential_schemas")
-        .select("id", "ecosystem_id")
-        .where({ id: schemaId })
-        .first();
-      const ecosystemId = schema?.ecosystem_id ?? null;
+      const schemaId = participant.schema_id
+      const schema = await trx('credential_schemas').select('id', 'ecosystem_id').where({ id: schemaId }).first()
+      const ecosystemId = schema?.ecosystem_id ?? null
 
       for (const p of participantChain) {
         await bumpEntity(trx, {
@@ -145,7 +140,7 @@ export async function applyScheduledParticipantFlipsForBlock(
           entityId: p.id,
           roleType,
           delta,
-        });
+        })
         await bumpEntity(trx, {
           height,
           blockTime,
@@ -153,7 +148,7 @@ export async function applyScheduledParticipantFlipsForBlock(
           entityId: p.id,
           roleType: ROLE_TYPE_ANY,
           delta,
-        });
+        })
       }
 
       await bumpEntity(trx, {
@@ -163,7 +158,7 @@ export async function applyScheduledParticipantFlipsForBlock(
         entityId: schemaId,
         roleType,
         delta,
-      });
+      })
       await bumpEntity(trx, {
         height,
         blockTime,
@@ -171,7 +166,7 @@ export async function applyScheduledParticipantFlipsForBlock(
         entityId: schemaId,
         roleType: ROLE_TYPE_ANY,
         delta,
-      });
+      })
 
       if (ecosystemId != null) {
         await bumpEntity(trx, {
@@ -181,7 +176,7 @@ export async function applyScheduledParticipantFlipsForBlock(
           entityId: ecosystemId,
           roleType,
           delta,
-        });
+        })
         await bumpEntity(trx, {
           height,
           blockTime,
@@ -189,7 +184,7 @@ export async function applyScheduledParticipantFlipsForBlock(
           entityId: ecosystemId,
           roleType: ROLE_TYPE_ANY,
           delta,
-        });
+        })
       }
 
       await bumpEntity(trx, {
@@ -199,7 +194,7 @@ export async function applyScheduledParticipantFlipsForBlock(
         entityId: GLOBAL_ENTITY_ID,
         roleType,
         delta,
-      });
+      })
       await bumpEntity(trx, {
         height,
         blockTime,
@@ -207,15 +202,15 @@ export async function applyScheduledParticipantFlipsForBlock(
         entityId: GLOBAL_ENTITY_ID,
         roleType: ROLE_TYPE_ANY,
         delta,
-      });
+      })
 
       if (await hasParticipantsIsActiveNowColumn(trx)) {
-        await trx("participants")
+        await trx('participants')
           .where({ id: participant.id })
-          .update({ is_active_now: flip.flip_kind === 1 });
+          .update({ is_active_now: flip.flip_kind === 1 })
       }
 
-      await trx("participant_scheduled_flips")
+      await trx('participant_scheduled_flips')
         .where({
           participant_id: flip.participant_id,
           version: flip.version,
@@ -226,18 +221,13 @@ export async function applyScheduledParticipantFlipsForBlock(
           status: 1,
           applied_height: height,
           applied_time: blockTime.toISOString(),
-        });
+        })
     }
-  });
+  })
 }
 
-async function markFlipStale(
-  trx: any,
-  flip: any,
-  height: number,
-  blockTime: Date
-) {
-  await trx("participant_scheduled_flips")
+async function markFlipStale(trx: any, flip: any, height: number, blockTime: Date) {
+  await trx('participant_scheduled_flips')
     .where({
       participant_id: flip.participant_id,
       version: flip.version,
@@ -248,35 +238,35 @@ async function markFlipStale(
       status: 2,
       applied_height: height,
       applied_time: blockTime.toISOString(),
-    });
+    })
 }
 
 async function bumpEntity(
   trx: any,
   params: {
-    height: number;
-    blockTime: Date;
-    entityKind: number;
-    entityId: number | null;
-    roleType: number;
-    delta: number;
+    height: number
+    blockTime: Date
+    entityKind: number
+    entityId: number | null
+    roleType: number
+    delta: number
   }
 ) {
-  const { height, blockTime, entityKind, entityId, roleType, delta } = params;
+  const { height, blockTime, entityKind, entityId, roleType, delta } = params
 
-  const atHeightRow = await trx("entity_participant_changes")
+  const atHeightRow = await trx('entity_participant_changes')
     .where({
       entity_kind: entityKind,
       entity_id: entityId,
       type: roleType,
       height,
     })
-    .first();
+    .first()
 
   if (atHeightRow) {
     const currentValue =
-      typeof atHeightRow.value === "string" ? Number(atHeightRow.value) : Number(atHeightRow.value ?? 0);
-    await trx("entity_participant_changes")
+      typeof atHeightRow.value === 'string' ? Number(atHeightRow.value) : Number(atHeightRow.value ?? 0)
+    await trx('entity_participant_changes')
       .where({
         entity_kind: entityKind,
         entity_id: entityId,
@@ -286,39 +276,38 @@ async function bumpEntity(
       .update({
         value: currentValue + delta,
         block_time: blockTime.toISOString(),
-      });
-    return;
+      })
+    return
   }
 
-  const last = await trx("entity_participant_changes")
+  const last = await trx('entity_participant_changes')
     .where({
       entity_kind: entityKind,
       entity_id: entityId,
       type: roleType,
     })
-    .andWhere("height", "<=", height - 1)
-    .orderBy("height", "desc")
-    .first();
+    .andWhere('height', '<=', height - 1)
+    .orderBy('height', 'desc')
+    .first()
 
-  const prev = last ? Number(last.value) : 0;
-  const next = prev + delta;
+  const prev = last ? Number(last.value) : 0
+  const next = prev + delta
 
-  await trx("entity_participant_changes").insert({
+  await trx('entity_participant_changes').insert({
     height,
     block_time: blockTime.toISOString(),
     entity_kind: entityKind,
     entity_id: entityId,
     type: roleType,
     value: next,
-  });
+  })
 }
 
-let hasIsActiveNowColumnCache: boolean | null = null;
+let hasIsActiveNowColumnCache: boolean | null = null
 
 async function hasParticipantsIsActiveNowColumn(trx: any): Promise<boolean> {
-  if (hasIsActiveNowColumnCache !== null) return hasIsActiveNowColumnCache;
-  const exists = await trx.schema.hasColumn("participants", "is_active_now");
-  hasIsActiveNowColumnCache = !!exists;
-  return hasIsActiveNowColumnCache;
+  if (hasIsActiveNowColumnCache !== null) return hasIsActiveNowColumnCache
+  const exists = await trx.schema.hasColumn('participants', 'is_active_now')
+  hasIsActiveNowColumnCache = !!exists
+  return hasIsActiveNowColumnCache
 }
-

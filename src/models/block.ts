@@ -1,34 +1,34 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { BlockSignature } from './block_signature';
-import { PowerEvent } from './power_event';
-import { Transaction } from './transaction';
-import { Event } from './event';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { BlockSignature } from './block_signature'
+import { Event } from './event'
+import { PowerEvent } from './power_event'
+import { Transaction } from './transaction'
 
 export class Block extends BaseModel {
-  height!: number;
+  height!: number
 
-  hash!: string;
+  hash!: string
 
-  time!: Date;
+  time!: Date
 
-  proposer_address!: string;
+  proposer_address!: string
 
-  data!: any;
+  data!: any
 
-  tx_count!: number;
+  tx_count!: number
 
   static get tableName() {
-    return 'block';
+    return 'block'
   }
 
   static get jsonAttributes() {
-    return ['data'];
+    return ['data']
   }
 
   static get idColumn(): string | string[] {
-    return 'height';
+    return 'height'
   }
 
   static get jsonSchema() {
@@ -42,7 +42,7 @@ export class Block extends BaseModel {
         proposer_address: { type: 'string', minLength: 1, maxLength: 255 },
         tx_count: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -79,6 +79,6 @@ export class Block extends BaseModel {
           to: 'event.block_height',
         },
       },
-    };
+    }
   }
 }

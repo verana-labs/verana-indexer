@@ -1,13 +1,13 @@
-import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
-import { ServiceBroker } from 'moleculer';
-import { Validator } from '../../../../src/models';
-import CrawlSigningInfoService from '../../../../src/services/crawl-validator/crawl_signing_info.service';
-import knex from '../../../../src/common/utils/db_connection';
+import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core'
+import { ServiceBroker } from 'moleculer'
+import knex from '../../../../src/common/utils/db_connection'
+import { Validator } from '../../../../src/models'
+import CrawlSigningInfoService from '../../../../src/services/crawl-validator/crawl_signing_info.service'
 
-jest.setTimeout(30000);
+jest.setTimeout(30000)
 
 jest.mock('../../../../src/common', () => {
-  const actual = jest.requireActual('../../../../src/common');
+  const actual = jest.requireActual('../../../../src/common')
   return {
     ...actual,
     getLcdClient: jest.fn().mockResolvedValue({
@@ -36,8 +36,8 @@ jest.mock('../../../../src/common', () => {
         },
       },
     }),
-  };
-});
+  }
+})
 
 @Describe('Test crawl_signing_info service')
 export default class CrawlSigningInfoTest {
@@ -75,52 +75,52 @@ export default class CrawlSigningInfoTest {
     self_delegation_balance: '102469134',
     delegators_count: 0,
     delegators_last_height: 0,
-  });
+  })
 
-  broker = new ServiceBroker({ logger: false });
-  crawlSigningInfoService!: CrawlSigningInfoService;
+  broker = new ServiceBroker({ logger: false })
+  crawlSigningInfoService!: CrawlSigningInfoService
 
   @BeforeAll()
   async initSuite() {
-    await this.broker.start();
-    this.crawlSigningInfoService = this.broker.createService(CrawlSigningInfoService) as CrawlSigningInfoService;
+    await this.broker.start()
+    this.crawlSigningInfoService = this.broker.createService(CrawlSigningInfoService) as CrawlSigningInfoService
 
     // Stop background jobs for deterministic tests
-    this.crawlSigningInfoService.getQueueManager().stopAll();
+    this.crawlSigningInfoService.getQueueManager().stopAll()
 
     // Clean table WITHOUT soft-delete (avoids missing delete_at errors)
     try {
-      await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+      await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE')
     } catch (err: any) {
       if (err?.nativeError?.code !== '42P01') {
-        throw err;
+        throw err
       }
     }
 
     // Seed
-    await Validator.query().insert(this.validator);
+    await Validator.query().insert(this.validator)
   }
 
   @AfterAll()
   async tearDown() {
     // Clean hard + shutdown
     try {
-      await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE');
+      await knex.raw('TRUNCATE TABLE validator RESTART IDENTITY CASCADE')
     } catch (err: any) {
       if (err?.nativeError?.code !== '42P01') {
-        throw err;
+        throw err
       }
     }
-    await this.broker.stop();
-    await knex.destroy();
+    await this.broker.stop()
+    await knex.destroy()
   }
 
   @Test('Crawl validator signing info success')
   public async testCrawlSigningInfo() {
-    await this.crawlSigningInfoService.handleJob({});
+    await this.crawlSigningInfoService.handleJob({})
 
-    const updated = await Validator.query().first();
-    expect(updated?.start_height).toEqual(0);
-    expect(updated?.tombstoned).toEqual(false);
+    const updated = await Validator.query().first()
+    expect(updated?.start_height).toEqual(0)
+    expect(updated?.tombstoned).toEqual(false)
   }
 }

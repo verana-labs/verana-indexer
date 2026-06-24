@@ -1,4 +1,4 @@
-import { Knex } from "knex";
+import { Knex } from 'knex'
 
 // Corporation model normalization on the indexer (single migration for this PR).
 //
@@ -21,43 +21,39 @@ import { Knex } from "knex";
 // Idempotent. No backfill — corporation_id is populated by the ingest on (re)indexing.
 
 const TABLES = [
-  "ecosystem",
-  "ecosystem_history",
-  "ecosystem_snapshot",
-  "participants",
-  "participant_history",
-  "participant_sessions",
-  "participant_session_history",
-] as const;
+  'ecosystem',
+  'ecosystem_history',
+  'ecosystem_snapshot',
+  'participants',
+  'participant_history',
+  'participant_sessions',
+  'participant_session_history',
+] as const
 
 export async function up(knex: Knex): Promise<void> {
   for (const table of TABLES) {
-    if (!(await knex.schema.hasTable(table))) continue;
-    if (!(await knex.schema.hasColumn(table, "corporation_id"))) {
-      await knex.raw(
-        `ALTER TABLE "${table}" ADD COLUMN "corporation_id" bigint NOT NULL DEFAULT 0`
-      );
-      await knex.raw(
-        `CREATE INDEX IF NOT EXISTS "idx_${table}_corporation_id" ON "${table}" ("corporation_id")`
-      );
+    if (!(await knex.schema.hasTable(table))) continue
+    if (!(await knex.schema.hasColumn(table, 'corporation_id'))) {
+      await knex.raw(`ALTER TABLE "${table}" ADD COLUMN "corporation_id" bigint NOT NULL DEFAULT 0`)
+      await knex.raw(`CREATE INDEX IF NOT EXISTS "idx_${table}_corporation_id" ON "${table}" ("corporation_id")`)
     }
-    if (await knex.schema.hasColumn(table, "corporation")) {
-      await knex.raw(`ALTER TABLE "${table}" DROP COLUMN IF EXISTS "corporation"`);
+    if (await knex.schema.hasColumn(table, 'corporation')) {
+      await knex.raw(`ALTER TABLE "${table}" DROP COLUMN IF EXISTS "corporation"`)
     }
   }
 }
 
 export async function down(knex: Knex): Promise<void> {
   for (const table of TABLES) {
-    if (!(await knex.schema.hasTable(table))) continue;
+    if (!(await knex.schema.hasTable(table))) continue
     // Re-create the legacy column as nullable (the original was NOT NULL, but the addresses
     // cannot be reconstructed here; ingest/backfill would repopulate it).
-    if (!(await knex.schema.hasColumn(table, "corporation"))) {
-      await knex.raw(`ALTER TABLE "${table}" ADD COLUMN "corporation" varchar(255)`);
+    if (!(await knex.schema.hasColumn(table, 'corporation'))) {
+      await knex.raw(`ALTER TABLE "${table}" ADD COLUMN "corporation" varchar(255)`)
     }
-    if (await knex.schema.hasColumn(table, "corporation_id")) {
-      await knex.raw(`DROP INDEX IF EXISTS "idx_${table}_corporation_id"`);
-      await knex.raw(`ALTER TABLE "${table}" DROP COLUMN IF EXISTS "corporation_id"`);
+    if (await knex.schema.hasColumn(table, 'corporation_id')) {
+      await knex.raw(`DROP INDEX IF EXISTS "idx_${table}_corporation_id"`)
+      await knex.raw(`ALTER TABLE "${table}" DROP COLUMN IF EXISTS "corporation_id"`)
     }
   }
 }

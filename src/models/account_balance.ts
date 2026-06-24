@@ -1,31 +1,31 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Account } from './account';
+import { Model } from 'objection'
+import { Account } from './account'
+import BaseModel from './base'
 
 export class AccountBalance extends BaseModel {
-  static softDelete = false;
+  static softDelete = false
 
-  account!: Account;
+  account!: Account
 
-  id!: number;
+  id!: number
 
-  denom!: string;
+  denom!: string
 
-  amount!: string;
+  amount!: string
 
-  base_denom!: string;
+  base_denom!: string
 
-  created_at!: Date;
+  created_at!: Date
 
-  last_updated_height!: number;
+  last_updated_height!: number
 
-  account_id!: number;
+  account_id!: number
 
-  type!: string;
+  type!: string
 
   static get tableName() {
-    return 'account_balance';
+    return 'account_balance'
   }
 
   static get jsonSchema() {
@@ -38,7 +38,7 @@ export class AccountBalance extends BaseModel {
         base_denom: { type: 'string' },
         account_id: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -51,11 +51,11 @@ export class AccountBalance extends BaseModel {
           to: 'account.id',
         },
       },
-    };
+    }
   }
 
   static TYPE = {
     NATIVE: 'NATIVE',
     ERC20_TOKEN: 'ERC20_TOKEN',
-  };
+  }
 }

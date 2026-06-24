@@ -1,29 +1,29 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Transaction } from './transaction';
-import { EventAttribute } from './event_attribute';
-import { TransactionMessage } from './transaction_message';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { EventAttribute } from './event_attribute'
+import { Transaction } from './transaction'
+import { TransactionMessage } from './transaction_message'
 
 export class Event extends BaseModel {
-  [relation: string]: any | any[];
+  [relation: string]: any | any[]
 
-  id!: string;
+  id!: string
 
-  tx_id!: number;
+  tx_id!: number
 
-  tx_msg_index?: number | undefined;
+  tx_msg_index?: number | undefined
 
-  type!: string;
+  type!: string
 
-  block_height!: number | undefined;
+  block_height!: number | undefined
 
-  source!: string;
+  source!: string
 
-  attributes!: EventAttribute[];
+  attributes!: EventAttribute[]
 
   static get tableName() {
-    return 'event';
+    return 'event'
   }
 
   static get jsonSchema() {
@@ -34,9 +34,9 @@ export class Event extends BaseModel {
         tx_id: { type: 'number' },
         type: { type: 'string' },
         block_height: { type: 'number' },
-        source: { type: 'string', enum: Object.values(this.SOURCE) },
+        source: { type: 'string', enum: Object.values(Event.SOURCE) },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -65,7 +65,7 @@ export class Event extends BaseModel {
           to: ['transaction_message.tx_id', 'transaction_message.index'],
         },
       },
-    };
+    }
   }
 
   static get SOURCE() {
@@ -73,14 +73,13 @@ export class Event extends BaseModel {
       BEGIN_BLOCK_EVENT: 'BEGIN_BLOCK_EVENT',
       END_BLOCK_EVENT: 'END_BLOCK_EVENT',
       TX_EVENT: 'TX_EVENT',
-    };
+    }
   }
 
   getAttributesFrom(attributesType: string[]) {
     return attributesType.map(
-      (attributeType) =>
-        this.attributes?.find((attr: any) => attr.key === attributeType)?.value
-    );
+      (attributeType) => this.attributes?.find((attr: any) => attr.key === attributeType)?.value
+    )
   }
 
   static EVENT_TYPE = {
@@ -113,5 +112,5 @@ export class Event extends BaseModel {
     BLOCK_BLOOM: 'block_bloom',
     CONVERT_COIN: 'convert_coin',
     CONVERT_ERC20: 'convert_erc20',
-  };
+  }
 }
