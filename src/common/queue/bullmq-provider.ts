@@ -1,27 +1,27 @@
 /* eslint-disable max-classes-per-file */
-import { Job, Queue, Worker, WorkerOptions } from 'bullmq';
-import _ from 'underscore';
-import { JobOption, QueueOptions, QueueProvider } from './queue-manager-types';
-import { getRedisConnection } from './redis-connector';
+import { Job, Queue, Worker, WorkerOptions } from 'bullmq'
+import _ from 'underscore'
+import { JobOption, QueueOptions, QueueProvider } from './queue-manager-types'
+import { getRedisConnection } from './redis-connector'
 
 type LoggerLike = {
-  info?: (...args: unknown[]) => void;
-  warn?: (...args: unknown[]) => void;
-  error?: (...args: unknown[]) => void;
-  debug?: (...args: unknown[]) => void;
-};
+  info?: (...args: unknown[]) => void
+  warn?: (...args: unknown[]) => void
+  error?: (...args: unknown[]) => void
+  debug?: (...args: unknown[]) => void
+}
 
 class DefaultValue {
-  static readonly DEFAULT_JOB_NAME = '_default_bull_job';
+  static readonly DEFAULT_JOB_NAME = '_default_bull_job'
 
   static readonly DEFAULT_WORKER_OPTION: WorkerOptions = {
     concurrency: 1,
-        // Give long-running jobs enough time to finish without losing the lock
+    // Give long-running jobs enough time to finish without losing the lock
     lockDuration: 900000,
     lockRenewTime: 90000,
     stalledInterval: 60000,
     maxStalledCount: 3,
-  };
+  }
 
   static readonly DEFAULT_JOB_OTION: JobOption = {
     // removeOnComplete: true,
@@ -29,104 +29,86 @@ class DefaultValue {
       count: 4,
     },
     removeOnComplete: 3,
-  };
+  }
 }
 
 export class BullQueueProvider implements QueueProvider {
   public constructor(private readonly logger?: LoggerLike) {}
 
-  private _queues: Record<string, Queue> = {};
+  private _queues: Record<string, Queue> = {}
 
-  private _workers: Worker[] = [];
+  private _workers: Worker[] = []
 
   private getLogger(): LoggerLike | undefined {
-    return this.logger ?? ((global as any).logger as LoggerLike | undefined);
+    return this.logger ?? ((global as any).logger as LoggerLike | undefined)
   }
 
   private log(level: keyof LoggerLike, ...args: unknown[]): void {
-    const logger = this.getLogger();
-    const fn = logger?.[level];
+    const logger = this.getLogger()
+    const fn = logger?.[level]
     if (typeof fn === 'function') {
-      fn(...args);
+      fn(...args)
     }
   }
 
-  public submitJob(
-    queueName: string,
-    jobName: string,
-    opts?: JobOption,
-    payload?: object
-  ): void {
-    const q = this.getQueue(queueName);
+  public submitJob(queueName: string, jobName: string, opts?: JobOption, payload?: object): void {
+    const q = this.getQueue(queueName)
     q.add(jobName, payload, opts).catch((err: unknown) => {
-      this.log(
-        'error',
-        `Failed to add BullMQ job "${jobName}" to queue "${queueName}"`,
-        err
-      );
-    });
+      this.log('error', `Failed to add BullMQ job "${jobName}" to queue "${queueName}"`, err)
+    })
   }
 
- public registerQueueHandler(
-  opt: QueueOptions,
-  fn: (payload: object) => Promise<void>
-): void {
-  const queueName = opt.queueName;
-  // create a new worker to handle the job
-  const processor = async (job: Job) => {
-    const heapBefore = process.memoryUsage().heapUsed;
-    try {
-      await fn(job.data);
-    } catch (e) {
-      this.log('error', `job ${job.name} failed`);
-      this.log('error', e);
-      throw e;
-    } finally {
-      const heapAfter = process.memoryUsage().heapUsed;
-      const deltaMb = (heapAfter - heapBefore) / (1024 * 1024);
-      // Only log when growth is significant (>5MB) to avoid noise
-      if (deltaMb > 5) {
-        this.log('warn',
-          `[MemTrack] ${queueName} +${deltaMb.toFixed(1)}MB ` +
-          `(${(heapBefore / (1024 * 1024)).toFixed(0)}→${(heapAfter / (1024 * 1024)).toFixed(0)}MB)`
-        );
+  public registerQueueHandler(opt: QueueOptions, fn: (payload: object) => Promise<void>): void {
+    const queueName = opt.queueName
+    // create a new worker to handle the job
+    const processor = async (job: Job) => {
+      const heapBefore = process.memoryUsage().heapUsed
+      try {
+        await fn(job.data)
+      } catch (e) {
+        this.log('error', `job ${job.name} failed`)
+        this.log('error', e)
+        throw e
+      } finally {
+        const heapAfter = process.memoryUsage().heapUsed
+        const deltaMb = (heapAfter - heapBefore) / (1024 * 1024)
+        // Only log when growth is significant (>5MB) to avoid noise
+        if (deltaMb > 5) {
+          this.log(
+            'warn',
+            `[MemTrack] ${queueName} +${deltaMb.toFixed(1)}MB ` +
+              `(${(heapBefore / (1024 * 1024)).toFixed(0)}→${(heapAfter / (1024 * 1024)).toFixed(0)}MB)`
+          )
+        }
       }
     }
-  };
 
-  // 🔹 ADD THE CHECK HERE
-  if (process.env.NODE_ENV === 'test') {
-    return;
+    // 🔹 ADD THE CHECK HERE
+    if (process.env.NODE_ENV === 'test') {
+      return
+    }
+
+    const wo: WorkerOptions = _.defaults(opt, DefaultValue.DEFAULT_WORKER_OPTION)
+
+    this.log('info', `worker option: ${JSON.stringify(wo)}`)
+    wo.connection = getRedisConnection()
+    const worker = new Worker(opt.queueName, processor, wo)
+
+    worker.on('error', (err: Error) => {
+      const msg = err?.message ?? String(err)
+      if (typeof msg === 'string' && (msg.includes('Missing key for job') || msg.includes('Missing lock for job'))) {
+        this.log('warn', 'BullMQ repeat/delayed job race (key/lock):', msg)
+      } else {
+        this.log('error', `worker ${opt.queueName} error:`, err)
+      }
+    })
+
+    this._workers.push(worker)
   }
 
-  const wo: WorkerOptions = _.defaults(
-    opt,
-    DefaultValue.DEFAULT_WORKER_OPTION
-  );
-
-  this.log('info', `worker option: ${JSON.stringify(wo)}`);
-  wo.connection = getRedisConnection();
-  const worker = new Worker(opt.queueName, processor, wo);
-
-  worker.on('error', (err: Error) => {
-    const msg = err?.message ?? String(err);
-    if (
-      typeof msg === 'string' &&
-      (msg.includes('Missing key for job') || msg.includes('Missing lock for job'))
-    ) {
-      this.log('warn', 'BullMQ repeat/delayed job race (key/lock):', msg);
-    } else {
-      this.log('error', `worker ${opt.queueName} error:`, err);
-    }
-  });
-
-  this._workers.push(worker);
-}
-
-
   public async stopAll(): Promise<void> {
-    await Promise.all(this._workers.map((w) => w.close()));
-    this._workers = []; // let the rest to the GC
+    await Promise.all(this._workers.map((w) => w.close()))
+    this._workers = [] // let the rest to the GC
   }
 
   /**
@@ -145,17 +127,17 @@ export class BullQueueProvider implements QueueProvider {
           resume: async () => {},
           pause: async () => {},
           close: async () => {},
-        } as any;
+        } as any
       } else {
         // queue not exist create and cache it
         this._queues[name] = new Queue(name, {
           connection: getRedisConnection(),
           prefix: 'bull',
-        });
+        })
       }
     }
 
-    return this._queues[name];
+    return this._queues[name]
   }
 }
 // function getRedisConnection(): import('bullmq').ConnectionOptions {

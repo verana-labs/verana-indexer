@@ -1,21 +1,17 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable import/no-extraneous-dependencies */
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import {
-  QueryProposalRequest,
-  QueryProposalResponse,
-} from '@aura-nw/aurajs/types/codegen/cosmos/gov/v1/query';
-import Long from 'long';
-import { fromBase64, toHex } from '@cosmjs/encoding';
-import { cosmos } from '@aura-nw/aurajs';
-import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
-import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc';
-import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query';
-import knex from '../../common/utils/db_connection';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
+
+import { cosmos } from '@aura-nw/aurajs'
+import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query'
+import { QueryProposalRequest, QueryProposalResponse } from '@aura-nw/aurajs/types/codegen/cosmos/gov/v1/query'
+import { fromBase64, toHex } from '@cosmjs/encoding'
+import { JsonRpcSuccessResponse } from '@cosmjs/json-rpc'
+import { HttpBatchClient } from '@cosmjs/tendermint-rpc'
+import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import Long from 'long'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
 import {
   ABCI_QUERY_PATH,
   BULL_JOB_NAME,
@@ -23,31 +19,33 @@ import {
   getLcdClient,
   IProviderJSClientFactory,
   SERVICE,
-} from '../../common';
-import { BlockCheckpoint, Proposal, EventAttribute } from '../../models';
-import Utils from '../../common/utils/utils';
-import { detectStartMode } from '../../common/utils/start_mode_detector';
+} from '../../common'
+import knex from '../../common/utils/db_connection'
+import { detectStartMode } from '../../common/utils/start_mode_detector'
+import Utils from '../../common/utils/utils'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, EventAttribute, Proposal } from '../../models'
 
 @Service({
   name: SERVICE.V1.CrawlProposalService.key,
   version: 1,
 })
 export default class CrawlProposalService extends BullableService {
-  private _lcdClient!: IProviderJSClientFactory;
+  private _lcdClient!: IProviderJSClientFactory
 
-  private _httpBatchClient: HttpBatchClient;
-  private _isFreshStart: boolean = false;
+  private _httpBatchClient: HttpBatchClient
+  private _isFreshStart: boolean = false
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
-    this._httpBatchClient = getHttpBatchClient();
+    super(broker)
+    this._httpBatchClient = getHttpBatchClient()
   }
 
   public async _start() {
-    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_PROPOSAL);
-    this._isFreshStart = startMode.isFreshStart;
-    this.logger.info(`CrawlProposal service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
-    
+    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_PROPOSAL)
+    this._isFreshStart = startMode.isFreshStart
+    this.logger.info(`CrawlProposal service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`)
+
     await this.createJob(
       BULL_JOB_NAME.CRAWL_PROPOSAL,
       BULL_JOB_NAME.CRAWL_PROPOSAL,
@@ -61,7 +59,7 @@ export default class CrawlProposalService extends BullableService {
           every: config.crawlProposal.millisecondRepeatJob || config.crawlProposal.crawlProposal.millisecondCrawl,
         },
       }
-    );
+    )
     await this.createJob(
       BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
       BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
@@ -75,7 +73,7 @@ export default class CrawlProposalService extends BullableService {
           every: config.crawlProposal.handleEndedProposal.millisecondCrawl,
         },
       }
-    );
+    )
     await this.createJob(
       BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
       BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
@@ -89,9 +87,9 @@ export default class CrawlProposalService extends BullableService {
           every: config.crawlProposal.handleNotEnoughDepositProposal.millisecondCrawl,
         },
       }
-    );
-    
-    return super._start();
+    )
+
+    return super._start()
   }
 
   @QueueHandler({
@@ -99,139 +97,125 @@ export default class CrawlProposalService extends BullableService {
     jobName: BULL_JOB_NAME.CRAWL_PROPOSAL,
   })
   public async handleCrawlProposals(_payload: object): Promise<void> {
-    const lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient()
     if (!lcdClient?.provider) {
-      this.logger.warn('LCD client not available, skipping proposal crawl. Will retry on next job execution.');
-      return;
+      this.logger.warn('LCD client not available, skipping proposal crawl. Will retry on next job execution.')
+      return
     }
-    this._lcdClient = lcdClient;
+    this._lcdClient = lcdClient
 
-    const listProposals: Proposal[] = [];
+    const listProposals: Proposal[] = []
 
-    const [startHeight, endHeight, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.CRAWL_PROPOSAL,
-        [BULL_JOB_NAME.HANDLE_TRANSACTION],
-        config.crawlProposal.key
-      );
-    this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`);
-    
-    const validStartHeight = Number.isFinite(startHeight) && !Number.isNaN(startHeight) ? Number(startHeight) : 0;
-    const validEndHeight = Number.isFinite(endHeight) && !Number.isNaN(endHeight) ? Number(endHeight) : 0;
-    
-    if (!Number.isFinite(validStartHeight) || !Number.isFinite(validEndHeight) || Number.isNaN(validStartHeight) || Number.isNaN(validEndHeight)) {
-      this.logger.warn(`Invalid checkpoint heights: startHeight=${startHeight}, endHeight=${endHeight}. Skipping proposal crawl.`);
-      return;
+    const [startHeight, endHeight, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.CRAWL_PROPOSAL,
+      [BULL_JOB_NAME.HANDLE_TRANSACTION],
+      config.crawlProposal.key
+    )
+    this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`)
+
+    const validStartHeight = Number.isFinite(startHeight) && !Number.isNaN(startHeight) ? Number(startHeight) : 0
+    const validEndHeight = Number.isFinite(endHeight) && !Number.isNaN(endHeight) ? Number(endHeight) : 0
+
+    if (
+      !Number.isFinite(validStartHeight) ||
+      !Number.isFinite(validEndHeight) ||
+      Number.isNaN(validStartHeight) ||
+      Number.isNaN(validEndHeight)
+    ) {
+      this.logger.warn(
+        `Invalid checkpoint heights: startHeight=${startHeight}, endHeight=${endHeight}. Skipping proposal crawl.`
+      )
+      return
     }
-    
-    if (validStartHeight >= validEndHeight) return;
 
-    let proposalIds: number[] = [];
+    if (validStartHeight >= validEndHeight) return
+
+    let proposalIds: number[] = []
     const resultTx = await EventAttribute.query()
       .where('block_height', '>', validStartHeight)
       .andWhere('block_height', '<=', validEndHeight)
       .andWhere('key', EventAttribute.ATTRIBUTE_KEY.PROPOSAL_ID)
-      .select('value');
+      .select('value')
 
-    if (resultTx.length > 0)
-      proposalIds = Array.from(
-        new Set(resultTx.map((res: any) => parseInt(res.value, 10)))
-      );
+    if (resultTx.length > 0) proposalIds = Array.from(new Set(resultTx.map((res: any) => parseInt(res.value, 10))))
 
     await knex
       .transaction(async (trx) => {
         if (proposalIds.length > 0) {
-          const listProposalsInDb: Proposal[] = await Proposal.query().whereIn(
-            'proposal_id',
-            proposalIds
-          );
+          const listProposalsInDb: Proposal[] = await Proposal.query().whereIn('proposal_id', proposalIds)
           const nodeInfo: GetNodeInfoResponseSDKType =
-            await this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
-          const cosmosSdkVersion =
-            nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99';
-          const chunkSize = this._isFreshStart 
-            ? (config.crawlProposal.freshStart?.chunkSize || 100)
-            : (config.crawlProposal.chunkSize || 5000);
-          const maxConcurrent = this._isFreshStart ? 3 : 10;
-          
+            await this._lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo()
+          const cosmosSdkVersion = nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99'
+          const chunkSize = this._isFreshStart
+            ? config.crawlProposal.freshStart?.chunkSize || 100
+            : config.crawlProposal.chunkSize || 5000
+          const maxConcurrent = this._isFreshStart ? 3 : 10
+
           for (let i = 0; i < proposalIds.length; i += chunkSize) {
-            const chunk = proposalIds.slice(i, i + chunkSize);
-            const concurrentChunk = chunk.slice(0, maxConcurrent);
+            const chunk = proposalIds.slice(i, i + chunkSize)
+            const concurrentChunk = chunk.slice(0, maxConcurrent)
             await Promise.all(
               concurrentChunk.map(async (proposalId: number) => {
-              try {
-                let proposal;
-                if (Utils.compareVersion(cosmosSdkVersion, 'v0.45.99') === -1) {
-                  proposal =
-                    await this._lcdClient.provider.cosmos.gov.v1beta1.proposal({
+                try {
+                  let proposal: any
+                  if (Utils.compareVersion(cosmosSdkVersion, 'v0.45.99') === -1) {
+                    proposal = await this._lcdClient.provider.cosmos.gov.v1beta1.proposal({
                       proposalId,
-                    });
-                } else {
-                  // use gov.v1 to call proposal
-                  proposal =
-                    await this._lcdClient.provider.cosmos.gov.v1.proposal({
+                    })
+                  } else {
+                    // use gov.v1 to call proposal
+                    proposal = await this._lcdClient.provider.cosmos.gov.v1.proposal({
                       proposalId,
-                    });
-                  proposal.proposal = {
-                    ...proposal.proposal,
-                    proposal_id: proposal.proposal.id,
-                    content: proposal.proposal.messages,
-                    description: proposal.proposal.summary,
-                    proposer: proposal.proposal.proposer,
-                    final_tally_result: {
-                      yes: proposal.proposal.final_tally_result.yes_count,
-                      abstain:
-                        proposal.proposal.final_tally_result.abstain_count,
-                      no: proposal.proposal.final_tally_result.no_count,
-                      no_with_veto:
-                        proposal.proposal.final_tally_result.no_with_veto_count,
-                    },
-                  };
-                }
+                    })
+                    proposal.proposal = {
+                      ...proposal.proposal,
+                      proposal_id: proposal.proposal.id,
+                      content: proposal.proposal.messages,
+                      description: proposal.proposal.summary,
+                      proposer: proposal.proposal.proposer,
+                      final_tally_result: {
+                        yes: proposal.proposal.final_tally_result.yes_count,
+                        abstain: proposal.proposal.final_tally_result.abstain_count,
+                        no: proposal.proposal.final_tally_result.no_count,
+                        no_with_veto: proposal.proposal.final_tally_result.no_with_veto_count,
+                      },
+                    }
+                  }
 
-                const foundProposal: Proposal | undefined =
-                  listProposalsInDb.find(
+                  const foundProposal: Proposal | undefined = listProposalsInDb.find(
                     (pro: Proposal) => pro.proposal_id === proposalId
-                  );
+                  )
 
-                let proposalEntity: Proposal;
-                if (!foundProposal) {
-                  const [proposerAddress, initialDeposit] =
-                    await Proposal.getProposerBySearchTx(
+                  let proposalEntity: Proposal
+                  if (!foundProposal) {
+                    const [proposerAddress, initialDeposit] = await Proposal.getProposerBySearchTx(
                       proposal.proposal.proposal_id
-                    );
+                    )
 
-                  proposalEntity = Proposal.createNewProposal(
-                    proposal.proposal,
-                    proposerAddress,
-                    initialDeposit
-                  );
-                } else {
-                  proposalEntity = foundProposal;
-                  proposalEntity.status = proposal.proposal.status;
-                  proposalEntity.total_deposit =
-                    proposal.proposal.total_deposit;
-                  proposalEntity.voting_start_time =
-                    proposal.proposal.voting_start_time;
-                  proposalEntity.voting_end_time =
-                    proposal.proposal.voting_end_time;
-                }
+                    proposalEntity = Proposal.createNewProposal(proposal.proposal, proposerAddress, initialDeposit)
+                  } else {
+                    proposalEntity = foundProposal
+                    proposalEntity.status = proposal.proposal.status
+                    proposalEntity.total_deposit = proposal.proposal.total_deposit
+                    proposalEntity.voting_start_time = proposal.proposal.voting_start_time
+                    proposalEntity.voting_end_time = proposal.proposal.voting_end_time
+                  }
 
-                listProposals.push(proposalEntity);
-              } catch (error: any) {
-                // check if this is no data found with this proposal_id
-                if (error.response?.data?.code === 5) {
-                  this.logger.warn(`Proposal ${proposalId} not found onchain`);
-                } else {
-                  this.logger.error(`Error get proposal ${proposalId}`);
-                  this.logger.debug(error);
-                  throw error;
+                  listProposals.push(proposalEntity)
+                } catch (error: any) {
+                  // check if this is no data found with this proposal_id
+                  if (error.response?.data?.code === 5) {
+                    this.logger.warn(`Proposal ${proposalId} not found onchain`)
+                  } else {
+                    this.logger.error(`Error get proposal ${proposalId}`)
+                    this.logger.debug(error)
+                    throw error
+                  }
                 }
-              }
-            })
-            );
+              })
+            )
           }
-          
+
           if (listProposals.length > 0)
             await Proposal.query()
               .insert(listProposals)
@@ -240,28 +224,24 @@ export default class CrawlProposalService extends BullableService {
               .returning('proposal_id')
               .transacting(trx)
               .catch((error) => {
-                this.logger.error(
-                  `Error insert or update proposals: ${JSON.stringify(
-                    listProposals
-                  )}`
-                );
-                this.logger.error(error);
-                throw error;
-              });
+                this.logger.error(`Error insert or update proposals: ${JSON.stringify(listProposals)}`)
+                this.logger.error(error)
+                throw error
+              })
         }
 
-        updateBlockCheckpoint.height = validEndHeight;
+        updateBlockCheckpoint.height = validEndHeight
         await BlockCheckpoint.query()
           .insert(updateBlockCheckpoint)
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       })
       .catch((error) => {
-        this.logger.error(error);
-        throw error;
-      });
+        this.logger.error(error)
+        throw error
+      })
   }
 
   @QueueHandler({
@@ -269,22 +249,20 @@ export default class CrawlProposalService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_ENDED_PROPOSAL,
   })
   public async handleEndedProposals(_payload: object): Promise<void> {
-    const batchQueries: any[] = [];
-    const patchQueries: any[] = [];
+    const batchQueries: any[] = []
+    const patchQueries: any[] = []
 
-    const current10SecsAgo = new Date(Date.now() - 10);
+    const current10SecsAgo = new Date(Date.now() - 10)
 
     const endedProposals = await Proposal.query()
       .where('status', Proposal.STATUS.PROPOSAL_STATUS_VOTING_PERIOD)
-      .andWhere('voting_end_time', '<=', current10SecsAgo);
+      .andWhere('voting_end_time', '<=', current10SecsAgo)
 
     endedProposals.forEach((proposal: Proposal) => {
       const request: QueryProposalRequest = {
         proposalId: Long.fromInt(proposal.proposal_id),
-      };
-      const data = toHex(
-        cosmos.gov.v1.QueryProposalRequest.encode(request).finish()
-      );
+      }
+      const data = toHex(cosmos.gov.v1.QueryProposalRequest.encode(request).finish())
 
       batchQueries.push(
         this._httpBatchClient.execute(
@@ -293,23 +271,18 @@ export default class CrawlProposalService extends BullableService {
             data,
           })
         )
-      );
-    });
+      )
+    })
 
-    const result: JsonRpcSuccessResponse[] = await Promise.all(batchQueries);
-    const resultProposals: (QueryProposalResponse | null)[] = result.map(
-      (res: JsonRpcSuccessResponse) =>
-        res.result.response.value
-          ? cosmos.gov.v1.QueryProposalResponse.decode(
-            fromBase64(res.result.response.value)
-          )
-          : null
-    );
+    const result: JsonRpcSuccessResponse[] = await Promise.all(batchQueries)
+    const resultProposals: (QueryProposalResponse | null)[] = result.map((res: JsonRpcSuccessResponse) =>
+      res.result.response.value
+        ? cosmos.gov.v1.QueryProposalResponse.decode(fromBase64(res.result.response.value))
+        : null
+    )
 
     endedProposals.forEach((proposal: Proposal) => {
-      const onchainPro = resultProposals.find((pro) =>
-        pro?.proposal?.id.equals(Long.fromInt(proposal.proposal_id))
-      );
+      const onchainPro = resultProposals.find((pro) => pro?.proposal?.id.equals(Long.fromInt(proposal.proposal_id)))
       if (onchainPro) {
         patchQueries.push(
           Proposal.query()
@@ -320,31 +293,24 @@ export default class CrawlProposalService extends BullableService {
                   (key) =>
                     cosmos.gov.v1.ProposalStatus[key as keyof typeof cosmos.gov.v1.ProposalStatus] ===
                     onchainPro?.proposal?.status
-                )
-                || '',
+                ) || '',
               total_deposit: onchainPro?.proposal?.totalDeposit || [],
               tally: {
                 yes: onchainPro.proposal?.finalTallyResult?.yesCount ?? '0',
                 no: onchainPro.proposal?.finalTallyResult?.noCount ?? '0',
-                abstain:
-                  onchainPro.proposal?.finalTallyResult?.abstainCount ?? '0',
-                no_with_veto:
-                  onchainPro.proposal?.finalTallyResult?.noWithVetoCount ?? '0',
+                abstain: onchainPro.proposal?.finalTallyResult?.abstainCount ?? '0',
+                no_with_veto: onchainPro.proposal?.finalTallyResult?.noWithVetoCount ?? '0',
               },
             })
-        );
+        )
       }
-    });
+    })
 
     if (patchQueries.length > 0)
       await Promise.all(patchQueries).catch((error) => {
-        this.logger.error(
-          `Error update status for ended proposals: ${JSON.stringify(
-            endedProposals
-          )}`
-        );
-        this.logger.error(error);
-      });
+        this.logger.error(`Error update status for ended proposals: ${JSON.stringify(endedProposals)}`)
+        this.logger.error(error)
+      })
   }
 
   @QueueHandler({
@@ -352,25 +318,21 @@ export default class CrawlProposalService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_NOT_ENOUGH_DEPOSIT_PROPOSAL,
     // prefix: `horoscope-v2-${config.chainId}`,
   })
-  public async handleNotEnoughDepositProposals(
-    _payload: object
-  ): Promise<void> {
-    const batchQueries: any[] = [];
-    const patchQueries: any[] = [];
+  public async handleNotEnoughDepositProposals(_payload: object): Promise<void> {
+    const batchQueries: any[] = []
+    const patchQueries: any[] = []
 
-    const current10SecsAgo = new Date(Date.now() - 10);
+    const current10SecsAgo = new Date(Date.now() - 10)
 
     const depositProposals = await Proposal.query()
       .where('status', Proposal.STATUS.PROPOSAL_STATUS_DEPOSIT_PERIOD)
-      .andWhere('deposit_end_time', '<=', current10SecsAgo);
+      .andWhere('deposit_end_time', '<=', current10SecsAgo)
 
     depositProposals.forEach((proposal: Proposal) => {
       const request: QueryProposalRequest = {
         proposalId: Long.fromInt(proposal.proposal_id),
-      };
-      const data = toHex(
-        cosmos.gov.v1.QueryProposalRequest.encode(request).finish()
-      );
+      }
+      const data = toHex(cosmos.gov.v1.QueryProposalRequest.encode(request).finish())
 
       batchQueries.push(
         this._httpBatchClient.execute(
@@ -379,41 +341,31 @@ export default class CrawlProposalService extends BullableService {
             data,
           })
         )
-      );
-    });
+      )
+    })
 
-    const result: JsonRpcSuccessResponse[] = await Promise.all(batchQueries);
-    const resultProposals: (QueryProposalResponse | null)[] = result.map(
-      (res: JsonRpcSuccessResponse) =>
-        res.result.response.value
-          ? cosmos.gov.v1.QueryProposalResponse.decode(
-            fromBase64(res.result.response.value)
-          )
-          : null
-    );
+    const result: JsonRpcSuccessResponse[] = await Promise.all(batchQueries)
+    const resultProposals: (QueryProposalResponse | null)[] = result.map((res: JsonRpcSuccessResponse) =>
+      res.result.response.value
+        ? cosmos.gov.v1.QueryProposalResponse.decode(fromBase64(res.result.response.value))
+        : null
+    )
 
     depositProposals.forEach((proposal: Proposal) => {
-      const onchainPro = resultProposals.find((pro) =>
-        pro?.proposal?.id.equals(Long.fromInt(proposal.proposal_id))
-      );
+      const onchainPro = resultProposals.find((pro) => pro?.proposal?.id.equals(Long.fromInt(proposal.proposal_id)))
 
       if (!onchainPro)
         patchQueries.push(
           Proposal.query().where('proposal_id', proposal.proposal_id).patch({
             status: Proposal.STATUS.PROPOSAL_STATUS_NOT_ENOUGH_DEPOSIT,
           })
-        );
-    });
+        )
+    })
 
     if (patchQueries.length > 0)
       await Promise.all(patchQueries).catch((error) => {
-        this.logger.error(
-          `Error update status for not enough deposit proposals: ${JSON.stringify(
-            depositProposals
-          )}`
-        );
-        this.logger.error(error);
-      });
+        this.logger.error(`Error update status for not enough deposit proposals: ${JSON.stringify(depositProposals)}`)
+        this.logger.error(error)
+      })
   }
-
 }

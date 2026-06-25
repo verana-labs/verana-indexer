@@ -1,40 +1,34 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import { ICoin } from '../common';
-import { Account } from './account';
-import BaseModel from './base';
+import { Model } from 'objection'
+import { ICoin } from '../common'
+import { Account } from './account'
+import BaseModel from './base'
 
 export class AccountVesting extends BaseModel {
-  account_id!: number;
+  account_id!: number
 
-  original_vesting!: ICoin[];
+  original_vesting!: ICoin[]
 
-  delegated_free!: ICoin[];
+  delegated_free!: ICoin[]
 
-  delegated_vesting!: ICoin[];
+  delegated_vesting!: ICoin[]
 
-  start_time: number | undefined;
+  start_time: number | undefined
 
-  end_time!: number;
+  end_time!: number
 
   static get tableName() {
-    return 'account_vesting';
+    return 'account_vesting'
   }
 
   static get jsonAttributes() {
-    return ['original_vesting', 'delegated_free', 'delegated_vesting'];
+    return ['original_vesting', 'delegated_free', 'delegated_vesting']
   }
 
   static get jsonSchema() {
     return {
       type: 'object',
-      required: [
-        'account_id',
-        'original_vesting',
-        'delegated_free',
-        'delegated_vesting',
-        'end_time',
-      ],
+      required: ['account_id', 'original_vesting', 'delegated_free', 'delegated_vesting', 'end_time'],
       properties: {
         account_id: { type: 'number' },
         original_vesting: {
@@ -70,7 +64,7 @@ export class AccountVesting extends BaseModel {
         start_time: { type: ['number', 'null'] },
         end_time: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -83,6 +77,6 @@ export class AccountVesting extends BaseModel {
           to: 'account.id',
         },
       },
-    };
+    }
   }
 }

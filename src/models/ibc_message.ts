@@ -1,39 +1,39 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { IbcChannel } from './ibc_channel';
-import { TransactionMessage } from './transaction_message';
-import config from '../config.json' with { type: 'json' };
+import { Model } from 'objection'
+import config from '../config.json' with { type: 'json' }
+import BaseModel from './base'
+import { IbcChannel } from './ibc_channel'
+import { TransactionMessage } from './transaction_message'
 
 export class IbcMessage extends BaseModel {
-  [relation: string]: any;
+  [relation: string]: any
 
-  id!: number;
+  id!: number
 
-  transaction_message_id!: number;
+  transaction_message_id!: number
 
-  src_channel_id!: string;
+  src_channel_id!: string
 
-  src_port_id!: string;
+  src_port_id!: string
 
-  dst_channel_id!: string;
+  dst_channel_id!: string
 
-  dst_port_id!: string;
+  dst_port_id!: string
 
-  type!: string;
+  type!: string
 
-  sequence!: number;
+  sequence!: number
 
-  sequence_key!: string;
+  sequence_key!: string
 
-  data!: any;
+  data!: any
 
-  message!: TransactionMessage;
+  message!: TransactionMessage
 
-  tx_hash!: string;
+  tx_hash!: string
 
   static get tableName() {
-    return 'ibc_message';
+    return 'ibc_message'
   }
 
   static get jsonSchema() {
@@ -59,7 +59,7 @@ export class IbcMessage extends BaseModel {
         sequence: { type: 'number' },
         sequence_key: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -88,7 +88,7 @@ export class IbcMessage extends BaseModel {
           to: 'ibc_channel.id',
         },
       },
-    };
+    }
   }
 
   static EVENT_TYPE = {
@@ -96,9 +96,9 @@ export class IbcMessage extends BaseModel {
     RECV_PACKET: 'recv_packet',
     ACKNOWLEDGE_PACKET: 'acknowledge_packet',
     TIMEOUT_PACKET: 'timeout_packet',
-  };
+  }
 
   static PORTS = {
     ICS20: config.crawlIbcIcs20.port,
-  };
+  }
 }

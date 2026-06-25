@@ -1,24 +1,25 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import { Model, AjvValidator } from 'objection';
-import addFormats from 'ajv-formats';
-import CustomQueryBuilder from './custom_query_builder';
-import knex from '../common/utils/db_connection';
+
+import addFormats from 'ajv-formats'
+import { AjvValidator, Model } from 'objection'
+import knex from '../common/utils/db_connection'
+import CustomQueryBuilder from './custom_query_builder'
 
 export default class BaseModel extends Model {
-  static QueryBuilder = CustomQueryBuilder;
+  static QueryBuilder = CustomQueryBuilder
 
-  static softDelete = true; // by default, all models are soft deleted
+  static softDelete = true // by default, all models are soft deleted
 
-  static delColumn = 'delete_at';
+  static delColumn = 'delete_at'
 
   static get idColumn(): string | string[] {
-    return 'id';
+    return 'id'
   }
 
   static createValidator() {
     return new AjvValidator({
       onCreateAjv: (ajv) => {
-        addFormats(ajv);
+        addFormats(ajv)
       },
       options: {
         $data: true,
@@ -29,17 +30,15 @@ export default class BaseModel extends Model {
         coerceTypes: true,
         removeAdditional: true,
       },
-    });
+    })
   }
   // static customMethod() {
   //   console.log('base customMethod');
   // }
 
   static isSoftDelete() {
-    return this.softDelete;
+    return BaseModel.softDelete
   }
-
-
 }
 
-BaseModel.knex(knex);
+BaseModel.knex(knex)

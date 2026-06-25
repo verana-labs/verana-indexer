@@ -2,10 +2,8 @@
   "extends": "./tsconfig-base.json",
   "compilerOptions": {
     "target": "ES6",
-    "rootDirs": [
-      "./src",
-      "./test"
-    ],
+    "lib": ["ES2022"],
+    "rootDirs": ["./src", "./test"],
     "module": "ESNEXT",
     "outDir": "dist",
     "forceConsistentCasingInFileNames": true,
@@ -16,21 +14,12 @@
     "moduleResolution": "Node",
     "resolveJsonModule": true,
     "paths": {
-      "src/*": [
-        "./src/*"
-      ],
-      "test/*": [
-        "./test/*"
-      ],
-      "@verana-labs/verana-types/codec/*": [
-        "./node_modules/@verana-labs/verana-types/dist/codec/*"
-      ]
+      "src/*": ["./src/*"],
+      "test/*": ["./test/*"],
+      "@verana-labs/verana-types/codec/*": ["./node_modules/@verana-labs/verana-types/dist/codec/*"]
     }
   },
-  "exclude": [
-    "node_modules",
-    "dist"
-  ],
+  "exclude": ["node_modules", "dist"],
   "ts-node": {
     "esm": true,
     // avoid need to specify extension when input

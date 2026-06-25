@@ -1,32 +1,32 @@
-import { Knex } from "knex";
+import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
-  const exists = await knex.schema.hasTable("indexer_events");
-  if (exists) return;
+  const exists = await knex.schema.hasTable('indexer_events')
+  if (exists) return
 
-  await knex.schema.createTable("indexer_events", (table) => {
-    table.bigIncrements("id").primary();
-    table.text("event_type").notNullable();
-    table.text("did").notNullable();
-    table.bigInteger("block_height").notNullable();
-    table.text("tx_hash").notNullable();
-    table.integer("tx_index").notNullable().defaultTo(0);
-    table.integer("message_index").notNullable().defaultTo(0);
-    table.text("message_type").notNullable();
-    table.text("module").notNullable();
-    table.text("entity_type").nullable();
-    table.text("entity_id").nullable();
-    table.timestamp("timestamp").notNullable();
-    table.jsonb("payload").notNullable().defaultTo("{}");
-    table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
+  await knex.schema.createTable('indexer_events', (table) => {
+    table.bigIncrements('id').primary()
+    table.text('event_type').notNullable()
+    table.text('did').notNullable()
+    table.bigInteger('block_height').notNullable()
+    table.text('tx_hash').notNullable()
+    table.integer('tx_index').notNullable().defaultTo(0)
+    table.integer('message_index').notNullable().defaultTo(0)
+    table.text('message_type').notNullable()
+    table.text('module').notNullable()
+    table.text('entity_type').nullable()
+    table.text('entity_id').nullable()
+    table.timestamp('timestamp').notNullable()
+    table.jsonb('payload').notNullable().defaultTo('{}')
+    table.timestamp('created_at').notNullable().defaultTo(knex.fn.now())
 
-    table.index(["did", "block_height", "tx_index", "message_index", "id"], "idx_events_did_replay_order");
-    table.index(["block_height", "tx_index", "message_index", "id"], "idx_events_replay_order");
-    table.index(["block_height"], "idx_events_block_height");
-    table.index(["did"], "idx_events_did");
-    table.index(["tx_hash"], "idx_events_tx_hash");
-    table.index(["event_type"], "idx_events_event_type");
-  });
+    table.index(['did', 'block_height', 'tx_index', 'message_index', 'id'], 'idx_events_did_replay_order')
+    table.index(['block_height', 'tx_index', 'message_index', 'id'], 'idx_events_replay_order')
+    table.index(['block_height'], 'idx_events_block_height')
+    table.index(['did'], 'idx_events_did')
+    table.index(['tx_hash'], 'idx_events_tx_hash')
+    table.index(['event_type'], 'idx_events_event_type')
+  })
 
   await knex.raw(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_events_tx_msg_entity_unique
@@ -38,19 +38,19 @@ export async function up(knex: Knex): Promise<void> {
       entity_type,
       COALESCE(entity_id, '')
     )
-  `);
+  `)
 
   await knex.raw(`
     CREATE INDEX IF NOT EXISTS idx_events_payload_related_dids_gin
     ON indexer_events USING GIN ((payload -> 'related_dids'))
-  `);
+  `)
 
   await knex.raw(`
     CREATE INDEX IF NOT EXISTS idx_events_payload_related_dids_camel_gin
     ON indexer_events USING GIN ((payload -> 'relatedDids'))
-  `);
+  `)
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropTableIfExists("indexer_events");
+  await knex.schema.dropTableIfExists('indexer_events')
 }

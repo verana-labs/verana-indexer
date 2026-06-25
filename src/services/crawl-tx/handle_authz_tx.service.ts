@@ -1,11 +1,10 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import _ from 'lodash';
-import { BlockCheckpoint, TransactionMessage } from '../../models';
-import { BULL_JOB_NAME, MSG_TYPE, SERVICE } from '../../common';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../config.json' with { type: 'json' };
-import knex from '../../common/utils/db_connection';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, MSG_TYPE, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, TransactionMessage } from '../../models'
 
 @Service({
   name: SERVICE.V1.HandleAuthzTx.key,
@@ -13,21 +12,18 @@ import knex from '../../common/utils/db_connection';
 })
 export default class HandleAuthzTxService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   async handleJob() {
-    const [startBlock, endBlock, blockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.HANDLE_AUTHZ_TX,
-        [BULL_JOB_NAME.HANDLE_TRANSACTION],
-        config.handleAuthzTx.key
-      );
-    this.logger.info(
-      `Handle Authz Message from block ${startBlock} to block ${endBlock}`
-    );
+    const [startBlock, endBlock, blockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.HANDLE_AUTHZ_TX,
+      [BULL_JOB_NAME.HANDLE_TRANSACTION],
+      config.handleAuthzTx.key
+    )
+    this.logger.info(`Handle Authz Message from block ${startBlock} to block ${endBlock}`)
     if (startBlock > endBlock) {
-      return;
+      return
     }
 
     // query numberOfRow tx message has type authz and has no parent_id
@@ -36,11 +32,11 @@ export default class HandleAuthzTxService extends BullableService {
       .where('height', '>', startBlock)
       .andWhere('height', '<=', endBlock)
       .andWhere('type', MSG_TYPE.MSG_AUTHZ_EXEC)
-      .andWhere('parent_id', null);
-    const listSubTxAuthz: TransactionMessage[] = [];
+      .andWhere('parent_id', null)
+    const listSubTxAuthz: TransactionMessage[] = []
 
     listTxMsgs.forEach((txMsg) => {
-      this.logger.debug('Handling tx msg id: ', txMsg.id);
+      this.logger.debug('Handling tx msg id: ', txMsg.id)
       txMsg?.content?.msgs.forEach((msg: any, index: number) => {
         listSubTxAuthz.push(
           TransactionMessage.fromJson({
@@ -51,38 +47,36 @@ export default class HandleAuthzTxService extends BullableService {
             parent_id: txMsg.id,
             sender: txMsg.sender,
           })
-        );
-      });
-    });
+        )
+      })
+    })
     await knex.transaction(async (trx) => {
       try {
         if (listSubTxAuthz.length > 0) {
-          const chunkSize = config.handleAuthzTx.chunkSize || 5000;
-          this.logger.info(`📝 [AUTHZ_TX] Inserting ${listSubTxAuthz.length} authz messages in chunks of ${chunkSize}`);
+          const chunkSize = config.handleAuthzTx.chunkSize || 5000
+          this.logger.info(`📝 [AUTHZ_TX] Inserting ${listSubTxAuthz.length} authz messages in chunks of ${chunkSize}`)
           for (let i = 0; i < listSubTxAuthz.length; i += chunkSize) {
-            const chunk = listSubTxAuthz.slice(i, i + chunkSize);
-            await TransactionMessage.query()
-              .insert(chunk)
-              .transacting(trx);
+            const chunk = listSubTxAuthz.slice(i, i + chunkSize)
+            await TransactionMessage.query().insert(chunk).transacting(trx)
           }
-          this.logger.info(`✅ [AUTHZ_TX] Inserted ${listSubTxAuthz.length} authz messages`);
+          this.logger.info(`✅ [AUTHZ_TX] Inserted ${listSubTxAuthz.length} authz messages`)
         }
 
         if (blockCheckpoint) {
-          blockCheckpoint.height = endBlock;
+          blockCheckpoint.height = endBlock
 
           await BlockCheckpoint.query()
             .insert(blockCheckpoint)
             .onConflict('job_name')
             .merge()
             .returning('id')
-            .transacting(trx);
+            .transacting(trx)
         }
       } catch (error) {
-        this.logger.error(`❌ [AUTHZ_TX] Transaction failed, rolling back:`, error);
-        throw error;
+        this.logger.error(`❌ [AUTHZ_TX] Transaction failed, rolling back:`, error)
+        throw error
       }
-    });
+    })
   }
 
   @QueueHandler({
@@ -91,7 +85,7 @@ export default class HandleAuthzTxService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   async jobHandler() {
-    await this.handleJob();
+    await this.handleJob()
   }
 
   public async _start(): Promise<void> {
@@ -108,7 +102,7 @@ export default class HandleAuthzTxService extends BullableService {
           every: config.handleAuthzTx.millisecondCrawl,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

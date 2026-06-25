@@ -1,4 +1,4 @@
-import { Knex } from 'knex';
+import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createView('view_ibc_channel_detail_statistic', (view) => {
@@ -17,18 +17,13 @@ export async function up(knex: Knex): Promise<void> {
             'ibc_ics20.status',
             '=',
             knex.raw("'ack_success'")
-          );
+          )
         })
-        .groupBy(
-          'ibc_ics20.denom',
-          'ibc_ics20.type',
-          'ibc_channel.channel_id',
-          'ibc_channel.counterparty_channel_id'
-        )
-    );
-  });
+        .groupBy('ibc_ics20.denom', 'ibc_ics20.type', 'ibc_channel.channel_id', 'ibc_channel.counterparty_channel_id')
+    )
+  })
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropViewIfExists('view_ibc_channel_detail_statistic');
+  await knex.schema.dropViewIfExists('view_ibc_channel_detail_statistic')
 }

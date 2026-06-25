@@ -1,34 +1,34 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Transaction } from './transaction';
-import { Event } from './event';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { Event } from './event'
+import { Transaction } from './transaction'
 
 export class TransactionMessage extends BaseModel {
-  [relation: string]: any;
+  [relation: string]: any
 
-  id!: number;
+  id!: number
 
-  tx_id!: number;
+  tx_id!: number
 
-  index!: number;
+  index!: number
 
-  type!: string;
+  type!: string
 
-  sender!: string;
+  sender!: string
 
-  content!: any;
+  content!: any
 
-  parent_id!: number;
+  parent_id!: number
 
-  events!: Event[];
+  events!: Event[]
 
   static get tableName() {
-    return 'transaction_message';
+    return 'transaction_message'
   }
 
   static get jsonAttributes() {
-    return ['content'];
+    return ['content']
   }
 
   static get jsonSchema() {
@@ -42,7 +42,7 @@ export class TransactionMessage extends BaseModel {
         sender: { type: 'string' },
         parent_id: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -63,6 +63,6 @@ export class TransactionMessage extends BaseModel {
           to: ['event.tx_id', 'event.tx_msg_index'],
         },
       },
-    };
+    }
   }
 }
