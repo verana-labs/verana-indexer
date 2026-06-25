@@ -1,20 +1,20 @@
-import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { Context, ServiceBroker } from "moleculer";
-import BaseService from "../../base/base.service";
-import ApiResponder from "../../common/utils/apiResponse";
-import { getBlockHeight } from "../../common/utils/blockHeight";
-import { dateToIsoOrNull } from "../../common/utils/date_utils";
-import ExchangeRate from "../../models/exchange_rate";
-import ExchangeRateHistory from "../../models/exchange_rate_history";
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Context, ServiceBroker } from 'moleculer'
+import BaseService from '../../base/base.service'
+import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockHeight } from '../../common/utils/blockHeight'
+import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import ExchangeRate from '../../models/exchange_rate'
+import ExchangeRateHistory from '../../models/exchange_rate_history'
 
 function computePrice(amount: string, rate: string, rateScale: number): string {
-  const scaled = BigInt(amount) * BigInt(rate);
-  let divisor = BigInt(1);
-  const ten = BigInt(10);
+  const scaled = BigInt(amount) * BigInt(rate)
+  let divisor = BigInt(1)
+  const ten = BigInt(10)
   for (let i = 0; i < rateScale; i += 1) {
-    divisor *= ten;
+    divisor *= ten
   }
-  return (scaled / divisor).toString();
+  return (scaled / divisor).toString()
 }
 
 function serializeExchangeRateRow(row: any) {
@@ -30,41 +30,41 @@ function serializeExchangeRateRow(row: any) {
     updated: dateToIsoOrNull(row.updated),
     expires: dateToIsoOrNull(row.expires),
     state: Boolean(row.state),
-  };
+  }
 }
 
 interface GetExchangeRateParams {
-  id?: string;
-  base_asset_type?: string;
-  base_asset?: string;
-  quote_asset_type?: string;
-  quote_asset?: string;
-  state?: boolean;
-  expire_ts?: string;
+  id?: string
+  base_asset_type?: string
+  base_asset?: string
+  quote_asset_type?: string
+  quote_asset?: string
+  state?: boolean
+  expire_ts?: string
 }
 
 interface GetPriceParams {
-  base_asset_type: string;
-  base_asset: string;
-  quote_asset_type: string;
-  quote_asset: string;
-  amount: string;
+  base_asset_type: string
+  base_asset: string
+  quote_asset_type: string
+  quote_asset: string
+  amount: string
 }
 
 type AssetPair = {
-  base_asset_type: string;
-  base_asset: string;
-  quote_asset_type: string;
-  quote_asset: string;
-};
+  base_asset_type: string
+  base_asset: string
+  quote_asset_type: string
+  quote_asset: string
+}
 
 @Service({
-  name: "ExchangeRateApiService",
+  name: 'ExchangeRateApiService',
   version: 1,
 })
 export default class ExchangeRateApiService extends BaseService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   private async resolveAtHeight(
@@ -72,47 +72,45 @@ export default class ExchangeRateApiService extends BaseService {
     blockHeight: number
   ): Promise<any | undefined> {
     let query = ExchangeRateHistory.query()
-      .where("height", "<=", blockHeight)
-      .orderBy("height", "desc")
-      .orderBy("id", "desc");
+      .where('height', '<=', blockHeight)
+      .orderBy('height', 'desc')
+      .orderBy('id', 'desc')
     if (selector.id !== undefined) {
-      query = query.where("exchange_rate_id", selector.id);
+      query = query.where('exchange_rate_id', selector.id)
     } else if (selector.pair) {
       query = query
-        .where("base_asset_type", selector.pair.base_asset_type)
-        .where("base_asset", selector.pair.base_asset)
-        .where("quote_asset_type", selector.pair.quote_asset_type)
-        .where("quote_asset", selector.pair.quote_asset);
+        .where('base_asset_type', selector.pair.base_asset_type)
+        .where('base_asset', selector.pair.base_asset)
+        .where('quote_asset_type', selector.pair.quote_asset_type)
+        .where('quote_asset', selector.pair.quote_asset)
     }
-    return query.first();
+    return query.first()
   }
 
-  private async resolveLatest(
-    selector: { id?: number; pair?: AssetPair }
-  ): Promise<any | undefined> {
-    let query = ExchangeRate.query();
+  private async resolveLatest(selector: { id?: number; pair?: AssetPair }): Promise<any | undefined> {
+    let query = ExchangeRate.query()
     if (selector.id !== undefined) {
-      query = query.where("id", selector.id);
+      query = query.where('id', selector.id)
     } else if (selector.pair) {
       query = query
-        .where("base_asset_type", selector.pair.base_asset_type)
-        .where("base_asset", selector.pair.base_asset)
-        .where("quote_asset_type", selector.pair.quote_asset_type)
-        .where("quote_asset", selector.pair.quote_asset);
+        .where('base_asset_type', selector.pair.base_asset_type)
+        .where('base_asset', selector.pair.base_asset)
+        .where('quote_asset_type', selector.pair.quote_asset_type)
+        .where('quote_asset', selector.pair.quote_asset)
     }
-    return query.first();
+    return query.first()
   }
 
   @Action({
-    rest: "GET get",
+    rest: 'GET get',
     params: {
-      id: { type: "string", optional: true, convert: true },
-      base_asset_type: { type: "enum", values: ["TU", "COIN", "FIAT"], optional: true },
-      base_asset: { type: "string", optional: true },
-      quote_asset_type: { type: "enum", values: ["TU", "COIN", "FIAT"], optional: true },
-      quote_asset: { type: "string", optional: true },
-      state: { type: "boolean", optional: true, convert: true },
-      expire_ts: { type: "string", optional: true },
+      id: { type: 'string', optional: true, convert: true },
+      base_asset_type: { type: 'enum', values: ['TU', 'COIN', 'FIAT'], optional: true },
+      base_asset: { type: 'string', optional: true },
+      quote_asset_type: { type: 'enum', values: ['TU', 'COIN', 'FIAT'], optional: true },
+      quote_asset: { type: 'string', optional: true },
+      state: { type: 'boolean', optional: true, convert: true },
+      expire_ts: { type: 'string', optional: true },
     },
   })
   async getExchangeRate(ctx: Context<GetExchangeRateParams>) {
@@ -125,28 +123,28 @@ export default class ExchangeRateApiService extends BaseService {
         quote_asset: quoteAsset,
         state,
         expire_ts: expireTs,
-      } = ctx.params;
+      } = ctx.params
 
-      const hasId = id !== undefined && id.trim() !== "";
+      const hasId = id !== undefined && id.trim() !== ''
       const hasAssets =
         baseAssetType !== undefined &&
         baseAsset !== undefined &&
         quoteAssetType !== undefined &&
-        quoteAsset !== undefined;
+        quoteAsset !== undefined
 
       if (hasId === hasAssets) {
         return ApiResponder.error(
           ctx,
           "Provide either 'id' or the full four-tuple (base_asset_type, base_asset, quote_asset_type, quote_asset), but not both",
           400
-        );
+        )
       }
 
-      let expireDate: Date | undefined;
+      let expireDate: Date | undefined
       if (expireTs) {
-        expireDate = new Date(expireTs);
+        expireDate = new Date(expireTs)
         if (Number.isNaN(expireDate.getTime())) {
-          return ApiResponder.error(ctx, "Invalid expire_ts datetime format", 400);
+          return ApiResponder.error(ctx, 'Invalid expire_ts datetime format', 400)
         }
       }
 
@@ -159,45 +157,42 @@ export default class ExchangeRateApiService extends BaseService {
               quote_asset_type: quoteAssetType as string,
               quote_asset: quoteAsset as string,
             },
-          };
+          }
 
-      const blockHeight = getBlockHeight(ctx);
-      const row = blockHeight !== undefined
-        ? await this.resolveAtHeight(selector, blockHeight)
-        : await this.resolveLatest(selector);
+      const blockHeight = getBlockHeight(ctx)
+      const row =
+        blockHeight !== undefined
+          ? await this.resolveAtHeight(selector, blockHeight)
+          : await this.resolveLatest(selector)
 
       if (!row) {
-        return ApiResponder.error(ctx, "Exchange rate not found", 404);
+        return ApiResponder.error(ctx, 'Exchange rate not found', 404)
       }
 
       if (state !== undefined && Boolean(row.state) !== state) {
-        return ApiResponder.error(ctx, "Exchange rate not found", 404);
+        return ApiResponder.error(ctx, 'Exchange rate not found', 404)
       }
       if (expireDate && !(row.expires && new Date(row.expires) > expireDate)) {
-        return ApiResponder.error(ctx, "Exchange rate not found", 404);
+        return ApiResponder.error(ctx, 'Exchange rate not found', 404)
       }
 
       return ApiResponder.success(ctx, {
         exchange_rate: serializeExchangeRateRow(row),
-      });
+      })
     } catch (err: any) {
-      this.logger.error("Error in ExchangeRate.getExchangeRate:", err);
-      return ApiResponder.error(
-        ctx,
-        `Failed to get exchange rate: ${err?.message || String(err)}`,
-        500
-      );
+      this.logger.error('Error in ExchangeRate.getExchangeRate:', err)
+      return ApiResponder.error(ctx, `Failed to get exchange rate: ${err?.message || String(err)}`, 500)
     }
   }
 
   @Action({
-    rest: "GET price",
+    rest: 'GET price',
     params: {
-      base_asset_type: { type: "enum", values: ["TU", "COIN", "FIAT"] },
-      base_asset: { type: "string", empty: false },
-      quote_asset_type: { type: "enum", values: ["TU", "COIN", "FIAT"] },
-      quote_asset: { type: "string", empty: false },
-      amount: { type: "string", empty: false, pattern: /^[0-9]+$/ },
+      base_asset_type: { type: 'enum', values: ['TU', 'COIN', 'FIAT'] },
+      base_asset: { type: 'string', empty: false },
+      quote_asset_type: { type: 'enum', values: ['TU', 'COIN', 'FIAT'] },
+      quote_asset: { type: 'string', empty: false },
+      amount: { type: 'string', empty: false, pattern: /^[0-9]+$/ },
     },
   })
   async getPrice(ctx: Context<GetPriceParams>) {
@@ -208,7 +203,7 @@ export default class ExchangeRateApiService extends BaseService {
         quote_asset_type: quoteAssetType,
         quote_asset: quoteAsset,
         amount,
-      } = ctx.params;
+      } = ctx.params
 
       if (baseAssetType === quoteAssetType && baseAsset === quoteAsset) {
         return ApiResponder.success(ctx, {
@@ -217,7 +212,7 @@ export default class ExchangeRateApiService extends BaseService {
           base_asset: baseAsset,
           quote_asset_type: quoteAssetType,
           quote_asset: quoteAsset,
-        });
+        })
       }
 
       const pair: AssetPair = {
@@ -225,23 +220,24 @@ export default class ExchangeRateApiService extends BaseService {
         base_asset: baseAsset,
         quote_asset_type: quoteAssetType,
         quote_asset: quoteAsset,
-      };
-      const blockHeight = getBlockHeight(ctx);
-      const row = blockHeight !== undefined
-        ? await this.resolveAtHeight({ pair }, blockHeight)
-        : await this.resolveLatest({ pair });
+      }
+      const blockHeight = getBlockHeight(ctx)
+      const row =
+        blockHeight !== undefined
+          ? await this.resolveAtHeight({ pair }, blockHeight)
+          : await this.resolveLatest({ pair })
 
       if (!row) {
-        return ApiResponder.error(ctx, "Exchange rate not found", 404);
+        return ApiResponder.error(ctx, 'Exchange rate not found', 404)
       }
 
-      const isExpired = !row.expires || new Date(row.expires) <= new Date();
+      const isExpired = !row.expires || new Date(row.expires) <= new Date()
       if (!row.state || isExpired) {
-        return ApiResponder.error(ctx, "Exchange rate is disabled or expired", 410);
+        return ApiResponder.error(ctx, 'Exchange rate is disabled or expired', 410)
       }
 
-      const price = computePrice(amount, String(row.rate), Number(row.rate_scale));
-      const serialized = serializeExchangeRateRow(row);
+      const price = computePrice(amount, String(row.rate), Number(row.rate_scale))
+      const serialized = serializeExchangeRateRow(row)
 
       return ApiResponder.success(ctx, {
         price,
@@ -252,14 +248,10 @@ export default class ExchangeRateApiService extends BaseService {
         rate: serialized.rate,
         rate_scale: serialized.rate_scale,
         expires: serialized.expires,
-      });
+      })
     } catch (err: any) {
-      this.logger.error("Error in ExchangeRate.getPrice:", err);
-      return ApiResponder.error(
-        ctx,
-        `Failed to get price: ${err?.message || String(err)}`,
-        500
-      );
+      this.logger.error('Error in ExchangeRate.getPrice:', err)
+      return ApiResponder.error(ctx, `Failed to get price: ${err?.message || String(err)}`, 500)
     }
   }
 }
