@@ -12,13 +12,31 @@ import { isUnknownMessageError } from './api_shared'
 import { subscribeBroadcaster } from './subscribe_broadcaster'
 import { swaggerUiComponent } from './swagger_ui'
 import { vtSubscribeBroadcaster } from './vt_subscribe_broadcaster'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { IncomingMessage, Server, ServerResponse } from 'http'
+import { Context, Errors, ServiceBroker } from 'moleculer'
+import OpenApiMixin from 'moleculer-auto-openapi'
+import ApiGateway, { Route } from 'moleculer-web'
+import BaseService from '../../base/base.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import { indexerStatusManager } from '../manager/indexer_status.manager'
+import { isUnknownMessageError } from './api_shared'
+import { subscribeBroadcaster } from './subscribe_broadcaster'
+import { swaggerUiComponent } from './swagger_ui'
+import { vtSubscribeBroadcaster } from './vt_subscribe_broadcaster'
 
+const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION
+const REQUEST_ACCEPTED_NS = Symbol('requestAcceptedNs')
+const REQUEST_START_NS = Symbol('requestStartNs')
+const requestTimingHookedServers = new WeakSet<Server>()
 const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION
 const REQUEST_ACCEPTED_NS = Symbol('requestAcceptedNs')
 const REQUEST_START_NS = Symbol('requestStartNs')
 const requestTimingHookedServers = new WeakSet<Server>()
 
 const DEFAULT_ROUTE_CONFIG = {
+  mappingPolicy: 'restrict' as const,
   mappingPolicy: 'restrict' as const,
   bodyParsers: {
     json: true,

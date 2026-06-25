@@ -2,6 +2,9 @@ export const environmentDeploy = {
   development: 'development',
   staging: 'staging',
 }
+  development: 'development',
+  staging: 'staging',
+}
 
 // Chain id of config.json file that devOps configure on server
 export const chainIdConfigOnServer = {
