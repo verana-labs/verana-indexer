@@ -295,14 +295,6 @@ export const SERVICE = {
       key: "ExchangeRateProcessorService",
       path: "v1.ExchangeRateProcessorService",
     },
-    ExchangeRateDatabaseService: {
-      key: "ExchangeRateDatabaseService",
-      path: "v1.ExchangeRateDatabaseService",
-    },
-    ExchangeRateProcessorService: {
-      key: "ExchangeRateProcessorService",
-      path: "v1.ExchangeRateProcessorService",
-    },
     CrawlAccountService: {
       key: 'CrawlAccountService',
       name: 'v1.CrawlAccountService',
