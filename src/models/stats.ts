@@ -1,110 +1,110 @@
-import BaseModel from "./base";
+import BaseModel from './base'
 
-export type Granularity = "HOUR" | "DAY" | "MONTH";
-export type EntityType = "GLOBAL" | "ECOSYSTEM" | "CREDENTIAL_SCHEMA" | "PARTICIPANT";
+export type Granularity = 'HOUR' | 'DAY' | 'MONTH'
+export type EntityType = 'GLOBAL' | 'ECOSYSTEM' | 'CREDENTIAL_SCHEMA' | 'PARTICIPANT'
 
 export default class Stats extends BaseModel {
-  static tableName = "stats";
+  static tableName = 'stats'
 
-  id!: number;
-  granularity!: Granularity;
-  timestamp!: Date;
-  entity_type!: EntityType;
-  entity_id!: number ;
+  id!: number
+  granularity!: Granularity
+  timestamp!: Date
+  entity_type!: EntityType
+  entity_id!: number
 
   // Cumulative fields
-  cumulative_participants!: number;
-  cumulative_participants_ecosystem!: number;
-  cumulative_participants_issuer_grantor!: number;
-  cumulative_participants_issuer!: number;
-  cumulative_participants_verifier_grantor!: number;
-  cumulative_participants_verifier!: number;
-  cumulative_participants_holder!: number;
-  cumulative_active_schemas!: number;
-  cumulative_archived_schemas!: number;
-  cumulative_weight!: number;
-  cumulative_issued!: number;
-  cumulative_verified!: number;
-  cumulative_ecosystem_slash_events!: number;
-  cumulative_ecosystem_slashed_amount!: number;
-  cumulative_ecosystem_slashed_amount_repaid!: number;
-  cumulative_network_slash_events!: number;
-  cumulative_network_slashed_amount!: number;
-  cumulative_network_slashed_amount_repaid!: number;
+  cumulative_participants!: number
+  cumulative_participants_ecosystem!: number
+  cumulative_participants_issuer_grantor!: number
+  cumulative_participants_issuer!: number
+  cumulative_participants_verifier_grantor!: number
+  cumulative_participants_verifier!: number
+  cumulative_participants_holder!: number
+  cumulative_active_schemas!: number
+  cumulative_archived_schemas!: number
+  cumulative_weight!: number
+  cumulative_issued!: number
+  cumulative_verified!: number
+  cumulative_ecosystem_slash_events!: number
+  cumulative_ecosystem_slashed_amount!: number
+  cumulative_ecosystem_slashed_amount_repaid!: number
+  cumulative_network_slash_events!: number
+  cumulative_network_slashed_amount!: number
+  cumulative_network_slashed_amount_repaid!: number
 
   // Delta fields
-  delta_participants!: number;
-  delta_participants_ecosystem!: number;
-  delta_participants_issuer_grantor!: number;
-  delta_participants_issuer!: number;
-  delta_participants_verifier_grantor!: number;
-  delta_participants_verifier!: number;
-  delta_participants_holder!: number;
-  delta_active_schemas!: number;
-  delta_archived_schemas!: number;
-  delta_weight!: number;
-  delta_issued!: number;
-  delta_verified!: number;
-  delta_ecosystem_slash_events!: number;
-  delta_ecosystem_slashed_amount!: number;
-  delta_ecosystem_slashed_amount_repaid!: number;
-  delta_network_slash_events!: number;
-  delta_network_slashed_amount!: number;
-  delta_network_slashed_amount_repaid!: number;
+  delta_participants!: number
+  delta_participants_ecosystem!: number
+  delta_participants_issuer_grantor!: number
+  delta_participants_issuer!: number
+  delta_participants_verifier_grantor!: number
+  delta_participants_verifier!: number
+  delta_participants_holder!: number
+  delta_active_schemas!: number
+  delta_archived_schemas!: number
+  delta_weight!: number
+  delta_issued!: number
+  delta_verified!: number
+  delta_ecosystem_slash_events!: number
+  delta_ecosystem_slashed_amount!: number
+  delta_ecosystem_slashed_amount_repaid!: number
+  delta_network_slash_events!: number
+  delta_network_slashed_amount!: number
+  delta_network_slashed_amount_repaid!: number
 
-  created_at!: Date;
-  updated_at!: Date;
+  created_at!: Date
+  updated_at!: Date
 
   static get jsonSchema() {
     return {
-      type: "object",
+      type: 'object',
       required: [
-        "granularity",
-        "timestamp",
-        "entity_type",
-        "cumulative_participants",
-        "cumulative_participants_ecosystem",
-        "cumulative_participants_issuer_grantor",
-        "cumulative_participants_issuer",
-        "cumulative_participants_verifier_grantor",
-        "cumulative_participants_verifier",
-        "cumulative_participants_holder",
-        "cumulative_active_schemas",
-        "cumulative_archived_schemas",
-        "cumulative_weight",
-        "cumulative_issued",
-        "cumulative_verified",
-        "cumulative_ecosystem_slash_events",
-        "cumulative_ecosystem_slashed_amount",
-        "cumulative_ecosystem_slashed_amount_repaid",
-        "cumulative_network_slash_events",
-        "cumulative_network_slashed_amount",
-        "cumulative_network_slashed_amount_repaid",
-        "delta_participants",
-        "delta_active_schemas",
-        "delta_archived_schemas",
-        "delta_weight",
-        "delta_issued",
-        "delta_verified",
-        "delta_ecosystem_slash_events",
-        "delta_ecosystem_slashed_amount",
-        "delta_ecosystem_slashed_amount_repaid",
-        "delta_network_slash_events",
-        "delta_network_slashed_amount",
-        "delta_network_slashed_amount_repaid",
-        "delta_participants_ecosystem",
-        "delta_participants_issuer_grantor",
-        "delta_participants_issuer",
-        "delta_participants_verifier_grantor",
-        "delta_participants_verifier",
-        "delta_participants_holder",
+        'granularity',
+        'timestamp',
+        'entity_type',
+        'cumulative_participants',
+        'cumulative_participants_ecosystem',
+        'cumulative_participants_issuer_grantor',
+        'cumulative_participants_issuer',
+        'cumulative_participants_verifier_grantor',
+        'cumulative_participants_verifier',
+        'cumulative_participants_holder',
+        'cumulative_active_schemas',
+        'cumulative_archived_schemas',
+        'cumulative_weight',
+        'cumulative_issued',
+        'cumulative_verified',
+        'cumulative_ecosystem_slash_events',
+        'cumulative_ecosystem_slashed_amount',
+        'cumulative_ecosystem_slashed_amount_repaid',
+        'cumulative_network_slash_events',
+        'cumulative_network_slashed_amount',
+        'cumulative_network_slashed_amount_repaid',
+        'delta_participants',
+        'delta_active_schemas',
+        'delta_archived_schemas',
+        'delta_weight',
+        'delta_issued',
+        'delta_verified',
+        'delta_ecosystem_slash_events',
+        'delta_ecosystem_slashed_amount',
+        'delta_ecosystem_slashed_amount_repaid',
+        'delta_network_slash_events',
+        'delta_network_slashed_amount',
+        'delta_network_slashed_amount_repaid',
+        'delta_participants_ecosystem',
+        'delta_participants_issuer_grantor',
+        'delta_participants_issuer',
+        'delta_participants_verifier_grantor',
+        'delta_participants_verifier',
+        'delta_participants_holder',
       ],
       properties: {
-        granularity: { type: "string", enum: ["HOUR", "DAY", "MONTH"] },
-        timestamp: { type: "string", format: "date-time" },
-        entity_type: { type: "string", enum: ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"] },
-        entity_id: { type: "number" },
+        granularity: { type: 'string', enum: ['HOUR', 'DAY', 'MONTH'] },
+        timestamp: { type: 'string', format: 'date-time' },
+        entity_type: { type: 'string', enum: ['GLOBAL', 'ECOSYSTEM', 'CREDENTIAL_SCHEMA', 'PARTICIPANT'] },
+        entity_id: { type: 'number' },
       },
-    };
+    }
   }
 }

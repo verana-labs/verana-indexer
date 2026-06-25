@@ -1,11 +1,11 @@
-import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { Context, ServiceBroker } from "moleculer";
-import BaseService from "../../base/base.service";
-import { SERVICE } from "../../common";
-import ApiResponder from "../../common/utils/apiResponse";
-import Stats, { Granularity, EntityType } from "../../models/stats";
-import knex from "../../common/utils/db_connection";
-import { isValidISO8601UTC } from "../../common/utils/date_utils";
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Context, ServiceBroker } from 'moleculer'
+import BaseService from '../../base/base.service'
+import { SERVICE } from '../../common'
+import ApiResponder from '../../common/utils/apiResponse'
+import { isValidISO8601UTC } from '../../common/utils/date_utils'
+import knex from '../../common/utils/db_connection'
+import Stats, { EntityType, Granularity } from '../../models/stats'
 
 @Service({
   name: SERVICE.V1.StatsAPIService.key,
@@ -13,139 +13,145 @@ import { isValidISO8601UTC } from "../../common/utils/date_utils";
 })
 export default class StatsAPIService extends BaseService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   private normalizeStatsRecord(record: any): any {
-    if (!record) return record;
-    
-    const normalized = { ...record };
+    if (!record) return record
+
+    const normalized = { ...record }
     const numericFields = [
-      "id",
-      "entity_id",
-      "cumulative_participants",
-      "cumulative_participants_ecosystem",
-      "cumulative_participants_issuer_grantor",
-      "cumulative_participants_issuer",
-      "cumulative_participants_verifier_grantor",
-      "cumulative_participants_verifier",
-      "cumulative_participants_holder",
-      "cumulative_active_schemas",
-      "cumulative_archived_schemas",
-      "cumulative_weight",
-      "cumulative_issued",
-      "cumulative_verified",
-      "cumulative_ecosystem_slash_events",
-      "cumulative_ecosystem_slashed_amount",
-      "cumulative_ecosystem_slashed_amount_repaid",
-      "cumulative_network_slash_events",
-      "cumulative_network_slashed_amount",
-      "cumulative_network_slashed_amount_repaid",
-      "delta_participants",
-      "delta_participants_ecosystem",
-      "delta_participants_issuer_grantor",
-      "delta_participants_issuer",
-      "delta_participants_verifier_grantor",
-      "delta_participants_verifier",
-      "delta_participants_holder",
-      "delta_active_schemas",
-      "delta_archived_schemas",
-      "delta_weight",
-      "delta_issued",
-      "delta_verified",
-      "delta_ecosystem_slash_events",
-      "delta_ecosystem_slashed_amount",
-      "delta_ecosystem_slashed_amount_repaid",
-      "delta_network_slash_events",
-      "delta_network_slashed_amount",
-      "delta_network_slashed_amount_repaid",
-    ];
+      'id',
+      'entity_id',
+      'cumulative_participants',
+      'cumulative_participants_ecosystem',
+      'cumulative_participants_issuer_grantor',
+      'cumulative_participants_issuer',
+      'cumulative_participants_verifier_grantor',
+      'cumulative_participants_verifier',
+      'cumulative_participants_holder',
+      'cumulative_active_schemas',
+      'cumulative_archived_schemas',
+      'cumulative_weight',
+      'cumulative_issued',
+      'cumulative_verified',
+      'cumulative_ecosystem_slash_events',
+      'cumulative_ecosystem_slashed_amount',
+      'cumulative_ecosystem_slashed_amount_repaid',
+      'cumulative_network_slash_events',
+      'cumulative_network_slashed_amount',
+      'cumulative_network_slashed_amount_repaid',
+      'delta_participants',
+      'delta_participants_ecosystem',
+      'delta_participants_issuer_grantor',
+      'delta_participants_issuer',
+      'delta_participants_verifier_grantor',
+      'delta_participants_verifier',
+      'delta_participants_holder',
+      'delta_active_schemas',
+      'delta_archived_schemas',
+      'delta_weight',
+      'delta_issued',
+      'delta_verified',
+      'delta_ecosystem_slash_events',
+      'delta_ecosystem_slashed_amount',
+      'delta_ecosystem_slashed_amount_repaid',
+      'delta_network_slash_events',
+      'delta_network_slashed_amount',
+      'delta_network_slashed_amount_repaid',
+    ]
 
     for (const field of numericFields) {
-      const value = normalized[field];
-      if (typeof value === "string" && /^-?\d+$/.test(value)) {
-        const asNumber = Number(value);
-        normalized[field] = Number.isSafeInteger(asNumber) ? asNumber : value;
+      const value = normalized[field]
+      if (typeof value === 'string' && /^-?\d+$/.test(value)) {
+        const asNumber = Number(value)
+        normalized[field] = Number.isSafeInteger(asNumber) ? asNumber : value
       }
     }
 
-    return normalized;
+    return normalized
   }
 
   private async getParticipantsAtHeightInternal(params: {
-    entityKind: number;
-    entityId: number | null;
-    roleType: number;
-    height: number;
+    entityKind: number
+    entityId: number | null
+    roleType: number
+    height: number
   }): Promise<number | string> {
-    const { entityKind, entityId, roleType, height } = params;
+    const { entityKind, entityId, roleType, height } = params
 
-    if (entityKind !== 0 && entityId === null) return 0;
+    if (entityKind !== 0 && entityId === null) return 0
 
-    const row = await knex("entity_participant_changes")
-      .where("entity_kind", entityKind)
-      .andWhere("entity_id", entityKind === 0 ? 0 : (entityId as number))
-      .andWhere("type", roleType)
-      .andWhere("height", "<=", height)
-      .orderBy("height", "desc")
-      .first();
+    const row = await knex('entity_participant_changes')
+      .where('entity_kind', entityKind)
+      .andWhere('entity_id', entityKind === 0 ? 0 : (entityId as number))
+      .andWhere('type', roleType)
+      .andWhere('height', '<=', height)
+      .orderBy('height', 'desc')
+      .first()
 
-    if (!row) return 0;
-    const rawValue = (row as any).value;
-    if (rawValue === null || rawValue === undefined) return 0;
+    if (!row) return 0
+    const rawValue = (row as any).value
+    if (rawValue === null || rawValue === undefined) return 0
 
-    const minSafe = BigInt(Number.MIN_SAFE_INTEGER);
-    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+    const minSafe = BigInt(Number.MIN_SAFE_INTEGER)
+    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER)
 
-    if (typeof rawValue === "bigint") {
-      return rawValue >= minSafe && rawValue <= maxSafe ? Number(rawValue) : rawValue.toString();
+    if (typeof rawValue === 'bigint') {
+      return rawValue >= minSafe && rawValue <= maxSafe ? Number(rawValue) : rawValue.toString()
     }
 
-    if (typeof rawValue === "string") {
-      if (!/^-?\d+$/.test(rawValue)) return 0;
-      const asBigInt = BigInt(rawValue);
-      return asBigInt >= minSafe && asBigInt <= maxSafe ? Number(asBigInt) : rawValue;
+    if (typeof rawValue === 'string') {
+      if (!/^-?\d+$/.test(rawValue)) return 0
+      const asBigInt = BigInt(rawValue)
+      return asBigInt >= minSafe && asBigInt <= maxSafe ? Number(asBigInt) : rawValue
     }
 
-    if (typeof rawValue === "number") {
-      return Number.isSafeInteger(rawValue) ? rawValue : String(rawValue);
+    if (typeof rawValue === 'number') {
+      return Number.isSafeInteger(rawValue) ? rawValue : String(rawValue)
     }
 
-    return 0;
+    return 0
   }
 
   @Action({
-    name: "get",
+    name: 'get',
     params: {
-      id: { type: "number", integer: true, positive: true, optional: true, convert: true },
-      granularity: { type: "enum", values: ["HOUR", "DAY", "MONTH"], optional: true },
-      timestamp: { type: "string", optional: true },
-      entity_type: { type: "enum", values: ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"], optional: true },
-      entity_id: { type: "string", optional: true },
+      id: { type: 'number', integer: true, positive: true, optional: true, convert: true },
+      granularity: { type: 'enum', values: ['HOUR', 'DAY', 'MONTH'], optional: true },
+      timestamp: { type: 'string', optional: true },
+      entity_type: {
+        type: 'enum',
+        values: ['GLOBAL', 'ECOSYSTEM', 'CREDENTIAL_SCHEMA', 'PARTICIPANT'],
+        optional: true,
+      },
+      entity_id: { type: 'string', optional: true },
     },
   })
-  public async get(ctx: Context<{
-    id?: number;
-    granularity?: Granularity;
-    timestamp?: string;
-    entity_type?: EntityType;
-    entity_id?: string;
-  }>): Promise<unknown> {
+  public async get(
+    ctx: Context<{
+      id?: number
+      granularity?: Granularity
+      timestamp?: string
+      entity_type?: EntityType
+      entity_id?: string
+    }>
+  ): Promise<unknown> {
     try {
-      const { id, granularity, timestamp, entity_type: entityType, entity_id: entityId } = ctx.params;
+      const { id, granularity, timestamp, entity_type: entityType, entity_id: entityId } = ctx.params
 
       if (timestamp && !isValidISO8601UTC(timestamp)) {
         return ApiResponder.error(
           ctx,
           "Invalid timestamp format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
           400
-        );
+        )
       }
 
       if (timestamp) {
-        const timestampDate = new Date(timestamp);
+        const timestampDate = new Date(timestamp)
         if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, "Invalid timestamp format", 400);
+          return ApiResponder.error(ctx, 'Invalid timestamp format', 400)
         }
       }
 
@@ -155,13 +161,13 @@ export default class StatsAPIService extends BaseService {
             ctx,
             "When 'id' is provided, 'granularity', 'timestamp', 'entity_type', and 'entity_id' parameters should not be provided",
             400
-          );
+          )
         }
-        const stat = await Stats.query().findById(id);
+        const stat = await Stats.query().findById(id)
         if (!stat) {
-          return ApiResponder.error(ctx, "Stats not found", 404);
+          return ApiResponder.error(ctx, 'Stats not found', 404)
         }
-        return ApiResponder.success(ctx, this.normalizeStatsRecord(stat), 200);
+        return ApiResponder.success(ctx, this.normalizeStatsRecord(stat), 200)
       }
 
       if (!granularity || !timestamp || !entityType) {
@@ -169,15 +175,15 @@ export default class StatsAPIService extends BaseService {
           ctx,
           "Either 'id' or all of 'granularity', 'timestamp', 'entity_type' must be provided",
           400
-        );
+        )
       }
 
-      if (entityType === "GLOBAL" && entityId) {
-        return ApiResponder.error(ctx, "entity_id must be null for GLOBAL entity_type", 400);
+      if (entityType === 'GLOBAL' && entityId) {
+        return ApiResponder.error(ctx, 'entity_id must be null for GLOBAL entity_type', 400)
       }
 
-      if (entityType !== "GLOBAL" && !entityId) {
-        return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400);
+      if (entityType !== 'GLOBAL' && !entityId) {
+        return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400)
       }
 
       if (!isValidISO8601UTC(timestamp)) {
@@ -185,66 +191,80 @@ export default class StatsAPIService extends BaseService {
           ctx,
           "Invalid timestamp format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
           400
-        );
+        )
       }
 
-      const timestampDate = new Date(timestamp);
+      const timestampDate = new Date(timestamp)
       if (Number.isNaN(timestampDate.getTime())) {
-        return ApiResponder.error(ctx, "Invalid timestamp format", 400);
+        return ApiResponder.error(ctx, 'Invalid timestamp format', 400)
       }
 
       const stat = await Stats.query()
-        .where("granularity", granularity)
-        .where("timestamp", timestampDate)
-        .where("entity_type", entityType)
+        .where('granularity', granularity)
+        .where('timestamp', timestampDate)
+        .where('entity_type', entityType)
         .where((builder) => {
-          if (entityType === "GLOBAL") {
-            builder.whereNull("entity_id");
+          if (entityType === 'GLOBAL') {
+            builder.whereNull('entity_id')
           } else if (entityId) {
-            builder.where("entity_id", entityId);
+            builder.where('entity_id', entityId)
           }
         })
-        .first();
+        .first()
 
       if (!stat) {
-        return ApiResponder.error(ctx, "Stats not found", 404);
+        return ApiResponder.error(ctx, 'Stats not found', 404)
       }
 
-      return ApiResponder.success(ctx, this.normalizeStatsRecord(stat), 200);
+      return ApiResponder.success(ctx, this.normalizeStatsRecord(stat), 200)
     } catch (err: unknown) {
-      this.logger.error("Error in get:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
+      this.logger.error('Error in get:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 
   @Action({
-    name: "stats",
+    name: 'stats',
     params: {
-      granularity: { type: "enum", values: ["HOUR", "DAY", "MONTH"], optional: true },
-      timestamp_from: { type: "string", convert: true },
-      timestamp_until: { type: "string", convert: true },
-      entity_type: { type: "enum", values: ["GLOBAL", "ECOSYSTEM", "CREDENTIAL_SCHEMA", "PARTICIPANT"], convert: true },
-      entity_ids: { type: "any", optional: true },
-      result_type: { type: "enum", values: ["BUCKETS", "TOTAL", "BUCKETS_AND_TOTAL"], optional: true, default: "BUCKETS_AND_TOTAL" },
+      granularity: { type: 'enum', values: ['HOUR', 'DAY', 'MONTH'], optional: true },
+      timestamp_from: { type: 'string', convert: true },
+      timestamp_until: { type: 'string', convert: true },
+      entity_type: { type: 'enum', values: ['GLOBAL', 'ECOSYSTEM', 'CREDENTIAL_SCHEMA', 'PARTICIPANT'], convert: true },
+      entity_ids: { type: 'any', optional: true },
+      result_type: {
+        type: 'enum',
+        values: ['BUCKETS', 'TOTAL', 'BUCKETS_AND_TOTAL'],
+        optional: true,
+        default: 'BUCKETS_AND_TOTAL',
+      },
     },
   })
-  public async stats(ctx: Context<{
-    granularity?: Granularity;
-    timestamp_from: string;
-    timestamp_until: string;
-    entity_type: EntityType;
-      entity_ids?: any;
-    result_type?: "BUCKETS" | "TOTAL" | "BUCKETS_AND_TOTAL";
-  }>): Promise<unknown> {
+  public async stats(
+    ctx: Context<{
+      granularity?: Granularity
+      timestamp_from: string
+      timestamp_until: string
+      entity_type: EntityType
+      entity_ids?: any
+      result_type?: 'BUCKETS' | 'TOTAL' | 'BUCKETS_AND_TOTAL'
+    }>
+  ): Promise<unknown> {
     try {
-      const { granularity, timestamp_from: timestampFrom, timestamp_until: timestampUntil, entity_type: entityType, entity_ids: entityIds, result_type: resultType = "BUCKETS_AND_TOTAL" } = ctx.params;
+      const {
+        granularity,
+        timestamp_from: timestampFrom,
+        timestamp_until: timestampUntil,
+        entity_type: entityType,
+        entity_ids: entityIds,
+        result_type: resultType = 'BUCKETS_AND_TOTAL',
+      } = ctx.params
 
       if (!isValidISO8601UTC(timestampFrom)) {
         return ApiResponder.error(
           ctx,
           "Invalid timestamp_from format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
           400
-        );
+        )
       }
 
       if (!isValidISO8601UTC(timestampUntil)) {
@@ -252,302 +272,328 @@ export default class StatsAPIService extends BaseService {
           ctx,
           "Invalid timestamp_until format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
           400
-        );
+        )
       }
 
-      const fromDate = new Date(timestampFrom);
-      const untilDate = new Date(timestampUntil);
+      const fromDate = new Date(timestampFrom)
+      const untilDate = new Date(timestampUntil)
 
       if (Number.isNaN(fromDate.getTime()) || Number.isNaN(untilDate.getTime())) {
-        return ApiResponder.error(ctx, "Invalid timestamp format", 400);
+        return ApiResponder.error(ctx, 'Invalid timestamp format', 400)
       }
 
       if (fromDate >= untilDate) {
-        return ApiResponder.error(ctx, "timestamp_from must be before timestamp_until", 400);
+        return ApiResponder.error(ctx, 'timestamp_from must be before timestamp_until', 400)
       }
 
-    let parsedEntityIds: Array<string | number> = [];
-    if (Array.isArray(entityIds)) {
-      parsedEntityIds = entityIds
-        .map((id) => (id === null || id === undefined ? "" : String(id).trim()))
-        .filter((id) => id.length > 0)
-        .map((id) => (id.match(/^-?\d+$/) ? Number(id) : id));
-    } else if (typeof entityIds === "string" && entityIds.trim().length > 0) {
-      parsedEntityIds = entityIds
-        .split(",")
-        .map((id: string) => id.trim())
-        .filter((id: string) => id.length > 0)
-        .map((id: string) => (id.match(/^-?\d+$/) ? Number(id) : id));
-    } else {
-      parsedEntityIds = [];
-    }
-
-    if (entityType === "GLOBAL" && parsedEntityIds.length > 0) {
-      return ApiResponder.error(ctx, "entity_ids must be empty for GLOBAL entity_type", 400);
-    }
-
-    if (entityType !== "GLOBAL" && parsedEntityIds.length === 0) {
-      return ApiResponder.error(ctx, `entity_ids array is required for entity_type ${entityType}`, 400);
-    }
-
-    let effectiveGranularity = granularity;
-    if (!effectiveGranularity) {
-      const hoursDiff = (untilDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60);
-      const daysDiff = hoursDiff / 24;
-      const monthsDiff = daysDiff / 30;
-
-      if (monthsDiff >= 1) {
-        effectiveGranularity = "MONTH";
-      } else if (daysDiff >= 1) {
-        effectiveGranularity = "DAY";
+      let parsedEntityIds: Array<string | number> = []
+      if (Array.isArray(entityIds)) {
+        parsedEntityIds = entityIds
+          .map((id) => (id === null || id === undefined ? '' : String(id).trim()))
+          .filter((id) => id.length > 0)
+          .map((id) => (id.match(/^-?\d+$/) ? Number(id) : id))
+      } else if (typeof entityIds === 'string' && entityIds.trim().length > 0) {
+        parsedEntityIds = entityIds
+          .split(',')
+          .map((id: string) => id.trim())
+          .filter((id: string) => id.length > 0)
+          .map((id: string) => (id.match(/^-?\d+$/) ? Number(id) : id))
       } else {
-        effectiveGranularity = "HOUR";
-      }
-    }
-
-    let buckets: Stats[] = [];
-    let granularitiesUsedArr: string[] = [];
-
-    if (!granularity) {
-      const bucketsArr: any[] = [];
-      const granularitiesUsed = new Set<string>();
-
-      const preloadedQuery = Stats.query()
-        .where("timestamp", ">=", fromDate)
-        .where("timestamp", "<", untilDate)
-        .whereIn("granularity", ["HOUR", "DAY", "MONTH"])
-        .where("entity_type", entityType);
-
-      if (entityType === "GLOBAL") {
-        preloadedQuery.whereNull("entity_id");
-      } else {
-        preloadedQuery.whereIn("entity_id", parsedEntityIds);
+        parsedEntityIds = []
       }
 
-      const preloadedBuckets = await preloadedQuery;
-      const bucketByKey = new Map<string, Stats>();
-      for (const bucket of preloadedBuckets) {
-        const ts = new Date(bucket.timestamp).toISOString();
-        const key = `${bucket.granularity}|${ts}`;
-        bucketByKey.set(key, bucket);
+      if (entityType === 'GLOBAL' && parsedEntityIds.length > 0) {
+        return ApiResponder.error(ctx, 'entity_ids must be empty for GLOBAL entity_type', 400)
       }
 
-      const cloneUtc = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
+      if (entityType !== 'GLOBAL' && parsedEntityIds.length === 0) {
+        return ApiResponder.error(ctx, `entity_ids array is required for entity_type ${entityType}`, 400)
+      }
 
-      const addBucketIfExists = (g: string, ts: Date) => {
-        const b = bucketByKey.get(`${g}|${ts.toISOString()}`);
-        if (b) {
-          bucketsArr.push(b);
-          granularitiesUsed.add(g);
-        }
-      };
+      let effectiveGranularity = granularity
+      if (!effectiveGranularity) {
+        const hoursDiff = (untilDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60)
+        const daysDiff = hoursDiff / 24
+        const monthsDiff = daysDiff / 30
 
-      const floorToHour = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0));
-      let cur = floorToHour(cloneUtc(fromDate));
-      while (cur < untilDate) {
-        const startOfMonth = (d: Date) => d.getUTCDate() === 1 && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
-        const startOfDay = (d: Date) => d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
-
-        const nextMonth = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1, 0, 0, 0, 0));
-        const nextDay = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + 1, 0, 0, 0, 0));
-        if (startOfMonth(cur) && nextMonth <= untilDate) {
-          addBucketIfExists("MONTH", cur);
-          cur = nextMonth;
-        } else if (startOfDay(cur) && nextDay <= untilDate) {
-          addBucketIfExists("DAY", cur);
-          cur = nextDay;
+        if (monthsDiff >= 1) {
+          effectiveGranularity = 'MONTH'
+        } else if (daysDiff >= 1) {
+          effectiveGranularity = 'DAY'
         } else {
-          addBucketIfExists("HOUR", cur);
-          cur = new Date(cur.getTime() + 60 * 60 * 1000);
+          effectiveGranularity = 'HOUR'
         }
       }
 
-      buckets = bucketsArr.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      if (granularitiesUsed.has("HOUR")) effectiveGranularity = "HOUR";
-      else if (granularitiesUsed.has("DAY")) effectiveGranularity = "DAY";
-      else if (granularitiesUsed.has("MONTH")) effectiveGranularity = "MONTH";
-      else effectiveGranularity = "HOUR";
-      granularitiesUsedArr = Array.from(granularitiesUsed);
-    } else {
-      const query = Stats.query()
-        .where("granularity", effectiveGranularity)
-        .where("timestamp", ">=", fromDate)
-        .where("timestamp", "<", untilDate)
-        .where("entity_type", entityType);
+      let buckets: Stats[] = []
+      let granularitiesUsedArr: string[] = []
 
-      if (entityType === "GLOBAL") {
-        query.whereNull("entity_id");
+      if (!granularity) {
+        const bucketsArr: any[] = []
+        const granularitiesUsed = new Set<string>()
+
+        const preloadedQuery = Stats.query()
+          .where('timestamp', '>=', fromDate)
+          .where('timestamp', '<', untilDate)
+          .whereIn('granularity', ['HOUR', 'DAY', 'MONTH'])
+          .where('entity_type', entityType)
+
+        if (entityType === 'GLOBAL') {
+          preloadedQuery.whereNull('entity_id')
+        } else {
+          preloadedQuery.whereIn('entity_id', parsedEntityIds)
+        }
+
+        const preloadedBuckets = await preloadedQuery
+        const bucketByKey = new Map<string, Stats>()
+        for (const bucket of preloadedBuckets) {
+          const ts = new Date(bucket.timestamp).toISOString()
+          const key = `${bucket.granularity}|${ts}`
+          bucketByKey.set(key, bucket)
+        }
+
+        const cloneUtc = (d: Date) =>
+          new Date(
+            Date.UTC(
+              d.getUTCFullYear(),
+              d.getUTCMonth(),
+              d.getUTCDate(),
+              d.getUTCHours(),
+              d.getUTCMinutes(),
+              d.getUTCSeconds(),
+              d.getUTCMilliseconds()
+            )
+          )
+
+        const addBucketIfExists = (g: string, ts: Date) => {
+          const b = bucketByKey.get(`${g}|${ts.toISOString()}`)
+          if (b) {
+            bucketsArr.push(b)
+            granularitiesUsed.add(g)
+          }
+        }
+
+        const floorToHour = (d: Date) =>
+          new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0))
+        let cur = floorToHour(cloneUtc(fromDate))
+        while (cur < untilDate) {
+          const startOfMonth = (d: Date) =>
+            d.getUTCDate() === 1 &&
+            d.getUTCHours() === 0 &&
+            d.getUTCMinutes() === 0 &&
+            d.getUTCSeconds() === 0 &&
+            d.getUTCMilliseconds() === 0
+          const startOfDay = (d: Date) =>
+            d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0
+
+          const nextMonth = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1, 0, 0, 0, 0))
+          const nextDay = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + 1, 0, 0, 0, 0))
+          if (startOfMonth(cur) && nextMonth <= untilDate) {
+            addBucketIfExists('MONTH', cur)
+            cur = nextMonth
+          } else if (startOfDay(cur) && nextDay <= untilDate) {
+            addBucketIfExists('DAY', cur)
+            cur = nextDay
+          } else {
+            addBucketIfExists('HOUR', cur)
+            cur = new Date(cur.getTime() + 60 * 60 * 1000)
+          }
+        }
+
+        buckets = bucketsArr.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+        if (granularitiesUsed.has('HOUR')) effectiveGranularity = 'HOUR'
+        else if (granularitiesUsed.has('DAY')) effectiveGranularity = 'DAY'
+        else if (granularitiesUsed.has('MONTH')) effectiveGranularity = 'MONTH'
+        else effectiveGranularity = 'HOUR'
+        granularitiesUsedArr = Array.from(granularitiesUsed)
       } else {
-        query.whereIn("entity_id", parsedEntityIds);
+        const query = Stats.query()
+          .where('granularity', effectiveGranularity)
+          .where('timestamp', '>=', fromDate)
+          .where('timestamp', '<', untilDate)
+          .where('entity_type', entityType)
+
+        if (entityType === 'GLOBAL') {
+          query.whereNull('entity_id')
+        } else {
+          query.whereIn('entity_id', parsedEntityIds)
+        }
+
+        query.orderBy('timestamp', 'asc')
+
+        buckets = await query
       }
 
-      query.orderBy("timestamp", "asc");
+      let total: Record<string, unknown> | null = null
+      if (resultType === 'TOTAL' || resultType === 'BUCKETS_AND_TOTAL') {
+        let totalQuery = knex('stats')
+          .where('timestamp', '>=', fromDate)
+          .where('timestamp', '<', untilDate)
+          .where('entity_type', entityType)
 
-      buckets = await query;
-    }
+        if (granularity) {
+          totalQuery = totalQuery.where('granularity', effectiveGranularity)
+        } else if (granularitiesUsedArr.length > 0) {
+          totalQuery = totalQuery.whereIn('granularity', granularitiesUsedArr)
+        }
 
-    let total: Record<string, unknown> | null = null;
-    if (resultType === "TOTAL" || resultType === "BUCKETS_AND_TOTAL") {
-      let totalQuery = knex("stats")
-        .where("timestamp", ">=", fromDate)
-        .where("timestamp", "<", untilDate)
-        .where("entity_type", entityType);
+        if (entityType === 'GLOBAL') {
+          totalQuery = totalQuery.whereNull('entity_id')
+        } else {
+          totalQuery = totalQuery.whereIn('entity_id', parsedEntityIds)
+        }
 
-      if (granularity) {
-        totalQuery = totalQuery.where("granularity", effectiveGranularity);
-      } else if (granularitiesUsedArr.length > 0) {
-        totalQuery = totalQuery.whereIn("granularity", granularitiesUsedArr);
+        const totalResult = await totalQuery
+          .select(
+            knex.raw('COALESCE(SUM(delta_participants), 0) as delta_participants'),
+            knex.raw('COALESCE(SUM(delta_participants_ecosystem), 0) as delta_participants_ecosystem'),
+            knex.raw('COALESCE(SUM(delta_participants_issuer_grantor), 0) as delta_participants_issuer_grantor'),
+            knex.raw('COALESCE(SUM(delta_participants_issuer), 0) as delta_participants_issuer'),
+            knex.raw('COALESCE(SUM(delta_participants_verifier_grantor), 0) as delta_participants_verifier_grantor'),
+            knex.raw('COALESCE(SUM(delta_participants_verifier), 0) as delta_participants_verifier'),
+            knex.raw('COALESCE(SUM(delta_participants_holder), 0) as delta_participants_holder'),
+            knex.raw('COALESCE(SUM(delta_active_schemas), 0) as delta_active_schemas'),
+            knex.raw('COALESCE(SUM(delta_archived_schemas), 0) as delta_archived_schemas'),
+            knex.raw('COALESCE(SUM(CAST(delta_weight AS NUMERIC)), 0) as delta_weight'),
+            knex.raw('COALESCE(SUM(CAST(delta_issued AS NUMERIC)), 0) as delta_issued'),
+            knex.raw('COALESCE(SUM(CAST(delta_verified AS NUMERIC)), 0) as delta_verified'),
+            knex.raw('COALESCE(SUM(delta_ecosystem_slash_events), 0) as delta_ecosystem_slash_events'),
+            knex.raw(
+              'COALESCE(SUM(CAST(delta_ecosystem_slashed_amount AS NUMERIC)), 0) as delta_ecosystem_slashed_amount'
+            ),
+            knex.raw(
+              'COALESCE(SUM(CAST(delta_ecosystem_slashed_amount_repaid AS NUMERIC)), 0) as delta_ecosystem_slashed_amount_repaid'
+            ),
+            knex.raw('COALESCE(SUM(delta_network_slash_events), 0) as delta_network_slash_events'),
+            knex.raw('COALESCE(SUM(CAST(delta_network_slashed_amount AS NUMERIC)), 0) as delta_network_slashed_amount'),
+            knex.raw(
+              'COALESCE(SUM(CAST(delta_network_slashed_amount_repaid AS NUMERIC)), 0) as delta_network_slashed_amount_repaid'
+            )
+          )
+          .first()
+
+        total = await totalResult
       }
-
-      if (entityType === "GLOBAL") {
-        totalQuery = totalQuery.whereNull("entity_id");
-      } else {
-        totalQuery = totalQuery.whereIn("entity_id", parsedEntityIds);
-      }
-
-      const totalResult = await totalQuery
-        .select(
-          knex.raw("COALESCE(SUM(delta_participants), 0) as delta_participants"),
-          knex.raw("COALESCE(SUM(delta_participants_ecosystem), 0) as delta_participants_ecosystem"),
-          knex.raw("COALESCE(SUM(delta_participants_issuer_grantor), 0) as delta_participants_issuer_grantor"),
-          knex.raw("COALESCE(SUM(delta_participants_issuer), 0) as delta_participants_issuer"),
-          knex.raw("COALESCE(SUM(delta_participants_verifier_grantor), 0) as delta_participants_verifier_grantor"),
-          knex.raw("COALESCE(SUM(delta_participants_verifier), 0) as delta_participants_verifier"),
-          knex.raw("COALESCE(SUM(delta_participants_holder), 0) as delta_participants_holder"),
-          knex.raw("COALESCE(SUM(delta_active_schemas), 0) as delta_active_schemas"),
-          knex.raw("COALESCE(SUM(delta_archived_schemas), 0) as delta_archived_schemas"),
-          knex.raw("COALESCE(SUM(CAST(delta_weight AS NUMERIC)), 0) as delta_weight"),
-          knex.raw("COALESCE(SUM(CAST(delta_issued AS NUMERIC)), 0) as delta_issued"),
-          knex.raw("COALESCE(SUM(CAST(delta_verified AS NUMERIC)), 0) as delta_verified"),
-          knex.raw("COALESCE(SUM(delta_ecosystem_slash_events), 0) as delta_ecosystem_slash_events"),
-          knex.raw("COALESCE(SUM(CAST(delta_ecosystem_slashed_amount AS NUMERIC)), 0) as delta_ecosystem_slashed_amount"),
-          knex.raw("COALESCE(SUM(CAST(delta_ecosystem_slashed_amount_repaid AS NUMERIC)), 0) as delta_ecosystem_slashed_amount_repaid"),
-          knex.raw("COALESCE(SUM(delta_network_slash_events), 0) as delta_network_slash_events"),
-          knex.raw("COALESCE(SUM(CAST(delta_network_slashed_amount AS NUMERIC)), 0) as delta_network_slashed_amount"),
-          knex.raw("COALESCE(SUM(CAST(delta_network_slashed_amount_repaid AS NUMERIC)), 0) as delta_network_slashed_amount_repaid")
-        )
-        .first();
-
-      total = await totalResult;
-    }
 
       const response: Record<string, unknown> = {
-      granularity: effectiveGranularity,
-      timestamp_from: timestampFrom,
-      timestamp_until: timestampUntil,
-      entity_type: entityType,
-      entity_ids: parsedEntityIds,
-      result_type: resultType,
-    };
+        granularity: effectiveGranularity,
+        timestamp_from: timestampFrom,
+        timestamp_until: timestampUntil,
+        entity_type: entityType,
+        entity_ids: parsedEntityIds,
+        result_type: resultType,
+      }
 
-    if (resultType === "BUCKETS" || resultType === "BUCKETS_AND_TOTAL") {
-      response.buckets = buckets.map((bucket) => {
-        const timestamp = new Date(bucket.timestamp);
-        return this.normalizeStatsRecord({
-          timestamp: timestamp.toISOString().replace(/\.\d{3}Z$/, "Z"),
-          cumulative_participants: bucket.cumulative_participants,
-          cumulative_participants_ecosystem: bucket.cumulative_participants_ecosystem,
-          cumulative_participants_issuer_grantor: bucket.cumulative_participants_issuer_grantor,
-          cumulative_participants_issuer: bucket.cumulative_participants_issuer,
-          cumulative_participants_verifier_grantor: bucket.cumulative_participants_verifier_grantor,
-          cumulative_participants_verifier: bucket.cumulative_participants_verifier,
-          cumulative_participants_holder: bucket.cumulative_participants_holder,
-          cumulative_active_schemas: bucket.cumulative_active_schemas,
-          cumulative_archived_schemas: bucket.cumulative_archived_schemas,
-          cumulative_weight: bucket.cumulative_weight,
-          cumulative_issued: bucket.cumulative_issued,
-          cumulative_verified: bucket.cumulative_verified,
-          cumulative_ecosystem_slash_events: bucket.cumulative_ecosystem_slash_events,
-          cumulative_ecosystem_slashed_amount: bucket.cumulative_ecosystem_slashed_amount,
-          cumulative_ecosystem_slashed_amount_repaid: bucket.cumulative_ecosystem_slashed_amount_repaid,
-          cumulative_network_slash_events: bucket.cumulative_network_slash_events,
-          cumulative_network_slashed_amount: bucket.cumulative_network_slashed_amount,
-          cumulative_network_slashed_amount_repaid: bucket.cumulative_network_slashed_amount_repaid,
-          delta_participants: bucket.delta_participants,
-          delta_participants_ecosystem: bucket.delta_participants_ecosystem,
-          delta_participants_issuer_grantor: bucket.delta_participants_issuer_grantor,
-          delta_participants_issuer: bucket.delta_participants_issuer,
-          delta_participants_verifier_grantor: bucket.delta_participants_verifier_grantor,
-          delta_participants_verifier: bucket.delta_participants_verifier,
-          delta_participants_holder: bucket.delta_participants_holder,
-          delta_active_schemas: bucket.delta_active_schemas,
-          delta_archived_schemas: bucket.delta_archived_schemas,
-          delta_weight: bucket.delta_weight,
-          delta_issued: bucket.delta_issued,
-          delta_verified: bucket.delta_verified,
-          delta_ecosystem_slash_events: bucket.delta_ecosystem_slash_events,
-          delta_ecosystem_slashed_amount: bucket.delta_ecosystem_slashed_amount,
-          delta_ecosystem_slashed_amount_repaid: bucket.delta_ecosystem_slashed_amount_repaid,
-          delta_network_slash_events: bucket.delta_network_slash_events,
-          delta_network_slashed_amount: bucket.delta_network_slashed_amount,
-          delta_network_slashed_amount_repaid: bucket.delta_network_slashed_amount_repaid,
-        });
-      });
-    }
+      if (resultType === 'BUCKETS' || resultType === 'BUCKETS_AND_TOTAL') {
+        response.buckets = buckets.map((bucket) => {
+          const timestamp = new Date(bucket.timestamp)
+          return this.normalizeStatsRecord({
+            timestamp: timestamp.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+            cumulative_participants: bucket.cumulative_participants,
+            cumulative_participants_ecosystem: bucket.cumulative_participants_ecosystem,
+            cumulative_participants_issuer_grantor: bucket.cumulative_participants_issuer_grantor,
+            cumulative_participants_issuer: bucket.cumulative_participants_issuer,
+            cumulative_participants_verifier_grantor: bucket.cumulative_participants_verifier_grantor,
+            cumulative_participants_verifier: bucket.cumulative_participants_verifier,
+            cumulative_participants_holder: bucket.cumulative_participants_holder,
+            cumulative_active_schemas: bucket.cumulative_active_schemas,
+            cumulative_archived_schemas: bucket.cumulative_archived_schemas,
+            cumulative_weight: bucket.cumulative_weight,
+            cumulative_issued: bucket.cumulative_issued,
+            cumulative_verified: bucket.cumulative_verified,
+            cumulative_ecosystem_slash_events: bucket.cumulative_ecosystem_slash_events,
+            cumulative_ecosystem_slashed_amount: bucket.cumulative_ecosystem_slashed_amount,
+            cumulative_ecosystem_slashed_amount_repaid: bucket.cumulative_ecosystem_slashed_amount_repaid,
+            cumulative_network_slash_events: bucket.cumulative_network_slash_events,
+            cumulative_network_slashed_amount: bucket.cumulative_network_slashed_amount,
+            cumulative_network_slashed_amount_repaid: bucket.cumulative_network_slashed_amount_repaid,
+            delta_participants: bucket.delta_participants,
+            delta_participants_ecosystem: bucket.delta_participants_ecosystem,
+            delta_participants_issuer_grantor: bucket.delta_participants_issuer_grantor,
+            delta_participants_issuer: bucket.delta_participants_issuer,
+            delta_participants_verifier_grantor: bucket.delta_participants_verifier_grantor,
+            delta_participants_verifier: bucket.delta_participants_verifier,
+            delta_participants_holder: bucket.delta_participants_holder,
+            delta_active_schemas: bucket.delta_active_schemas,
+            delta_archived_schemas: bucket.delta_archived_schemas,
+            delta_weight: bucket.delta_weight,
+            delta_issued: bucket.delta_issued,
+            delta_verified: bucket.delta_verified,
+            delta_ecosystem_slash_events: bucket.delta_ecosystem_slash_events,
+            delta_ecosystem_slashed_amount: bucket.delta_ecosystem_slashed_amount,
+            delta_ecosystem_slashed_amount_repaid: bucket.delta_ecosystem_slashed_amount_repaid,
+            delta_network_slash_events: bucket.delta_network_slash_events,
+            delta_network_slashed_amount: bucket.delta_network_slashed_amount,
+            delta_network_slashed_amount_repaid: bucket.delta_network_slashed_amount_repaid,
+          })
+        })
+      }
 
-    if (resultType === "TOTAL" || resultType === "BUCKETS_AND_TOTAL") {
-      response.total = {
-        delta_participants: Number(total?.delta_participants || 0),
-        delta_participants_ecosystem: Number(total?.delta_participants_ecosystem || 0),
-        delta_participants_issuer_grantor: Number(total?.delta_participants_issuer_grantor || 0),
-        delta_participants_issuer: Number(total?.delta_participants_issuer || 0),
-        delta_participants_verifier_grantor: Number(total?.delta_participants_verifier_grantor || 0),
-        delta_participants_verifier: Number(total?.delta_participants_verifier || 0),
-        delta_participants_holder: Number(total?.delta_participants_holder || 0),
-        delta_active_schemas: Number(total?.delta_active_schemas || 0),
-        delta_archived_schemas: Number(total?.delta_archived_schemas || 0),
-        delta_weight: Number(total?.delta_weight || 0),
-        delta_issued: Number(total?.delta_issued || 0),
-        delta_verified: Number(total?.delta_verified || 0),
-        delta_ecosystem_slash_events: Number(total?.delta_ecosystem_slash_events || 0),
-        delta_ecosystem_slashed_amount:Number( total?.delta_ecosystem_slashed_amount || 0),
-        delta_ecosystem_slashed_amount_repaid:Number( total?.delta_ecosystem_slashed_amount_repaid || 0),
-        delta_network_slash_events: Number(total?.delta_network_slash_events || 0),
-        delta_network_slashed_amount: Number(total?.delta_network_slashed_amount || 0),
-        delta_network_slashed_amount_repaid: Number(total?.delta_network_slashed_amount_repaid || 0),
-      };
-    }
+      if (resultType === 'TOTAL' || resultType === 'BUCKETS_AND_TOTAL') {
+        response.total = {
+          delta_participants: Number(total?.delta_participants || 0),
+          delta_participants_ecosystem: Number(total?.delta_participants_ecosystem || 0),
+          delta_participants_issuer_grantor: Number(total?.delta_participants_issuer_grantor || 0),
+          delta_participants_issuer: Number(total?.delta_participants_issuer || 0),
+          delta_participants_verifier_grantor: Number(total?.delta_participants_verifier_grantor || 0),
+          delta_participants_verifier: Number(total?.delta_participants_verifier || 0),
+          delta_participants_holder: Number(total?.delta_participants_holder || 0),
+          delta_active_schemas: Number(total?.delta_active_schemas || 0),
+          delta_archived_schemas: Number(total?.delta_archived_schemas || 0),
+          delta_weight: Number(total?.delta_weight || 0),
+          delta_issued: Number(total?.delta_issued || 0),
+          delta_verified: Number(total?.delta_verified || 0),
+          delta_ecosystem_slash_events: Number(total?.delta_ecosystem_slash_events || 0),
+          delta_ecosystem_slashed_amount: Number(total?.delta_ecosystem_slashed_amount || 0),
+          delta_ecosystem_slashed_amount_repaid: Number(total?.delta_ecosystem_slashed_amount_repaid || 0),
+          delta_network_slash_events: Number(total?.delta_network_slash_events || 0),
+          delta_network_slashed_amount: Number(total?.delta_network_slashed_amount || 0),
+          delta_network_slashed_amount_repaid: Number(total?.delta_network_slashed_amount_repaid || 0),
+        }
+      }
 
-      return ApiResponder.success(ctx, response, 200);
+      return ApiResponder.success(ctx, response, 200)
     } catch (err: unknown) {
-      this.logger.error("Error in stats:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
+      this.logger.error('Error in stats:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 
   @Action({
-    name: "getParticipantsAtHeight",
+    name: 'getParticipantsAtHeight',
     params: {
-      entity_kind: { type: "number", integer: true, min: 0, max: 3, convert: true },
-      entity_id: { type: "any", optional: true },
-      role_type: { type: "number", integer: true, min: 0, max: 6, convert: true },
-      height: { type: "number", integer: true, positive: true, convert: true },
+      entity_kind: { type: 'number', integer: true, min: 0, max: 3, convert: true },
+      entity_id: { type: 'any', optional: true },
+      role_type: { type: 'number', integer: true, min: 0, max: 6, convert: true },
+      height: { type: 'number', integer: true, positive: true, convert: true },
     },
   })
-  public async getParticipantsAtHeight(ctx: Context<{
-    entity_kind: number;
-    entity_id?: unknown;
-    role_type: number;
-    height: number;
-  }>): Promise<unknown> {
+  public async getParticipantsAtHeight(
+    ctx: Context<{
+      entity_kind: number
+      entity_id?: unknown
+      role_type: number
+      height: number
+    }>
+  ): Promise<unknown> {
     try {
-      const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType, height } = ctx.params;
+      const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType, height } = ctx.params
 
-      let entityId: number = 0;
+      let entityId: number = 0
       if (entityKind === 0) {
-        entityId = 0;
-      } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === "") {
-        return ApiResponder.error(ctx, "entity_id is required for non-GLOBAL entity_kind", 400);
+        entityId = 0
+      } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === '') {
+        return ApiResponder.error(ctx, 'entity_id is required for non-GLOBAL entity_kind', 400)
       } else {
-        const asString = String(rawEntityId);
+        const asString = String(rawEntityId)
         if (!/^\d+$/.test(asString)) {
-          return ApiResponder.error(ctx, "entity_id must be a positive integer identifier", 400);
+          return ApiResponder.error(ctx, 'entity_id must be a positive integer identifier', 400)
         }
-        const parsedId = Number(asString);
+        const parsedId = Number(asString)
         if (!Number.isSafeInteger(parsedId) || parsedId <= 0) {
-          return ApiResponder.error(ctx, "entity_id must be a positive, safe integer identifier", 400);
+          return ApiResponder.error(ctx, 'entity_id must be a positive, safe integer identifier', 400)
         }
-        entityId = parsedId;
+        entityId = parsedId
       }
 
       const value = await this.getParticipantsAtHeightInternal({
@@ -555,7 +601,7 @@ export default class StatsAPIService extends BaseService {
         entityId,
         roleType,
         height,
-      });
+      })
 
       return ApiResponder.success(
         ctx,
@@ -567,10 +613,10 @@ export default class StatsAPIService extends BaseService {
           value,
         },
         200
-      );
+      )
     } catch (err: unknown) {
-      this.logger.error("Error in getParticipantsAtHeight:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
+      this.logger.error('Error in getParticipantsAtHeight:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 }

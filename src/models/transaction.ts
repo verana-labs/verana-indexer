@@ -1,46 +1,46 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Event } from './event';
-import { TransactionMessage } from './transaction_message';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { Event } from './event'
+import { TransactionMessage } from './transaction_message'
 
 export class Transaction extends BaseModel {
   static softDelete = false;
 
-  [relation: string]: any;
+  [relation: string]: any
 
-  id!: number;
+  id!: number
 
-  height!: number;
+  height!: number
 
-  hash!: string;
+  hash!: string
 
-  codespace!: string;
+  codespace!: string
 
-  code!: number;
+  code!: number
 
-  gas_used!: string;
+  gas_used!: string
 
-  gas_wanted!: string;
+  gas_wanted!: string
 
-  gas_limit!: string;
+  gas_limit!: string
 
-  fee!: string;
+  fee!: string
 
-  memo!: string;
+  memo!: string
 
-  index!: number;
+  index!: number
 
-  timestamp!: Date;
+  timestamp!: Date
 
-  data!: any;
+  data!: any
 
   static get tableName() {
-    return 'transaction';
+    return 'transaction'
   }
 
   static get jsonAttributes() {
-    return ['data'];
+    return ['data']
   }
 
   static get jsonSchema() {
@@ -70,7 +70,7 @@ export class Transaction extends BaseModel {
         index: { type: 'number' },
         memo: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -99,6 +99,6 @@ export class Transaction extends BaseModel {
           to: 'event.tx_id',
         },
       },
-    };
+    }
   }
 }

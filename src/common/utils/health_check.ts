@@ -1,63 +1,63 @@
-import os from 'os';
-import fs from 'fs';
-import knex from './db_connection';
-import { getLcdClient } from './verana_client';
-import { BULL_JOB_NAME } from '../constant';
-import { delay } from './db_query_helper';
+import fs from 'fs'
+import os from 'os'
+import { BULL_JOB_NAME } from '../constant'
+import knex from './db_connection'
+import { delay } from './db_query_helper'
+import { getLcdClient } from './verana_client'
 
 export interface HealthStatus {
   database: {
-    healthy: boolean;
-    activeConnections?: number;
-    maxConnections?: number;
-    connectionUsagePercent?: number;
-    poolUsed?: number;
-    poolFree?: number;
-    poolPending?: number;
-    poolMax?: number;
-    poolUsagePercent?: number;
-    poolPendingPercent?: number;
-  };
+    healthy: boolean
+    activeConnections?: number
+    maxConnections?: number
+    connectionUsagePercent?: number
+    poolUsed?: number
+    poolFree?: number
+    poolPending?: number
+    poolMax?: number
+    poolUsagePercent?: number
+    poolPendingPercent?: number
+  }
   server: {
-    healthy: boolean;
-    cpuUsagePercent?: number;
-    memoryUsagePercent?: number;
-    freeMemoryMB?: number;
-    heapUsagePercent?: number;
-    heapUsedMB?: number;
-    heapTotalMB?: number;
-  };
-  overall: 'healthy' | 'degraded' | 'critical';
+    healthy: boolean
+    cpuUsagePercent?: number
+    memoryUsagePercent?: number
+    freeMemoryMB?: number
+    heapUsagePercent?: number
+    heapUsedMB?: number
+    heapTotalMB?: number
+  }
+  overall: 'healthy' | 'degraded' | 'critical'
 }
 
-let lastHealthCheck: HealthStatus | null = null;
-let lastHealthCheckTime: number = 0;
-let healthCheckPromise: Promise<HealthStatus> | null = null; // Prevent race conditions
-const HEALTH_CHECK_CACHE_MS = 3000; // Reduced from 5000 for more responsive checks
+let lastHealthCheck: HealthStatus | null = null
+let lastHealthCheckTime: number = 0
+let healthCheckPromise: Promise<HealthStatus> | null = null // Prevent race conditions
+const HEALTH_CHECK_CACHE_MS = 3000 // Reduced from 5000 for more responsive checks
 
 // Memory thresholds - more aggressive to prevent OOM
-const MEMORY_HEALTHY_THRESHOLD = 70;      // Below 70% = healthy
-const MEMORY_DEGRADED_THRESHOLD = 80;     // 70-80% = degraded
-const MEMORY_CRITICAL_THRESHOLD = 85;     // Above 80% = critical (was 85%)
-const HEAP_HEALTHY_THRESHOLD = 65;        // Node.js heap thresholds
-const HEAP_CRITICAL_THRESHOLD = 75;
+const MEMORY_HEALTHY_THRESHOLD = 70 // Below 70% = healthy
+const MEMORY_DEGRADED_THRESHOLD = 80 // 70-80% = degraded
+const MEMORY_CRITICAL_THRESHOLD = 85 // Above 80% = critical (was 85%)
+const HEAP_HEALTHY_THRESHOLD = 65 // Node.js heap thresholds
+const HEAP_CRITICAL_THRESHOLD = 75
 
 /**
  * Safe parseInt that returns a default value if parsing fails or results in NaN
  */
 function safeParseInt(value: string | undefined | null, defaultValue: number): number {
-  if (!value) return defaultValue;
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) || !Number.isFinite(parsed) ? defaultValue : parsed;
+  if (!value) return defaultValue
+  const parsed = parseInt(value, 10)
+  return Number.isNaN(parsed) || !Number.isFinite(parsed) ? defaultValue : parsed
 }
 
 /**
  * Safe percentage calculation that handles division by zero
  */
 function safePercentage(numerator: number, denominator: number): number {
-  if (denominator === 0) return 0;
-  const result = (numerator / denominator) * 100;
-  return Number.isFinite(result) ? Math.max(0, Math.min(100, result)) : 0;
+  if (denominator === 0) return 0
+  const result = (numerator / denominator) * 100
+  return Number.isFinite(result) ? Math.max(0, Math.min(100, result)) : 0
 }
 
 /**
@@ -67,31 +67,31 @@ function safePercentage(numerator: number, denominator: number): number {
 function getContainerMemoryLimit(): number {
   // Skip cgroup checks on non-Linux platforms (Windows, macOS)
   if (os.platform() !== 'linux') {
-    return os.totalmem();
+    return os.totalmem()
   }
 
   try {
     // Try cgroup v2 first (newer systems)
     if (fs.existsSync('/sys/fs/cgroup/memory.max')) {
-      const maxStr = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
+      const maxStr = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim()
       if (maxStr !== 'max' && maxStr !== 'infinity') {
-        const limit = safeParseInt(maxStr, os.totalmem());
-        if (limit > 0) return limit;
+        const limit = safeParseInt(maxStr, os.totalmem())
+        if (limit > 0) return limit
       }
     }
     // Try cgroup v1 (older systems)
     if (fs.existsSync('/sys/fs/cgroup/memory/memory.limit_in_bytes')) {
-      const limitStr = fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim();
-      const limit = safeParseInt(limitStr, os.totalmem());
+      const limitStr = fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim()
+      const limit = safeParseInt(limitStr, os.totalmem())
       // If limit is very high (close to system max), it's effectively unlimited
       if (limit > 0 && limit < os.totalmem() * 0.95) {
-        return limit;
+        return limit
       }
     }
   } catch {
     // Ignore errors, fall back to OS memory
   }
-  return os.totalmem();
+  return os.totalmem()
 }
 
 /**
@@ -101,7 +101,7 @@ function getContainerMemoryLimit(): number {
 function getContainerMemoryUsage(): number {
   // Skip cgroup checks on non-Linux platforms
   if (os.platform() !== 'linux') {
-    return Math.max(0, os.totalmem() - os.freemem());
+    return Math.max(0, os.totalmem() - os.freemem())
   }
 
   try {
@@ -110,21 +110,21 @@ function getContainerMemoryUsage(): number {
       const usage = safeParseInt(
         fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(),
         os.totalmem() - os.freemem()
-      );
-      if (usage > 0) return usage;
+      )
+      if (usage > 0) return usage
     }
     // Try cgroup v1
     if (fs.existsSync('/sys/fs/cgroup/memory/memory.usage_in_bytes')) {
       const usage = safeParseInt(
         fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(),
         os.totalmem() - os.freemem()
-      );
-      if (usage > 0) return usage;
+      )
+      if (usage > 0) return usage
     }
   } catch {
     // Ignore errors, fall back to calculation
   }
-  return Math.max(0, os.totalmem() - os.freemem());
+  return Math.max(0, os.totalmem() - os.freemem())
 }
 
 /**
@@ -132,35 +132,35 @@ function getContainerMemoryUsage(): number {
  */
 export function triggerGC(): boolean {
   if (global.gc) {
-    global.gc();
-    return true;
+    global.gc()
+    return true
   }
-  return false;
+  return false
 }
 
 export async function checkHealth(): Promise<HealthStatus> {
-  const now = Date.now();
+  const now = Date.now()
 
   // Return cached result if valid
-  if (lastHealthCheck && (now - lastHealthCheckTime) < HEALTH_CHECK_CACHE_MS) {
-    return lastHealthCheck;
+  if (lastHealthCheck && now - lastHealthCheckTime < HEALTH_CHECK_CACHE_MS) {
+    return lastHealthCheck
   }
 
   // Return in-flight request if one exists (prevents race conditions)
   if (healthCheckPromise) {
-    return healthCheckPromise;
+    return healthCheckPromise
   }
 
   // Create new health check promise
-  healthCheckPromise = performHealthCheck();
+  healthCheckPromise = performHealthCheck()
 
   try {
-    const result = await healthCheckPromise;
-    lastHealthCheck = result;
-    lastHealthCheckTime = Date.now();
-    return result;
+    const result = await healthCheckPromise
+    lastHealthCheck = result
+    lastHealthCheckTime = Date.now()
+    return result
   } finally {
-    healthCheckPromise = null;
+    healthCheckPromise = null
   }
 }
 
@@ -168,8 +168,8 @@ async function performHealthCheck(): Promise<HealthStatus> {
   const health: HealthStatus = {
     database: { healthy: false },
     server: { healthy: false },
-    overall: 'critical'
-  };
+    overall: 'critical',
+  }
 
   try {
     const dbStats = await knex.raw(`
@@ -178,33 +178,33 @@ async function performHealthCheck(): Promise<HealthStatus> {
         (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') as max
       FROM pg_stat_activity
       WHERE datname = current_database()
-    `);
+    `)
 
-    const activeConnections = safeParseInt(dbStats.rows[0]?.active, 0);
-    const maxConnections = safeParseInt(dbStats.rows[0]?.max, 100);
-    const connectionUsagePercent = safePercentage(activeConnections, maxConnections);
+    const activeConnections = safeParseInt(dbStats.rows[0]?.active, 0)
+    const maxConnections = safeParseInt(dbStats.rows[0]?.max, 100)
+    const connectionUsagePercent = safePercentage(activeConnections, maxConnections)
 
-    let poolUsed = 0;
-    let poolFree = 0;
-    let poolPending = 0;
-    let poolMax = 0;
-    let poolUsagePercent = 0;
-    let poolPendingPercent = 0;
+    let poolUsed = 0
+    let poolFree = 0
+    let poolPending = 0
+    let poolMax = 0
+    let poolUsagePercent = 0
+    let poolPendingPercent = 0
 
     try {
-      const client: any = (knex as any).client;
-      const pool = client?.pool;
+      const client: any = (knex as any).client
+      const pool = client?.pool
       if (pool) {
-        poolUsed = Array.isArray(pool.used) ? pool.used.length : (pool.usedSize || 0);
-        poolFree = Array.isArray(pool.free) ? pool.free.length : (pool.freeSize || 0);
+        poolUsed = Array.isArray(pool.used) ? pool.used.length : pool.usedSize || 0
+        poolFree = Array.isArray(pool.free) ? pool.free.length : pool.freeSize || 0
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        const pendingAcquires = (pool as any).pendingAcquires;
-        poolPending = Array.isArray(pendingAcquires) ? pendingAcquires.length : (pendingAcquires?.length || 0);
+        const pendingAcquires = (pool as any).pendingAcquires
+        poolPending = Array.isArray(pendingAcquires) ? pendingAcquires.length : pendingAcquires?.length || 0
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        poolMax = pool.max || pool.maxSize || 0;
+        poolMax = pool.max || pool.maxSize || 0
         if (poolMax > 0) {
-          poolUsagePercent = safePercentage(poolUsed, poolMax);
-          poolPendingPercent = safePercentage(poolPending, poolMax);
+          poolUsagePercent = safePercentage(poolUsed, poolMax)
+          poolPendingPercent = safePercentage(poolPending, poolMax)
         }
       }
     } catch {
@@ -222,35 +222,35 @@ async function performHealthCheck(): Promise<HealthStatus> {
       poolMax,
       poolUsagePercent,
       poolPendingPercent,
-    };
+    }
   } catch (error) {
     // Log error for debugging but don't fail the health check entirely
-    console.error('Health check database query failed:', error);
-    health.database.healthy = false;
+    console.error('Health check database query failed:', error)
+    health.database.healthy = false
   }
 
   try {
     // Use container-aware memory metrics
-    const totalMemory = Math.max(1, getContainerMemoryLimit()); // Prevent division by zero
-    const usedMemory = Math.max(0, getContainerMemoryUsage());
-    const freeMemory = Math.max(0, totalMemory - usedMemory);
-    const memoryUsagePercent = safePercentage(usedMemory, totalMemory);
-    const freeMemoryMB = freeMemory / (1024 * 1024);
+    const totalMemory = Math.max(1, getContainerMemoryLimit()) // Prevent division by zero
+    const usedMemory = Math.max(0, getContainerMemoryUsage())
+    const freeMemory = Math.max(0, totalMemory - usedMemory)
+    const memoryUsagePercent = safePercentage(usedMemory, totalMemory)
+    const freeMemoryMB = freeMemory / (1024 * 1024)
 
     // Also check Node.js heap memory (more accurate for detecting JS memory leaks)
-    const heapStats = process.memoryUsage();
-    const heapUsedMB = Math.max(0, heapStats.heapUsed / (1024 * 1024));
-    const heapTotalMB = Math.max(1, heapStats.heapTotal / (1024 * 1024));
-    const heapUsagePercent = safePercentage(heapStats.heapUsed, heapStats.heapTotal);
+    const heapStats = process.memoryUsage()
+    const heapUsedMB = Math.max(0, heapStats.heapUsed / (1024 * 1024))
+    const heapTotalMB = Math.max(1, heapStats.heapTotal / (1024 * 1024))
+    const heapUsagePercent = safePercentage(heapStats.heapUsed, heapStats.heapTotal)
 
     // Note: process.cpuUsage() returns cumulative time, not current usage percentage
     // We track it but it's not a reliable instant CPU metric
-    const cpuUsage = process.cpuUsage();
-    const cpuUsagePercent = 0; // Set to 0 as cumulative time isn't useful here
+    const _cpuUsage = process.cpuUsage()
+    const cpuUsagePercent = 0 // Set to 0 as cumulative time isn't useful here
 
     // Server is healthy only if BOTH container memory and heap are in good shape
-    const containerMemoryHealthy = memoryUsagePercent < MEMORY_HEALTHY_THRESHOLD && freeMemoryMB > 200;
-    const heapHealthy = heapUsagePercent < HEAP_HEALTHY_THRESHOLD;
+    const containerMemoryHealthy = memoryUsagePercent < MEMORY_HEALTHY_THRESHOLD && freeMemoryMB > 200
+    const heapHealthy = heapUsagePercent < HEAP_HEALTHY_THRESHOLD
 
     health.server = {
       healthy: containerMemoryHealthy && heapHealthy,
@@ -259,50 +259,52 @@ async function performHealthCheck(): Promise<HealthStatus> {
       freeMemoryMB,
       heapUsagePercent,
       heapUsedMB,
-      heapTotalMB
-    };
+      heapTotalMB,
+    }
 
     // Trigger GC if memory is getting high (proactive cleanup)
     if (memoryUsagePercent > MEMORY_DEGRADED_THRESHOLD || heapUsagePercent > HEAP_CRITICAL_THRESHOLD) {
-      triggerGC();
+      triggerGC()
     }
   } catch (error) {
-    console.error('Health check server metrics failed:', error);
-    health.server.healthy = false;
+    console.error('Health check server metrics failed:', error)
+    health.server.healthy = false
   }
 
   // Determine overall health with more conservative thresholds
-  const memoryPercent = health.server.memoryUsagePercent || 100;
-  const heapPercent = health.server.heapUsagePercent || 100;
-  const dbUsagePercent = health.database.connectionUsagePercent || 100;
-  const poolUsagePercent = health.database.poolUsagePercent ?? dbUsagePercent;
-  const poolPendingPercent = health.database.poolPendingPercent ?? 0;
+  const memoryPercent = health.server.memoryUsagePercent || 100
+  const heapPercent = health.server.heapUsagePercent || 100
+  const dbUsagePercent = health.database.connectionUsagePercent || 100
+  const poolUsagePercent = health.database.poolUsagePercent ?? dbUsagePercent
+  const poolPendingPercent = health.database.poolPendingPercent ?? 0
 
   // Critical if ANY of these conditions are met (more aggressive)
-  const isCritical = memoryPercent >= MEMORY_CRITICAL_THRESHOLD ||
-                     heapPercent >= HEAP_CRITICAL_THRESHOLD ||
-                     dbUsagePercent >= 95 ||
-                     poolUsagePercent >= 95 ||
-                     poolPendingPercent >= 120;
+  const isCritical =
+    memoryPercent >= MEMORY_CRITICAL_THRESHOLD ||
+    heapPercent >= HEAP_CRITICAL_THRESHOLD ||
+    dbUsagePercent >= 95 ||
+    poolUsagePercent >= 95 ||
+    poolPendingPercent >= 120
 
   // Degraded if approaching limits
-  const isDegraded = memoryPercent >= MEMORY_HEALTHY_THRESHOLD ||
-                     heapPercent >= HEAP_HEALTHY_THRESHOLD ||
-                     dbUsagePercent >= 80 ||
-                     poolUsagePercent >= 80 ||
-                     poolPendingPercent >= 60;
+  const isDegraded =
+    memoryPercent >= MEMORY_HEALTHY_THRESHOLD ||
+    heapPercent >= HEAP_HEALTHY_THRESHOLD ||
+    dbUsagePercent >= 80 ||
+    poolUsagePercent >= 80 ||
+    poolPendingPercent >= 60
 
   if (isCritical) {
-    health.overall = 'critical';
+    health.overall = 'critical'
   } else if (isDegraded) {
-    health.overall = 'degraded';
+    health.overall = 'degraded'
   } else if (health.database.healthy && health.server.healthy) {
-    health.overall = 'healthy';
+    health.overall = 'healthy'
   } else {
-    health.overall = 'degraded';
+    health.overall = 'degraded'
   }
 
-  return health;
+  return health
 }
 
 export function getOptimalBlocksPerCall(
@@ -310,131 +312,127 @@ export function getOptimalBlocksPerCall(
   health: HealthStatus,
   isFreshStart: boolean
 ): number {
-  const memoryPercent = health.server.memoryUsagePercent || 0;
-  const heapPercent = health.server.heapUsagePercent || 0;
+  const memoryPercent = health.server.memoryUsagePercent || 0
+  const heapPercent = health.server.heapUsagePercent || 0
 
   // Emergency mode: drastically reduce if memory is extremely high
   if (memoryPercent > 90 || heapPercent > 85) {
-    return Math.max(5, Math.floor(baseBlocksPerCall * 0.05)); // Only 5% of base
+    return Math.max(5, Math.floor(baseBlocksPerCall * 0.05)) // Only 5% of base
   }
 
   if (isFreshStart) {
     if (health.overall === 'critical') {
-      return Math.max(5, Math.floor(baseBlocksPerCall * 0.1));  // 10% of base
+      return Math.max(5, Math.floor(baseBlocksPerCall * 0.1)) // 10% of base
     }
     if (health.overall === 'degraded') {
-      return Math.max(10, Math.floor(baseBlocksPerCall * 0.2)); // 20% of base
+      return Math.max(10, Math.floor(baseBlocksPerCall * 0.2)) // 20% of base
     }
-    return Math.max(25, Math.floor(baseBlocksPerCall * 0.4));   // 40% of base when healthy
+    return Math.max(25, Math.floor(baseBlocksPerCall * 0.4)) // 40% of base when healthy
   }
 
   // Reindexing mode - more aggressive throttling
   if (health.overall === 'critical') {
-    return Math.max(25, Math.floor(baseBlocksPerCall * 0.1));   // 10% of base (was 50%)
+    return Math.max(25, Math.floor(baseBlocksPerCall * 0.1)) // 10% of base (was 50%)
   }
   if (health.overall === 'degraded') {
-    return Math.max(50, Math.floor(baseBlocksPerCall * 0.25));  // 25% of base (was 70%)
+    return Math.max(50, Math.floor(baseBlocksPerCall * 0.25)) // 25% of base (was 70%)
   }
-  let result = Math.min(baseBlocksPerCall, 500);
-  const heapMb = health.server.heapUsedMB ?? 0;
-  if (heapMb > 2000) result = Math.min(result, 80);
-  else if (heapMb > 1600) result = Math.min(result, 150);
-  return result;
+  let result = Math.min(baseBlocksPerCall, 500)
+  const heapMb = health.server.heapUsedMB ?? 0
+  if (heapMb > 2000) result = Math.min(result, 80)
+  else if (heapMb > 1600) result = Math.min(result, 150)
+  return result
 }
 
-export function getOptimalDelay(
-  baseDelay: number,
-  health: HealthStatus,
-  isFreshStart: boolean
-): number {
-  const memoryPercent = health.server.memoryUsagePercent || 0;
-  const heapPercent = health.server.heapUsagePercent || 0;
+export function getOptimalDelay(baseDelay: number, health: HealthStatus, isFreshStart: boolean): number {
+  const memoryPercent = health.server.memoryUsagePercent || 0
+  const heapPercent = health.server.heapUsagePercent || 0
 
   // Emergency mode: add significant delay if memory is extremely high
   if (memoryPercent > 90 || heapPercent > 85) {
-    return Math.max(baseDelay * 10, 5000); // At least 5 seconds
+    return Math.max(baseDelay * 10, 5000) // At least 5 seconds
   }
 
   if (isFreshStart) {
     if (health.overall === 'critical') {
-      return Math.max(baseDelay * 8, 3000);  // At least 3 seconds (was 5x)
+      return Math.max(baseDelay * 8, 3000) // At least 3 seconds (was 5x)
     }
     if (health.overall === 'degraded') {
-      return Math.max(baseDelay * 5, 2000);  // At least 2 seconds (was 3x)
+      return Math.max(baseDelay * 5, 2000) // At least 2 seconds (was 3x)
     }
-    return Math.max(baseDelay * 2, 1000);    // At least 1 second
+    return Math.max(baseDelay * 2, 1000) // At least 1 second
   }
 
   // Reindexing mode - more delay to allow GC
   if (health.overall === 'critical') {
-    return Math.max(baseDelay * 5, 1000);    // At least 1 second (was 2x)
+    return Math.max(baseDelay * 5, 1000) // At least 1 second (was 2x)
   }
   if (health.overall === 'degraded') {
-    return Math.max(baseDelay * 3, 500);     // At least 500ms (was 1.5x)
+    return Math.max(baseDelay * 3, 500) // At least 500ms (was 1.5x)
   }
-  return Math.max(baseDelay, 100);
+  return Math.max(baseDelay, 100)
 }
 
 /**
  * Check if we should pause processing to allow memory recovery
  */
 export function shouldPauseForMemory(health: HealthStatus): boolean {
-  const memoryPercent = health.server.memoryUsagePercent || 0;
-  const heapPercent = health.server.heapUsagePercent || 0;
-  return memoryPercent > 88 || heapPercent > 82;
+  const memoryPercent = health.server.memoryUsagePercent || 0
+  const heapPercent = health.server.heapUsagePercent || 0
+  return memoryPercent > 88 || heapPercent > 82
 }
 
 /**
  * Get recommended pause duration based on memory pressure
  */
 export function getMemoryRecoveryPauseMs(health: HealthStatus): number {
-  const memoryPercent = health.server.memoryUsagePercent || 0;
+  const memoryPercent = health.server.memoryUsagePercent || 0
 
-  if (memoryPercent > 95) return 10000; // 10 seconds
-  if (memoryPercent > 90) return 5000;  // 5 seconds
-  if (memoryPercent > 85) return 2000;  // 2 seconds
-  return 0;
+  if (memoryPercent > 95) return 10000 // 10 seconds
+  if (memoryPercent > 90) return 5000 // 5 seconds
+  if (memoryPercent > 85) return 2000 // 2 seconds
+  return 0
 }
 
-const DEFAULT_DB_TIMEOUT_MS = 10000;
-const DEFAULT_BLOCKCHAIN_TIMEOUT_MS = 15000;
-const DEFAULT_MONITOR_CHECK_TIMEOUT_MS = 10000;
+const DEFAULT_DB_TIMEOUT_MS = 10000
+const DEFAULT_BLOCKCHAIN_TIMEOUT_MS = 15000
+const DEFAULT_MONITOR_CHECK_TIMEOUT_MS = 10000
 
 export async function checkDatabaseHealth(timeoutMs?: number): Promise<{ ok: boolean; error?: string }> {
-  const timeout = timeoutMs ?? DEFAULT_DB_TIMEOUT_MS;
-  const timeoutInt = Math.max(1, Math.floor(timeout));
+  const timeout = timeoutMs ?? DEFAULT_DB_TIMEOUT_MS
+  const timeoutInt = Math.max(1, Math.floor(timeout))
   try {
     await Promise.race([
       knex.transaction(async (trx) => {
-        await trx.raw(`SET LOCAL statement_timeout = ${timeoutInt}`);
-        await trx.raw("SELECT 1");
+        await trx.raw(`SET LOCAL statement_timeout = ${timeoutInt}`)
+        await trx.raw('SELECT 1')
       }),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Database health check timeout")), timeoutInt);
+        setTimeout(() => reject(new Error('Database health check timeout')), timeoutInt)
       }),
-    ]);
-    return { ok: true };
+    ])
+    return { ok: true }
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+    return { ok: false, error: err?.message ?? String(err) }
   }
 }
 
 export async function checkBlockchainApiHealth(timeoutMs?: number): Promise<{ ok: boolean; error?: string }> {
-  const timeout = timeoutMs ?? DEFAULT_BLOCKCHAIN_TIMEOUT_MS;
+  const timeout = timeoutMs ?? DEFAULT_BLOCKCHAIN_TIMEOUT_MS
   try {
-    const lcdClient = await getLcdClient();
+    const lcdClient = await getLcdClient()
     if (!lcdClient?.provider) {
-      return { ok: false, error: 'LCD client or provider not available' };
+      return { ok: false, error: 'LCD client or provider not available' }
     }
     await Promise.race([
       lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Blockchain API health check timeout')), timeout);
+        setTimeout(() => reject(new Error('Blockchain API health check timeout')), timeout)
       }),
-    ]);
-    return { ok: true };
+    ])
+    return { ok: true }
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+    return { ok: false, error: err?.message ?? String(err) }
   }
 }
 
@@ -442,129 +440,128 @@ export async function getLastProcessedBlockHeight(
   jobName: string = BULL_JOB_NAME.CRAWL_BLOCK
 ): Promise<{ ok: boolean; height?: number; error?: string }> {
   try {
-    const row = await knex('block_checkpoint').where('job_name', jobName).select('height').first();
-    const height = row?.height != null ? Number(row.height) : undefined;
-    return { ok: true, height: height ?? 0 };
+    const row = await knex('block_checkpoint').where('job_name', jobName).select('height').first()
+    const height = row?.height != null ? Number(row.height) : undefined
+    return { ok: true, height: height ?? 0 }
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+    return { ok: false, error: err?.message ?? String(err) }
   }
 }
 
 export interface StartupHealthResult {
-  ok: boolean;
+  ok: boolean
   checks: {
-    database: { ok: boolean; error?: string };
-    blockchainApi: { ok: boolean; error?: string };
-    lastProcessedBlock: { ok: boolean; height?: number; error?: string };
-  };
+    database: { ok: boolean; error?: string }
+    blockchainApi: { ok: boolean; error?: string }
+    lastProcessedBlock: { ok: boolean; height?: number; error?: string }
+  }
 }
 
 export async function runPreStartupHealthChecks(options?: {
-  dbTimeoutMs?: number;
-  blockchainTimeoutMs?: number;
-  checkpointJobName?: string;
+  dbTimeoutMs?: number
+  blockchainTimeoutMs?: number
+  checkpointJobName?: string
 }): Promise<StartupHealthResult> {
-  const dbTimeout = options?.dbTimeoutMs ?? DEFAULT_DB_TIMEOUT_MS;
-  const chainTimeout = options?.blockchainTimeoutMs ?? DEFAULT_BLOCKCHAIN_TIMEOUT_MS;
-  const jobName = options?.checkpointJobName ?? BULL_JOB_NAME.CRAWL_BLOCK;
+  const dbTimeout = options?.dbTimeoutMs ?? DEFAULT_DB_TIMEOUT_MS
+  const chainTimeout = options?.blockchainTimeoutMs ?? DEFAULT_BLOCKCHAIN_TIMEOUT_MS
+  const jobName = options?.checkpointJobName ?? BULL_JOB_NAME.CRAWL_BLOCK
 
   const [database, blockchainApi, lastProcessedBlock] = await Promise.all([
     checkDatabaseHealth(dbTimeout),
     checkBlockchainApiHealth(chainTimeout),
     getLastProcessedBlockHeight(jobName),
-  ]);
+  ])
 
   return {
     ok: database.ok && blockchainApi.ok && lastProcessedBlock.ok,
     checks: { database, blockchainApi, lastProcessedBlock },
-  };
+  }
 }
 
 export interface WaitForHealthyOptions {
-  maxAttempts?: number;
-  initialDelayMs?: number;
-  backoffMultiplier?: number;
-  maxDelayMs?: number;
-  dbTimeoutMs?: number;
-  blockchainTimeoutMs?: number;
-  lcdTimeoutMs?: number;
-  checkpointJobName?: string;
-  logger?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void };
+  maxAttempts?: number
+  initialDelayMs?: number
+  backoffMultiplier?: number
+  maxDelayMs?: number
+  dbTimeoutMs?: number
+  blockchainTimeoutMs?: number
+  lcdTimeoutMs?: number
+  checkpointJobName?: string
+  logger?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void }
 }
 
 export async function waitForHealthyDependencies(options: WaitForHealthyOptions = {}): Promise<StartupHealthResult> {
-  const {
-    maxAttempts = 30,
-    initialDelayMs = 2000,
-    backoffMultiplier = 1.5,
-    maxDelayMs = 60000,
-    logger,
-  } = options;
+  const { maxAttempts = 30, initialDelayMs = 2000, backoffMultiplier = 1.5, maxDelayMs = 60000, logger } = options
 
-  let delayMs = initialDelayMs;
-  let lastResult: StartupHealthResult | null = null;
+  let delayMs = initialDelayMs
+  let lastResult: StartupHealthResult | null = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     lastResult = await runPreStartupHealthChecks({
       dbTimeoutMs: options.dbTimeoutMs,
       blockchainTimeoutMs: options.blockchainTimeoutMs ?? options.lcdTimeoutMs,
       checkpointJobName: options.checkpointJobName,
-    });
+    })
 
     if (lastResult.ok) {
       logger?.info?.(
         `Startup health checks passed (attempt ${attempt}/${maxAttempts}). DB: ok, Blockchain API: ok, Last block: ${lastResult.checks.lastProcessedBlock.height ?? 'n/a'}.`
-      );
-      return lastResult;
+      )
+      return lastResult
     }
 
-    const checks = lastResult.checks;
-    const errors: string[] = [];
-    if (!checks.database.ok) errors.push(`DB: ${checks.database.error}`);
-    if (!checks.blockchainApi.ok) errors.push(`API: ${checks.blockchainApi.error}`);
-    if (!checks.lastProcessedBlock.ok) errors.push(`Checkpoint: ${checks.lastProcessedBlock.error}`);
+    const checks = lastResult.checks
+    const errors: string[] = []
+    if (!checks.database.ok) errors.push(`DB: ${checks.database.error}`)
+    if (!checks.blockchainApi.ok) errors.push(`API: ${checks.blockchainApi.error}`)
+    if (!checks.lastProcessedBlock.ok) errors.push(`Checkpoint: ${checks.lastProcessedBlock.error}`)
 
     if (attempt < maxAttempts) {
-      logger?.warn?.(`Startup health check failed (attempt ${attempt}/${maxAttempts}): ${errors.join('; ')}. Retrying in ${delayMs}ms...`);
-      await delay(delayMs);
-      delayMs = Math.min(Math.floor(delayMs * backoffMultiplier), maxDelayMs);
+      logger?.warn?.(
+        `Startup health check failed (attempt ${attempt}/${maxAttempts}): ${errors.join('; ')}. Retrying in ${delayMs}ms...`
+      )
+      await delay(delayMs)
+      delayMs = Math.min(Math.floor(delayMs * backoffMultiplier), maxDelayMs)
     }
   }
 
-  const c = lastResult!.checks;
+  if (!lastResult) {
+    throw new Error('Startup health checks did not produce a result')
+  }
+  const c = lastResult.checks
   logger?.error?.(
     `Startup health checks did not pass after ${maxAttempts} attempts. Last: DB=${c.database.ok ? 'ok' : c.database.error}, API=${c.blockchainApi.ok ? 'ok' : c.blockchainApi.error}, Checkpoint=${c.lastProcessedBlock.ok ? 'ok' : c.lastProcessedBlock.error}.`
-  );
-  return lastResult!;
+  )
+  return lastResult
 }
 
-const DEFAULT_MONITOR_HEALTHY_INTERVAL_MS = 20000;
-const DEFAULT_MONITOR_UNHEALTHY_INTERVAL_MS = 5000;
-const DEFAULT_MONITOR_BACKOFF_MULTIPLIER = 1.5;
-const DEFAULT_MONITOR_MAX_BACKOFF_MS = 300000;
-const DEFAULT_CONSECUTIVE_FAILURES_BEFORE_PAUSE = 3;
+const DEFAULT_MONITOR_HEALTHY_INTERVAL_MS = 20000
+const DEFAULT_MONITOR_UNHEALTHY_INTERVAL_MS = 5000
+const DEFAULT_MONITOR_BACKOFF_MULTIPLIER = 1.5
+const DEFAULT_MONITOR_MAX_BACKOFF_MS = 300000
+const DEFAULT_CONSECUTIVE_FAILURES_BEFORE_PAUSE = 3
 
 export interface BlockchainHealthMonitorOptions {
-  healthyIntervalMs?: number;
-  unhealthyIntervalMs?: number;
-  backoffMultiplier?: number;
-  maxBackoffMs?: number;
-  consecutiveFailuresBeforePause?: number;
-  healthCheckTimeoutMs?: number;
-  onUnhealthy?: (error: string, consecutiveFailures: number) => Promise<void>;
-  onHealthy?: () => void;
-  logger?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void };
+  healthyIntervalMs?: number
+  unhealthyIntervalMs?: number
+  backoffMultiplier?: number
+  maxBackoffMs?: number
+  consecutiveFailuresBeforePause?: number
+  healthCheckTimeoutMs?: number
+  onUnhealthy?: (error: string, consecutiveFailures: number) => Promise<void>
+  onHealthy?: () => void
+  logger?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void }
 }
 
 let blockchainMonitorInstance: {
-  stop: () => void;
-  getStatus: () => { isHealthy: boolean; lastCheckAt?: string; lastError?: string; consecutiveFailures: number };
-} | null = null;
+  stop: () => void
+  getStatus: () => { isHealthy: boolean; lastCheckAt?: string; lastError?: string; consecutiveFailures: number }
+} | null = null
 
 export function startBlockchainHealthMonitor(options: BlockchainHealthMonitorOptions = {}): void {
   if (blockchainMonitorInstance) {
-    options.logger?.warn?.('Blockchain health monitor already running');
-    return;
+    options.logger?.warn?.('Blockchain health monitor already running')
+    return
   }
 
   const {
@@ -577,91 +574,91 @@ export function startBlockchainHealthMonitor(options: BlockchainHealthMonitorOpt
     onUnhealthy,
     onHealthy,
     logger,
-  } = options;
+  } = options
 
-  let stopped = false;
-  let isHealthy = true;
-  let consecutiveFailures = 0;
-  let currentUnhealthyIntervalMs = unhealthyIntervalMs;
-  let lastCheckAt: string | undefined;
-  let lastError: string | undefined;
+  let stopped = false
+  let isHealthy = true
+  let consecutiveFailures = 0
+  let currentUnhealthyIntervalMs = unhealthyIntervalMs
+  let lastCheckAt: string | undefined
+  let lastError: string | undefined
 
   const runCheck = async (): Promise<void> => {
-    if (stopped) return;
-    const result = await checkBlockchainApiHealth(healthCheckTimeoutMs);
-    lastCheckAt = new Date().toISOString();
+    if (stopped) return
+    const result = await checkBlockchainApiHealth(healthCheckTimeoutMs)
+    lastCheckAt = new Date().toISOString()
 
     if (result.ok) {
       if (!isHealthy) {
-        isHealthy = true;
-        consecutiveFailures = 0;
-        currentUnhealthyIntervalMs = unhealthyIntervalMs;
-        logger?.info?.('Blockchain API health monitor: API is healthy again.');
-        onHealthy?.();
+        isHealthy = true
+        consecutiveFailures = 0
+        currentUnhealthyIntervalMs = unhealthyIntervalMs
+        logger?.info?.('Blockchain API health monitor: API is healthy again.')
+        onHealthy?.()
       }
-      consecutiveFailures = 0;
-      return;
+      consecutiveFailures = 0
+      return
     }
 
-    lastError = result.error;
-    consecutiveFailures++;
+    lastError = result.error
+    consecutiveFailures++
     if (isHealthy) {
-      isHealthy = false;
-      logger?.warn?.(`Blockchain API health monitor: API unhealthy (${consecutiveFailures}/${consecutiveFailuresBeforePause}): ${result.error}`);
+      isHealthy = false
+      logger?.warn?.(
+        `Blockchain API health monitor: API unhealthy (${consecutiveFailures}/${consecutiveFailuresBeforePause}): ${result.error}`
+      )
     }
     if (consecutiveFailures >= consecutiveFailuresBeforePause && onUnhealthy) {
-      logger?.warn?.(`Blockchain API health monitor: Pausing indexer after ${consecutiveFailures} consecutive failures.`);
-      await onUnhealthy(lastError!, consecutiveFailures);
+      logger?.warn?.(
+        `Blockchain API health monitor: Pausing indexer after ${consecutiveFailures} consecutive failures.`
+      )
+      await onUnhealthy(lastError ?? '', consecutiveFailures)
     }
-  };
+  }
 
   const scheduleNext = (): void => {
-    if (stopped) return;
-    const intervalMs = isHealthy ? healthyIntervalMs : currentUnhealthyIntervalMs;
+    if (stopped) return
+    const intervalMs = isHealthy ? healthyIntervalMs : currentUnhealthyIntervalMs
     const t = setTimeout(async () => {
-      await runCheck();
+      await runCheck()
       if (!isHealthy && !stopped) {
-        currentUnhealthyIntervalMs = Math.min(
-          Math.floor(currentUnhealthyIntervalMs * backoffMultiplier),
-          maxBackoffMs
-        );
+        currentUnhealthyIntervalMs = Math.min(Math.floor(currentUnhealthyIntervalMs * backoffMultiplier), maxBackoffMs)
       }
-      scheduleNext();
-    }, intervalMs);
-    (blockchainMonitorInstance as any)._timer = t;
-  };
+      scheduleNext()
+    }, intervalMs)
+    ;(blockchainMonitorInstance as any)._timer = t
+  }
 
   blockchainMonitorInstance = {
     stop() {
-      stopped = true;
-      if ((blockchainMonitorInstance as any)?._timer) clearTimeout((blockchainMonitorInstance as any)._timer);
-      blockchainMonitorInstance = null;
-      logger?.info?.('Blockchain health monitor stopped.');
+      stopped = true
+      if ((blockchainMonitorInstance as any)?._timer) clearTimeout((blockchainMonitorInstance as any)._timer)
+      blockchainMonitorInstance = null
+      logger?.info?.('Blockchain health monitor stopped.')
     },
     getStatus() {
-      return { isHealthy, lastCheckAt, lastError, consecutiveFailures };
+      return { isHealthy, lastCheckAt, lastError, consecutiveFailures }
     },
-  };
+  }
 
   logger?.info?.(
     `Blockchain health monitor started. Healthy interval: ${healthyIntervalMs}ms, pause after ${consecutiveFailuresBeforePause} failures.`
-  );
-  scheduleNext();
+  )
+  scheduleNext()
 }
 
 export function stopBlockchainHealthMonitor(): void {
-  if (blockchainMonitorInstance) blockchainMonitorInstance.stop();
+  if (blockchainMonitorInstance) blockchainMonitorInstance.stop()
 }
 
 export function getBlockchainHealthMonitorStatus(): {
-  isHealthy: boolean;
-  lastCheckAt?: string;
-  lastError?: string;
-  consecutiveFailures: number;
-  running: boolean;
+  isHealthy: boolean
+  lastCheckAt?: string
+  lastError?: string
+  consecutiveFailures: number
+  running: boolean
 } {
-  if (!blockchainMonitorInstance) return { isHealthy: true, consecutiveFailures: 0, running: false };
-  const s = blockchainMonitorInstance.getStatus();
-  return { ...s, running: true };
+  if (!blockchainMonitorInstance) return { isHealthy: true, consecutiveFailures: 0, running: false }
+  const s = blockchainMonitorInstance.getStatus()
+  return { ...s, running: true }
 }
-

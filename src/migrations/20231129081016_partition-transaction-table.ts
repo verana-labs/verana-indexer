@@ -1,22 +1,23 @@
-import { Knex } from 'knex';
-import config from '../config.json' with { type: 'json' };
+import { Knex } from 'knex'
+import config from '../config.json' with { type: 'json' }
 
 export async function up(knex: Knex): Promise<void> {
-  await knex.raw(
-    `set statement_timeout to ${config.migrationTransactionToPartition.statementTimeout}`
-  );
+  await knex.raw(`set statement_timeout to ${config.migrationTransactionToPartition.statementTimeout}`)
   await knex.transaction(async (trx) => {
-    const transactionExists = await knex.raw(`
+    const transactionExists = await knex
+      .raw(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = 'transaction'
       );
-    `).transacting(trx);
-    
-    const transactionTableExists = transactionExists.rows[0].exists;
-    
-    const isPartitioned = await knex.raw(`
+    `)
+      .transacting(trx)
+
+    const transactionTableExists = transactionExists.rows[0].exists
+
+    const isPartitioned = await knex
+      .raw(`
       SELECT EXISTS (
         SELECT FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -24,115 +25,115 @@ export async function up(knex: Knex): Promise<void> {
         AND c.relname = 'transaction'
         AND c.relkind = 'p'
       );
-    `).transacting(trx);
-    
-    const transactionIsPartitioned = isPartitioned.rows[0].exists;
-    
-    const oldPartitionExists = await knex.raw(`
+    `)
+      .transacting(trx)
+
+    const transactionIsPartitioned = isPartitioned.rows[0].exists
+
+    const oldPartitionExists = await knex
+      .raw(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = 'transaction_partition_0_100000000'
       );
-    `).transacting(trx);
-    
-    const oldPartitionTableExists = oldPartitionExists.rows[0].exists;
-    
-    const partitionExists = await knex.raw(`
+    `)
+      .transacting(trx)
+
+    const oldPartitionTableExists = oldPartitionExists.rows[0].exists
+
+    const partitionExists = await knex
+      .raw(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = 'transaction_partition'
       );
-    `).transacting(trx);
-    
-    const partitionTableExists = partitionExists.rows[0].exists;
+    `)
+      .transacting(trx)
+
+    const partitionTableExists = partitionExists.rows[0].exists
 
     if (transactionIsPartitioned) {
-      console.log('Transaction table is already partitioned. Skipping migration.');
-      return;
+      console.log('Transaction table is already partitioned. Skipping migration.')
+      return
     }
 
     if (!transactionTableExists && oldPartitionTableExists && partitionTableExists) {
-      console.log('Migration partially completed. Completing migration...');
-      await knex
-        .raw('ALTER TABLE transaction_partition RENAME TO transaction;')
-        .transacting(trx);
-      
+      console.log('Migration partially completed. Completing migration...')
+      await knex.raw('ALTER TABLE transaction_partition RENAME TO transaction;').transacting(trx)
+
       try {
-        await knex.raw(`
+        await knex
+          .raw(`
           ALTER TABLE transaction_partition_0_100000000
           ALTER COLUMN hash TYPE TEXT USING hash::TEXT;
-        `).transacting(trx);
-        console.log('Fixed hash column type from VARCHAR to TEXT');
+        `)
+          .transacting(trx)
+        console.log('Fixed hash column type from VARCHAR to TEXT')
       } catch (err: any) {
         if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
-          console.warn(`Warning fixing hash column: ${err.message}`);
+          console.warn(`Warning fixing hash column: ${err.message}`)
         }
       }
 
       try {
-        await knex.raw(`
+        await knex
+          .raw(`
           ALTER TABLE transaction_partition_0_100000000
           ALTER COLUMN codespace TYPE TEXT USING codespace::TEXT;
-        `).transacting(trx);
-        console.log('Fixed codespace column type from VARCHAR to TEXT');
+        `)
+          .transacting(trx)
+        console.log('Fixed codespace column type from VARCHAR to TEXT')
       } catch (err: any) {
         if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
-          console.warn(`Warning fixing codespace column: ${err.message}`);
+          console.warn(`Warning fixing codespace column: ${err.message}`)
         }
       }
-      
-      const oldSeqTransaction = await knex.raw(
-        `SELECT last_value FROM transaction_id_seq;`
-      ).transacting(trx);
-      const oldSeqValue = oldSeqTransaction.rows[0].last_value;
-      await knex
-        .raw(
-          `ALTER SEQUENCE transaction_partition_id_seq RESTART WITH ${oldSeqValue};`
-        )
-        .transacting(trx);
+
+      const oldSeqTransaction = await knex.raw(`SELECT last_value FROM transaction_id_seq;`).transacting(trx)
+      const oldSeqValue = oldSeqTransaction.rows[0].last_value
+      await knex.raw(`ALTER SEQUENCE transaction_partition_id_seq RESTART WITH ${oldSeqValue};`).transacting(trx)
 
       await knex
         .raw(
           `ALTER TABLE transaction ATTACH PARTITION transaction_partition_0_100000000 FOR VALUES FROM (0) TO (100000000)`
         )
-        .transacting(trx);
-      
-      let startId = config.migrationTransactionToPartition.startId;
-      let endId = config.migrationTransactionToPartition.endId;
-      const step = config.migrationTransactionToPartition.step;
+        .transacting(trx)
+
+      const startId = config.migrationTransactionToPartition.startId
+      const endId = config.migrationTransactionToPartition.endId
+      const step = config.migrationTransactionToPartition.step
       for (let i = startId; i < endId; i += step) {
-        const partitionName = `transaction_partition_${i}_${i + step}`;
-        const partitionExistsCheck = await knex.raw(`
+        const partitionName = `transaction_partition_${i}_${i + step}`
+        const partitionExistsCheck = await knex
+          .raw(`
           SELECT EXISTS (
             SELECT FROM information_schema.tables 
             WHERE table_schema = 'public' 
             AND table_name = '${partitionName}'
           );
-        `).transacting(trx);
-        
+        `)
+          .transacting(trx)
+
         if (!partitionExistsCheck.rows[0].exists) {
+          await knex.raw(`CREATE TABLE ${partitionName} (LIKE transaction INCLUDING ALL)`).transacting(trx)
           await knex
-            .raw(`CREATE TABLE ${partitionName} (LIKE transaction INCLUDING ALL)`)
-            .transacting(trx);
-          await knex
-            .raw(
-              `ALTER TABLE transaction ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`
-            )
-            .transacting(trx);
+            .raw(`ALTER TABLE transaction ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`)
+            .transacting(trx)
         }
       }
-      return;
+      return
     }
 
     if (!transactionTableExists) {
-      throw new Error('Transaction table does not exist. Cannot proceed with migration.');
+      throw new Error('Transaction table does not exist. Cannot proceed with migration.')
     }
 
     // Create event table with config support partition on block height column
     if (!partitionTableExists) {
-      await knex.raw(`
+      await knex
+        .raw(`
         CREATE TABLE transaction_partition
         (
           id SERIAL PRIMARY KEY,
@@ -157,7 +158,8 @@ export async function up(knex: Knex): Promise<void> {
           ON transaction_partition (hash);
         CREATE INDEX transaction_partition_timestamp_index
           ON transaction_partition (timestamp);
-      `).transacting(trx);
+      `)
+        .transacting(trx)
     }
 
     // Update new table name(event_partition) to event name
@@ -168,35 +170,37 @@ export async function up(knex: Knex): Promise<void> {
         ALTER TABLE transaction RENAME TO transaction_partition_0_100000000;
       `
       )
-      .transacting(trx);
-    
+      .transacting(trx)
+
     try {
-      await knex.raw(`
+      await knex
+        .raw(`
         ALTER TABLE transaction_partition_0_100000000
         ALTER COLUMN hash TYPE TEXT USING hash::TEXT;
-      `).transacting(trx);
-      console.log('Fixed hash column type from VARCHAR to TEXT');
+      `)
+        .transacting(trx)
+      console.log('Fixed hash column type from VARCHAR to TEXT')
     } catch (err: any) {
       if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
-        console.warn(`Warning fixing hash column: ${err.message}`);
+        console.warn(`Warning fixing hash column: ${err.message}`)
       }
     }
 
     try {
-      await knex.raw(`
+      await knex
+        .raw(`
         ALTER TABLE transaction_partition_0_100000000
         ALTER COLUMN codespace TYPE TEXT USING codespace::TEXT;
-      `).transacting(trx);
-      console.log('Fixed codespace column type from VARCHAR to TEXT');
+      `)
+        .transacting(trx)
+      console.log('Fixed codespace column type from VARCHAR to TEXT')
     } catch (err: any) {
       if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
-        console.warn(`Warning fixing codespace column: ${err.message}`);
+        console.warn(`Warning fixing codespace column: ${err.message}`)
       }
     }
-    
-    await knex
-      .raw('ALTER TABLE transaction_partition RENAME TO transaction;')
-      .transacting(trx);
+
+    await knex.raw('ALTER TABLE transaction_partition RENAME TO transaction;').transacting(trx)
 
     // Drop fk on old table and create again fk point to new transaction partitioned table
     await knex
@@ -211,57 +215,49 @@ export async function up(knex: Knex): Promise<void> {
         ALTER TABLE feegrant DROP CONSTRAINT IF EXISTS feegrant_init_tx_id_foreign;
       `
       )
-      .transacting(trx);
+      .transacting(trx)
 
     // update seq
-    const oldSeqTransaction = await knex.raw(
-      `SELECT last_value FROM transaction_id_seq;`
-    );
-    const oldSeqValue = oldSeqTransaction.rows[0].last_value;
-    await knex
-      .raw(
-        `ALTER SEQUENCE transaction_partition_id_seq RESTART WITH ${oldSeqValue};`
-      )
-      .transacting(trx);
+    const oldSeqTransaction = await knex.raw(`SELECT last_value FROM transaction_id_seq;`)
+    const oldSeqValue = oldSeqTransaction.rows[0].last_value
+    await knex.raw(`ALTER SEQUENCE transaction_partition_id_seq RESTART WITH ${oldSeqValue};`).transacting(trx)
 
     // add old table transaction into transaction partitioned
     await knex
       .raw(
         `ALTER TABLE transaction ATTACH PARTITION transaction_partition_0_100000000 FOR VALUES FROM (0) TO (100000000)`
       )
-      .transacting(trx);
+      .transacting(trx)
     /**
      * @description: Create partition base on id column and range value by step
      * Then apply partition to table
      */
-    let startId = config.migrationTransactionToPartition.startId;
-    let endId = config.migrationTransactionToPartition.endId;
-    const step = config.migrationTransactionToPartition.step;
+    const startId = config.migrationTransactionToPartition.startId
+    const endId = config.migrationTransactionToPartition.endId
+    const step = config.migrationTransactionToPartition.step
     for (let i = startId; i < endId; i += step) {
-      const partitionName = `transaction_partition_${i}_${i + step}`;
-      
-      const partitionExistsCheck = await knex.raw(`
+      const partitionName = `transaction_partition_${i}_${i + step}`
+
+      const partitionExistsCheck = await knex
+        .raw(`
         SELECT EXISTS (
           SELECT FROM information_schema.tables 
           WHERE table_schema = 'public' 
           AND table_name = '${partitionName}'
         );
-      `).transacting(trx);
-      
+      `)
+        .transacting(trx)
+
       if (!partitionExistsCheck.rows[0].exists) {
+        await knex.raw(`CREATE TABLE ${partitionName} (LIKE transaction INCLUDING ALL)`).transacting(trx)
         await knex
-          .raw(`CREATE TABLE ${partitionName} (LIKE transaction INCLUDING ALL)`)
-          .transacting(trx);
-        await knex
-          .raw(
-            `ALTER TABLE transaction ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`
-          )
-          .transacting(trx);
+          .raw(`ALTER TABLE transaction ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`)
+          .transacting(trx)
       } else {
-        console.log(`Partition ${partitionName} already exists. Skipping creation.`);
+        console.log(`Partition ${partitionName} already exists. Skipping creation.`)
       }
     }
-  });
+  })
 }
 
 export async function down(knex: Knex): Promise<void> {
@@ -272,16 +268,10 @@ export async function down(knex: Knex): Promise<void> {
         ALTER TABLE transaction DETACH PARTITION transaction_partition_0_100000000;
       `
       )
-      .transacting(trx);
-    await knex
-      .raw('alter table transaction rename to transaction_partition;')
-      .transacting(trx);
-    await knex
-      .raw(
-        'alter table transaction_partition_0_100000000 rename to transaction;'
-      )
-      .transacting(trx);
-    await knex.schema.dropTableIfExists('transaction_partition');
+      .transacting(trx)
+    await knex.raw('alter table transaction rename to transaction_partition;').transacting(trx)
+    await knex.raw('alter table transaction_partition_0_100000000 rename to transaction;').transacting(trx)
+    await knex.schema.dropTableIfExists('transaction_partition')
 
     await knex
       .raw(
@@ -295,7 +285,7 @@ export async function down(knex: Knex): Promise<void> {
         ALTER TABLE feegrant DROP CONSTRAINT feegrant_init_tx_id_foreign;
       `
       )
-      .transacting(trx);
+      .transacting(trx)
     await knex
       .raw(
         `
@@ -308,6 +298,6 @@ export async function down(knex: Knex): Promise<void> {
         ALTER TABLE feegrant ADD CONSTRAINT feegrant_init_tx_id_foreign FOREIGN KEY (init_tx_id) REFERENCES transaction(id);
       `
       )
-      .transacting(trx);
-  });
+      .transacting(trx)
+  })
 }

@@ -1,5 +1,5 @@
-import { Knex } from 'knex';
-import config from '../config.json' with { type: 'json' };
+import { Knex } from 'knex'
+import config from '../config.json' with { type: 'json' }
 
 export async function up(knex: Knex): Promise<void> {
   await knex.transaction(async (trx) => {
@@ -21,37 +21,37 @@ export async function up(knex: Knex): Promise<void> {
 
       CREATE INDEX block_partition_time_index
       ON block_partition (time);
-    `);
+    `)
 
     // Update new table name(event_partition) to event name
-    await knex
-      .raw('ALTER TABLE block RENAME TO block_partition_0_100000000;')
-      .transacting(trx);
-    await knex
-      .raw('ALTER TABLE block_partition RENAME TO block;')
-      .transacting(trx);
+    await knex.raw('ALTER TABLE block RENAME TO block_partition_0_100000000;').transacting(trx)
+    await knex.raw('ALTER TABLE block_partition RENAME TO block;').transacting(trx)
 
     try {
-      await knex.raw(`
+      await knex
+        .raw(`
         ALTER TABLE block_partition_0_100000000
         ALTER COLUMN hash TYPE TEXT USING hash::TEXT;
-      `).transacting(trx);
-      console.log('Fixed hash column from VARCHAR to TEXT in block_partition_0_100000000');
+      `)
+        .transacting(trx)
+      console.log('Fixed hash column from VARCHAR to TEXT in block_partition_0_100000000')
     } catch (err: any) {
       if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
-        console.warn(`Warning fixing hash column: ${err.message}`);
+        console.warn(`Warning fixing hash column: ${err.message}`)
       }
     }
 
     try {
-      await knex.raw(`
+      await knex
+        .raw(`
         ALTER TABLE block_partition_0_100000000
         ALTER COLUMN proposer_address TYPE TEXT USING proposer_address::TEXT;
-      `).transacting(trx);
-      console.log('Fixed proposer_address column from VARCHAR to TEXT in block_partition_0_100000000');
+      `)
+        .transacting(trx)
+      console.log('Fixed proposer_address column from VARCHAR to TEXT in block_partition_0_100000000')
     } catch (err: any) {
       if (!err.message?.includes('type "text"') && !err.message?.includes('does not exist')) {
-        console.warn(`Warning fixing proposer_address column: ${err.message}`);
+        console.warn(`Warning fixing proposer_address column: ${err.message}`)
       }
     }
 
@@ -65,34 +65,27 @@ export async function up(knex: Knex): Promise<void> {
         ALTER TABLE transaction DROP CONSTRAINT IF EXISTS transaction_height_foreign;
       `
       )
-      .transacting(trx);
+      .transacting(trx)
 
     // add old table block into block partitioned
     await knex
-      .raw(
-        `ALTER TABLE block ATTACH PARTITION block_partition_0_100000000 FOR VALUES FROM (0) TO (100000000)`
-      )
-      .transacting(trx);
+      .raw(`ALTER TABLE block ATTACH PARTITION block_partition_0_100000000 FOR VALUES FROM (0) TO (100000000)`)
+      .transacting(trx)
     /**
      * @description: Create partition base on id column and range value by step
      * Then apply partition to table
      */
-    let startId = config.migrationBlockToPartition.startId;
-    let endId = config.migrationBlockToPartition.endId;
-    const step = config.migrationBlockToPartition.step;
+    const startId = config.migrationBlockToPartition.startId
+    const endId = config.migrationBlockToPartition.endId
+    const step = config.migrationBlockToPartition.step
     for (let i = startId; i < endId; i += step) {
-      const partitionName = `block_partition_${i}_${i + step}`;
+      const partitionName = `block_partition_${i}_${i + step}`
+      await knex.raw(`CREATE TABLE ${partitionName} (LIKE block INCLUDING ALL)`).transacting(trx)
       await knex
-        .raw(`CREATE TABLE ${partitionName} (LIKE block INCLUDING ALL)`)
-        .transacting(trx);
-      await knex
-        .raw(
-          `ALTER TABLE block ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step
-          })`
-        )
-        .transacting(trx);
+        .raw(`ALTER TABLE block ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`)
+        .transacting(trx)
     }
-  });
+  })
 }
 
-export async function down(knex: Knex): Promise<void> { }
+export async function down(knex: Knex): Promise<void> {}

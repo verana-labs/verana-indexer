@@ -1,31 +1,31 @@
-import knex from './db_connection';
-import { BlockCheckpoint } from '../../models';
-import { BULL_JOB_NAME } from '../constant';
-import { clearRedisCache } from './cache_cleaner';
+import { BlockCheckpoint } from '../../models'
+import { BULL_JOB_NAME } from '../constant'
+import { clearRedisCache } from './cache_cleaner'
+import knex from './db_connection'
 
 export interface StartModeResult {
-  isFreshStart: boolean;
-  totalBlocks: number;
-  currentBlock: number;
-  cacheCleared?: boolean;
+  isFreshStart: boolean
+  totalBlocks: number
+  currentBlock: number
+  cacheCleared?: boolean
 }
 
-let reindexCacheCleared = false;
-let cachedStartMode: StartModeResult | null = null;
+let reindexCacheCleared = false
+let cachedStartMode: StartModeResult | null = null
 
 function publishStartMode(mode: StartModeResult, jobName?: string): void {
-  (global as any).__indexerStartMode = {
+  ;(global as any).__indexerStartMode = {
     ...mode,
     jobName: jobName || BULL_JOB_NAME.CRAWL_BLOCK,
     detectedAt: new Date().toISOString(),
-  };
+  }
 }
 
 export async function detectStartMode(jobName?: string, logger?: any): Promise<StartModeResult> {
   // Return cached result — start mode never changes during a process's lifetime
   if (cachedStartMode) {
-    publishStartMode(cachedStartMode, jobName);
-    return cachedStartMode;
+    publishStartMode(cachedStartMode, jobName)
+    return cachedStartMode
   }
 
   try {
@@ -33,52 +33,50 @@ export async function detectStartMode(jobName?: string, logger?: any): Promise<S
     // in the database and if the current block is less than 1000.
     // Here we are using a bounded query instead of count(*) to avoid a full sequential scan,
     // which might be too expensive since the block table is large.
-    const boundedResult = await knex.raw(
-      `SELECT count(*) AS count FROM (SELECT 1 FROM block LIMIT 100) sub`
-    );
-    const totalBlocks = parseInt(String(boundedResult.rows?.[0]?.count ?? '0'), 10);
-    
-    const checkpointJobName = jobName || BULL_JOB_NAME.CRAWL_BLOCK;
+    const boundedResult = await knex.raw(`SELECT count(*) AS count FROM (SELECT 1 FROM block LIMIT 100) sub`)
+    const totalBlocks = parseInt(String(boundedResult.rows?.[0]?.count ?? '0'), 10)
+
+    const checkpointJobName = jobName || BULL_JOB_NAME.CRAWL_BLOCK
     const checkpoint = await BlockCheckpoint.query().findOne({
       job_name: checkpointJobName,
-    });
-    const currentBlock = checkpoint ? checkpoint.height : 0;
-    
-    const isFreshStart = totalBlocks < 100 && currentBlock < 1000;
-    
-    let cacheCleared = false;
+    })
+    const currentBlock = checkpoint ? checkpoint.height : 0
+
+    const isFreshStart = totalBlocks < 100 && currentBlock < 1000
+
+    let cacheCleared = false
     if (isFreshStart && !reindexCacheCleared && process.env.NODE_ENV !== 'test') {
-      logger?.info?.('Fresh start detected - clearing Redis cache');
-      const result = await clearRedisCache(logger);
-      cacheCleared = result.success;
-      reindexCacheCleared = true;
+      logger?.info?.('Fresh start detected - clearing Redis cache')
+      const result = await clearRedisCache(logger)
+      cacheCleared = result.success
+      reindexCacheCleared = true
     }
-    
+
     const result = {
       isFreshStart,
       totalBlocks,
       currentBlock,
       cacheCleared,
-    };
-    cachedStartMode = result;
-    publishStartMode(result, checkpointJobName);
-    return result;
-  } catch (error) {
+    }
+    cachedStartMode = result
+    publishStartMode(result, checkpointJobName)
+    return result
+  } catch (_error) {
     const result = {
       isFreshStart: false,
       totalBlocks: 0,
       currentBlock: 0,
-    };
-    publishStartMode(result, jobName);
-    return result;
+    }
+    publishStartMode(result, jobName)
+    return result
   }
 }
 
 export async function clearCacheForReindex(logger?: any): Promise<boolean> {
   if (process.env.NODE_ENV === 'test') {
-    return true;
+    return true
   }
-  const result = await clearRedisCache(logger);
-  reindexCacheCleared = result.success;
-  return result.success;
+  const result = await clearRedisCache(logger)
+  reindexCacheCleared = result.success
+  return result.success
 }

@@ -1,87 +1,81 @@
 /* eslint-disable no-await-in-loop */
 /* eslint-disable import/no-extraneous-dependencies */
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import Long from 'long';
-import { fromBase64 } from '@cosmjs/encoding';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../config.json' with { type: 'json' };
-import {
-  BULL_JOB_NAME,
-  getLcdClient,
-  IProviderJSClientFactory,
-  IPagination,
-  SERVICE,
-} from '../../common';
-import { Validator } from '../../models';
-import knex from '../../common/utils/db_connection';
+
+import { fromBase64 } from '@cosmjs/encoding'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import Long from 'long'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, getLcdClient, IPagination, IProviderJSClientFactory, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { Validator } from '../../models'
 
 @Service({
   name: SERVICE.V1.CrawlSigningInfoService.key,
   version: 1,
 })
 export default class CrawlSigningInfoService extends BullableService {
-  private _lcdClient!: IProviderJSClientFactory;
+  private _lcdClient!: IProviderJSClientFactory
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
-  private async retryRpcCall<T>(
-    rpcCall: () => Promise<T>,
-    operationName: string
-  ): Promise<T> {
-    const attempts = config.crawlSigningInfo.rpcRetryAttempts || 3;
-    const delay = config.crawlSigningInfo.rpcRetryDelay || 2000;
-    const timeout = config.crawlSigningInfo.rpcTimeout || 30000;
-    let lastError: Error | unknown;
+  private async retryRpcCall<T>(rpcCall: () => Promise<T>, operationName: string): Promise<T> {
+    const attempts = config.crawlSigningInfo.rpcRetryAttempts || 3
+    const delay = config.crawlSigningInfo.rpcRetryDelay || 2000
+    const timeout = config.crawlSigningInfo.rpcTimeout || 30000
+    let lastError: Error | unknown
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         return await Promise.race([
           rpcCall(),
           new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('RPC call timeout')), timeout);
+            setTimeout(() => reject(new Error('RPC call timeout')), timeout)
           }),
-        ]);
+        ])
       } catch (error: unknown) {
-        lastError = error;
-        const isLastAttempt = attempt === attempts;
-        const err = error as NodeJS.ErrnoException;
-        
-        const errorMessage = err?.message || String(error);
-        const isNetworkError = err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || 
-                              err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND' ||
-                              err?.code === 'ECONNABORTED' || errorMessage.toLowerCase().includes('timeout');
-        
+        lastError = error
+        const isLastAttempt = attempt === attempts
+        const err = error as NodeJS.ErrnoException
+
+        const errorMessage = err?.message || String(error)
+        const isNetworkError =
+          err?.code === 'EACCES' ||
+          err?.code === 'ECONNREFUSED' ||
+          err?.code === 'ETIMEDOUT' ||
+          err?.code === 'ENOTFOUND' ||
+          err?.code === 'ECONNABORTED' ||
+          errorMessage.toLowerCase().includes('timeout')
+
         if (isLastAttempt) {
           if (isNetworkError) {
             this.logger.warn(
               `⚠️ RPC call failed due to network/timeout error (${err.code || 'timeout'}): ${operationName}. ${err.message || errorMessage}. This is non-critical. Will retry on next job execution.`
-            );
+            )
           } else {
-            this.logger.error(
-              `❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${errorMessage}`
-            );
+            this.logger.error(`❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${errorMessage}`)
           }
-          throw error;
+          throw error
         }
 
-        const backoffDelay = delay * (2 ** (attempt - 1));
+        const backoffDelay = delay * 2 ** (attempt - 1)
         this.logger.warn(
           `⚠️ RPC call failed (attempt ${attempt}/${attempts}): ${operationName}. Retrying in ${backoffDelay}ms...`
-        );
+        )
         await new Promise<void>((resolve) => {
           setTimeout(() => {
-            resolve();
-          }, backoffDelay);
-        });
+            resolve()
+          }, backoffDelay)
+        })
       }
     }
 
-    throw lastError instanceof Error 
-      ? lastError 
-      : new Error(`Failed to execute ${operationName} after ${attempts} attempts`);
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Failed to execute ${operationName} after ${attempts} attempts`)
   }
 
   @QueueHandler({
@@ -91,94 +85,77 @@ export default class CrawlSigningInfoService extends BullableService {
   })
   public async handleJob(_payload: object): Promise<void> {
     try {
-      this.logger.info('Update validator signing info');
-      const lcdClient = await getLcdClient();
+      this.logger.info('Update validator signing info')
+      const lcdClient = await getLcdClient()
       if (!lcdClient?.provider) {
-        this.logger.warn('LCD client not available, skipping signing info update. Will retry on next job execution.');
-        return;
+        this.logger.warn('LCD client not available, skipping signing info update. Will retry on next job execution.')
+        return
       }
-      this._lcdClient = lcdClient;
+      this._lcdClient = lcdClient
 
-      const updateValidators: Validator[] = [];
-      const signingInfos: any[] = [];
+      const updateValidators: Validator[] = []
+      const signingInfos: any[] = []
 
-      let foundValidators: Validator[] = [];
+      let foundValidators: Validator[] = []
       await knex.transaction(async (trx) => {
-        foundValidators = await Validator.query()
-          .select('*')
-          .forUpdate()
-          .transacting(trx);
-      });
+        foundValidators = await Validator.query().select('*').forUpdate().transacting(trx)
+      })
 
       if (foundValidators.length > 0) {
-        const paramSlashing = await this.retryRpcCall(
+        const paramSlashing = (await this.retryRpcCall(
           () => this._lcdClient.provider.cosmos.slashing.v1beta1.params(),
           'getSlashingParams'
-        ) as any;
+        )) as any
 
-        let resultCallApi: any;
-        let done = false;
+        let resultCallApi: any
+        let done = false
         const pagination: IPagination = {
           limit: Long.fromInt(config.crawlValidator.queryPageLimit),
-        };
+        }
 
         while (!done) {
-          resultCallApi = await this.retryRpcCall(
-            () => this._lcdClient.provider.cosmos.slashing.v1beta1.signingInfos({
-              pagination,
-            }),
+          resultCallApi = (await this.retryRpcCall(
+            () =>
+              this._lcdClient.provider.cosmos.slashing.v1beta1.signingInfos({
+                pagination,
+              }),
             'getSigningInfos'
-          ) as any;
+          )) as any
 
-          signingInfos.push(...resultCallApi.info);
+          signingInfos.push(...resultCallApi.info)
           if (resultCallApi.pagination.next_key === null) {
-            done = true;
+            done = true
           } else {
-            pagination.key = fromBase64(resultCallApi.pagination.next_key);
+            pagination.key = fromBase64(resultCallApi.pagination.next_key)
           }
         }
         if (foundValidators.length === 0) {
-          return;
+          return
         }
 
-        const listUpdates: any[] = [];
+        const listUpdates: any[] = []
         foundValidators.forEach((foundValidator: Validator) => {
           try {
-            const signingInfo = signingInfos.find(
-              (sign: any) => sign.address === foundValidator.consensus_address
-            );
+            const signingInfo = signingInfos.find((sign: any) => sign.address === foundValidator.consensus_address)
 
             if (signingInfo) {
-              let uptime = 0;
+              let uptime = 0
               if (paramSlashing?.params) {
-                const blockWindow =
-                  paramSlashing?.params.signed_blocks_window.toString();
-                const missedBlock = signingInfo.missed_blocks_counter.toString();
+                const blockWindow = paramSlashing?.params.signed_blocks_window.toString()
+                const missedBlock = signingInfo.missed_blocks_counter.toString()
                 uptime =
-                  Number(
-                    ((BigInt(blockWindow) - BigInt(missedBlock)) *
-                      BigInt(100000000)) /
-                    BigInt(blockWindow)
-                  ) / 1000000;
+                  Number(((BigInt(blockWindow) - BigInt(missedBlock)) * BigInt(100000000)) / BigInt(blockWindow)) /
+                  1000000
               }
 
-              const updateValidator = foundValidator;
-              updateValidator.start_height = Number.parseInt(
-                signingInfo.start_height,
-                10
-              );
-              updateValidator.index_offset = Number.parseInt(
-                signingInfo.index_offset,
-                10
-              );
-              updateValidator.jailed_until = signingInfo.jailed_until;
-              updateValidator.tombstoned = signingInfo.tombstoned;
-              updateValidator.missed_blocks_counter = Number.parseInt(
-                signingInfo.missed_blocks_counter,
-                10
-              );
-              updateValidator.uptime = uptime;
-              updateValidators.push(updateValidator);
+              const updateValidator = foundValidator
+              updateValidator.start_height = Number.parseInt(signingInfo.start_height, 10)
+              updateValidator.index_offset = Number.parseInt(signingInfo.index_offset, 10)
+              updateValidator.jailed_until = signingInfo.jailed_until
+              updateValidator.tombstoned = signingInfo.tombstoned
+              updateValidator.missed_blocks_counter = Number.parseInt(signingInfo.missed_blocks_counter, 10)
+              updateValidator.uptime = uptime
+              updateValidators.push(updateValidator)
 
               listUpdates.push({
                 id: updateValidator.id,
@@ -188,12 +165,12 @@ export default class CrawlSigningInfoService extends BullableService {
                 tombstoned: updateValidator.tombstoned,
                 missed_blocks_counter: updateValidator.missed_blocks_counter,
                 uptime: updateValidator.uptime,
-              });
+              })
             }
           } catch (error) {
-            this.logger.error(error);
+            this.logger.error(error)
           }
-        });
+        })
 
         if (listUpdates.length > 0) {
           const stringListUpdate = listUpdates
@@ -203,33 +180,35 @@ export default class CrawlSigningInfoService extends BullableService {
                   TO_TIMESTAMP('${update.jailed_until}','YYYY-MM-DDTHH24:MI:SSZ'), 
                   ${update.tombstoned}, ${update.missed_blocks_counter}, ${update.uptime})`
             )
-            .join(',');
+            .join(',')
           await knex.raw(
             `update validator SET start_height = temp.start_height, index_offset = temp.index_offset, jailed_until = temp.jailed_until,
             tombstoned = temp.tombstoned, missed_blocks_counter = temp.missed_blocks_counter, uptime = temp.uptime 
             from (VALUES ${stringListUpdate}) as temp(id, start_height, index_offset, jailed_until, tombstoned, missed_blocks_counter, uptime)
             where validator.id = temp.id`
-          );
+          )
         }
 
-        this.logger.info('Update validator signing info done');
+        this.logger.info('Update validator signing info done')
       }
     } catch (error: unknown) {
-      const err = error as NodeJS.ErrnoException;
-      const errorMessage = err?.message || String(error);
-      const isNetworkError = err?.code === 'EACCES' || err?.code === 'ECONNREFUSED' || 
-                            err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND' ||
-                            err?.code === 'ECONNABORTED' || errorMessage.toLowerCase().includes('timeout');
-      
+      const err = error as NodeJS.ErrnoException
+      const errorMessage = err?.message || String(error)
+      const isNetworkError =
+        err?.code === 'EACCES' ||
+        err?.code === 'ECONNREFUSED' ||
+        err?.code === 'ETIMEDOUT' ||
+        err?.code === 'ENOTFOUND' ||
+        err?.code === 'ECONNABORTED' ||
+        errorMessage.toLowerCase().includes('timeout')
+
       if (isNetworkError) {
         this.logger.warn(
           `⚠️ Network/timeout error in signing info update (${err.code || 'timeout'}): ${errorMessage}. This is non-critical. Will retry on next job execution.`
-        );
+        )
       } else {
-        this.logger.error(
-          `❌ Error in signing info update: ${errorMessage}`
-        );
-        throw error;
+        this.logger.error(`❌ Error in signing info update: ${errorMessage}`)
+        throw error
       }
     }
   }
@@ -249,8 +228,8 @@ export default class CrawlSigningInfoService extends BullableService {
           pattern: config.crawlSigningInfo.patternCrawl ?? undefined,
         },
       }
-    );
+    )
 
-    return super._start();
+    return super._start()
   }
 }

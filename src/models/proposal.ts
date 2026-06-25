@@ -1,78 +1,73 @@
 /* eslint-disable import/no-cycle */
-import { ICoin } from '../common/types/interfaces';
-import BaseModel from './base';
-import knex from '../common/utils/db_connection';
-import { Transaction } from './transaction';
-import { Event } from './event';
-import { MSG_TYPE } from '../common';
-import { EventAttribute } from './event_attribute';
+
+import { MSG_TYPE } from '../common'
+import { ICoin } from '../common/types/interfaces'
+import knex from '../common/utils/db_connection'
+import BaseModel from './base'
+import { Event } from './event'
+import { EventAttribute } from './event_attribute'
+import { Transaction } from './transaction'
 
 export interface ITally {
-  yes: string;
-  no: string;
-  abstain: string;
-  no_with_veto: string;
+  yes: string
+  no: string
+  abstain: string
+  no_with_veto: string
 }
 
 export interface ICountVote {
-  yes: number;
-  no: number;
-  abstain: number;
-  no_with_veto: number;
-  unspecified: number;
+  yes: number
+  no: number
+  abstain: number
+  no_with_veto: number
+  unspecified: number
 }
 
 export class Proposal extends BaseModel {
-  proposal_id!: number;
+  proposal_id!: number
 
-  proposer_address: string | undefined;
+  proposer_address: string | undefined
 
-  voting_start_time!: string;
+  voting_start_time!: string
 
-  voting_end_time!: string;
+  voting_end_time!: string
 
-  submit_time!: string;
+  submit_time!: string
 
-  deposit_end_time!: string;
+  deposit_end_time!: string
 
-  type!: string;
+  type!: string
 
-  title!: string;
+  title!: string
 
-  description!: string;
+  description!: string
 
-  content!: JSON;
+  content!: JSON
 
-  status!: string;
+  status!: string
 
-  tally!: ITally;
+  tally!: ITally
 
-  initial_deposit!: ICoin[];
+  initial_deposit!: ICoin[]
 
-  total_deposit!: ICoin[];
+  total_deposit!: ICoin[]
 
-  turnout: number | undefined;
+  turnout: number | undefined
 
-  count_vote!: ICountVote;
+  count_vote!: ICountVote
 
-  vote_counted!: boolean;
+  vote_counted!: boolean
 
   static get tableName() {
-    return 'proposal';
+    return 'proposal'
   }
 
   static get jsonAttributes() {
-    return [
-      'content',
-      'tally',
-      'initial_deposit',
-      'total_deposit',
-      'count_vote',
-    ];
+    return ['content', 'tally', 'initial_deposit', 'total_deposit', 'count_vote']
   }
 
   static get idColumn(): string | string[] {
-    return 'proposal_id';
+    return 'proposal_id'
   }
 
   static get STATUS() {
@@ -84,7 +79,7 @@ export class Proposal extends BaseModel {
       PROPOSAL_STATUS_REJECTED: 'PROPOSAL_STATUS_REJECTED',
       PROPOSAL_STATUS_FAILED: 'PROPOSAL_STATUS_FAILED',
       PROPOSAL_STATUS_NOT_ENOUGH_DEPOSIT: 'PROPOSAL_STATUS_NOT_ENOUGH_DEPOSIT',
-    };
+    }
   }
 
   static get jsonSchema() {
@@ -145,18 +140,14 @@ export class Proposal extends BaseModel {
         turnout: { type: ['number', 'null'] },
         vote_counted: { type: 'boolean' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
-    return {};
+    return {}
   }
 
-  static createNewProposal(
-    proposal: any,
-    proposerAddress?: string,
-    initialDeposit?: ICoin[]
-  ) {
+  static createNewProposal(proposal: any, proposerAddress?: string, initialDeposit?: ICoin[]) {
     return Proposal.fromJson({
       proposal_id: proposal.proposal_id,
       proposer_address: proposal.proposer_address ?? proposerAddress ?? null,
@@ -164,9 +155,7 @@ export class Proposal extends BaseModel {
       voting_end_time: proposal.voting_end_time,
       submit_time: proposal.submit_time,
       deposit_end_time: proposal.deposit_end_time,
-      type:
-        proposal.content['@type'] ??
-        proposal.messages.map((msg: { [key: string]: any }) => msg['@type']).join(','),
+      type: proposal.content['@type'] ?? proposal.messages.map((msg: { [key: string]: any }) => msg['@type']).join(','),
       title: proposal.content.title ?? proposal.title ?? '',
       description: proposal.content.description ?? proposal.description ?? '',
       content: proposal.content,
@@ -176,7 +165,7 @@ export class Proposal extends BaseModel {
       total_deposit: proposal.total_deposit,
       turnout: null,
       vote_counted: false,
-    });
+    })
   }
 
   static async getProposerBySearchTx(proposalId: string) {
@@ -185,24 +174,18 @@ export class Proposal extends BaseModel {
       .where('transaction.code', 0)
       // .andWhere('messages.type', MSG_TYPE.MSG_SUBMIT_PROPOSAL)
       .andWhere((builder) => {
-        builder.whereIn('messages.type', [
-          MSG_TYPE.MSG_SUBMIT_PROPOSAL,
-          MSG_TYPE.MSG_SUBMIT_PROPOSAL_V1,
-        ]);
+        builder.whereIn('messages.type', [MSG_TYPE.MSG_SUBMIT_PROPOSAL, MSG_TYPE.MSG_SUBMIT_PROPOSAL_V1])
       })
       .andWhere('events.type', Event.EVENT_TYPE.SUBMIT_PROPOSAL)
-      .andWhere(
-        'events:attributes.key',
-        EventAttribute.ATTRIBUTE_KEY.PROPOSAL_ID
-      )
+      .andWhere('events:attributes.key', EventAttribute.ATTRIBUTE_KEY.PROPOSAL_ID)
       .andWhere('events:attributes.value', proposalId)
       .andWhere(knex.raw('messages.index = events.tx_msg_index'))
       .select('messages.content')
-      .first();
+      .first()
 
-    const initialDeposit = tx?.content.initial_deposit;
-    const proposerAddress = tx?.content.proposer;
+    const initialDeposit = tx?.content.initial_deposit
+    const proposerAddress = tx?.content.proposer
 
-    return [proposerAddress, initialDeposit];
+    return [proposerAddress, initialDeposit]
   }
 }

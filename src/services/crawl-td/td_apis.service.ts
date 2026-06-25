@@ -1,18 +1,15 @@
-import {
-  Action,
-  Service,
-} from "@ourparentcenter/moleculer-decorators-extended";
-import { Context, ServiceBroker } from "moleculer";
-import BullableService from "../../base/bullable.service";
-import { ModulesParamsNamesTypes, MODULE_DISPLAY_NAMES, SERVICE } from "../../common";
-import { validateRequiredAccountParam } from "../../common/utils/accountValidation";
-import ApiResponder from "../../common/utils/apiResponse";
-import knex from "../../common/utils/db_connection";
-import TrustDeposit from "../../models/trust_deposit";
-import { getModuleParamsAction } from "../../common/utils/params_service";
-import { isValidISO8601UTC } from "../../common/utils/date_utils";
-import { buildActivityTimeline } from "../../common/utils/activity_timeline_helper";
-import { mapTrustDepositApiFields } from "../../common/vpr-v4-mapping";
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Context, ServiceBroker } from 'moleculer'
+import BullableService from '../../base/bullable.service'
+import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
+import { validateRequiredAccountParam } from '../../common/utils/accountValidation'
+import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
+import ApiResponder from '../../common/utils/apiResponse'
+import { isValidISO8601UTC } from '../../common/utils/date_utils'
+import knex from '../../common/utils/db_connection'
+import { getModuleParamsAction } from '../../common/utils/params_service'
+import { mapTrustDepositApiFields } from '../../common/vpr-v4-mapping'
+import TrustDeposit from '../../models/trust_deposit'
 
 @Service({
   name: SERVICE.V1.TrustDepositApiService.key,
@@ -20,45 +17,41 @@ import { mapTrustDepositApiFields } from "../../common/vpr-v4-mapping";
 })
 export default class TrustDepositApiService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @Action({
-    name: "getTrustDeposit",
+    name: 'getTrustDeposit',
     params: {
-      corporation: { type: "string", min: 5 },
+      corporation: { type: 'string', min: 5 },
     },
   })
   public async getTrustDeposit(ctx: Context<{ corporation: string }>) {
     try {
-      const accountValidation = validateRequiredAccountParam(ctx.params.corporation, "corporation");
+      const accountValidation = validateRequiredAccountParam(ctx.params.corporation, 'corporation')
       if (!accountValidation.valid) {
-        return ApiResponder.error(ctx, accountValidation.error, 400);
+        return ApiResponder.error(ctx, accountValidation.error, 400)
       }
-      const account = accountValidation.value;
-      const blockHeight = (ctx.meta as any)?.blockHeight;
+      const account = accountValidation.value
+      const blockHeight = (ctx.meta as any)?.blockHeight
 
       if (!this.isValidAccount(account)) {
-        this.logger.warn(`Invalid corporation address format: ${account}`);
-        return ApiResponder.error(ctx, "Invalid corporation address format", 400);
+        this.logger.warn(`Invalid corporation address format: ${account}`)
+        return ApiResponder.error(ctx, 'Invalid corporation address format', 400)
       }
 
       // If AtBlockHeight is provided, query historical state
-      if (typeof blockHeight === "number") {
-        const historyRecord = await knex("trust_deposit_history")
+      if (typeof blockHeight === 'number') {
+        const historyRecord = await knex('trust_deposit_history')
           .where({ corporation: account })
-          .where("height", "<=", blockHeight)
-          .orderBy("height", "desc")
-          .orderBy("created_at", "desc")
-          .first();
+          .where('height', '<=', blockHeight)
+          .orderBy('height', 'desc')
+          .orderBy('created_at', 'desc')
+          .first()
 
         if (!historyRecord) {
-          this.logger.info(`No trust deposit found for account: ${account}`);
-          return ApiResponder.error(
-            ctx,
-            `No trust deposit found for account: ${account}`,
-            404
-          );
+          this.logger.info(`No trust deposit found for account: ${account}`)
+          return ApiResponder.error(ctx, `No trust deposit found for account: ${account}`, 404)
         }
 
         const result = {
@@ -73,21 +66,17 @@ export default class TrustDepositApiService extends BullableService {
             last_repaid: historyRecord.last_repaid,
             slash_count: historyRecord.slash_count || 0,
           } as Record<string, unknown>),
-        };
+        }
 
-        return ApiResponder.success(ctx, result, 200);
+        return ApiResponder.success(ctx, result, 200)
       }
 
       // Otherwise, return latest state
-      const trustDeposit = await TrustDeposit.query().findOne({ corporation: account });
+      const trustDeposit = await TrustDeposit.query().findOne({ corporation: account })
 
       if (!trustDeposit) {
-        this.logger.info(`No trust deposit found for corporation: ${account}`);
-        return ApiResponder.error(
-          ctx,
-          `No trust deposit found for corporation: ${account}`,
-          404
-        );
+        this.logger.info(`No trust deposit found for corporation: ${account}`)
+        return ApiResponder.error(ctx, `No trust deposit found for corporation: ${account}`, 404)
       }
       const result = {
         trust_deposit: mapTrustDepositApiFields({
@@ -102,40 +91,41 @@ export default class TrustDepositApiService extends BullableService {
           slash_count: Number(trustDeposit.slash_count ?? 0),
         } as Record<string, unknown>),
       }
-      return ApiResponder.success(
-        ctx,
-        result,
-        200
-      );
+      return ApiResponder.success(ctx, result, 200)
     } catch (err: any) {
-      this.logger.error("Error in getTrustDeposit:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
+      this.logger.error('Error in getTrustDeposit:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 
   @Action({
-    name: "getModuleParams",
+    name: 'getModuleParams',
   })
   public async getModuleParams(ctx: Context) {
-    return getModuleParamsAction(ctx, ModulesParamsNamesTypes.TD, MODULE_DISPLAY_NAMES.TRUST_DEPOSIT);
+    return getModuleParamsAction(ctx, ModulesParamsNamesTypes.TD, MODULE_DISPLAY_NAMES.TRUST_DEPOSIT)
   }
 
   @Action({
-    name: "getTrustDepositHistory",
+    name: 'getTrustDepositHistory',
     params: {
-      corporation: { type: "string", min: 5 },
-      response_max_size: { type: "number", optional: true, default: 64 },
-      transaction_timestamp_older_than: { type: "string", optional: true },
+      corporation: { type: 'string', min: 5 },
+      response_max_size: { type: 'number', optional: true, default: 64 },
+      transaction_timestamp_older_than: { type: 'string', optional: true },
     },
   })
-  public async getTrustDepositHistory(ctx: Context<{ corporation: string; response_max_size?: number; transaction_timestamp_older_than?: string }>) {
+  public async getTrustDepositHistory(
+    ctx: Context<{ corporation: string; response_max_size?: number; transaction_timestamp_older_than?: string }>
+  ) {
     try {
-      const accountValidation = validateRequiredAccountParam(ctx.params.corporation, "corporation");
+      const accountValidation = validateRequiredAccountParam(ctx.params.corporation, 'corporation')
       if (!accountValidation.valid) {
-        return ApiResponder.error(ctx, accountValidation.error, 400);
+        return ApiResponder.error(ctx, accountValidation.error, 400)
       }
-      const account = accountValidation.value;
-      const { response_max_size: responseMaxSize = 64, transaction_timestamp_older_than: transactionTimestampOlderThan } = ctx.params;
+      const account = accountValidation.value
+      const {
+        response_max_size: responseMaxSize = 64,
+        transaction_timestamp_older_than: transactionTimestampOlderThan,
+      } = ctx.params
 
       if (transactionTimestampOlderThan) {
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
@@ -143,69 +133,66 @@ export default class TrustDepositApiService extends BullableService {
             ctx,
             "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
             400
-          );
+          )
         }
-        const timestampDate = new Date(transactionTimestampOlderThan);
+        const timestampDate = new Date(transactionTimestampOlderThan)
         if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, "Invalid transaction_timestamp_older_than format", 400);
+          return ApiResponder.error(ctx, 'Invalid transaction_timestamp_older_than format', 400)
         }
       }
-      
-      const atBlockHeight = (ctx.meta as any)?.$headers?.["at-block-height"] || (ctx.meta as any)?.$headers?.["At-Block-Height"];
+
+      const atBlockHeight =
+        (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
 
       if (!this.isValidAccount(account)) {
-        return ApiResponder.error(ctx, "Invalid corporation address format", 400);
+        return ApiResponder.error(ctx, 'Invalid corporation address format', 400)
       }
 
       const [trustDeposit, trustDepositHistory] = await Promise.all([
         TrustDeposit.query().findOne({ corporation: account }),
-        knex("trust_deposit_history")
+        knex('trust_deposit_history')
           .where({ corporation: account })
           .modify((qb) => {
             if (atBlockHeight && Number.isFinite(Number(atBlockHeight))) {
-              qb.where("height", "<=", Number(atBlockHeight));
+              qb.where('height', '<=', Number(atBlockHeight))
             }
           })
           .first(),
-      ]);
+      ])
       if (!trustDeposit && !trustDepositHistory) {
-        return ApiResponder.error(
-          ctx,
-          `No trust deposit found for corporation: ${account}`,
-          404
-        );
+        return ApiResponder.error(ctx, `No trust deposit found for corporation: ${account}`, 404)
       }
 
       const activity = await buildActivityTimeline(
         {
-          entityType: "TrustDeposit",
-          historyTable: "trust_deposit_history",
-          idField: "corporation",
+          entityType: 'TrustDeposit',
+          historyTable: 'trust_deposit_history',
+          idField: 'corporation',
           entityId: account,
-          msgTypePrefixes: ["/verana.td.v1"],
+          msgTypePrefixes: ['/verana.td.v1'],
         },
         {
           responseMaxSize,
           transactionTimestampOlderThan,
           atBlockHeight,
         }
-      );
+      )
 
       const result = {
-        entity_type: "TrustDeposit",
+        entity_type: 'TrustDeposit',
         entity_id: account,
         activity: activity || [],
-      };
+      }
 
-      return ApiResponder.success(ctx, result, 200);
+      return ApiResponder.success(ctx, result, 200)
     } catch (err: any) {
-      this.logger.error("Error in getTrustDepositHistory:", err);
-      return ApiResponder.error(ctx, "Internal Server Error", 500);
+      this.logger.error('Error in getTrustDepositHistory:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 
   private isValidAccount(account: string): boolean {
-    const accountRegex = /^verana1[0-9a-z]{10,}$/;
-    return accountRegex.test(account);
+    const accountRegex = /^verana1[0-9a-z]{10,}$/
+    return accountRegex.test(account)
   }
 }

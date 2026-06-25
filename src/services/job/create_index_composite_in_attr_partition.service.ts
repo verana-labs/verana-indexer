@@ -1,13 +1,10 @@
 /* eslint-disable no-await-in-loop */
-import {
-  Action,
-  Service,
-} from '@ourparentcenter/moleculer-decorators-extended';
-import { Context, ServiceBroker } from 'moleculer';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import knex from '../../common/utils/db_connection';
-import { BlockCheckpoint } from '../../models';
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Context, ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import { BlockCheckpoint } from '../../models'
 
 @Service({
   name: SERVICE.V1.JobService.CreateIndexCompositeAttrPartition.key,
@@ -15,28 +12,23 @@ import { BlockCheckpoint } from '../../models';
 })
 export default class CreateIndexCompositeAttrPartitionJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
     queueName: BULL_JOB_NAME.JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION,
     jobName: BULL_JOB_NAME.JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION,
   })
-  async jobCheckIfNeedCreateEventAttrPartition(_payload: {
-    partitionName: string;
-    needConcurrently: boolean;
-  }) {
+  async jobCheckIfNeedCreateEventAttrPartition(_payload: { partitionName: string; needConcurrently: boolean }) {
     const blockCheckpoint = await BlockCheckpoint.query().findOne({
       job_name: `${BULL_JOB_NAME.JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION}_${_payload.partitionName}`,
-    });
+    })
 
     if (!blockCheckpoint) {
       await knex.transaction(async (trx) => {
-        this.logger.info(
-          `Creating composite index in event_attribute partition ${_payload.partitionName}`
-        );
+        this.logger.info(`Creating composite index in event_attribute partition ${_payload.partitionName}`)
 
-        const range = _payload.partitionName.match(/\d+/g);
+        const range = _payload.partitionName.match(/\d+/g)
         if (range?.length === 2) {
           // check if need concurently
           if (_payload.needConcurrently === true) {
@@ -47,7 +39,7 @@ export default class CreateIndexCompositeAttrPartitionJob extends BullableServic
                 (composite_key ASC NULLS LAST, value ASC NULLS LAST, block_height ASC NULLS LAST)
                 INCLUDE(event_id, tx_id)
                 WHERE length(value) >= 40 AND length(value) <= 75;`
-            );
+            )
           } else {
             await knex
               .raw(
@@ -57,37 +49,32 @@ export default class CreateIndexCompositeAttrPartitionJob extends BullableServic
                 INCLUDE(event_id, tx_id)
                 WHERE length(value) >= 40 AND length(value) <= 75;`
               )
-              .transacting(trx);
+              .transacting(trx)
           }
         } else {
-          this.logger.error('partition table name not has range');
+          this.logger.error('partition table name not has range')
         }
 
-        this.logger.info(
-          `Creating composite index in event_attribute partition ${_payload.partitionName} done`
-        );
+        this.logger.info(`Creating composite index in event_attribute partition ${_payload.partitionName} done`)
 
         await BlockCheckpoint.query()
           .insert({
             height: 1,
             job_name: `${BULL_JOB_NAME.JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION}_${_payload.partitionName}`,
           })
-          .transacting(trx);
-      });
+          .transacting(trx)
+      })
     }
   }
 
   @Action({
-    name: SERVICE.V1.JobService.CreateIndexCompositeAttrPartition
-      .actionCreateJob.key,
+    name: SERVICE.V1.JobService.CreateIndexCompositeAttrPartition.actionCreateJob.key,
     params: {
       partitionName: 'string',
       needConcurrently: 'boolean',
     },
   })
-  public async actionCreateJob(
-    ctx: Context<{ partitionName: string; needConcurrently: boolean }>
-  ) {
+  public async actionCreateJob(ctx: Context<{ partitionName: string; needConcurrently: boolean }>) {
     this.createJob(
       BULL_JOB_NAME.JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION,
       BULL_JOB_NAME.JOB_CREATE_COMPOSITE_INDEX_ATTR_PARTITION,
@@ -102,6 +89,6 @@ export default class CreateIndexCompositeAttrPartitionJob extends BullableServic
           count: 3,
         },
       }
-    );
+    )
   }
 }

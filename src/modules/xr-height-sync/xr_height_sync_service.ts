@@ -1,61 +1,60 @@
-import type { ServiceBroker } from "moleculer";
-import { SERVICE } from "../../common";
-import { fetchExchangeRates, serializeLedgerExchangeRate } from "./xr_height_sync_helpers";
+import { Buffer } from 'node:buffer'
+import type { ServiceBroker } from 'moleculer'
+import { SERVICE } from '../../common'
+import { fetchExchangeRates, serializeLedgerExchangeRate } from './xr_height_sync_helpers'
 
 export const XR_EVENT_TYPES = {
-  CREATE: "create_exchange_rate",
-  UPDATE: "update_exchange_rate",
-  SET_STATE: "set_exchange_rate_state",
-} as const;
+  CREATE: 'create_exchange_rate',
+  UPDATE: 'update_exchange_rate',
+  SET_STATE: 'set_exchange_rate_state',
+} as const
 
-const XR_EVENT_TYPE_SET = new Set<string>(Object.values(XR_EVENT_TYPES));
+const XR_EVENT_TYPE_SET = new Set<string>(Object.values(XR_EVENT_TYPES))
 
 interface BlockEventAttribute {
-  key?: string;
-  value?: string;
+  key?: string
+  value?: string
 }
 
 interface BlockEvent {
-  type?: string;
-  attributes?: BlockEventAttribute[];
+  type?: string
+  attributes?: BlockEventAttribute[]
 }
 
 function decodeAttr(value: string | undefined): string {
-  if (value === undefined || value === null) return "";
+  if (value === undefined || value === null) return ''
   try {
-    const decoded = Buffer.from(value, "base64").toString("utf8");
-    if (Buffer.from(decoded, "utf8").toString("base64") === value) {
-      return decoded;
+    const decoded = Buffer.from(value, 'base64').toString('utf8')
+    if (Buffer.from(decoded, 'utf8').toString('base64') === value) {
+      return decoded
     }
   } catch {
     // value was not base64-encoded
   }
-  return value;
+  return value
 }
 
 function getAttr(event: BlockEvent, key: string): string | undefined {
   for (const attr of event.attributes ?? []) {
-    if (decodeAttr(attr.key) === key) return decodeAttr(attr.value);
+    if (decodeAttr(attr.key) === key) return decodeAttr(attr.value)
   }
-  return undefined;
+  return undefined
 }
 
-export function buildEventTypeResolverFromEvents(
-  events: BlockEvent[]
-): (id: number) => string {
-  const byId = new Map<number, string>();
+export function buildEventTypeResolverFromEvents(events: BlockEvent[]): (id: number) => string {
+  const byId = new Map<number, string>()
   for (const event of events) {
-    if (!event.type || !XR_EVENT_TYPE_SET.has(event.type)) continue;
-    const id = Number(getAttr(event, "id"));
+    if (!event.type || !XR_EVENT_TYPE_SET.has(event.type)) continue
+    const id = Number(getAttr(event, 'id'))
     if (Number.isInteger(id) && id > 0) {
-      byId.set(id, event.type);
+      byId.set(id, event.type)
     }
   }
-  return (id: number): string => byId.get(id) ?? "SYNC_LEDGER";
+  return (id: number): string => byId.get(id) ?? 'SYNC_LEDGER'
 }
 
 export function hasExchangeRateEvents(events: BlockEvent[]): boolean {
-  return events.some((event) => event.type !== undefined && XR_EVENT_TYPE_SET.has(event.type));
+  return events.some((event) => event.type !== undefined && XR_EVENT_TYPE_SET.has(event.type))
 }
 
 export async function runHeightSyncXR(
@@ -63,22 +62,22 @@ export async function runHeightSyncXR(
   payload: { events: BlockEvent[] },
   blockHeight: number
 ): Promise<void> {
-  const events = payload.events ?? [];
-  if (!hasExchangeRateEvents(events) || typeof blockHeight !== "number" || blockHeight <= 0) {
-    return;
+  const events = payload.events ?? []
+  if (!hasExchangeRateEvents(events) || typeof blockHeight !== 'number' || blockHeight <= 0) {
+    return
   }
 
-  let ledgerRates;
+  let ledgerRates: Awaited<ReturnType<typeof fetchExchangeRates>> = []
   try {
-    ledgerRates = await fetchExchangeRates(blockHeight);
+    ledgerRates = await fetchExchangeRates(blockHeight)
   } catch (err: any) {
     broker.logger.warn(
       `[XR Height Sync] Failed to fetch exchange rates at block=${blockHeight}: ${err?.message || String(err)}`
-    );
-    return;
+    )
+    return
   }
 
-  const resolveEventType = buildEventTypeResolverFromEvents(events);
+  const resolveEventType = buildEventTypeResolverFromEvents(events)
 
   for (const ledgerRate of ledgerRates) {
     try {
@@ -86,11 +85,11 @@ export async function runHeightSyncXR(
         exchangeRate: serializeLedgerExchangeRate(ledgerRate),
         blockHeight,
         eventType: resolveEventType(ledgerRate.id),
-      });
+      })
     } catch (err: any) {
       broker.logger.warn(
         `[XR Height Sync] Sync failed id=${ledgerRate.id} at block=${blockHeight}: ${err?.message || String(err)}`
-      );
+      )
     }
   }
 }

@@ -1,29 +1,28 @@
-import { ServiceBroker } from 'moleculer';
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
 import {
-  BlockCheckpoint,
-  CoinTransfer,
-  Event,
-  Transaction,
-} from '../../models';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../config.json' with { type: 'json' };
-import knex from '../../common/utils/db_connection';
-import { detectStartMode } from '../../common/utils/start_mode_detector';
-import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier } from '../../common/utils/crawl_speed_config';
-import { executeWithRetry, isConnectionTerminatedError } from '../../common/utils/db_query_helper';
+  applySpeedToBatchSize,
+  applySpeedToDelay,
+  getCrawlSpeedMultiplier,
+} from '../../common/utils/crawl_speed_config'
+import knex from '../../common/utils/db_connection'
+import { executeWithRetry, isConnectionTerminatedError } from '../../common/utils/db_query_helper'
+import { detectStartMode } from '../../common/utils/start_mode_detector'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, CoinTransfer, Event, Transaction } from '../../models'
 
 @Service({
   name: SERVICE.V1.CoinTransfer.key,
   version: 1,
 })
 export default class CoinTransferService extends BullableService {
-  private _isFreshStart: boolean = false;
-  private readonly BATCH_SIZE = 10;
+  private _isFreshStart: boolean = false
+  private readonly BATCH_SIZE = 10
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   /**
@@ -32,38 +31,48 @@ export default class CoinTransferService extends BullableService {
    * @param toHeight
    * @private
    */
-  private async fetchTransactionCTByHeight(
-    fromHeight: number,
-    toHeight: number
-  ): Promise<Transaction[]> {
+  private async fetchTransactionCTByHeight(fromHeight: number, toHeight: number): Promise<Transaction[]> {
     const transactions = await Transaction.query()
-      .select('id', 'height', 'hash', 'timestamp', 'index', 'code', 'codespace', 'gas_used', 'gas_wanted', 'gas_limit', 'fee', 'memo')
+      .select(
+        'id',
+        'height',
+        'hash',
+        'timestamp',
+        'index',
+        'code',
+        'codespace',
+        'gas_used',
+        'gas_wanted',
+        'gas_limit',
+        'fee',
+        'memo'
+      )
       .withGraphFetched('messages')
       .where('height', '>', fromHeight)
       .andWhere('height', '<=', toHeight)
-      .orderBy('id', 'ASC');
-    if (transactions.length === 0) return [];
+      .orderBy('id', 'ASC')
+    if (transactions.length === 0) return []
 
-    const transactionsWithId: any = [];
+    const transactionsWithId: any = []
     transactions.forEach((transaction) => {
       transactionsWithId[transaction.id] = {
         ...transaction,
         events: [],
-      };
-    });
-    this.logger.warn(`Found ${transactions.length} transactions from height ${fromHeight} to ${toHeight}`);
-    const minTransactionId = transactions[0].id;
-    const maxTransactionId = transactions[transactions.length - 1].id;
+      }
+    })
+    this.logger.warn(`Found ${transactions.length} transactions from height ${fromHeight} to ${toHeight}`)
+    const minTransactionId = transactions[0].id
+    const maxTransactionId = transactions[transactions.length - 1].id
     const events = await Event.query()
       .withGraphFetched('attributes')
       .where('tx_id', '>=', minTransactionId)
       .andWhere('tx_id', '<=', maxTransactionId)
-      .whereNotNull('tx_msg_index');
+      .whereNotNull('tx_msg_index')
     events.forEach((event) => {
-      transactionsWithId[event.tx_id].events.push(event);
-    });
+      transactionsWithId[event.tx_id].events.push(event)
+    })
 
-    return transactionsWithId;
+    return transactionsWithId
   }
 
   /**
@@ -74,9 +83,9 @@ export default class CoinTransferService extends BullableService {
    * return [0, ''] if invalid
    */
   private extractAmount(rawAmount: string | undefined): [number, string] {
-    const amount = rawAmount?.match(/(\d+)/)?.[0] ?? '0';
-    const denom = rawAmount?.replace(amount, '') ?? '';
-    return [Number.parseInt(amount, 10), denom];
+    const amount = rawAmount?.match(/(\d+)/)?.[0] ?? '0'
+    const denom = rawAmount?.replace(amount, '') ?? ''
+    return [Number.parseInt(amount, 10), denom]
   }
 
   @QueueHandler({
@@ -84,194 +93,173 @@ export default class CoinTransferService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
   })
   public async jobHandleTxCoinTransfer() {
-    const [fromBlock, toBlock, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
-        [BULL_JOB_NAME.HANDLE_TRANSACTION],
-        'handleCoinTransfer'
-      );
+    const [fromBlock, toBlock, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
+      [BULL_JOB_NAME.HANDLE_TRANSACTION],
+      'handleCoinTransfer'
+    )
 
     if (fromBlock >= toBlock) {
-      this.logger.debug('Waiting for new transaction crawled');
-      return;
+      this.logger.debug('Waiting for new transaction crawled')
+      return
     }
 
-    let actualToBlock = toBlock;
+    let actualToBlock = toBlock
     if (this._isFreshStart && config.handleCoinTransfer.freshStart) {
-      const maxBlocks = config.handleCoinTransfer.freshStart.blocksPerCall || config.handleCoinTransfer.blocksPerCall;
-      actualToBlock = Math.min(toBlock, fromBlock + maxBlocks);
+      const maxBlocks = config.handleCoinTransfer.freshStart.blocksPerCall || config.handleCoinTransfer.blocksPerCall
+      actualToBlock = Math.min(toBlock, fromBlock + maxBlocks)
     }
 
-
-    const baseChunkSize = (this._isFreshStart && config.handleCoinTransfer.freshStart)
-      ? (config.handleCoinTransfer.freshStart.chunkSize || config.handleCoinTransfer.chunkSize)
-      : config.handleCoinTransfer.chunkSize;
-    const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
+    const baseChunkSize =
+      this._isFreshStart && config.handleCoinTransfer.freshStart
+        ? config.handleCoinTransfer.freshStart.chunkSize || config.handleCoinTransfer.chunkSize
+        : config.handleCoinTransfer.chunkSize
+    const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart)
 
     try {
       await executeWithRetry(
-        async () => knex.transaction(async (trx) => {
-        let currentFrom = fromBlock;
-        let totalInserted = 0;
-        while (currentFrom < actualToBlock) {
-          const batchTo = Math.min(currentFrom + this.BATCH_SIZE, actualToBlock);
-          const transactions = await this.fetchTransactionCTByHeight(
-            currentFrom,
-            batchTo
-          );
+        async () =>
+          knex.transaction(async (trx) => {
+            let currentFrom = fromBlock
+            let totalInserted = 0
+            while (currentFrom < actualToBlock) {
+              const batchTo = Math.min(currentFrom + this.BATCH_SIZE, actualToBlock)
+              const transactions = await this.fetchTransactionCTByHeight(currentFrom, batchTo)
 
-          const batchCoinTransfers: CoinTransfer[] = [];
-          transactions.forEach((tx: Transaction) => {
-            tx.events.forEach((event: Event) => {
-              if (
-                event.tx_msg_index === null ||
-                event.tx_msg_index === undefined ||
-                event.type !== 'transfer'
-              )
-                return;
+              const batchCoinTransfers: CoinTransfer[] = []
+              transactions.forEach((tx: Transaction) => {
+                tx.events.forEach((event: Event) => {
+                  if (event.tx_msg_index === null || event.tx_msg_index === undefined || event.type !== 'transfer')
+                    return
 
-              // skip if message is not 'MsgMultiSend'
-              if (
-                event.attributes.length !== 3 &&
-                tx.messages[event.tx_msg_index].type !==
-                '/cosmos.bank.v1beta1.MsgMultiSend' &&
-                !(
-                  event.attributes.length === 4 &&
-                  event.attributes.map((attr) => attr.key).includes('authz_msg_index')
+                  // skip if message is not 'MsgMultiSend'
+                  if (
+                    event.attributes.length !== 3 &&
+                    tx.messages[event.tx_msg_index].type !== '/cosmos.bank.v1beta1.MsgMultiSend' &&
+                    !(
+                      event.attributes.length === 4 &&
+                      event.attributes.map((attr) => attr.key).includes('authz_msg_index')
+                    )
+                  ) {
+                    this.logger.error(
+                      'Coin transfer detected in unsupported message type',
+                      tx.hash,
+                      tx.messages[event.tx_msg_index].content
+                    )
+                    return
+                  }
+
+                  const ctTemplate = {
+                    block_height: tx.height,
+                    tx_id: tx.id,
+                    tx_msg_id: tx.messages[event.tx_msg_index].id,
+                    from: event.attributes.find((attr) => attr.key === 'sender')?.value,
+                    to: '',
+                    amount: 0,
+                    denom: '',
+                    timestamp: new Date(tx.timestamp).toISOString(),
+                  }
+                  /**
+                   * we expect 2 cases:
+                   * 1. transfer event has only 1 sender and 1 recipient
+                   *    then the event will have 3 attributes: sender, recipient, amount
+                   * 2. transfer event has 1 sender and multiple recipients, message must be 'MsgMultiSend'
+                   *    then the event will be an array of attributes: recipient1, amount1, recipient2, amount2, ...
+                   *    sender is the coin_spent.spender
+                   */
+                  if (
+                    event.attributes.length === 3 ||
+                    (event.attributes.length === 4 &&
+                      event.attributes.map((attr) => attr.key).includes('authz_msg_index'))
+                  ) {
+                    const rawAmount = event.attributes.find((attr) => attr.key === 'amount')?.value
+                    const [amount, denom] = this.extractAmount(rawAmount)
+                    batchCoinTransfers.push(
+                      CoinTransfer.fromJson({
+                        ...ctTemplate,
+                        from: event.attributes.find((attr) => attr.key === 'sender')?.value,
+                        to: event.attributes.find((attr) => attr.key === 'recipient')?.value,
+                        amount,
+                        denom,
+                      })
+                    )
+                    return
+                  }
+                  const coinSpentEvent = tx.events.find(
+                    (e: Event) => e.type === 'coin_spent' && e.tx_msg_index === event.tx_msg_index
+                  )
+                  ctTemplate.from = coinSpentEvent?.attributes.find(
+                    (attr: { key: string; value: string }) => attr.key === 'spender'
+                  )?.value
+                  for (let i = 0; i < event.attributes.length; i += 2) {
+                    if (event.attributes[i].key !== 'recipient' && event.attributes[i + 1].key !== 'amount') {
+                      this.logger.error(
+                        'Coin transfer in MsgMultiSend detected with invalid attributes',
+                        tx.hash,
+                        event.attributes
+                      )
+                      return
+                    }
+
+                    const rawAmount = event.attributes[i + 1].value
+                    const [amount, denom] = this.extractAmount(rawAmount)
+                    batchCoinTransfers.push(
+                      CoinTransfer.fromJson({
+                        ...ctTemplate,
+                        to: event.attributes[i].value,
+                        amount,
+                        denom,
+                      })
+                    )
+                  }
+                })
+              })
+
+              if (batchCoinTransfers.length > 0) {
+                this.logger.info(
+                  ` [COIN_TRANSFER] Inserting ${batchCoinTransfers.length} coin transfers for blocks ${currentFrom + 1} to ${batchTo}`
                 )
-              ) {
-                this.logger.error(
-                  'Coin transfer detected in unsupported message type',
-                  tx.hash,
-                  tx.messages[event.tx_msg_index].content
-                );
-                return;
+                await trx.batchInsert(CoinTransfer.tableName, batchCoinTransfers, chunkSize)
+                totalInserted += batchCoinTransfers.length
               }
 
-              const ctTemplate = {
-                block_height: tx.height,
-                tx_id: tx.id,
-                tx_msg_id: tx.messages[event.tx_msg_index].id,
-                from: event.attributes.find((attr) => attr.key === 'sender')?.value,
-                to: '',
-                amount: 0,
-                denom: '',
-                timestamp: new Date(tx.timestamp).toISOString(),
-              };
-              /**
-               * we expect 2 cases:
-               * 1. transfer event has only 1 sender and 1 recipient
-               *    then the event will have 3 attributes: sender, recipient, amount
-               * 2. transfer event has 1 sender and multiple recipients, message must be 'MsgMultiSend'
-               *    then the event will be an array of attributes: recipient1, amount1, recipient2, amount2, ...
-               *    sender is the coin_spent.spender
-               */
-              if (
-                event.attributes.length === 3 ||
-                (event.attributes.length === 4 &&
-                  event.attributes
-                    .map((attr) => attr.key)
-                    .includes('authz_msg_index'))
-              ) {
-                const rawAmount = event.attributes.find(
-                  (attr) => attr.key === 'amount'
-                )?.value;
-                const [amount, denom] = this.extractAmount(rawAmount);
-                batchCoinTransfers.push(
-                  CoinTransfer.fromJson({
-                    ...ctTemplate,
-                    from: event.attributes.find((attr) => attr.key === 'sender')
-                      ?.value,
-                    to: event.attributes.find((attr) => attr.key === 'recipient')
-                      ?.value,
-                    amount,
-                    denom,
-                  })
-                );
-                return;
-              }
-              const coinSpentEvent = tx.events.find(
-                (e: Event) =>
-                  e.type === 'coin_spent' && e.tx_msg_index === event.tx_msg_index
-              );
-              ctTemplate.from = coinSpentEvent?.attributes.find(
-                (attr: { key: string; value: string }) => attr.key === 'spender'
-              )?.value;
-              for (let i = 0; i < event.attributes.length; i += 2) {
-                if (
-                  event.attributes[i].key !== 'recipient' &&
-                  event.attributes[i + 1].key !== 'amount'
-                ) {
-                  this.logger.error(
-                    'Coin transfer in MsgMultiSend detected with invalid attributes',
-                    tx.hash,
-                    event.attributes
-                  );
-                  return;
-                }
+              currentFrom = batchTo
+            }
 
-                const rawAmount = event.attributes[i + 1].value;
-                const [amount, denom] = this.extractAmount(rawAmount);
-                batchCoinTransfers.push(
-                  CoinTransfer.fromJson({
-                    ...ctTemplate,
-                    to: event.attributes[i].value,
-                    amount,
-                    denom,
-                  })
-                );
-              }
-            });
-          });
+            updateBlockCheckpoint.height = actualToBlock
+            await BlockCheckpoint.query().transacting(trx).insert(updateBlockCheckpoint).onConflict('job_name').merge()
 
-          if (batchCoinTransfers.length > 0) {
-            this.logger.info(` [COIN_TRANSFER] Inserting ${batchCoinTransfers.length} coin transfers for blocks ${currentFrom + 1} to ${batchTo}`);
-            await trx.batchInsert(
-              CoinTransfer.tableName,
-              batchCoinTransfers,
-              chunkSize
-            );
-            totalInserted += batchCoinTransfers.length;
-          }
-
-          currentFrom = batchTo;
-        }
-
-        updateBlockCheckpoint.height = actualToBlock;
-        await BlockCheckpoint.query()
-          .transacting(trx)
-          .insert(updateBlockCheckpoint)
-          .onConflict('job_name')
-          .merge();
-
-        this.logger.info(`[COIN_TRANSFER] Total inserted ${totalInserted} coin transfers`);
-        }),
+            this.logger.info(`[COIN_TRANSFER] Total inserted ${totalInserted} coin transfers`)
+          }),
         { retries: 3, retryDelay: 1500 },
         this.logger
-      );
+      )
     } catch (error: any) {
       if (isConnectionTerminatedError(error)) {
         this.logger.warn(
           `[COIN_TRANSFER] Transient DB connectivity issue, skipping this cycle and retrying on next schedule: ${error?.message || error}`
-        );
-        return;
+        )
+        return
       }
-      this.logger.error(`❌ [COIN_TRANSFER] Transaction failed:`, error);
-      throw error;
+      this.logger.error(`❌ [COIN_TRANSFER] Transaction failed:`, error)
+      throw error
     }
   }
 
   public async _start() {
-    const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_COIN_TRANSFER);
-    this._isFreshStart = startMode.isFreshStart;
+    const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_COIN_TRANSFER)
+    this._isFreshStart = startMode.isFreshStart
 
-    const baseCrawlInterval = (this._isFreshStart && config.handleCoinTransfer.freshStart)
-      ? (config.handleCoinTransfer.freshStart.millisecondCrawl || config.handleCoinTransfer.millisecondCrawl)
-      : config.handleCoinTransfer.millisecondCrawl;
-    const crawlInterval = applySpeedToDelay(baseCrawlInterval, !this._isFreshStart);
+    const baseCrawlInterval =
+      this._isFreshStart && config.handleCoinTransfer.freshStart
+        ? config.handleCoinTransfer.freshStart.millisecondCrawl || config.handleCoinTransfer.millisecondCrawl
+        : config.handleCoinTransfer.millisecondCrawl
+    const crawlInterval = applySpeedToDelay(baseCrawlInterval, !this._isFreshStart)
 
-    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
-    this.logger.info(`CoinTransfer Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms | Speed Multiplier: ${speedMultiplier}x`);
+    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart)
+    this.logger.info(
+      `CoinTransfer Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | Interval: ${crawlInterval}ms | Speed Multiplier: ${speedMultiplier}x`
+    )
 
     this.createJob(
       BULL_JOB_NAME.HANDLE_COIN_TRANSFER,
@@ -286,7 +274,7 @@ export default class CoinTransferService extends BullableService {
           every: crawlInterval,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

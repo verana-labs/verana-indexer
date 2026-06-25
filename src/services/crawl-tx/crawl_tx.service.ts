@@ -1,80 +1,70 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query';
-import { fromBase64, toBase64 } from '@cosmjs/encoding';
-import { decodeTxRaw } from '@cosmjs/proto-signing';
-import { HttpBatchClient } from '@cosmjs/tendermint-rpc';
-import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc';
+import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query'
+import { fromBase64, toBase64 } from '@cosmjs/encoding'
+import { decodeTxRaw } from '@cosmjs/proto-signing'
+import { HttpBatchClient } from '@cosmjs/tendermint-rpc'
+import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc'
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Knex } from 'knex'
+import _ from 'lodash'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, getHttpBatchClient, getLcdClient, SERVICE } from '../../common'
+import ChainRegistry from '../../common/utils/chain.registry'
 import {
-  Action,
-  Service,
-} from '@ourparentcenter/moleculer-decorators-extended';
-import { Knex } from 'knex';
-import _ from 'lodash';
-import { ServiceBroker } from 'moleculer';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
+  applySpeedToBatchSize,
+  applySpeedToDelay,
+  getCrawlSpeedMultiplier,
+  getRecommendedConcurrency,
+} from '../../common/utils/crawl_speed_config'
+import knex from '../../common/utils/db_connection'
+import { runWithCrawlLock } from '../../common/utils/db_pool_guard'
+import { getDbQueryTimeoutMs, getHeavyBrokerCallTimeoutMs } from '../../common/utils/db_query_helper'
+import { checkCrawlingStatus, handleErrorGracefully } from '../../common/utils/error_handler'
+import { triggerGC } from '../../common/utils/health_check'
+import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard'
+import { getProviderRegistry } from '../../common/utils/provider.registry'
+import { detectStartMode } from '../../common/utils/start_mode_detector'
+import Utils from '../../common/utils/utils'
 import {
-  BULL_JOB_NAME,
-  getHttpBatchClient,
-  getLcdClient,
-  SERVICE,
-} from '../../common';
-import { indexerStatusManager } from '../manager/indexer_status.manager';
-import { handleErrorGracefully, checkCrawlingStatus } from '../../common/utils/error_handler';
-import { getDbQueryTimeoutMs, getHeavyBrokerCallTimeoutMs } from '../../common/utils/db_query_helper';
-import { triggerGC } from '../../common/utils/health_check';
-import { applySpeedToDelay, applySpeedToBatchSize, getCrawlSpeedMultiplier, getRecommendedConcurrency } from '../../common/utils/crawl_speed_config';
-import { throwIfHeapCriticalDuringCrawl } from '../../common/utils/memory_crawl_guard';
-import { runWithCrawlLock, CrawlSkipError } from '../../common/utils/db_pool_guard';
-import {
-  isVeranaMessageType,
-  shouldSkipUnknownMessages,
-  isUpdateParamsMessageType,
-  isCredentialSchemaMessageType,
-  isParticipantMessageType,
-  isTrustDepositMessageType,
-  isEcosystemMessageType,
   isCorporationMessageType,
+  isCredentialSchemaMessageType,
+  isEcosystemMessageType,
   isGovernanceFrameworkMessageType,
   isKnownVeranaMessageType,
-} from '../../common/verana-message-types';
-import ChainRegistry from '../../common/utils/chain.registry';
-import knex from '../../common/utils/db_connection';
-import { getProviderRegistry } from '../../common/utils/provider.registry';
-import Utils from '../../common/utils/utils';
-import { detectStartMode } from '../../common/utils/start_mode_detector';
-import {
-  Block,
-  BlockCheckpoint,
-  Event,
-  Transaction,
-  TransactionMessage,
-} from '../../models';
-import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers';
-import { extractEcosystemIdsFromEvents } from "../../modules/ec-height-sync/ec_height_sync_helpers";
-import { applyScheduledParticipantFlipsForBlock } from "../crawl-pp/pp_flip_processor";
+  isParticipantMessageType,
+  isTrustDepositMessageType,
+  isUpdateParamsMessageType,
+  isVeranaMessageType,
+  shouldSkipUnknownMessages,
+} from '../../common/verana-message-types'
+import config from '../../config.json' with { type: 'json' }
+import { Block, BlockCheckpoint, Event, Transaction, TransactionMessage } from '../../models'
+import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers'
+import { extractEcosystemIdsFromEvents } from '../../modules/ec-height-sync/ec_height_sync_helpers'
+import { applyScheduledParticipantFlipsForBlock } from '../crawl-pp/pp_flip_processor'
+import { indexerStatusManager } from '../manager/indexer_status.manager'
 
-const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000);
+const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000)
 
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
   version: 1,
-
 })
 export default class CrawlTxService extends BullableService {
-  private _httpBatchClient: HttpBatchClient;
+  private _httpBatchClient: HttpBatchClient
 
-  private _registry!: ChainRegistry;
+  private _registry!: ChainRegistry
 
-  private _processingLock: boolean = false;
+  private _processingLock: boolean = false
 
-  private _isFreshStart: boolean = false;
+  private _isFreshStart: boolean = false
 
-  private _hasUniqueConstraintCache: boolean | null = null;
+  private _hasUniqueConstraintCache: boolean | null = null
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
-    this._httpBatchClient = getHttpBatchClient();
+    super(broker)
+    this._httpBatchClient = getHttpBatchClient()
   }
 
   @QueueHandler({
@@ -83,51 +73,49 @@ export default class CrawlTxService extends BullableService {
   })
   public async jobCrawlTx(): Promise<void> {
     try {
-      checkCrawlingStatus();
+      checkCrawlingStatus()
     } catch {
-      this.logger.warn('⏸️ Crawling is stopped, skipping transaction crawl');
-      return;
+      this.logger.warn('⏸️ Crawling is stopped, skipping transaction crawl')
+      return
     }
 
     try {
       await runWithCrawlLock(async () => {
-        const [startBlock, endBlock, blockCheckpoint] =
-          await BlockCheckpoint.getCheckpoint(
-            BULL_JOB_NAME.CRAWL_TRANSACTION,
-            [BULL_JOB_NAME.CRAWL_BLOCK],
-            config.crawlTransaction.key
-          );
+        const [startBlock, endBlock, blockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+          BULL_JOB_NAME.CRAWL_TRANSACTION,
+          [BULL_JOB_NAME.CRAWL_BLOCK],
+          config.crawlTransaction.key
+        )
 
-        this.logger.info(
-          `Crawl transaction from block ${startBlock} to ${endBlock}`
-        );
+        this.logger.info(`Crawl transaction from block ${startBlock} to ${endBlock}`)
         if (startBlock >= endBlock) {
-          return;
+          return
         }
 
-        let actualEndBlock = endBlock;
+        let actualEndBlock = endBlock
         if (this._isFreshStart && config.crawlTransaction.freshStart) {
-          const baseMaxBlocks = config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall;
-          const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false);
-          actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+          const baseMaxBlocks =
+            config.crawlTransaction.freshStart.blocksPerCall || config.crawlTransaction.blocksPerCall
+          const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, false)
+          actualEndBlock = Math.min(endBlock, startBlock + maxBlocks)
         } else if (!this._isFreshStart) {
-          const baseMaxBlocks = config.crawlTransaction.blocksPerCall || 200;
-          const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true);
-          actualEndBlock = Math.min(endBlock, startBlock + maxBlocks);
+          const baseMaxBlocks = config.crawlTransaction.blocksPerCall || 200
+          const maxBlocks = applySpeedToBatchSize(baseMaxBlocks, true)
+          actualEndBlock = Math.min(endBlock, startBlock + maxBlocks)
         }
 
-        const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock);
-        await throwIfHeapCriticalDuringCrawl('crawl-tx:after-getListRawTx', this.logger);
-        const listdecodedTx = await this.decodeListRawTx(listTxRaw);
-        await throwIfHeapCriticalDuringCrawl('crawl-tx:after-decodeListRawTx', this.logger);
+        const listTxRaw = await this.getListRawTx(startBlock, actualEndBlock)
+        await throwIfHeapCriticalDuringCrawl('crawl-tx:after-getListRawTx', this.logger)
+        const listdecodedTx = await this.decodeListRawTx(listTxRaw)
+        await throwIfHeapCriticalDuringCrawl('crawl-tx:after-decodeListRawTx', this.logger)
 
-        listTxRaw.length = 0;
+        listTxRaw.length = 0
 
         await knex.transaction(async (trx) => {
-          await this.insertTxDecoded(listdecodedTx, trx);
+          await this.insertTxDecoded(listdecodedTx, trx)
           if (blockCheckpoint) {
-            blockCheckpoint.height = actualEndBlock;
-            blockCheckpoint.updated_at = new Date();
+            blockCheckpoint.height = actualEndBlock
+            blockCheckpoint.updated_at = new Date()
 
             await BlockCheckpoint.query()
               .insert(blockCheckpoint)
@@ -138,23 +126,25 @@ export default class CrawlTxService extends BullableService {
               })
               .returning('id')
               .timeout(getDbQueryTimeoutMs())
-              .transacting(trx);
-            }
-          });
+              .transacting(trx)
+          }
+        })
 
-        const txCount = listdecodedTx.length;
+        const txCount = listdecodedTx.length
         if (txCount > 25) {
-          triggerGC();
+          triggerGC()
         }
 
-        listdecodedTx.length = 0;
-      }, this.logger);
+        listdecodedTx.length = 0
+      }, this.logger)
     } catch (e: any) {
       if (e?.name === 'CrawlSkipError') {
-        this.logger.warn(`[CRAWL_TX] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`);
-        return;
+        this.logger.warn(
+          `[CRAWL_TX] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`
+        )
+        return
       }
-      throw e;
+      throw e
     }
   }
 
@@ -164,47 +154,49 @@ export default class CrawlTxService extends BullableService {
   })
   public async jobHandlerCrawlTx(): Promise<void> {
     try {
-      checkCrawlingStatus();
+      checkCrawlingStatus()
     } catch {
-      this.logger.warn('⏸️ [HANDLE_TRANSACTION] Crawling is stopped, skipping transaction handling');
-      return;
+      this.logger.warn('⏸️ [HANDLE_TRANSACTION] Crawling is stopped, skipping transaction handling')
+      return
     }
 
     if (this._processingLock) {
-      this.logger.debug(' [HANDLE_TRANSACTION] Already in progress, skipping...');
-      return;
+      this.logger.debug(' [HANDLE_TRANSACTION] Already in progress, skipping...')
+      return
     }
 
-    this._processingLock = true;
+    this._processingLock = true
 
     try {
       try {
         await runWithCrawlLock(async () => {
-          await this.jobHandlerCrawlTxBody();
-        }, this.logger);
+          await this.jobHandlerCrawlTxBody()
+        }, this.logger)
       } catch (e: any) {
         if (e?.name === 'CrawlSkipError') {
-          this.logger.warn(`[HANDLE_TRANSACTION] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`);
-          return;
+          this.logger.warn(
+            `[HANDLE_TRANSACTION] Skipping cycle: ${e?.message || 'crawler temporarily paused (DB pool or memory pressure).'}`
+          )
+          return
         }
-        throw e;
+        throw e
       }
     } catch (error) {
       await handleErrorGracefully(
         error,
         SERVICE.V1.CrawlTransaction.key,
         '[HANDLE_TRANSACTION] Error processing transactions'
-      );
+      )
     } finally {
-      this._processingLock = false;
+      this._processingLock = false
     }
   }
 
   private async jobHandlerCrawlTxBody(): Promise<void> {
     // Check if unique constraint exists ONCE before processing (cache the result)
-      if (this._hasUniqueConstraintCache === null) {
-        try {
-          const constraintCheck = await knex.raw(`
+    if (this._hasUniqueConstraintCache === null) {
+      try {
+        const constraintCheck = await knex.raw(`
             SELECT 1 FROM pg_indexes 
             WHERE schemaname = 'public' 
               AND tablename LIKE 'transaction_message%'
@@ -212,286 +204,284 @@ export default class CrawlTxService extends BullableService {
               AND indexdef LIKE '%tx_id%'
               AND indexdef LIKE '%index%'
             LIMIT 1
-          `);
-          this._hasUniqueConstraintCache = constraintCheck.rows.length > 0;
-          this.logger.info(` [HANDLE_TRANSACTION] Unique constraint check: ${this._hasUniqueConstraintCache ? 'EXISTS' : 'DOES NOT EXIST'}`);
-        } catch (error) {
-          // If check fails, assume constraint doesn't exist
-          this._hasUniqueConstraintCache = false;
-          this.logger.warn(` [HANDLE_TRANSACTION] Constraint check failed, assuming no constraint exists:`, error);
-        }
+          `)
+        this._hasUniqueConstraintCache = constraintCheck.rows.length > 0
+        this.logger.info(
+          ` [HANDLE_TRANSACTION] Unique constraint check: ${this._hasUniqueConstraintCache ? 'EXISTS' : 'DOES NOT EXIST'}`
+        )
+      } catch (error) {
+        // If check fails, assume constraint doesn't exist
+        this._hasUniqueConstraintCache = false
+        this.logger.warn(` [HANDLE_TRANSACTION] Constraint check failed, assuming no constraint exists:`, error)
       }
+    }
 
-      // Get checkpoint - use height for compatibility but track by transaction ID
-      const [startBlock, endBlock, blockCheckpoint] =
-        await BlockCheckpoint.getCheckpoint(
-          BULL_JOB_NAME.HANDLE_TRANSACTION,
-          [BULL_JOB_NAME.CRAWL_TRANSACTION],
-          config.handleTransaction.key
-        );
+    // Get checkpoint - use height for compatibility but track by transaction ID
+    const [startBlock, endBlock, blockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.HANDLE_TRANSACTION,
+      [BULL_JOB_NAME.CRAWL_TRANSACTION],
+      config.handleTransaction.key
+    )
 
-      // Get last processed transaction ID from checkpoint height
-      // Checkpoint now stores actual block height, so we need to find the last transaction ID at that height
-      let lastProcessedTxId = 0;
-      if (blockCheckpoint && blockCheckpoint.height > 0) {
-        // Find the last transaction ID at or before the checkpoint height
-        const txAtHeight = await Transaction.query()
-          .select('id')
-          .where('height', '<=', blockCheckpoint.height)
-          .orderBy('id', 'desc')
-          .timeout(TX_BOUNDARY_TIMEOUT_MS)
-          .first();
-        lastProcessedTxId = txAtHeight?.id || 0;
-      }
-
-      // Get max transaction ID from crawl:transaction checkpoint
-      const crawlTxCheckpoint = await BlockCheckpoint.query()
-        .select('height')
-        .where('job_name', BULL_JOB_NAME.CRAWL_TRANSACTION)
-        .first();
-      
-      const maxTxId = await Transaction.query()
-        .where('height', '<=', crawlTxCheckpoint?.height || endBlock)
-        .max('id as max_id')
+    // Get last processed transaction ID from checkpoint height
+    // Checkpoint now stores actual block height, so we need to find the last transaction ID at that height
+    let lastProcessedTxId = 0
+    if (blockCheckpoint && blockCheckpoint.height > 0) {
+      // Find the last transaction ID at or before the checkpoint height
+      const txAtHeight = await Transaction.query()
+        .select('id')
+        .where('height', '<=', blockCheckpoint.height)
+        .orderBy('id', 'desc')
         .timeout(TX_BOUNDARY_TIMEOUT_MS)
-        .first() as any;
-      
-      const maxAvailableTxId = maxTxId?.max_id || 0;
+        .first()
+      lastProcessedTxId = txAtHeight?.id || 0
+    }
 
-      if (lastProcessedTxId >= maxAvailableTxId) {
-        // No new transactions, but still advance checkpoint to CRAWL_TRANSACTION height
-        // so downstream services (e.g. stats) know all blocks have been checked
-        const crawlTxHeight = crawlTxCheckpoint?.height || 0;
-        if (blockCheckpoint && crawlTxHeight > blockCheckpoint.height) {
-          const previousHeight = blockCheckpoint.height;
-          await this.applyScheduledFlipsForRange(previousHeight + 1, crawlTxHeight);
-          blockCheckpoint.height = crawlTxHeight;
-          blockCheckpoint.updated_at = new Date();
-          await knex.transaction(async (trx) => {
-            await BlockCheckpoint.query()
-              .insert(blockCheckpoint)
-              .onConflict('job_name')
-              .merge({
-                height: crawlTxHeight,
-                updated_at: blockCheckpoint.updated_at,
-              })
-              .timeout(getDbQueryTimeoutMs())
-              .transacting(trx);
-          });
-          this.logger.info(` [HANDLE_TRANSACTION] No new transactions, advanced checkpoint from ${previousHeight} to ${crawlTxHeight}`);
-          try {
-            await this.broker.call(
-              `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`,
-              {
-                height: crawlTxHeight,
-                timestamp: blockCheckpoint.updated_at.toISOString(),
-              }
-            );
-            this.logger.debug(` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${crawlTxHeight} (no-tx advance)`);
-          } catch (error) {
-            this.logger.warn(
-              `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed for height ${crawlTxHeight}:`,
-              error
-            );
-          }
-        } else {
-          this.logger.debug(` [HANDLE_TRANSACTION] No new transactions to process (${lastProcessedTxId} >= ${maxAvailableTxId})`);
-        }
-        return;
-      }
+    // Get max transaction ID from crawl:transaction checkpoint
+    const crawlTxCheckpoint = await BlockCheckpoint.query()
+      .select('height')
+      .where('job_name', BULL_JOB_NAME.CRAWL_TRANSACTION)
+      .first()
 
-      this.logger.info(
-        ` [HANDLE_TRANSACTION] Processing transactions from ID ${lastProcessedTxId + 1} to ${maxAvailableTxId}`
-      );
+    const maxTxId = (await Transaction.query()
+      .where('height', '<=', crawlTxCheckpoint?.height || endBlock)
+      .max('id as max_id')
+      .timeout(TX_BOUNDARY_TIMEOUT_MS)
+      .first()) as any
 
-      // Process transactions sequentially by ID
-      const maxTxsPerCall = this._isFreshStart && config.handleTransaction.freshStart
-        ? applySpeedToBatchSize(
-            config.handleTransaction.freshStart.txsPerCall || 100,
-            false
+    const maxAvailableTxId = maxTxId?.max_id || 0
+
+    if (lastProcessedTxId >= maxAvailableTxId) {
+      // No new transactions, but still advance checkpoint to CRAWL_TRANSACTION height
+      // so downstream services (e.g. stats) know all blocks have been checked
+      const crawlTxHeight = crawlTxCheckpoint?.height || 0
+      if (blockCheckpoint && crawlTxHeight > blockCheckpoint.height) {
+        const previousHeight = blockCheckpoint.height
+        await this.applyScheduledFlipsForRange(previousHeight + 1, crawlTxHeight)
+        blockCheckpoint.height = crawlTxHeight
+        blockCheckpoint.updated_at = new Date()
+        await knex.transaction(async (trx) => {
+          await BlockCheckpoint.query()
+            .insert(blockCheckpoint)
+            .onConflict('job_name')
+            .merge({
+              height: crawlTxHeight,
+              updated_at: blockCheckpoint.updated_at,
+            })
+            .timeout(getDbQueryTimeoutMs())
+            .transacting(trx)
+        })
+        this.logger.info(
+          ` [HANDLE_TRANSACTION] No new transactions, advanced checkpoint from ${previousHeight} to ${crawlTxHeight}`
+        )
+        try {
+          await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`, {
+            height: crawlTxHeight,
+            timestamp: blockCheckpoint.updated_at.toISOString(),
+          })
+          this.logger.debug(
+            ` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${crawlTxHeight} (no-tx advance)`
           )
-        : applySpeedToBatchSize(
-            config.handleTransaction.txsPerCall || 100,
-            true
-          );
+        } catch (error) {
+          this.logger.warn(
+            `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed for height ${crawlTxHeight}:`,
+            error
+          )
+        }
+      } else {
+        this.logger.debug(
+          ` [HANDLE_TRANSACTION] No new transactions to process (${lastProcessedTxId} >= ${maxAvailableTxId})`
+        )
+      }
+      return
+    }
 
-      let currentTxId = lastProcessedTxId;
-      let txsProcessed = 0;
-      let lastProcessedHeight = startBlock;
+    this.logger.info(
+      ` [HANDLE_TRANSACTION] Processing transactions from ID ${lastProcessedTxId + 1} to ${maxAvailableTxId}`
+    )
 
-      while (currentTxId < maxAvailableTxId && txsProcessed < maxTxsPerCall) {
-        await throwIfHeapCriticalDuringCrawl('handle-transaction:while-loop', this.logger);
-        // Fetch transactions in batches by ID (much faster than by height)
-        const batchSize = Math.min(50, maxTxsPerCall - txsProcessed);
-        const transactions = await Transaction.query()
-          .select(
-            'id', 'height', 'index', 'hash', 'code', 'codespace',
-            'gas_used', 'gas_wanted', 'gas_limit', 'fee', 'timestamp', 'memo',
-            knex.raw(`jsonb_build_object(
+    // Process transactions sequentially by ID
+    const maxTxsPerCall =
+      this._isFreshStart && config.handleTransaction.freshStart
+        ? applySpeedToBatchSize(config.handleTransaction.freshStart.txsPerCall || 100, false)
+        : applySpeedToBatchSize(config.handleTransaction.txsPerCall || 100, true)
+
+    let currentTxId = lastProcessedTxId
+    let txsProcessed = 0
+    let lastProcessedHeight = startBlock
+
+    while (currentTxId < maxAvailableTxId && txsProcessed < maxTxsPerCall) {
+      await throwIfHeapCriticalDuringCrawl('handle-transaction:while-loop', this.logger)
+      // Fetch transactions in batches by ID (much faster than by height)
+      const batchSize = Math.min(50, maxTxsPerCall - txsProcessed)
+      const transactions = await Transaction.query()
+        .select(
+          'id',
+          'height',
+          'index',
+          'hash',
+          'code',
+          'codespace',
+          'gas_used',
+          'gas_wanted',
+          'gas_limit',
+          'fee',
+          'timestamp',
+          'memo',
+          knex.raw(`jsonb_build_object(
               'tx', jsonb_build_object('body', data->'tx'->'body'),
               'tx_response', (data->'tx_response') - 'raw_log' - 'data'
             ) as data`)
-          )
-          .where('id', '>', currentTxId)
-          .orderBy('id', 'asc')
-          .limit(batchSize);
+        )
+        .where('id', '>', currentTxId)
+        .orderBy('id', 'asc')
+        .limit(batchSize)
 
-        if (transactions.length === 0) {
-          break;
+      if (transactions.length === 0) {
+        break
+      }
+
+      // Group transactions by block height for batch processing
+      const transactionsByBlock = new Map<number, Transaction[]>()
+      for (const tx of transactions) {
+        let blockTxs = transactionsByBlock.get(tx.height)
+        if (!blockTxs) {
+          blockTxs = []
+          transactionsByBlock.set(tx.height, blockTxs)
         }
+        blockTxs.push(tx)
+      }
 
-        // Group transactions by block height for batch processing
-        const transactionsByBlock = new Map<number, Transaction[]>();
-        for (const tx of transactions) {
-          if (!transactionsByBlock.has(tx.height)) {
-            transactionsByBlock.set(tx.height, []);
+      // Process each block's transactions
+      for (const [blockHeight, blockTxs] of transactionsByBlock.entries()) {
+        await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}`, this.logger)
+        try {
+          if (blockHeight > lastProcessedHeight + 1) {
+            await this.applyScheduledFlipsForRange(lastProcessedHeight + 1, blockHeight - 1)
           }
-          transactionsByBlock.get(tx.height)!.push(tx);
-        }
 
-        // Process each block's transactions
-        for (const [blockHeight, blockTxs] of transactionsByBlock.entries()) {
-          await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}`, this.logger);
-          try {
-            if (blockHeight > (lastProcessedHeight + 1)) {
-              await this.applyScheduledFlipsForRange(lastProcessedHeight + 1, blockHeight - 1);
-            }
+          // Process all transactions for this block
+          const processingPayloads = await this.processTransactionsForBlock(blockTxs, blockCheckpoint)
 
-            // Process all transactions for this block
-            const processingPayloads = await this.processTransactionsForBlock(blockTxs, blockCheckpoint);
-
-            // Process payloads after successful commit
-            if (processingPayloads && !(config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction)) {
-              try {
-                await this.processPayloads(processingPayloads);
-              } catch (err: any) {
-                this.logger.error(` [HANDLE_TRANSACTION] Error processing message batches:`, err);
-                throw err;
-              }
-            }
-            await this.applyScheduledFlipsForBlockHeight(blockHeight, blockTxs[0]?.timestamp as Date | string | undefined);
-
-            // Update tracking
-            lastProcessedHeight = blockHeight;
-            currentTxId = Math.max(...blockTxs.map(tx => tx.id));
-            txsProcessed += blockTxs.length;
-
-            if (blockCheckpoint) {
-              await knex.transaction(async (trx) => {
-                blockCheckpoint.height = blockHeight; 
-                blockCheckpoint.updated_at = new Date();
-                await BlockCheckpoint.query()
-                  .insert(blockCheckpoint)
-                  .onConflict('job_name')
-                  .merge({
-                    height: blockHeight,
-                    updated_at: blockCheckpoint.updated_at,
-                  })
-                  .transacting(trx);
-              });
-            }
-
-            // Broadcast websocket event for processed block
+          // Process payloads after successful commit
+          if (
+            processingPayloads &&
+            !(config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction)
+          ) {
             try {
-              await this.broker.call(
-                `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`,
-                {
-                  height: blockHeight,
-                  timestamp: new Date().toISOString(),
-                }
-              );
-              this.logger.debug(
-                ` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${blockHeight}`
-              );
-            } catch (error) {
-              this.logger.warn(
-                `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed event for height ${blockHeight}:`,
-                error
-              );
+              await this.processPayloads(processingPayloads)
+            } catch (err: any) {
+              this.logger.error(` [HANDLE_TRANSACTION] Error processing message batches:`, err)
+              throw err
             }
-
-            this.logger.info(`✅ [HANDLE_TRANSACTION] Successfully processed block ${blockHeight} with ${blockTxs.length} transaction(s)`);
-          } catch (error) {
-            this.logger.error(`❌ [HANDLE_TRANSACTION] Failed to process block ${blockHeight}:`, error);
-            throw error;
           }
+          await this.applyScheduledFlipsForBlockHeight(blockHeight, blockTxs[0]?.timestamp as Date | string | undefined)
+
+          // Update tracking
+          lastProcessedHeight = blockHeight
+          currentTxId = Math.max(...blockTxs.map((tx) => tx.id))
+          txsProcessed += blockTxs.length
+
+          if (blockCheckpoint) {
+            await knex.transaction(async (trx) => {
+              blockCheckpoint.height = blockHeight
+              blockCheckpoint.updated_at = new Date()
+              await BlockCheckpoint.query()
+                .insert(blockCheckpoint)
+                .onConflict('job_name')
+                .merge({
+                  height: blockHeight,
+                  updated_at: blockCheckpoint.updated_at,
+                })
+                .transacting(trx)
+            })
+          }
+
+          // Broadcast websocket event for processed block
+          try {
+            await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`, {
+              height: blockHeight,
+              timestamp: new Date().toISOString(),
+            })
+            this.logger.debug(` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${blockHeight}`)
+          } catch (error) {
+            this.logger.warn(
+              `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed event for height ${blockHeight}:`,
+              error
+            )
+          }
+
+          this.logger.info(
+            `✅ [HANDLE_TRANSACTION] Successfully processed block ${blockHeight} with ${blockTxs.length} transaction(s)`
+          )
+        } catch (error) {
+          this.logger.error(`❌ [HANDLE_TRANSACTION] Failed to process block ${blockHeight}:`, error)
+          throw error
         }
       }
+    }
 
-      // Checkpoint is updated per block above, just log summary
-      if (txsProcessed > 0) {
-        this.logger.info(`✅ [HANDLE_TRANSACTION] Completed processing ${txsProcessed} transaction(s), checkpoint at height ${lastProcessedHeight}, last tx ID ${currentTxId}`);
-      }
+    // Checkpoint is updated per block above, just log summary
+    if (txsProcessed > 0) {
+      this.logger.info(
+        `✅ [HANDLE_TRANSACTION] Completed processing ${txsProcessed} transaction(s), checkpoint at height ${lastProcessedHeight}, last tx ID ${currentTxId}`
+      )
+    }
   }
 
   private async applyScheduledFlipsForRange(startHeight: number, endHeight: number): Promise<void> {
     if (!Number.isInteger(startHeight) || !Number.isInteger(endHeight) || endHeight < startHeight) {
-      return;
+      return
     }
 
     try {
-      const endBlock = await Block.query()
-        .select("time")
-        .where("height", endHeight)
-        .first();
-      if (!endBlock?.time) return;
-      const endTimeIso = new Date(endBlock.time).toISOString();
+      const endBlock = await Block.query().select('time').where('height', endHeight).first()
+      if (!endBlock?.time) return
+      const endTimeIso = new Date(endBlock.time).toISOString()
 
-      const earliest = await knex("participant_scheduled_flips")
-        .where("status", 0)
-        .min("flip_at_time as min")
-        .first();
-      const minFlip = (earliest as any)?.min;
-      if (!minFlip) return;
-      const minIso = new Date(minFlip).toISOString();
-      if (minIso > endTimeIso) return;
+      const earliest = await knex('participant_scheduled_flips').where('status', 0).min('flip_at_time as min').first()
+      const minFlip = (earliest as any)?.min
+      if (!minFlip) return
+      const minIso = new Date(minFlip).toISOString()
+      if (minIso > endTimeIso) return
     } catch (error) {
       // If the scheduled-flips table doesn't exist yet, skip applying scheduled flips
       // for this range rather than failing later when processing each block.
       this.logger.debug(
         `[SCHEDULED_FLIPS] Skipping scheduled flips range ${startHeight}-${endHeight} due to missing/invalid prerequisites`,
         error
-      );
-      return;
+      )
+      return
     }
 
     const blocks = await Block.query()
-      .select("height", "time")
-      .where("height", ">=", startHeight)
-      .andWhere("height", "<=", endHeight)
-      .orderBy("height", "asc");
+      .select('height', 'time')
+      .where('height', '>=', startHeight)
+      .andWhere('height', '<=', endHeight)
+      .orderBy('height', 'asc')
 
     for (const block of blocks) {
-      await this.applyScheduledFlipsForBlockHeight(
-        Number(block.height),
-        block.time ? new Date(block.time) : undefined
-      );
+      await this.applyScheduledFlipsForBlockHeight(Number(block.height), block.time ? new Date(block.time) : undefined)
     }
   }
 
-  private async applyScheduledFlipsForBlockHeight(
-    blockHeight: number,
-    blockTimeHint?: Date | string
-  ): Promise<void> {
-    if (!Number.isInteger(blockHeight) || blockHeight <= 0) return;
+  private async applyScheduledFlipsForBlockHeight(blockHeight: number, blockTimeHint?: Date | string): Promise<void> {
+    if (!Number.isInteger(blockHeight) || blockHeight <= 0) return
 
-    let blockTime = blockTimeHint ? new Date(blockTimeHint) : null;
+    let blockTime = blockTimeHint ? new Date(blockTimeHint) : null
     if (!blockTime || Number.isNaN(blockTime.getTime())) {
-      const block = await Block.query()
-        .select("time")
-        .where("height", blockHeight)
-        .first();
+      const block = await Block.query().select('time').where('height', blockHeight).first()
       if (!block?.time) {
-        this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for scheduled flips`);
-        return;
+        this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for scheduled flips`)
+        return
       }
-      blockTime = new Date(block.time);
+      blockTime = new Date(block.time)
     }
 
     await applyScheduledParticipantFlipsForBlock({
       height: blockHeight,
       blockTime,
-    });
+    })
   }
 
   /**
@@ -503,14 +493,16 @@ export default class CrawlTxService extends BullableService {
     blockCheckpoint: BlockCheckpoint | null
   ): Promise<any> {
     if (blockTransactions.length === 0) {
-      return null;
+      return null
     }
 
-    const blockHeight = blockTransactions[0].height;
-    this.logger.info(` [HANDLE_TRANSACTION] Processing ${blockTransactions.length} transaction(s) for block ${blockHeight}`);
+    const blockHeight = blockTransactions[0].height
+    this.logger.info(
+      ` [HANDLE_TRANSACTION] Processing ${blockTransactions.length} transaction(s) for block ${blockHeight}`
+    )
 
     // Sort transactions by index to maintain order
-    blockTransactions.sort((a, b) => a.index - b.index);
+    blockTransactions.sort((a, b) => a.index - b.index)
 
     // Wrap entire block processing in a single DB transaction
     return await knex.transaction(async (trx) => {
@@ -524,88 +516,83 @@ export default class CrawlTxService extends BullableService {
           updateParamsList: [],
           blockHeight,
           csEventsFromBlock: [],
-        };
+        }
 
         for (let i = 0; i < blockTransactions.length; i++) {
           if (i > 0 && i % 10 === 0) {
-            await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}-tx-loop`, this.logger);
+            await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}-tx-loop`, this.logger)
           }
-          const tx = blockTransactions[i];
-          this.logger.debug(` [HANDLE_TRANSACTION] Processing transaction ${i + 1}/${blockTransactions.length} (id: ${tx.id}, hash: ${tx.hash}) for block ${blockHeight}`);
+          const tx = blockTransactions[i]
+          this.logger.debug(
+            ` [HANDLE_TRANSACTION] Processing transaction ${i + 1}/${blockTransactions.length} (id: ${tx.id}, hash: ${tx.hash}) for block ${blockHeight}`
+          )
 
-          const rawEvents = tx.data?.tx_response?.events;
+          const rawEvents = tx.data?.tx_response?.events
           if (Array.isArray(rawEvents)) {
-            allPayloads.csEventsFromBlock.push(...rawEvents);
+            allPayloads.csEventsFromBlock.push(...rawEvents)
           }
 
-          const txPayloads = await this.processSingleTransaction(tx, trx);
+          const txPayloads = await this.processSingleTransaction(tx, trx)
 
           if (txPayloads) {
             if (txPayloads.ecosystemList?.length) {
-              allPayloads.ecosystemList.push(...txPayloads.ecosystemList);
+              allPayloads.ecosystemList.push(...txPayloads.ecosystemList)
             }
             if (txPayloads.corporationList?.length) {
-              allPayloads.corporationList.push(...txPayloads.corporationList);
+              allPayloads.corporationList.push(...txPayloads.corporationList)
             }
             if (txPayloads.credentialSchemaMessages?.length) {
-              allPayloads.credentialSchemaMessages.push(...txPayloads.credentialSchemaMessages);
+              allPayloads.credentialSchemaMessages.push(...txPayloads.credentialSchemaMessages)
             }
             if (txPayloads.participantMessages?.length) {
-              allPayloads.participantMessages.push(...txPayloads.participantMessages);
+              allPayloads.participantMessages.push(...txPayloads.participantMessages)
             }
             if (txPayloads.trustDepositList?.length) {
-              allPayloads.trustDepositList.push(...txPayloads.trustDepositList);
+              allPayloads.trustDepositList.push(...txPayloads.trustDepositList)
             }
             if (txPayloads.updateParamsList?.length) {
-              allPayloads.updateParamsList.push(...txPayloads.updateParamsList);
+              allPayloads.updateParamsList.push(...txPayloads.updateParamsList)
             }
           }
         }
 
-        this.logger.info(`✅ [HANDLE_TRANSACTION] Successfully committed block ${blockHeight} with ${blockTransactions.length} transaction(s)`);
-        return allPayloads;
+        this.logger.info(
+          `✅ [HANDLE_TRANSACTION] Successfully committed block ${blockHeight} with ${blockTransactions.length} transaction(s)`
+        )
+        return allPayloads
       } catch (error) {
-        this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed for block ${blockHeight}, rolling back:`, error);
-        throw error;
+        this.logger.error(`❌ [HANDLE_TRANSACTION] Transaction failed for block ${blockHeight}, rolling back:`, error)
+        throw error
       }
-    });
+    })
   }
 
   /**
    * Process a single transaction sequentially.
    * Inserts events and messages with idempotent operations.
    */
-  private async processSingleTransaction(
-    tx: Transaction,
-    trx: Knex.Transaction
-  ): Promise<any> {
-    const rawLogTx = tx.data;
+  private async processSingleTransaction(tx: Transaction, trx: Knex.Transaction): Promise<any> {
+    const rawLogTx = tx.data
 
     if (!rawLogTx || !rawLogTx.tx_response) {
-      this.logger.warn(` [HANDLE_TRANSACTION] Transaction ${tx.hash} has no raw log data, skipping`);
-      return null;
+      this.logger.warn(` [HANDLE_TRANSACTION] Transaction ${tx.hash} has no raw log data, skipping`)
+      return null
     }
 
     // Extract sender
-    let sender = '';
+    let sender = ''
     try {
       if (this._registry.decodeAttribute && this._registry.encodeAttribute) {
         sender = this._registry.decodeAttribute(
-          this._findAttribute(
-            rawLogTx.tx_response.events,
-            'message',
-            this._registry.encodeAttribute('sender')
-          )
-        );
+          this._findAttribute(rawLogTx.tx_response.events, 'message', this._registry.encodeAttribute('sender'))
+        )
       }
-    } catch (error) {
-      this.logger.warn(
-        ` [HANDLE_TRANSACTION] Transaction ${tx.hash} has no sender event`
-      );
+    } catch (_error) {
+      this.logger.warn(` [HANDLE_TRANSACTION] Transaction ${tx.hash} has no sender event`)
     }
 
     // Create events with message index
-    const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx);
+    const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx)
 
     // Prepare events for insertion (idempotent)
     const eventInsert =
@@ -613,27 +600,23 @@ export default class CrawlTxService extends BullableService {
         tx_id: tx.id,
         tx_msg_index: event.msg_index ?? undefined,
         type: event.type,
-        attributes: event.attributes?.map(
-          (attribute: any, index: number) => ({
-            tx_id: tx.id,
-            block_height: tx.height,
-            index,
-            composite_key: attribute?.key && this._registry.decodeAttribute
-              ? `${event.type}.${this._registry.decodeAttribute(
-                attribute?.key
-              )}`
+        attributes: event.attributes?.map((attribute: any, index: number) => ({
+          tx_id: tx.id,
+          block_height: tx.height,
+          index,
+          composite_key:
+            attribute?.key && this._registry.decodeAttribute
+              ? `${event.type}.${this._registry.decodeAttribute(attribute?.key)}`
               : null,
-            key: attribute?.key && this._registry.decodeAttribute
-              ? this._registry.decodeAttribute(attribute?.key)
-              : null,
-            value: attribute?.value && this._registry.decodeAttribute
+          key: attribute?.key && this._registry.decodeAttribute ? this._registry.decodeAttribute(attribute?.key) : null,
+          value:
+            attribute?.value && this._registry.decodeAttribute
               ? this._registry.decodeAttribute(attribute?.value)
               : null,
-          })
-        ),
+        })),
         block_height: tx.height,
         source: Event.SOURCE.TX_EVENT,
-      })) ?? [];
+      })) ?? []
 
     // Prepare messages for insertion (idempotent)
     const msgInsert =
@@ -643,36 +626,36 @@ export default class CrawlTxService extends BullableService {
         index,
         type: message['@type'],
         content: message,
-      })) ?? [];
+      })) ?? []
 
     // Insert events idempotently (chunked for performance)
     // Note: insertGraph doesn't support onConflict directly, so we use try-catch for idempotency
     if (eventInsert.length > 0) {
-      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
-        ? config.handleTransaction.freshStart
-        : config.handleTransaction;
-      const baseChunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
-      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
+      const effectiveConfig =
+        this._isFreshStart && config.handleTransaction.freshStart
+          ? config.handleTransaction.freshStart
+          : config.handleTransaction
+      const baseChunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000
+      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart)
 
       for (let i = 0; i < eventInsert.length; i += chunkSize) {
-        await throwIfHeapCriticalDuringCrawl('handle-transaction:event-insert', this.logger);
-        const chunk = eventInsert.slice(i, i + chunkSize);
+        await throwIfHeapCriticalDuringCrawl('handle-transaction:event-insert', this.logger)
+        const chunk = eventInsert.slice(i, i + chunkSize)
         try {
-          await Event.query()
-            .insertGraph(chunk, { allowRefs: true })
-            .transacting(trx);
+          await Event.query().insertGraph(chunk, { allowRefs: true }).transacting(trx)
         } catch (error: any) {
           // If unique constraint violation, ignore (idempotent replay)
           // PostgreSQL: 23505 = unique_violation, SQLite: SQLITE_CONSTRAINT
-          const isConflictError = error?.nativeError?.code === '23505' 
-            || error?.code === 'SQLITE_CONSTRAINT'
-            || error?.message?.includes('duplicate key')
-            || error?.message?.includes('UNIQUE constraint');
-          
+          const isConflictError =
+            error?.nativeError?.code === '23505' ||
+            error?.code === 'SQLITE_CONSTRAINT' ||
+            error?.message?.includes('duplicate key') ||
+            error?.message?.includes('UNIQUE constraint')
+
           if (isConflictError) {
-            this.logger.debug(` [HANDLE_TRANSACTION] Event already exists (idempotent replay), skipping`);
+            this.logger.debug(` [HANDLE_TRANSACTION] Event already exists (idempotent replay), skipping`)
           } else {
-            throw error;
+            throw error
           }
         }
       }
@@ -681,55 +664,54 @@ export default class CrawlTxService extends BullableService {
     // Insert messages idempotently (chunked for performance)
     // Check if unique constraint exists first to avoid transaction abort
     if (msgInsert.length > 0) {
-      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
-        ? config.handleTransaction.freshStart
-        : config.handleTransaction;
-      const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
-      const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart);
+      const effectiveConfig =
+        this._isFreshStart && config.handleTransaction.freshStart
+          ? config.handleTransaction.freshStart
+          : config.handleTransaction
+      const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000
+      const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart)
 
       // Always use regular insert with duplicate handling to avoid transaction abort issues
       // ON CONFLICT can abort the transaction if constraint doesn't exist, so we avoid it
       for (let i = 0; i < msgInsert.length; i += chunkSizeMsg) {
-        await throwIfHeapCriticalDuringCrawl('handle-transaction:message-insert', this.logger);
-        const chunk = msgInsert.slice(i, i + chunkSizeMsg);
-        
+        await throwIfHeapCriticalDuringCrawl('handle-transaction:message-insert', this.logger)
+        const chunk = msgInsert.slice(i, i + chunkSizeMsg)
+
         try {
-          await TransactionMessage.query()
-            .insert(chunk)
-            .timeout(60000)
-            .transacting(trx);
+          await TransactionMessage.query().insert(chunk).timeout(60000).transacting(trx)
         } catch (insertError: any) {
           // If unique constraint violation, ignore (idempotent replay)
-          const isConflictError = insertError?.nativeError?.code === '23505' 
-            || insertError?.code === 'SQLITE_CONSTRAINT'
-            || insertError?.message?.includes('duplicate key')
-            || insertError?.message?.includes('UNIQUE constraint');
-          
+          const isConflictError =
+            insertError?.nativeError?.code === '23505' ||
+            insertError?.code === 'SQLITE_CONSTRAINT' ||
+            insertError?.message?.includes('duplicate key') ||
+            insertError?.message?.includes('UNIQUE constraint')
+
           if (isConflictError) {
-            this.logger.debug(` [HANDLE_TRANSACTION] Message already exists (idempotent replay), skipping`);
+            this.logger.debug(` [HANDLE_TRANSACTION] Message already exists (idempotent replay), skipping`)
           } else {
-            throw insertError;
+            throw insertError
           }
         }
       }
 
-      const payload = await this.processMessageTypes(msgInsert, [tx]);
-      payload.blockHeight = tx.height;
-      payload.csEventsFromBlock = rawLogTx.tx_response?.events ?? [];
+      const payload = await this.processMessageTypes(msgInsert, [tx])
+      payload.blockHeight = tx.height
+      payload.csEventsFromBlock = rawLogTx.tx_response?.events ?? []
 
       if (config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction) {
         try {
-          await this.processPayloads(payload);
+          await this.processPayloads(payload)
         } catch (err: any) {
-          this.logger.error(`[processSingleTransaction] Error processing payloads inside transaction:`, err);
-          throw err;
+          this.logger.error(`[processSingleTransaction] Error processing payloads inside transaction:`, err)
+          throw err
         }
       }
 
-      return payload;
+      return payload
     }
 
-    return null;
+    return null
   }
 
   /**
@@ -739,11 +721,11 @@ export default class CrawlTxService extends BullableService {
     const rows = await knex('block')
       .select('height', knex.raw("data->'block_result' as block_result"))
       .where('height', '=', blockHeight)
-      .first();
+      .first()
 
     if (!rows) {
-      this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for TrustDeposit processing`);
-      return;
+      this.logger.warn(`[HANDLE_TRANSACTION] Block ${blockHeight} not found for TrustDeposit processing`)
+      return
     }
 
     try {
@@ -751,10 +733,13 @@ export default class CrawlTxService extends BullableService {
         `${SERVICE.V1.CrawlTrustDepositService.path}.processBlockEvents`,
         { block: rows },
         { timeout: 30000 }
-      );
+      )
     } catch (err: any) {
-      this.logger.warn(`[HANDLE_TRANSACTION] Failed to process TrustDeposit events for block ${blockHeight}:`, err?.message || err);
-      throw err;
+      this.logger.warn(
+        `[HANDLE_TRANSACTION] Failed to process TrustDeposit events for block ${blockHeight}:`,
+        err?.message || err
+      )
+      throw err
     }
   }
 
@@ -767,107 +752,95 @@ export default class CrawlTxService extends BullableService {
       .select('height', 'time', 'tx_count')
       .where('height', '>', startBlock)
       .andWhere('height', '<=', endBlock)
-      .orderBy('height', 'asc');
+      .orderBy('height', 'asc')
     // this.logger.warn(blocks);
-    const promises: any[] = [];
+    const promises: any[] = []
 
-    const getBlockInfo = async (
-      height: number,
-      timestamp: Date,
-      page: string,
-      perPage: string
-    ) => {
+    const getBlockInfo = async (height: number, timestamp: Date, page: string, perPage: string) => {
       try {
         const blockInfo = await this.retryRpcCall(
-          () => this._httpBatchClient.execute(
-            createJsonRpcRequest('tx_search', {
-              query: `tx.height=${height}`,
-              page,
-              per_page: perPage,
-              order_by: 'asc',
-            })
-          ),
+          () =>
+            this._httpBatchClient.execute(
+              createJsonRpcRequest('tx_search', {
+                query: `tx.height=${height}`,
+                page,
+                per_page: perPage,
+                order_by: 'asc',
+              })
+            ),
           `tx_search-height-${height}-page-${page}`
-        );
+        )
         return {
           txs: blockInfo.result?.txs || [],
           tx_count: Number(blockInfo.result?.total_count || 0),
           height,
           timestamp,
-        };
+        }
       } catch (error) {
-        this.logger.error(`❌ Failed to fetch tx_search for height ${height}, page ${page}: ${error}`);
+        this.logger.error(`❌ Failed to fetch tx_search for height ${height}, page ${page}: ${error}`)
         return {
           txs: [],
           tx_count: 0,
           height,
           timestamp,
-        };
+        }
       }
-    };
+    }
 
-    const baseTxsPerCall = (this._isFreshStart && config.handleTransaction.freshStart)
-      ? (config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall)
-      : config.handleTransaction.txsPerCall;
-    const rawTxsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart);
-    const maxPerPage = this.getTxSearchMaxPerPage();
-    const txsPerCall = Math.max(1, Math.min(rawTxsPerCall, maxPerPage));
+    const baseTxsPerCall =
+      this._isFreshStart && config.handleTransaction.freshStart
+        ? config.handleTransaction.freshStart.txsPerCall || config.handleTransaction.txsPerCall
+        : config.handleTransaction.txsPerCall
+    const rawTxsPerCall = applySpeedToBatchSize(baseTxsPerCall, !this._isFreshStart)
+    const maxPerPage = this.getTxSearchMaxPerPage()
+    const txsPerCall = Math.max(1, Math.min(rawTxsPerCall, maxPerPage))
 
     if (rawTxsPerCall > maxPerPage) {
       this.logger.warn(
         `[crawl_tx] txsPerCall ${rawTxsPerCall} exceeds tx_search max ${maxPerPage}; clamping per_page to ${txsPerCall} to avoid missing transactions`
-      );
+      )
     }
 
     blocks.forEach((block) => {
       if (block.tx_count > 0) {
-        this.logger.info('crawl tx by height: ', block.height);
-        const totalPages = Math.ceil(
-          block.tx_count / txsPerCall
-        );
+        this.logger.info('crawl tx by height: ', block.height)
+        const totalPages = Math.ceil(block.tx_count / txsPerCall)
 
-        [...Array(totalPages)].forEach((e, i) => {
-          const pageIndex = (i + 1).toString();
-          promises.push(
-            getBlockInfo(
-              block.height,
-              block.time,
-              pageIndex,
-              txsPerCall.toString()
-            )
-          );
-        });
+        ;[...Array(totalPages)].forEach((e, i) => {
+          const pageIndex = (i + 1).toString()
+          promises.push(getBlockInfo(block.height, block.time, pageIndex, txsPerCall.toString()))
+        })
       }
-    });
-    const resultPromisesResults = await Promise.allSettled(promises);
+    })
+    const resultPromisesResults = await Promise.allSettled(promises)
     const resultPromises: any[] = resultPromisesResults
       .filter((result) => result.status === 'fulfilled')
-      .map((result) => (result as PromiseFulfilledResult<any>).value);
+      .map((result) => (result as PromiseFulfilledResult<any>).value)
 
-    const failures = resultPromisesResults.filter((result) => result.status === 'rejected');
+    const failures = resultPromisesResults.filter((result) => result.status === 'rejected')
     if (failures.length > 0) {
-      this.logger.warn(`⚠️ ${failures.length} tx_search RPC call(s) failed, but processing ${resultPromises.length} successful results`);
+      this.logger.warn(
+        `⚠️ ${failures.length} tx_search RPC call(s) failed, but processing ${resultPromises.length} successful results`
+      )
     }
 
-    const listRawTxs: any[] = [];
+    const listRawTxs: any[] = []
     blocks.forEach((block) => {
       if (block.tx_count > 0) {
-        const listTxs: any[] = [];
+        const listTxs: any[] = []
         resultPromises
-          .filter(
-            (result) => result.height.toString() === block.height.toString()
-          )
+          .filter((result) => result.height.toString() === block.height.toString())
           .forEach((resultPromise) => {
-            listTxs.push(...resultPromise.txs);
-          });
+            listTxs.push(...resultPromise.txs)
+          })
         if (listTxs.length !== block.tx_count) {
-          const error = `Error in block ${block.height}: ${listTxs.length} txs found, ${block.tx_count} txs expected`;
-          this.logger.error(error);
-          promises.length = 0;
-          resultPromisesResults.length = 0;
-          resultPromises.length = 0;
-          blocks.length = 0;
-          throw new Error(error);
+          const error = `Error in block ${block.height}: ${listTxs.length} txs found, ${block.tx_count} txs expected`
+          this.logger.error(error)
+          promises.length = 0
+          resultPromisesResults.length = 0
+          resultPromises.length = 0
+          blocks.length = 0
+          throw new Error(error)
         }
         listRawTxs.push({
           listTx: {
@@ -876,71 +849,65 @@ export default class CrawlTxService extends BullableService {
           },
           height: block.height,
           timestamp: block.time,
-        });
+        })
       }
-    });
+    })
 
-    promises.length = 0;
-    resultPromisesResults.length = 0;
-    resultPromises.length = 0;
-    blocks.length = 0;
+    promises.length = 0
+    resultPromisesResults.length = 0
+    resultPromises.length = 0
+    blocks.length = 0
 
-    return listRawTxs;
+    return listRawTxs
   }
 
   private getTxSearchMaxPerPage(): number {
-    const envValue = Number(process.env.TX_SEARCH_MAX_PER_PAGE);
+    const envValue = Number(process.env.TX_SEARCH_MAX_PER_PAGE)
     if (Number.isFinite(envValue) && envValue > 0) {
-      return Math.floor(envValue);
+      return Math.floor(envValue)
     }
-    return 100;
+    return 100
   }
 
   // decode list raw tx
   async decodeListRawTx(
     listRawTx: { listTx: any; height: number; timestamp: string }[]
   ): Promise<{ listTx: any; height: number; timestamp: string }[]> {
-    const concurrency = this._isFreshStart
-      ? 8
-      : getRecommendedConcurrency(1, true);
-    const listDecodedTx: { listTx: any; height: number; timestamp: string }[] = [];
+    const concurrency = this._isFreshStart ? 8 : getRecommendedConcurrency(1, true)
+    const listDecodedTx: { listTx: any; height: number; timestamp: string }[] = []
 
     const decodeOne = async (payloadBlock: { listTx: any; height: number; timestamp: string }) => {
-      const { listTx, timestamp, height } = payloadBlock;
-      const listHandleTx: any[] = [];
-      const mapExistedTx: Map<string, boolean> = new Map();
-      let listHash: string[] = [];
+      const { listTx, timestamp, height } = payloadBlock
+      const listHandleTx: any[] = []
+      const mapExistedTx: Map<string, boolean> = new Map()
+      let listHash: string[] = []
       try {
-        listHash = listTx.txs.map((tx: any) => tx.hash);
+        listHash = listTx.txs.map((tx: any) => tx.hash)
         const listTxExisted = await Transaction.query()
           .select('id', 'hash')
           .whereIn('hash', listHash)
-          .timeout(getDbQueryTimeoutMs(120000));
+          .timeout(getDbQueryTimeoutMs(120000))
         listTxExisted.forEach((tx) => {
-          mapExistedTx.set(tx.hash, true);
-        });
-        listTxExisted.length = 0;
+          mapExistedTx.set(tx.hash, true)
+        })
+        listTxExisted.length = 0
 
         listTx.txs.forEach((tx: any) => {
-          this.logger.warn(`Handle txhash ${tx.hash}`);
+          this.logger.warn(`Handle txhash ${tx.hash}`)
           if (mapExistedTx.get(tx.hash)) {
-            return;
+            return
           }
-          const decodedTx = decodeTxRaw(fromBase64(tx.tx));
+          const decodedTx = decodeTxRaw(fromBase64(tx.tx))
 
-          const parsedTx: any = {};
-          parsedTx.tx = decodedTx;
-          parsedTx.tx.signatures = decodedTx.signatures.map(
-            (signature: Uint8Array) => toBase64(signature)
-          );
+          const parsedTx: any = {}
+          parsedTx.tx = decodedTx
+          parsedTx.tx.signatures = decodedTx.signatures.map((signature: Uint8Array) => toBase64(signature))
 
           const decodedMsgs = decodedTx.body.messages.map((msg) => {
-            const decodedMsg = Utils.camelizeKeys(
-              this._registry.decodeMsg(msg)
-            );
-            decodedMsg['@type'] = msg.typeUrl;
-            return decodedMsg;
-          });
+            const decodedMsg = Utils.camelizeKeys(this._registry.decodeMsg(msg))
+            decodedMsg['@type'] = msg.typeUrl
+            return decodedMsg
+          })
 
           parsedTx.tx = {
             body: {
@@ -948,8 +915,7 @@ export default class CrawlTxService extends BullableService {
               memo: decodedTx.body?.memo,
               timeout_height: decodedTx.body?.timeoutHeight,
               extension_options: decodedTx.body?.extensionOptions,
-              non_critical_extension_options:
-                decodedTx.body?.nonCriticalExtensionOptions,
+              non_critical_extension_options: decodedTx.body?.nonCriticalExtensionOptions,
             },
             auth_info: {
               fee: {
@@ -958,29 +924,27 @@ export default class CrawlTxService extends BullableService {
                 granter: decodedTx.authInfo.fee?.granter,
                 payer: decodedTx.authInfo.fee?.payer,
               },
-              signer_infos: decodedTx.authInfo.signerInfos.map(
-                (signerInfo) => {
-                  const pubkey = signerInfo.publicKey?.value;
+              signer_infos: decodedTx.authInfo.signerInfos.map((signerInfo) => {
+                const pubkey = signerInfo.publicKey?.value
 
-                  if (pubkey instanceof Uint8Array) {
-                    return {
-                      mode_info: signerInfo.modeInfo,
-                      public_key: {
-                        '@type': signerInfo.publicKey?.typeUrl,
-                        key: toBase64(pubkey.slice(2)),
-                      },
-                      sequence: signerInfo.sequence.toString(),
-                    };
-                  }
+                if (pubkey instanceof Uint8Array) {
                   return {
                     mode_info: signerInfo.modeInfo,
+                    public_key: {
+                      '@type': signerInfo.publicKey?.typeUrl,
+                      key: toBase64(pubkey.slice(2)),
+                    },
                     sequence: signerInfo.sequence.toString(),
-                  };
+                  }
                 }
-              ),
+                return {
+                  mode_info: signerInfo.modeInfo,
+                  sequence: signerInfo.sequence.toString(),
+                }
+              }),
             },
             signatures: decodedTx.signatures,
-          };
+          }
 
           parsedTx.tx_response = {
             height: tx.height,
@@ -996,34 +960,34 @@ export default class CrawlTxService extends BullableService {
             index: tx.index,
             events: tx.tx_result.events,
             timestamp,
-          };
-          try {
-            parsedTx.tx_response.logs = JSON.parse(tx.tx_result.log);
-          } catch (error) {
-            this.logger.warn('tx fail');
           }
-          listHandleTx.push(parsedTx);
-        });
+          try {
+            parsedTx.tx_response.logs = JSON.parse(tx.tx_result.log)
+          } catch (_error) {
+            this.logger.warn('tx fail')
+          }
+          listHandleTx.push(parsedTx)
+        })
 
-        mapExistedTx.clear();
-        listHash.length = 0;
+        mapExistedTx.clear()
+        listHash.length = 0
 
-        return { listTx: listHandleTx, timestamp, height };
+        return { listTx: listHandleTx, timestamp, height }
       } catch (error) {
-        this.logger.error(error);
-        mapExistedTx.clear();
-        listHash.length = 0;
-        throw error;
+        this.logger.error(error)
+        mapExistedTx.clear()
+        listHash.length = 0
+        throw error
       }
-    };
+    }
 
     for (let i = 0; i < listRawTx.length; i += concurrency) {
-      await throwIfHeapCriticalDuringCrawl('crawl-tx:decodeListRawTx-chunk', this.logger);
-      const chunk = listRawTx.slice(i, i + concurrency);
-      const decodedChunk = await Promise.all(chunk.map(decodeOne));
-      listDecodedTx.push(...decodedChunk);
+      await throwIfHeapCriticalDuringCrawl('crawl-tx:decodeListRawTx-chunk', this.logger)
+      const chunk = listRawTx.slice(i, i + concurrency)
+      const decodedChunk = await Promise.all(chunk.map(decodeOne))
+      listDecodedTx.push(...decodedChunk)
     }
-    return listDecodedTx;
+    return listDecodedTx
   }
 
   async insertTxDecoded(
@@ -1031,19 +995,19 @@ export default class CrawlTxService extends BullableService {
     transactionDB: Knex.Transaction
   ) {
     const totalTxs = listTxDecoded.reduce((sum, block) => {
-      const txList = Array.isArray(block.listTx) ? block.listTx : (block.listTx?.txs || []);
-      return sum + txList.length;
-    }, 0);
+      const txList = Array.isArray(block.listTx) ? block.listTx : block.listTx?.txs || []
+      return sum + txList.length
+    }, 0)
     if (totalTxs > 0) {
-      this.logger.info(`[insertTxDecoded] Processing ${totalTxs} transactions across ${listTxDecoded.length} blocks`);
+      this.logger.info(`[insertTxDecoded] Processing ${totalTxs} transactions across ${listTxDecoded.length} blocks`)
     }
-    const listTxModel: any[] = [];
+    const listTxModel: any[] = []
     listTxDecoded.forEach((payloadBlock) => {
-      const { listTx, height, timestamp } = payloadBlock;
-      const txArray = Array.isArray(listTx) ? listTx : (listTx?.txs || []);
+      const { listTx, height, timestamp } = payloadBlock
+      const txArray = Array.isArray(listTx) ? listTx : listTx?.txs || []
       if (txArray.length === 0) {
-        this.logger.debug(`[insertTxDecoded] No transactions found for block ${height}`);
-        return;
+        this.logger.debug(`[insertTxDecoded] No transactions found for block ${height}`)
+        return
       }
       txArray.forEach((tx: any) => {
         const txInsert = {
@@ -1061,87 +1025,69 @@ export default class CrawlTxService extends BullableService {
             data: config.handleTransaction.saveRawLog ? tx : null,
             memo: tx.tx.body.memo,
           }),
-        };
-        listTxModel.push(txInsert);
-      });
-    });
+        }
+        listTxModel.push(txInsert)
+      })
+    })
 
     if (listTxModel.length) {
-      await throwIfHeapCriticalDuringCrawl('crawl-tx:before-batchInsert-transactions', this.logger);
-      const effectiveConfig = this._isFreshStart && config.crawlTransaction.freshStart
-        ? config.crawlTransaction.freshStart
-        : config.crawlTransaction;
-      const baseChunkSize = effectiveConfig.chunkSize || config.crawlTransaction.chunkSize;
-      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
-      const resultInsert = await transactionDB.batchInsert(
-        Transaction.tableName,
-        listTxModel,
-        chunkSize
-      );
-      this.logger.info(`[insertTxDecoded] Successfully inserted ${listTxModel.length} transactions`);
-      listTxModel.length = 0;
+      await throwIfHeapCriticalDuringCrawl('crawl-tx:before-batchInsert-transactions', this.logger)
+      const effectiveConfig =
+        this._isFreshStart && config.crawlTransaction.freshStart
+          ? config.crawlTransaction.freshStart
+          : config.crawlTransaction
+      const baseChunkSize = effectiveConfig.chunkSize || config.crawlTransaction.chunkSize
+      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart)
+      const _resultInsert = await transactionDB.batchInsert(Transaction.tableName, listTxModel, chunkSize)
+      this.logger.info(`[insertTxDecoded] Successfully inserted ${listTxModel.length} transactions`)
+      listTxModel.length = 0
     }
   }
 
-
-
   // insert related table (event, event_attribute, message)
-  async insertRelatedTx(
-    listDecodedTx: Transaction[],
-    transactionDB: Knex.Transaction
-  ) {
-    this.logger.info(`[insertRelatedTx] Processing ${listDecodedTx.length} decoded transactions`);
-    const listEventModel: any[] = [];
-    const listMsgModel: any[] = [];
+  async insertRelatedTx(listDecodedTx: Transaction[], transactionDB: Knex.Transaction) {
+    this.logger.info(`[insertRelatedTx] Processing ${listDecodedTx.length} decoded transactions`)
+    const listEventModel: any[] = []
+    const listMsgModel: any[] = []
     listDecodedTx.forEach((tx) => {
-      const rawLogTx = tx.data;
+      const rawLogTx = tx.data
 
-      let sender = '';
+      let sender = ''
       try {
         if (this._registry.decodeAttribute && this._registry.encodeAttribute) {
           sender = this._registry.decodeAttribute(
-            this._findAttribute(
-              rawLogTx.tx_response.events,
-              'message',
-              this._registry.encodeAttribute('sender')
-            )
-          );
+            this._findAttribute(rawLogTx.tx_response.events, 'message', this._registry.encodeAttribute('sender'))
+          )
         }
-      } catch (error) {
-        this.logger.warn(
-          'txhash not has sender event: ',
-          rawLogTx.tx_response.txhash
-        );
+      } catch (_error) {
+        this.logger.warn('txhash not has sender event: ', rawLogTx.tx_response.txhash)
       }
 
-      const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx);
+      const listEventWithMsgIndex = this.createListEventWithMsgIndex(rawLogTx)
 
       const eventInsert =
         listEventWithMsgIndex?.map((event: any) => ({
           tx_id: tx.id,
           tx_msg_index: event.msg_index ?? undefined,
           type: event.type,
-          attributes: event.attributes?.map(
-            (attribute: any, index: number) => ({
-              tx_id: tx.id,
-              block_height: tx.height,
-              index,
-              composite_key: attribute?.key && this._registry.decodeAttribute
-                ? `${event.type}.${this._registry.decodeAttribute(
-                  attribute?.key
-                )}`
+          attributes: event.attributes?.map((attribute: any, index: number) => ({
+            tx_id: tx.id,
+            block_height: tx.height,
+            index,
+            composite_key:
+              attribute?.key && this._registry.decodeAttribute
+                ? `${event.type}.${this._registry.decodeAttribute(attribute?.key)}`
                 : null,
-              key: attribute?.key && this._registry.decodeAttribute
-                ? this._registry.decodeAttribute(attribute?.key)
-                : null,
-              value: attribute?.value && this._registry.decodeAttribute
+            key:
+              attribute?.key && this._registry.decodeAttribute ? this._registry.decodeAttribute(attribute?.key) : null,
+            value:
+              attribute?.value && this._registry.decodeAttribute
                 ? this._registry.decodeAttribute(attribute?.value)
                 : null,
-            })
-          ),
+          })),
           block_height: tx.height,
           source: Event.SOURCE.TX_EVENT,
-        })) ?? [];
+        })) ?? []
       const msgInsert =
         rawLogTx.tx.body.messages.map((message: any, index: any) => ({
           tx_id: tx.id,
@@ -1149,58 +1095,55 @@ export default class CrawlTxService extends BullableService {
           index,
           type: message['@type'],
           content: message,
-        })) ?? [];
-      listEventModel.push(...eventInsert);
-      listMsgModel.push(...msgInsert);
-    });
+        })) ?? []
+      listEventModel.push(...eventInsert)
+      listMsgModel.push(...msgInsert)
+    })
 
     if (listEventModel.length) {
-      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
-        ? config.handleTransaction.freshStart
-        : config.handleTransaction;
-      const baseChunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
-      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart);
-      this.logger.info(`📝 [insertRelatedTx] Inserting ${listEventModel.length} events in chunks of ${chunkSize}`);
+      const effectiveConfig =
+        this._isFreshStart && config.handleTransaction.freshStart
+          ? config.handleTransaction.freshStart
+          : config.handleTransaction
+      const baseChunkSize = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000
+      const chunkSize = applySpeedToBatchSize(baseChunkSize, !this._isFreshStart)
+      this.logger.info(`📝 [insertRelatedTx] Inserting ${listEventModel.length} events in chunks of ${chunkSize}`)
       for (let i = 0; i < listEventModel.length; i += chunkSize) {
-        const chunk = listEventModel.slice(i, i + chunkSize);
-        await Event.query()
-          .insertGraph(chunk, { allowRefs: true })
-          .transacting(transactionDB);
+        const chunk = listEventModel.slice(i, i + chunkSize)
+        await Event.query().insertGraph(chunk, { allowRefs: true }).transacting(transactionDB)
       }
-      this.logger.info(`✅ [insertRelatedTx] Inserted ${listEventModel.length} events`);
+      this.logger.info(`✅ [insertRelatedTx] Inserted ${listEventModel.length} events`)
     }
 
-      if (listMsgModel?.length) {
-      const effectiveConfig = this._isFreshStart && config.handleTransaction.freshStart
-        ? config.handleTransaction.freshStart
-        : config.handleTransaction;
-      const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000;
-      const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart);
-      this.logger.info(`[insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSizeMsg}`);
+    if (listMsgModel?.length) {
+      const effectiveConfig =
+        this._isFreshStart && config.handleTransaction.freshStart
+          ? config.handleTransaction.freshStart
+          : config.handleTransaction
+      const baseChunkSizeMsg = effectiveConfig.chunkSize || config.handleTransaction.chunkSize || 10000
+      const chunkSizeMsg = applySpeedToBatchSize(baseChunkSizeMsg, !this._isFreshStart)
+      this.logger.info(`[insertRelatedTx] Inserting ${listMsgModel.length} messages in chunks of ${chunkSizeMsg}`)
 
-      const messagesForProcessing = [...listMsgModel];
+      const messagesForProcessing = [...listMsgModel]
 
       for (let i = 0; i < listMsgModel.length; i += chunkSizeMsg) {
-        const chunk = listMsgModel.slice(i, i + chunkSizeMsg);
-        await TransactionMessage.query()
-          .insert(chunk)
-          .timeout(getDbQueryTimeoutMs(60000))
-          .transacting(transactionDB);
+        const chunk = listMsgModel.slice(i, i + chunkSizeMsg)
+        await TransactionMessage.query().insert(chunk).timeout(getDbQueryTimeoutMs(60000)).transacting(transactionDB)
       }
-      this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`);
-      const payload = await this.processMessageTypes(messagesForProcessing, listDecodedTx);
+      this.logger.info(`[insertRelatedTx] Inserted ${listMsgModel.length} messages`)
+      const payload = await this.processMessageTypes(messagesForProcessing, listDecodedTx)
       if (config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction) {
         try {
-          await this.processPayloads(payload);
+          await this.processPayloads(payload)
         } catch (err: any) {
-          this.logger.error(`[insertRelatedTx] Error processing payloads inside transaction:`, err);
-          throw err;
+          this.logger.error(`[insertRelatedTx] Error processing payloads inside transaction:`, err)
+          throw err
         }
       }
-      listEventModel.length = 0;
-      listMsgModel.length = 0;
-      messagesForProcessing.length = 0;
-      return payload;
+      listEventModel.length = 0
+      listMsgModel.length = 0
+      messagesForProcessing.length = 0
+      return payload
     }
     return {
       ecosystemList: [],
@@ -1209,23 +1152,25 @@ export default class CrawlTxService extends BullableService {
       participantMessages: [],
       trustDepositList: [],
       updateParamsList: [],
-    };
+    }
   }
 
   private async processMessageTypes(resultInsertMsgs: any[], listDecodedTx: Transaction[]): Promise<any> {
     const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
-      const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-      return parentTx?.code === 0;
-    });
+      const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
+      return parentTx?.code === 0
+    })
 
-    this.logger.info(`📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`);
+    this.logger.info(
+      `📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`
+    )
 
     const ecosystemList = successfulMsgs
       .filter((msg: any) => isEcosystemMessageType(msg.type))
       .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-        const txEvents = parentTx?.data?.tx_response?.events ?? [];
-        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents, true);
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
+        const txEvents = parentTx?.data?.tx_response?.events ?? []
+        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents, true)
         return {
           type: msg.type,
           content: msg.content ?? null,
@@ -1234,16 +1179,13 @@ export default class CrawlTxService extends BullableService {
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
           eventEcosystemIds,
-        };
-      });
+        }
+      })
 
     const corporationList = successfulMsgs
-      .filter(
-        (msg: any) =>
-          isCorporationMessageType(msg.type) || isGovernanceFrameworkMessageType(msg.type)
-      )
+      .filter((msg: any) => isCorporationMessageType(msg.type) || isGovernanceFrameworkMessageType(msg.type))
       .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         return {
           type: msg.type,
           content: msg.content ?? null,
@@ -1252,27 +1194,27 @@ export default class CrawlTxService extends BullableService {
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
           txEvents: parentTx?.data?.tx_response?.events ?? [],
-        };
-      });
+        }
+      })
 
     const credentialSchemaMessages = successfulMsgs
       .filter((msg: any) => isCredentialSchemaMessageType(msg.type))
       .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
 
         return {
           type: msg.type,
           content: msg.content ?? null,
           timestamp: parentTx?.data?.tx_response?.timestamp ?? parentTx?.timestamp ?? null,
           height: Number(parentTx?.data?.tx_response?.height ?? parentTx?.height ?? 0),
-          txResponse: parentTx?.data?.tx_response ?? null, 
-        };
-      });
+          txResponse: parentTx?.data?.tx_response ?? null,
+        }
+      })
 
     const participantMessages = successfulMsgs
       .filter((msg: any) => isParticipantMessageType(msg.type))
       .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         return {
           type: msg.type,
           content: msg.content ?? null,
@@ -1282,36 +1224,36 @@ export default class CrawlTxService extends BullableService {
           txCode: Number(parentTx?.code ?? parentTx?.data?.tx_response?.code ?? 0),
           msgIndex: Number(msg?.index ?? 0),
           txEvents: parentTx?.data?.tx_response?.events ?? [],
-        };
-      });
+        }
+      })
 
     const trustDepositList = resultInsertMsgs
       .filter((msg: any) => isTrustDepositMessageType(msg.type))
       .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         return {
           type: msg.type,
           content: msg.content ?? null,
           timestamp: parentTx?.timestamp ?? null,
           height: parentTx?.height ?? null,
           txEvents: parentTx?.data?.tx_response?.events ?? [],
-        };
-      });
+        }
+      })
 
     const updateParamsList = successfulMsgs
       .filter((msg: any) => isUpdateParamsMessageType(msg.type))
       .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         return {
           message: msg,
           height: parentTx?.height,
           txHash: parentTx?.hash,
-        };
-      });
+        }
+      })
 
-    await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx);
+    await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx)
 
-    this.logger.info(`[insertRelatedTx] Completed processing all messages (payload prepared)`);
+    this.logger.info(`[insertRelatedTx] Completed processing all messages (payload prepared)`)
 
     return {
       ecosystemList,
@@ -1320,140 +1262,116 @@ export default class CrawlTxService extends BullableService {
       participantMessages,
       trustDepositList,
       updateParamsList,
-    };
+    }
   }
 
   private async validateAllMessagesProcessed(successfulMsgs: any[], listDecodedTx: Transaction[]): Promise<void> {
-    const unknownMessages: any[] = [];
+    const unknownMessages: any[] = []
 
     successfulMsgs.forEach((msg: any) => {
-      const isVeranaMessage = isVeranaMessageType(msg.type);
+      const isVeranaMessage = isVeranaMessageType(msg.type)
       if (!isVeranaMessage) {
-        return;
+        return
       }
 
       if (!isKnownVeranaMessageType(msg.type)) {
-        unknownMessages.push(msg);
+        unknownMessages.push(msg)
       }
-    });
+    })
 
     if (unknownMessages.length > 0) {
-      const unknownTypes = [...new Set(unknownMessages.map((msg: any) => msg.type))];
-      const skipUnknown = shouldSkipUnknownMessages();
+      const unknownTypes = [...new Set(unknownMessages.map((msg: any) => msg.type))]
+      const skipUnknown = shouldSkipUnknownMessages()
 
-      this.logger.error(`INDEXER COLLISION RISK: Unknown Verana message types detected: ${unknownTypes.join(', ')}`);
-      console.error('='.repeat(80));
-      console.error('CRITICAL: UNKNOWN VERANA MESSAGE TYPES DETECTED');
-      console.error('='.repeat(80));
-      console.error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
-      console.error(`This indicates a protocol change or new feature that requires indexer updates.`);
-      console.error(`Affected transactions: ${unknownMessages.length}`);
-      console.error(`Skip mode: ${skipUnknown ? 'ENABLED (TESTING)' : 'DISABLED (PRODUCTION)'}`);
-      console.error('');
-      console.error('Sample affected transactions:');
+      this.logger.error(`INDEXER COLLISION RISK: Unknown Verana message types detected: ${unknownTypes.join(', ')}`)
+      console.error('='.repeat(80))
+      console.error('CRITICAL: UNKNOWN VERANA MESSAGE TYPES DETECTED')
+      console.error('='.repeat(80))
+      console.error(`Unknown Verana message types: ${unknownTypes.join(', ')}`)
+      console.error(`This indicates a protocol change or new feature that requires indexer updates.`)
+      console.error(`Affected transactions: ${unknownMessages.length}`)
+      console.error(`Skip mode: ${skipUnknown ? 'ENABLED (TESTING)' : 'DISABLED (PRODUCTION)'}`)
+      console.error('')
+      console.error('Sample affected transactions:')
       unknownMessages.slice(0, 3).forEach((msg: any, index: number) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id);
-        const height = parentTx?.height ?? 'unknown';
-        console.error(`  ${index + 1}. TX ${msg.tx_id} at height ${height}: ${msg.type}`);
-      });
-      console.error('');
+        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
+        const height = parentTx?.height ?? 'unknown'
+        console.error(`  ${index + 1}. TX ${msg.tx_id} at height ${height}: ${msg.type}`)
+      })
+      console.error('')
       console.error(
         skipUnknown
           ? 'Continuing in test mode - monitor for protocol changes'
           : 'Indexer stopped - update message handlers for new message types'
-      );
-      console.error('='.repeat(80));
+      )
+      console.error('='.repeat(80))
 
       if (!skipUnknown) {
-        console.error(`STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`);
-        const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`);
-        await handleErrorGracefully(
-          error,
-          SERVICE.V1.CrawlTransaction.key,
-          'Unknown Verana message types',
-          true
-        );
+        console.error(`STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`)
+        const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`)
+        await handleErrorGracefully(error, SERVICE.V1.CrawlTransaction.key, 'Unknown Verana message types', true)
       } else {
-        this.logger.warn(
-          `TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`
-        );
+        this.logger.warn(`TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`)
       }
     }
   }
 
   private checkMappingEventToLog(tx: any) {
-    this.logger.info('checking mapping log in tx :', tx.tx_response.txhash);
-    let flattenLog: string[] = [];
-    let flattenEventEncoded: string[] = [];
+    this.logger.info('checking mapping log in tx :', tx.tx_response.txhash)
+    let flattenLog: string[] = []
+    let flattenEventEncoded: string[] = []
 
     tx?.tx_response?.logs?.forEach((log: any, index: number) => {
       log.events.forEach((event: any) => {
         event.attributes?.forEach((attr: any) => {
           if (attr.value === undefined) {
-            flattenLog.push(`${index} - ${event.type} - ${attr.key} - null`);
+            flattenLog.push(`${index} - ${event.type} - ${attr.key} - null`)
           } else {
-            flattenLog.push(`${index} - ${event.type} - ${attr.key} - ${attr.value}`);
+            flattenLog.push(`${index} - ${event.type} - ${attr.key} - ${attr.value}`)
           }
-        });
-      });
-    });
+        })
+      })
+    })
 
     tx?.tx_response?.events?.forEach((event: any) => {
       event.attributes?.forEach((attr: any) => {
         if (event.msg_index !== undefined) {
-          const key = attr.key && this._registry.decodeAttribute
-            ? this._registry.decodeAttribute(attr.key)
-            : null;
-          const value = attr.value && this._registry.decodeAttribute
-            ? this._registry.decodeAttribute(attr.value)
-            : null;
-          flattenEventEncoded.push(
-            `${event.msg_index} - ${event.type} - ${key} - ${value}`
-          );
+          const key = attr.key && this._registry.decodeAttribute ? this._registry.decodeAttribute(attr.key) : null
+          const value = attr.value && this._registry.decodeAttribute ? this._registry.decodeAttribute(attr.value) : null
+          flattenEventEncoded.push(`${event.msg_index} - ${event.type} - ${key} - ${value}`)
         }
-      });
-    });
+      })
+    })
     // compare 2 array
     if (flattenLog.length !== flattenEventEncoded.length) {
-      this.logger.warn(
-        'Length between 2 flatten array is not equal',
-        tx.tx_response.txhash
-      );
+      this.logger.warn('Length between 2 flatten array is not equal', tx.tx_response.txhash)
     }
-    flattenLog = flattenLog.sort();
-    flattenEventEncoded = flattenEventEncoded.sort();
-    const checkResult = flattenLog.every(
-      (item: string, index: number) => item === flattenEventEncoded[index]
-    );
+    flattenLog = flattenLog.sort()
+    flattenEventEncoded = flattenEventEncoded.sort()
+    const checkResult = flattenLog.every((item: string, index: number) => item === flattenEventEncoded[index])
     if (checkResult === false) {
-      this.logger.warn(
-        'Mapping event to log is wrong: ',
-        tx.tx_response.txhash
-      );
+      this.logger.warn('Mapping event to log is wrong: ', tx.tx_response.txhash)
     }
   }
 
   public createListEventWithMsgIndex(tx: any): any[] {
-    const returnEvents: any[] = [];
+    const returnEvents: any[] = []
     // if this is failed tx, then no need to set index msg
     if (!tx.tx_response.logs) {
-      this.logger.warn('Failed tx, no need to set index msg');
-      return [];
+      this.logger.warn('Failed tx, no need to set index msg')
+      return []
     }
-    let reachLastEventTypeTx = false;
+    let reachLastEventTypeTx = false
     // last event type in event field which belongs to tx event
-    const listTxEventType = config.handleTransaction.lastEventsTypeTx;
+    const listTxEventType = config.handleTransaction.lastEventsTypeTx
     for (let i = 0; i < tx?.tx_response?.events?.length; i += 1) {
       if (listTxEventType.includes(tx.tx_response.events[i].type)) {
-        reachLastEventTypeTx = true;
+        reachLastEventTypeTx = true
       }
-      if (
-        reachLastEventTypeTx &&
-        !listTxEventType.includes(tx.tx_response.events[i].type)
-      ) {
-        break;
+      if (reachLastEventTypeTx && !listTxEventType.includes(tx.tx_response.events[i].type)) {
+        break
       }
-      returnEvents.push(tx.tx_response.events[i]);
+      returnEvents.push(tx.tx_response.events[i])
     }
     // get messages log and append to list event
     tx.tx_response.logs.forEach((log: any, index: number) => {
@@ -1461,43 +1379,32 @@ export default class CrawlTxService extends BullableService {
         returnEvents.push({
           ...event,
           msg_index: index,
-        });
-      });
-    });
+        })
+      })
+    })
 
     // check mapping event log ok
-    const cloneTx = _.clone(tx);
-    cloneTx.tx_response.events = returnEvents;
-    this.checkMappingEventToLog(cloneTx);
+    const cloneTx = _.clone(tx)
+    cloneTx.tx_response.events = returnEvents
+    this.checkMappingEventToLog(cloneTx)
 
-    return returnEvents;
+    return returnEvents
   }
 
-  private _findAttribute(
-    events: any,
-    eventType: string,
-    attributeKey: string
-  ): string {
-    let result = '';
+  private _findAttribute(events: any, eventType: string, attributeKey: string): string {
+    let result = ''
     const foundEvent = events.find(
       (event: any) =>
-        event.type === eventType &&
-        event.attributes.some(
-          (attribute: any) => attribute.key === attributeKey
-        )
-    );
+        event.type === eventType && event.attributes.some((attribute: any) => attribute.key === attributeKey)
+    )
     if (foundEvent) {
-      const foundAttribute = foundEvent.attributes.find(
-        (attribute: any) => attribute.key === attributeKey
-      );
-      result = foundAttribute.value;
+      const foundAttribute = foundEvent.attributes.find((attribute: any) => attribute.key === attributeKey)
+      result = foundAttribute.value
     }
     if (!result.length) {
-      throw new Error(
-        `Could not find attribute ${attributeKey} in event type ${eventType}`
-      );
+      throw new Error(`Could not find attribute ${attributeKey} in event type ${eventType}`)
     }
-    return result;
+    return result
   }
 
   @Action({
@@ -1505,132 +1412,145 @@ export default class CrawlTxService extends BullableService {
   })
   async triggerHandleTxJob() {
     try {
-      const queue = this.getQueueManager().getQueue(
-        BULL_JOB_NAME.CRAWL_TRANSACTION
-      );
-      const jobInDelayed = await queue.getDelayed();
+      const queue = this.getQueueManager().getQueue(BULL_JOB_NAME.CRAWL_TRANSACTION)
+      const jobInDelayed = await queue.getDelayed()
       if (jobInDelayed?.length > 0) {
-        const job = jobInDelayed[0];
+        const job = jobInDelayed[0]
         try {
-          const jobState = await job.getState();
+          const jobState = await job.getState()
           if (jobState === 'delayed') {
-            await job.promote();
-            this.logger.debug(`Promoted delayed job ${job.id}`);
+            await job.promote()
+            this.logger.debug(`Promoted delayed job ${job.id}`)
           } else {
-            this.logger.debug(`Job ${job.id} is not in delayed state (current: ${jobState}), skipping promotion`);
+            this.logger.debug(`Job ${job.id} is not in delayed state (current: ${jobState}), skipping promotion`)
           }
         } catch (promoteError: any) {
-          const errorMessage = promoteError?.message || String(promoteError);
-          if (errorMessage.includes('not in the delayed state') ||
+          const errorMessage = promoteError?.message || String(promoteError)
+          if (
+            errorMessage.includes('not in the delayed state') ||
             errorMessage.includes('is not in the delayed state') ||
-            errorMessage.includes('Job is not in delayed state')) {
-            this.logger.debug(`Job ${job.id} cannot be promoted (not in delayed state), this is normal if job was already processed`);
+            errorMessage.includes('Job is not in delayed state')
+          ) {
+            this.logger.debug(
+              `Job ${job.id} cannot be promoted (not in delayed state), this is normal if job was already processed`
+            )
           } else {
-            this.logger.warn(`Failed to promote job ${job.id}:`, promoteError);
+            this.logger.warn(`Failed to promote job ${job.id}:`, promoteError)
           }
         }
       }
     } catch (error: any) {
-      if (error?.message?.includes('not in the delayed state') || error?.message?.includes('is not in the delayed state')) {
-        this.logger.debug('Job promotion skipped (job not in delayed state), this is normal');
+      if (
+        error?.message?.includes('not in the delayed state') ||
+        error?.message?.includes('is not in the delayed state')
+      ) {
+        this.logger.debug('Job promotion skipped (job not in delayed state), this is normal')
       } else {
-        this.logger.warn('Error checking/promoting delayed jobs:', error);
+        this.logger.warn('Error checking/promoting delayed jobs:', error)
       }
     }
   }
 
   public async _start() {
     try {
-      await this.broker.waitForServices([SERVICE.V1.CrawlBlock.name]);
-      const providerRegistry = await getProviderRegistry();
-      this._registry = new ChainRegistry(this.logger, providerRegistry);
+      await this.broker.waitForServices([SERVICE.V1.CrawlBlock.name])
+      const providerRegistry = await getProviderRegistry()
+      this._registry = new ChainRegistry(this.logger, providerRegistry)
 
-      const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_TRANSACTION, this.logger);
-      this._isFreshStart = startMode.isFreshStart;
-      this.logger.info(`Start mode: blocks=${startMode.totalBlocks}, checkpoint=${startMode.currentBlock}, freshStart=${this._isFreshStart}, cacheCleared=${startMode.cacheCleared || false}`);
+      const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_TRANSACTION, this.logger)
+      this._isFreshStart = startMode.isFreshStart
+      this.logger.info(
+        `Start mode: blocks=${startMode.totalBlocks}, checkpoint=${startMode.currentBlock}, freshStart=${this._isFreshStart}, cacheCleared=${startMode.cacheCleared || false}`
+      )
 
       try {
-        const lcdClient = await getLcdClient();
+        const lcdClient = await getLcdClient()
         if (!lcdClient?.provider) {
-          this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`);
+          this.logger.warn(`LCD client not available, skipping node info fetch. Will retry on next operation.`)
         } else {
           try {
             const nodeInfo: GetNodeInfoResponseSDKType = await this.retryRpcCall(
               () => lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
               'getNodeInfo'
-            );
-            const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version;
+            )
+            const cosmosSdkVersion = nodeInfo?.application_version?.cosmos_sdk_version
             if (cosmosSdkVersion) {
-              this._registry.setCosmosSdkVersionByString(cosmosSdkVersion);
+              this._registry.setCosmosSdkVersionByString(cosmosSdkVersion)
             }
           } catch (error: any) {
-            const errorMessage = error?.message || String(error);
+            const errorMessage = error?.message || String(error)
             const wasStopped = await handleErrorGracefully(
               error,
               SERVICE.V1.CrawlTransaction.key,
               'Failed to get node info'
-            );
+            )
 
             if (!wasStopped) {
               if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
-                this.logger.warn(`⚠️ Failed to get node info due to timeout (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+                this.logger.warn(
+                  `⚠️ Failed to get node info due to timeout (non-critical): ${errorMessage}. Continuing without SDK version update.`
+                )
               } else {
-                this.logger.warn(`⚠️ Failed to get node info (non-critical): ${errorMessage}. Continuing without SDK version update.`);
+                this.logger.warn(
+                  `⚠️ Failed to get node info (non-critical): ${errorMessage}. Continuing without SDK version update.`
+                )
               }
             } else {
-              this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+              this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.')
             }
           }
         }
       } catch (error: any) {
-        const errorMessage = error?.message || String(error);
+        const errorMessage = error?.message || String(error)
         if (!indexerStatusManager.isIndexerRunning()) {
-          this.logger.error(`❌ Service startup encountered error (indexer already stopped): ${errorMessage}`);
-          this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+          this.logger.error(`❌ Service startup encountered error (indexer already stopped): ${errorMessage}`)
+          this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.')
         } else {
           const wasStopped = await handleErrorGracefully(
             error,
             SERVICE.V1.CrawlTransaction.key,
             'Service startup error'
-          );
+          )
 
           if (wasStopped) {
-            this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+            this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.')
           } else if (errorMessage.includes('timeout') || error?.code === 'ECONNABORTED') {
-            this.logger.warn(`⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`);
+            this.logger.warn(
+              `⚠️ LCD client initialization timeout (non-critical): ${errorMessage}. Service will continue and retry later.`
+            )
           } else {
-            this.logger.warn(`⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`);
+            this.logger.warn(
+              `⚠️ Failed to initialize LCD client (non-critical): ${errorMessage}. Service will continue and retry later.`
+            )
           }
         }
       }
     } catch (error: any) {
-      const wasStopped = await handleErrorGracefully(
-        error,
-        SERVICE.V1.CrawlTransaction.key,
-        'Service startup error'
-      );
+      const wasStopped = await handleErrorGracefully(error, SERVICE.V1.CrawlTransaction.key, 'Service startup error')
 
       if (wasStopped) {
-        this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.');
+        this.logger.warn('⚠️ Service will start but indexer is stopped. APIs will return error status.')
       }
     }
 
-    const baseCrawlTxInterval = (this._isFreshStart && config.crawlTransaction.freshStart)
-      ? (config.crawlTransaction.freshStart.millisecondCrawl || config.crawlTransaction.millisecondCrawl)
-      : config.crawlTransaction.millisecondCrawl;
-    const crawlTxInterval = applySpeedToDelay(baseCrawlTxInterval, !this._isFreshStart);
+    const baseCrawlTxInterval =
+      this._isFreshStart && config.crawlTransaction.freshStart
+        ? config.crawlTransaction.freshStart.millisecondCrawl || config.crawlTransaction.millisecondCrawl
+        : config.crawlTransaction.millisecondCrawl
+    const crawlTxInterval = applySpeedToDelay(baseCrawlTxInterval, !this._isFreshStart)
 
-    const baseHandleTxInterval = (this._isFreshStart && config.handleTransaction.freshStart)
-      ? (config.handleTransaction.freshStart.millisecondCrawl || config.handleTransaction.millisecondCrawl)
-      : config.handleTransaction.millisecondCrawl;
-    const handleTxInterval = applySpeedToDelay(baseHandleTxInterval, !this._isFreshStart);
+    const baseHandleTxInterval =
+      this._isFreshStart && config.handleTransaction.freshStart
+        ? config.handleTransaction.freshStart.millisecondCrawl || config.handleTransaction.millisecondCrawl
+        : config.handleTransaction.millisecondCrawl
+    const handleTxInterval = applySpeedToDelay(baseHandleTxInterval, !this._isFreshStart)
 
-    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart);
+    const speedMultiplier = getCrawlSpeedMultiplier(!this._isFreshStart)
     this.logger.info(
       `🚀 CrawlTx Service Starting | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'} | ` +
-      `CrawlTx Interval: ${crawlTxInterval}ms | HandleTx Interval: ${handleTxInterval}ms | ` +
-      `Speed Multiplier: ${speedMultiplier}x ${speedMultiplier !== 1.0 ? `(${this._isFreshStart ? 'slower/conservative' : 'faster'})` : '(default)'}`
-    );
+        `CrawlTx Interval: ${crawlTxInterval}ms | HandleTx Interval: ${handleTxInterval}ms | ` +
+        `Speed Multiplier: ${speedMultiplier}x ${speedMultiplier !== 1.0 ? `(${this._isFreshStart ? 'slower/conservative' : 'faster'})` : '(default)'}`
+    )
 
     if (process.env.NODE_ENV !== 'test') {
       this.createJob(
@@ -1646,7 +1566,7 @@ export default class CrawlTxService extends BullableService {
             every: crawlTxInterval,
           },
         }
-      );
+      )
       this.createJob(
         BULL_JOB_NAME.HANDLE_TRANSACTION,
         BULL_JOB_NAME.HANDLE_TRANSACTION,
@@ -1660,12 +1580,10 @@ export default class CrawlTxService extends BullableService {
             every: handleTxInterval,
           },
         }
-      );
+      )
     }
-    return super._start();
+    return super._start()
   }
-
-
 
   private async processTrustDepositEventsForBlocks(startBlock: number, endBlock: number): Promise<void> {
     try {
@@ -1673,13 +1591,15 @@ export default class CrawlTxService extends BullableService {
         .select('height', knex.raw("data->'block_result' as block_result"))
         .where('height', '>', startBlock)
         .andWhere('height', '<=', endBlock)
-        .orderBy('height', 'asc');
+        .orderBy('height', 'asc')
 
       if (!blocks.length) {
-        return;
+        return
       }
 
-      this.logger.info(`[HANDLE_TRANSACTION] Processing TrustDeposit events for ${blocks.length} blocks (${startBlock} to ${endBlock})`);
+      this.logger.info(
+        `[HANDLE_TRANSACTION] Processing TrustDeposit events for ${blocks.length} blocks (${startBlock} to ${endBlock})`
+      )
 
       for (const block of blocks) {
         try {
@@ -1687,191 +1607,178 @@ export default class CrawlTxService extends BullableService {
             `${SERVICE.V1.CrawlTrustDepositService.path}.processBlockEvents`,
             { block },
             { timeout: 30000 }
-          );
+          )
         } catch (err: any) {
-          this.logger.warn(`[HANDLE_TRANSACTION] Failed to process TrustDeposit events for block ${block.height}:`, err?.message || err);
+          this.logger.warn(
+            `[HANDLE_TRANSACTION] Failed to process TrustDeposit events for block ${block.height}:`,
+            err?.message || err
+          )
         }
       }
     } catch (error) {
-      this.logger.error(`[HANDLE_TRANSACTION] Error in processTrustDepositEventsForBlocks:`, error);
-      throw error;
+      this.logger.error(`[HANDLE_TRANSACTION] Error in processTrustDepositEventsForBlocks:`, error)
+      throw error
     }
   }
 
-  private async retryRpcCall<T>(
-    rpcCall: () => Promise<T>,
-    operationName: string,
-    maxAttempts?: number
-  ): Promise<T> {
-    const attempts = maxAttempts || config.handleTransaction.rpcRetryAttempts || 3;
-    const delay = config.handleTransaction.rpcRetryDelay || 1000;
-    const timeout = config.handleTransaction.rpcTimeout || 30000;
-    let lastError: Error | unknown;
+  private async retryRpcCall<T>(rpcCall: () => Promise<T>, operationName: string, maxAttempts?: number): Promise<T> {
+    const attempts = maxAttempts || config.handleTransaction.rpcRetryAttempts || 3
+    const delay = config.handleTransaction.rpcRetryDelay || 1000
+    const timeout = config.handleTransaction.rpcTimeout || 30000
+    let lastError: Error | unknown
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         return await Promise.race([
           rpcCall(),
           new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('RPC call timeout')), timeout);
+            setTimeout(() => reject(new Error('RPC call timeout')), timeout)
           }),
-        ]);
+        ])
       } catch (error) {
-        lastError = error;
-        const isLastAttempt = attempt === attempts;
+        lastError = error
+        const isLastAttempt = attempt === attempts
 
         if (isLastAttempt) {
-          this.logger.error(
-            `❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${error}`
-          );
-          throw error;
+          this.logger.error(`❌ RPC call failed after ${attempts} attempts: ${operationName}. Error: ${error}`)
+          throw error
         }
 
-        const backoffDelay = delay * (2 ** (attempt - 1));
+        const backoffDelay = delay * 2 ** (attempt - 1)
         this.logger.warn(
           `⚠️ RPC call failed (attempt ${attempt}/${attempts}): ${operationName}. Retrying in ${backoffDelay}ms...`
-        );
-        const { delay: delayUtil } = await import('../../common/utils/db_query_helper');
-        await delayUtil(backoffDelay);
+        )
+        const { delay: delayUtil } = await import('../../common/utils/db_query_helper')
+        await delayUtil(backoffDelay)
       }
     }
 
     throw lastError instanceof Error
       ? lastError
-      : new Error(`Failed to execute ${operationName} after ${attempts} attempts`);
+      : new Error(`Failed to execute ${operationName} after ${attempts} attempts`)
   }
 
   public setRegistry(registry: ChainRegistry) {
-    this._registry = registry;
+    this._registry = registry
   }
   private async processPayloads(payload: any) {
-    if (!payload) return;
+    if (!payload) return
     if (payload.ecosystemList?.length) {
-      await this.broker.call(
-        `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`,
-        { ecosystemList: payload.ecosystemList },
-      );
+      await this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
+        ecosystemList: payload.ecosystemList,
+      })
     }
 
-    const useHeightSyncTR = process.env.USE_HEIGHT_SYNC_TR === "true";
-    const blockHeight = payload.blockHeight;
-    if (useHeightSyncTR && typeof blockHeight === "number") {
-      const events = payload.csEventsFromBlock ?? [];
-      const ecosystemIdsFromEvents = extractEcosystemIdsFromEvents(events, true);
-      const handledEcosystemIds = new Set<number>();
+    const useHeightSyncTR = process.env.USE_HEIGHT_SYNC_TR === 'true'
+    const blockHeight = payload.blockHeight
+    if (useHeightSyncTR && typeof blockHeight === 'number') {
+      const events = payload.csEventsFromBlock ?? []
+      const ecosystemIdsFromEvents = extractEcosystemIdsFromEvents(events, true)
+      const handledEcosystemIds = new Set<number>()
       for (const msg of payload.ecosystemList ?? []) {
-        const eventIds = Array.isArray(msg?.eventEcosystemIds) ? msg.eventEcosystemIds : [];
+        const eventIds = Array.isArray(msg?.eventEcosystemIds) ? msg.eventEcosystemIds : []
         for (const raw of eventIds) {
-          const id = Number(raw);
-          if (Number.isInteger(id) && id > 0) handledEcosystemIds.add(id);
+          const id = Number(raw)
+          if (Number.isInteger(id) && id > 0) handledEcosystemIds.add(id)
         }
-        const content = msg?.content ?? {};
+        const content = msg?.content ?? {}
         const fallbackCandidates = [
           content?.ecosystem_id,
           content?.ecosystemId,
           content?.ecosystem_id,
           content?.ecosystemId,
           content?.id,
-        ];
+        ]
         for (const raw of fallbackCandidates) {
-          const id = Number(raw);
-          if (Number.isInteger(id) && id > 0) handledEcosystemIds.add(id);
+          const id = Number(raw)
+          if (Number.isInteger(id) && id > 0) handledEcosystemIds.add(id)
         }
       }
 
-      const extraEcosystemIdsFromEvents = ecosystemIdsFromEvents.filter((id) => !handledEcosystemIds.has(id));
+      const extraEcosystemIdsFromEvents = ecosystemIdsFromEvents.filter((id) => !handledEcosystemIds.has(id))
       if (extraEcosystemIdsFromEvents.length > 0) {
         try {
-          await this.broker.call(
-            `${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`,
-            {
-              ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
-                type: "EVENT_SYNC_TR",
-                height: blockHeight,
-                content: { id },
-              })),
-            }
-          );
+          await this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
+            ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
+              type: 'EVENT_SYNC_TR',
+              height: blockHeight,
+              content: { id },
+            })),
+          })
         } catch (err: any) {
           this.logger.warn(
             `[processPayloads] Failed to run EC height-sync from events at block=${blockHeight}: ${
               err?.message || String(err)
             }`
-          );
+          )
         }
       }
     }
 
     if (payload.corporationList?.length) {
-      await this.broker.call(
-        `${SERVICE.V1.CorporationMessageProcessorService.path}.handleCorporationMessages`,
-        { corporationList: payload.corporationList },
-      );
+      await this.broker.call(`${SERVICE.V1.CorporationMessageProcessorService.path}.handleCorporationMessages`, {
+        corporationList: payload.corporationList,
+      })
     }
 
-    const useHeightSyncCS = process.env.USE_HEIGHT_SYNC_CS === "true";
-    const hasCsMessages = (payload.credentialSchemaMessages?.length ?? 0) > 0;
-    if (useHeightSyncCS && typeof blockHeight === "number" && hasCsMessages) {
-     const { runHeightSyncCS } = await import("../../modules/cs-height-sync/cs_height_sync_service");
-      await runHeightSyncCS(this.broker, payload, blockHeight);
+    const useHeightSyncCS = process.env.USE_HEIGHT_SYNC_CS === 'true'
+    const hasCsMessages = (payload.credentialSchemaMessages?.length ?? 0) > 0
+    if (useHeightSyncCS && typeof blockHeight === 'number' && hasCsMessages) {
+      const { runHeightSyncCS } = await import('../../modules/cs-height-sync/cs_height_sync_service')
+      await runHeightSyncCS(this.broker, payload, blockHeight)
     } else if (payload.credentialSchemaMessages?.length) {
-      await this.broker.call(
-        `${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`,
-        { credentialSchemaMessages: payload.credentialSchemaMessages },
-      );
+      await this.broker.call(`${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`, {
+        credentialSchemaMessages: payload.credentialSchemaMessages,
+      })
     } else {
-      const hasCsEvents = (payload.csEventsFromBlock ?? []).some((event: { type?: string; attributes?: Array<{ key?: string; value?: string }> }) =>
-        isPotentialCredentialSchemaEvent(event, true)
-      );
-      if (useHeightSyncCS && hasCsEvents && typeof blockHeight === "number") {
-        const { runHeightSyncCS } = await import("../../modules/cs-height-sync/cs_height_sync_service");
-        await runHeightSyncCS(this.broker, payload, blockHeight);
+      const hasCsEvents = (payload.csEventsFromBlock ?? []).some(
+        (event: { type?: string; attributes?: Array<{ key?: string; value?: string }> }) =>
+          isPotentialCredentialSchemaEvent(event, true)
+      )
+      if (useHeightSyncCS && hasCsEvents && typeof blockHeight === 'number') {
+        const { runHeightSyncCS } = await import('../../modules/cs-height-sync/cs_height_sync_service')
+        await runHeightSyncCS(this.broker, payload, blockHeight)
       }
     }
 
     if (payload.participantMessages?.length) {
-      const participantMessages = payload.participantMessages;
-      const participantBatchSize = 50;
+      const participantMessages = payload.participantMessages
+      const participantBatchSize = 50
       for (let i = 0; i < participantMessages.length; i += participantBatchSize) {
-        const batch = participantMessages.slice(i, i + participantBatchSize);
+        const batch = participantMessages.slice(i, i + participantBatchSize)
         await this.broker.call(
           `${SERVICE.V1.ParticipantProcessorService.path}.handleParticipantMessages`,
           { participantMessages: batch },
-          { timeout: getHeavyBrokerCallTimeoutMs() },
-        );
+          { timeout: getHeavyBrokerCallTimeoutMs() }
+        )
         if (i + participantBatchSize < participantMessages.length) {
-          const { delay } = await import('../../common/utils/db_query_helper');
-          await delay(200);
+          const { delay } = await import('../../common/utils/db_query_helper')
+          await delay(200)
         }
       }
     }
 
     if (payload.trustDepositList?.length) {
-      const useHeightSyncTD = process.env.USE_HEIGHT_SYNC_TD === "true";
-      const tdBlockHeight = typeof payload.blockHeight === "number" ? payload.blockHeight : undefined;
-      if (useHeightSyncTD && typeof tdBlockHeight === "number") {
-        const { runHeightSyncTD } = await import("../../modules/td-height-sync/td_height_sync_service");
-        await runHeightSyncTD(this.broker, { trustDepositList: payload.trustDepositList }, tdBlockHeight);
+      const useHeightSyncTD = process.env.USE_HEIGHT_SYNC_TD === 'true'
+      const tdBlockHeight = typeof payload.blockHeight === 'number' ? payload.blockHeight : undefined
+      if (useHeightSyncTD && typeof tdBlockHeight === 'number') {
+        const { runHeightSyncTD } = await import('../../modules/td-height-sync/td_height_sync_service')
+        await runHeightSyncTD(this.broker, { trustDepositList: payload.trustDepositList }, tdBlockHeight)
       } else {
-        await this.broker.call(
-          `${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`,
-          { trustDepositList: payload.trustDepositList },
-        );
+        await this.broker.call(`${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`, {
+          trustDepositList: payload.trustDepositList,
+        })
       }
     }
 
     if (payload.updateParamsList?.length) {
       for (const updateMsg of payload.updateParamsList) {
         try {
-          await this.broker.call(
-            `${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`,
-            updateMsg,
-          );
+          await this.broker.call(`${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`, updateMsg)
         } catch (err) {
-          this.logger.error(`[processPayloads] Failed to process UpdateParams message:`, err);
+          this.logger.error(`[processPayloads] Failed to process UpdateParams message:`, err)
         }
       }
     }
   }
 }
- 

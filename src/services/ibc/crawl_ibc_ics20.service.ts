@@ -1,36 +1,31 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { Knex } from 'knex';
-import { ServiceBroker } from 'moleculer';
-import _ from 'lodash';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import knex from '../../common/utils/db_connection';
-import {
-  BlockCheckpoint,
-  EventAttribute,
-  IbcIcs20,
-  IbcMessage,
-} from '../../models';
-import { detectStartMode } from '../../common/utils/start_mode_detector';
-import { tableExists, isTableMissingError } from '../../common/utils/db_health';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Knex } from 'knex'
+import _ from 'lodash'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import { isTableMissingError, tableExists } from '../../common/utils/db_health'
+import { detectStartMode } from '../../common/utils/start_mode_detector'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, EventAttribute, IbcIcs20, IbcMessage } from '../../models'
 
 @Service({
   name: SERVICE.V1.CrawlIBCIcs20Service.key,
   version: 1,
 })
 export default class CrawlIBCIcs20Service extends BullableService {
-  private _isFreshStart: boolean = false;
+  private _isFreshStart: boolean = false
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   public async _start() {
-    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_IBC_ICS20);
-    this._isFreshStart = startMode.isFreshStart;
-    this.logger.info(`CrawlIBCIcs20 service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
-    return super._start();
+    const startMode = await detectStartMode(BULL_JOB_NAME.CRAWL_IBC_ICS20)
+    this._isFreshStart = startMode.isFreshStart
+    this.logger.info(`CrawlIBCIcs20 service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`)
+    return super._start()
   }
 
   @QueueHandler({
@@ -39,47 +34,40 @@ export default class CrawlIBCIcs20Service extends BullableService {
   })
   public async crawlIbcIcs20(): Promise<void> {
     try {
-      if (!(await tableExists("ibc_message")) || !(await tableExists("transaction_message")) || !(await tableExists("transaction"))) {
-        this.logger.warn("Required tables do not exist yet, waiting for migrations...");
-        return;
+      if (
+        !(await tableExists('ibc_message')) ||
+        !(await tableExists('transaction_message')) ||
+        !(await tableExists('transaction'))
+      ) {
+        this.logger.warn('Required tables do not exist yet, waiting for migrations...')
+        return
       }
 
-      const [startHeight, endHeight, updateBlockCheckpoint] =
-        await BlockCheckpoint.getCheckpoint(
-          BULL_JOB_NAME.CRAWL_IBC_ICS20,
-          [BULL_JOB_NAME.CRAWL_IBC_APP],
-          config.crawlIbcIcs20.key
-        );
-      this.logger.info(
-        `Handle IBC/ICS20, startHeight: ${startHeight}, endHeight: ${endHeight}`
-      );
-      if (startHeight > endHeight) return;
+      const [startHeight, endHeight, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+        BULL_JOB_NAME.CRAWL_IBC_ICS20,
+        [BULL_JOB_NAME.CRAWL_IBC_APP],
+        config.crawlIbcIcs20.key
+      )
+      this.logger.info(`Handle IBC/ICS20, startHeight: ${startHeight}, endHeight: ${endHeight}`)
+      if (startHeight > endHeight) return
       await knex.transaction(async (trx) => {
-      await this.handleIcs20Send(startHeight, endHeight, trx);
-      await this.handleIcs20Recv(startHeight, endHeight, trx);
-      await this.handleIcs20Ack(startHeight, endHeight, trx);
-      await this.handleIcs20Timeout(startHeight, endHeight, trx);
-      updateBlockCheckpoint.height = endHeight;
-      await BlockCheckpoint.query()
-        .transacting(trx)
-        .insert(updateBlockCheckpoint)
-        .onConflict('job_name')
-        .merge();
-    });
+        await this.handleIcs20Send(startHeight, endHeight, trx)
+        await this.handleIcs20Recv(startHeight, endHeight, trx)
+        await this.handleIcs20Ack(startHeight, endHeight, trx)
+        await this.handleIcs20Timeout(startHeight, endHeight, trx)
+        updateBlockCheckpoint.height = endHeight
+        await BlockCheckpoint.query().transacting(trx).insert(updateBlockCheckpoint).onConflict('job_name').merge()
+      })
     } catch (error: any) {
       if (isTableMissingError(error)) {
-        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
-        return;
+        this.logger.warn('Database tables do not exist yet, waiting for migrations...')
+        return
       }
-      throw error;
+      throw error
     }
   }
 
-  async handleIcs20Send(
-    startHeight: number,
-    endHeight: number,
-    trx: Knex.Transaction
-  ) {
+  async handleIcs20Send(startHeight: number, endHeight: number, trx: Knex.Transaction) {
     const ics20Sends = await IbcMessage.query()
       .joinRelated('message.transaction')
       .where('src_port_id', IbcMessage.PORTS.ICS20)
@@ -95,40 +83,30 @@ export default class CrawlIBCIcs20Service extends BullableService {
         'ibc_message.data'
       )
       .orderBy('message.id')
-      .transacting(trx);
+      .transacting(trx)
     if (ics20Sends.length > 0) {
       const ibcIcs20s = ics20Sends.map((msg) =>
         IbcIcs20.fromJson({
           ibc_message_id: msg.id,
-          ..._.pick(msg.data, [
-            'sender',
-            'receiver',
-            'amount',
-            'denom',
-            'memo',
-          ]),
+          ..._.pick(msg.data, ['sender', 'receiver', 'amount', 'denom', 'memo']),
           channel_id: msg.src_channel_id,
           status: IbcIcs20.STATUS_TYPE.ONGOING,
           sequence_key: msg.sequence_key,
           type: msg.type,
           start_time: msg.timestamp,
         })
-      );
-      const chunkSize = this._isFreshStart 
-        ? (config.crawlIbcIcs20.freshStart?.chunkSize || 100)
-        : (config.crawlIbcIcs20.chunkSize || 5000);
+      )
+      const chunkSize = this._isFreshStart
+        ? config.crawlIbcIcs20.freshStart?.chunkSize || 100
+        : config.crawlIbcIcs20.chunkSize || 5000
       for (let i = 0; i < ibcIcs20s.length; i += chunkSize) {
-        const chunk = ibcIcs20s.slice(i, i + chunkSize);
-        await IbcIcs20.query().insert(chunk).transacting(trx);
+        const chunk = ibcIcs20s.slice(i, i + chunkSize)
+        await IbcIcs20.query().insert(chunk).transacting(trx)
       }
     }
   }
 
-  async handleIcs20Recv(
-    startHeight: number,
-    endHeight: number,
-    trx: Knex.Transaction
-  ) {
+  async handleIcs20Recv(startHeight: number, endHeight: number, trx: Knex.Transaction) {
     const ics20Recvs = await IbcMessage.query()
       .withGraphFetched('message.events(selectIcs20Event).attributes')
       .joinRelated('message.transaction')
@@ -136,7 +114,7 @@ export default class CrawlIBCIcs20Service extends BullableService {
         selectIcs20Event(builder) {
           builder
             .where('type', IbcIcs20.EVENT_TYPE.FUNGIBLE_TOKEN_PACKET)
-            .orWhere('type', IbcIcs20.EVENT_TYPE.DENOM_TRACE);
+            .orWhere('type', IbcIcs20.EVENT_TYPE.DENOM_TRACE)
         },
       })
       .where('dst_port_id', IbcMessage.PORTS.ICS20)
@@ -152,75 +130,57 @@ export default class CrawlIBCIcs20Service extends BullableService {
         'ibc_message.type'
       )
       .orderBy('message.id')
-      .transacting(trx);
+      .transacting(trx)
     if (ics20Recvs.length > 0) {
       const ibcIcs20s = ics20Recvs.map((msg) => {
-        const recvEvent = msg.message.events.find(
-          (e) => e.type === IbcIcs20.EVENT_TYPE.FUNGIBLE_TOKEN_PACKET
-        );
+        const recvEvent = msg.message.events.find((e) => e.type === IbcIcs20.EVENT_TYPE.FUNGIBLE_TOKEN_PACKET)
         if (recvEvent === undefined) {
-          throw Error(`Recv ibc hasn't emmitted events: ${msg.id}`);
+          throw Error(`Recv ibc hasn't emmitted events: ${msg.id}`)
         }
-        const [sender, receiver, amount, originalDenom, ackStatus, memo] =
-          recvEvent.getAttributesFrom([
-            EventAttribute.ATTRIBUTE_KEY.SENDER,
-            EventAttribute.ATTRIBUTE_KEY.RECEIVER,
-            EventAttribute.ATTRIBUTE_KEY.AMOUNT,
-            EventAttribute.ATTRIBUTE_KEY.DENOM,
-            EventAttribute.ATTRIBUTE_KEY.SUCCESS,
-            EventAttribute.ATTRIBUTE_KEY.MEMO,
-          ]);
+        const [sender, receiver, amount, originalDenom, ackStatus, memo] = recvEvent.getAttributesFrom([
+          EventAttribute.ATTRIBUTE_KEY.SENDER,
+          EventAttribute.ATTRIBUTE_KEY.RECEIVER,
+          EventAttribute.ATTRIBUTE_KEY.AMOUNT,
+          EventAttribute.ATTRIBUTE_KEY.DENOM,
+          EventAttribute.ATTRIBUTE_KEY.SUCCESS,
+          EventAttribute.ATTRIBUTE_KEY.MEMO,
+        ])
         if (originalDenom === undefined) {
-          throw Error(`Recv ibc hasn't emit denom: ${msg.id}`);
+          throw Error(`Recv ibc hasn't emit denom: ${msg.id}`)
         }
-        const isSource =
-          msg.message.events.find(
-            (e) => e.type === IbcIcs20.EVENT_TYPE.DENOM_TRACE
-          ) === undefined;
-        const denom = this.parseDenom(
-          originalDenom,
-          isSource,
-          msg.dst_port_id,
-          msg.dst_channel_id
-        );
+        const isSource = msg.message.events.find((e) => e.type === IbcIcs20.EVENT_TYPE.DENOM_TRACE) === undefined
+        const denom = this.parseDenom(originalDenom, isSource, msg.dst_port_id, msg.dst_channel_id)
         return IbcIcs20.fromJson({
           ibc_message_id: msg.id,
           sender,
           receiver,
           amount,
           denom,
-          status:
-            ackStatus === 'true'
-              ? IbcIcs20.STATUS_TYPE.ACK_SUCCESS
-              : IbcIcs20.STATUS_TYPE.ACK_ERROR,
+          status: ackStatus === 'true' ? IbcIcs20.STATUS_TYPE.ACK_SUCCESS : IbcIcs20.STATUS_TYPE.ACK_ERROR,
           channel_id: msg.dst_channel_id,
           sequence_key: msg.sequence_key,
           type: msg.type,
           memo,
           finish_time: msg.timestamp,
-        });
-      });
-      const chunkSize = this._isFreshStart 
-        ? (config.crawlIbcIcs20.freshStart?.chunkSize || 100)
-        : (config.crawlIbcIcs20.chunkSize || 5000);
+        })
+      })
+      const chunkSize = this._isFreshStart
+        ? config.crawlIbcIcs20.freshStart?.chunkSize || 100
+        : config.crawlIbcIcs20.chunkSize || 5000
       for (let i = 0; i < ibcIcs20s.length; i += chunkSize) {
-        const chunk = ibcIcs20s.slice(i, i + chunkSize);
-        await IbcIcs20.query().insert(chunk).transacting(trx);
+        const chunk = ibcIcs20s.slice(i, i + chunkSize)
+        await IbcIcs20.query().insert(chunk).transacting(trx)
       }
     }
   }
 
-  async handleIcs20Ack(
-    startHeight: number,
-    endHeight: number,
-    trx: Knex.Transaction
-  ) {
+  async handleIcs20Ack(startHeight: number, endHeight: number, trx: Knex.Transaction) {
     const ics20Acks = await IbcMessage.query()
       .withGraphFetched('message.events(selectIcs20Event).attributes')
       .joinRelated('message.transaction')
       .modifiers({
         selectIcs20Event(builder) {
-          builder.where('type', IbcIcs20.EVENT_TYPE.FUNGIBLE_TOKEN_PACKET);
+          builder.where('type', IbcIcs20.EVENT_TYPE.FUNGIBLE_TOKEN_PACKET)
         },
       })
       .where('src_port_id', IbcMessage.PORTS.ICS20)
@@ -228,59 +188,39 @@ export default class CrawlIBCIcs20Service extends BullableService {
       .andWhere('message:transaction.height', '>', startHeight)
       .andWhere('message:transaction.height', '<=', endHeight)
       .orderBy('message.id')
-      .select(
-        'message:transaction.timestamp',
-        'ibc_message.sequence_key',
-        'ibc_message.id'
-      )
-      .transacting(trx);
+      .select('message:transaction.timestamp', 'ibc_message.sequence_key', 'ibc_message.id')
+      .transacting(trx)
     if (ics20Acks.length > 0) {
       // update success ack status for origin send ics20
       const acksSuccess = ics20Acks.filter((ack) => {
-        const ackEvents = ack.message.events;
+        const ackEvents = ack.message.events
         if (ackEvents.length !== 2) {
-          throw Error(`Ack ibc hasn't emmitted enough events: ${ack.id}`);
+          throw Error(`Ack ibc hasn't emmitted enough events: ${ack.id}`)
         }
-        const [success] = ackEvents[1].getAttributesFrom([
-          EventAttribute.ATTRIBUTE_KEY.SUCCESS,
-        ]);
+        const [success] = ackEvents[1].getAttributesFrom([EventAttribute.ATTRIBUTE_KEY.SUCCESS])
 
-        return success !== undefined;
-      });
-      await this.updateOriginSendStatus(
-        acksSuccess,
-        IbcIcs20.STATUS_TYPE.ACK_SUCCESS,
-        trx
-      );
+        return success !== undefined
+      })
+      await this.updateOriginSendStatus(acksSuccess, IbcIcs20.STATUS_TYPE.ACK_SUCCESS, trx)
       // update error ack status for origin send ics20
       const acksError = ics20Acks.filter((ack) => {
-        const ackEvents = ack.message.events;
+        const ackEvents = ack.message.events
         if (ackEvents.length !== 2) {
-          throw Error(`Ack ibc hasn't emmitted enough events: ${ack.id}`);
+          throw Error(`Ack ibc hasn't emmitted enough events: ${ack.id}`)
         }
-        const [success] = ackEvents[1].getAttributesFrom([
-          EventAttribute.ATTRIBUTE_KEY.SUCCESS,
-        ]);
-        return success === undefined;
-      });
-      await this.updateOriginSendStatus(
-        acksError,
-        IbcIcs20.STATUS_TYPE.ACK_ERROR,
-        trx
-      );
+        const [success] = ackEvents[1].getAttributesFrom([EventAttribute.ATTRIBUTE_KEY.SUCCESS])
+        return success === undefined
+      })
+      await this.updateOriginSendStatus(acksError, IbcIcs20.STATUS_TYPE.ACK_ERROR, trx)
     }
   }
 
-  async handleIcs20Timeout(
-    startHeight: number,
-    endHeight: number,
-    trx: Knex.Transaction
-  ) {
+  async handleIcs20Timeout(startHeight: number, endHeight: number, trx: Knex.Transaction) {
     const ics20Timeouts = await IbcMessage.query()
       .joinRelated('message.transaction')
       .modifiers({
         selectIcs20Event(builder) {
-          builder.where('type', IbcIcs20.EVENT_TYPE.TIMEOUT);
+          builder.where('type', IbcIcs20.EVENT_TYPE.TIMEOUT)
         },
       })
       .where('src_port_id', IbcMessage.PORTS.ICS20)
@@ -289,34 +229,21 @@ export default class CrawlIBCIcs20Service extends BullableService {
       .andWhere('message:transaction.height', '<=', endHeight)
       .orderBy('message.id')
       .select('message:transaction.timestamp', 'ibc_message.sequence_key')
-      .transacting(trx);
+      .transacting(trx)
     if (ics20Timeouts.length > 0) {
-      await this.updateOriginSendStatus(
-        ics20Timeouts,
-        IbcIcs20.STATUS_TYPE.TIMEOUT,
-        trx
-      );
+      await this.updateOriginSendStatus(ics20Timeouts, IbcIcs20.STATUS_TYPE.TIMEOUT, trx)
     }
   }
 
-  parseDenom(
-    denom: string,
-    isSource: boolean,
-    dstPort: string,
-    dstChannel: string
-  ) {
+  parseDenom(denom: string, isSource: boolean, dstPort: string, dstChannel: string) {
     if (isSource) {
-      const tokens2 = denom.split('/').slice(2);
-      return tokens2.join('/');
+      const tokens2 = denom.split('/').slice(2)
+      return tokens2.join('/')
     }
-    return `${dstPort}/${dstChannel}/${denom}`;
+    return `${dstPort}/${dstChannel}/${denom}`
   }
 
-  async updateOriginSendStatus(
-    msgs: IbcMessage[],
-    type: string,
-    trx: Knex.Transaction
-  ) {
+  async updateOriginSendStatus(msgs: IbcMessage[], type: string, trx: Knex.Transaction) {
     if (msgs.length > 0) {
       const ibcIcs20sKeyBy = _.keyBy(
         await IbcIcs20.query()
@@ -327,17 +254,12 @@ export default class CrawlIBCIcs20Service extends BullableService {
           )
           .andWhere('type', IbcMessage.EVENT_TYPE.SEND_PACKET),
         'sequence_key'
-      );
+      )
       msgs.forEach((msg) => {
-        ibcIcs20sKeyBy[msg.sequence_key].finish_time = msg.timestamp;
-        ibcIcs20sKeyBy[msg.sequence_key].status = type;
-      });
-      await IbcIcs20.query()
-        .transacting(trx)
-        .insert(Object.values(ibcIcs20sKeyBy))
-        .onConflict('id')
-        .merge();
+        ibcIcs20sKeyBy[msg.sequence_key].finish_time = msg.timestamp
+        ibcIcs20sKeyBy[msg.sequence_key].status = type
+      })
+      await IbcIcs20.query().transacting(trx).insert(Object.values(ibcIcs20sKeyBy)).onConflict('id').merge()
     }
   }
-
 }

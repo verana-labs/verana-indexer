@@ -1,6 +1,6 @@
-import { BeforeAll, Describe, Test } from '@jest-decorated/core';
-import { BlockCheckpoint } from '../../../src/models';
-import knex from '../../../src/common/utils/db_connection';
+import { BeforeAll, Describe, Test } from '@jest-decorated/core'
+import knex from '../../../src/common/utils/db_connection'
+import { BlockCheckpoint } from '../../../src/models'
 
 @Describe('Test checkpoint model')
 export default class CW20HoldersTest {
@@ -25,30 +25,25 @@ export default class CW20HoldersTest {
       job_name: 'job5',
       height: 110,
     },
-  ];
+  ]
 
   @BeforeAll()
   async initSuite() {
-    await knex.raw('TRUNCATE TABLE block_checkpoint RESTART IDENTITY CASCADE');
+    await knex.raw('TRUNCATE TABLE block_checkpoint RESTART IDENTITY CASCADE')
     await BlockCheckpoint.query().insert(
-      this.blockCheckpoint.map((blockCheckpoint) =>
-        BlockCheckpoint.fromJson(blockCheckpoint)
-      )
-    );
+      this.blockCheckpoint.map((blockCheckpoint) => BlockCheckpoint.fromJson(blockCheckpoint))
+    )
   }
 
   @Test('get Checkpoint')
   public async testQuery() {
-    const result = await BlockCheckpoint.getCheckpoint(
-      this.blockCheckpoint[0].job_name,
-      [
-        this.blockCheckpoint[1].job_name,
-        this.blockCheckpoint[2].job_name,
-        this.blockCheckpoint[3].job_name,
-        this.blockCheckpoint[4].job_name,
-      ]
-    );
-    expect(result[0]).toEqual(this.blockCheckpoint[0].height);
-    expect(result[1]).toEqual(this.blockCheckpoint[3].height);
+    const result = await BlockCheckpoint.getCheckpoint(this.blockCheckpoint[0].job_name, [
+      this.blockCheckpoint[1].job_name,
+      this.blockCheckpoint[2].job_name,
+      this.blockCheckpoint[3].job_name,
+      this.blockCheckpoint[4].job_name,
+    ])
+    expect(result[0]).toEqual(this.blockCheckpoint[0].height)
+    expect(result[1]).toEqual(this.blockCheckpoint[3].height)
   }
 }

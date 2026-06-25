@@ -86,7 +86,6 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -131,3 +130,6 @@ yarn.lock
 # Local indexer artifacts
 genesis.json
 .reindex-checkpoint.json
+# Editor and agent config (not shared)
+.claude/
+.vscode/
