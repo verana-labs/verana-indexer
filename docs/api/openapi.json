@@ -2852,6 +2852,103 @@
         }
       }
     },
+    "/v4/exchange-rate/get": {
+      "get": {
+        "tags": [
+          "Exchange Rate"
+        ],
+        "summary": "Get Exchange Rate",
+        "description": "Retrieve a single Exchange Rate entry by its ID or by the composite asset-pair key.",
+        "operationId": "getExchangeRate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Primary key lookup (conditional)"
+          },
+          {
+            "name": "base_asset_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["TU", "COIN", "FIAT"]
+            },
+            "description": "Base asset type (conditional, part of composite key)"
+          },
+          {
+            "name": "base_asset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Base asset identifier (conditional)"
+          },
+          {
+            "name": "quote_asset_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["TU", "COIN", "FIAT"]
+            },
+            "description": "Quote asset type (conditional)"
+          },
+          {
+            "name": "quote_asset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Quote asset identifier (conditional)"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter on state (optional)"
+          },
+          {
+            "name": "expire_ts",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Return only if expires > expire_ts (optional)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exchange rate found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "exchange_rate": {
+                      "$ref": "#/components/schemas/ExchangeRate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/exchange-rate/price": {
       "get": {
         "tags": [
@@ -6702,6 +6799,23 @@
           "verifiedCredentials": { "type": "integer", "minimum": 0 }
         }
       },
+      "ExchangeRate": {
+        "type": "object",
+        "required": ["id", "base_asset_type", "base_asset", "quote_asset_type", "quote_asset", "rate", "rate_scale", "expires", "state"],
+        "properties": {
+          "id": { "type": "integer" },
+          "base_asset_type": { "type": "string", "enum": ["TU", "COIN", "FIAT"] },
+          "base_asset": { "type": "string" },
+          "quote_asset_type": { "type": "string", "enum": ["TU", "COIN", "FIAT"] },
+          "quote_asset": { "type": "string" },
+          "rate": { "type": "string" },
+          "rate_scale": { "type": "integer" },
+          "validity_duration": { "type": "integer" },
+          "updated": { "type": "string", "format": "date-time" },
+          "expires": { "type": "string", "format": "date-time" },
+          "state": { "type": "boolean" }
+        }
+      },
       "ResolutionResponse": {
         "type": "object",
         "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
@@ -6787,7 +6901,7 @@
     },
     {
       "name": "Exchange Rate",
-      "description": "Exchange Rate oracle queries (verana.xr.v1)."
+      "description": "Exchange Rate oracle queries (verana.xr.v1)"
     },
     {
       "name": "Statistics",
