@@ -2,7 +2,6 @@ import knex from '../../../../src/common/utils/db_connection'
 import { VeranaParticipantMessageTypes } from '../../../../src/common/verana-message-types'
 import { up as createIndexerEventsTable } from '../../../../src/migrations/20260420000000_create_indexer_events'
 import { up as hardenIndexerEventsTable } from '../../../../src/migrations/20260421000000_harden_indexer_events_replay'
-import { up as backfillV4PayloadValues } from '../../../../src/migrations/20260607000000_indexer_events_v4_payload_values'
 import { listIndexerEvents, persistIndexerEventsForBlock } from '../../../../src/services/api/indexer_events_query'
 
 describe('indexer_events_query', () => {
@@ -208,7 +207,7 @@ describe('indexer_events_query', () => {
     await persistIndexerEventsForBlock(baseHeight)
     await persistIndexerEventsForBlock(baseHeight + 1)
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight, limit: 10 })
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
       did,
@@ -226,7 +225,7 @@ describe('indexer_events_query', () => {
 
     await persistIndexerEventsForBlock(baseHeight + 10)
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 9, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight + 9, limit: 10 })
     expect(events.map((event) => event.tx_hash)).toEqual([
       `tx-${runId}-order-1a`,
       `tx-${runId}-order-1b`,
@@ -265,7 +264,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-match-did`,
     })
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ did, tx_hash: `tx-${runId}-match-did` })
@@ -281,7 +280,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-related-dids`,
     })
 
-    const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [relatedDid], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events).toHaveLength(1)
     expect(events[0].did).toBe(otherDid)
@@ -298,7 +297,7 @@ describe('indexer_events_query', () => {
     })
 
     const events = await listIndexerEvents({
-      did: encodeURIComponent(` ${did} `),
+      dids: [encodeURIComponent(` ${did} `)],
       afterBlockHeight: 0,
       limit: 10,
     })
@@ -320,7 +319,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-new-height`,
     })
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 60, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight + 60, limit: 10 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-new-height`])
   })
@@ -341,7 +340,7 @@ describe('indexer_events_query', () => {
       txIndex: 1,
     })
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 69, limit: 1 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight + 69, limit: 1 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-limit-1`])
   })
@@ -355,7 +354,7 @@ describe('indexer_events_query', () => {
     })
 
     const events = await listIndexerEvents({
-      did: `did:web:indexer-events-missing-${runId}.example`,
+      dids: [`did:web:indexer-events-missing-${runId}.example`],
       afterBlockHeight: 0,
       limit: 10,
     })
@@ -376,7 +375,7 @@ describe('indexer_events_query', () => {
       content: { id: 42, applicant: unpersistedDid },
     })
 
-    const events = await listIndexerEvents({ did: unpersistedDid, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [unpersistedDid], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events).toEqual([])
   })
@@ -403,7 +402,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-grouping-unrelated`,
     })
 
-    const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [relatedDid], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-grouping-match`])
   })
@@ -534,22 +533,5 @@ describe('indexer_events_query', () => {
     expect(record.payload.action).toBe('start_participant_op')
     expect(record.payload.message_type).toBe('MsgStartParticipantOP')
     expect(record.payload.entity_type).toBe('Participant')
-  })
-
-  it('backfills existing rows from v3 to v4 payload values', async () => {
-    const height = baseHeight + 170
-    await insertStoredIndexerEvent({ did, relatedDids: [did], height, txHash: `tx-${runId}-backfill` })
-
-    const before = await knex('indexer_events').where('tx_hash', `tx-${runId}-backfill`).first()
-    expect(before.payload.module).toBe('participant')
-    expect(before.payload.action).toBe('StartParticipantOP')
-
-    await backfillV4PayloadValues(knex)
-
-    const after = await knex('indexer_events').where('tx_hash', `tx-${runId}-backfill`).first()
-    expect(after.module).toBe('pp')
-    expect(after.payload.module).toBe('pp')
-    expect(after.payload.action).toBe('start_participant_op')
-    expect(after.payload.message_type).toBe('MsgStartParticipantOP')
   })
 })

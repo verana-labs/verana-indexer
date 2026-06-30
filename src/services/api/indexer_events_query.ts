@@ -1,3 +1,4 @@
+import _ from 'lodash'
 import knex from '../../common/utils/db_connection'
 import { extractController } from '../../common/utils/extract_controller'
 import {
@@ -16,7 +17,6 @@ import {
   readFirstPositiveInteger,
   toProtoModule,
   toShortMessageType,
-  toSnakeCaseAction,
   uniqueNormalizedDids,
 } from './indexer_event_utils'
 
@@ -485,7 +485,7 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
     timestamp: event.timestamp,
     payload: {
       module,
-      action: toSnakeCaseAction(event.action),
+      action: _.snakeCase(event.action),
       message_type: toShortMessageType(event.messageType),
       tx_index: event.txIndex,
       message_index: event.messageIndex,
@@ -628,15 +628,14 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
 export async function listIndexerEvents(args: {
   afterBlockHeight?: number
   blockHeight?: number
-  did?: string
   dids?: string[]
   corporationId?: number
   ids?: number[]
   limit?: number
 }): Promise<IndexerEventRecord[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 100))))
-  const normalizedDids = uniqueNormalizedDids([...(args.dids ?? []), ...(args.did != null ? [args.did] : [])])
-  const didFilterRequested = (args.dids?.length ?? 0) > 0 || args.did != null
+  const normalizedDids = uniqueNormalizedDids(args.dids ?? [])
+  const didFilterRequested = (args.dids?.length ?? 0) > 0
   const corporationId = toCorporationId(args.corporationId)
   const query = knex('indexer_events as ie')
     .select(

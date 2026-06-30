@@ -56,7 +56,6 @@ export default class IndexerEventsService extends BaseService {
   @Action({
     name: 'listEvents',
     params: {
-      did: { type: 'string', trim: true, optional: true, pattern: /^did:[a-z0-9]+:.+/i },
       dids: { type: 'string', trim: true, optional: true },
       corporation_id: { type: 'number', integer: true, positive: true, optional: true, convert: true },
       after_block_height: { type: 'number', integer: true, min: 0, optional: true, convert: true },
@@ -65,7 +64,6 @@ export default class IndexerEventsService extends BaseService {
   })
   public async listEvents(
     ctx: Context<{
-      did?: string
       dids?: string
       corporation_id?: number
       after_block_height?: number
@@ -76,7 +74,6 @@ export default class IndexerEventsService extends BaseService {
     try {
       const events = await listIndexerEvents({
         afterBlockHeight,
-        did: ctx.params.did,
         dids: parseCsvList(ctx.params.dids),
         corporationId: ctx.params.corporation_id,
         limit: ctx.params.limit,
