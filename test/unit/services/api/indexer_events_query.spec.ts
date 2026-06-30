@@ -2,6 +2,7 @@ import knex from "../../../../src/common/utils/db_connection";
 import { VeranaParticipantMessageTypes } from "../../../../src/common/verana-message-types";
 import { up as createIndexerEventsTable } from "../../../../src/migrations/20260420000000_create_indexer_events";
 import { up as hardenIndexerEventsTable } from "../../../../src/migrations/20260421000000_harden_indexer_events_replay";
+import { up as backfillV4PayloadValues } from "../../../../src/migrations/20260607000000_indexer_events_v4_payload_values";
 import { listIndexerEvents, persistIndexerEventsForBlock } from "../../../../src/services/api/indexer_events_query";
 
 describe("indexer_events_query", () => {
@@ -151,6 +152,8 @@ describe("indexer_events_query", () => {
     txHash: string;
     txIndex?: number;
     messageIndex?: number;
+    corporationId?: number;
+    relatedCorporationIds?: number[];
   }): Promise<void> {
     txHashes.push(args.txHash);
     await knex("indexer_events").insert({
@@ -175,6 +178,8 @@ describe("indexer_events_query", () => {
         related_dids: args.relatedDids,
         entity_type: "Participant",
         entity_id: "42",
+        ...(args.corporationId !== undefined ? { corporation_id: args.corporationId } : {}),
+        ...(args.relatedCorporationIds ? { related_corporation_ids: args.relatedCorporationIds } : {}),
       },
     });
   }
@@ -401,5 +406,112 @@ describe("indexer_events_query", () => {
     const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 });
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-grouping-match`]);
+  });
+
+  it("matches events by corporation_id via payload.corporation_id", async () => {
+    const height = baseHeight + 110;
+    const corpId = 4242;
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-corp-scalar`,
+      corporationId: corpId,
+    });
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-corp-other`,
+      txIndex: 1,
+      corporationId: corpId + 1,
+    });
+
+    const events = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-corp-scalar`]);
+  });
+
+  it("matches events by corporation_id via payload.related_corporation_ids", async () => {
+    const height = baseHeight + 120;
+    const corpId = 5252;
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-corp-related`,
+      relatedCorporationIds: [9999, corpId],
+    });
+
+    const events = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-corp-related`]);
+  });
+
+  it("matches events by any DID in the dids list", async () => {
+    const height = baseHeight + 130;
+    const didA = `did:web:indexer-events-list-a-${runId}.example`;
+    const didB = `did:web:indexer-events-list-b-${runId}.example`;
+    await insertStoredIndexerEvent({ did: didA, relatedDids: [didA], height, txHash: `tx-${runId}-dids-a` });
+    await insertStoredIndexerEvent({ did: didB, relatedDids: [didB], height, txHash: `tx-${runId}-dids-b`, txIndex: 1 });
+    await insertStoredIndexerEvent({ did: otherDid, relatedDids: [otherDid], height, txHash: `tx-${runId}-dids-c`, txIndex: 2 });
+
+    const events = await listIndexerEvents({ dids: [didA, didB], afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-dids-a`, `tx-${runId}-dids-b`]);
+  });
+
+  it("intersects dids AND corporation_id when both are present", async () => {
+    const height = baseHeight + 140;
+    const corpId = 6363;
+    const targetDid = `did:web:indexer-events-both-${runId}.example`;
+    await insertStoredIndexerEvent({ did: targetDid, relatedDids: [targetDid], height, txHash: `tx-${runId}-both-match`, corporationId: corpId });
+    await insertStoredIndexerEvent({ did: targetDid, relatedDids: [targetDid], height, txHash: `tx-${runId}-did-only`, txIndex: 1, corporationId: corpId + 1 });
+    await insertStoredIndexerEvent({ did: otherDid, relatedDids: [otherDid], height, txHash: `tx-${runId}-corp-only`, txIndex: 2, corporationId: corpId });
+
+    const events = await listIndexerEvents({ dids: [targetDid], corporationId: corpId, afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-both-match`]);
+  });
+
+  it("returns all events (wildcard) when neither dids nor corporation_id is given", async () => {
+    const height = baseHeight + 150;
+    await insertStoredIndexerEvent({ did, relatedDids: [did], height, txHash: `tx-${runId}-wild-1` });
+    await insertStoredIndexerEvent({ did: otherDid, relatedDids: [], height, txHash: `tx-${runId}-wild-2`, txIndex: 1, corporationId: 7777 });
+
+    const events = await listIndexerEvents({ afterBlockHeight: height - 1, limit: 10 });
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-wild-1`, `tx-${runId}-wild-2`]);
+  });
+
+  it("persists v4 payload values while keeping event_type as the Cosmos action name", async () => {
+    const height = baseHeight + 160;
+    await insertBlock(height);
+    await insertTxMessage({ height, txIndex: 0, messageIndex: 0, hash: `tx-${runId}-v4-values` });
+
+    const [record] = await persistIndexerEventsForBlock(height);
+
+    expect(record.event_type).toBe("StartParticipantOP");
+    expect(record.payload.module).toBe("pp");
+    expect(record.payload.action).toBe("start_participant_op");
+    expect(record.payload.message_type).toBe("MsgStartParticipantOP");
+    expect(record.payload.entity_type).toBe("Participant");
+  });
+
+  it("backfills existing rows from v3 to v4 payload values", async () => {
+    const height = baseHeight + 170;
+    await insertStoredIndexerEvent({ did, relatedDids: [did], height, txHash: `tx-${runId}-backfill` });
+
+    const before = await knex("indexer_events").where("tx_hash", `tx-${runId}-backfill`).first();
+    expect(before.payload.module).toBe("participant");
+    expect(before.payload.action).toBe("StartParticipantOP");
+
+    await backfillV4PayloadValues(knex);
+
+    const after = await knex("indexer_events").where("tx_hash", `tx-${runId}-backfill`).first();
+    expect(after.module).toBe("pp");
+    expect(after.payload.module).toBe("pp");
+    expect(after.payload.action).toBe("start_participant_op");
+    expect(after.payload.message_type).toBe("MsgStartParticipantOP");
   });
 });

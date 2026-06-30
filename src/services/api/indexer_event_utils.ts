@@ -82,3 +82,28 @@ export function readFirstPositiveInteger(source: unknown, keys: readonly string[
   }
   return null;
 }
+
+const MODULE_TO_PROTO: Record<string, string> = {
+  ecosystem: "ec",
+  "credential-schema": "cs",
+  participant: "pp",
+  "digital-identity": "di",
+  delegation: "de",
+  corporation: "co",
+};
+
+export function toProtoModule(module: string): string {
+  return MODULE_TO_PROTO[module] ?? module;
+}
+
+export function toSnakeCaseAction(action: string): string {
+  return action
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
+
+export function toShortMessageType(messageType: string): string {
+  const lastDot = messageType.lastIndexOf(".");
+  return lastDot >= 0 ? messageType.slice(lastDot + 1) : messageType;
+}

@@ -14,6 +14,9 @@ import {
   firstNormalizedDid,
   normalizeDid,
   readFirstPositiveInteger,
+  toProtoModule,
+  toShortMessageType,
+  toSnakeCaseAction,
   uniqueNormalizedDids,
 } from "./indexer_event_utils";
 
@@ -267,10 +270,6 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   return undefined;
 }
 
-function normalizeRequestedDid(value: unknown): string | undefined {
-  return normalizeDid(value);
-}
-
 function toCorporationId(value: unknown): number | undefined {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : undefined;
@@ -472,6 +471,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
 }
 
 function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
+  const module = toProtoModule(event.module);
   return {
     event_type: event.action,
     did: event.did,
@@ -480,14 +480,14 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
     tx_index: event.txIndex,
     message_index: event.messageIndex,
     message_type: event.messageType,
-    module: event.module,
+    module,
     entity_type: event.entityType ?? null,
     entity_id: event.entityId ?? null,
     timestamp: event.timestamp,
     payload: {
-      module: event.module,
-      action: event.action,
-      message_type: event.messageType,
+      module,
+      action: toSnakeCaseAction(event.action),
+      message_type: toShortMessageType(event.messageType),
       tx_index: event.txIndex,
       message_index: event.messageIndex,
       sender: event.sender,
@@ -626,11 +626,15 @@ export async function listIndexerEvents(args: {
   afterBlockHeight?: number;
   blockHeight?: number;
   did?: string;
+  dids?: string[];
+  corporationId?: number;
   ids?: number[];
   limit?: number;
 }): Promise<IndexerEventRecord[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(Number(args.limit ?? 100))));
-  const normalizedDid = normalizeRequestedDid(args.did);
+  const normalizedDids = uniqueNormalizedDids([...(args.dids ?? []), ...(args.did != null ? [args.did] : [])]);
+  const didFilterRequested = (args.dids?.length ?? 0) > 0 || args.did != null;
+  const corporationId = toCorporationId(args.corporationId);
   const query = knex("indexer_events as ie")
     .select(
       "ie.id",
@@ -653,15 +657,29 @@ export async function listIndexerEvents(args: {
     .orderBy("ie.id", "asc")
     .limit(limit);
 
-  if (args.ids) query.whereIn("ie.id", args.ids);
-  if (args.did && !normalizedDid) return [];
-  if (normalizedDid && !args.ids) {
-    query.andWhere(function () {
-      this
-        .where("ie.did", normalizedDid)
-        .orWhereRaw("(ie.payload -> 'related_dids') \\? ?", [normalizedDid])
-        .orWhereRaw("(ie.payload -> 'relatedDids') \\? ?", [normalizedDid]);
-    });
+  if (args.ids) {
+    query.whereIn("ie.id", args.ids);
+  } else {
+    if (didFilterRequested && normalizedDids.length === 0) return [];
+    if (normalizedDids.length > 0) {
+      query.andWhere(function () {
+        this.whereIn("ie.did", normalizedDids);
+        for (const requestedDid of normalizedDids) {
+          this
+            .orWhereRaw("(ie.payload -> 'related_dids') \\? ?", [requestedDid])
+            .orWhereRaw("(ie.payload -> 'relatedDids') \\? ?", [requestedDid]);
+        }
+      });
+    }
+    if (corporationId !== undefined) {
+      query.andWhere(function () {
+        this
+          .whereRaw("(ie.payload ->> 'corporation_id') = ?", [String(corporationId)])
+          .orWhereRaw("(ie.payload ->> 'corporationId') = ?", [String(corporationId)])
+          .orWhereRaw("(ie.payload -> 'related_corporation_ids') @> ?::jsonb", [JSON.stringify([corporationId])])
+          .orWhereRaw("(ie.payload -> 'relatedCorporationIds') @> ?::jsonb", [JSON.stringify([corporationId])]);
+      });
+    }
   }
   applyBlockHeightFilter(query, args, "ie.block_height");
 
