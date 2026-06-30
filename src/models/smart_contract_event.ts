@@ -1,31 +1,31 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { SmartContract } from './smart_contract';
-import { Event } from './event';
-import { SmartContractEventAttribute } from './smart_contract_event_attribute';
-import { Transaction } from './transaction';
-import { TransactionMessage } from './transaction_message';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { Event } from './event'
+import { SmartContract } from './smart_contract'
+import { SmartContractEventAttribute } from './smart_contract_event_attribute'
+import { Transaction } from './transaction'
+import { TransactionMessage } from './transaction_message'
 
 export class SmartContractEvent extends BaseModel {
-  [relation: string]: any;
+  [relation: string]: any
 
-  attributes!: SmartContractEventAttribute;
+  attributes!: SmartContractEventAttribute
 
-  id!: number;
+  id!: number
 
-  smart_contract_id!: number;
+  smart_contract_id!: number
 
-  action?: string;
+  action?: string
 
-  event_id!: string;
+  event_id!: string
 
-  index!: number;
+  index!: number
 
-  tx_id!: number;
+  tx_id!: number
 
   static get tableName() {
-    return 'smart_contract_event';
+    return 'smart_contract_event'
   }
 
   static get jsonSchema() {
@@ -37,7 +37,7 @@ export class SmartContractEvent extends BaseModel {
         index: { type: 'number' },
         tx_id: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -90,6 +90,6 @@ export class SmartContractEvent extends BaseModel {
           },
         },
       },
-    };
+    }
   }
 }

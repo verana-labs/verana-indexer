@@ -1,55 +1,46 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { IbcMessage } from './ibc_message';
-import { IbcChannel } from './ibc_channel';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { IbcChannel } from './ibc_channel'
+import { IbcMessage } from './ibc_message'
 
 export class IbcIcs20 extends BaseModel {
-  id!: number;
+  id!: number
 
-  ibc_message_id!: number;
+  ibc_message_id!: number
 
-  sender!: string;
+  sender!: string
 
-  receiver!: string;
+  receiver!: string
 
-  amount!: string;
+  amount!: string
 
-  denom!: string;
+  denom!: string
 
-  status!: string;
+  status!: string
 
-  channel_id!: string;
+  channel_id!: string
 
-  ibc_message!: IbcMessage;
+  ibc_message!: IbcMessage
 
-  sequence_key!: string;
+  sequence_key!: string
 
-  type!: string;
+  type!: string
 
-  memo!: string;
+  memo!: string
 
-  start_time!: Date;
+  start_time!: Date
 
-  finish_time!: Date;
+  finish_time!: Date
 
   static get tableName() {
-    return 'ibc_ics20';
+    return 'ibc_ics20'
   }
 
   static get jsonSchema() {
     return {
       type: 'object',
-      required: [
-        'receiver',
-        'amount',
-        'denom',
-        'ibc_message_id',
-        'channel_id',
-        'sequence_key',
-        'status',
-        'type',
-      ],
+      required: ['receiver', 'amount', 'denom', 'ibc_message_id', 'channel_id', 'sequence_key', 'status', 'type'],
       properties: {
         receiver: { type: 'string' },
         denom: { type: 'string' },
@@ -60,7 +51,7 @@ export class IbcIcs20 extends BaseModel {
         status: { type: 'string' },
         type: { type: 'string' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -81,19 +72,19 @@ export class IbcIcs20 extends BaseModel {
           to: 'ibc_channel.channel_id',
         },
       },
-    };
+    }
   }
 
   static EVENT_TYPE = {
     TIMEOUT: 'timeout',
     FUNGIBLE_TOKEN_PACKET: 'fungible_token_packet',
     DENOM_TRACE: 'denomination_trace',
-  };
+  }
 
   static STATUS_TYPE = {
     TIMEOUT: 'timeout',
     ACK_ERROR: 'ack_error',
     ACK_SUCCESS: 'ack_success',
     ONGOING: 'ongoing',
-  };
+  }
 }

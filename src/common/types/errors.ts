@@ -1,4 +1,4 @@
-import { constants } from 'http2';
+import { constants } from 'http2'
 
 export enum ErrorMessage {
   SUCCESSFUL = 'Successful',
@@ -14,4 +14,4 @@ export const ErrorCode = {
   WRONG: constants.HTTP_STATUS_UNPROCESSABLE_ENTITY,
   BAD_REQUEST: constants.HTTP_STATUS_BAD_REQUEST,
   NOT_ACTIVE: constants.HTTP_STATUS_FORBIDDEN,
-};
+}

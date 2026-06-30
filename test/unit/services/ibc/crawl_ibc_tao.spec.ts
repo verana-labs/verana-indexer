@@ -1,23 +1,14 @@
-import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
-import { ServiceBroker } from 'moleculer';
-import knex from '../../../../src/common/utils/db_connection';
-import {
-  Block,
-  Event,
-  IbcChannel,
-  IbcClient,
-  IbcConnection,
-  Transaction,
-} from '../../../../src/models';
-import CrawlIbcTaoService from '../../../../src/services/ibc/crawl_ibc_tao.service';
+import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core'
+import { ServiceBroker } from 'moleculer'
+import knex from '../../../../src/common/utils/db_connection'
+import { Block, Event, IbcChannel, IbcClient, IbcConnection, Transaction } from '../../../../src/models'
+import CrawlIbcTaoService from '../../../../src/services/ibc/crawl_ibc_tao.service'
 
 @Describe('Test crawl ibc service')
 export default class CrawlIbcTest {
-  broker = new ServiceBroker({ logger: false });
+  broker = new ServiceBroker({ logger: false })
 
-  crawlIbcTaoSerivce = this.broker.createService(
-    CrawlIbcTaoService
-  ) as CrawlIbcTaoService;
+  crawlIbcTaoSerivce = this.broker.createService(CrawlIbcTaoService) as CrawlIbcTaoService
 
   block: Block = Block.fromJson({
     height: 1300000,
@@ -25,7 +16,7 @@ export default class CrawlIbcTest {
     time: '2023-01-12T01:53:57.216Z',
     proposer_address: 'auraomd;cvpio3j4eg',
     data: {},
-  });
+  })
 
   transaction: Transaction = Transaction.fromJson({
     height: this.block.height,
@@ -43,20 +34,20 @@ export default class CrawlIbcTest {
         logs: [],
       },
     },
-  });
+  })
 
   @BeforeAll()
   async initSuite() {
-    this.crawlIbcTaoSerivce.getQueueManager().stopAll();
+    this.crawlIbcTaoSerivce.getQueueManager().stopAll()
     await knex.raw(
       'TRUNCATE TABLE block, block_signature, transaction, event, event_attribute, ibc_client RESTART IDENTITY CASCADE'
-    );
-    await Block.query().insert(this.block);
+    )
+    await Block.query().insert(this.block)
   }
 
   @AfterAll()
   async tearDown() {
-    await this.broker.stop();
+    await this.broker.stop()
   }
 
   @Test('Test handleNewIbcClient')
@@ -152,25 +143,19 @@ export default class CrawlIbcTest {
             },
             '@type': '/ibc.lightclients.tendermint.v1.ConsensusState',
             timestamp: '2022-12-01T07:22:43.523Z',
-            next_validators_hash:
-              'RY9Nf/qtdDMVQK7LMjoVgrS1CkZaEVj02CDlkdgzutM=',
+            next_validators_hash: 'RY9Nf/qtdDMVQK7LMjoVgrS1CkZaEVj02CDlkdgzutM=',
           },
         },
-      });
-      await this.crawlIbcTaoSerivce.handleNewIbcClient([events], trx);
-      const newClient = await IbcClient.query()
-        .transacting(trx)
-        .first()
-        .throwIfNotFound();
-      expect(newClient.client_id).toEqual(events.attributes[0].value);
-      expect(newClient.client_type).toEqual(events.attributes[1].value);
-      expect(newClient.client_state).toEqual(events.content.client_state);
-      expect(newClient.consensus_state).toEqual(events.content.consensus_state);
-      expect(newClient.counterparty_chain_id).toEqual(
-        events.content.client_state.chain_id
-      );
+      })
+      await this.crawlIbcTaoSerivce.handleNewIbcClient([events], trx)
+      const newClient = await IbcClient.query().transacting(trx).first().throwIfNotFound()
+      expect(newClient.client_id).toEqual(events.attributes[0].value)
+      expect(newClient.client_type).toEqual(events.attributes[1].value)
+      expect(newClient.client_state).toEqual(events.content.client_state)
+      expect(newClient.consensus_state).toEqual(events.content.consensus_state)
+      expect(newClient.counterparty_chain_id).toEqual(events.content.client_state.chain_id)
       // await trx.rollback();
-    });
+    })
   }
 
   @Test('Test handleNewIbcConnection')
@@ -286,20 +271,13 @@ export default class CrawlIbcTest {
           },
           counterparty_connection_id: 'connection-27',
         },
-      });
-      await this.crawlIbcTaoSerivce.handleNewIbcConnection([events], trx);
-      const newConnection = await IbcConnection.query()
-        .transacting(trx)
-        .first()
-        .throwIfNotFound();
-      expect(newConnection.connection_id).toEqual(events.attributes[0].value);
-      expect(newConnection.counterparty_client_id).toEqual(
-        events.attributes[2].value
-      );
-      expect(newConnection.counterparty_connection_id).toEqual(
-        events.attributes[3].value
-      );
-    });
+      })
+      await this.crawlIbcTaoSerivce.handleNewIbcConnection([events], trx)
+      const newConnection = await IbcConnection.query().transacting(trx).first().throwIfNotFound()
+      expect(newConnection.connection_id).toEqual(events.attributes[0].value)
+      expect(newConnection.counterparty_client_id).toEqual(events.attributes[2].value)
+      expect(newConnection.counterparty_connection_id).toEqual(events.attributes[3].value)
+    })
   }
 
   @Test('Test handleNewIbcChannel')
@@ -309,8 +287,7 @@ export default class CrawlIbcTest {
         type: Event.EVENT_TYPE.CHANNEL_OPEN_ACK,
         attributes: [
           {
-            value:
-              'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
+            value: 'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
             key: 'port_id',
             event_id: '1',
           },
@@ -320,8 +297,7 @@ export default class CrawlIbcTest {
             event_id: '1',
           },
           {
-            value:
-              'wasm.nois1xwde9rzqk5u36fke0r9ddmtwvh43n4fv53c5vc462wz8xlnqjhls6d90xc',
+            value: 'wasm.nois1xwde9rzqk5u36fke0r9ddmtwvh43n4fv53c5vc462wz8xlnqjhls6d90xc',
             key: 'counterparty_port_id',
             event_id: '1',
           },
@@ -339,8 +315,7 @@ export default class CrawlIbcTest {
         content: {
           '@type': '/ibc.core.channel.v1.MsgChannelOpenAck',
           signer: 'aura1teguu4gyk002q74rdw8xk6wxz663d3e0da44vv',
-          port_id:
-            'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
+          port_id: 'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
           proof_try:
             'CqsJCqgJCmpjaGFubmVsRW5kcy9wb3J0cy93YXNtLm5vaXMxeHdkZTlyenFrNXUzNmZrZTByOWRkbXR3dmg0M240ZnY1M2M1dmM0NjJ3ejh4bG5xamhsczZkOTB4Yy9jaGFubmVscy9jaGFubmVsLTQ0EnAIAhABGlIKRHdhc20uYXVyYTFzNDJtcTV4ejVldDNmaHMwY3h2ZjhkczZ2bXk1dTZkMjd1MjN5ZHEyOHIyaGdtZWRudzVzM3U3a2pmEgpjaGFubmVsLTc5Ig1jb25uZWN0aW9uLTIwKgdub2lzLXY3Gg4IARgBIAEqBgACqNbwAyIsCAESKAIEqNbwAyApVTv4ZHdG03r0dv2FLRgljarFXhPCzLxe5U794Dxg7iAiLAgBEigEBqjW8AMgbTQCakVAjVARrysKAAPM1e1tiTHofZa81TN6VdrZryMgIiwIARIoBgqo1vADIH+PzOA8CN5w3mj/yRWJffIKzoh1l9E7sKZ5XNBpk36XICIuCAESBwgQqNbwAyAaISDJYlIFbAyC1KK1ZZBsZZFdBLoWBTAPcvdp1IOv5E9HLSIuCAESBwowqNbwAyAaISCEaKaAA8yFOHGODccYN+9HuImlZxYWqoTxIN/J8kBiayIsCAESKAxUqNbwAyD3SAJRP1mO4LVWbHvRyD2webWn9TkNbkJZy7jIPzhrMiAiLwgBEggO1AGo1vADIBohICKuXv3N+wd3GBXhJZ27wd4v6vIL8XZUP8OoZE/aOUysIi0IARIpEO4CqNbwAyBgaG7cgNsElUcgrf9Mp2Gmzo0/AsmRHPw5FTwX9Kr0MSAiLQgBEikSqASo1vADIFQDyXDfKzS3OL1ZkYfELpPLhFtz8T5WII7GUvojwrwsICItCAESKRScBqjW8AMgfo0r4iAG6Q26x4Y6zuXHZJc5TgywPhYCp408vX7zDBQgIi0IARIpFtIMqNbwAyDqu2q/0ILlZYXdrphZJmwZtcf8/aHxsqR3dX84m9TTeiAiLQgBEikYgBqo1vADIIPtczfmGBBRreb3CDJB7Wm0ebRH+HR88bBCcXaUupjcICIvCAESCBrAJ6jW8AMgGiEgcpa1SruIq6LeCV4xG7rX2arPRTP/iEbXQ8D5WnWUzwAiLwgBEggc1mGo1vADIBohIDXxpaT6Ugv6U6oOS5S0EDChcoYZW0+my6CUTsXNzvvGIi4IARIqHoqRAajW8AMgBRWQCNEouEeVb1Jgy9Tt+qq891z0wHVNBzVj20RLaGggIi4IARIqItjHAqjW8AMgUvOkgI+dIkIugdSRweG9eleBh/pswvTETxdw6FY4uTwgIjAIARIJJPDCDajW8AMgGiEgyhYnMC8oHxxof8aeyKInF9dJIbxw7e5YkEFV7dhRRWMiLggBEiom8rYSqNbwAyD0JrFmOhwOvx0p9bY869JVWAT2YOnKOMAZ2aBBy0VO/CAiLggBEioosvQZqNbwAyCz9+zU1Wu3buyW7azM+yVxZPfqMxKFHWdwLoOIS5JhYyAiMAgBEgkq9oM/qNbwAyAaISAPNNwvlr7Cghq7eoYfeWqJEKPOMwjXnB66fWb3O1uckQr+AQr7AQoDaWJjEiDfSyEEYUNHoexjzxEoS8ca//0GRWkbX/BhVhlfyDT5zBoJCAEYASABKgEAIicIARIBARog+VbefwQZr0EJzBl04fE3Iwq9K4y59Sd3XuzKGogXDyIiJQgBEiEBL8wLSj1F5rFmu97n7OD0uDc38TFCf3+7Sc+80c3rlPAiJwgBEgEBGiDFznslp7K5oVZJG04oLeQXNU3ws7wFeEH4qB+XS4Q9zyIlCAESIQEtpn507xvLNnr4cRXICIMm+qvT86qeswagi/7S7aB1riInCAESAQEaILASAaS4z/TvmnniGlkXMUOeTYKHWs4RWU6MlCMFBTA3',
           channel_id: 'channel-79',
@@ -351,22 +326,15 @@ export default class CrawlIbcTest {
           counterparty_version: 'nois-v7',
           counterparty_channel_id: 'channel-44',
         },
-      });
-      await this.crawlIbcTaoSerivce.handleNewIbcChannel([events], trx);
-      const newChannel = await IbcChannel.query()
-        .transacting(trx)
-        .first()
-        .throwIfNotFound();
-      expect(newChannel.channel_id).toEqual(events.attributes[1].value);
-      expect(newChannel.counterparty_channel_id).toEqual(
-        events.attributes[3].value
-      );
-      expect(newChannel.counterparty_port_id).toEqual(
-        events.attributes[2].value
-      );
-      expect(newChannel.port_id).toEqual(events.attributes[0].value);
-      expect(newChannel.state).toEqual(IbcChannel.STATUS.OPEN);
-    });
+      })
+      await this.crawlIbcTaoSerivce.handleNewIbcChannel([events], trx)
+      const newChannel = await IbcChannel.query().transacting(trx).first().throwIfNotFound()
+      expect(newChannel.channel_id).toEqual(events.attributes[1].value)
+      expect(newChannel.counterparty_channel_id).toEqual(events.attributes[3].value)
+      expect(newChannel.counterparty_port_id).toEqual(events.attributes[2].value)
+      expect(newChannel.port_id).toEqual(events.attributes[0].value)
+      expect(newChannel.state).toEqual(IbcChannel.STATUS.OPEN)
+    })
   }
 
   @Test('Test handleCloseIbcChannel')
@@ -376,8 +344,7 @@ export default class CrawlIbcTest {
         type: Event.EVENT_TYPE.CHANNEL_CLOSE_CONFIRM,
         attributes: [
           {
-            value:
-              'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
+            value: 'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
             key: 'port_id',
             event_id: '1',
           },
@@ -387,8 +354,7 @@ export default class CrawlIbcTest {
             event_id: '1',
           },
           {
-            value:
-              'wasm.nois1xwde9rzqk5u36fke0r9ddmtwvh43n4fv53c5vc462wz8xlnqjhls6d90xc',
+            value: 'wasm.nois1xwde9rzqk5u36fke0r9ddmtwvh43n4fv53c5vc462wz8xlnqjhls6d90xc',
             key: 'counterparty_port_id',
             event_id: '1',
           },
@@ -406,8 +372,7 @@ export default class CrawlIbcTest {
         content: {
           '@type': '/ibc.core.channel.v1.MsgChannelOpenAck',
           signer: 'aura1teguu4gyk002q74rdw8xk6wxz663d3e0da44vv',
-          port_id:
-            'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
+          port_id: 'wasm.aura1s42mq5xz5et3fhs0cxvf8ds6vmy5u6d27u23ydq28r2hgmednw5s3u7kjf',
           proof_try:
             'CqsJCqgJCmpjaGFubmVsRW5kcy9wb3J0cy93YXNtLm5vaXMxeHdkZTlyenFrNXUzNmZrZTByOWRkbXR3dmg0M240ZnY1M2M1dmM0NjJ3ejh4bG5xamhsczZkOTB4Yy9jaGFubmVscy9jaGFubmVsLTQ0EnAIAhABGlIKRHdhc20uYXVyYTFzNDJtcTV4ejVldDNmaHMwY3h2ZjhkczZ2bXk1dTZkMjd1MjN5ZHEyOHIyaGdtZWRudzVzM3U3a2pmEgpjaGFubmVsLTc5Ig1jb25uZWN0aW9uLTIwKgdub2lzLXY3Gg4IARgBIAEqBgACqNbwAyIsCAESKAIEqNbwAyApVTv4ZHdG03r0dv2FLRgljarFXhPCzLxe5U794Dxg7iAiLAgBEigEBqjW8AMgbTQCakVAjVARrysKAAPM1e1tiTHofZa81TN6VdrZryMgIiwIARIoBgqo1vADIH+PzOA8CN5w3mj/yRWJffIKzoh1l9E7sKZ5XNBpk36XICIuCAESBwgQqNbwAyAaISDJYlIFbAyC1KK1ZZBsZZFdBLoWBTAPcvdp1IOv5E9HLSIuCAESBwowqNbwAyAaISCEaKaAA8yFOHGODccYN+9HuImlZxYWqoTxIN/J8kBiayIsCAESKAxUqNbwAyD3SAJRP1mO4LVWbHvRyD2webWn9TkNbkJZy7jIPzhrMiAiLwgBEggO1AGo1vADIBohICKuXv3N+wd3GBXhJZ27wd4v6vIL8XZUP8OoZE/aOUysIi0IARIpEO4CqNbwAyBgaG7cgNsElUcgrf9Mp2Gmzo0/AsmRHPw5FTwX9Kr0MSAiLQgBEikSqASo1vADIFQDyXDfKzS3OL1ZkYfELpPLhFtz8T5WII7GUvojwrwsICItCAESKRScBqjW8AMgfo0r4iAG6Q26x4Y6zuXHZJc5TgywPhYCp408vX7zDBQgIi0IARIpFtIMqNbwAyDqu2q/0ILlZYXdrphZJmwZtcf8/aHxsqR3dX84m9TTeiAiLQgBEikYgBqo1vADIIPtczfmGBBRreb3CDJB7Wm0ebRH+HR88bBCcXaUupjcICIvCAESCBrAJ6jW8AMgGiEgcpa1SruIq6LeCV4xG7rX2arPRTP/iEbXQ8D5WnWUzwAiLwgBEggc1mGo1vADIBohIDXxpaT6Ugv6U6oOS5S0EDChcoYZW0+my6CUTsXNzvvGIi4IARIqHoqRAajW8AMgBRWQCNEouEeVb1Jgy9Tt+qq891z0wHVNBzVj20RLaGggIi4IARIqItjHAqjW8AMgUvOkgI+dIkIugdSRweG9eleBh/pswvTETxdw6FY4uTwgIjAIARIJJPDCDajW8AMgGiEgyhYnMC8oHxxof8aeyKInF9dJIbxw7e5YkEFV7dhRRWMiLggBEiom8rYSqNbwAyD0JrFmOhwOvx0p9bY869JVWAT2YOnKOMAZ2aBBy0VO/CAiLggBEioosvQZqNbwAyCz9+zU1Wu3buyW7azM+yVxZPfqMxKFHWdwLoOIS5JhYyAiMAgBEgkq9oM/qNbwAyAaISAPNNwvlr7Cghq7eoYfeWqJEKPOMwjXnB66fWb3O1uckQr+AQr7AQoDaWJjEiDfSyEEYUNHoexjzxEoS8ca//0GRWkbX/BhVhlfyDT5zBoJCAEYASABKgEAIicIARIBARog+VbefwQZr0EJzBl04fE3Iwq9K4y59Sd3XuzKGogXDyIiJQgBEiEBL8wLSj1F5rFmu97n7OD0uDc38TFCf3+7Sc+80c3rlPAiJwgBEgEBGiDFznslp7K5oVZJG04oLeQXNU3ws7wFeEH4qB+XS4Q9zyIlCAESIQEtpn507xvLNnr4cRXICIMm+qvT86qeswagi/7S7aB1riInCAESAQEaILASAaS4z/TvmnniGlkXMUOeTYKHWs4RWU6MlCMFBTA3',
           channel_id: 'channel-79',
@@ -418,13 +383,10 @@ export default class CrawlIbcTest {
           counterparty_version: 'nois-v7',
           counterparty_channel_id: 'channel-44',
         },
-      });
-      await this.crawlIbcTaoSerivce.handleCloseIbcChannel([events], trx);
-      const newChannel = await IbcChannel.query()
-        .transacting(trx)
-        .first()
-        .throwIfNotFound();
-      expect(newChannel.state).toEqual(IbcChannel.STATUS.CLOSE);
-    });
+      })
+      await this.crawlIbcTaoSerivce.handleCloseIbcChannel([events], trx)
+      const newChannel = await IbcChannel.query().transacting(trx).first().throwIfNotFound()
+      expect(newChannel.state).toEqual(IbcChannel.STATUS.CLOSE)
+    })
   }
 }

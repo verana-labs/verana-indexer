@@ -1,10 +1,10 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import config from '../../config.json' with { type: 'json' };
-import { Block, Proposal, Vote } from '../../models';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import knex from '../../common/utils/db_connection';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { Block, Proposal, Vote } from '../../models'
 
 @Service({
   name: SERVICE.V1.CountVoteProposalService.key,
@@ -12,7 +12,7 @@ import knex from '../../common/utils/db_connection';
 })
 export default class CountVoteProposalService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
@@ -27,7 +27,7 @@ export default class CountVoteProposalService extends BullableService {
           .join('block_checkpoint', 'block.height', 'block_checkpoint.height')
           .select('block.time')
           .findOne('block_checkpoint.job_name', BULL_JOB_NAME.HANDLE_VOTE_TX)
-      )?.time ?? new Date(Date.now() - 10);
+      )?.time ?? new Date(Date.now() - 10)
 
     const votingProposals = await Proposal.query()
       .where('status', Proposal.STATUS.PROPOSAL_STATUS_VOTING_PERIOD)
@@ -41,54 +41,48 @@ export default class CountVoteProposalService extends BullableService {
           .andWhere('voting_end_time', '<=', latestCheckpointTime)
           .andWhere('vote_counted', false)
       )
-      .select('*');
+      .select('*')
 
-    const chunkSize = config.countVoteProposal.chunkSize || 5000; 
+    const chunkSize = config.countVoteProposal.chunkSize || 5000
     for (let i = 0; i < votingProposals.length; i += chunkSize) {
-      const batch = votingProposals.slice(i, i + chunkSize);
-      
+      const batch = votingProposals.slice(i, i + chunkSize)
+
       await Promise.all(
         batch.map(async (proposal: Proposal) => {
-          const proposalId = proposal.proposal_id;
-          this.logger.info('Count vote for proposal id ', proposalId);
+          const proposalId = proposal.proposal_id
+          this.logger.info('Count vote for proposal id ', proposalId)
 
-          const voteCounted =
-            new Date(proposal.voting_end_time) <= latestCheckpointTime;
+          const voteCounted = new Date(proposal.voting_end_time) <= latestCheckpointTime
 
           await knex.transaction(async (trx) => {
-            const [
-              countVoteYes,
-              countVoteNo,
-              countVoteNoWithVeto,
-              countVoteAbstain,
-              countVoteUnspecified,
-            ] = await Promise.all([
-              Vote.query()
-                .where('proposal_id', proposalId)
-                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_YES)
-                .count()
-                .transacting(trx),
-              Vote.query()
-                .where('proposal_id', proposalId)
-                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO)
-                .count()
-                .transacting(trx),
-              Vote.query()
-                .where('proposal_id', proposalId)
-                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO_WITH_VETO)
-                .count()
-                .transacting(trx),
-              Vote.query()
-                .where('proposal_id', proposalId)
-                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_ABSTAIN)
-                .count()
-                .transacting(trx),
-              Vote.query()
-                .where('proposal_id', proposalId)
-                .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_UNSPECIFIED)
-                .count()
-                .transacting(trx),
-            ]);
+            const [countVoteYes, countVoteNo, countVoteNoWithVeto, countVoteAbstain, countVoteUnspecified] =
+              await Promise.all([
+                Vote.query()
+                  .where('proposal_id', proposalId)
+                  .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_YES)
+                  .count()
+                  .transacting(trx),
+                Vote.query()
+                  .where('proposal_id', proposalId)
+                  .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO)
+                  .count()
+                  .transacting(trx),
+                Vote.query()
+                  .where('proposal_id', proposalId)
+                  .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_NO_WITH_VETO)
+                  .count()
+                  .transacting(trx),
+                Vote.query()
+                  .where('proposal_id', proposalId)
+                  .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_ABSTAIN)
+                  .count()
+                  .transacting(trx),
+                Vote.query()
+                  .where('proposal_id', proposalId)
+                  .andWhere('vote_option', Vote.VOTE_OPTION.VOTE_OPTION_UNSPECIFIED)
+                  .count()
+                  .transacting(trx),
+              ])
 
             await Proposal.query()
               .where('proposal_id', proposalId)
@@ -102,10 +96,10 @@ export default class CountVoteProposalService extends BullableService {
                 },
                 vote_counted: voteCounted,
               })
-              .transacting(trx);
-          });
+              .transacting(trx)
+          })
         })
-      );
+      )
     }
   }
 
@@ -123,8 +117,8 @@ export default class CountVoteProposalService extends BullableService {
           every: config.countVoteProposal.millisecondCrawl,
         },
       }
-    );
+    )
 
-    return super._start();
+    return super._start()
   }
 }

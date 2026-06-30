@@ -1,6 +1,6 @@
 // TODO: add logic to inject redis information here instead of get from environment
 
-import { RedisOptions } from 'bullmq';
+import { RedisOptions } from 'bullmq'
 
 // let path = process.env.BULL_REDIS_URL
 // const redisConnection = getRedisConnection(path);
@@ -9,18 +9,18 @@ import { RedisOptions } from 'bullmq';
 export function getRedisConnection(path?: string): RedisOptions {
   // TODO: it could be better to get the data from other instead of fixed in process environment
   // eslint-disable-next-line @typescript-eslint/naming-convention
-  let _path = path ?? process.env.QUEUE_JOB_REDIS;
-  _path = _path ?? '';
+  let _path = path ?? process.env.QUEUE_JOB_REDIS
+  _path = _path ?? ''
 
-  const res = getIORedisInstance(_path);
-  return res;
+  const res = getIORedisInstance(_path)
+  return res
 }
 
 function getIORedisInstance(path: string): RedisOptions {
   try {
-    const url = new URL(path);
-    const dbString = url.pathname ? url.pathname.substr(1) : '';
-    const db = dbString && !Number.isNaN(parseInt(dbString, 10)) ? parseInt(dbString, 10) : 0;
+    const url = new URL(path)
+    const dbString = url.pathname ? url.pathname.substr(1) : ''
+    const db = dbString && !Number.isNaN(parseInt(dbString, 10)) ? parseInt(dbString, 10) : 0
 
     return {
       host: url.hostname,
@@ -28,12 +28,12 @@ function getIORedisInstance(path: string): RedisOptions {
       username: url.username,
       password: url.password,
       db,
-    };
-  } catch (e) {
+    }
+  } catch (_e) {
     return {
       host: 'localhost',
       port: 6379,
-    };
+    }
   }
 
   // if (_ioRedis) return _ioRedis;

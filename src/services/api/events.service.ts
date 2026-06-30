@@ -1,10 +1,10 @@
-import { Action, Service } from "@ourparentcenter/moleculer-decorators-extended";
-import { Context, Errors, ServiceBroker } from "moleculer";
-import BaseService from "../../base/base.service";
-import { SERVICE } from "../../common";
-import { subscribeBroadcaster } from "./subscribe_broadcaster";
-import { listIndexerEvents, persistIndexerEventsForBlock } from "./indexer_events_query";
-import { parseCsvList } from "./indexer_event_utils";
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Context, Errors, ServiceBroker } from 'moleculer'
+import BaseService from '../../base/base.service'
+import { SERVICE } from '../../common'
+import { parseCsvList } from './indexer_event_utils'
+import { listIndexerEvents, persistIndexerEventsForBlock } from './indexer_events_query'
+import { subscribeBroadcaster } from './subscribe_broadcaster'
 
 @Service({
   name: SERVICE.V1.IndexerEventsService.key,
@@ -12,25 +12,25 @@ import { parseCsvList } from "./indexer_event_utils";
 })
 export default class IndexerEventsService extends BaseService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @Action({
-    name: "broadcastBlockIndexed",
+    name: 'broadcastBlockIndexed',
     params: {
-      height: { type: "number", integer: true, positive: true, convert: true },
-      timestamp: { type: "string", optional: true, convert: true },
+      height: { type: 'number', integer: true, positive: true, convert: true },
+      timestamp: { type: 'string', optional: true, convert: true },
     },
   })
   public async broadcastBlockIndexed(ctx: Context<{ height: number; timestamp?: string }>) {
-    const { height, timestamp } = ctx.params;
-    const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
-    let events: Awaited<ReturnType<typeof persistIndexerEventsForBlock>> = [];
+    const { height, timestamp } = ctx.params
+    const eventTimestamp = timestamp ? new Date(timestamp) : new Date()
+    let events: Awaited<ReturnType<typeof persistIndexerEventsForBlock>> = []
 
     try {
-      events = await persistIndexerEventsForBlock(height);
+      events = await persistIndexerEventsForBlock(height)
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error persisting indexer events:", error);
+      this.logger.error('[IndexerEventsService] Error persisting indexer events:', error)
     }
 
     try {
@@ -38,10 +38,10 @@ export default class IndexerEventsService extends BaseService {
         block: height,
         blockTime: eventTimestamp.toISOString(),
         events,
-      });
+      })
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error broadcasting block-indexed:", error);
-      throw error;
+      this.logger.error('[IndexerEventsService] Error broadcasting block-indexed:', error)
+      throw error
     }
 
     return {
@@ -50,27 +50,29 @@ export default class IndexerEventsService extends BaseService {
       eventsNotified: events.length,
       height,
       timestamp: eventTimestamp.toISOString(),
-    };
+    }
   }
 
   @Action({
-    name: "listEvents",
+    name: 'listEvents',
     params: {
-      did: { type: "string", trim: true, optional: true, pattern: /^did:[a-z0-9]+:.+/i },
-      dids: { type: "string", trim: true, optional: true },
-      corporation_id: { type: "number", integer: true, positive: true, optional: true, convert: true },
-      after_block_height: { type: "number", integer: true, min: 0, optional: true, convert: true },
-      limit: { type: "number", integer: true, min: 1, max: 500, optional: true, convert: true },
+      did: { type: 'string', trim: true, optional: true, pattern: /^did:[a-z0-9]+:.+/i },
+      dids: { type: 'string', trim: true, optional: true },
+      corporation_id: { type: 'number', integer: true, positive: true, optional: true, convert: true },
+      after_block_height: { type: 'number', integer: true, min: 0, optional: true, convert: true },
+      limit: { type: 'number', integer: true, min: 1, max: 500, optional: true, convert: true },
     },
   })
-  public async listEvents(ctx: Context<{
-    did?: string;
-    dids?: string;
-    corporation_id?: number;
-    after_block_height?: number;
-    limit?: number;
-  }>) {
-    const afterBlockHeight = ctx.params.after_block_height ?? 0;
+  public async listEvents(
+    ctx: Context<{
+      did?: string
+      dids?: string
+      corporation_id?: number
+      after_block_height?: number
+      limit?: number
+    }>
+  ) {
+    const afterBlockHeight = ctx.params.after_block_height ?? 0
     try {
       const events = await listIndexerEvents({
         afterBlockHeight,
@@ -78,19 +80,15 @@ export default class IndexerEventsService extends BaseService {
         dids: parseCsvList(ctx.params.dids),
         corporationId: ctx.params.corporation_id,
         limit: ctx.params.limit,
-      });
+      })
       return {
         events,
         count: events.length,
         after_block_height: afterBlockHeight,
-      };
+      }
     } catch (error) {
-      this.logger.error("[IndexerEventsService] Error listing indexer events:", error);
-      throw new Errors.MoleculerError(
-        "Failed to list indexer events",
-        500,
-        "INDEXER_EVENTS_QUERY_FAILED"
-      );
+      this.logger.error('[IndexerEventsService] Error listing indexer events:', error)
+      throw new Errors.MoleculerError('Failed to list indexer events', 500, 'INDEXER_EVENTS_QUERY_FAILED')
     }
   }
 }

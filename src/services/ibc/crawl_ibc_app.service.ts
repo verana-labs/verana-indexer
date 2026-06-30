@@ -1,19 +1,14 @@
-import { fromHex, fromUtf8 } from '@cosmjs/encoding';
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { Knex } from 'knex';
-import { ServiceBroker } from 'moleculer';
-import knex from '../../common/utils/db_connection';
-import config from '../../config.json' with { type: 'json' };
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import { getAttributeFrom } from '../../common/utils/smart_contract';
-import { tableExists, isTableMissingError } from '../../common/utils/db_health';
-import {
-  BlockCheckpoint,
-  Event,
-  EventAttribute,
-  IbcMessage,
-} from '../../models';
+import { fromHex, fromUtf8 } from '@cosmjs/encoding'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Knex } from 'knex'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import { isTableMissingError, tableExists } from '../../common/utils/db_health'
+import { getAttributeFrom } from '../../common/utils/smart_contract'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, Event, EventAttribute, IbcMessage } from '../../models'
 
 @Service({
   name: SERVICE.V1.CrawlIBCAppService.key,
@@ -21,7 +16,7 @@ import {
 })
 export default class CrawlIbcAppService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
@@ -30,83 +25,57 @@ export default class CrawlIbcAppService extends BullableService {
   })
   public async crawlIbcApp(): Promise<void> {
     try {
-      if (!(await tableExists("event")) || !(await tableExists("transaction_message")) || !(await tableExists("transaction"))) {
-        this.logger.warn("Required tables do not exist yet, waiting for migrations...");
-        return;
+      if (
+        !(await tableExists('event')) ||
+        !(await tableExists('transaction_message')) ||
+        !(await tableExists('transaction'))
+      ) {
+        this.logger.warn('Required tables do not exist yet, waiting for migrations...')
+        return
       }
 
-      const [startHeight, endHeight, updateBlockCheckpoint] =
-        await BlockCheckpoint.getCheckpoint(
-          BULL_JOB_NAME.CRAWL_IBC_APP,
-          [BULL_JOB_NAME.CRAWL_IBC_TAO],
-          config.crawlIbcApp.key
-        );
-      this.logger.info(
-        `Handle IBC/APP, startHeight: ${startHeight}, endHeight: ${endHeight}`
-      );
-      if (startHeight > endHeight) return;
+      const [startHeight, endHeight, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+        BULL_JOB_NAME.CRAWL_IBC_APP,
+        [BULL_JOB_NAME.CRAWL_IBC_TAO],
+        config.crawlIbcApp.key
+      )
+      this.logger.info(`Handle IBC/APP, startHeight: ${startHeight}, endHeight: ${endHeight}`)
+      if (startHeight > endHeight) return
       const events = await Event.query()
         .withGraphFetched('attributes')
         .joinRelated('message.transaction')
-        .select(
-          'event.id',
-          'event.type',
-          'message.id as message_id',
-          'message:transaction.hash as tx_hash'
-        )
-      .whereIn('event.type', [
-        IbcMessage.EVENT_TYPE.ACKNOWLEDGE_PACKET,
-        IbcMessage.EVENT_TYPE.RECV_PACKET,
-        IbcMessage.EVENT_TYPE.SEND_PACKET,
-        IbcMessage.EVENT_TYPE.TIMEOUT_PACKET,
-      ])
-      .andWhere('event.block_height', '>', startHeight)
-      .andWhere('event.block_height', '<=', endHeight)
-      .orderBy('event.id');
-    await knex.transaction(async (trx) => {
-      await this.handleIbcMessage(events, trx);
-      updateBlockCheckpoint.height = endHeight;
-      await BlockCheckpoint.query()
-        .transacting(trx)
-        .insert(updateBlockCheckpoint)
-        .onConflict('job_name')
-        .merge();
-    });
+        .select('event.id', 'event.type', 'message.id as message_id', 'message:transaction.hash as tx_hash')
+        .whereIn('event.type', [
+          IbcMessage.EVENT_TYPE.ACKNOWLEDGE_PACKET,
+          IbcMessage.EVENT_TYPE.RECV_PACKET,
+          IbcMessage.EVENT_TYPE.SEND_PACKET,
+          IbcMessage.EVENT_TYPE.TIMEOUT_PACKET,
+        ])
+        .andWhere('event.block_height', '>', startHeight)
+        .andWhere('event.block_height', '<=', endHeight)
+        .orderBy('event.id')
+      await knex.transaction(async (trx) => {
+        await this.handleIbcMessage(events, trx)
+        updateBlockCheckpoint.height = endHeight
+        await BlockCheckpoint.query().transacting(trx).insert(updateBlockCheckpoint).onConflict('job_name').merge()
+      })
     } catch (error: any) {
       if (isTableMissingError(error)) {
-        this.logger.warn("Database tables do not exist yet, waiting for migrations...");
-        return;
+        this.logger.warn('Database tables do not exist yet, waiting for migrations...')
+        return
       }
-      throw error;
+      throw error
     }
   }
 
   async handleIbcMessage(events: Event[], trx: Knex.Transaction) {
     const ibcMessages = events.map((event) => {
-      const srcChannel = getAttributeFrom(
-        event.attributes,
-        EventAttribute.ATTRIBUTE_KEY.SRC_CHANNEL
-      );
-      const srcPort = getAttributeFrom(
-        event.attributes,
-        EventAttribute.ATTRIBUTE_KEY.SRC_PORT
-      );
-      const dstChannel = getAttributeFrom(
-        event.attributes,
-        EventAttribute.ATTRIBUTE_KEY.DST_CHANNEL
-      );
-      const dstPort = getAttributeFrom(
-        event.attributes,
-        EventAttribute.ATTRIBUTE_KEY.DST_PORT
-      );
-      const sequence = getAttributeFrom(
-        event.attributes,
-        EventAttribute.ATTRIBUTE_KEY.SEQUENCE
-      );
-      const dataHex = getAttributeFrom(
-        event.attributes,
-        EventAttribute.ATTRIBUTE_KEY.DATA_HEX
-      );
+      const srcChannel = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.SRC_CHANNEL)
+      const srcPort = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.SRC_PORT)
+      const dstChannel = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.DST_CHANNEL)
+      const dstPort = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.DST_PORT)
+      const sequence = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.SEQUENCE)
+      const dataHex = getAttributeFrom(event.attributes, EventAttribute.ATTRIBUTE_KEY.DATA_HEX)
       return IbcMessage.fromJson({
         transaction_message_id: event.message_id,
         src_channel_id: srcChannel,
@@ -118,13 +87,13 @@ export default class CrawlIbcAppService extends BullableService {
         sequence_key: `${srcChannel}.${srcPort}.${dstChannel}.${dstPort}.${sequence}`,
         data: dataHex ? fromUtf8(fromHex(dataHex)) : null,
         tx_hash: event.tx_hash,
-      });
-    });
+      })
+    })
     if (ibcMessages.length > 0) {
-      const chunkSize = config.crawlIbcApp.chunkSize || 5000;
+      const chunkSize = config.crawlIbcApp.chunkSize || 5000
       for (let i = 0; i < ibcMessages.length; i += chunkSize) {
-        const chunk = ibcMessages.slice(i, i + chunkSize);
-        await IbcMessage.query().insert(chunk).transacting(trx);
+        const chunk = ibcMessages.slice(i, i + chunkSize)
+        await IbcMessage.query().insert(chunk).transacting(trx)
       }
     }
   }
@@ -143,7 +112,7 @@ export default class CrawlIbcAppService extends BullableService {
           every: config.crawlIbcApp.millisecondRepeatJob,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

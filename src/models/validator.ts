@@ -1,72 +1,72 @@
 /* eslint-disable import/no-cycle */
-import { fromBase64, fromBech32, toBech32, toHex } from '@cosmjs/encoding';
-import { pubkeyToRawAddress } from '@cosmjs/tendermint-rpc';
-import { Model } from 'objection';
-import config from '../config.json' with { type: 'json' };
-import BaseModel from './base';
-import { PowerEvent } from './power_event';
-import { Delegator } from './delegator';
+import { fromBase64, fromBech32, toBech32, toHex } from '@cosmjs/encoding'
+import { pubkeyToRawAddress } from '@cosmjs/tendermint-rpc'
+import { Model } from 'objection'
+import config from '../config.json' with { type: 'json' }
+import BaseModel from './base'
+import { Delegator } from './delegator'
+import { PowerEvent } from './power_event'
 
 export interface IConsensusPubkey {
-  type: string;
-  key: string;
+  type: string
+  key: string
 }
 
 export class Validator extends BaseModel {
-  id!: number;
+  id!: number
 
-  operator_address!: string;
+  operator_address!: string
 
-  account_address!: string;
+  account_address!: string
 
-  consensus_address!: string;
+  consensus_address!: string
 
-  consensus_hex_address!: string;
+  consensus_hex_address!: string
 
-  consensus_pubkey!: IConsensusPubkey;
+  consensus_pubkey!: IConsensusPubkey
 
-  jailed!: boolean;
+  jailed!: boolean
 
-  status!: string;
+  status!: string
 
-  tokens!: string;
+  tokens!: string
 
-  delegator_shares!: string;
+  delegator_shares!: string
 
-  description!: any;
+  description!: any
 
-  unbonding_height!: number;
+  unbonding_height!: number
 
-  unbonding_time!: string;
+  unbonding_time!: string
 
-  commission!: any;
+  commission!: any
 
-  min_self_delegation!: string;
+  min_self_delegation!: string
 
-  uptime!: number;
+  uptime!: number
 
-  self_delegation_balance!: string;
+  self_delegation_balance!: string
 
-  percent_voting_power!: number;
+  percent_voting_power!: number
 
-  start_height!: number;
+  start_height!: number
 
-  index_offset!: number;
+  index_offset!: number
 
-  jailed_until!: string;
+  jailed_until!: string
 
-  tombstoned!: boolean;
+  tombstoned!: boolean
 
-  missed_blocks_counter!: number;
+  missed_blocks_counter!: number
 
-  delegators_count!: number;
+  delegators_count!: number
 
-  delegators_last_height!: number;
+  delegators_last_height!: number
 
-  image_url!: string;
+  image_url!: string
 
   static get tableName() {
-    return 'validator';
+    return 'validator'
   }
 
   static get STATUS() {
@@ -76,11 +76,11 @@ export class Validator extends BaseModel {
       UNSPECIFIED: 'BOND_STATUS_UNSPECIFIED',
       UNBONDING: 'BOND_STATUS_UNBONDING',
       UNRECOGNIZED: 'UNRECOGNIZED',
-    };
+    }
   }
 
   static get jsonAttributes() {
-    return ['consensus_pubkey', 'description', 'commission'];
+    return ['consensus_pubkey', 'description', 'commission']
   }
 
   static get jsonSchema() {
@@ -142,7 +142,7 @@ export class Validator extends BaseModel {
         delegators_count: { type: 'number' },
         delegators_last_height: { type: 'number' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -171,31 +171,22 @@ export class Validator extends BaseModel {
           to: 'delegator.validator_id',
         },
       },
-    };
+    }
   }
 
   static createNewValidator(validator: any): Validator {
     const consensusAddress: string = toBech32(
       `${config.networkPrefixAddress}${config.consensusPrefixAddress}`,
-      pubkeyToRawAddress(
-        'ed25519',
-        fromBase64(validator.consensus_pubkey.key.toString())
-      )
-    );
+      pubkeyToRawAddress('ed25519', fromBase64(validator.consensus_pubkey.key.toString()))
+    )
     const consensusHexAddress: string = toHex(
-      pubkeyToRawAddress(
-        'ed25519',
-        fromBase64(validator.consensus_pubkey.key.toString())
-      )
-    ).toUpperCase();
-    const accountAddress = toBech32(
-      config.networkPrefixAddress,
-      fromBech32(validator.operator_address).data
-    );
+      pubkeyToRawAddress('ed25519', fromBase64(validator.consensus_pubkey.key.toString()))
+    ).toUpperCase()
+    const accountAddress = toBech32(config.networkPrefixAddress, fromBech32(validator.operator_address).data)
     const consensusPubkey = {
       type: validator.consensus_pubkey['@type'],
       key: validator.consensus_pubkey.key,
-    };
+    }
 
     const validatorEntity = Validator.fromJson({
       operator_address: validator.operator_address,
@@ -226,8 +217,8 @@ export class Validator extends BaseModel {
       missed_blocks_counter: 0,
       delegators_count: 0,
       delegators_last_height: 0,
-    });
+    })
 
-    return validatorEntity;
+    return validatorEntity
   }
 }

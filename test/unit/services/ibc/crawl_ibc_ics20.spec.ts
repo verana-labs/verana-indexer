@@ -1,26 +1,17 @@
-import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core';
-import { ServiceBroker } from 'moleculer';
-import knex from '../../../../src/common/utils/db_connection';
-import {
-  Block,
-  Event,
-  EventAttribute,
-  IbcIcs20,
-  IbcMessage,
-  Transaction,
-} from '../../../../src/models';
-import CrawlIbcIcs20 from '../../../../src/services/ibc/crawl_ibc_ics20.service';
-import config from '../../../../src/config.json' with { type: 'json' };
-import { getAttributeFrom } from '../../../../src/common/utils/smart_contract';
+import { AfterAll, BeforeAll, Describe, Test } from '@jest-decorated/core'
+import { ServiceBroker } from 'moleculer'
+import knex from '../../../../src/common/utils/db_connection'
+import { getAttributeFrom } from '../../../../src/common/utils/smart_contract'
+import config from '../../../../src/config.json' with { type: 'json' }
+import { Block, Event, EventAttribute, IbcIcs20, IbcMessage, Transaction } from '../../../../src/models'
+import CrawlIbcIcs20 from '../../../../src/services/ibc/crawl_ibc_ics20.service'
 
-const PORT = config.crawlIbcIcs20.port;
+const PORT = config.crawlIbcIcs20.port
 @Describe('Test crawl ibc-ics20 service')
 export default class CrawlIbcIcs20Test {
-  broker = new ServiceBroker({ logger: false });
+  broker = new ServiceBroker({ logger: false })
 
-  crawlIbcIcs20Serivce = this.broker.createService(
-    CrawlIbcIcs20
-  ) as CrawlIbcIcs20;
+  crawlIbcIcs20Serivce = this.broker.createService(CrawlIbcIcs20) as CrawlIbcIcs20
 
   block: Block = Block.fromJson({
     height: 30000,
@@ -28,7 +19,7 @@ export default class CrawlIbcIcs20Test {
     time: '2023-01-12T01:53:57.216Z',
     proposer_address: 'auraomd;cvpio3j4eg',
     data: {},
-  });
+  })
 
   transaction = {
     ...Transaction.fromJson({
@@ -61,21 +52,21 @@ export default class CrawlIbcIcs20Test {
         },
       },
     ],
-  };
+  }
 
   @BeforeAll()
   async initSuite() {
-    this.crawlIbcIcs20Serivce.getQueueManager().stopAll();
+    this.crawlIbcIcs20Serivce.getQueueManager().stopAll()
     await knex.raw(
       'TRUNCATE TABLE block, block_signature, transaction, event, event_attribute, transaction_message, ibc_message RESTART IDENTITY CASCADE'
-    );
-    await Block.query().insert(this.block);
-    await Transaction.query().insertGraph(this.transaction);
+    )
+    await Block.query().insert(this.block)
+    await Transaction.query().insertGraph(this.transaction)
   }
 
   @AfterAll()
   async tearDown() {
-    await this.broker.stop();
+    await this.broker.stop()
   }
 
   @Test('Test handleIcs20Send')
@@ -97,28 +88,22 @@ export default class CrawlIbcIcs20Test {
             '{"autopilot":{"stakeibc":{"stride_address":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl","action":"LiquidStake"},"receiver":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl"}}',
           sender: 'cosmos1e8288j8swfy7rwkyx0h3lz82fe58vz2m6xx0en',
         },
-      });
-      const message = await IbcMessage.query()
-        .insert(ibcMessage)
-        .transacting(trx);
-      await this.crawlIbcIcs20Serivce.handleIcs20Send(
-        this.block.height - 1,
-        this.block.height,
-        trx
-      );
-      const result = await IbcIcs20.query().first().transacting(trx);
-      expect(result?.ibc_message_id).toEqual(message.id);
-      expect(result?.sender).toEqual(ibcMessage.data.sender);
-      expect(result?.receiver).toEqual(ibcMessage.data.receiver);
-      expect(result?.amount).toEqual(10000);
-      expect(result?.denom).toEqual(ibcMessage.data.denom);
-      expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ONGOING);
-      expect(result?.sequence_key).toEqual(ibcMessage.sequence_key);
-      expect(result?.type).toEqual(ibcMessage.type);
-      expect(result?.channel_id).toEqual(ibcMessage.src_channel_id);
-      expect(result?.finish_time).toBeNull();
-      expect(result?.start_time).toEqual(new Date(this.transaction.timestamp));
-    });
+      })
+      const message = await IbcMessage.query().insert(ibcMessage).transacting(trx)
+      await this.crawlIbcIcs20Serivce.handleIcs20Send(this.block.height - 1, this.block.height, trx)
+      const result = await IbcIcs20.query().first().transacting(trx)
+      expect(result?.ibc_message_id).toEqual(message.id)
+      expect(result?.sender).toEqual(ibcMessage.data.sender)
+      expect(result?.receiver).toEqual(ibcMessage.data.receiver)
+      expect(result?.amount).toEqual(10000)
+      expect(result?.denom).toEqual(ibcMessage.data.denom)
+      expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ONGOING)
+      expect(result?.sequence_key).toEqual(ibcMessage.sequence_key)
+      expect(result?.type).toEqual(ibcMessage.type)
+      expect(result?.channel_id).toEqual(ibcMessage.src_channel_id)
+      expect(result?.finish_time).toBeNull()
+      expect(result?.start_time).toEqual(new Date(this.transaction.timestamp))
+    })
   }
 
   @Test('Test handleIcs20Recv from source chain')
@@ -140,10 +125,8 @@ export default class CrawlIbcIcs20Test {
             '{"autopilot":{"stakeibc":{"stride_address":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl","action":"LiquidStake"},"receiver":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl"}}',
           sender: 'cosmos1e8288j8swfy7rwkyx0h3lz82fe58vz2m6xx0en',
         },
-      });
-      const ibcMsg = await IbcMessage.query()
-        .insert(ibcMessage)
-        .transacting(trx);
+      })
+      const ibcMsg = await IbcMessage.query().insert(ibcMessage).transacting(trx)
       const event1Attrs = [
         {
           key: 'module',
@@ -173,19 +156,17 @@ export default class CrawlIbcIcs20Test {
           key: 'success',
           value: 'true',
         },
-      ];
+      ]
       const event2Attrs = [
         {
           key: 'trace_hash',
-          value:
-            '40CA5EF447F368B7F2276A689383BE3C427B15395D4BF6639B605D36C0846A20',
+          value: '40CA5EF447F368B7F2276A689383BE3C427B15395D4BF6639B605D36C0846A20',
         },
         {
           key: 'denom',
-          value:
-            'ibc/40CA5EF447F368B7F2276A689383BE3C427B15395D4BF6639B605D36C0846A20',
+          value: 'ibc/40CA5EF447F368B7F2276A689383BE3C427B15395D4BF6639B605D36C0846A20',
         },
-      ];
+      ]
       const events = [
         Event.fromJson({
           tx_id: 1,
@@ -198,8 +179,8 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
         Event.fromJson({
@@ -213,41 +194,31 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
-      ];
-      await Event.query().insertGraph(events).transacting(trx);
-      await this.crawlIbcIcs20Serivce.handleIcs20Recv(
-        this.block.height - 1,
-        this.block.height,
-        trx
-      );
-      const result = await IbcIcs20.query()
-        .where('type', IbcMessage.EVENT_TYPE.RECV_PACKET)
-        .first()
-        .transacting(trx);
-      expect(result?.ibc_message_id).toEqual(ibcMsg.id);
-      expect(result?.receiver).toEqual(
-        getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.RECEIVER)
-      );
-      expect(result?.sender).toEqual(
-        getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.SENDER)
-      );
-      expect(result?.amount).toEqual(10000);
+      ]
+      await Event.query().insertGraph(events).transacting(trx)
+      await this.crawlIbcIcs20Serivce.handleIcs20Recv(this.block.height - 1, this.block.height, trx)
+      const result = await IbcIcs20.query().where('type', IbcMessage.EVENT_TYPE.RECV_PACKET).first().transacting(trx)
+      expect(result?.ibc_message_id).toEqual(ibcMsg.id)
+      expect(result?.receiver).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.RECEIVER))
+      expect(result?.sender).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.SENDER))
+      expect(result?.amount).toEqual(10000)
       expect(result?.denom).toEqual(
-        `${ibcMessage.dst_port_id}/${ibcMessage.dst_channel_id
+        `${ibcMessage.dst_port_id}/${
+          ibcMessage.dst_channel_id
         }/${getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.DENOM)}`
-      );
-      expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS);
-      expect(result?.sequence_key).toEqual(ibcMessage.sequence_key);
-      expect(result?.type).toEqual(ibcMessage.type);
-      expect(result?.channel_id).toEqual(ibcMessage.dst_channel_id);
-      expect(result?.start_time).toBeNull();
-      expect(result?.finish_time).toEqual(new Date(this.transaction.timestamp));
-      await trx.rollback();
-    });
+      )
+      expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS)
+      expect(result?.sequence_key).toEqual(ibcMessage.sequence_key)
+      expect(result?.type).toEqual(ibcMessage.type)
+      expect(result?.channel_id).toEqual(ibcMessage.dst_channel_id)
+      expect(result?.start_time).toBeNull()
+      expect(result?.finish_time).toEqual(new Date(this.transaction.timestamp))
+      await trx.rollback()
+    })
   }
 
   @Test('Test handleIcs20Recv from sink chain')
@@ -269,10 +240,8 @@ export default class CrawlIbcIcs20Test {
             '{"autopilot":{"stakeibc":{"stride_address":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl","action":"LiquidStake"},"receiver":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl"}}',
           sender: 'cosmos1e8288j8swfy7rwkyx0h3lz82fe58vz2m6xx0en',
         },
-      });
-      const ibcMsg = await IbcMessage.query()
-        .insert(ibcMessage)
-        .transacting(trx);
+      })
+      const ibcMsg = await IbcMessage.query().insert(ibcMessage).transacting(trx)
       const event1Attrs = [
         {
           key: 'module',
@@ -302,7 +271,7 @@ export default class CrawlIbcIcs20Test {
           key: 'success',
           value: 'true',
         },
-      ];
+      ]
       const events = [
         Event.fromJson({
           tx_id: 1,
@@ -315,38 +284,27 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
-      ];
-      await Event.query().insertGraph(events).transacting(trx);
-      await this.crawlIbcIcs20Serivce.handleIcs20Recv(
-        this.block.height - 1,
-        this.block.height,
-        trx
-      );
-      const result = await IbcIcs20.query()
-        .where('type', IbcMessage.EVENT_TYPE.RECV_PACKET)
-        .first()
-        .transacting(trx);
-      expect(result?.ibc_message_id).toEqual(ibcMsg.id);
-      expect(result?.receiver).toEqual(
-        getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.RECEIVER)
-      );
-      expect(result?.sender).toEqual(
-        getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.SENDER)
-      );
-      expect(result?.amount).toEqual(10000);
-      expect(result?.denom).toEqual('uatom');
-      expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS);
-      expect(result?.sequence_key).toEqual(ibcMessage.sequence_key);
-      expect(result?.type).toEqual(ibcMessage.type);
-      expect(result?.channel_id).toEqual(ibcMessage.dst_channel_id);
-      expect(result?.start_time).toBeNull();
-      expect(result?.finish_time).toEqual(new Date(this.transaction.timestamp));
-      await trx.rollback();
-    });
+      ]
+      await Event.query().insertGraph(events).transacting(trx)
+      await this.crawlIbcIcs20Serivce.handleIcs20Recv(this.block.height - 1, this.block.height, trx)
+      const result = await IbcIcs20.query().where('type', IbcMessage.EVENT_TYPE.RECV_PACKET).first().transacting(trx)
+      expect(result?.ibc_message_id).toEqual(ibcMsg.id)
+      expect(result?.receiver).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.RECEIVER))
+      expect(result?.sender).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.SENDER))
+      expect(result?.amount).toEqual(10000)
+      expect(result?.denom).toEqual('uatom')
+      expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS)
+      expect(result?.sequence_key).toEqual(ibcMessage.sequence_key)
+      expect(result?.type).toEqual(ibcMessage.type)
+      expect(result?.channel_id).toEqual(ibcMessage.dst_channel_id)
+      expect(result?.start_time).toBeNull()
+      expect(result?.finish_time).toEqual(new Date(this.transaction.timestamp))
+      await trx.rollback()
+    })
   }
 
   @Test('Test handleIcs20AckError')
@@ -368,8 +326,8 @@ export default class CrawlIbcIcs20Test {
             '{"autopilot":{"stakeibc":{"stride_address":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl","action":"LiquidStake"},"receiver":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl"}}',
           sender: 'cosmos1e8288j8swfy7rwkyx0h3lz82fe58vz2m6xx0en',
         },
-      });
-      await IbcMessage.query().insert(ibcMessage).transacting(trx);
+      })
+      await IbcMessage.query().insert(ibcMessage).transacting(trx)
       const event1Attrs = [
         {
           key: 'module',
@@ -400,13 +358,13 @@ export default class CrawlIbcIcs20Test {
           key: 'acknowledgement',
           value: 'result:"\\001" ',
         },
-      ];
+      ]
       const event2Attrs = [
         {
           key: 'error',
           value: '\u0001',
         },
-      ];
+      ]
       const events = [
         Event.fromJson({
           tx_id: 1,
@@ -419,8 +377,8 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
         Event.fromJson({
@@ -434,27 +392,21 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
-      ];
-      await Event.query().insertGraph(events).transacting(trx);
-      await this.crawlIbcIcs20Serivce.handleIcs20Ack(
-        this.block.height - 1,
-        this.block.height,
-        trx
-      );
+      ]
+      await Event.query().insertGraph(events).transacting(trx)
+      await this.crawlIbcIcs20Serivce.handleIcs20Ack(this.block.height - 1, this.block.height, trx)
       const originSend = await IbcIcs20.query()
         .where('type', IbcMessage.EVENT_TYPE.SEND_PACKET)
         .first()
-        .transacting(trx);
-      expect(originSend?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_ERROR);
-      expect(originSend?.finish_time).toEqual(
-        new Date(this.transaction.timestamp)
-      );
-      await trx.rollback();
-    });
+        .transacting(trx)
+      expect(originSend?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_ERROR)
+      expect(originSend?.finish_time).toEqual(new Date(this.transaction.timestamp))
+      await trx.rollback()
+    })
   }
 
   @Test('Test handleIcs20AckSuccess')
@@ -476,8 +428,8 @@ export default class CrawlIbcIcs20Test {
             '{"autopilot":{"stakeibc":{"stride_address":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl","action":"LiquidStake"},"receiver":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl"}}',
           sender: 'cosmos1e8288j8swfy7rwkyx0h3lz82fe58vz2m6xx0en',
         },
-      });
-      await IbcMessage.query().insert(ibcMessage).transacting(trx);
+      })
+      await IbcMessage.query().insert(ibcMessage).transacting(trx)
       const event1Attrs = [
         {
           key: 'module',
@@ -508,13 +460,13 @@ export default class CrawlIbcIcs20Test {
           key: 'acknowledgement',
           value: 'result:"\\001" ',
         },
-      ];
+      ]
       const event2Attrs = [
         {
           key: 'success',
           value: '\u0001',
         },
-      ];
+      ]
       const events = [
         Event.fromJson({
           tx_id: 1,
@@ -527,8 +479,8 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
         Event.fromJson({
@@ -542,27 +494,21 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
-      ];
-      await Event.query().insertGraph(events).transacting(trx);
-      await this.crawlIbcIcs20Serivce.handleIcs20Ack(
-        this.block.height - 1,
-        this.block.height,
-        trx
-      );
+      ]
+      await Event.query().insertGraph(events).transacting(trx)
+      await this.crawlIbcIcs20Serivce.handleIcs20Ack(this.block.height - 1, this.block.height, trx)
       const originSend = await IbcIcs20.query()
         .where('type', IbcMessage.EVENT_TYPE.SEND_PACKET)
         .first()
-        .transacting(trx);
-      expect(originSend?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS);
-      expect(originSend?.finish_time).toEqual(
-        new Date(this.transaction.timestamp)
-      );
-      await trx.rollback();
-    });
+        .transacting(trx)
+      expect(originSend?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS)
+      expect(originSend?.finish_time).toEqual(new Date(this.transaction.timestamp))
+      await trx.rollback()
+    })
   }
 
   @Test('Test handleIcs20Timeout')
@@ -584,8 +530,8 @@ export default class CrawlIbcIcs20Test {
             '{"autopilot":{"stakeibc":{"stride_address":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl","action":"LiquidStake"},"receiver":"stride1e8288j8swfy7rwkyx0h3lz82fe58vz2medxndl"}}',
           sender: 'cosmos1e8288j8swfy7rwkyx0h3lz82fe58vz2m6xx0en',
         },
-      });
-      await IbcMessage.query().insert(ibcMessage).transacting(trx);
+      })
+      await IbcMessage.query().insert(ibcMessage).transacting(trx)
       const event1Attrs = [
         {
           key: 'module',
@@ -607,7 +553,7 @@ export default class CrawlIbcIcs20Test {
           key: 'memo',
           value: '',
         },
-      ];
+      ]
       const events = [
         Event.fromJson({
           tx_id: 1,
@@ -620,29 +566,20 @@ export default class CrawlIbcIcs20Test {
               block_height: this.block.height,
               event_id: 1,
               index,
-            });
-            return e;
+            })
+            return e
           }),
         }),
-      ];
-      await Event.query()
-        .insertGraph(events)
-        .where('type', IbcMessage.EVENT_TYPE.TIMEOUT_PACKET)
-        .transacting(trx);
-      await this.crawlIbcIcs20Serivce.handleIcs20Timeout(
-        this.block.height - 1,
-        this.block.height,
-        trx
-      );
+      ]
+      await Event.query().insertGraph(events).where('type', IbcMessage.EVENT_TYPE.TIMEOUT_PACKET).transacting(trx)
+      await this.crawlIbcIcs20Serivce.handleIcs20Timeout(this.block.height - 1, this.block.height, trx)
       const originSend = await IbcIcs20.query()
         .where('type', IbcMessage.EVENT_TYPE.SEND_PACKET)
         .first()
-        .transacting(trx);
-      expect(originSend?.status).toEqual(IbcIcs20.STATUS_TYPE.TIMEOUT);
-      expect(originSend?.finish_time).toEqual(
-        new Date(this.transaction.timestamp)
-      );
-      await trx.rollback();
-    });
+        .transacting(trx)
+      expect(originSend?.status).toEqual(IbcIcs20.STATUS_TYPE.TIMEOUT)
+      expect(originSend?.finish_time).toEqual(new Date(this.transaction.timestamp))
+      await trx.rollback()
+    })
   }
 }

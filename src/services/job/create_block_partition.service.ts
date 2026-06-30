@@ -1,11 +1,11 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import BigNumber from 'bignumber.js';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import knex from '../../common/utils/db_connection';
-import { Block } from '../../models';
-import config from '../../config.json' with { type: 'json' };
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import BigNumber from 'bignumber.js'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { Block } from '../../models'
 
 @Service({
   name: SERVICE.V1.JobService.CreateBlockPartition.key,
@@ -13,7 +13,7 @@ import config from '../../config.json' with { type: 'json' };
 })
 export default class CreateBlockPartitionJob extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   /**
@@ -22,9 +22,9 @@ export default class CreateBlockPartitionJob extends BullableService {
    * @param latestBlock
    */
   public async createPartitionName(latestBlock: Block | undefined): Promise<{
-    fromHeight: string;
-    toHeight: string;
-    partitionName: string;
+    fromHeight: string
+    toHeight: string
+    partitionName: string
   } | null> {
     if (
       !latestBlock ||
@@ -32,22 +32,16 @@ export default class CreateBlockPartitionJob extends BullableService {
         .mod(config.migrationBlockToPartition.step)
         .lt(config.migrationBlockToPartition.step / 2)
     )
-      return null;
+      return null
 
     // Calculate current partition step then add 1 step for feature partition creation
     const stepMultiple =
-      Math.floor(
-        BigNumber(latestBlock.height)
-          .div(config.migrationBlockToPartition.step)
-          .toNumber()
-      ) + 1;
+      Math.floor(BigNumber(latestBlock.height).div(config.migrationBlockToPartition.step).toNumber()) + 1
 
     // Build partition name
-    const fromHeight = BigNumber(
-      config.migrationBlockToPartition.step
-    ).multipliedBy(stepMultiple);
-    const toHeight = fromHeight.plus(config.migrationBlockToPartition.step);
-    const partitionName = `block_partition_${fromHeight.toString()}_${toHeight.toString()}`;
+    const fromHeight = BigNumber(config.migrationBlockToPartition.step).multipliedBy(stepMultiple)
+    const toHeight = fromHeight.plus(config.migrationBlockToPartition.step)
+    const partitionName = `block_partition_${fromHeight.toString()}_${toHeight.toString()}`
 
     // Check partition exist or not
     const existPartition = await knex.raw(`
@@ -58,15 +52,15 @@ export default class CreateBlockPartitionJob extends BullableService {
       JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
       JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
       WHERE child.relname = '${partitionName}';
-    `);
+    `)
 
-    if (existPartition.rows.length > 0) return null;
+    if (existPartition.rows.length > 0) return null
 
     return {
       fromHeight: fromHeight.toString(),
       toHeight: toHeight.toString(),
       partitionName,
-    };
+    }
   }
 
   /**
@@ -74,9 +68,9 @@ export default class CreateBlockPartitionJob extends BullableService {
    * @param partitionInfo
    */
   public async createPartitionByPartitionInfo(partitionInfo: {
-    fromHeight: string;
-    toHeight: string;
-    partitionName: string;
+    fromHeight: string
+    toHeight: string
+    partitionName: string
   }): Promise<void> {
     await knex.transaction(async (trx) => {
       await knex
@@ -86,7 +80,7 @@ export default class CreateBlockPartitionJob extends BullableService {
             (LIKE ${config.jobCheckNeedCreateBlockPartition.templateTable} INCLUDING ALL EXCLUDING CONSTRAINTS)
         `
         )
-        .transacting(trx);
+        .transacting(trx)
       await knex
         .raw(
           `
@@ -94,8 +88,8 @@ export default class CreateBlockPartitionJob extends BullableService {
             FOR VALUES FROM (${partitionInfo.fromHeight}) to (${partitionInfo.toHeight})
         `
         )
-        .transacting(trx);
-    });
+        .transacting(trx)
+    })
   }
 
   /**
@@ -108,21 +102,17 @@ export default class CreateBlockPartitionJob extends BullableService {
     jobName: BULL_JOB_NAME.JOB_CREATE_BLOCK_PARTITION,
   })
   async jobCreateBlockPartition(): Promise<boolean> {
-    const latestBlock = await Block.query()
-      .select('height')
-      .limit(1)
-      .orderBy('height', 'DESC')
-      .first();
-    const partitionInfo = await this.createPartitionName(latestBlock);
+    const latestBlock = await Block.query().select('height').limit(1).orderBy('height', 'DESC').first()
+    const partitionInfo = await this.createPartitionName(latestBlock)
 
     if (!partitionInfo) {
-      this.logger.info('Dont need to create partition');
-      return false;
+      this.logger.info('Dont need to create partition')
+      return false
     }
 
-    this.logger.info('Create partition on table', partitionInfo);
-    await this.createPartitionByPartitionInfo(partitionInfo);
-    return true;
+    this.logger.info('Create partition on table', partitionInfo)
+    await this.createPartitionByPartitionInfo(partitionInfo)
+    return true
   }
 
   public async _start(): Promise<void> {
@@ -139,7 +129,7 @@ export default class CreateBlockPartitionJob extends BullableService {
           every: config.jobCheckNeedCreateBlockPartition.millisecondCrawl,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

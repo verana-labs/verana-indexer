@@ -1,35 +1,28 @@
-import BaseModel from './base';
+import BaseModel from './base'
 
 export class Vote extends BaseModel {
-  voter!: string;
+  voter!: string
 
-  txhash!: string;
+  txhash!: string
 
-  vote_option!: string;
+  vote_option!: string
 
-  proposal_id!: number;
+  proposal_id!: number
 
-  height!: number;
+  height!: number
 
   tx_id!: number;
 
-  [key: string]: any;
+  [key: string]: any
 
   static get tableName() {
-    return 'vote';
+    return 'vote'
   }
 
   static get jsonSchema() {
     return {
       type: 'object',
-      required: [
-        'voter',
-        'txhash',
-        'vote_option',
-        'proposal_id',
-        'height',
-        'tx_id',
-      ],
+      required: ['voter', 'txhash', 'vote_option', 'proposal_id', 'height', 'tx_id'],
       properties: {
         voter: { type: 'string' },
         txhash: { type: 'string' },
@@ -38,7 +31,7 @@ export class Vote extends BaseModel {
         height: { type: 'number' },
         tx_id: { type: 'number' },
       },
-    };
+    }
   }
 
   static get VOTE_OPTION() {
@@ -48,6 +41,6 @@ export class Vote extends BaseModel {
       VOTE_OPTION_ABSTAIN: 'VOTE_OPTION_ABSTAIN',
       VOTE_OPTION_NO: 'VOTE_OPTION_NO',
       VOTE_OPTION_NO_WITH_VETO: 'VOTE_OPTION_NO_WITH_VETO',
-    };
+    }
   }
 }

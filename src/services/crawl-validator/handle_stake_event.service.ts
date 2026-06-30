@@ -1,21 +1,15 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import _ from 'lodash';
-import { parseCoins } from '@cosmjs/proto-signing';
-import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query';
-import { SemVer } from 'semver';
-import knex from '../../common/utils/db_connection';
-import { BULL_JOB_NAME, SERVICE, getLcdClient } from '../../common';
-import {
-  PowerEvent,
-  Validator,
-  Event,
-  EventAttribute,
-  BlockCheckpoint,
-} from '../../models';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../config.json' with { type: 'json' };
-import { detectStartMode } from '../../common/utils/start_mode_detector';
+import { GetNodeInfoResponseSDKType } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query'
+import { parseCoins } from '@cosmjs/proto-signing'
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import _ from 'lodash'
+import { ServiceBroker } from 'moleculer'
+import { SemVer } from 'semver'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, getLcdClient, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import { detectStartMode } from '../../common/utils/start_mode_detector'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, Event, EventAttribute, PowerEvent, Validator } from '../../models'
 
 @Service({
   name: SERVICE.V1.HandleStakeEventService.key,
@@ -27,10 +21,10 @@ export default class HandleStakeEventService extends BullableService {
     Event.EVENT_TYPE.REDELEGATE,
     Event.EVENT_TYPE.UNBOND,
     Event.EVENT_TYPE.CREATE_VALIDATOR,
-  ];
+  ]
 
-  private cosmosSdkVersion!: SemVer;
-  private _isFreshStart: boolean = false;
+  private cosmosSdkVersion!: SemVer
+  private _isFreshStart: boolean = false
 
   // map to get index of amount attribute inside event stake based on cosmos sdk version
   private mapIndexAmountWithEventStakes = {
@@ -46,32 +40,31 @@ export default class HandleStakeEventService extends BullableService {
       [Event.EVENT_TYPE.UNBOND]: 1,
       [Event.EVENT_TYPE.CREATE_VALIDATOR]: 1,
     },
-  };
+  }
 
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   public async _start() {
-    const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_STAKE_EVENT);
-    this._isFreshStart = startMode.isFreshStart;
-    this.logger.info(`HandleStakeEvent service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`);
-    
+    const startMode = await detectStartMode(BULL_JOB_NAME.HANDLE_STAKE_EVENT)
+    this._isFreshStart = startMode.isFreshStart
+    this.logger.info(`HandleStakeEvent service started | Mode: ${this._isFreshStart ? 'Fresh Start' : 'Reindexing'}`)
+
     try {
-      const lcdClient = await getLcdClient();
+      const lcdClient = await getLcdClient()
       if (lcdClient?.provider) {
         const nodeInfo: GetNodeInfoResponseSDKType =
-          await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo();
-        const cosmosSdkVersion =
-          nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99';
-        this.cosmosSdkVersion = new SemVer(cosmosSdkVersion);
+          await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo()
+        const cosmosSdkVersion = nodeInfo.application_version?.cosmos_sdk_version ?? 'v0.45.99'
+        this.cosmosSdkVersion = new SemVer(cosmosSdkVersion)
       }
     } catch (error) {
-      this.logger.warn('Failed to get Cosmos SDK version, using default:', error);
-      this.cosmosSdkVersion = new SemVer('v0.45.99');
+      this.logger.warn('Failed to get Cosmos SDK version, using default:', error)
+      this.cosmosSdkVersion = new SemVer('v0.45.99')
     }
-    
-    return super._start();
+
+    return super._start()
   }
 
   @QueueHandler({
@@ -80,100 +73,94 @@ export default class HandleStakeEventService extends BullableService {
     // prefix: `horoscope-v2-${config.chainId}`,
   })
   public async handleJob(_payload: object): Promise<void> {
-    const [startHeight, endHeight, updateBlockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.HANDLE_STAKE_EVENT,
-        [BULL_JOB_NAME.HANDLE_TRANSACTION, BULL_JOB_NAME.CRAWL_VALIDATOR],
-        config.handleStakeEvent.key
-      );
-    this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`);
-    if (startHeight >= endHeight) return;
+    const [startHeight, endHeight, updateBlockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.HANDLE_STAKE_EVENT,
+      [BULL_JOB_NAME.HANDLE_TRANSACTION, BULL_JOB_NAME.CRAWL_VALIDATOR],
+      config.handleStakeEvent.key
+    )
+    this.logger.info(`startHeight: ${startHeight}, endHeight: ${endHeight}`)
+    if (startHeight >= endHeight) return
 
     const resultEvents = await Event.query()
       .select('event.id as event_id', 'event.type', 'event.block_height')
       .withGraphFetched('transaction')
       .modifyGraph('transaction', (builder) => {
-        builder.select('id', 'timestamp');
+        builder.select('id', 'timestamp')
       })
       .withGraphFetched('attributes')
       .modifyGraph('attributes', (builder) => {
-        builder.select('key', 'value', 'index').orderBy('index');
+        builder.select('key', 'value', 'index').orderBy('index')
       })
       .whereIn('event.type', this.eventStakes)
       .andWhere('event.block_height', '>', startHeight)
-      .andWhere('event.block_height', '<=', endHeight);
+      .andWhere('event.block_height', '<=', endHeight)
 
-    const validators: Validator[] = await Validator.query();
-    const validatorKeys = _.keyBy(validators, 'operator_address');
+    const validators: Validator[] = await Validator.query()
+    const validatorKeys = _.keyBy(validators, 'operator_address')
 
-    const powerEvents: PowerEvent[] = [];
+    const powerEvents: PowerEvent[] = []
     resultEvents.forEach((stakeEvent) => {
       try {
-        let validatorSrcId;
-        let validatorDstId;
-        let amount;
-        let amountRaw;
+        let validatorSrcId: any
+        let validatorDstId: any
+        let amount: any
+        let amountRaw: any
         const firstValidator = stakeEvent.attributes.find(
           (attr: any) =>
             attr.key === EventAttribute.ATTRIBUTE_KEY.VALIDATOR ||
             attr.key === EventAttribute.ATTRIBUTE_KEY.SOURCE_VALIDATOR
-        );
+        )
         if (!firstValidator) {
-          this.logger.warn(
-            `stake event ${stakeEvent.id} doesn't have first validator`
-          );
-          return;
+          this.logger.warn(`stake event ${stakeEvent.id} doesn't have first validator`)
+          return
         }
         const destValidator = stakeEvent.attributes.find(
-          (attr: any) =>
-            attr.key === EventAttribute.ATTRIBUTE_KEY.DESTINATION_VALIDATOR
-        );
+          (attr: any) => attr.key === EventAttribute.ATTRIBUTE_KEY.DESTINATION_VALIDATOR
+        )
         switch (stakeEvent.type) {
           case PowerEvent.TYPES.DELEGATE: {
-            validatorDstId = validatorKeys[firstValidator.value].id;
+            validatorDstId = validatorKeys[firstValidator.value].id
             amountRaw = this.getRawAmountByFirstIndex(
               stakeEvent.attributes,
               PowerEvent.TYPES.DELEGATE,
               firstValidator.index
-            );
-            break;
+            )
+            break
           }
           case PowerEvent.TYPES.REDELEGATE:
-            validatorSrcId = validatorKeys[firstValidator.value].id;
+            validatorSrcId = validatorKeys[firstValidator.value].id
             if (!destValidator) {
-              this.logger.warn(
-                `stake event ${stakeEvent.id} doesn't have destination validator`
-              );
-              return;
+              this.logger.warn(`stake event ${stakeEvent.id} doesn't have destination validator`)
+              return
             }
-            validatorDstId = validatorKeys[destValidator.value].id;
+            validatorDstId = validatorKeys[destValidator.value].id
             amountRaw = this.getRawAmountByFirstIndex(
               stakeEvent.attributes,
               PowerEvent.TYPES.REDELEGATE,
               firstValidator.index
-            );
-            break;
+            )
+            break
           case PowerEvent.TYPES.UNBOND:
-            validatorSrcId = validatorKeys[firstValidator.value].id;
+            validatorSrcId = validatorKeys[firstValidator.value].id
             amountRaw = this.getRawAmountByFirstIndex(
               stakeEvent.attributes,
               PowerEvent.TYPES.UNBOND,
               firstValidator.index
-            );
-            break;
+            )
+            break
           case PowerEvent.TYPES.CREATE_VALIDATOR:
-            validatorDstId = validatorKeys[firstValidator.value].id;
+            validatorDstId = validatorKeys[firstValidator.value].id
             amountRaw = this.getRawAmountByFirstIndex(
               stakeEvent.attributes,
               PowerEvent.TYPES.CREATE_VALIDATOR,
               firstValidator.index
-            );
-            break;
+            )
+            break
           default:
-            break;
+            break
         }
         if (amountRaw) {
-          amount = parseCoins(amountRaw?.value)[0].amount;
+          amount = parseCoins(amountRaw?.value)[0].amount
         }
         const powerEvent: PowerEvent = PowerEvent.fromJson({
           tx_id: stakeEvent.transaction.id,
@@ -183,65 +170,52 @@ export default class HandleStakeEventService extends BullableService {
           validator_dst_id: validatorDstId,
           amount,
           time: stakeEvent.transaction.timestamp.toISOString(),
-        });
+        })
 
-        powerEvents.push(powerEvent);
+        powerEvents.push(powerEvent)
       } catch (error) {
-        this.logger.error(
-          `Error create power event: ${JSON.stringify(stakeEvent)}`
-        );
-        this.logger.error(error);
-        throw error;
+        this.logger.error(`Error create power event: ${JSON.stringify(stakeEvent)}`)
+        this.logger.error(error)
+        throw error
       }
-    });
+    })
 
     await knex.transaction(async (trx) => {
       if (powerEvents.length > 0) {
-        const chunkSize = config.handleStakeEvent.chunkSize || 5000;
+        const chunkSize = config.handleStakeEvent.chunkSize || 5000
         for (let i = 0; i < powerEvents.length; i += chunkSize) {
-          const chunk = powerEvents.slice(i, i + chunkSize);
+          const chunk = powerEvents.slice(i, i + chunkSize)
           await PowerEvent.query()
             .insert(chunk)
             .transacting(trx)
             .catch((error) => {
-              this.logger.error(
-                `Error insert validator's power events: ${JSON.stringify(
-                  chunk
-                )}`
-              );
-              this.logger.error(error);
-            });
+              this.logger.error(`Error insert validator's power events: ${JSON.stringify(chunk)}`)
+              this.logger.error(error)
+            })
         }
       }
 
-      updateBlockCheckpoint.height = endHeight;
+      updateBlockCheckpoint.height = endHeight
       await BlockCheckpoint.query()
         .insert(updateBlockCheckpoint)
         .onConflict('job_name')
         .merge()
         .returning('id')
-        .transacting(trx);
-    });
+        .transacting(trx)
+    })
   }
 
-  public getRawAmountByFirstIndex(
-    attributes: EventAttribute[],
-    action: string,
-    firstIndex: number
-  ) {
-    let indexRule;
+  public getRawAmountByFirstIndex(attributes: EventAttribute[], action: string, firstIndex: number) {
+    let indexRule: any
     if (this.cosmosSdkVersion.compare('0.47.8') === -1) {
-      indexRule = this.mapIndexAmountWithEventStakes['< 0.47.8'];
+      indexRule = this.mapIndexAmountWithEventStakes['< 0.47.8']
     } else {
-      indexRule = this.mapIndexAmountWithEventStakes['>= 0.47.8'];
+      indexRule = this.mapIndexAmountWithEventStakes['>= 0.47.8']
     }
 
     const amountRaw = attributes.find(
-      (attr: any) =>
-        attr.key === EventAttribute.ATTRIBUTE_KEY.AMOUNT &&
-        attr.index === firstIndex + indexRule[action]
-    );
-    return amountRaw;
+      (attr: any) => attr.key === EventAttribute.ATTRIBUTE_KEY.AMOUNT && attr.index === firstIndex + indexRule[action]
+    )
+    return amountRaw
   }
-
 }

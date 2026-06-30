@@ -1,11 +1,11 @@
 /* eslint-disable no-await-in-loop */
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import { BlockCheckpoint } from '../../models';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import { BULL_JOB_NAME, SERVICE } from '../../common';
-import config from '../../config.json' with { type: 'json' };
-import knex from '../../common/utils/db_connection';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint } from '../../models'
 
 @Service({
   name: SERVICE.V1.JobService.UpdateTxCountInBlock.key,
@@ -13,7 +13,7 @@ import knex from '../../common/utils/db_connection';
 })
 export default class UpdateTxCountInBlock extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
@@ -21,32 +21,31 @@ export default class UpdateTxCountInBlock extends BullableService {
     jobName: BULL_JOB_NAME.JOB_UPDATE_TX_COUNT_IN_BLOCK,
   })
   async updateTxCountInBlock() {
-    const [startBlock, endBlock, blockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.JOB_UPDATE_TX_COUNT_IN_BLOCK,
-        [BULL_JOB_NAME.CRAWL_BLOCK],
-        config.jobUpdateTxCountInBlock.key
-      );
-    this.logger.info(`Update tx count from block ${startBlock} to ${endBlock}`);
+    const [startBlock, endBlock, blockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.JOB_UPDATE_TX_COUNT_IN_BLOCK,
+      [BULL_JOB_NAME.CRAWL_BLOCK],
+      config.jobUpdateTxCountInBlock.key
+    )
+    this.logger.info(`Update tx count from block ${startBlock} to ${endBlock}`)
     if (startBlock > endBlock) {
-      return;
+      return
     }
 
     await knex.transaction(async (trx) => {
       // this.logger.warn('transaction', trx);
       await knex.raw(
         `UPDATE block set tx_count = jsonb_array_length( (((data->>'block')::jsonb->>'data')::jsonb->>'txs')::jsonb) where height > ${startBlock} and height <= ${endBlock} and tx_count is NULL`
-      );
+      )
       if (blockCheckpoint) {
-        blockCheckpoint.height = endBlock;
+        blockCheckpoint.height = endBlock
         await BlockCheckpoint.query()
           .insert(blockCheckpoint)
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       }
-    });
+    })
   }
 
   async _start(): Promise<void> {
@@ -63,8 +62,8 @@ export default class UpdateTxCountInBlock extends BullableService {
           every: config.jobUpdateTxCountInBlock.millisecondCrawl,
         },
       }
-    );
+    )
 
-    return super._start();
+    return super._start()
   }
 }

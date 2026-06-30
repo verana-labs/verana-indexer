@@ -1,17 +1,17 @@
-import { Model } from 'objection';
-import BaseModel from './base';
+import { Model } from 'objection'
+import BaseModel from './base'
 
 export class BlockSignature extends BaseModel {
-  height!: number;
+  height!: number
 
-  block_id_flag!: number;
+  block_id_flag!: number
 
-  validator_address!: string;
+  validator_address!: string
 
-  timestamp!: Date;
+  timestamp!: Date
 
   static get tableName() {
-    return 'block_signature';
+    return 'block_signature'
   }
 
   static get jsonSchema() {
@@ -24,7 +24,7 @@ export class BlockSignature extends BaseModel {
         validator_address: { type: 'string' },
         timestamp: { type: 'string', format: 'date-time' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -37,6 +37,6 @@ export class BlockSignature extends BaseModel {
           to: 'block.height',
         },
       },
-    };
+    }
   }
 }

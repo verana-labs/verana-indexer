@@ -1,33 +1,33 @@
 /* eslint-disable import/no-cycle */
-import { Model } from 'objection';
-import BaseModel from './base';
-import { Code } from './code';
+import { Model } from 'objection'
+import BaseModel from './base'
+import { Code } from './code'
 
 export class CodeIdVerification extends BaseModel {
-  code_id!: number;
+  code_id!: number
 
-  data_hash!: string;
+  data_hash!: string
 
-  instantiate_msg_schema: string | undefined;
+  instantiate_msg_schema: string | undefined
 
-  query_msg_schema: string | undefined;
+  query_msg_schema: string | undefined
 
-  execute_msg_schema: string | undefined;
+  execute_msg_schema: string | undefined
 
-  s3_location: string | undefined;
+  s3_location: string | undefined
 
-  verification_status: string | undefined;
+  verification_status: string | undefined
 
-  compiler_version: string | undefined;
+  compiler_version: string | undefined
 
-  github_url: string | undefined;
+  github_url: string | undefined
 
-  verify_step!: any;
+  verify_step!: any
 
-  verified_at: Date | undefined;
+  verified_at: Date | undefined
 
   static get tableName() {
-    return 'code_id_verification';
+    return 'code_id_verification'
   }
 
   static get VERIFICATION_STATUS() {
@@ -35,11 +35,11 @@ export class CodeIdVerification extends BaseModel {
       FAIL: 'FAIL',
       VERIFYING: 'VERIFYING',
       SUCCESS: 'SUCCESS',
-    };
+    }
   }
 
   static get jsonAttributes() {
-    return ['verify_step'];
+    return ['verify_step']
   }
 
   static get jsonSchema() {
@@ -55,7 +55,7 @@ export class CodeIdVerification extends BaseModel {
         s3_location: { type: ['string', 'null'] },
         verification_status: {
           type: ['string', 'null'],
-          enum: Object.values(this.VERIFICATION_STATUS),
+          enum: Object.values(CodeIdVerification.VERIFICATION_STATUS),
         },
         compiler_version: { type: ['string', 'null'] },
         github_url: { type: ['string', 'null'] },
@@ -69,7 +69,7 @@ export class CodeIdVerification extends BaseModel {
         },
         verified_at: { type: ['string', 'null'], format: 'date-time' },
       },
-    };
+    }
   }
 
   static get relationMappings() {
@@ -82,6 +82,6 @@ export class CodeIdVerification extends BaseModel {
           to: 'code.code_id',
         },
       },
-    };
+    }
   }
 }

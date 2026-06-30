@@ -1,10 +1,10 @@
-import { Service } from '@ourparentcenter/moleculer-decorators-extended';
-import { ServiceBroker } from 'moleculer';
-import { BlockCheckpoint, TransactionMessage, Vote } from '../../models';
-import { BULL_JOB_NAME, MSG_TYPE, SERVICE } from '../../common/constant';
-import BullableService, { QueueHandler } from '../../base/bullable.service';
-import config from '../../config.json' with { type: 'json' };
-import knex from '../../common/utils/db_connection';
+import { Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BullableService, { QueueHandler } from '../../base/bullable.service'
+import { BULL_JOB_NAME, MSG_TYPE, SERVICE } from '../../common/constant'
+import knex from '../../common/utils/db_connection'
+import config from '../../config.json' with { type: 'json' }
+import { BlockCheckpoint, TransactionMessage, Vote } from '../../models'
 
 @Service({
   name: SERVICE.V1.HandleVoteTx.key,
@@ -12,7 +12,7 @@ import knex from '../../common/utils/db_connection';
 })
 export default class HandleTxVoteService extends BullableService {
   public constructor(public broker: ServiceBroker) {
-    super(broker);
+    super(broker)
   }
 
   @QueueHandler({
@@ -20,21 +20,18 @@ export default class HandleTxVoteService extends BullableService {
     jobName: BULL_JOB_NAME.HANDLE_VOTE_TX,
   })
   private async jobHandle(_payload: any): Promise<void> {
-    await this.handleVote();
+    await this.handleVote()
   }
 
   async handleVote() {
-    const [startBlock, endBlock, blockCheckpoint] =
-      await BlockCheckpoint.getCheckpoint(
-        BULL_JOB_NAME.HANDLE_VOTE_TX,
-        [BULL_JOB_NAME.HANDLE_AUTHZ_TX],
-        config.handleVoteTx.key
-      );
-    this.logger.info(
-      `Handle Voting message from block ${startBlock} to block ${endBlock}`
-    );
+    const [startBlock, endBlock, blockCheckpoint] = await BlockCheckpoint.getCheckpoint(
+      BULL_JOB_NAME.HANDLE_VOTE_TX,
+      [BULL_JOB_NAME.HANDLE_AUTHZ_TX],
+      config.handleVoteTx.key
+    )
+    this.logger.info(`Handle Voting message from block ${startBlock} to block ${endBlock}`)
     if (startBlock > endBlock) {
-      return;
+      return
     }
     const txMsgs = await TransactionMessage.query()
       .select('transaction.hash', 'transaction.height', 'transaction_message.*')
@@ -42,16 +39,16 @@ export default class HandleTxVoteService extends BullableService {
       .where('height', '>', startBlock)
       .andWhere('height', '<=', endBlock)
       .andWhere((builder) => {
-        builder.whereIn('type', [MSG_TYPE.MSG_VOTE, MSG_TYPE.MSG_VOTE_V1]);
+        builder.whereIn('type', [MSG_TYPE.MSG_VOTE, MSG_TYPE.MSG_VOTE_V1])
       })
       .andWhere('code', 0)
       .orderBy([
         { column: 'height', order: 'ASC' },
         { column: 'transaction_message.index', order: 'ASC' },
-      ]);
-    const votesInsert: Vote[] = [];
+      ])
+    const votesInsert: Vote[] = []
     txMsgs.forEach((txMsg) => {
-      const { content } = txMsg;
+      const { content } = txMsg
       votesInsert.push(
         Vote.fromJson({
           voter: content.voter,
@@ -61,13 +58,13 @@ export default class HandleTxVoteService extends BullableService {
           height: txMsg.height,
           tx_id: txMsg.tx_id,
         })
-      );
-    });
+      )
+    })
 
     await knex.transaction(async (trx) => {
-      const chunkSize = config.handleVoteTx.chunkSize || 5000;
+      const chunkSize = config.handleVoteTx.chunkSize || 5000
       for (let i = 0; i < votesInsert.length; i += chunkSize) {
-        const chunk = votesInsert.slice(i, i + chunkSize);
+        const chunk = votesInsert.slice(i, i + chunkSize)
         await Promise.all(
           chunk.map(async (vote) => {
             const resultInsert = await Vote.query(trx)
@@ -75,22 +72,22 @@ export default class HandleTxVoteService extends BullableService {
               .onConflict(['proposal_id', 'voter'])
               .merge(['vote_option', 'height', 'tx_id', 'txhash'])
               .where('vote.height', '<=', vote.height)
-              .transacting(trx);
-            this.logger.debug('result insert vote: ', resultInsert);
+              .transacting(trx)
+            this.logger.debug('result insert vote: ', resultInsert)
           })
-        );
+        )
       }
       if (blockCheckpoint) {
-        blockCheckpoint.height = endBlock;
+        blockCheckpoint.height = endBlock
 
         await BlockCheckpoint.query()
           .insert(blockCheckpoint)
           .onConflict('job_name')
           .merge()
           .returning('id')
-          .transacting(trx);
+          .transacting(trx)
       }
-    });
+    })
   }
 
   public async _start(): Promise<void> {
@@ -107,7 +104,7 @@ export default class HandleTxVoteService extends BullableService {
           every: config.handleVoteTx.millisecondCrawl,
         },
       }
-    );
-    return super._start();
+    )
+    return super._start()
   }
 }

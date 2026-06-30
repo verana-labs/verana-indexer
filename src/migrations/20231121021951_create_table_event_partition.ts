@@ -1,4 +1,4 @@
-import { Knex } from 'knex';
+import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
   await knex.transaction(async (trx) => {
@@ -22,19 +22,15 @@ export async function up(knex: Knex): Promise<void> {
 
       CREATE INDEX event_partition_block_height_btree_idx
         ON event_partition USING BTREE (block_height ASC NULLS LAST);`
-    );
+    )
 
     // Change table name if no data exist on event
-    const isExistEventData = await knex.raw(`SELECT * FROM event LIMIT 1`);
+    const isExistEventData = await knex.raw(`SELECT * FROM event LIMIT 1`)
     if (isExistEventData.rows.length === 0 && process.env.NODE_ENV !== 'test') {
-      await knex
-        .raw('ALTER TABLE event RENAME TO event_backup;')
-        .transacting(trx);
-      await knex
-        .raw('ALTER TABLE event_partition RENAME TO event;')
-        .transacting(trx);
+      await knex.raw('ALTER TABLE event RENAME TO event_backup;').transacting(trx)
+      await knex.raw('ALTER TABLE event_partition RENAME TO event;').transacting(trx)
     }
-  });
+  })
 }
 
 export async function down(knex: Knex): Promise<void> {}

@@ -108,10 +108,7 @@
     "chunkSize": 500,
     "txsPerCall": 200,
     "saveRawLog": true,
-    "lastEventsTypeTx": [
-      "tx",
-      "ethereum_tx"
-    ],
+    "lastEventsTypeTx": ["tx", "ethereum_tx"],
     "rpcRetryAttempts": 3,
     "rpcRetryDelay": 1000,
     "rpcTimeout": 30000,
@@ -280,17 +277,9 @@
     "subWhereDepthLimit": 1,
     "rateLimitWindow": 60000,
     "rateLimitQuery": 30,
-    "queryNeedWhereModel": [
-      "event_attribute",
-      "view_event_attribute_value_index"
-    ],
-    "queryNeedWhereRelation": [
-      "event_attributes",
-      "event_attribute_index"
-    ],
-    "queryNeedWhereCondition": [
-      "block_height"
-    ],
+    "queryNeedWhereModel": ["event_attribute", "view_event_attribute_value_index"],
+    "queryNeedWhereRelation": ["event_attributes", "event_attribute_index"],
+    "queryNeedWhereCondition": ["block_height"],
     "queryHeightRangeLimit": 10000
   },
   "crawlValidatorImage": {
@@ -381,11 +370,7 @@
   },
   "accountStatistics": {
     "numberOfTopRecords": 10,
-    "dayRange": [
-      3,
-      15,
-      30
-    ]
+    "dayRange": [3, 15, 30]
   },
   "dailyStatsJobs": {
     "jobPattern": "0 0 0 * * ?"
@@ -522,9 +507,7 @@
     "blocksPerCall": 500,
     "millisecondRepeatJob": 1000,
     "chunkSizeInsert": 5000,
-    "wrapExtensionContract": [
-      ""
-    ]
+    "wrapExtensionContract": [""]
   },
   "erc721": {
     "key": "erc721",
