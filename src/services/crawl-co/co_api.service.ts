@@ -107,8 +107,6 @@ export default class CorporationApiService extends BaseService {
         policy_address: policyAddress,
         language: plain.language ?? null,
         active_version: deriveActiveVersion(cgfVersions),
-        // not indexed yet (no archived column / ArchiveCorporation handler)
-        archived: null,
         created: plain.created,
         modified: plain.modified,
         controlled_ecosystems: controlledEcosystems,

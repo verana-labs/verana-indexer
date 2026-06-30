@@ -172,7 +172,6 @@ describe('CorporationApiService.getCorporationV4', () => {
       policy_address: 'verana1pol',
       language: 'en',
       active_version: 1,
-      archived: null,
       created: '2024-01-01',
       modified: '2024-02-01',
       controlled_ecosystems: 2,
