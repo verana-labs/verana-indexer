@@ -355,6 +355,9 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       createRoute('/v4/exchange-rate', {
         'GET price': `${SERVICE.V1.ExchangeRateApiService.path}.getPrice`,
       }),
+      createRoute('/v4/corporation', {
+        'GET get/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationV4`,
+      }),
       createRoute('/verana/td/v1', {
         'GET get/:corporation': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         'GET params': `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
