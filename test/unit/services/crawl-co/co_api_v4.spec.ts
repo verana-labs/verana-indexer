@@ -7,6 +7,7 @@ jest.mock('../../../../src/services/crawl-co/co_stats', () => ({
   deriveActiveVersion: jest.fn(),
   applyGfData: jest.fn(),
   getResolvedBlockHeight: jest.fn(async () => 0),
+  parseGfDataMode: jest.fn((raw: string | undefined) => ({ ok: true, mode: raw ?? 'only_active' })),
 }))
 jest.mock('../../../../src/services/resolver/trust-data-enrichment', () => ({
   parseTrustDataMode: jest.fn(() => ({ ok: true, mode: 'none' })),
@@ -31,6 +32,7 @@ import {
   deriveActiveVersion,
   getCorporationTrustDeposit,
   getResolvedBlockHeight,
+  parseGfDataMode,
 } from '../../../../src/services/crawl-co/co_stats'
 
 function fetchReturns(corporation: unknown) {
@@ -63,6 +65,63 @@ describe('CorporationApiService.getCorporationV4', () => {
 
     expect(ApiResponder.error).toHaveBeenCalledWith(ctx, expect.stringContaining('Invalid corporation id'), 400)
     expect(Corporation.query as jest.Mock).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 (not all-versions) when gf_data fails validation', async () => {
+    ;(parseGfDataMode as jest.Mock).mockReturnValueOnce({
+      ok: false,
+      message: 'Invalid "gf_data". Allowed values: none, only_active, all',
+    })
+    const ctx: any = { params: { id: '1', gf_data: 'bogus' }, meta: {} }
+
+    await service.getCorporationV4(ctx)
+
+    expect(ApiResponder.error).toHaveBeenCalledWith(ctx, expect.stringContaining('Invalid "gf_data"'), 400)
+    expect(Corporation.query as jest.Mock).not.toHaveBeenCalled()
+  })
+
+  it('excludes EGF rows (ecosystem_id != 0) from active_version/versions — CGF only per spec', async () => {
+    fetchReturns({
+      toJSON: () => ({
+        id: 1,
+        did: 'did:example:co',
+        corporation: 'verana1pol',
+        governanceFrameworkVersions: [
+          { version: 1, ecosystem_id: 0, active_since: '2024-01-01', documents: [] }, // CGF
+          { version: 7, ecosystem_id: 5, active_since: '2024-06-01', documents: [] }, // EGF for a controlled ecosystem
+        ],
+      }),
+    })
+    ;(calculateCorporationParticipantStats as jest.Mock).mockResolvedValue({
+      participants: 0,
+      participants_ecosystem: 0,
+      participants_issuer_grantor: 0,
+      participants_issuer: 0,
+      participants_verifier_grantor: 0,
+      participants_verifier: 0,
+      participants_holder: 0,
+    })
+    ;(countControlledEcosystems as jest.Mock).mockResolvedValue(1)
+    ;(getCorporationTrustDeposit as jest.Mock).mockResolvedValue({
+      deposit: 0,
+      share: 0,
+      refunded: 0,
+      slashed_deposit: 0,
+      repaid_deposit: 0,
+      slash_count: 0,
+      last_slashed: null,
+      last_repaid: null,
+    })
+    ;(deriveActiveVersion as jest.Mock).mockReturnValue(1)
+    ;(applyGfData as jest.Mock).mockReturnValue([])
+
+    const ctx: any = { params: { id: '1', gf_data: 'all' }, meta: {} }
+    await service.getCorporationV4(ctx)
+
+    // Both helpers must receive the CGF-only set (ecosystem_id falsy), not the EGF row.
+    const cgfOnly = [{ version: 1, ecosystem_id: 0, active_since: '2024-01-01', documents: [] }]
+    expect(deriveActiveVersion).toHaveBeenCalledWith(cgfOnly)
+    expect(applyGfData).toHaveBeenCalledWith(cgfOnly, 'all', undefined)
   })
 
   it('builds the spec response object: { corporation } with on-chain fields + aggregates + versions', async () => {
@@ -172,7 +231,7 @@ describe('CorporationApiService.getCorporationV4', () => {
     expect('versions' in res.corporation).toBe(false)
   })
 
-  it('computes entity aggregates at latest state, but echoes At-Block-Height (point-in-time deferred)', async () => {
+  it('resolves participant aggregates at the requested At-Block-Height and echoes it', async () => {
     fetchReturns({
       toJSON: () => ({ id: 1, did: 'did:example:co', corporation: 'verana1pol', governanceFrameworkVersions: [] }),
     })
@@ -202,9 +261,9 @@ describe('CorporationApiService.getCorporationV4', () => {
     const ctx: any = { params: { id: '1', gf_data: 'none' }, meta: { blockHeight: 5 } }
     await service.getCorporationV4(ctx)
 
-    // entity counts computed at latest (no block height threaded into the membership query)
-    expect(calculateCorporationParticipantStats).toHaveBeenCalledWith(1)
-    // block_height still resolves/echoes the requested At-Block-Height
+    // participant counts are resolved at the requested At-Block-Height (block height threaded through)
+    expect(calculateCorporationParticipantStats).toHaveBeenCalledWith(1, 5)
+    // block_height resolves/echoes the requested At-Block-Height
     expect(getResolvedBlockHeight).toHaveBeenCalledWith(5)
   })
 })

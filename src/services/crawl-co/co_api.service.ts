@@ -15,9 +15,9 @@ import {
   calculateCorporationParticipantStats,
   countControlledEcosystems,
   deriveActiveVersion,
-  type GfDataMode,
   getCorporationTrustDeposit,
   getResolvedBlockHeight,
+  parseGfDataMode,
 } from './co_stats'
 
 @Service({
@@ -57,7 +57,12 @@ export default class CorporationApiService extends BaseService {
   ) {
     try {
       const { id, preferred_language: preferredLanguage } = ctx.params
-      const gfData = (ctx.params.gf_data ?? 'only_active') as GfDataMode
+
+      const gfDataParsed = parseGfDataMode(ctx.params.gf_data)
+      if (!gfDataParsed.ok) {
+        return ApiResponder.error(ctx, gfDataParsed.message, 400)
+      }
+      const gfData = gfDataParsed.mode
 
       const trustDataParsed = parseTrustDataMode(ctx.params.trust_data)
       if (!trustDataParsed.ok) {
@@ -65,39 +70,44 @@ export default class CorporationApiService extends BaseService {
       }
       const trustDataMode = trustDataParsed.mode
 
-      const numericId = Number(id)
-      if (!Number.isInteger(numericId) || numericId <= 0) {
+      // uint64 id: query by digit-string to avoid Number() precision loss above 2^53
+      const idStr = String(id).trim()
+      if (!/^\d+$/.test(idStr) || BigInt(idStr) <= BigInt(0)) {
         return ApiResponder.error(ctx, `Invalid corporation id '${id}'`, 400)
       }
 
       const blockHeight = getBlockHeight(ctx)
 
       const corporationRow = await Corporation.query()
-        .findById(numericId)
-        .withGraphFetched('governanceFrameworkVersions.documents')
+        .findById(idStr)
+        .withGraphFetched(gfData === 'none' ? 'governanceFrameworkVersions' : 'governanceFrameworkVersions.documents')
 
       if (!corporationRow) {
         return ApiResponder.error(ctx, `Corporation ${id} not found`, 404)
       }
 
       const plain = corporationRow.toJSON() as Record<string, unknown>
-      const corporationId = Number(plain.id)
+      const corporationId = plain.id as number | string
+      // CGF only — the relation also returns EGF rows (non-zero ecosystem_id) owned by the corporation
       const allVersions = (plain.governanceFrameworkVersions ?? []) as CorporationGfVersion[]
-      const policyAddress = (plain.corporation as string | null) ?? (plain.policy_address as string | null) ?? null
+      const cgfVersions = allVersions.filter((v) => !v.ecosystem_id)
+      const policyAddress = (plain.policy_address as string | null) ?? (plain.corporation as string | null) ?? null
 
-      // Aggregates are latest-state; point-in-time reconstruction is deferred (no corporation_snapshot).
-      const [participantStats, controlledEcosystems, trustDeposit] = await Promise.all([
-        calculateCorporationParticipantStats(corporationId),
+      // participants honor At-Block-Height; controlled_ecosystems + trust-deposit stay latest (point-in-time deferred)
+      const [participantStats, controlledEcosystems, trustDeposit, resolvedBlockHeight] = await Promise.all([
+        calculateCorporationParticipantStats(corporationId, blockHeight),
         countControlledEcosystems(corporationId),
         getCorporationTrustDeposit(policyAddress),
+        getResolvedBlockHeight(blockHeight),
       ])
 
       const corporation: Record<string, unknown> = {
         id: corporationId,
         did: plain.did,
-        policy_address: plain.policy_address ?? null,
+        policy_address: policyAddress,
         language: plain.language ?? null,
-        active_version: deriveActiveVersion(allVersions),
+        active_version: deriveActiveVersion(cgfVersions),
+        // not indexed yet (no archived column / ArchiveCorporation handler)
         archived: null,
         created: plain.created,
         modified: plain.modified,
@@ -107,10 +117,10 @@ export default class CorporationApiService extends BaseService {
       }
 
       if (gfData !== 'none') {
-        corporation.versions = applyGfData(allVersions, gfData, preferredLanguage)
+        corporation.versions = applyGfData(cgfVersions, gfData, preferredLanguage)
       }
 
-      const responsePayload = { corporation, block_height: await getResolvedBlockHeight(blockHeight) }
+      const responsePayload = { corporation, block_height: resolvedBlockHeight }
       const enriched =
         trustDataMode === 'none'
           ? responsePayload

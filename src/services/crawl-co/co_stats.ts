@@ -3,9 +3,18 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
 import TrustDeposit from '../../models/trust_deposit'
-import { calculateParticipantState } from '../crawl-pp/pp_state_utils'
+import { calculateParticipantState, normalizeParticipantType, type ParticipantType } from '../crawl-pp/pp_state_utils'
 
 export type GfDataMode = 'none' | 'only_active' | 'all'
+
+export function parseGfDataMode(raw: unknown): { ok: true; mode: GfDataMode } | { ok: false; message: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, mode: 'only_active' }
+  const normalized = String(raw).trim().toLowerCase()
+  if (normalized === 'none' || normalized === 'only_active' || normalized === 'all') {
+    return { ok: true, mode: normalized as GfDataMode }
+  }
+  return { ok: false, message: 'Invalid "gf_data". Allowed values: none, only_active, all' }
+}
 
 export interface CorporationGfVersion {
   version: number
@@ -47,8 +56,17 @@ function emptyParticipantStats(): CorporationParticipantStats {
   }
 }
 
+const ROLE_TO_FIELD: Partial<Record<ParticipantType, keyof CorporationParticipantStats>> = {
+  ECOSYSTEM: 'participants_ecosystem',
+  ISSUER_GRANTOR: 'participants_issuer_grantor',
+  ISSUER: 'participants_issuer',
+  VERIFIER_GRANTOR: 'participants_verifier_grantor',
+  VERIFIER: 'participants_verifier',
+  HOLDER: 'participants_holder',
+}
+
 export async function calculateCorporationParticipantStats(
-  corporationId: number,
+  corporationId: number | string,
   blockHeight?: number
 ): Promise<CorporationParticipantStats> {
   const stats = emptyParticipantStats()
@@ -78,26 +96,27 @@ export async function calculateCorporationParticipantStats(
     if (state !== 'ACTIVE') continue
 
     stats.participants += 1
-    if (row.role === 'ECOSYSTEM') stats.participants_ecosystem += 1
-    else if (row.role === 'ISSUER_GRANTOR') stats.participants_issuer_grantor += 1
-    else if (row.role === 'ISSUER') stats.participants_issuer += 1
-    else if (row.role === 'VERIFIER_GRANTOR') stats.participants_verifier_grantor += 1
-    else if (row.role === 'VERIFIER') stats.participants_verifier += 1
-    else if (row.role === 'HOLDER') stats.participants_holder += 1
+    const roleField = ROLE_TO_FIELD[normalizeParticipantType(row.role)]
+    if (roleField) stats[roleField] += 1
   }
 
   return stats
 }
 
-export async function countControlledEcosystems(corporationId: number): Promise<number> {
+export async function countControlledEcosystems(corporationId: number | string): Promise<number> {
   return Ecosystem.query().where('corporation_id', corporationId).resultSize()
 }
 
 function byActiveSinceDesc(a: CorporationGfVersion, b: CorporationGfVersion): number {
-  if (!a.active_since && !b.active_since) return 0
-  if (!a.active_since) return 1
-  if (!b.active_since) return -1
-  return new Date(b.active_since).getTime() - new Date(a.active_since).getTime()
+  if (a.active_since && b.active_since) {
+    const diff = new Date(b.active_since).getTime() - new Date(a.active_since).getTime()
+    if (diff !== 0) return diff
+  } else if (a.active_since) {
+    return -1
+  } else if (b.active_since) {
+    return 1
+  }
+  return (b.version ?? 0) - (a.version ?? 0)
 }
 
 export function deriveActiveVersion(versions: CorporationGfVersion[]): number | null {
@@ -169,6 +188,10 @@ export function applyGfData(
 
 export async function getResolvedBlockHeight(blockHeight?: number): Promise<number> {
   if (typeof blockHeight === 'number') return blockHeight
-  const row = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION).first()
-  return row?.height != null ? Number(row.height) : 0
+  const checkpoint = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION).first()
+  if (checkpoint?.height != null) return Number(checkpoint.height)
+  // fall back to latest block when the checkpoint row isn't written yet (fresh indexer)
+  const latest = await knex('block').max('height as max').first()
+  const maxValue = latest != null ? (latest as { max: string | number | null }).max : null
+  return maxValue != null ? Number(maxValue) : 0
 }
