@@ -5,6 +5,7 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockHeight } from '../../common/utils/blockHeight'
 import { Corporation } from '../../models/corporation'
 import { CorporationHistory } from '../../models/corporation_history'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
@@ -69,8 +70,7 @@ export default class CorporationApiService extends BaseService {
         return ApiResponder.error(ctx, `Invalid corporation id '${id}'`, 400)
       }
 
-      const meta = (ctx.meta ?? {}) as Record<string, unknown>
-      const blockHeight = typeof meta.blockHeight === 'number' ? meta.blockHeight : undefined
+      const blockHeight = getBlockHeight(ctx)
 
       const corporationRow = await Corporation.query()
         .findById(numericId)
@@ -118,7 +118,8 @@ export default class CorporationApiService extends BaseService {
 
       return ApiResponder.success(ctx, enriched)
     } catch (err) {
-      return ApiResponder.error(ctx, err instanceof Error ? err.message : String(err), 500)
+      this.logger.error('Error in getCorporationV4:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 
