@@ -49,6 +49,16 @@ export async function up(knex: Knex): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_events_payload_related_dids_camel_gin
     ON indexer_events USING GIN ((payload -> 'relatedDids'))
   `)
+
+  await knex.raw(`
+    CREATE INDEX IF NOT EXISTS idx_events_payload_related_corp_ids_gin
+    ON indexer_events USING GIN ((payload -> 'related_corporation_ids'))
+  `)
+
+  await knex.raw(`
+    CREATE INDEX IF NOT EXISTS idx_events_payload_related_corp_ids_camel_gin
+    ON indexer_events USING GIN ((payload -> 'relatedCorporationIds'))
+  `)
 }
 
 export async function down(knex: Knex): Promise<void> {
