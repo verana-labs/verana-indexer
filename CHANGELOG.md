@@ -1,5 +1,45 @@
 # Changelog
 
+## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-07-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* 
+
+### Features
+
+* add snapshot endpoint for initial sync ([#238](https://github.com/verana-labs/verana-indexer/issues/238)) ([56dfda5](https://github.com/verana-labs/verana-indexer/commit/56dfda5fc478a49d6255e1951a0f2164d7fdad7a))
+* add support for v4 verifiable transactions in indexer ([#220](https://github.com/verana-labs/verana-indexer/issues/220)) ([11083fc](https://github.com/verana-labs/verana-indexer/commit/11083fc0d69058ac3a3baa9abba8bab01f74f2a0))
+* add trustData summary/full/null to TR and Perm APIs ([#228](https://github.com/verana-labs/verana-indexer/issues/228)) ([709b4b1](https://github.com/verana-labs/verana-indexer/commit/709b4b111c2ed3a553e8c882c5f7ea66b8f10e52))
+* align IDX-INDEXER-QRY-6 list indexer events to v4 ([#305](https://github.com/verana-labs/verana-indexer/issues/305)) ([2b7a281](https://github.com/verana-labs/verana-indexer/commit/2b7a2812cba8ab3f1cee764ff2aed468d91bc288))
+* corporation id model ([#283](https://github.com/verana-labs/verana-indexer/issues/283)) ([d0f5152](https://github.com/verana-labs/verana-indexer/commit/d0f5152d289c8bd0c26aa04e27a05112fb3e2e8b))
+* idx xr qry 2 list exchange rates ([#300](https://github.com/verana-labs/verana-indexer/issues/300)) ([08a7e9a](https://github.com/verana-labs/verana-indexer/commit/08a7e9a2b99edb281487bd8e69645f701e158863))
+* implement idx qry 3 ([#292](https://github.com/verana-labs/verana-indexer/issues/292)) ([c16ad1c](https://github.com/verana-labs/verana-indexer/commit/c16ad1c12f0b95eee62aa5a3bcec35494ad505b9))
+* implement idx vt qry 2 verifiable trust list changes ([#288](https://github.com/verana-labs/verana-indexer/issues/288)) ([05e72cf](https://github.com/verana-labs/verana-indexer/commit/05e72cfd89f0e7b797bf9026cacf396a09eac7a3))
+* implement idx vt sub 1 verifiable trust subscribe changes ([#286](https://github.com/verana-labs/verana-indexer/issues/286)) ([7a173d8](https://github.com/verana-labs/verana-indexer/commit/7a173d85f8ca50b99cdbae25c5e88ddd71940937))
+* implement IDX-INDEXER-SUB-1 Subscribe Indexer Events ([#247](https://github.com/verana-labs/verana-indexer/issues/247)) ([f83ec7b](https://github.com/verana-labs/verana-indexer/commit/f83ec7b81d015b0099fe2674f305f678f86620ce))
+* implement IDX-VT-QRY-1 resolve endpoint ([#249](https://github.com/verana-labs/verana-indexer/issues/249)) ([6263584](https://github.com/verana-labs/verana-indexer/commit/62635840a755aaa179b4957ad36d4d8185b27698))
+* implement IDX-VT-QRY-3 ([#291](https://github.com/verana-labs/verana-indexer/issues/291)) ([84e3845](https://github.com/verana-labs/verana-indexer/commit/84e384599a403e02b797f1e6f8089ab448160ab8))
+* implemented IDX-XR-QRY-1 ([#299](https://github.com/verana-labs/verana-indexer/issues/299)) ([047fdd5](https://github.com/verana-labs/verana-indexer/commit/047fdd5f5432b9d0768581f6185cd2f342e63fe0))
+* remove mx reputation module ([#237](https://github.com/verana-labs/verana-indexer/issues/237)) ([2769445](https://github.com/verana-labs/verana-indexer/commit/2769445d4adf22edbfc8cc4914a1edb17f447533))
+* upgrade verana types ([#250](https://github.com/verana-labs/verana-indexer/issues/250)) ([31a2c97](https://github.com/verana-labs/verana-indexer/commit/31a2c97062ec5daf79145cd10c026df39e3ff88d))
+
+
+### Bug Fixes
+
+* align idx metrics qry 1 get global metrics with v4 ([#290](https://github.com/verana-labs/verana-indexer/issues/290)) ([d6c46c3](https://github.com/verana-labs/verana-indexer/commit/d6c46c30212857f29c69e481bafd7708f439392a))
+* align snapshot with spec ([#287](https://github.com/verana-labs/verana-indexer/issues/287)) ([6999a53](https://github.com/verana-labs/verana-indexer/commit/6999a53fe96c7b45420614132106fa778b9fd794))
+* improve event replay for pre-existing DIDs ([#242](https://github.com/verana-labs/verana-indexer/issues/242)) ([d785a36](https://github.com/verana-labs/verana-indexer/commit/d785a367b9ede3ade8266e8d3ad7fae2ea19aa30))
+* include entity id based on db query ([#248](https://github.com/verana-labs/verana-indexer/issues/248)) ([9b8056d](https://github.com/verana-labs/verana-indexer/commit/9b8056d88aef5cf547b8306ab35e44d1c0d8633a))
+* remove codefish semantic release ([#298](https://github.com/verana-labs/verana-indexer/issues/298)) ([99c2703](https://github.com/verana-labs/verana-indexer/commit/99c270339e79a487b890f8e63bb79f10561bf59b))
+* remove duplicate index creation from indexer events migration ([#245](https://github.com/verana-labs/verana-indexer/issues/245)) ([65c70be](https://github.com/verana-labs/verana-indexer/commit/65c70be47825e35380242de2b8384afceb89d694))
+* resolve problem on DID's validation ([#246](https://github.com/verana-labs/verana-indexer/issues/246)) ([e9a8952](https://github.com/verana-labs/verana-indexer/commit/e9a895200b6c76b9d0945af8a9c070d0c48ec340))
+* return null when no next indexer change exists ([#244](https://github.com/verana-labs/verana-indexer/issues/244)) ([881e326](https://github.com/verana-labs/verana-indexer/commit/881e326c3ef1b53057b747eb8c79ca326e15ae0f))
+* update endpoint according to IDX-INDEXER-QRY-5 ([#289](https://github.com/verana-labs/verana-indexer/issues/289)) ([e2d2492](https://github.com/verana-labs/verana-indexer/commit/e2d24922010b91b6a47cbf09833df73c55da8196))
+* use gRPC instead of blockchain api ([#284](https://github.com/verana-labs/verana-indexer/issues/284)) ([b5c0416](https://github.com/verana-labs/verana-indexer/commit/b5c0416612e50eaa9ec0d8fcd955985c3332d839))
+* verana-types import path (.js.js) causing startup failure ([#236](https://github.com/verana-labs/verana-indexer/issues/236)) ([c1cee21](https://github.com/verana-labs/verana-indexer/commit/c1cee21f2b34566bd29da396c78b3a19bf9a5952))
+
 ## [1.3.1](https://github.com/verana-labs/verana-indexer/compare/v1.3.0...v1.3.1) (2026-04-28)
 
 
