@@ -357,6 +357,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       }),
       createRoute('/v4/corporation', {
         'GET get/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationV4`,
+        'GET list': `${SERVICE.V1.CorporationApiService.path}.listCorporationsV4`,
       }),
       createRoute('/verana/td/v1', {
         'GET get/:corporation': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
