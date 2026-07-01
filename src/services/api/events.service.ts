@@ -2,6 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, Errors, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
+import { parseCsvList } from './indexer_event_utils'
 import { listIndexerEvents, persistIndexerEventsForBlock } from './indexer_events_query'
 import { subscribeBroadcaster } from './subscribe_broadcaster'
 
@@ -55,14 +56,16 @@ export default class IndexerEventsService extends BaseService {
   @Action({
     name: 'listEvents',
     params: {
-      did: { type: 'string', trim: true, pattern: /^did:[a-z0-9]+:.+/i },
+      dids: { type: 'string', trim: true, optional: true },
+      corporation_id: { type: 'number', integer: true, positive: true, optional: true, convert: true },
       after_block_height: { type: 'number', integer: true, min: 0, optional: true, convert: true },
       limit: { type: 'number', integer: true, min: 1, max: 500, optional: true, convert: true },
     },
   })
   public async listEvents(
     ctx: Context<{
-      did: string
+      dids?: string
+      corporation_id?: number
       after_block_height?: number
       limit?: number
     }>
@@ -71,7 +74,8 @@ export default class IndexerEventsService extends BaseService {
     try {
       const events = await listIndexerEvents({
         afterBlockHeight,
-        did: ctx.params.did,
+        dids: parseCsvList(ctx.params.dids),
+        corporationId: ctx.params.corporation_id,
         limit: ctx.params.limit,
       })
       return {
