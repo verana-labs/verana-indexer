@@ -74,6 +74,11 @@
       "millisecondCrawl": 2000
     }
   },
+  "crawlExchangeRate": {
+    "key": "crawlExchangeRate",
+    "millisecondCrawl": 300,
+    "chunkSize": 500
+  },
   "crawlAccounts": {
     "key": "crawlAccounts",
     "freshStart": {
