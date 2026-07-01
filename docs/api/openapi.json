@@ -2949,6 +2949,132 @@
         }
       }
     },
+    "/v4/exchange-rate/list": {
+      "get": {
+        "tags": [
+          "Exchange Rate"
+        ],
+        "summary": "List Exchange Rates",
+        "description": "Retrieve a paginated, filtered list of Exchange Rate entries, ordered by id. Aligned with VPR MOD-XR-QRY-2.",
+        "operationId": "listExchangeRates",
+        "parameters": [
+          {
+            "name": "base_asset_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["TU", "COIN", "FIAT"]
+            },
+            "description": "Filter on base asset type"
+          },
+          {
+            "name": "base_asset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter on base asset identifier"
+          },
+          {
+            "name": "quote_asset_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["TU", "COIN", "FIAT"]
+            },
+            "description": "Filter on quote asset type"
+          },
+          {
+            "name": "quote_asset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter on quote asset identifier"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Filter on state"
+          },
+          {
+            "name": "expire",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Return only entries whose expires > expire"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Caps the number of items returned"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Half-open range cursor on id (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Half-open range cursor on id (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["id", "+id", "-id"],
+              "default": "-id"
+            },
+            "description": "Sort order by id (default -id, newest-first)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of exchange rates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "exchange_rates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ExchangeRate"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/exchange-rate/price": {
       "get": {
         "tags": [
