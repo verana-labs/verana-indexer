@@ -107,7 +107,7 @@ function normalizeSchemaMode(mode?: string): SchemaMode {
   return 'OPEN'
 }
 
-function normalizeParticipantType(value: unknown): ParticipantType {
+export function normalizeParticipantType(value: unknown): ParticipantType {
   if (typeof value === 'string') {
     const upper = value.toUpperCase()
     if (
