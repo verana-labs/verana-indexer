@@ -136,9 +136,7 @@ if (!isLocalhost3001) {
 if (preconditionFailures.length === 0) {
   const reachability = checkServerReachableSync(TEST_BASE_URL)
   if (!reachability.reachable) {
-    preconditionFailures.push(
-      `Server is not reachable at ${TEST_BASE_URL}/v4/indexer/version (${reachability.reason})`
-    )
+    preconditionFailures.push(`Server is not reachable at ${TEST_BASE_URL}/v4/indexer/version (${reachability.reason})`)
   }
 }
 
@@ -1095,7 +1093,10 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
     describe('GET /v4/participant/participant-session-history/:id - ALL PARAMETERS', () => {
       itIf('should get participant session history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`)
+        const response = await testEndpoint(
+          'GET',
+          `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`
+        )
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
