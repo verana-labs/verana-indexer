@@ -21,7 +21,7 @@ interface ConnectedEvent {
 
 type EventMessage = BlockIndexedEvent | BlockResolvedEvent | ConnectedEvent
 
-const ws = new WebSocket('ws://localhost:3001/verana/indexer/v1/events')
+const ws = new WebSocket('ws://localhost:3001/v4/indexer/events')
 
 ws.on('open', () => {
   console.log('✅ Connected to Verana Indexer Events WebSocket')

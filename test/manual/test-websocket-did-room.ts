@@ -21,14 +21,14 @@ type ConnectedMessage = {
 
 type Message = ConnectedMessage | IndexerEventMessage | Record<string, unknown>
 
-const baseUrl = process.env.INDEXER_WS_URL || 'ws://localhost:3001/verana/indexer/v1/events'
+const baseUrl = process.env.INDEXER_WS_URL || 'ws://localhost:3001/v4/indexer/events'
 const did = process.env.DID || 'did:web:agent.example'
 const afterBlockHeight = Number(process.env.AFTER_BLOCK_HEIGHT || 0)
 const wsUrl = `${baseUrl}?did=${encodeURIComponent(did)}`
 
 function httpReplayUrl(blockHeight: number): string {
   const httpBase = (process.env.INDEXER_HTTP_URL || 'http://localhost:3001').replace(/\/$/, '')
-  return `${httpBase}/verana/indexer/v1/events?did=${encodeURIComponent(did)}&after_block_height=${blockHeight}`
+  return `${httpBase}/v4/indexer/events?did=${encodeURIComponent(did)}&after_block_height=${blockHeight}`
 }
 
 async function replayMissedEvents(blockHeight: number): Promise<void> {
