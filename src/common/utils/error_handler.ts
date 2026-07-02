@@ -172,9 +172,9 @@ export async function handleErrorGracefully(
     }
     await indexerStatusManager.stopCrawlingOnly(enhancedError, serviceName)
     if (logger.warn) {
-      logger.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`)
+      logger.warn(`Crawling stopped. Error details available via /v4/indexer/status API`)
     } else {
-      console.warn(`Crawling stopped. Error details available via /verana/indexer/v1/status API`)
+      console.warn(`Crawling stopped. Error details available via /v4/indexer/status API`)
     }
     return true
   }

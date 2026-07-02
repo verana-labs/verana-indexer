@@ -12,7 +12,7 @@
     }
   ],
   "paths": {
-    "/verana/co/v1/get/{id}": {
+    "/v4/corporation/get/{id}": {
       "get": {
         "tags": [
           "Corporation"
@@ -54,7 +54,7 @@
         }
       }
     },
-    "/verana/co/v1/list": {
+    "/v4/corporation/list": {
       "get": {
         "tags": [
           "Corporation"
@@ -107,7 +107,7 @@
         }
       }
     },
-    "/verana/co/v1/history/{id}": {
+    "/v4/corporation/history/{id}": {
       "get": {
         "tags": [
           "Corporation"
@@ -149,7 +149,7 @@
         }
       }
     },
-    "/verana/indexer/v1/block-height": {
+    "/v4/indexer/block-height": {
       "get": {
         "tags": [
           "Indexer"
@@ -201,7 +201,7 @@
         }
       }
     },
-    "/verana/indexer/v1/events": {
+    "/v4/indexer/events": {
       "get": {
         "tags": [
           "Indexer"
@@ -425,7 +425,7 @@
         }
       }
     },
-    "/verana/indexer/v1/version": {
+    "/v4/indexer/version": {
       "get": {
         "tags": [
           "Indexer"
@@ -503,7 +503,7 @@
         }
       }
     },
-    "/verana/indexer/v1/status": {
+    "/v4/indexer/status": {
       "get": {
         "tags": [
           "Indexer"
@@ -710,7 +710,7 @@
         }
       }
     },
-    "/verana/ec/v1/get/{id}": {
+    "/v4/ecosystem/get/{id}": {
       "get": {
         "tags": [
           "Ecosystem"
@@ -796,7 +796,7 @@
         }
       }
     },
-    "/verana/ec/v1/list": {
+    "/v4/ecosystem/list": {
       "get": {
         "tags": [
           "Ecosystem"
@@ -1179,7 +1179,7 @@
         }
       }
     },
-    "/verana/ec/v1/params": {
+    "/v4/ecosystem/params": {
       "get": {
         "tags": [
           "Ecosystem"
@@ -1209,7 +1209,7 @@
         }
       }
     },
-    "/verana/ec/v1/history/{id}": {
+    "/v4/ecosystem/history/{id}": {
       "get": {
         "tags": [
           "Ecosystem"
@@ -1418,7 +1418,7 @@
         }
       }
     },
-    "/verana/cs/v1/get/{id}": {
+    "/v4/credential-schema/get/{id}": {
       "get": {
         "tags": [
           "Credential Schema"
@@ -1472,7 +1472,7 @@
         }
       }
     },
-    "/verana/cs/v1/js/{id}": {
+    "/v4/credential-schema/js/{id}": {
       "get": {
         "tags": [
           "Credential Schema"
@@ -1571,7 +1571,7 @@
         }
       }
     },
-    "/verana/cs/v1/list": {
+    "/v4/credential-schema/list": {
       "get": {
         "tags": [
           "Credential Schema"
@@ -1921,7 +1921,7 @@
         }
       }
     },
-    "/verana/cs/v1/params": {
+    "/v4/credential-schema/params": {
       "get": {
         "tags": [
           "Credential Schema"
@@ -1951,7 +1951,7 @@
         }
       }
     },
-    "/verana/cs/v1/history/{id}": {
+    "/v4/credential-schema/history/{id}": {
       "get": {
         "tags": [
           "Credential Schema"
@@ -2081,10 +2081,10 @@
         }
       }
     },
-    "/verana/pp/v1/get/{id}": {
+    "/v4/participant/get/{id}": {
       "get": {
         "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "Get Participant",
         "description": "Retrieve a specific Participant by its ID",
@@ -2149,10 +2149,10 @@
         }
       }
     },
-    "/verana/pp/v1/participant-session/{id}": {
+    "/v4/participant/participant-session/{id}": {
       "get": {
         "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "Get Participant Session",
         "description": "Retrieve a specific Participant Session by its ID",
@@ -2203,10 +2203,10 @@
         }
       }
     },
-    "/verana/pp/v1/list": {
+    "/v4/participant/list": {
       "get": {
         "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "List Participants",
         "description": "Retrieve a paginated list of Participants with extensive filtering options",
@@ -2656,10 +2656,10 @@
         }
       }
     },
-    "/verana/pp/v1/pending/flat": {
+    "/v4/participant/pending/flat": {
       "get": {
         "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "Get pending tasks",
         "description": "Return pending tasks for a given account grouped by Ecosystem and Credential Schema. Supports At-Block-Height header for historical state.",
@@ -3202,65 +3202,10 @@
         }
       }
     },
-    "/verana/pp/v1/participant-sessions": {
+    "/v4/participant/beneficiaries": {
       "get": {
         "tags": [
-          "Participants"
-        ],
-        "summary": "List Participant Sessions",
-        "description": "Retrieve a paginated list of Participant Sessions",
-        "operationId": "listParticipantSessions",
-        "parameters": [
-          {
-            "name": "modified_after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "description": "Filter by modification date"
-          },
-          {
-            "name": "response_max_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1024,
-              "default": 64
-            },
-            "description": "Maximum number of records to return"
-          },
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response with list of Participant Sessions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ParticipantSessionListResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
-    "/verana/pp/v1/beneficiaries": {
-      "get": {
-        "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "Find Beneficiaries",
         "description": "Find participant beneficiaries based on issuer and verifier participants",
@@ -3322,10 +3267,10 @@
         }
       }
     },
-    "/verana/pp/v1/history/{id}": {
+    "/v4/participant/history/{id}": {
       "get": {
         "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "Get Participant activity timeline",
         "description": "Retrieve the activity timeline for a Participant, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
@@ -3433,10 +3378,10 @@
         }
       }
     },
-    "/verana/pp/v1/participant-session-history/{id}": {
+    "/v4/participant/participant-session-history/{id}": {
       "get": {
         "tags": [
-          "Participants"
+          "Participant"
         ],
         "summary": "Get Participant Session History",
         "description": "Retrieve the recorded history for a specific Participant Session ID.",
@@ -3516,7 +3461,7 @@
         }
       }
     },
-    "/verana/stats/v1/get": {
+    "/v4/stats/get": {
       "get": {
         "tags": [
           "Statistics"
@@ -3618,7 +3563,7 @@
         }
       }
     },
-    "/verana/stats/v1/stats": {
+    "/v4/stats/stats": {
       "get": {
         "tags": [
           "Statistics"
@@ -3721,7 +3666,7 @@
         }
       }
     },
-    "/verana/stats/v1/participants-at-height": {
+    "/v4/stats/count-participants": {
       "get": {
         "tags": [
           "Statistics"
@@ -3817,10 +3762,10 @@
         }
       }
     },
-    "/verana/td/v1/get/{corporation}": {
+    "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
-          "TrustDeposit"
+          "Trust Deposit"
         ],
         "summary": "Get Trust Deposit by corporation",
         "description": "Retrieve trust deposit information for a specific corporation address .",
@@ -3883,10 +3828,10 @@
         }
       }
     },
-    "/verana/td/v1/params": {
+    "/v4/trust-deposit/params": {
       "get": {
         "tags": [
-          "TrustDeposit"
+          "Trust Deposit"
         ],
         "summary": "Get Trust Deposit Parameters",
         "description": "Retrieve current system parameters for Trust Deposit module",
@@ -3922,10 +3867,10 @@
         }
       }
     },
-    "/verana/td/v1/history/{corporation}": {
+    "/v4/trust-deposit/history/{corporation}": {
       "get": {
         "tags": [
-          "TrustDeposit"
+          "Trust Deposit"
         ],
         "summary": "Get Trust Deposit activity timeline",
         "description": "Retrieve the activity timeline for a Trust Deposit, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
@@ -4043,7 +3988,7 @@
     "/v4/verifiable-trust/resolve": {
       "post": {
         "tags": [
-          "Resolver"
+          "Verifiable Trust"
         ],
         "summary": "Resolve (IDX-VT-QRY-1)",
         "description": "Resolves the Verifiable Trust state for a DID. Always returns the trust-core fields (`did`, `trusted`, `evaluatedAtTime`, `evaluatedAtBlock`, `expiresAtTime`, `corporationId`); every other section is opt-in via its request selector. Point-in-time is selected via the `At-Block-Height` header.",
@@ -4183,7 +4128,7 @@
     "/v4/verifiable-trust/changes": {
       "get": {
         "tags": [
-          "Resolver"
+          "Verifiable Trust"
         ],
         "summary": "List Changes (IDX-VT-QRY-2)",
         "description": "WebSocket-companion catch-up for the Verifiable Trust subscribe stream. Returns the same change envelopes as the `/v4/verifiable-trust/subscribe` WS `block` messages, compressed: blocks with no subscribed change are omitted. Use after a disconnection or a detected gap, looping with `nextFromBlock` until it is `null`.",
@@ -4324,7 +4269,7 @@
     "/v4/verifiable-trust/dids": {
       "get": {
         "tags": [
-          "Resolver"
+          "Verifiable Trust"
         ],
         "summary": "List Indexed DIDs (IDX-VT-QRY-3)",
         "description": "Enumerates the universe of DIDs the indexer can resolve at a frozen snapshot block, so a client with an empty mirror can bootstrap by resolving each via `/v4/verifiable-trust/resolve`. The snapshot block is selected via the `At-Block-Height` header (latest indexed block when omitted). The DID universe is the union of every Corporation `did`, every Ecosystem `did`, the DID of every in-scope Participant, and any DID previously evaluated by the resolver that the indexer still tracks.",
@@ -5804,17 +5749,6 @@
           }
         }
       },
-      "ParticipantSessionListResponse": {
-        "type": "object",
-        "properties": {
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ParticipantSession"
-            }
-          }
-        }
-      },
       "ParticipantSessionHistoryItem": {
         "type": "object",
         "properties": {
@@ -6996,7 +6930,7 @@
   "tags": [
     {
       "name": "Corporation",
-      "description": "Corporations (verana.co.v1) and their Governance Frameworks (verana.gf.v1)"
+      "description": "Corporations and their Governance Frameworks"
     },
     {
       "name": "Ecosystem",
@@ -7007,11 +6941,11 @@
       "description": "Credential Schema management operations"
     },
     {
-      "name": "Participants",
+      "name": "Participant",
       "description": "Participant management operations"
     },
     {
-      "name": "TrustDeposit",
+      "name": "Trust Deposit",
       "description": "Trust Deposit management and operations"
     },
     {
@@ -7019,7 +6953,7 @@
       "description": "Indexer state and changes tracking operations"
     },
     {
-      "name": "Resolver",
+      "name": "Verifiable Trust",
       "description": "Verifiable Trust resolver (IDX-VT-QRY-1 resolve)."
     },
     {
@@ -7027,14 +6961,15 @@
     },
     {
       "name": "Exchange Rate",
-      "description": "Exchange Rate oracle queries (verana.xr.v1)"
+      "description": "Exchange Rate oracle queries"
     },
     {
       "name": "Statistics",
       "description": "Statistics operations for querying cumulative and delta metrics across different granularities (HOUR, DAY, MONTH) and entity types (GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, PARTICIPANT)"
     },
     {
-      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/verana/indexer/v1/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/verana/indexer/v1/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /verana/indexer/v1/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartParticipantOP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"participant\",\n    \"action\": \"StartParticipantOP\",\n    \"message_type\": \"/verana.pp.v1.MsgStartParticipantOP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Participant\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
+      "name": "Indexer WebSocket",
+      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/v4/indexer/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/v4/indexer/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /v4/indexer/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartParticipantOP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"participant\",\n    \"action\": \"StartParticipantOP\",\n    \"message_type\": \"/verana.pp.v1.MsgStartParticipantOP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Participant\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
     }
   ]
 }

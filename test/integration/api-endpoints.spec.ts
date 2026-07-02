@@ -93,7 +93,7 @@ let suiteEnabled = false
 
 function checkServerReachableSync(baseUrl: string): { reachable: boolean; reason: string } {
   const script = `
-    const url = new URL(${JSON.stringify(`${baseUrl}/verana/indexer/v1/version`)});
+    const url = new URL(${JSON.stringify(`${baseUrl}/v4/indexer/version`)});
     const mod = url.protocol === "https:" ? require("https") : require("http");
     const req = mod.get(url, { timeout: 5000 }, (res) => {
       if (res.statusCode && res.statusCode < 500) {
@@ -137,7 +137,7 @@ if (preconditionFailures.length === 0) {
   const reachability = checkServerReachableSync(TEST_BASE_URL)
   if (!reachability.reachable) {
     preconditionFailures.push(
-      `Server is not reachable at ${TEST_BASE_URL}/verana/indexer/v1/version (${reachability.reason})`
+      `Server is not reachable at ${TEST_BASE_URL}/v4/indexer/version (${reachability.reason})`
     )
   }
 }
@@ -168,7 +168,7 @@ if (!suiteEnabled) {
 describeIf('Comprehensive API Endpoints Integration Tests', () => {
   beforeAll(async () => {
     if (suiteEnabled) {
-      const response = await axios.get(`${TEST_BASE_URL}/verana/indexer/v1/version`, {
+      const response = await axios.get(`${TEST_BASE_URL}/v4/indexer/version`, {
         timeout: 5000,
       })
       console.log(`✓ Server is reachable at ${TEST_BASE_URL}`)
@@ -184,13 +184,13 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
   describe('Indexer Endpoints - All Parameters Tested', () => {
     itIf('should get block height - basic', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/block-height')
+      const response = await testEndpoint('GET', '/v4/indexer/block-height')
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expect(response.status).toBeLessThan(500)
     })
 
     itIf('should get version - basic', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/version')
+      const response = await testEndpoint('GET', '/v4/indexer/version')
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
       if (response.status === 200) {
@@ -199,7 +199,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     itIf('should get status - basic', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/status')
+      const response = await testEndpoint('GET', '/v4/indexer/status')
       expect(response.status).not.toBeGreaterThanOrEqual(500)
     })
 
@@ -296,19 +296,19 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
   describe('API Response Timing Headers', () => {
     itIf('should include x-response-time-ms for participant list endpoint', async () => {
-      const response = await testEndpoint('GET', '/verana/pp/v1/list', { response_max_size: 1 })
+      const response = await testEndpoint('GET', '/v4/participant/list', { response_max_size: 1 })
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
     })
 
     itIf('should include x-response-time-ms for EC list endpoint', async () => {
-      const response = await testEndpoint('GET', '/verana/ec/v1/list', { response_max_size: 1 })
+      const response = await testEndpoint('GET', '/v4/ecosystem/list', { response_max_size: 1 })
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
     })
 
     itIf('should include x-response-time-ms for CS list endpoint', async () => {
-      const response = await testEndpoint('GET', '/verana/cs/v1/list', { response_max_size: 1 })
+      const response = await testEndpoint('GET', '/v4/credential-schema/list', { response_max_size: 1 })
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
     })
@@ -323,17 +323,17 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
   describe('Participant Role Attributes and Filters', () => {
     itIf('should accept participant-role min/max filters on participant/cs/ec list', async () => {
-      const participant = await testEndpoint('GET', '/verana/pp/v1/list', {
+      const participant = await testEndpoint('GET', '/v4/participant/list', {
         response_max_size: 1,
         min_participants_ecosystem: 0,
         max_participants_ecosystem: 10,
       })
-      const cs = await testEndpoint('GET', '/verana/cs/v1/list', {
+      const cs = await testEndpoint('GET', '/v4/credential-schema/list', {
         response_max_size: 1,
         min_participants_issuer: 0,
         max_participants_issuer: 10,
       })
-      const ec = await testEndpoint('GET', '/verana/ec/v1/list', {
+      const ec = await testEndpoint('GET', '/v4/ecosystem/list', {
         response_max_size: 1,
         min_participants_verifier_grantor: 0,
         max_participants_verifier_grantor: 10,
@@ -359,16 +359,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   })
 
   describe('Trust Registry Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/ec/v1/get/:ecosystem_id', () => {
+    describe('GET /v4/ecosystem/get/:ecosystem_id', () => {
       itIf('should get trust registry - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/ec/v1/get/${SAMPLE_TR_ID}`)
+        const response = await testEndpoint('GET', `/v4/ecosystem/get/${SAMPLE_TR_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get trust registry - with At-Block-Height header', async () => {
         const response = await testEndpoint(
           'GET',
-          `/verana/ec/v1/get/${SAMPLE_TR_ID}`,
+          `/v4/ecosystem/get/${SAMPLE_TR_ID}`,
           {},
           {
             'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
@@ -378,41 +378,41 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should handle invalid EC ID format', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/get/invalid-id')
+        const response = await testEndpoint('GET', '/v4/ecosystem/get/invalid-id')
         expect(response.status).toBeGreaterThanOrEqual(400)
         expect(response.status).toBeLessThan(600)
       })
     })
 
-    describe('GET /verana/ec/v1/list - ALL PARAMETERS', () => {
+    describe('GET /v4/ecosystem/list - ALL PARAMETERS', () => {
       itIf('should list trust registries - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list')
+        const response = await testEndpoint('GET', '/v4/ecosystem/list')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with response_max_size at minimum (1)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           response_max_size: 1,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with response_max_size at maximum (1024)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           response_max_size: 1024,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with controller filter', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           controller: SAMPLE_ACCOUNT,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with participant filter', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           participant: SAMPLE_ACCOUNT,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -420,56 +420,56 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list trust registries - with modified_after filter', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           modified_after: timestamps.from,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with only_active (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           only_active: true,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with only_active (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           only_active: false,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with active_gf_only (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           active_gf_only: true,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with preferred_language filter', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           preferred_language: 'en',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           sort: 'modified',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           sort: '-participants_verifier_grantor',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list trust registries - with min/max filters (participants)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           min_participants: 1,
           max_participants: 100,
         })
@@ -477,7 +477,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list trust registries - with min/max filters (weight)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           min_weight: '0',
           max_weight: '1000000',
         })
@@ -485,7 +485,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list trust registries - with min/max filters (issued)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           min_issued: '0',
           max_issued: '1000000',
         })
@@ -493,7 +493,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list trust registries - with min/max filters (verified)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           min_verified: '0',
           max_verified: '1000000',
         })
@@ -501,7 +501,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list trust registries - with min/max filters (slash events)', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           min_ecosystem_slash_events: 0,
           max_ecosystem_slash_events: 100,
           min_network_slash_events: 0,
@@ -512,7 +512,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list trust registries - with ALL filters combined', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           response_max_size: 50,
           controller: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
@@ -526,28 +526,28 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list trust registries - validation: response_max_size exceeds max', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/list', {
+        const response = await testEndpoint('GET', '/v4/ecosystem/list', {
           response_max_size: 2000,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/ec/v1/params', () => {
+    describe('GET /v4/ecosystem/params', () => {
       itIf('should get EC params - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/ec/v1/params')
+        const response = await testEndpoint('GET', '/v4/ecosystem/params')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/ec/v1/history/:ecosystem_id - ALL PARAMETERS', () => {
+    describe('GET /v4/ecosystem/history/:ecosystem_id - ALL PARAMETERS', () => {
       itIf('should get EC history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`)
+        const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get EC history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`, {
+        const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`, {
           response_max_size: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -555,7 +555,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get EC history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`, {
+        const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -563,7 +563,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get EC history - with ALL parameters', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/ec/v1/history/${SAMPLE_TR_ID}`, {
+        const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
@@ -573,16 +573,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   })
 
   describe('Credential Schema Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/cs/v1/get/:id', () => {
+    describe('GET /v4/credential-schema/get/:id', () => {
       itIf('should get credential schema - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/cs/v1/get/${SAMPLE_ID}`)
+        const response = await testEndpoint('GET', `/v4/credential-schema/get/${SAMPLE_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get credential schema - with At-Block-Height header', async () => {
         const response = await testEndpoint(
           'GET',
-          `/verana/cs/v1/get/${SAMPLE_ID}`,
+          `/v4/credential-schema/get/${SAMPLE_ID}`,
           {},
           {
             'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
@@ -592,35 +592,35 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /verana/cs/v1/js/:id', () => {
+    describe('GET /v4/credential-schema/js/:id', () => {
       itIf('should get JSON schema - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/cs/v1/js/${SAMPLE_ID}`)
+        const response = await testEndpoint('GET', `/v4/credential-schema/js/${SAMPLE_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/cs/v1/list - ALL PARAMETERS', () => {
+    describe('GET /v4/credential-schema/list - ALL PARAMETERS', () => {
       itIf('should list credential schemas - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list')
+        const response = await testEndpoint('GET', '/v4/credential-schema/list')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           response_max_size: 10,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with ecosystem_id filter', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           ecosystem_id: SAMPLE_TR_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with participant filter', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           participant: SAMPLE_ACCOUNT,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -628,56 +628,56 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list credential schemas - with modified_after filter', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           modified_after: timestamps.from,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with only_active (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           only_active: true,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with only_active (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           only_active: false,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with issuer_onboarding_mode', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           issuer_onboarding_mode: '2',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with verifier_onboarding_mode', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           verifier_onboarding_mode: '2',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           sort: 'modified',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           sort: '-participants_issuer_grantor',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list credential schemas - with min/max filters (participants)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           min_participants: 1,
           max_participants: 100,
         })
@@ -685,7 +685,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list credential schemas - with min/max filters (weight)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           min_weight: 0,
           max_weight: 1000000,
         })
@@ -693,7 +693,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list credential schemas - with min/max filters (issued)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           min_issued: 0,
           max_issued: 1000000,
         })
@@ -701,7 +701,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list credential schemas - with min/max filters (verified)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           min_verified: 0,
           max_verified: 1000000,
         })
@@ -709,7 +709,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list credential schemas - with min/max filters (slash events)', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           min_ecosystem_slash_events: 0,
           max_ecosystem_slash_events: 100,
           min_network_slash_events: 0,
@@ -720,7 +720,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list credential schemas - with ALL filters combined', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/cs/v1/list', {
+        const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           response_max_size: 50,
           ecosystem_id: SAMPLE_TR_ID,
           participant: SAMPLE_ACCOUNT,
@@ -736,21 +736,21 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /verana/cs/v1/params', () => {
+    describe('GET /v4/credential-schema/params', () => {
       itIf('should get CS params - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/cs/v1/params')
+        const response = await testEndpoint('GET', '/v4/credential-schema/params')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/cs/v1/history/:id - ALL PARAMETERS', () => {
+    describe('GET /v4/credential-schema/history/:id - ALL PARAMETERS', () => {
       itIf('should get CS history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/cs/v1/history/${SAMPLE_ID}`)
+        const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get CS history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/cs/v1/history/${SAMPLE_ID}`, {
+        const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`, {
           response_max_size: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -758,7 +758,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get CS history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/cs/v1/history/${SAMPLE_ID}`, {
+        const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -766,7 +766,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get CS history - with ALL parameters', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/cs/v1/history/${SAMPLE_ID}`, {
+        const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
@@ -776,91 +776,91 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   })
 
   describe('Participant Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/pp/v1/get/:id', () => {
+    describe('GET /v4/participant/get/:id', () => {
       itIf('should get participant - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/pp/v1/get/${SAMPLE_PARTICIPANT_ID}`)
+        const response = await testEndpoint('GET', `/v4/participant/get/${SAMPLE_PARTICIPANT_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/pp/v1/list - ALL PARAMETERS', () => {
+    describe('GET /v4/participant/list - ALL PARAMETERS', () => {
       itIf('should list participants - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list')
+        const response = await testEndpoint('GET', '/v4/participant/list')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with schema_id', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           schema_id: SAMPLE_SCHEMA_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with corporation', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           corporation: SAMPLE_ACCOUNT,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with did', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           did: SAMPLE_DID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with participant_id', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with validator_participant_id', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           validator_participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with participant_state', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           participant_state: 'ACTIVE',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with type', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           type: 'ISSUER',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with only_valid (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           only_valid: true,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with only_valid (false)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           only_valid: false,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with only_slashed (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           only_slashed: true,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with only_repaid (true)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           only_repaid: true,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -868,28 +868,28 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list participants - with modified_after', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           modified_after: timestamps.from,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with country filter', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           country: 'US',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with op_state filter', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           op_state: 'VALIDATED',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           response_max_size: 50,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -897,28 +897,28 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list participants - with when parameter', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           when: timestamps.from,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           sort: 'modified',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           sort: '-participants_holder',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should list participants - with min/max participants', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           min_participants: 1,
           max_participants: 100,
         })
@@ -926,7 +926,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list participants - with min/max weight', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           min_weight: 0,
           max_weight: 1000000,
         })
@@ -934,7 +934,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list participants - with min/max issued', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           min_issued: 0,
           max_issued: 1000000,
         })
@@ -942,7 +942,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list participants - with min/max verified', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           min_verified: 0,
           max_verified: 1000000,
         })
@@ -950,7 +950,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should list participants - with min/max slash events', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           min_ecosystem_slash_events: 0,
           max_ecosystem_slash_events: 100,
           min_network_slash_events: 0,
@@ -961,7 +961,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should list participants - with ALL filters combined', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/pp/v1/list', {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
           schema_id: SAMPLE_SCHEMA_ID,
           corporation: SAMPLE_ACCOUNT,
           did: SAMPLE_DID,
@@ -983,21 +983,21 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /verana/pp/v1/pending/flat - ALL PARAMETERS', () => {
+    describe('GET /v4/participant/pending/flat - ALL PARAMETERS', () => {
       itIf('should get pending flat - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat')
+        const response = await testEndpoint('GET', '/v4/participant/pending/flat')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get pending flat - with account (required)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
           account: SAMPLE_ACCOUNT,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get pending flat - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
           account: SAMPLE_ACCOUNT,
           response_max_size: 100,
         })
@@ -1005,7 +1005,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get pending flat - with sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
           account: SAMPLE_ACCOUNT,
           sort: 'modified',
         })
@@ -1013,7 +1013,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get pending flat - with participant-role sort parameter', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/pending/flat', {
+        const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
           account: SAMPLE_ACCOUNT,
           sort: '-participants_ecosystem',
         })
@@ -1021,23 +1021,23 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /verana/pp/v1/beneficiaries - ALL PARAMETERS', () => {
+    describe('GET /v4/participant/beneficiaries - ALL PARAMETERS', () => {
       itIf('should get beneficiaries - with issuer_participant_id', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries', {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get beneficiaries - with verifier_participant_id', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries', {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           verifier_participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get beneficiaries - validation: missing required parameters (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries')
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
         if (response.status === 400) {
           expect(response.data?.error || response.data?.message).toMatch(
@@ -1047,7 +1047,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get beneficiaries - with issuer_participant_id and response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/beneficiaries', {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
           response_max_size: 100,
         })
@@ -1055,14 +1055,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /verana/pp/v1/history/:id - ALL PARAMETERS', () => {
+    describe('GET /v4/participant/history/:id - ALL PARAMETERS', () => {
       itIf('should get participant history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`)
+        const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get participant history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`, {
+        const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`, {
           response_max_size: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1070,7 +1070,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get participant history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`, {
+        const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1078,7 +1078,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get participant history - with ALL parameters', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/pp/v1/history/${SAMPLE_PARTICIPANT_ID}`, {
+        const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
@@ -1086,54 +1086,23 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /verana/pp/v1/participant-session/:id', () => {
+    describe('GET /v4/participant/participant-session/:id', () => {
       itIf('should get participant session - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session/${SAMPLE_PARTICIPANT_ID}`)
+        const response = await testEndpoint('GET', `/v4/participant/participant-session/${SAMPLE_PARTICIPANT_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/pp/v1/participant-sessions - ALL PARAMETERS', () => {
-      itIf('should list participant sessions - no parameters (defaults)', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions')
-        expect(response.status).not.toBeGreaterThanOrEqual(500)
-      })
-
-      itIf('should list participant sessions - with response_max_size', async () => {
-        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions', {
-          response_max_size: 50,
-        })
-        expect(response.status).not.toBeGreaterThanOrEqual(500)
-      })
-
-      itIf('should list participant sessions - with modified_after', async () => {
-        const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions', {
-          modified_after: timestamps.from,
-        })
-        expect(response.status).not.toBeGreaterThanOrEqual(500)
-      })
-
-      itIf('should list participant sessions - with ALL parameters', async () => {
-        const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', '/verana/pp/v1/participant-sessions', {
-          response_max_size: 50,
-          modified_after: timestamps.from,
-        })
-        expect(response.status).not.toBeGreaterThanOrEqual(500)
-      })
-    })
-
-    describe('GET /verana/pp/v1/participant-session-history/:id - ALL PARAMETERS', () => {
+    describe('GET /v4/participant/participant-session-history/:id - ALL PARAMETERS', () => {
       itIf('should get participant session history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`)
+        const response = await testEndpoint('GET', `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get participant session history - with response_max_size', async () => {
         const response = await testEndpoint(
           'GET',
-          `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
+          `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
           {
             response_max_size: 100,
           }
@@ -1145,7 +1114,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps()
         const response = await testEndpoint(
           'GET',
-          `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
+          `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
           {
             transaction_timestamp_older_than: timestamps.lastWeek,
           }
@@ -1157,7 +1126,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps()
         const response = await testEndpoint(
           'GET',
-          `/verana/pp/v1/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
+          `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
           {
             response_max_size: 50,
             transaction_timestamp_older_than: timestamps.lastWeek,
@@ -1175,7 +1144,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     itIf('should get all metrics - with At-Block-Height header', async () => {
-      const heightResponse = await testEndpoint('GET', '/verana/indexer/v1/block-height')
+      const heightResponse = await testEndpoint('GET', '/v4/indexer/block-height')
       const currentHeight = Number(heightResponse?.data?.height || SAMPLE_BLOCK_HEIGHT)
       const response = await testEndpoint(
         'GET',
@@ -1190,16 +1159,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   })
 
   describe('Trust Deposit Endpoints - All Parameters Tested', () => {
-    describe('GET /verana/td/v1/get/:corporation', () => {
+    describe('GET /v4/trust-deposit/get/:corporation', () => {
       itIf('should get trust deposit - basic', async () => {
-        const response = await testEndpoint('GET', `/verana/td/v1/get/${SAMPLE_ACCOUNT}`)
+        const response = await testEndpoint('GET', `/v4/trust-deposit/get/${SAMPLE_ACCOUNT}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get trust deposit - with At-Block-Height header', async () => {
         const response = await testEndpoint(
           'GET',
-          `/verana/td/v1/get/${SAMPLE_ACCOUNT}`,
+          `/v4/trust-deposit/get/${SAMPLE_ACCOUNT}`,
           {},
           {
             'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
@@ -1209,26 +1178,26 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should handle invalid account format', async () => {
-        const response = await testEndpoint('GET', '/verana/td/v1/get/invalid-account')
+        const response = await testEndpoint('GET', '/v4/trust-deposit/get/invalid-account')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/td/v1/params', () => {
+    describe('GET /v4/trust-deposit/params', () => {
       itIf('should get TD params - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/td/v1/params')
+        const response = await testEndpoint('GET', '/v4/trust-deposit/params')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/td/v1/history/:corporation - ALL PARAMETERS', () => {
+    describe('GET /v4/trust-deposit/history/:corporation - ALL PARAMETERS', () => {
       itIf('should get TD history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/verana/td/v1/history/${SAMPLE_ACCOUNT}`)
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get TD history - with response_max_size', async () => {
-        const response = await testEndpoint('GET', `/verana/td/v1/history/${SAMPLE_ACCOUNT}`, {
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`, {
           response_max_size: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1236,7 +1205,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get TD history - with transaction_timestamp_older_than', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/td/v1/history/${SAMPLE_ACCOUNT}`, {
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`, {
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1244,7 +1213,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get TD history - with ALL parameters', async () => {
         const timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/verana/td/v1/history/${SAMPLE_ACCOUNT}`, {
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`, {
           response_max_size: 50,
           transaction_timestamp_older_than: timestamps.lastWeek,
         })
@@ -1256,16 +1225,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   describe('Stats Endpoints - All Parameters Tested', () => {
     const timestamps = getTimestamps()
 
-    describe('GET /verana/stats/v1/get - ALL PARAMETERS', () => {
+    describe('GET /v4/stats/get - ALL PARAMETERS', () => {
       itIf('should get stats by id - basic', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           id: SAMPLE_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get stats by granularity and timestamp (GLOBAL) - HOUR granularity', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'HOUR',
           timestamp: timestamps.from,
           entity_type: 'GLOBAL',
@@ -1274,7 +1243,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats by granularity and timestamp (GLOBAL) - DAY granularity', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'GLOBAL',
@@ -1283,7 +1252,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats by granularity and timestamp (GLOBAL) - MONTH granularity', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'MONTH',
           timestamp: timestamps.from,
           entity_type: 'GLOBAL',
@@ -1292,7 +1261,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats by granularity and timestamp (ECOSYSTEM) - with entity_id', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'ECOSYSTEM',
@@ -1302,7 +1271,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats by granularity and timestamp (CREDENTIAL_SCHEMA) - with entity_id', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'CREDENTIAL_SCHEMA',
@@ -1312,7 +1281,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats by granularity and timestamp (PARTICIPANT) - with entity_id', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'PARTICIPANT',
@@ -1322,7 +1291,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: GLOBAL with entity_id (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'GLOBAL',
@@ -1335,7 +1304,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: ECOSYSTEM without entity_id (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'ECOSYSTEM',
@@ -1347,7 +1316,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: invalid timestamp format', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: 'invalid-timestamp',
           entity_type: 'GLOBAL',
@@ -1356,7 +1325,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: invalid granularity', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'INVALID',
           timestamp: timestamps.from,
           entity_type: 'GLOBAL',
@@ -1365,7 +1334,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: invalid entity_type', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           granularity: 'DAY',
           timestamp: timestamps.from,
           entity_type: 'INVALID',
@@ -1374,14 +1343,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: missing required parameters', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {})
+        const response = await testEndpoint('GET', '/v4/stats/get', {})
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
 
-    describe('GET /verana/stats/v1/stats - ALL PARAMETERS', () => {
+    describe('GET /v4/stats/stats - ALL PARAMETERS', () => {
       itIf('should get stats with time range (GLOBAL) - BUCKETS_AND_TOTAL', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1391,7 +1360,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (GLOBAL) - BUCKETS only', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1401,7 +1370,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (GLOBAL) - TOTAL only', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1411,7 +1380,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (GLOBAL) - with granularity HOUR', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1422,7 +1391,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (GLOBAL) - with granularity DAY', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1433,7 +1402,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (GLOBAL) - with granularity MONTH', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1444,7 +1413,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (ECOSYSTEM) - with entity_ids array', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'ECOSYSTEM',
@@ -1455,7 +1424,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (ECOSYSTEM) - with entity_ids comma-separated string', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'ECOSYSTEM',
@@ -1466,7 +1435,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (CREDENTIAL_SCHEMA) - with entity_ids', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'CREDENTIAL_SCHEMA',
@@ -1477,7 +1446,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats with time range (PARTICIPANT) - with entity_ids', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'PARTICIPANT',
@@ -1488,7 +1457,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: timestamp_from after timestamp_until (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.until,
           timestamp_until: timestamps.from,
           entity_type: 'GLOBAL',
@@ -1500,7 +1469,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: GLOBAL with entity_ids (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1513,7 +1482,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: ECOSYSTEM without entity_ids (should fail)', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: timestamps.from,
           timestamp_until: timestamps.until,
           entity_type: 'ECOSYSTEM',
@@ -1525,7 +1494,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: invalid timestamp format', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {
+        const response = await testEndpoint('GET', '/v4/stats/stats', {
           timestamp_from: 'invalid',
           timestamp_until: timestamps.until,
           entity_type: 'GLOBAL',
@@ -1534,7 +1503,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
 
       itIf('should get stats - validation: missing required parameters', async () => {
-        const response = await testEndpoint('GET', '/verana/stats/v1/stats', {})
+        const response = await testEndpoint('GET', '/v4/stats/stats', {})
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
@@ -1548,7 +1517,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
     itIf('should handle malformed requests gracefully', async () => {
       try {
-        const response = await testEndpoint('GET', '/verana/stats/v1/get', {
+        const response = await testEndpoint('GET', '/v4/stats/get', {
           invalid_param: 'invalid_value',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1559,14 +1528,14 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     itIf('should handle invalid HTTP methods gracefully', async () => {
-      const response = await testEndpoint('POST', '/verana/indexer/v1/version')
+      const response = await testEndpoint('POST', '/v4/indexer/version')
       expect(response.status).not.toBeGreaterThanOrEqual(500)
     })
   })
 
   describe('Response Validation - Comprehensive Tests', () => {
     itIf('should return valid JSON responses', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/version')
+      const response = await testEndpoint('GET', '/v4/indexer/version')
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       if (response.status < 400) {
         expect(response.headers['content-type']).toMatch(/application\/json/)
@@ -1575,7 +1544,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     itIf('should include proper headers', async () => {
-      const response = await testEndpoint('GET', '/verana/indexer/v1/block-height')
+      const response = await testEndpoint('GET', '/v4/indexer/block-height')
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       if (response.status < 400) {
         expect(response.headers).toBeDefined()
@@ -1583,7 +1552,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     itIf('should return consistent error format for 400 errors', async () => {
-      const response = await testEndpoint('GET', '/verana/stats/v1/get', {})
+      const response = await testEndpoint('GET', '/v4/stats/get', {})
       if (response.status === 400) {
         expect(response.data).toBeDefined()
         expect(response.data.error || response.data.message).toBeDefined()
@@ -1591,7 +1560,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     itIf('should return consistent error format for 404 errors', async () => {
-      const response = await testEndpoint('GET', '/verana/cs/v1/get/999999999')
+      const response = await testEndpoint('GET', '/v4/credential-schema/get/999999999')
       if (response.status === 404) {
         expect(response.data).toBeDefined()
         expect(response.data.error || response.data.message).toBeDefined()

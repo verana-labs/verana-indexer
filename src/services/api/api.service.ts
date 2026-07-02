@@ -185,7 +185,7 @@ function createOnBeforeCall(required: boolean = true) {
       ;(req as any)[REQUEST_START_NS] = process.hrtime.bigint()
       const urlPath = req.url || ''
       const isStatusEndpoint =
-        urlPath.includes('/verana/indexer/v1/status') ||
+        urlPath.includes('/v4/indexer/status') ||
         urlPath.endsWith('/status') ||
         (ctx.action?.name || '').includes('IndexerStatusService.getStatus')
 
@@ -321,32 +321,31 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
     port: process.env.PORT || 3001,
 
     routes: [
-      createRoute('/verana/cs/v1', {
+      createRoute('/v4/credential-schema', {
         'GET get/:id': `${SERVICE.V1.CredentialSchemaDatabaseService.path}.get`,
         'GET history/:id': `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getHistory`,
         'GET js/:id': `${SERVICE.V1.CredentialSchemaDatabaseService.path}.JsonSchema`,
         'GET list': `${SERVICE.V1.CredentialSchemaDatabaseService.path}.list`,
         'GET params': `${SERVICE.V1.CredentialSchemaDatabaseService.path}.getParams`,
       }),
-      createRoute('/verana/ec/v1', {
+      createRoute('/v4/ecosystem', {
         'GET get/:ecosystem_id': `${SERVICE.V1.EcosystemDatabaseService.path}.getEcosystem`,
         'GET list': `${SERVICE.V1.EcosystemDatabaseService.path}.listEcosystems`,
         'GET params': `${SERVICE.V1.EcosystemDatabaseService.path}.getParams`,
         'GET history/:ecosystem_id': `${SERVICE.V1.EcosystemHistoryService.path}.getTRHistory`,
       }),
-      createRoute('/verana/co/v1', {
+      createRoute('/v4/corporation', {
         'GET get/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporation`,
         'GET list': `${SERVICE.V1.CorporationApiService.path}.listCorporations`,
         'GET history/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationHistory`,
       }),
-      createRoute('/verana/pp/v1', {
+      createRoute('/v4/participant', {
         'GET get/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipant`,
         'GET list': `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
         'GET pending/flat': `${SERVICE.V1.ParticipantAPIService.path}.pendingFlat`,
         'GET beneficiaries': `${SERVICE.V1.ParticipantAPIService.path}.findBeneficiaries`,
         'GET history/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipantHistory`,
         'GET participant-session/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSession`,
-        'GET participant-sessions': `${SERVICE.V1.ParticipantAPIService.path}.listParticipantSessions`,
         'GET participant-session-history/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSessionHistory`,
       }),
       createRoute('/v4/metrics', {
@@ -357,7 +356,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET get': `${SERVICE.V1.ExchangeRateApiService.path}.getExchangeRate`,
         'GET list': `${SERVICE.V1.ExchangeRateApiService.path}.listExchangeRates`,
       }),
-      createRoute('/verana/td/v1', {
+      createRoute('/v4/trust-deposit', {
         'GET get/:corporation': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         'GET params': `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
         'GET history/:corporation': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDepositHistory`,
@@ -370,18 +369,15 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       createRoute('/v4/indexer', {
         'GET snapshot': `${SERVICE.V1.IndexerSnapshotService.path}.getSnapshot`,
         'GET changes': `${SERVICE.V1.IndexerMetaService.path}.listChanges`,
-      }),
-      createRoute('/verana/indexer/v1', {
         'GET block-height': `${SERVICE.V1.IndexerMetaService.path}.getBlockHeight`,
         'GET events': `${SERVICE.V1.IndexerEventsService.path}.listEvents`,
         'GET version': `${SERVICE.V1.IndexerMetaService.path}.getVersion`,
         'GET status': `${SERVICE.V1.IndexerStatusService.path}.getDetailedStatus`,
-        'GET errors/download': `v1.LogsService.downloadErrors`,
       }),
-      createRoute('/verana/stats/v1', {
+      createRoute('/v4/stats', {
         'GET get': `${SERVICE.V1.StatsAPIService.path}.get`,
         'GET stats': `${SERVICE.V1.StatsAPIService.path}.stats`,
-        'GET participants-at-height': `${SERVICE.V1.StatsAPIService.path}.getParticipantsAtHeight`,
+        'GET count-participants': `${SERVICE.V1.StatsAPIService.path}.getParticipantsAtHeight`,
       }),
       {
         path: '/',
