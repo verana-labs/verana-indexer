@@ -151,6 +151,8 @@ describe('indexer_events_query', () => {
     txHash: string
     txIndex?: number
     messageIndex?: number
+    corporationId?: number
+    relatedCorporationIds?: number[]
   }): Promise<void> {
     txHashes.push(args.txHash)
     await knex('indexer_events').insert({
@@ -175,6 +177,8 @@ describe('indexer_events_query', () => {
         related_dids: args.relatedDids,
         entity_type: 'Participant',
         entity_id: '42',
+        ...(args.corporationId !== undefined ? { corporation_id: args.corporationId } : {}),
+        ...(args.relatedCorporationIds ? { related_corporation_ids: args.relatedCorporationIds } : {}),
       },
     })
   }
@@ -203,7 +207,7 @@ describe('indexer_events_query', () => {
     await persistIndexerEventsForBlock(baseHeight)
     await persistIndexerEventsForBlock(baseHeight + 1)
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight, limit: 10 })
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
       did,
@@ -221,7 +225,7 @@ describe('indexer_events_query', () => {
 
     await persistIndexerEventsForBlock(baseHeight + 10)
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 9, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight + 9, limit: 10 })
     expect(events.map((event) => event.tx_hash)).toEqual([
       `tx-${runId}-order-1a`,
       `tx-${runId}-order-1b`,
@@ -260,7 +264,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-match-did`,
     })
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ did, tx_hash: `tx-${runId}-match-did` })
@@ -276,7 +280,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-related-dids`,
     })
 
-    const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [relatedDid], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events).toHaveLength(1)
     expect(events[0].did).toBe(otherDid)
@@ -293,7 +297,7 @@ describe('indexer_events_query', () => {
     })
 
     const events = await listIndexerEvents({
-      did: encodeURIComponent(` ${did} `),
+      dids: [encodeURIComponent(` ${did} `)],
       afterBlockHeight: 0,
       limit: 10,
     })
@@ -315,7 +319,7 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-new-height`,
     })
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 60, limit: 10 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight + 60, limit: 10 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-new-height`])
   })
@@ -336,7 +340,7 @@ describe('indexer_events_query', () => {
       txIndex: 1,
     })
 
-    const events = await listIndexerEvents({ did, afterBlockHeight: baseHeight + 69, limit: 1 })
+    const events = await listIndexerEvents({ dids: [did], afterBlockHeight: baseHeight + 69, limit: 1 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-limit-1`])
   })
@@ -350,7 +354,7 @@ describe('indexer_events_query', () => {
     })
 
     const events = await listIndexerEvents({
-      did: `did:web:indexer-events-missing-${runId}.example`,
+      dids: [`did:web:indexer-events-missing-${runId}.example`],
       afterBlockHeight: 0,
       limit: 10,
     })
@@ -371,7 +375,7 @@ describe('indexer_events_query', () => {
       content: { id: 42, applicant: unpersistedDid },
     })
 
-    const events = await listIndexerEvents({ did: unpersistedDid, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [unpersistedDid], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events).toEqual([])
   })
@@ -398,8 +402,136 @@ describe('indexer_events_query', () => {
       txHash: `tx-${runId}-grouping-unrelated`,
     })
 
-    const events = await listIndexerEvents({ did: relatedDid, afterBlockHeight: height - 1, limit: 10 })
+    const events = await listIndexerEvents({ dids: [relatedDid], afterBlockHeight: height - 1, limit: 10 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-grouping-match`])
+  })
+
+  it('matches events by corporation_id via payload.corporation_id', async () => {
+    const height = baseHeight + 110
+    const corpId = 4242
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-corp-scalar`,
+      corporationId: corpId,
+    })
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-corp-other`,
+      txIndex: 1,
+      corporationId: corpId + 1,
+    })
+
+    const events = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 })
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-corp-scalar`])
+  })
+
+  it('matches events by corporation_id via payload.related_corporation_ids', async () => {
+    const height = baseHeight + 120
+    const corpId = 5252
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-corp-related`,
+      relatedCorporationIds: [9999, corpId],
+    })
+
+    const events = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 })
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-corp-related`])
+  })
+
+  it('matches events by any DID in the dids list', async () => {
+    const height = baseHeight + 130
+    const didA = `did:web:indexer-events-list-a-${runId}.example`
+    const didB = `did:web:indexer-events-list-b-${runId}.example`
+    await insertStoredIndexerEvent({ did: didA, relatedDids: [didA], height, txHash: `tx-${runId}-dids-a` })
+    await insertStoredIndexerEvent({ did: didB, relatedDids: [didB], height, txHash: `tx-${runId}-dids-b`, txIndex: 1 })
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [otherDid],
+      height,
+      txHash: `tx-${runId}-dids-c`,
+      txIndex: 2,
+    })
+
+    const events = await listIndexerEvents({ dids: [didA, didB], afterBlockHeight: height - 1, limit: 10 })
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-dids-a`, `tx-${runId}-dids-b`])
+  })
+
+  it('intersects dids AND corporation_id when both are present', async () => {
+    const height = baseHeight + 140
+    const corpId = 6363
+    const targetDid = `did:web:indexer-events-both-${runId}.example`
+    await insertStoredIndexerEvent({
+      did: targetDid,
+      relatedDids: [targetDid],
+      height,
+      txHash: `tx-${runId}-both-match`,
+      corporationId: corpId,
+    })
+    await insertStoredIndexerEvent({
+      did: targetDid,
+      relatedDids: [targetDid],
+      height,
+      txHash: `tx-${runId}-did-only`,
+      txIndex: 1,
+      corporationId: corpId + 1,
+    })
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [otherDid],
+      height,
+      txHash: `tx-${runId}-corp-only`,
+      txIndex: 2,
+      corporationId: corpId,
+    })
+
+    const events = await listIndexerEvents({
+      dids: [targetDid],
+      corporationId: corpId,
+      afterBlockHeight: height - 1,
+      limit: 10,
+    })
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-both-match`])
+  })
+
+  it('returns all events (wildcard) when neither dids nor corporation_id is given', async () => {
+    const height = baseHeight + 150
+    await insertStoredIndexerEvent({ did, relatedDids: [did], height, txHash: `tx-${runId}-wild-1` })
+    await insertStoredIndexerEvent({
+      did: otherDid,
+      relatedDids: [],
+      height,
+      txHash: `tx-${runId}-wild-2`,
+      txIndex: 1,
+      corporationId: 7777,
+    })
+
+    const events = await listIndexerEvents({ afterBlockHeight: height - 1, limit: 10 })
+
+    expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-wild-1`, `tx-${runId}-wild-2`])
+  })
+
+  it('persists v4 payload values while keeping event_type as the Cosmos action name', async () => {
+    const height = baseHeight + 160
+    await insertBlock(height)
+    await insertTxMessage({ height, txIndex: 0, messageIndex: 0, hash: `tx-${runId}-v4-values` })
+
+    const [record] = await persistIndexerEventsForBlock(height)
+
+    expect(record.event_type).toBe('StartParticipantOP')
+    expect(record.payload.module).toBe('pp')
+    expect(record.payload.action).toBe('start_participant_op')
+    expect(record.payload.message_type).toBe('MsgStartParticipantOP')
+    expect(record.payload.entity_type).toBe('Participant')
   })
 })
