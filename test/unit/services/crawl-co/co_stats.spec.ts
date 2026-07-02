@@ -238,6 +238,27 @@ describe('co_stats.applyGfData', () => {
     )
     expect(result).toEqual([])
   })
+
+  it('at a height (asOf) excludes versions not yet created and documents added after that block', () => {
+    const asOf = new Date('2020-06-01T00:00:00Z')
+    const vs = [
+      {
+        version: 1,
+        created: '2020-01-01T00:00:00Z',
+        active_since: '2020-01-01T00:00:00Z',
+        documents: [
+          { language: 'en', created: '2020-01-01T00:00:00Z' },
+          { language: 'fr', created: '2020-09-01T00:00:00Z' }, // added after asOf
+        ],
+      },
+      { version: 2, created: '2021-01-01T00:00:00Z', active_since: '2021-01-01T00:00:00Z', documents: [] }, // created after asOf
+    ]
+    const result = applyGfData(vs, 'all', undefined, asOf)
+    // v2 (created after asOf) excluded; v1 kept but its late fr document dropped
+    expect(result).toHaveLength(1)
+    expect(result[0].version).toBe(1)
+    expect(result[0].documents).toEqual([{ language: 'en', created: '2020-01-01T00:00:00Z' }])
+  })
 })
 
 describe('co_stats.getResolvedBlockHeight', () => {

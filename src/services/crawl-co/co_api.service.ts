@@ -5,6 +5,7 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { Corporation } from '../../models/corporation'
 import { CorporationHistory } from '../../models/corporation_history'
@@ -14,8 +15,11 @@ import {
   type CorporationGfVersion,
   calculateCorporationParticipantStats,
   countControlledEcosystems,
+  countControlledEcosystemsAtHeight,
   deriveActiveVersion,
+  getCorporationBaseAtHeight,
   getCorporationTrustDeposit,
+  getCorporationTrustDepositAtHeight,
   getResolvedBlockHeight,
   parseGfDataMode,
 } from './co_stats'
@@ -91,31 +95,65 @@ export default class CorporationApiService extends BaseService {
       // CGF only — the relation also returns EGF rows (non-zero ecosystem_id) owned by the corporation
       const allVersions = (plain.governanceFrameworkVersions ?? []) as CorporationGfVersion[]
       const cgfVersions = allVersions.filter((v) => !v.ecosystem_id)
-      const policyAddress = (plain.policy_address as string | null) ?? (plain.corporation as string | null) ?? null
+      const livePolicyAddress = (plain.policy_address as string | null) ?? (plain.corporation as string | null) ?? null
 
-      // participants honor At-Block-Height; controlled_ecosystems + trust-deposit stay latest (point-in-time deferred)
+      const pointInTime = typeof blockHeight === 'number'
+      const asOf = pointInTime
+        ? await getBlockChainTimeAsOf(blockHeight as number, { logContext: '[co_api:get]' })
+        : undefined
+
+      // At a height, reconstruct the whole corporation as of that block from the history tables;
+      // otherwise use the latest indexed state.
+      let base = {
+        did: (plain.did as string | null) ?? null,
+        policy_address: livePolicyAddress,
+        language: (plain.language as string | null) ?? null,
+        modified: (plain.modified as string | Date | null) ?? null,
+      }
+      if (pointInTime) {
+        const atHeight = await getCorporationBaseAtHeight(corporationId, blockHeight as number)
+        if (!atHeight) {
+          return ApiResponder.error(ctx, `Corporation ${id} not found`, 404)
+        }
+        base = {
+          did: atHeight.did,
+          policy_address: atHeight.policy_address,
+          language: atHeight.language,
+          modified: atHeight.modified,
+        }
+      }
+      const policyAddress = base.policy_address ?? livePolicyAddress
+
       const [participantStats, controlledEcosystems, trustDeposit, resolvedBlockHeight] = await Promise.all([
         calculateCorporationParticipantStats(corporationId, blockHeight),
-        countControlledEcosystems(corporationId),
-        getCorporationTrustDeposit(policyAddress),
+        pointInTime
+          ? countControlledEcosystemsAtHeight(corporationId, blockHeight as number)
+          : countControlledEcosystems(corporationId),
+        pointInTime
+          ? getCorporationTrustDepositAtHeight(policyAddress, blockHeight as number)
+          : getCorporationTrustDeposit(policyAddress),
         getResolvedBlockHeight(blockHeight),
       ])
 
+      const activeVersion = pointInTime
+        ? deriveActiveVersion(cgfVersions, asOf)
+        : ((plain.active_version as number | null) ?? null)
+
       const corporation: Record<string, unknown> = {
         id: corporationId,
-        did: plain.did,
+        did: base.did,
         policy_address: policyAddress,
-        language: plain.language ?? null,
-        active_version: deriveActiveVersion(cgfVersions),
+        language: base.language,
+        active_version: activeVersion,
         created: plain.created,
-        modified: plain.modified,
+        modified: base.modified,
         controlled_ecosystems: controlledEcosystems,
         ...participantStats,
         ...trustDeposit,
       }
 
       if (gfData !== 'none') {
-        corporation.versions = applyGfData(cgfVersions, gfData, preferredLanguage)
+        corporation.versions = applyGfData(cgfVersions, gfData, preferredLanguage, asOf)
       }
 
       const responsePayload = { corporation, block_height: resolvedBlockHeight }

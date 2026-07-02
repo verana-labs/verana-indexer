@@ -3,11 +3,17 @@ jest.mock('../../../../src/models/corporation_history', () => ({ CorporationHist
 jest.mock('../../../../src/services/crawl-co/co_stats', () => ({
   calculateCorporationParticipantStats: jest.fn(),
   countControlledEcosystems: jest.fn(),
+  countControlledEcosystemsAtHeight: jest.fn(),
   getCorporationTrustDeposit: jest.fn(),
+  getCorporationTrustDepositAtHeight: jest.fn(),
+  getCorporationBaseAtHeight: jest.fn(),
   deriveActiveVersion: jest.fn(),
   applyGfData: jest.fn(),
   getResolvedBlockHeight: jest.fn(async () => 0),
   parseGfDataMode: jest.fn((raw: string | undefined) => ({ ok: true, mode: raw ?? 'only_active' })),
+}))
+jest.mock('../../../../src/common/utils/block_time', () => ({
+  getBlockChainTimeAsOf: jest.fn(async () => new Date('2024-06-01T00:00:00.000Z')),
 }))
 jest.mock('../../../../src/services/resolver/trust-data-enrichment', () => ({
   parseTrustDataMode: jest.fn(() => ({ ok: true, mode: 'none' })),
@@ -29,8 +35,11 @@ import {
   applyGfData,
   calculateCorporationParticipantStats,
   countControlledEcosystems,
+  countControlledEcosystemsAtHeight,
   deriveActiveVersion,
+  getCorporationBaseAtHeight,
   getCorporationTrustDeposit,
+  getCorporationTrustDepositAtHeight,
   getResolvedBlockHeight,
   parseGfDataMode,
 } from '../../../../src/services/crawl-co/co_stats'
@@ -118,10 +127,9 @@ describe('CorporationApiService.getCorporationV4', () => {
     const ctx: any = { params: { id: '1', gf_data: 'all' }, meta: {} }
     await service.getCorporationV4(ctx)
 
-    // Both helpers must receive the CGF-only set (ecosystem_id falsy), not the EGF row.
+    // applyGfData must receive the CGF-only set (ecosystem_id falsy), not the EGF row (asOf undefined = latest).
     const cgfOnly = [{ version: 1, ecosystem_id: 0, active_since: '2024-01-01', documents: [] }]
-    expect(deriveActiveVersion).toHaveBeenCalledWith(cgfOnly)
-    expect(applyGfData).toHaveBeenCalledWith(cgfOnly, 'all', undefined)
+    expect(applyGfData).toHaveBeenCalledWith(cgfOnly, 'all', undefined, undefined)
   })
 
   it('builds the spec response object: { corporation } with on-chain fields + aggregates + versions', async () => {
@@ -132,6 +140,7 @@ describe('CorporationApiService.getCorporationV4', () => {
         policy_address: 'verana1pol',
         corporation: 'verana1pol',
         language: 'en',
+        active_version: 1,
         created: '2024-01-01',
         modified: '2024-02-01',
         governanceFrameworkVersions: [{ version: 1, active_since: '2024-01-01', documents: [{ language: 'en' }] }],
@@ -194,7 +203,7 @@ describe('CorporationApiService.getCorporationV4', () => {
     })
     expect(res.block_height).toBe(175)
     expect(getCorporationTrustDeposit).toHaveBeenCalledWith('verana1pol')
-    expect(applyGfData).toHaveBeenCalledWith(expect.any(Array), 'all', undefined)
+    expect(applyGfData).toHaveBeenCalledWith(expect.any(Array), 'all', undefined, undefined)
   })
 
   it('omits versions entirely when gf_data is "none"', async () => {
@@ -230,9 +239,22 @@ describe('CorporationApiService.getCorporationV4', () => {
     expect('versions' in res.corporation).toBe(false)
   })
 
-  it('resolves participant aggregates at the requested At-Block-Height and echoes it', async () => {
+  it('reconstructs the whole corporation as of the requested At-Block-Height', async () => {
     fetchReturns({
-      toJSON: () => ({ id: 1, did: 'did:example:co', corporation: 'verana1pol', governanceFrameworkVersions: [] }),
+      toJSON: () => ({
+        id: 1,
+        did: 'did:example:co',
+        corporation: 'verana1pol',
+        created: '2024-01-01',
+        governanceFrameworkVersions: [],
+      }),
+    })
+    ;(getCorporationBaseAtHeight as jest.Mock).mockResolvedValue({
+      id: 1,
+      did: 'did:example:co',
+      policy_address: 'verana1pol',
+      language: 'en',
+      modified: '2024-03-01',
     })
     ;(calculateCorporationParticipantStats as jest.Mock).mockResolvedValue({
       participants: 0,
@@ -243,8 +265,8 @@ describe('CorporationApiService.getCorporationV4', () => {
       participants_verifier: 0,
       participants_holder: 0,
     })
-    ;(countControlledEcosystems as jest.Mock).mockResolvedValue(0)
-    ;(getCorporationTrustDeposit as jest.Mock).mockResolvedValue({
+    ;(countControlledEcosystemsAtHeight as jest.Mock).mockResolvedValue(0)
+    ;(getCorporationTrustDepositAtHeight as jest.Mock).mockResolvedValue({
       deposit: 0,
       share: 0,
       refunded: 0,
@@ -260,9 +282,26 @@ describe('CorporationApiService.getCorporationV4', () => {
     const ctx: any = { params: { id: '1', gf_data: 'none' }, meta: { blockHeight: 5 } }
     await service.getCorporationV4(ctx)
 
-    // participant counts are resolved at the requested At-Block-Height (block height threaded through)
+    // point-in-time path: base + aggregates reconstructed from history at the requested height
+    expect(getCorporationBaseAtHeight).toHaveBeenCalledWith(1, 5)
     expect(calculateCorporationParticipantStats).toHaveBeenCalledWith(1, 5)
-    // block_height resolves/echoes the requested At-Block-Height
+    expect(countControlledEcosystemsAtHeight).toHaveBeenCalledWith(1, 5)
+    expect(getCorporationTrustDepositAtHeight).toHaveBeenCalledWith('verana1pol', 5)
     expect(getResolvedBlockHeight).toHaveBeenCalledWith(5)
+    // latest-only helpers are not used on the point-in-time path
+    expect(countControlledEcosystems).not.toHaveBeenCalled()
+    expect(getCorporationTrustDeposit).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the corporation did not exist at the requested At-Block-Height', async () => {
+    fetchReturns({
+      toJSON: () => ({ id: 1, did: 'did:example:co', corporation: 'verana1pol', governanceFrameworkVersions: [] }),
+    })
+    ;(getCorporationBaseAtHeight as jest.Mock).mockResolvedValue(null)
+
+    const ctx: any = { params: { id: '1' }, meta: { blockHeight: 5 } }
+    await service.getCorporationV4(ctx)
+
+    expect(ApiResponder.error).toHaveBeenCalledWith(ctx, 'Corporation 1 not found', 404)
   })
 })

@@ -107,6 +107,49 @@ export async function countControlledEcosystems(corporationId: number | string):
   return Ecosystem.query().where('corporation_id', corporationId).resultSize()
 }
 
+// Ecosystems owned by the corporation that existed and were not archived at the height.
+export async function countControlledEcosystemsAtHeight(
+  corporationId: number | string,
+  blockHeight: number
+): Promise<number> {
+  const ranked = knex('ecosystem_history')
+    .select('ecosystem_id', 'archived')
+    .select(knex.raw('ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, created_at DESC) as rn'))
+    .where('corporation_id', corporationId)
+    .where('height', '<=', blockHeight)
+  const rows = (await knex.from(ranked.as('h')).where('rn', 1).whereNull('archived')) as unknown[]
+  return rows.length
+}
+
+export interface CorporationBaseAtHeight {
+  id: number | string
+  did: string | null
+  policy_address: string | null
+  language: string | null
+  modified: string | Date | null
+}
+
+// Base corporation fields as of a height (from corporation_history); null if it did not exist yet.
+export async function getCorporationBaseAtHeight(
+  corporationId: number | string,
+  blockHeight: number
+): Promise<CorporationBaseAtHeight | null> {
+  const row = await knex('corporation_history')
+    .where('corporation_id', corporationId)
+    .where('height', '<=', blockHeight)
+    .orderBy('height', 'desc')
+    .orderBy('id', 'desc')
+    .first()
+  if (!row) return null
+  return {
+    id: corporationId,
+    did: (row.did as string | null) ?? null,
+    policy_address: (row.policy_address as string | null) ?? (row.corporation as string | null) ?? null,
+    language: (row.language as string | null) ?? null,
+    modified: (row.created_at as string | Date | null) ?? null,
+  }
+}
+
 function byActiveSinceDesc(a: CorporationGfVersion, b: CorporationGfVersion): number {
   if (a.active_since && b.active_since) {
     const diff = new Date(b.active_since).getTime() - new Date(a.active_since).getTime()
@@ -119,13 +162,15 @@ function byActiveSinceDesc(a: CorporationGfVersion, b: CorporationGfVersion): nu
   return (b.version ?? 0) - (a.version ?? 0)
 }
 
-export function deriveActiveVersion(versions: CorporationGfVersion[]): number | null {
-  const active = versions.filter((v) => v.active_since).sort(byActiveSinceDesc)
+export function deriveActiveVersion(versions: CorporationGfVersion[], asOf?: Date): number | null {
+  const active = versions
+    .filter((v) => v.active_since && (!asOf || new Date(v.active_since) <= asOf))
+    .sort(byActiveSinceDesc)
   return active.length > 0 ? active[0].version : null
 }
 
-export async function getCorporationTrustDeposit(address: string | null): Promise<CorporationTrustDepositSnapshot> {
-  const empty: CorporationTrustDepositSnapshot = {
+export function emptyTrustDepositSnapshot(): CorporationTrustDepositSnapshot {
+  return {
     deposit: 0,
     share: 0,
     refunded: 0,
@@ -135,11 +180,9 @@ export async function getCorporationTrustDeposit(address: string | null): Promis
     last_slashed: null,
     last_repaid: null,
   }
-  if (!address) return empty
+}
 
-  const row = await TrustDeposit.query().findOne({ corporation: address })
-  if (!row) return empty
-
+function mapTrustDepositRow(row: Record<string, unknown>): CorporationTrustDepositSnapshot {
   return {
     deposit: Number(row.deposit ?? 0),
     share: Number(row.share ?? 0),
@@ -147,9 +190,30 @@ export async function getCorporationTrustDeposit(address: string | null): Promis
     slashed_deposit: Number(row.slashed_deposit ?? 0),
     repaid_deposit: Number(row.repaid_deposit ?? 0),
     slash_count: Number(row.slash_count ?? 0),
-    last_slashed: row.last_slashed ?? null,
-    last_repaid: row.last_repaid ?? null,
+    last_slashed: (row.last_slashed as string | null) ?? null,
+    last_repaid: (row.last_repaid as string | null) ?? null,
   }
+}
+
+export async function getCorporationTrustDeposit(address: string | null): Promise<CorporationTrustDepositSnapshot> {
+  if (!address) return emptyTrustDepositSnapshot()
+  const row = await TrustDeposit.query().findOne({ corporation: address })
+  return row ? mapTrustDepositRow(row as unknown as Record<string, unknown>) : emptyTrustDepositSnapshot()
+}
+
+// Trust-deposit snapshot as of a block height (from trust_deposit_history).
+export async function getCorporationTrustDepositAtHeight(
+  address: string | null,
+  blockHeight: number
+): Promise<CorporationTrustDepositSnapshot> {
+  if (!address) return emptyTrustDepositSnapshot()
+  const row = await knex('trust_deposit_history')
+    .where('corporation', address)
+    .where('height', '<=', blockHeight)
+    .orderBy('height', 'desc')
+    .orderBy('id', 'desc')
+    .first()
+  return row ? mapTrustDepositRow(row as Record<string, unknown>) : emptyTrustDepositSnapshot()
 }
 
 function orderDocumentsByLanguage(
@@ -164,26 +228,38 @@ function orderDocumentsByLanguage(
 export function applyGfData(
   versions: CorporationGfVersion[],
   gfData: GfDataMode,
-  preferredLanguage?: string
+  preferredLanguage?: string,
+  asOf?: Date
 ): CorporationGfVersion[] {
+  // At a height, only versions that already existed (created <= asOf) count.
+  const existing = asOf
+    ? versions.filter((v) => v.created != null && new Date(v.created as string | Date) <= asOf)
+    : versions
+
   let selected: CorporationGfVersion[]
   if (gfData === 'none') {
     selected = []
   } else if (gfData === 'only_active') {
-    selected = versions
-      .filter((v) => v.active_since)
+    selected = existing
+      .filter((v) => v.active_since && (!asOf || new Date(v.active_since) <= asOf))
       .sort(byActiveSinceDesc)
       .slice(0, 1)
   } else {
-    selected = [...versions]
+    selected = [...existing]
   }
 
   // ecosystem_id is null for CGF versions (VPR invariant: only EGF versions carry one).
-  return selected.map((v) => ({
-    ...v,
-    ecosystem_id: v.ecosystem_id ? v.ecosystem_id : null,
-    documents: preferredLanguage ? orderDocumentsByLanguage(v.documents ?? [], preferredLanguage) : v.documents,
-  }))
+  return selected.map((v) => {
+    let documents = v.documents
+    // At a height, exclude documents added after that block.
+    if (asOf && documents) {
+      documents = documents.filter((d) => d.created != null && new Date(d.created as string | Date) <= asOf)
+    }
+    if (preferredLanguage) {
+      documents = orderDocumentsByLanguage(documents ?? [], preferredLanguage)
+    }
+    return { ...v, ecosystem_id: v.ecosystem_id ? v.ecosystem_id : null, documents }
+  })
 }
 
 export async function getResolvedBlockHeight(blockHeight?: number): Promise<number> {
