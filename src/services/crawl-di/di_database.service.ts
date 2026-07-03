@@ -19,9 +19,7 @@ export default class DigestDatabaseService extends BaseService {
   }
 
   @Action({ name: 'syncFromLedger' })
-  async syncFromLedger(ctx: {
-    params: { digest: DigestRow; blockHeight: number }
-  }): Promise<{ success: boolean }> {
+  async syncFromLedger(ctx: { params: { digest: DigestRow; blockHeight: number } }): Promise<{ success: boolean }> {
     const { digest, blockHeight } = ctx.params
 
     await knex('digests')
