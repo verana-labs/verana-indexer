@@ -335,7 +335,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET history/:ecosystem_id': `${SERVICE.V1.EcosystemHistoryService.path}.getTRHistory`,
       }),
       createRoute('/v4/corporation', {
-        'GET get/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporation`,
+        'GET get/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationV4`,
         'GET list': `${SERVICE.V1.CorporationApiService.path}.listCorporations`,
         'GET history/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationHistory`,
       }),
@@ -355,6 +355,9 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET price': `${SERVICE.V1.ExchangeRateApiService.path}.getPrice`,
         'GET get': `${SERVICE.V1.ExchangeRateApiService.path}.getExchangeRate`,
         'GET list': `${SERVICE.V1.ExchangeRateApiService.path}.listExchangeRates`,
+      }),
+      createRoute('/v4/di', {
+        'GET get/:digest': `${SERVICE.V1.DigestApiService.path}.getDigest`,
       }),
       createRoute('/v4/trust-deposit', {
         'GET get/:corporation': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,

@@ -17,6 +17,7 @@ export class Corporation extends BaseModel {
   decision_policy?: unknown
   doc_url?: string | null
   doc_digest_sri?: string | null
+  active_version?: number | null
   created!: Date
   modified!: Date
   height!: number

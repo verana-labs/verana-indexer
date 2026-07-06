@@ -17,39 +17,78 @@
         "tags": [
           "Corporation"
         ],
-        "summary": "Get Corporation",
-        "description": "Retrieve a Corporation by its numeric id, DID, or group_policy_address. Includes members and governance framework versions/documents.",
-        "operationId": "getCorporation",
+        "summary": "Get Corporation (v4)",
+        "description": "Retrieve a Corporation by id with indexer-computed aggregates (controlled_ecosystems, participant role counts, trust-deposit snapshot) and CGF versions. Aligned with VPR MOD-CO-QRY-1. When the At-Block-Height header is supplied, the whole Corporation is reconstructed as of that block (404 if it did not exist yet).",
+        "operationId": "getCorporationV4",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
             "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "uint64 Corporation id"
+          },
+          {
+            "name": "gf_data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "only_active",
+                "all"
+              ],
+              "default": "only_active"
+            },
+            "description": "Controls inclusion of CGF versions"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
               "type": "string"
             },
-            "description": "Corporation numeric id, DID, or group_policy_address"
+            "description": "ISO 639 language; orders returned CGF documents"
+          },
+          {
+            "name": "trust_data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "null",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Inline verifiable-trust data for the Corporation DID"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with the Corporation",
+            "description": "The Corporation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Corporation"
+                  "$ref": "#/components/schemas/CorporationV4Response"
                 }
               }
             }
           },
-          "404": {
-            "description": "Corporation not found"
-          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
+          "404": {
+            "description": "Corporation not found (or did not exist at the requested height)"
           }
         }
       }
@@ -3762,6 +3801,53 @@
         }
       }
     },
+    "/v4/di/get/{digest}": {
+      "get": {
+        "tags": [
+          "Digest"
+        ],
+        "summary": "Get Digest",
+        "description": "Look up a previously stored Digest entry by its digest string (typically an SRI digest such as sha384-...).",
+        "operationId": "getDigest",
+        "parameters": [
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The digest to look up (typically an SRI digest such as sha384-...)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Digest found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "digest": {
+                      "$ref": "#/components/schemas/Digest"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
@@ -6876,6 +6962,14 @@
           "state": { "type": "boolean" }
         }
       },
+      "Digest": {
+        "type": "object",
+        "required": ["digest", "created"],
+        "properties": {
+          "digest": { "type": "string" },
+          "created": { "type": "string", "format": "date-time" }
+        }
+      },
       "ResolutionResponse": {
         "type": "object",
         "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
@@ -6894,6 +6988,134 @@
           "services": { "type": "array", "items": { "$ref": "#/components/schemas/VtServiceEndpoint" } },
           "ecosystems": { "type": "array", "items": { "$ref": "#/components/schemas/VtEcosystem" } }
         }
+      },
+      "CorporationV4": {
+        "type": "object",
+        "description": "A Corporation with on-chain fields plus indexer-computed aggregates (IDX-CO-QRY-1).",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "uint64 Corporation id"
+          },
+          "did": {
+            "type": "string"
+          },
+          "policy_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "On-chain account that signs for the Corporation"
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Active CGF version"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "controlled_ecosystems": {
+            "type": "integer",
+            "description": "Count of Ecosystems owned by this Corporation"
+          },
+          "participants": {
+            "type": "integer"
+          },
+          "participants_ecosystem": {
+            "type": "integer"
+          },
+          "participants_issuer_grantor": {
+            "type": "integer"
+          },
+          "participants_issuer": {
+            "type": "integer"
+          },
+          "participants_verifier_grantor": {
+            "type": "integer"
+          },
+          "participants_verifier": {
+            "type": "integer"
+          },
+          "participants_holder": {
+            "type": "integer"
+          },
+          "deposit": {
+            "type": "integer"
+          },
+          "share": {
+            "type": "integer"
+          },
+          "refunded": {
+            "type": "integer"
+          },
+          "slashed_deposit": {
+            "type": "integer"
+          },
+          "repaid_deposit": {
+            "type": "integer"
+          },
+          "slash_count": {
+            "type": "integer"
+          },
+          "last_slashed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_repaid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "versions": {
+            "type": "array",
+            "description": "CGF versions (omitted when gf_data=none)",
+            "items": {
+              "$ref": "#/components/schemas/CoGovernanceFrameworkVersion"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "did",
+          "policy_address",
+          "active_version",
+          "created",
+          "modified",
+          "controlled_ecosystems"
+        ]
+      },
+      "CorporationV4Response": {
+        "type": "object",
+        "properties": {
+          "corporation": {
+            "$ref": "#/components/schemas/CorporationV4"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
+          }
+        },
+        "required": [
+          "corporation",
+          "block_height"
+        ]
       }
     },
     "responses": {
@@ -6962,6 +7184,10 @@
     {
       "name": "Exchange Rate",
       "description": "Exchange Rate oracle queries"
+    },
+    {
+      "name": "Digest",
+      "description": "Digest lookup queries"
     },
     {
       "name": "Statistics",
