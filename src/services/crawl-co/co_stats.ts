@@ -3,7 +3,12 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
 import TrustDeposit from '../../models/trust_deposit'
-import { calculateParticipantState, normalizeParticipantType, type ParticipantType } from '../crawl-pp/pp_state_utils'
+import {
+  calculateParticipantState,
+  normalizeParticipantType,
+  type ParticipantData,
+  type ParticipantType,
+} from '../crawl-pp/pp_state_utils'
 
 export type GfDataMode = 'none' | 'only_active' | 'all'
 
@@ -44,7 +49,7 @@ export interface CorporationParticipantStats {
   participants_holder: number
 }
 
-function emptyParticipantStats(): CorporationParticipantStats {
+export function emptyParticipantStats(): CorporationParticipantStats {
   return {
     participants: 0,
     participants_ecosystem: 0,
@@ -65,6 +70,41 @@ const ROLE_TO_FIELD: Partial<Record<ParticipantType, keyof CorporationParticipan
   HOLDER: 'participants_holder',
 }
 
+interface ParticipantRow {
+  corporation_id?: number | string
+  repaid?: string | null
+  slashed?: string | null
+  revoked?: string | null
+  effective_from?: string | null
+  effective_until?: string | null
+  role: string
+  op_state?: string
+  op_exp?: string | null
+  validator_participant_id?: string | null
+}
+
+function tallyActiveParticipant(stats: CorporationParticipantStats, row: ParticipantRow, now: Date): void {
+  const state = calculateParticipantState(
+    {
+      repaid: row.repaid,
+      slashed: row.slashed,
+      revoked: row.revoked,
+      effective_from: row.effective_from,
+      effective_until: row.effective_until,
+      role: row.role as ParticipantType,
+      op_state: row.op_state as ParticipantData['op_state'],
+      op_exp: row.op_exp,
+      validator_participant_id: row.validator_participant_id,
+    },
+    now
+  )
+  if (state !== 'ACTIVE') return
+
+  stats.participants += 1
+  const roleField = ROLE_TO_FIELD[normalizeParticipantType(row.role)]
+  if (roleField) stats[roleField] += 1
+}
+
 export async function calculateCorporationParticipantStats(
   corporationId: number | string,
   blockHeight?: number
@@ -77,34 +117,59 @@ export async function calculateCorporationParticipantStats(
   }
 
   const rows = await knex('participants').where('corporation_id', corporationId)
-
   for (const row of rows) {
-    const state = calculateParticipantState(
-      {
-        repaid: row.repaid,
-        slashed: row.slashed,
-        revoked: row.revoked,
-        effective_from: row.effective_from,
-        effective_until: row.effective_until,
-        role: row.role,
-        op_state: row.op_state,
-        op_exp: row.op_exp,
-        validator_participant_id: row.validator_participant_id,
-      },
-      now
-    )
-    if (state !== 'ACTIVE') continue
-
-    stats.participants += 1
-    const roleField = ROLE_TO_FIELD[normalizeParticipantType(row.role)]
-    if (roleField) stats[roleField] += 1
+    tallyActiveParticipant(stats, row, now)
   }
 
   return stats
 }
 
+export async function calculateCorporationParticipantStatsBatch(
+  corporationIds: Array<number | string>,
+  blockHeight?: number
+): Promise<Map<string, CorporationParticipantStats>> {
+  const result = new Map<string, CorporationParticipantStats>()
+  for (const id of corporationIds) {
+    result.set(String(id), emptyParticipantStats())
+  }
+  if (corporationIds.length === 0) return result
+
+  let now = new Date()
+  if (typeof blockHeight === 'number') {
+    now = await getBlockChainTimeAsOf(blockHeight, { logContext: '[co_stats]' })
+  }
+
+  const rows = await knex('participants').whereIn('corporation_id', corporationIds)
+  for (const row of rows) {
+    const stats = result.get(String(row.corporation_id))
+    if (stats) tallyActiveParticipant(stats, row, now)
+  }
+
+  return result
+}
+
 export async function countControlledEcosystems(corporationId: number | string): Promise<number> {
   return Ecosystem.query().where('corporation_id', corporationId).resultSize()
+}
+
+export async function countControlledEcosystemsBatch(
+  corporationIds: Array<number | string>
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  for (const id of corporationIds) {
+    result.set(String(id), 0)
+  }
+  if (corporationIds.length === 0) return result
+
+  const rows = (await knex('ecosystem')
+    .whereIn('corporation_id', corporationIds)
+    .groupBy('corporation_id')
+    .select('corporation_id')
+    .count({ count: '*' })) as unknown as Array<{ corporation_id: number | string; count: string | number }>
+  for (const row of rows) {
+    result.set(String(row.corporation_id), Number(row.count))
+  }
+  return result
 }
 
 // Ecosystems owned by the corporation that existed and were not archived at the height.
@@ -201,6 +266,20 @@ export async function getCorporationTrustDeposit(address: string | null): Promis
   return row ? mapTrustDepositRow(row as unknown as Record<string, unknown>) : emptyTrustDepositSnapshot()
 }
 
+export async function getCorporationTrustDepositBatch(
+  addresses: Array<string | null>
+): Promise<Map<string, CorporationTrustDepositSnapshot>> {
+  const result = new Map<string, CorporationTrustDepositSnapshot>()
+  const unique = [...new Set(addresses.filter((a): a is string => Boolean(a)))]
+  if (unique.length === 0) return result
+
+  const rows = await TrustDeposit.query().whereIn('corporation', unique)
+  for (const row of rows) {
+    result.set(row.corporation, mapTrustDepositRow(row as unknown as Record<string, unknown>))
+  }
+  return result
+}
+
 // Trust-deposit snapshot as of a block height (from trust_deposit_history).
 export async function getCorporationTrustDepositAtHeight(
   address: string | null,
@@ -260,6 +339,84 @@ export function applyGfData(
     }
     return { ...v, ecosystem_id: v.ecosystem_id ? v.ecosystem_id : null, documents }
   })
+}
+
+// Shared by Get and List so the two responses stay identical.
+export function buildCorporationObject(params: {
+  plain: Record<string, unknown>
+  cgfVersions: CorporationGfVersion[]
+  participantStats: CorporationParticipantStats
+  controlledEcosystems: number
+  trustDeposit: CorporationTrustDepositSnapshot
+  gfData: GfDataMode
+  preferredLanguage?: string
+}): Record<string, unknown> {
+  const { plain, cgfVersions, participantStats, controlledEcosystems, trustDeposit, gfData, preferredLanguage } = params
+  const policyAddress = (plain.policy_address as string | null) ?? (plain.corporation as string | null) ?? null
+
+  const corporation: Record<string, unknown> = {
+    id: plain.id,
+    did: plain.did,
+    policy_address: policyAddress,
+    language: plain.language ?? null,
+    active_version: deriveActiveVersion(cgfVersions),
+    created: plain.created,
+    modified: plain.modified,
+    controlled_ecosystems: controlledEcosystems,
+    ...participantStats,
+    ...trustDeposit,
+  }
+
+  if (gfData !== 'none') {
+    corporation.versions = applyGfData(cgfVersions, gfData, preferredLanguage)
+  }
+
+  return corporation
+}
+
+export interface CorporationListPagination {
+  limit: number
+  minId?: string
+  maxId?: string
+  direction: 'asc' | 'desc'
+}
+
+function parseCursorParam(raw: unknown): { ok: true; value?: string } | { ok: false } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true }
+  const value = String(raw).trim()
+  if (!/^\d+$/.test(value)) return { ok: false }
+  return { ok: true, value }
+}
+
+export function parseCorporationListPagination(params: {
+  limit?: string | number
+  min_id?: string | number
+  max_id?: string | number
+  sort?: string
+}): { ok: true; value: CorporationListPagination } | { ok: false; message: string } {
+  let limit = 64
+  if (params.limit !== undefined && params.limit !== '') {
+    const parsed = Number(params.limit)
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1024) {
+      return { ok: false, message: '"limit" must be an integer between 1 and 1024' }
+    }
+    limit = parsed
+  }
+
+  const minId = parseCursorParam(params.min_id)
+  if (!minId.ok) return { ok: false, message: '"min_id" must be a non-negative integer' }
+  const maxId = parseCursorParam(params.max_id)
+  if (!maxId.ok) return { ok: false, message: '"max_id" must be a non-negative integer' }
+
+  let direction: 'asc' | 'desc' = 'desc'
+  if (params.sort !== undefined && params.sort !== '') {
+    const sort = String(params.sort).trim()
+    if (sort === 'id' || sort === '+id') direction = 'asc'
+    else if (sort === '-id') direction = 'desc'
+    else return { ok: false, message: 'Only "id" sort is supported (use "id", "+id", or "-id")' }
+  }
+
+  return { ok: true, value: { limit, minId: minId.value, maxId: maxId.value, direction } }
 }
 
 export async function getResolvedBlockHeight(blockHeight?: number): Promise<number> {
