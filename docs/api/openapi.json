@@ -62,7 +62,7 @@
             "schema": {
               "type": "string",
               "enum": [
-                "none",
+                "null",
                 "summary",
                 "full"
               ]
