@@ -446,7 +446,8 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
       schemaId = schemaId ?? sessionRelation.schemaId
       if (sessionRelation.corporationId !== undefined) {
         if (corporationId === undefined) corporationId = sessionRelation.corporationId
-        else if (sessionRelation.corporationId !== corporationId) relatedCorporationIds.add(sessionRelation.corporationId)
+        else if (sessionRelation.corporationId !== corporationId)
+          relatedCorporationIds.add(sessionRelation.corporationId)
       }
       ;[sessionRelation.participantDid, sessionRelation.ecosystemDid].forEach((did) => {
         if (did) collected.add(did)
