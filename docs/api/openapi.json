@@ -1339,7 +1339,6 @@
                       "entity_id": "1",
                       "msg": "CreateEcosystem",
                       "changes": {
-                        "aka": "http://example.com",
                         "did": "did:example:123456789abcdefghi",
                         "issued": 0,
                         "weight": 0,
@@ -4888,10 +4887,6 @@
             "format": "date-time",
             "nullable": true
           },
-          "aka": {
-            "type": "string",
-            "nullable": true
-          },
           "language": {
             "type": "string"
           },
@@ -5077,10 +5072,6 @@
               "archived": {
                 "type": "string",
                 "format": "date-time",
-                "nullable": true
-              },
-              "aka": {
-                "type": "string",
                 "nullable": true
               },
               "language": {
