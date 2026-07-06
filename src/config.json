@@ -79,6 +79,11 @@
     "millisecondCrawl": 300,
     "chunkSize": 500
   },
+  "crawlDigest": {
+    "key": "crawlDigest",
+    "millisecondCrawl": 300,
+    "chunkSize": 500
+  },
   "crawlAccounts": {
     "key": "crawlAccounts",
     "freshStart": {
