@@ -3882,6 +3882,53 @@
         }
       }
     },
+    "/v4/di/get/{digest}": {
+      "get": {
+        "tags": [
+          "Digest"
+        ],
+        "summary": "Get Digest",
+        "description": "Look up a previously stored Digest entry by its digest string (typically an SRI digest such as sha384-...).",
+        "operationId": "getDigest",
+        "parameters": [
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The digest to look up (typically an SRI digest such as sha384-...)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Digest found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "digest": {
+                      "$ref": "#/components/schemas/Digest"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
@@ -6996,6 +7043,14 @@
           "state": { "type": "boolean" }
         }
       },
+      "Digest": {
+        "type": "object",
+        "required": ["digest", "created"],
+        "properties": {
+          "digest": { "type": "string" },
+          "created": { "type": "string", "format": "date-time" }
+        }
+      },
       "ResolutionResponse": {
         "type": "object",
         "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
@@ -7224,6 +7279,10 @@
     {
       "name": "Exchange Rate",
       "description": "Exchange Rate oracle queries"
+    },
+    {
+      "name": "Digest",
+      "description": "Digest lookup queries"
     },
     {
       "name": "Statistics",
