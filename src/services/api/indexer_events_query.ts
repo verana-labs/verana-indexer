@@ -7,6 +7,7 @@ import {
   VeranaDelegationMessageTypes,
   VeranaDiMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../../common/verana-message-types'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
@@ -102,13 +103,13 @@ const EVENT_META: Record<string, EventMeta> = {
     action: 'ArchiveEcosystem',
     entityType: 'Ecosystem',
   },
-  [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: {
-    module: 'ecosystem',
+  [VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument]: {
+    module: 'corporation',
     action: 'AddGovernanceFrameworkDocument',
     entityType: 'GovernanceFrameworkDocument',
   },
-  [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: {
-    module: 'ecosystem',
+  [VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion]: {
+    module: 'corporation',
     action: 'IncreaseActiveGFVersion',
     entityType: 'GovernanceFrameworkVersion',
   },
@@ -182,6 +183,11 @@ const EVENT_META: Record<string, EventMeta> = {
     action: 'CreateOrUpdateParticipantSession',
     entityType: 'ParticipantSession',
   },
+  [VeranaParticipantMessageTypes.TriggerResolver]: {
+    module: 'participant',
+    action: 'TriggerResolver',
+    entityType: 'Participant',
+  },
   [VeranaDiMessageTypes.StoreDigest]: {
     module: 'digital-identity',
     action: 'StoreDigest',
@@ -220,6 +226,8 @@ const ID_ALIASES = {
   credentialSchema: ['schema_id', 'schemaId', 'credential_schema_id', 'credentialSchemaId'],
   participant: ['participant_id', 'participantId'],
   validatorParticipant: ['validator_participant_id', 'validatorParticipantId'],
+  issuerParticipant: ['issuer_participant_id', 'issuerParticipantId'],
+  verifierParticipant: ['verifier_participant_id', 'verifierParticipantId'],
   governanceFramework: ['gfv_id', 'gfvId', 'gfd_id', 'gfdId'],
 } as const
 
@@ -425,6 +433,22 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
       const validatorRelation = await loadParticipantRelation(rawValidatorParticipantId)
       if (validatorRelation.corporationId !== undefined) relatedCorporationIds.add(validatorRelation.corporationId)
       ;[validatorRelation.participantDid, validatorRelation.ecosystemDid].forEach((did) => {
+        if (did) collected.add(did)
+      })
+    }
+    const rawIssuerParticipantId = readNumber(row.content, ID_ALIASES.issuerParticipant)
+    const rawVerifierParticipantId = readNumber(row.content, ID_ALIASES.verifierParticipant)
+    for (const sessionParticipantId of [rawIssuerParticipantId, rawVerifierParticipantId]) {
+      if (!sessionParticipantId) continue
+      const sessionRelation = await loadParticipantRelation(sessionParticipantId)
+      participantId = participantId ?? sessionRelation.participantId
+      ecosystemId = ecosystemId ?? sessionRelation.ecosystemId
+      schemaId = schemaId ?? sessionRelation.schemaId
+      if (sessionRelation.corporationId !== undefined) {
+        if (corporationId === undefined) corporationId = sessionRelation.corporationId
+        else if (sessionRelation.corporationId !== corporationId) relatedCorporationIds.add(sessionRelation.corporationId)
+      }
+      ;[sessionRelation.participantDid, sessionRelation.ecosystemDid].forEach((did) => {
         if (did) collected.add(did)
       })
     }
