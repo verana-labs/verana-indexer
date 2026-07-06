@@ -405,7 +405,11 @@ export default class EcosystemHistoryService extends BaseService {
         changes.versions = versions
       }
       return {
+        id: row.id != null ? Number(row.id) : null,
+        timestamp: row.created_at ? new Date(row.created_at).toISOString() : null,
         block_height: String(row.height),
+        entity_type: 'Ecosystem',
+        entity_id: String(ecosystemId),
         msg,
         changes,
         created_at: row.created_at,
