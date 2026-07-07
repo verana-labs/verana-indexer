@@ -56,7 +56,7 @@ export function mapCredentialSchemaApiFields(row: Record<string, unknown>): Reco
 export function mapEcosystemApiFields(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row }
   out.corporation_id = Number(out.corporation_id ?? 0) || 0
-  const { corporation, controller, ...result } = out
+  const { corporation, controller, aka, ...result } = out
   return result
 }
 

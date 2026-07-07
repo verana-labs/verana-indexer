@@ -340,6 +340,8 @@ export default class CorporationMessageProcessorService extends BullableService 
         })
       }
 
+      await this.syncCorporationActiveVersion(trx, corporation.id)
+
       return `Corporation created/updated: did=${did}, id=${corporation.id}`
     })
   }
@@ -437,8 +439,23 @@ export default class CorporationMessageProcessorService extends BullableService 
 
       await trx('co_governance_framework_version').where({ id: gfv.id }).update({ active_since: timestamp })
 
+      if (ecosystemId === 0) {
+        await this.syncCorporationActiveVersion(trx, corporation.id)
+      }
+
       return `IncreaseActiveGovernanceFrameworkVersion OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${nextVersion}`
     })
+  }
+
+  // Materialize the corporation's active CGF version = highest activated version (ecosystem_id = 0).
+  private async syncCorporationActiveVersion(trx: Knex.Transaction, corporationId: number): Promise<void> {
+    const row = (await trx('co_governance_framework_version')
+      .where({ corporation_id: corporationId, ecosystem_id: 0 })
+      .whereNotNull('active_since')
+      .max('version as max_version')
+      .first()) as { max_version: number | string | null } | undefined
+    const activeVersion = row?.max_version != null ? Number(row.max_version) : null
+    await trx('corporation').where({ id: corporationId }).update({ active_version: activeVersion })
   }
 
   private async findCorporation(trx: Knex.Transaction, message: DecodedCoMessage): Promise<CorporationRow | null> {

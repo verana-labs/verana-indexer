@@ -24,6 +24,7 @@ import {
 } from '../../common/utils/query_ordering'
 import { mapEcosystemApiFields } from '../../common/vpr-v4-mapping'
 import { Ecosystem } from '../../models/ecosystem'
+import { type GfDataMode, parseGfDataMode } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
 import { calculateEcosystemStats, TR_STATS_FIELDS } from './ec_stats'
@@ -62,6 +63,43 @@ export default class EcosystemDatabaseService extends BaseService {
 
   public constructor(public broker: ServiceBroker) {
     super(broker)
+  }
+
+  private resolveEcosystemGfDataMode(params: { gf_data?: unknown; active_gf_only?: string | boolean }):
+    | {
+        ok: true
+        mode: GfDataMode
+      }
+    | { ok: false; message: string } {
+    if (params.gf_data !== undefined && params.gf_data !== null && params.gf_data !== '') {
+      return parseGfDataMode(params.gf_data)
+    }
+
+    if (params.active_gf_only !== undefined && params.active_gf_only !== null && params.active_gf_only !== '') {
+      const activeGfOnly = String(params.active_gf_only).toLowerCase() === 'true'
+      return { ok: true, mode: activeGfOnly ? 'only_active' : 'all' }
+    }
+
+    return { ok: true, mode: 'only_active' }
+  }
+
+  private applyGfDataModeToResponsePayload(
+    responsePayload: { ecosystem?: Record<string, unknown>; ecosystems?: Record<string, unknown>[] },
+    gfDataMode: GfDataMode
+  ) {
+    if (gfDataMode !== 'none') {
+      return responsePayload
+    }
+
+    if (responsePayload.ecosystem) {
+      delete (responsePayload.ecosystem as Record<string, unknown>).versions
+    }
+    if (Array.isArray(responsePayload.ecosystems)) {
+      for (const ecosystem of responsePayload.ecosystems) {
+        delete (ecosystem as Record<string, unknown>).versions
+      }
+    }
+    return responsePayload
   }
 
   private valuesEquivalent(left: unknown, right: unknown): boolean {
@@ -1136,6 +1174,7 @@ export default class EcosystemDatabaseService extends BaseService {
     ctx: Context<{
       ecosystem_id: number
       active_gf_only?: string | boolean
+      gf_data?: string
       preferred_language?: string
       trust_data?: string
     }>
@@ -1148,7 +1187,12 @@ export default class EcosystemDatabaseService extends BaseService {
         return ApiResponder.error(ctx, trustDataModeParsed.message, 400)
       }
       const trustDataMode = trustDataModeParsed.mode
-      const activeGfOnly = String(ctx.params.active_gf_only).toLowerCase() === 'true'
+      const gfDataModeParsed = this.resolveEcosystemGfDataMode(ctx.params as any)
+      if (!gfDataModeParsed.ok) {
+        return ApiResponder.error(ctx, gfDataModeParsed.message, 400)
+      }
+      const gfDataMode = gfDataModeParsed.mode
+      const activeGfOnly = gfDataMode === 'only_active'
       const blockHeight = (ctx.meta as any)?.blockHeight
       const useHeightSync = process.env.NODE_ENV !== 'test' && process.env.USE_HEIGHT_SYNC_TR === 'true'
 
@@ -1210,7 +1254,10 @@ export default class EcosystemDatabaseService extends BaseService {
             network_slashed_amount: Number(snapshot.network_slashed_amount ?? 0),
             network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
           }
-          const responsePayload = { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) }
+          const responsePayload = this.applyGfDataModeToResponsePayload(
+            { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) },
+            gfDataMode
+          )
           const enrichedResponsePayload =
             trustDataMode === 'none'
               ? responsePayload
@@ -1270,38 +1317,41 @@ export default class EcosystemDatabaseService extends BaseService {
           }))
         }
         const t = ec as any
-        const responsePayload = {
-          ecosystem: mapEcosystemApiFields({
-            id: ec.id,
-            did: ec.did,
-            corporation_id: ec.corporation_id,
-            created: ec.created,
-            modified: ec.modified,
-            archived: ec.archived,
-            aka: ec.aka,
-            language: ec.language,
-            active_version: ec.active_version,
-            versions,
-            participants: Number(t.participants ?? 0),
-            participants_ecosystem: Number(t.participants_ecosystem ?? 0),
-            participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
-            participants_issuer: Number(t.participants_issuer ?? 0),
-            participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
-            participants_verifier: Number(t.participants_verifier ?? 0),
-            participants_holder: Number(t.participants_holder ?? 0),
-            active_schemas: Number(t.active_schemas ?? 0),
-            archived_schemas: Number(t.archived_schemas ?? 0),
-            weight: Number(t.weight ?? 0),
-            issued: Number(t.issued ?? 0),
-            verified: Number(t.verified ?? 0),
-            ecosystem_slash_events: Number(t.ecosystem_slash_events ?? 0),
-            ecosystem_slashed_amount: Number(t.ecosystem_slashed_amount ?? 0),
-            ecosystem_slashed_amount_repaid: Number(t.ecosystem_slashed_amount_repaid ?? 0),
-            network_slash_events: Number(t.network_slash_events ?? 0),
-            network_slashed_amount: Number(t.network_slashed_amount ?? 0),
-            network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
-          } as Record<string, unknown>),
-        }
+        const responsePayload = this.applyGfDataModeToResponsePayload(
+          {
+            ecosystem: mapEcosystemApiFields({
+              id: ec.id,
+              did: ec.did,
+              corporation_id: ec.corporation_id,
+              created: ec.created,
+              modified: ec.modified,
+              archived: ec.archived,
+              aka: ec.aka,
+              language: ec.language,
+              active_version: ec.active_version,
+              versions,
+              participants: Number(t.participants ?? 0),
+              participants_ecosystem: Number(t.participants_ecosystem ?? 0),
+              participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
+              participants_issuer: Number(t.participants_issuer ?? 0),
+              participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
+              participants_verifier: Number(t.participants_verifier ?? 0),
+              participants_holder: Number(t.participants_holder ?? 0),
+              active_schemas: Number(t.active_schemas ?? 0),
+              archived_schemas: Number(t.archived_schemas ?? 0),
+              weight: Number(t.weight ?? 0),
+              issued: Number(t.issued ?? 0),
+              verified: Number(t.verified ?? 0),
+              ecosystem_slash_events: Number(t.ecosystem_slash_events ?? 0),
+              ecosystem_slashed_amount: Number(t.ecosystem_slashed_amount ?? 0),
+              ecosystem_slashed_amount_repaid: Number(t.ecosystem_slashed_amount_repaid ?? 0),
+              network_slash_events: Number(t.network_slash_events ?? 0),
+              network_slashed_amount: Number(t.network_slashed_amount ?? 0),
+              network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
+            } as Record<string, unknown>),
+          },
+          gfDataMode
+        )
         const enrichedResponsePayload =
           trustDataMode === 'none'
             ? responsePayload
@@ -1337,38 +1387,41 @@ export default class EcosystemDatabaseService extends BaseService {
               }))
             }
             const s = snapshot as any
-            const responsePayload = {
-              ecosystem: mapEcosystemApiFields({
-                id: s.ecosystem_id,
-                did: s.did,
-                corporation_id: s.corporation_id,
-                created: s.created,
-                modified: s.modified,
-                archived: s.archived,
-                aka: s.aka,
-                language: s.language,
-                active_version: s.active_version,
-                versions,
-                participants: Number(s.participants ?? 0),
-                participants_ecosystem: Number(s.participants_ecosystem ?? 0),
-                participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
-                participants_issuer: Number(s.participants_issuer ?? 0),
-                participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
-                participants_verifier: Number(s.participants_verifier ?? 0),
-                participants_holder: Number(s.participants_holder ?? 0),
-                active_schemas: Number(s.active_schemas ?? 0),
-                archived_schemas: Number(s.archived_schemas ?? 0),
-                weight: Number(s.weight ?? 0),
-                issued: Number(s.issued ?? 0),
-                verified: Number(s.verified ?? 0),
-                ecosystem_slash_events: Number(s.ecosystem_slash_events ?? 0),
-                ecosystem_slashed_amount: Number(s.ecosystem_slashed_amount ?? 0),
-                ecosystem_slashed_amount_repaid: Number(s.ecosystem_slashed_amount_repaid ?? 0),
-                network_slash_events: Number(s.network_slash_events ?? 0),
-                network_slashed_amount: Number(s.network_slashed_amount ?? 0),
-                network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
-              } as Record<string, unknown>),
-            }
+            const responsePayload = this.applyGfDataModeToResponsePayload(
+              {
+                ecosystem: mapEcosystemApiFields({
+                  id: s.ecosystem_id,
+                  did: s.did,
+                  corporation_id: s.corporation_id,
+                  created: s.created,
+                  modified: s.modified,
+                  archived: s.archived,
+                  aka: s.aka,
+                  language: s.language,
+                  active_version: s.active_version,
+                  versions,
+                  participants: Number(s.participants ?? 0),
+                  participants_ecosystem: Number(s.participants_ecosystem ?? 0),
+                  participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
+                  participants_issuer: Number(s.participants_issuer ?? 0),
+                  participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
+                  participants_verifier: Number(s.participants_verifier ?? 0),
+                  participants_holder: Number(s.participants_holder ?? 0),
+                  active_schemas: Number(s.active_schemas ?? 0),
+                  archived_schemas: Number(s.archived_schemas ?? 0),
+                  weight: Number(s.weight ?? 0),
+                  issued: Number(s.issued ?? 0),
+                  verified: Number(s.verified ?? 0),
+                  ecosystem_slash_events: Number(s.ecosystem_slash_events ?? 0),
+                  ecosystem_slashed_amount: Number(s.ecosystem_slashed_amount ?? 0),
+                  ecosystem_slashed_amount_repaid: Number(s.ecosystem_slashed_amount_repaid ?? 0),
+                  network_slash_events: Number(s.network_slash_events ?? 0),
+                  network_slashed_amount: Number(s.network_slashed_amount ?? 0),
+                  network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
+                } as Record<string, unknown>),
+              },
+              gfDataMode
+            )
             const enrichedResponsePayload =
               trustDataMode === 'none'
                 ? responsePayload
@@ -1427,7 +1480,10 @@ export default class EcosystemDatabaseService extends BaseService {
           network_slashed_amount_repaid: Number((ecosystemHistory as any).network_slashed_amount_repaid ?? 0),
         }
 
-        const responsePayload = { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) }
+        const responsePayload = this.applyGfDataModeToResponsePayload(
+          { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) },
+          gfDataMode
+        )
         const enrichedResponsePayload =
           trustDataMode === 'none'
             ? responsePayload
@@ -1466,31 +1522,34 @@ export default class EcosystemDatabaseService extends BaseService {
       delete (plain as any).height
 
       const p = plain as any
-      const responsePayload = {
-        ecosystem: mapEcosystemApiFields({
-          ...plain,
-          id: plain.id,
-          versions,
-          participants: Number(p.participants ?? 0),
-          participants_ecosystem: Number(p.participants_ecosystem ?? 0),
-          participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
-          participants_issuer: Number(p.participants_issuer ?? 0),
-          participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
-          participants_verifier: Number(p.participants_verifier ?? 0),
-          participants_holder: Number(p.participants_holder ?? 0),
-          active_schemas: Number(p.active_schemas ?? 0),
-          archived_schemas: Number(p.archived_schemas ?? 0),
-          weight: Number(p.weight ?? 0),
-          issued: Number(p.issued ?? 0),
-          verified: Number(p.verified ?? 0),
-          ecosystem_slash_events: Number(p.ecosystem_slash_events ?? 0),
-          ecosystem_slashed_amount: Number(p.ecosystem_slashed_amount ?? 0),
-          ecosystem_slashed_amount_repaid: Number(p.ecosystem_slashed_amount_repaid ?? 0),
-          network_slash_events: Number(p.network_slash_events ?? 0),
-          network_slashed_amount: Number(p.network_slashed_amount ?? 0),
-          network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
-        } as Record<string, unknown>),
-      }
+      const responsePayload = this.applyGfDataModeToResponsePayload(
+        {
+          ecosystem: mapEcosystemApiFields({
+            ...plain,
+            id: plain.id,
+            versions,
+            participants: Number(p.participants ?? 0),
+            participants_ecosystem: Number(p.participants_ecosystem ?? 0),
+            participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
+            participants_issuer: Number(p.participants_issuer ?? 0),
+            participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
+            participants_verifier: Number(p.participants_verifier ?? 0),
+            participants_holder: Number(p.participants_holder ?? 0),
+            active_schemas: Number(p.active_schemas ?? 0),
+            archived_schemas: Number(p.archived_schemas ?? 0),
+            weight: Number(p.weight ?? 0),
+            issued: Number(p.issued ?? 0),
+            verified: Number(p.verified ?? 0),
+            ecosystem_slash_events: Number(p.ecosystem_slash_events ?? 0),
+            ecosystem_slashed_amount: Number(p.ecosystem_slashed_amount ?? 0),
+            ecosystem_slashed_amount_repaid: Number(p.ecosystem_slashed_amount_repaid ?? 0),
+            network_slash_events: Number(p.network_slash_events ?? 0),
+            network_slashed_amount: Number(p.network_slashed_amount ?? 0),
+            network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
+          } as Record<string, unknown>),
+        },
+        gfDataMode
+      )
       const enrichedResponsePayload =
         trustDataMode === 'none'
           ? responsePayload
@@ -1504,10 +1563,13 @@ export default class EcosystemDatabaseService extends BaseService {
   @Action({
     params: {
       corporation: { type: 'any', optional: true },
+      corporation_id: { type: 'any', optional: true },
       participant: { type: 'any', optional: true },
       modified_after: { type: 'string', optional: true },
+      archived: { type: 'any', optional: true },
       only_active: { type: 'any', optional: true },
       active_gf_only: { type: 'any', optional: true },
+      gf_data: { type: 'string', optional: true },
       preferred_language: { type: 'string', optional: true },
       response_max_size: { type: 'number', optional: true, default: 64 },
       sort: { type: 'string', optional: true },
@@ -1543,10 +1605,13 @@ export default class EcosystemDatabaseService extends BaseService {
   public async listEcosystems(
     ctx: Context<{
       corporation?: string
+      corporation_id?: string | number
       participant?: string
       modified_after?: string
+      archived?: string | boolean
       only_active?: string | boolean
       active_gf_only?: string | boolean
+      gf_data?: string
       preferred_language?: string
       response_max_size?: number
       sort?: string
@@ -1582,9 +1647,11 @@ export default class EcosystemDatabaseService extends BaseService {
     try {
       const {
         corporation,
+        corporation_id: corporationIdRaw,
         participant,
         modified_after: modifiedAfter,
         preferred_language: preferredLanguage,
+        archived: archivedRaw,
         only_active: onlyActiveRaw,
         response_max_size: responseMaxSizeRaw,
         sort,
@@ -1621,6 +1688,11 @@ export default class EcosystemDatabaseService extends BaseService {
         return ApiResponder.error(ctx, trustDataModeParsed.message, 400)
       }
       const trustDataMode = trustDataModeParsed.mode
+      const gfDataModeParsed = this.resolveEcosystemGfDataMode(ctx.params as any)
+      if (!gfDataModeParsed.ok) {
+        return ApiResponder.error(ctx, gfDataModeParsed.message, 400)
+      }
+      const gfDataMode = gfDataModeParsed.mode
 
       const participantValidation = validateParticipantParam(participant, 'participant')
       if (!participantValidation.valid) {
@@ -1634,7 +1706,15 @@ export default class EcosystemDatabaseService extends BaseService {
       }
       const corporationAccount = corporationValidation.value
       let corporationId: number | null = null
-      if (corporationAccount) {
+      const hasCorporationId =
+        corporationIdRaw !== undefined && corporationIdRaw !== null && String(corporationIdRaw).trim() !== ''
+      if (hasCorporationId) {
+        const parsedCorporationId = Number(corporationIdRaw)
+        if (!Number.isInteger(parsedCorporationId) || parsedCorporationId <= 0) {
+          return ApiResponder.error(ctx, 'Invalid "corporation_id". Must be a positive integer.', 400)
+        }
+        corporationId = parsedCorporationId
+      } else if (corporationAccount) {
         corporationId = await resolveCorporationIdByAddress(corporationAccount)
         if (corporationId === null) {
           return ApiResponder.success(ctx, { ecosystems: [] }, 200)
@@ -1647,9 +1727,17 @@ export default class EcosystemDatabaseService extends BaseService {
         return ApiResponder.error(ctx, err.message, 400)
       }
 
-      const hasOnlyActive = typeof onlyActiveRaw !== 'undefined'
-      const onlyActive = String(onlyActiveRaw).toLowerCase() === 'true'
-      const activeGfOnly = String(ctx.params.active_gf_only).toLowerCase() === 'true'
+      const hasArchived = archivedRaw !== undefined && archivedRaw !== null && String(archivedRaw).trim() !== ''
+      let hasOnlyActive: boolean
+      let onlyActive: boolean
+      if (hasArchived) {
+        hasOnlyActive = true
+        onlyActive = String(archivedRaw).toLowerCase() !== 'true'
+      } else {
+        hasOnlyActive = typeof onlyActiveRaw !== 'undefined'
+        onlyActive = String(onlyActiveRaw).toLowerCase() === 'true'
+      }
+      const activeGfOnly = gfDataMode === 'only_active'
       const blockHeight = (ctx.meta as any)?.blockHeight
 
       const responseMaxSize = !responseMaxSizeRaw ? 64 : Math.min(Math.max(responseMaxSizeRaw, 1), 1024)
@@ -1773,9 +1861,12 @@ export default class EcosystemDatabaseService extends BaseService {
           })
           const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters)
           const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize)
-          const responsePayload = {
-            ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
-          }
+          const responsePayload = this.applyGfDataModeToResponsePayload(
+            {
+              ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
+            },
+            gfDataMode
+          )
           const enrichedResponsePayload =
             trustDataMode === 'none'
               ? responsePayload
@@ -1884,9 +1975,12 @@ export default class EcosystemDatabaseService extends BaseService {
 
         const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize)
 
-        const responsePayload = {
-          ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
-        }
+        const responsePayload = this.applyGfDataModeToResponsePayload(
+          {
+            ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
+          },
+          gfDataMode
+        )
         const enrichedResponsePayload =
           trustDataMode === 'none'
             ? responsePayload
@@ -2080,9 +2174,12 @@ export default class EcosystemDatabaseService extends BaseService {
         })
         const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters)
         const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize)
-        const responsePayload = {
-          ecosystems: sortedBatch.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
-        }
+        const responsePayload = this.applyGfDataModeToResponsePayload(
+          {
+            ecosystems: sortedBatch.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
+          },
+          gfDataMode
+        )
         const enrichedResponsePayload =
           trustDataMode === 'none'
             ? responsePayload
@@ -2216,9 +2313,12 @@ export default class EcosystemDatabaseService extends BaseService {
         ? registriesWithStats.slice(0, responseMaxSize)
         : this.sortRegistries(registriesWithStats, sort, responseMaxSize)
 
-      const responsePayload = {
-        ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
-      }
+      const responsePayload = this.applyGfDataModeToResponsePayload(
+        {
+          ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
+        },
+        gfDataMode
+      )
       const enrichedResponsePayload =
         trustDataMode === 'none'
           ? responsePayload
@@ -2293,7 +2393,20 @@ export default class EcosystemDatabaseService extends BaseService {
 
   @Action()
   public async getParams(ctx: Context) {
-    const { getModuleParamsAction } = await import('../../common/utils/params_service')
-    return getModuleParamsAction(ctx, ModulesParamsNamesTypes.EC, MODULE_DISPLAY_NAMES.ECOSYSTEM)
+    const { getModuleParams } = await import('../../common/utils/params_service')
+    const blockHeight = (ctx.meta as any)?.blockHeight
+    const result = await getModuleParams(ModulesParamsNamesTypes.EC, blockHeight)
+
+    if (!result) {
+      return ApiResponder.error(ctx, `Module parameters not found: ${MODULE_DISPLAY_NAMES.ECOSYSTEM}`, 404)
+    }
+
+    const normalizedParams = result.params && typeof result.params === 'object' ? { ...result.params } : {}
+    if (Object.hasOwn(normalizedParams, 'trust_registry_trust_deposit')) {
+      normalizedParams.ecosystem_trust_deposit = normalizedParams.trust_registry_trust_deposit
+      delete normalizedParams.trust_registry_trust_deposit
+    }
+
+    return ApiResponder.success(ctx, { params: normalizedParams }, 200)
   }
 }
