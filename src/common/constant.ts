@@ -134,6 +134,7 @@ export const MODULE_DISPLAY_NAMES = {
   CREDENTIAL_SCHEMA: 'credentialschema',
   TRUST_DEPOSIT: 'trustdeposit',
   PARTICIPANT: 'participant',
+  CORPORATION: 'corporation',
 } as const
 
 export enum TrustDepositEventType {
