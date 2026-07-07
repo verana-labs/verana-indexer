@@ -42,6 +42,7 @@ import {
   MsgSetParticipantOPToValidated,
   MsgSlashParticipantTrustDeposit,
   MsgStartParticipantOP,
+  MsgTriggerResolver,
   MsgUpdateParams as MsgUpdateParamsPP,
 } from '@verana-labs/verana-types/codec/verana/pp/v1/tx'
 import {
@@ -108,6 +109,7 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
   [VeranaParticipantMessageTypes.CreateRootParticipant, MsgCreateRootParticipant],
   [VeranaParticipantMessageTypes.RevokeParticipant, MsgRevokeParticipant],
   [VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession, MsgCreateOrUpdateParticipantSession],
+  [VeranaParticipantMessageTypes.TriggerResolver, MsgTriggerResolver],
   [VeranaParticipantMessageTypes.SlashParticipantTrustDeposit, MsgSlashParticipantTrustDeposit],
   [VeranaParticipantMessageTypes.RepayParticipantSlashedTrustDeposit, MsgRepayParticipantSlashedTrustDeposit],
   [VeranaParticipantMessageTypes.SelfCreateParticipant, MsgSelfCreateParticipant],

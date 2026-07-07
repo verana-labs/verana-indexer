@@ -90,6 +90,10 @@ export interface MsgStartParticipantOP {
   vsOperatorAuthzFeeSpendLimit?: DenomAmount[] | null
   vs_operator_authz_spend_period?: string | null
   vsOperatorAuthzSpendPeriod?: string | null
+  vs_operator_authz_period?: string | null
+  vsOperatorAuthzPeriod?: string | null
+  vs_operator_authz_msg_types?: string[] | null
+  vsOperatorAuthzMsgTypes?: string[] | null
 }
 export interface MsgSlashParticipantTrustDeposit {
   timestamp?: Date | undefined
@@ -178,6 +182,10 @@ export interface MsgSelfCreateParticipant {
   vsOperatorAuthzFeeSpendLimit?: DenomAmount[] | null
   vs_operator_authz_spend_period?: string | null
   vsOperatorAuthzSpendPeriod?: string | null
+  vs_operator_authz_period?: string | null
+  vsOperatorAuthzPeriod?: string | null
+  vs_operator_authz_msg_types?: string[] | null
+  vsOperatorAuthzMsgTypes?: string[] | null
 }
 export interface MsgCreateOrUpdateParticipantSession {
   timestamp?: Date | undefined
