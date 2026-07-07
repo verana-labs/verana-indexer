@@ -214,7 +214,8 @@ export function calculateCorporationAvailableActions(
 
   if (isVerifierType(type)) {
     const inOpFlow = opState !== null && opState !== 'VALIDATION_STATE_UNSPECIFIED'
-    const useOpFlowRules = verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
+    const useOpFlowRules =
+      verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
     if (useOpFlowRules) {
       if (participantState === 'REPAID' || participantState === 'REVOKED') {
       } else if (participantState === 'SLASHED') {
@@ -317,7 +318,8 @@ export function calculateValidatorAvailableActions(
 
   if (isVerifierType(type)) {
     const inOpFlow = opState !== null && opState !== 'VALIDATION_STATE_UNSPECIFIED'
-    const useOpFlowRules = verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
+    const useOpFlowRules =
+      verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
     if (useOpFlowRules) {
       actions.add('PARTICIPANT_SLASH')
 
