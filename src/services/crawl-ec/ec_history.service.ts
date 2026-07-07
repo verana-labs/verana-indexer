@@ -272,7 +272,6 @@ export default class EcosystemHistoryService extends BaseService {
       'created',
       'modified',
       'archived',
-      'aka',
       'language',
       'active_version',
       'participants',
@@ -379,7 +378,6 @@ export default class EcosystemHistoryService extends BaseService {
               ? row.archived.toISOString()
               : new Date(row.archived).toISOString()
             : null,
-        aka: row.aka ?? null,
         language: row.language ?? null,
         active_version: row.active_version ?? null,
         participants: Number(row.participants ?? 0),
@@ -405,7 +403,11 @@ export default class EcosystemHistoryService extends BaseService {
         changes.versions = versions
       }
       return {
+        id: row.id != null ? Number(row.id) : null,
+        timestamp: row.created_at ? new Date(row.created_at).toISOString() : null,
         block_height: String(row.height),
+        entity_type: 'Ecosystem',
+        entity_id: String(ecosystemId),
         msg,
         changes,
         created_at: row.created_at,
@@ -505,6 +507,7 @@ export default class EcosystemHistoryService extends BaseService {
           const cleanedChanges = { ...originalChanges }
           delete cleanedChanges.added_governance_framework_versions
           delete cleanedChanges.added_governance_framework_documents
+          delete cleanedChanges.aka
 
           if (
             (addedGfvs && addedGfvs.length > 0) ||

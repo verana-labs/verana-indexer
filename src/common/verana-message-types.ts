@@ -21,6 +21,7 @@ export enum VeranaParticipantMessageTypes {
   SlashParticipantTrustDeposit = '/verana.pp.v1.MsgSlashParticipantTrustDeposit',
   RepayParticipantSlashedTrustDeposit = '/verana.pp.v1.MsgRepayParticipantSlashedTrustDeposit',
   CancelParticipantOPLastRequest = '/verana.pp.v1.MsgCancelParticipantOPLastRequest',
+  TriggerResolver = '/verana.pp.v1.MsgTriggerResolver',
 }
 
 export enum VeranaTrustDepositMessageTypes {

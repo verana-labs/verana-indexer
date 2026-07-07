@@ -593,6 +593,7 @@ export async function buildActivityTimeline(
       }
 
       const activityItem: any = {
+        id: record.id != null ? Number(record.id) : null,
         timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : null,
         block_height: record.height != null ? Number(record.height) : null,
         entity_type: activityEntityType,
