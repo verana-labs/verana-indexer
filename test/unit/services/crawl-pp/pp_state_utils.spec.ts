@@ -158,7 +158,7 @@ describe('🧪 pp_state_utils', () => {
       }
 
       const schema: SchemaData = {
-        issuer_onboarding_mode: 'GRANTOR_VALIDATION',
+        issuer_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
         verifier_onboarding_mode: 'OPEN',
       }
 
@@ -257,8 +257,8 @@ describe('🧪 pp_state_utils', () => {
 
   describe('calculateValidatorAvailableActions', () => {
     const grantorSchema: SchemaData = {
-      issuer_onboarding_mode: 'GRANTOR_VALIDATION',
-      verifier_onboarding_mode: 'GRANTOR_VALIDATION',
+      issuer_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
+      verifier_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
     }
 
     it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and PENDING OP includes slash, revoke, extend and set validated', () => {

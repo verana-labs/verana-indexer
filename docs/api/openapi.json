@@ -1640,7 +1640,7 @@
                   "description": "Credential schema JSON Schema definition (with $id overridden by indexer)."
                 },
                 "example": {
-                  "$id": "vpr:verana:vna-testnet-1/cs/v1/js/16",
+                  "$id": "vpr:verana:vna-testnet-1:cs:16",
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "title": "ExampleCredential",
                   "description": "ExampleCredential using JsonSchema",
@@ -1736,34 +1736,57 @@
             "description": "Filter by modification date"
           },
           {
-            "name": "only_active",
+            "name": "archived",
             "in": "query",
             "required": false,
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter by active status. If true, returns only active schemas (archived is null). If false or omitted, returns all schemas (both active and archived). Active/inactive is determined by the archived field."
+            "description": "true returns only archived schemas; false returns only not-archived schemas; omitted returns both. Default: null."
           },
           {
             "name": "issuer_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "GRANTOR_ONBOARDING_PROCESS",
+                "ECOSYSTEM_ONBOARDING_PROCESS"
+              ]
             },
-            "description": "Filter by issuer onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
+            "description": "Filter by issuer onboarding mode."
           },
           {
             "name": "verifier_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "GRANTOR_ONBOARDING_PROCESS",
+                "ECOSYSTEM_ONBOARDING_PROCESS"
+              ]
             },
-            "description": "Filter by verifier onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
+            "description": "Filter by verifier onboarding mode."
           },
           {
-            "name": "response_max_size",
+            "name": "holder_onboarding_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ISSUER_ONBOARDING_PROCESS",
+                "PERMISSIONLESS"
+              ]
+            },
+            "description": "Filter by holder onboarding mode."
+          },
+          {
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1772,16 +1795,42 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of records to return in the response"
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id upper bound (exclusive)"
           },
           {
             "name": "sort",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Sort by id ascending or descending"
           },
           {
             "name": "participant",
@@ -2106,26 +2155,51 @@
             "description": "The Credential Schema ID to retrieve history for"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
+              "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of activity items to return (default: 64)"
+            "description": "Page size"
           },
           {
-            "name": "transaction_timestamp_older_than",
+            "name": "min_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "pattern": "^[0-9]+$"
             },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2169,7 +2243,7 @@
                         "modified": "2025-10-02T17:23:55.515Z",
                         "verified": 0,
                         "description": "ExampleCredential using JsonSchema",
-                        "json_schema": "{\"$id\":\"vpr:verana:vna-testnet-1/cs/v1/js/1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}",
+                        "json_schema": "{\"$id\":\"vpr:verana:vna-testnet-1:cs:1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}",
                         "participants": 0,
                         "network_slash_events": 0,
                         "ecosystem_slash_events": 0,
@@ -2179,7 +2253,7 @@
                         "network_slashed_amount_repaid": 0,
                         "verifier_onboarding_mode": "OPEN",
                         "ecosystem_slashed_amount_repaid": 0,
-                        "holder_onboarding_mode": "OPEN",
+                        "holder_onboarding_mode": "PERMISSIONLESS",
                         "pricing_asset_type": "NATIVE",
                         "pricing_asset": "uvna",
                         "digest_algorithm": "sha256",
@@ -5328,14 +5402,29 @@
             "type": "integer"
           },
           "issuer_onboarding_mode": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "GRANTOR_ONBOARDING_PROCESS",
+              "ECOSYSTEM_ONBOARDING_PROCESS"
+            ]
           },
           "verifier_onboarding_mode": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "GRANTOR_ONBOARDING_PROCESS",
+              "ECOSYSTEM_ONBOARDING_PROCESS"
+            ]
           },
           "holder_onboarding_mode": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "enum": [
+              "ISSUER_ONBOARDING_PROCESS",
+              "PERMISSIONLESS",
+              null
+            ]
           },
           "pricing_asset_type": {
             "type": "string",

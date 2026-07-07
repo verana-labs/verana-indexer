@@ -146,7 +146,7 @@ describe('IndexerSnapshotService snapshot endpoint', () => {
 
             issuer_onboarding_mode: 'OPEN',
             verifier_onboarding_mode: 'OPEN',
-            holder_onboarding_mode: 'PARTICIPANTLESS',
+            holder_onboarding_mode: 'PERMISSIONLESS',
           }
 
           const info = await getColumnInfo('credential_schemas')

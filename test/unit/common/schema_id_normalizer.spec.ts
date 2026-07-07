@@ -4,7 +4,7 @@ import { Network } from '../../../src/network'
 describe('overrideSchemaIdInString', () => {
   const actualId = 42
   const chainId = Network.chainId || 'vna-testnet-1'
-  const expectedId = `vpr:verana:${chainId}/cs/v1/js/${actualId}`
+  const expectedId = `vpr:verana:${chainId}:cs:${actualId}`
 
   it('overrides $id when it exists (placeholder)', () => {
     const input = `{"$id":"vpr:verana:VPR_CHAIN_ID/cs/v1/js/VPR_CREDENTIAL_SCHEMA_ID","type":"object"}`
