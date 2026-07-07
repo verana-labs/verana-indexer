@@ -296,7 +296,21 @@ export default class TrustDepositMessageProcessorService extends BullableService
 
   private async slashTrustDeposit(content: any, ts: string, height: number) {
     try {
-      const account = requireController(content, 'TrustDeposit SLASH')
+      let account = extractController(content)
+      if (!account) {
+        const cid = content.corporation_id ?? content.corporationId
+        if (cid != null && /^\d+$/.test(String(cid))) {
+          const row = await knex('corporation')
+            .where({ id: Number(cid) })
+            .select('corporation')
+            .first()
+          account = row?.corporation ?? undefined
+        }
+      }
+      if (!account) {
+        this.logger.warn('[TrustDeposit] ❌ Slash: missing corporation/corporationId')
+        return
+      }
       const amount = toBigIntSafe(content.deposit ?? content.amount)
       if (amount <= BigInt(0)) {
         this.logger.warn('[TrustDeposit] Slash deposit must be > 0')
