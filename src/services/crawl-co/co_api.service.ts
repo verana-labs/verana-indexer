@@ -3,7 +3,7 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
-import { SERVICE } from '../../common'
+import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
@@ -211,5 +211,11 @@ export default class CorporationApiService extends BaseService {
     } catch (err: any) {
       return ApiResponder.error(ctx, err?.message || String(err), 500)
     }
+  }
+
+  @Action()
+  public async getCorporationParams(ctx: Context) {
+    const { getModuleParamsAction } = await import('../../common/utils/params_service')
+    return getModuleParamsAction(ctx, ModulesParamsNamesTypes.CO, MODULE_DISPLAY_NAMES.CORPORATION)
   }
 }

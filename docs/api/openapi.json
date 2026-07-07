@@ -4381,6 +4381,36 @@
           "500": { "$ref": "#/components/responses/ServerError" }
         }
       }
+    },
+    "/v4/corporation/params": {
+      "get": {
+        "tags": [
+          "Corporation"
+        ],
+        "summary": "Get Corporation parameters",
+        "description": "Retrieve the network-level Corporation module parameters (IDX-CO-QRY-3). Aligned with VPR MOD-CO-QRY-3. The x/co module currently defines no parameters (reserved for forward compatibility), so an empty params object is returned until governance introduces parameters.",
+        "operationId": "getCorporationParams",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Corporation module parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorporationParamsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7060,6 +7090,19 @@
         "required": [
           "corporation",
           "block_height"
+        ]
+      },
+      "CorporationParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "description": "Corporation module parameter set. The x/co module currently defines no parameters (reserved for forward compatibility); an empty object is returned.",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "params"
         ]
       }
     },
