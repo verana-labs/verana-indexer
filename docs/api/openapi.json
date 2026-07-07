@@ -98,10 +98,67 @@
         "tags": [
           "Corporation"
         ],
-        "summary": "List Corporations",
-        "description": "Retrieve a paginated list of Corporations with their members and governance framework versions/documents.",
-        "operationId": "listCorporations",
+        "summary": "List Corporations (v4)",
+        "description": "Paginated, filtered list of Corporations; each entry has the same shape as Get Corporation (IDX-CO-QRY-1). Aligned with VPR MOD-CO-QRY-2. When At-Block-Height is supplied, corporations not yet created at that block are excluded.",
+        "operationId": "listCorporationsV4",
         "parameters": [
+          {
+            "name": "gf_data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "only_active",
+                "all"
+              ],
+              "default": "only_active"
+            },
+            "description": "Controls inclusion of CGF versions"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO 639 language; orders returned CGF documents"
+          },
+          {
+            "name": "did",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by Corporation DID (exact match)"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only Corporations modified strictly after this ISO 8601 datetime"
+          },
+          {
+            "name": "trust_data",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "summary",
+                "full"
+              ]
+            },
+            "description": "Inline verifiable-trust data per Corporation DID"
+          },
           {
             "name": "limit",
             "in": "query",
@@ -109,39 +166,63 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
-              "default": 100
+              "maximum": 1024,
+              "default": 64
             },
-            "description": "Maximum number of records to return"
+            "description": "Page size"
           },
           {
-            "name": "offset",
+            "name": "min_id",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
-            "description": "Number of records to skip"
+            "description": "Cursor: id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by id ascending or descending"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with list of Corporations",
+            "description": "The Corporations",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CorporationListResponse"
+                  "$ref": "#/components/schemas/CorporationV4ListResponse"
                 }
               }
             }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
           }
         }
       }
@@ -7115,6 +7196,20 @@
         "required": [
           "corporation",
           "block_height"
+        ]
+      },
+      "CorporationV4ListResponse": {
+        "type": "object",
+        "properties": {
+          "corporations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CorporationV4"
+            }
+          }
+        },
+        "required": [
+          "corporations"
         ]
       }
     },
