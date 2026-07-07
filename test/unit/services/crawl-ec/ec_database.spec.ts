@@ -11,6 +11,10 @@ jest.mock('../../../../src/services/crawl-pp/pp_state_utils', () => ({
 }))
 jest.mock('../../../../src/services/crawl-ec/ec_stats', () => ({
   calculateEcosystemStats: jest.fn(),
+  TR_STATS_FIELDS: [],
+}))
+jest.mock('../../../../src/common/utils/params_service', () => ({
+  getModuleParams: jest.fn(),
 }))
 
 jest.mock('../../../../src/common/utils/db_connection', () => {
@@ -97,6 +101,41 @@ describe('EcosystemDatabaseService', () => {
       data = data?.ecosystem
       expect(data.versions[0].documents).toEqual([{ language: 'en', url: 'doc1' }])
     })
+
+    it('should reject an invalid gf_data value', async () => {
+      const ctx: any = { params: { ecosystem_id: 1, gf_data: 'bogus' } }
+      await service.getEcosystem(ctx)
+      expect(ApiResponder.error).toHaveBeenCalledWith(
+        ctx,
+        'Invalid "gf_data". Allowed values: none, only_active, all',
+        400
+      )
+    })
+
+    it('should omit versions when gf_data is none', async () => {
+      const mockTR = {
+        toJSON: jest.fn().mockReturnValue({
+          id: 1,
+          governanceFrameworkVersions: [{ active_since: '2025-01-01', documents: [{ language: 'en', url: 'doc1' }] }],
+        }),
+      }
+
+      ;(Ecosystem.query as any).mockReturnValueOnce({
+        findById: jest.fn().mockReturnValueOnce({
+          withGraphFetched: jest.fn().mockResolvedValueOnce(mockTR),
+        }),
+      })
+
+      const { calculateEcosystemStats } = require('../../../../src/services/crawl-ec/ec_stats')
+      ;(calculateEcosystemStats as jest.Mock).mockResolvedValue({})
+
+      const ctx: any = { params: { ecosystem_id: 1, gf_data: 'none' } }
+      await service.getEcosystem(ctx)
+
+      expect(ApiResponder.success).toHaveBeenCalled()
+      const data = (ApiResponder.success as jest.Mock).mock.calls[0][1]
+      expect(data.ecosystem.versions).toBeUndefined()
+    })
   })
 
   describe('listEcosystems', () => {
@@ -175,6 +214,30 @@ describe('EcosystemDatabaseService', () => {
       let data = (ApiResponder.success as jest.Mock).mock.calls[0][1]
       data = data?.ecosystems
       expect(data[0].versions[0].documents).toEqual([{ language: 'fr', url: 'doc2' }])
+    })
+
+    it('should reject a non-positive-integer corporation_id filter', async () => {
+      const ctx: any = { params: { corporation_id: 'abc' } }
+      await service.listEcosystems(ctx)
+      expect(ApiResponder.error).toHaveBeenCalledWith(ctx, 'Invalid "corporation_id". Must be a positive integer.', 400)
+    })
+  })
+
+  describe('getParams', () => {
+    it('should expose the ecosystem_trust_deposit key (renamed from trust_registry_trust_deposit)', async () => {
+      const { getModuleParams } = require('../../../../src/common/utils/params_service')
+      ;(getModuleParams as jest.Mock).mockResolvedValueOnce({
+        params: { trust_unit_price: 1000000, trust_registry_trust_deposit: 10 },
+      })
+
+      const ctx: any = { params: {}, meta: {} }
+      await service.getParams(ctx)
+
+      expect(ApiResponder.success).toHaveBeenCalled()
+      const data = (ApiResponder.success as jest.Mock).mock.calls[0][1]
+      expect(data.params.ecosystem_trust_deposit).toBe(10)
+      expect(data.params.trust_unit_price).toBe(1000000)
+      expect(data.params).not.toHaveProperty('trust_registry_trust_deposit')
     })
   })
 })
