@@ -63,33 +63,22 @@ export interface MsgStartParticipantOP {
   operator?: string
   timestamp?: Date | undefined
   type: number
-  participant_type?: number | string
   participantType?: number | string
-  validator_participant_id: number
   validatorParticipantId?: number
   did: string
-  effective_from: Date | undefined
   effectiveFrom?: Date | undefined
-  effective_until: Date | undefined
   effectiveUntil?: Date | undefined
-  validation_fees?: number
   validationFees?: number
-  issuance_fees?: number
   issuanceFees?: number
-  verification_fees?: number
   verificationFees?: number
-  vs_operator?: string
   vsOperator?: string
-  vs_operator_authz_enabled?: boolean
   vsOperatorAuthzEnabled?: boolean
-  vs_operator_authz_spend_limit?: DenomAmount[] | null
   vsOperatorAuthzSpendLimit?: DenomAmount[] | null
-  vs_operator_authz_with_feegrant?: boolean
   vsOperatorAuthzWithFeegrant?: boolean
-  vs_operator_authz_fee_spend_limit?: DenomAmount[] | null
   vsOperatorAuthzFeeSpendLimit?: DenomAmount[] | null
-  vs_operator_authz_spend_period?: string | null
   vsOperatorAuthzSpendPeriod?: string | null
+  vsOperatorAuthzPeriod?: string | null
+  vsOperatorAuthzMsgTypes?: string[] | null
 }
 export interface MsgSlashParticipantTrustDeposit {
   timestamp?: Date | undefined
@@ -147,37 +136,25 @@ export interface MsgSelfCreateParticipant {
   creator?: string
   corporation?: string
   operator?: string
-  schema_id?: number
   schemaId?: number
   type: ParticipantType
-  participant_type?: number | string
   participantType?: number | string
-  validator_participant_id?: number
   validatorParticipantId?: number
   did: string
-  effective_from?: Date | undefined
   effectiveFrom?: Date | undefined
   timestamp?: Date | undefined
-  effective_until?: Date | undefined
   effectiveUntil?: Date | undefined
-  validation_fees?: number
   validationFees?: number
-  issuance_fees?: number
   issuanceFees?: number
-  verification_fees: number
   verificationFees?: number
-  vs_operator?: string
   vsOperator?: string
-  vs_operator_authz_enabled?: boolean
   vsOperatorAuthzEnabled?: boolean
-  vs_operator_authz_spend_limit?: DenomAmount[] | null
   vsOperatorAuthzSpendLimit?: DenomAmount[] | null
-  vs_operator_authz_with_feegrant?: boolean
   vsOperatorAuthzWithFeegrant?: boolean
-  vs_operator_authz_fee_spend_limit?: DenomAmount[] | null
   vsOperatorAuthzFeeSpendLimit?: DenomAmount[] | null
-  vs_operator_authz_spend_period?: string | null
   vsOperatorAuthzSpendPeriod?: string | null
+  vsOperatorAuthzPeriod?: string | null
+  vsOperatorAuthzMsgTypes?: string[] | null
 }
 export interface MsgCreateOrUpdateParticipantSession {
   timestamp?: Date | undefined

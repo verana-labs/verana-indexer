@@ -83,6 +83,7 @@ const PARTICIPANT_HISTORY_FIELDS = [
   'vs_operator',
   'adjusted',
   'vs_operator_authz_enabled',
+  'vs_operator_authz_msg_types',
   'vs_operator_authz_spend_limit',
   'vs_operator_authz_with_feegrant',
   'vs_operator_authz_fee_spend_limit',
@@ -112,6 +113,7 @@ const PARTICIPANT_HISTORY_V4_FIELDS = [
   'vs_operator',
   'adjusted',
   'vs_operator_authz_enabled',
+  'vs_operator_authz_msg_types',
   'vs_operator_authz_spend_limit',
   'vs_operator_authz_with_feegrant',
   'vs_operator_authz_fee_spend_limit',
@@ -222,6 +224,12 @@ function pickMessageBool(msg: Record<string, any>, snake: string, camel: string,
     if (raw === 0) return false
   }
   return fallback
+}
+
+function pickMessageStringArray(msg: Record<string, any>, snake: string, camel: string): string[] | null {
+  const raw = pickMessageValue(msg, snake, camel)
+  if (!Array.isArray(raw)) return null
+  return raw.map(String)
 }
 
 function extractParticipantType(msg: Record<string, any>, fallback: string | number = 'UNSPECIFIED') {
@@ -423,6 +431,9 @@ async function pickParticipantSnapshot(record: any) {
       snapshot[field] = v !== null && v !== undefined ? Number(v) : 0
     } else if (field === 'vs_operator_authz_spend_limit' || field === 'vs_operator_authz_fee_spend_limit') {
       snapshot[field] = normalizeDenomAmountArrayForDb(record[field])
+    } else if (field === 'vs_operator_authz_msg_types') {
+      const v = record[field]
+      snapshot[field] = Array.isArray(v) ? v.map(String) : (v ?? null)
     } else if (field === 'vs_operator_authz_enabled' || field === 'vs_operator_authz_with_feegrant') {
       snapshot[field] = Boolean(record[field])
     } else if (field === 'adjusted') {
@@ -844,6 +855,11 @@ export default class ParticipantIngestService extends Service {
     const nowIso = new Date().toISOString()
 
     const corporationId = Number(ledgerParticipant.corporation_id ?? ledgerParticipant.corporationId ?? 0) || 0
+    const ledgerVsOperatorAuthzMsgTypes = pickMessageStringArray(
+      ledgerParticipant,
+      'vs_operator_authz_msg_types',
+      'vsOperatorAuthzMsgTypes'
+    )
 
     return {
       id,
@@ -881,9 +897,10 @@ export default class ParticipantIngestService extends Service {
       ),
       vs_operator: ledgerParticipant.vs_operator ?? ledgerParticipant.vsOperator ?? null,
       adjusted: toIsoOrNull(ledgerParticipant.adjusted ?? ledgerParticipant.adjustedAt),
-      vs_operator_authz_enabled: Boolean(
-        ledgerParticipant.vs_operator_authz_enabled ?? ledgerParticipant.vsOperatorAuthzEnabled ?? false
-      ),
+      vs_operator_authz_msg_types: ledgerVsOperatorAuthzMsgTypes,
+      vs_operator_authz_enabled:
+        Boolean(ledgerParticipant.vs_operator_authz_enabled ?? ledgerParticipant.vsOperatorAuthzEnabled ?? false) ||
+        (ledgerVsOperatorAuthzMsgTypes?.length ?? 0) > 0,
       vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
         ledgerParticipant.vs_operator_authz_spend_limit ?? ledgerParticipant.vsOperatorAuthzSpendLimit
       ),
@@ -894,7 +911,11 @@ export default class ParticipantIngestService extends Service {
         ledgerParticipant.vs_operator_authz_fee_spend_limit ?? ledgerParticipant.vsOperatorAuthzFeeSpendLimit
       ),
       vs_operator_authz_spend_period:
-        ledgerParticipant.vs_operator_authz_spend_period ?? ledgerParticipant.vsOperatorAuthzSpendPeriod ?? null,
+        ledgerParticipant.vs_operator_authz_spend_period ??
+        ledgerParticipant.vsOperatorAuthzSpendPeriod ??
+        ledgerParticipant.vs_operator_authz_period ??
+        ledgerParticipant.vsOperatorAuthzPeriod ??
+        null,
     }
   }
 
@@ -908,6 +929,7 @@ export default class ParticipantIngestService extends Service {
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_msg_types jsonb,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_fee_spend_limit jsonb,
@@ -919,6 +941,7 @@ export default class ParticipantIngestService extends Service {
         ADD COLUMN IF NOT EXISTS vs_operator text,
         ADD COLUMN IF NOT EXISTS adjusted timestamptz,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_enabled boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS vs_operator_authz_msg_types jsonb,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_spend_limit jsonb,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_with_feegrant boolean NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS vs_operator_authz_fee_spend_limit jsonb,
@@ -1939,12 +1962,15 @@ export default class ParticipantIngestService extends Service {
         deposit: 0,
         validator_participant_id: explicitValidatorParticipantId ?? ecosystemParticipant?.id ?? null,
         vs_operator: pickMessageValue(msg as any, 'vs_operator', 'vsOperator') ?? null,
-        vs_operator_authz_enabled: pickMessageBool(
+        vs_operator_authz_msg_types: pickMessageStringArray(
           msg as any,
-          'vs_operator_authz_enabled',
-          'vsOperatorAuthzEnabled',
-          false
+          'vs_operator_authz_msg_types',
+          'vsOperatorAuthzMsgTypes'
         ),
+        vs_operator_authz_enabled:
+          pickMessageBool(msg as any, 'vs_operator_authz_enabled', 'vsOperatorAuthzEnabled', false) ||
+          (pickMessageStringArray(msg as any, 'vs_operator_authz_msg_types', 'vsOperatorAuthzMsgTypes')?.length ?? 0) >
+            0,
         vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
           pickMessageValue(msg as any, 'vs_operator_authz_spend_limit', 'vsOperatorAuthzSpendLimit')
         ),
@@ -1958,7 +1984,9 @@ export default class ParticipantIngestService extends Service {
           pickMessageValue(msg as any, 'vs_operator_authz_fee_spend_limit', 'vsOperatorAuthzFeeSpendLimit')
         ),
         vs_operator_authz_spend_period:
-          pickMessageValue(msg as any, 'vs_operator_authz_spend_period', 'vsOperatorAuthzSpendPeriod') ?? null,
+          pickMessageValue(msg as any, 'vs_operator_authz_spend_period', 'vsOperatorAuthzSpendPeriod') ??
+          pickMessageValue(msg as any, 'vs_operator_authz_period', 'vsOperatorAuthzPeriod') ??
+          null,
         modified: timestamp,
         created: timestamp,
       }
@@ -2214,12 +2242,15 @@ export default class ParticipantIngestService extends Service {
         op_validator_deposit: 0,
         op_summary_digest: null,
         vs_operator: pickMessageValue(msg as any, 'vs_operator', 'vsOperator') ?? null,
-        vs_operator_authz_enabled: pickMessageBool(
+        vs_operator_authz_msg_types: pickMessageStringArray(
           msg as any,
-          'vs_operator_authz_enabled',
-          'vsOperatorAuthzEnabled',
-          false
+          'vs_operator_authz_msg_types',
+          'vsOperatorAuthzMsgTypes'
         ),
+        vs_operator_authz_enabled:
+          pickMessageBool(msg as any, 'vs_operator_authz_enabled', 'vsOperatorAuthzEnabled', false) ||
+          (pickMessageStringArray(msg as any, 'vs_operator_authz_msg_types', 'vsOperatorAuthzMsgTypes')?.length ?? 0) >
+            0,
         vs_operator_authz_spend_limit: normalizeDenomAmountArrayForDb(
           pickMessageValue(msg as any, 'vs_operator_authz_spend_limit', 'vsOperatorAuthzSpendLimit')
         ),
@@ -2233,7 +2264,9 @@ export default class ParticipantIngestService extends Service {
           pickMessageValue(msg as any, 'vs_operator_authz_fee_spend_limit', 'vsOperatorAuthzFeeSpendLimit')
         ),
         vs_operator_authz_spend_period:
-          pickMessageValue(msg as any, 'vs_operator_authz_spend_period', 'vsOperatorAuthzSpendPeriod') ?? null,
+          pickMessageValue(msg as any, 'vs_operator_authz_spend_period', 'vsOperatorAuthzSpendPeriod') ??
+          pickMessageValue(msg as any, 'vs_operator_authz_period', 'vsOperatorAuthzPeriod') ??
+          null,
         modified: now,
         created: now,
       }

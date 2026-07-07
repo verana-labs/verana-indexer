@@ -5,8 +5,25 @@ import {
 } from '@verana-labs/verana-types/codec/verana/td/v1/query'
 import { TrustDepositEventType } from '../../common/constant'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import knex from '../../common/utils/db_connection'
 import { withAbciQueryClient } from '../../common/utils/grpc_query'
 import { VeranaTrustDepositMessageTypes } from '../../common/verana-message-types'
+
+async function resolveCorporation(idOrAddress: string): Promise<{ corporationId: number; address: string } | null> {
+  const raw = String(idOrAddress).trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) {
+    const row = await knex('corporation')
+      .where({ id: Number(raw) })
+      .select('id', 'corporation')
+      .first()
+    if (row?.id != null) return { corporationId: Number(row.id), address: String(row.corporation ?? raw) }
+    return { corporationId: Number(raw), address: raw }
+  }
+  const row = await knex('corporation').where({ corporation: raw }).select('id', 'corporation').first()
+  if (row?.id != null) return { corporationId: Number(row.id), address: raw }
+  return null
+}
 
 const TD_MESSAGE_TYPES = new Set<string>([
   VeranaTrustDepositMessageTypes.UpdateParams,
@@ -18,26 +35,6 @@ const TD_MESSAGE_TYPES = new Set<string>([
 ])
 
 export const TD_BLOCKCHAIN_EVENT_TYPES = new Set<string>(Object.values(TrustDepositEventType) as string[])
-
-export interface LedgerTrustDepositResponse {
-  corporation?: string
-  account?: string
-  deposit?: number | string
-  amount?: number | string
-  share?: number | string
-  claimable?: number | string
-  slashed_deposit?: number | string
-  slashedDeposit?: number | string
-  repaid_deposit?: number | string
-  repaidDeposit?: number | string
-  last_slashed?: string | null
-  lastSlashed?: string | null
-  last_repaid?: string | null
-  lastRepaid?: string | null
-  slash_count?: number | string
-  slashCount?: number | string
-  [key: string]: unknown
-}
 
 export interface NormalizedLedgerTrustDeposit {
   corporation: string
@@ -140,42 +137,25 @@ export function blockchainEventTypeToHistoryEventType(blockchainEventType: strin
   }
 }
 
-export function normalizeLedgerResponse(data: unknown): NormalizedLedgerTrustDeposit | null {
-  if (!data || typeof data !== 'object') return null
-  const obj = data as Record<string, unknown>
-  const raw = obj.trust_deposit ?? obj.trustDeposit ?? obj.deposit ?? obj.data
-  if (!raw || typeof raw !== 'object') return null
-  const r = raw as LedgerTrustDepositResponse
-  const corporation = String(r.corporation ?? r.account ?? '').trim()
-  if (!corporation) return null
-  return {
-    corporation,
-    deposit: Number(r.deposit ?? r.amount ?? 0),
-    share: Number(r.share ?? 0),
-    claimable: Number(r.claimable ?? 0),
-    slashed_deposit: Number(r.slashed_deposit ?? r.slashedDeposit ?? 0),
-    repaid_deposit: Number(r.repaid_deposit ?? r.repaidDeposit ?? 0),
-    last_slashed: r.last_slashed ?? r.lastSlashed ?? null,
-    last_repaid: r.last_repaid ?? r.lastRepaid ?? null,
-    slash_count: Number(r.slash_count ?? r.slashCount ?? 0),
-  }
-}
-
 export async function fetchTrustDeposit(
   id: string,
   blockHeight?: number
 ): Promise<NormalizedLedgerTrustDeposit | null> {
   try {
+    const resolved = await resolveCorporation(id)
+    if (!resolved) return null
     return await withAbciQueryClient(blockHeight, async (rpc) => {
       const query = new TdQueryClientImpl(rpc)
-      const res = await query.GetTrustDeposit(QueryGetTrustDepositRequest.fromPartial({ corporation: id }))
+      const res = await query.GetTrustDeposit(
+        QueryGetTrustDepositRequest.fromPartial({ corporationId: resolved.corporationId })
+      )
       const td = res?.trustDeposit
       if (!td) return null
       return {
-        corporation: String(td.corporation ?? id),
+        corporation: resolved.address,
         deposit: Number(td.deposit ?? 0),
         share: Number(td.share ?? 0),
-        claimable: Number(td.claimable ?? 0),
+        claimable: Number(td.refunded ?? 0),
         slashed_deposit: Number(td.slashedDeposit ?? 0),
         repaid_deposit: Number(td.repaidDeposit ?? 0),
         last_slashed: dateToIsoOrNull(td.lastSlashed),
@@ -199,11 +179,10 @@ export function extractTrustDepositIdsFromMessageContent(
   const ids: string[] = []
   const candidates = [
     content.corporation,
+    content.corporationId,
     content.account,
-    content.deposit_account,
     content.depositAccount,
     content.owner,
-    content.trust_deposit_id,
     content.trustDepositId,
   ]
   for (const raw of candidates) {

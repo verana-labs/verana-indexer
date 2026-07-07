@@ -51,6 +51,7 @@ export default class Participant extends BaseModel {
   vs_operator?: string | null
   adjusted?: Date | string | null
   vs_operator_authz_enabled?: boolean
+  vs_operator_authz_msg_types?: string[] | null
   vs_operator_authz_spend_limit?: DenomAmount[] | null
   vs_operator_authz_with_feegrant?: boolean
   vs_operator_authz_fee_spend_limit?: DenomAmount[] | null
@@ -114,6 +115,9 @@ export default class Participant extends BaseModel {
         op_summary_digest: { type: 'string', maxLength: 512 },
         vs_operator: { type: ['string', 'null'] },
         vs_operator_authz_enabled: { type: ['boolean', 'null'] },
+        vs_operator_authz_msg_types: {
+          anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }],
+        },
         vs_operator_authz_spend_limit: {
           anyOf: [
             {
