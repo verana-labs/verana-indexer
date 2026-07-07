@@ -300,7 +300,10 @@ export default class TrustDepositMessageProcessorService extends BullableService
       if (!account) {
         const cid = content.corporation_id ?? content.corporationId
         if (cid != null && /^\d+$/.test(String(cid))) {
-          const row = await knex('corporation').where({ id: Number(cid) }).select('corporation').first()
+          const row = await knex('corporation')
+            .where({ id: Number(cid) })
+            .select('corporation')
+            .first()
           account = row?.corporation ?? undefined
         }
       }

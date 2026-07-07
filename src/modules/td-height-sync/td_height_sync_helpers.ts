@@ -13,7 +13,10 @@ async function resolveCorporation(idOrAddress: string): Promise<{ corporationId:
   const raw = String(idOrAddress).trim()
   if (!raw) return null
   if (/^\d+$/.test(raw)) {
-    const row = await knex('corporation').where({ id: Number(raw) }).select('id', 'corporation').first()
+    const row = await knex('corporation')
+      .where({ id: Number(raw) })
+      .select('id', 'corporation')
+      .first()
     if (row?.id != null) return { corporationId: Number(row.id), address: String(row.corporation ?? raw) }
     return { corporationId: Number(raw), address: raw }
   }
