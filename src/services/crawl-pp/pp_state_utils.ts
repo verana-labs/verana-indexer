@@ -9,6 +9,20 @@ export type CorporationAction =
 export type GranteeAction = CorporationAction
 export type ValidatorAction = 'OP_SET_VALIDATED' | 'PARTICIPANT_REVOKE' | 'PARTICIPANT_ADJUST' | 'PARTICIPANT_SLASH'
 
+const PARTICIPANT_ACTION_TO_VPR_MESSAGE: Record<CorporationAction | ValidatorAction, string> = {
+  OP_RENEW: 'RenewParticipantOP',
+  OP_CANCEL: 'CancelParticipantOPLastRequest',
+  OP_SET_VALIDATED: 'SetParticipantOPtoValidated',
+  PARTICIPANT_REVOKE: 'RevokeParticipant',
+  PARTICIPANT_ADJUST: 'SetParticipantEffectiveUntil',
+  PARTICIPANT_REPAY: 'RepayParticipantSlashedTrustDeposit',
+  PARTICIPANT_SLASH: 'SlashParticipantTrustDeposit',
+}
+
+export function mapParticipantActionsToVprMessages(actions: (CorporationAction | ValidatorAction)[]): string[] {
+  return actions.map((action) => PARTICIPANT_ACTION_TO_VPR_MESSAGE[action] ?? action)
+}
+
 export type ParticipantType =
   | 'UNSPECIFIED'
   | 'ISSUER_GRANTOR'
