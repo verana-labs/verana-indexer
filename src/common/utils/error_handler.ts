@@ -58,7 +58,7 @@ export function analyzeError(error: any): ErrorInfo {
     'canceling statement',
     'Connection terminated unexpectedly',
   ];
-  
+
   const postgresTimeoutCodes = ['57014'];
 
   const serverErrorPatterns = [
@@ -66,10 +66,6 @@ export function analyzeError(error: any): ErrorInfo {
     'Service Unavailable',
     'Gateway Timeout',
     'Internal Server Error',
-    '502',
-    '503',
-    '504',
-    '500',
   ];
 
   const isNetworkError =
@@ -81,10 +77,7 @@ export function analyzeError(error: any): ErrorInfo {
     );
 
   const isServerError =
-    (statusCode && statusCode >= 500) ||
-    statusCode === 502 ||
-    statusCode === 503 ||
-    statusCode === 504 ||
+    (statusCode != null && statusCode >= 500 && statusCode <= 599) ||
     serverErrorPatterns.some(pattern =>
       errorMessage.includes(pattern) ||
       statusText.includes(pattern)
@@ -105,15 +98,20 @@ export function analyzeError(error: any): ErrorInfo {
     error?.type === 'REQUEST_TIMEOUT' ||
     error?.name === 'RequestTimeoutError';
 
-  const shouldStopIndexer =
+  const isRecoverableDbConflict =
+    errorCode === '23505' ||
+    errorMessage.toLowerCase().includes('duplicate key value violates unique constraint');
+
+  const shouldStopIndexer = Boolean(
     !isNonCritical &&
     !isMoleculerRequestTimeout &&
+    !isRecoverableDbConflict &&
     (
       isNetworkError ||
       isServerError ||
-      isTimeoutError ||
-      (statusCode && statusCode >= 500)
-    );
+      isTimeoutError
+    )
+  );
 
   return {
     isNetworkError,
@@ -162,8 +160,8 @@ export async function handleErrorGracefully(
 
   const isNonCritical = errorMessage.toLowerCase().includes('non-critical') ||
     errorMessage.toLowerCase().includes('service will continue');
-  
-  const isTimeoutError = errorInfo.isTimeoutError || 
+
+  const isTimeoutError = errorInfo.isTimeoutError ||
     errorMessage.toLowerCase().includes('timeout') ||
     errorMessage.toLowerCase().includes('exceeded') ||
     errorMessage.toLowerCase().includes('timed out') ||
@@ -171,7 +169,7 @@ export async function handleErrorGracefully(
     error?.code === 'ECONNABORTED';
 
   const logger = (global as any).logger || console;
-  
+
   if (isNonCritical && isTimeoutError) {
     if (logger.warn) {
       logger.warn(`Non-critical timeout error in ${serviceName}: ${errorMessage}. Crawling will continue.`);
@@ -289,5 +287,3 @@ export function checkCrawlingStatus(): void {
     throw error;
   }
 }
-
-
