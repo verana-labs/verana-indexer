@@ -80,7 +80,6 @@ jobs:
           file: ./docker/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:dev
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.new_release_major_version }}-dev
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.new_release_major_version }}.${{ steps.semantic.outputs.new_release_minor_version }}-dev
             ${{ secrets.DOCKER_HUB_LOGIN }}/verana-indexer:v${{ steps.semantic.outputs.new_release_major_version }}.${{ steps.semantic.outputs.new_release_minor_version }}.${{ steps.semantic.outputs.new_release_patch_version }}
@@ -115,7 +114,6 @@ jobs:
         run: |
           echo "Docker Images" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- verana-indexer:dev" >> $GITHUB_STEP_SUMMARY
           echo "- verana-indexer:v${{ steps.semantic.outputs.new_release_major_version }}-dev" >> $GITHUB_STEP_SUMMARY
           echo "- verana-indexer:v${{ steps.semantic.outputs.new_release_major_version }}.${{ steps.semantic.outputs.new_release_minor_version }}-dev" >> $GITHUB_STEP_SUMMARY
           echo "- verana-indexer:v${{ steps.semantic.outputs.new_release_major_version }}.${{ steps.semantic.outputs.new_release_minor_version }}.${{ steps.semantic.outputs.new_release_patch_version }}" >> $GITHUB_STEP_SUMMARY
