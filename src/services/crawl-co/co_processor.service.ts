@@ -24,6 +24,7 @@ interface DecodedCoMessage {
   timestamp?: string
   signer?: string
   creator?: string
+  operator?: string
   did?: string
   language?: string
   corporation?: string
@@ -221,7 +222,8 @@ export default class CorporationMessageProcessorService extends BullableService 
     eventType: string,
     height: number,
     oldData: CorporationRow | null,
-    newData: CorporationRow
+    newData: CorporationRow,
+    account: string | null
   ): Promise<void> {
     let changes: ChangeRecord | null = null
     if (oldData) {
@@ -248,6 +250,32 @@ export default class CorporationMessageProcessorService extends BullableService 
       height: Number(height),
       changes: changes ? JSON.stringify(changes) : null,
       created_at: newData.modified ?? newData.created ?? new Date(),
+      account,
+    })
+  }
+
+  // CGF activity (event_type = AddCGFDocument | IncreaseCGFActiveVersion) with explicit changes;
+  // the corporation row itself does not diff for these events.
+  private async recordCgfHistory(
+    trx: Knex.Transaction,
+    corporation: CorporationRow,
+    eventType: string,
+    height: number,
+    changes: ChangeRecord,
+    account: string | null,
+    timestamp: string | Date
+  ): Promise<void> {
+    await trx('corporation_history').insert({
+      corporation_id: corporation.id,
+      did: corporation.did ?? null,
+      policy_address: corporation.policy_address ?? null,
+      corporation: corporation.corporation ?? null,
+      language: corporation.language ?? null,
+      event_type: eventType,
+      height: Number(height),
+      changes: JSON.stringify(changes),
+      created_at: timestamp,
+      account,
     })
   }
 
@@ -315,7 +343,8 @@ export default class CorporationMessageProcessorService extends BullableService 
         existing ? 'Update' : 'Create',
         blockHeight,
         existing ?? null,
-        corporation
+        corporation,
+        message.operator ?? message.signer ?? message.creator ?? null
       )
 
       if (row.doc_url || row.doc_digest_sri) {
@@ -365,7 +394,8 @@ export default class CorporationMessageProcessorService extends BullableService 
         'Update',
         Number(message.height || 0),
         corporation,
-        updateData
+        updateData,
+        message.operator ?? message.signer ?? message.creator ?? null
       )
 
       return `Corporation updated: id=${corporation.id}`
@@ -407,6 +437,18 @@ export default class CorporationMessageProcessorService extends BullableService 
         created: timestamp,
       })
 
+      if (ecosystemId === 0) {
+        await this.recordCgfHistory(
+          trx,
+          corporation,
+          'AddCGFDocument',
+          Number(message.height || 0),
+          { version, language, url, digest_sri: digestSri },
+          message.operator ?? message.signer ?? message.creator ?? null,
+          timestamp
+        )
+      }
+
       return `AddGovernanceFrameworkDocument OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${version}`
     })
   }
@@ -441,6 +483,15 @@ export default class CorporationMessageProcessorService extends BullableService 
 
       if (ecosystemId === 0) {
         await this.syncCorporationActiveVersion(trx, corporation.id)
+        await this.recordCgfHistory(
+          trx,
+          corporation,
+          'IncreaseCGFActiveVersion',
+          Number(message.height || 0),
+          { active_version: nextVersion },
+          message.operator ?? message.signer ?? message.creator ?? null,
+          timestamp
+        )
       }
 
       return `IncreaseActiveGovernanceFrameworkVersion OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${nextVersion}`
