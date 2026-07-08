@@ -23,10 +23,7 @@ import {
   validateSortParameter,
 } from '../../common/utils/query_ordering'
 import { overrideSchemaIdInString } from '../../common/utils/schema_id_normalizer'
-import {
-  mapCredentialSchemaApiFields,
-  normalizeIssuerVerifierOnboardingModeForDbFilter,
-} from '../../common/vpr-v4-mapping'
+import { mapCredentialSchemaApiFields } from '../../common/vpr-v4-mapping'
 import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
@@ -1561,6 +1558,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       ecosystem_id: { type: 'number', optional: true },
       participant: { type: 'any', optional: true },
       modified_after: { type: 'string', optional: true },
+      archived: { type: 'any', optional: true },
       only_active: {
         type: 'any',
         optional: true,
@@ -1569,8 +1567,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_onboarding_mode: { type: 'string', optional: true },
       verifier_onboarding_mode: { type: 'string', optional: true },
       holder_onboarding_mode: { type: 'string', optional: true },
+      min_id: { type: 'number', optional: true },
+      max_id: { type: 'number', optional: true },
+      limit: { type: 'number', optional: true },
       response_max_size: { type: 'number', optional: true, default: 64 },
-      sort: { type: 'string', optional: true, default: '-modified' },
+      sort: { type: 'string', optional: true, default: '-id' },
       min_participants: { type: 'number', optional: true },
       max_participants: { type: 'number', optional: true },
       min_participants_ecosystem: { type: 'number', optional: true },
@@ -1602,10 +1603,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       ecosystem_id?: number
       participant?: string
       modified_after?: string
+      archived?: any
       only_active?: any
       issuer_onboarding_mode?: string
       verifier_onboarding_mode?: string
       holder_onboarding_mode?: string
+      min_id?: number
+      max_id?: number
+      limit?: number
       response_max_size?: number
       sort?: string
       min_participants?: number
@@ -1639,7 +1644,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         ecosystem_id: ecosystemId,
         participant,
         modified_after: modifiedAfter,
+        archived: archivedParam,
         only_active: onlyActive,
+        min_id: minId,
+        max_id: maxId,
+        limit: limitParam,
         response_max_size: maxSize,
         sort,
         min_participants: minParticipants,
@@ -1672,23 +1681,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       } = ctx.params
 
       const issuerOmTrimmed = issuerOnboardingModeParam !== undefined ? String(issuerOnboardingModeParam).trim() : ''
-      let effectiveIssuerOm: string | undefined
-      if (issuerOmTrimmed !== '') {
-        effectiveIssuerOm = normalizeIssuerVerifierOnboardingModeForDbFilter(issuerOmTrimmed)
-      }
+      const effectiveIssuerOm: string | undefined = issuerOmTrimmed !== '' ? issuerOmTrimmed : undefined
 
       const verifierOmTrimmed =
         verifierOnboardingModeParam !== undefined ? String(verifierOnboardingModeParam).trim() : ''
-      let effectiveVerifierOm: string | undefined
-      if (verifierOmTrimmed !== '') {
-        effectiveVerifierOm = normalizeIssuerVerifierOnboardingModeForDbFilter(verifierOmTrimmed)
-      }
+      const effectiveVerifierOm: string | undefined = verifierOmTrimmed !== '' ? verifierOmTrimmed : undefined
 
-      let effectiveHolderOnboarding: string | undefined
       const holderOmTrimmed = holderOnboardingModeParam !== undefined ? String(holderOnboardingModeParam).trim() : ''
-      if (holderOmTrimmed !== '') {
-        effectiveHolderOnboarding = holderOmTrimmed
-      }
+      const effectiveHolderOnboarding: string | undefined = holderOmTrimmed !== '' ? holderOmTrimmed : undefined
 
       const participantValidation = validateParticipantParam(participant, 'participant')
       if (!participantValidation.valid) {
@@ -1696,7 +1696,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       const participantAccount = participantValidation.value
 
-      const effectiveSort = sort ?? '-modified'
+      const effectiveSort = sort ?? '-id'
       try {
         validateSortParameter(effectiveSort)
       } catch (err: any) {
@@ -1704,7 +1704,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       const blockHeight = (ctx.meta as any)?.blockHeight
-      const limit = Math.min(Math.max(maxSize || 64, 1), 1024)
+      const requestedLimit = limitParam ?? maxSize
+      const limit = Math.min(Math.max(Number(requestedLimit) || 64, 1), 1024)
+      const idMin = minId != null && Number.isFinite(Number(minId)) ? Number(minId) : undefined
+      const idMax = maxId != null && Number.isFinite(Number(maxId)) ? Number(maxId) : undefined
       let modifiedAfterIso: string | undefined
       if (modifiedAfter) {
         if (!isValidISO8601UTC(modifiedAfter)) {
@@ -1720,11 +1723,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
         modifiedAfterIso = ts.toISOString()
       }
-      let onlyActiveBool: boolean | undefined
-      if (typeof onlyActive === 'string') {
-        onlyActiveBool = onlyActive.toLowerCase() === 'true'
-      } else if (typeof onlyActive === 'boolean') {
-        onlyActiveBool = onlyActive
+      const parseTriStateBool = (value: unknown): boolean | undefined => {
+        if (value === undefined || value === null || value === '') return undefined
+        if (typeof value === 'boolean') return value
+        const lowered = String(value).trim().toLowerCase()
+        if (lowered === 'true') return true
+        if (lowered === 'false') return false
+        return undefined
+      }
+
+      let archivedFilter = parseTriStateBool(archivedParam)
+      if (archivedFilter === undefined && parseTriStateBool(onlyActive) === true) {
+        archivedFilter = false
       }
 
       if (typeof blockHeight === 'number') {
@@ -1801,7 +1811,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               if (hasHeightColumn) qb.where('csh.height', '<=', blockHeight)
               if (ecosystemId) qb.where('csh.ecosystem_id', ecosystemId)
               if (modifiedAfterIso) qb.where('csh.modified', '>', modifiedAfterIso)
-              if (onlyActiveBool === true) qb.whereNull('csh.archived')
+              if (archivedFilter === false) qb.whereNull('csh.archived')
+              else if (archivedFilter === true) qb.whereNotNull('csh.archived')
+              if (idMin !== undefined) qb.where('csh.credential_schema_id', '>=', idMin)
+              if (idMax !== undefined) qb.where('csh.credential_schema_id', '<', idMax)
               if (effectiveIssuerOm !== undefined) qb.where('csh.issuer_onboarding_mode', effectiveIssuerOm)
               if (effectiveVerifierOm !== undefined) qb.where('csh.verifier_onboarding_mode', effectiveVerifierOm)
               if (effectiveHolderOnboarding !== undefined)
@@ -1830,7 +1843,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               if (hasHeightColumn) qb.where('csh.height', '<=', blockHeight)
               if (ecosystemId) qb.where('csh.ecosystem_id', ecosystemId)
               if (modifiedAfterIso) qb.where('csh.modified', '>', modifiedAfterIso)
-              if (onlyActiveBool === true) qb.whereNull('csh.archived')
+              if (archivedFilter === false) qb.whereNull('csh.archived')
+              else if (archivedFilter === true) qb.whereNotNull('csh.archived')
+              if (idMin !== undefined) qb.where('csh.credential_schema_id', '>=', idMin)
+              if (idMax !== undefined) qb.where('csh.credential_schema_id', '<', idMax)
               if (effectiveIssuerOm !== undefined) qb.where('csh.issuer_onboarding_mode', effectiveIssuerOm)
               if (effectiveVerifierOm !== undefined) qb.where('csh.verifier_onboarding_mode', effectiveVerifierOm)
               if (effectiveHolderOnboarding !== undefined)
@@ -1838,7 +1854,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               applyMetricRangeFilters(qb)
             })
             .as('ranked')
-          const orderedLatest = applyOrdering(knex.from(ranked).select('*').where('rn', 1), sort)
+          const orderedLatest = applyOrdering(knex.from(ranked).select('*').where('rn', 1), effectiveSort)
           items = await orderedLatest.limit(limit)
         }
 
@@ -2175,6 +2191,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         query.whereIn('id', participantSchemaIds)
       }
       if (ecosystemId) query.where('ecosystem_id', ecosystemId)
+      if (idMin !== undefined) query.where('id', '>=', idMin)
+      if (idMax !== undefined) query.where('id', '<', idMax)
       applyHalfOpenRangeToQuery(query, 'participants', minParticipants, maxParticipants)
       applyHalfOpenRangeToQuery(query, 'participants_ecosystem', minParticipantsEcosystem, maxParticipantsEcosystem)
       applyHalfOpenRangeToQuery(
@@ -2202,8 +2220,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         query.where('modified', '>', modifiedAfterIso)
       }
 
-      if (onlyActiveBool === true) {
+      if (archivedFilter === false) {
         query.whereNull('archived')
+      } else if (archivedFilter === true) {
+        query.whereNotNull('archived')
       }
 
       if (effectiveIssuerOm !== undefined) {
@@ -2217,7 +2237,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (effectiveHolderOnboarding !== undefined) {
         query.where('holder_onboarding_mode', effectiveHolderOnboarding)
       }
-      const { fullyApplied: liveSortFullyApplied } = applyCredentialSchemaSqlSort(query, sort)
+      const { fullyApplied: liveSortFullyApplied } = applyCredentialSchemaSqlSort(query, effectiveSort)
       const liveFetchLimit = liveSortFullyApplied ? limit : Math.max(limit * 2, 256)
       const items = await query.limit(liveFetchLimit)
 
@@ -2336,7 +2356,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404)
         }
         ;(ctx.meta as any).$rawJsonResponse = true
-        return stored
+        return overrideSchemaIdInString(stored, id)
       }
 
       const schemaRecord = await knex('credential_schemas').select('json_schema').where({ id }).first()
@@ -2350,7 +2370,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} has no valid JSON schema`, 404)
       }
       ;(ctx.meta as any).$rawJsonResponse = true
-      return stored
+      return overrideSchemaIdInString(stored, id)
     } catch (err: any) {
       this.logger.error('Error in renderJsonSchema:', err)
       return ApiResponder.error(ctx, 'Internal Server Error', 500)
@@ -2366,19 +2386,40 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     name: 'getHistory',
     params: {
       id: { type: 'number', integer: true, positive: true },
+      min_id: { type: 'number', optional: true },
+      max_id: { type: 'number', optional: true },
+      limit: { type: 'number', optional: true },
+      sort: { type: 'string', optional: true, default: '-id' },
       response_max_size: { type: 'number', optional: true, default: 64 },
       transaction_timestamp_older_than: { type: 'string', optional: true },
     },
   })
   async getHistory(
-    ctx: Context<{ id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>
+    ctx: Context<{
+      id: number
+      min_id?: number
+      max_id?: number
+      limit?: number
+      sort?: string
+      response_max_size?: number
+      transaction_timestamp_older_than?: string
+    }>
   ) {
     try {
       const {
         id,
+        min_id: minId,
+        max_id: maxId,
+        limit: limitParam,
+        sort: sortParam = '-id',
         response_max_size: responseMaxSize = 64,
         transaction_timestamp_older_than: transactionTimestampOlderThan,
       } = ctx.params
+
+      const idMin = minId != null && Number.isFinite(Number(minId)) ? Number(minId) : undefined
+      const idMax = maxId != null && Number.isFinite(Number(maxId)) ? Number(maxId) : undefined
+      const effectiveLimit = Math.min(Math.max(Number(limitParam ?? responseMaxSize) || 64, 1), 1024)
+      const sortAscending = String(sortParam).trim().replace(/^\+/, '') === 'id'
 
       if (transactionTimestampOlderThan) {
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
@@ -2402,6 +2443,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404)
       }
 
+      const fetchSize = idMin !== undefined || idMax !== undefined ? Math.max(effectiveLimit * 4, 256) : effectiveLimit
+
       const activity = await buildActivityTimeline(
         {
           entityType: 'CredentialSchema',
@@ -2411,16 +2454,24 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           msgTypePrefixes: ['/verana.cs.v1'],
         },
         {
-          responseMaxSize,
+          responseMaxSize: fetchSize,
           transactionTimestampOlderThan,
           atBlockHeight,
         }
       )
 
+      let activityItems = Array.isArray(activity) ? activity : []
+      if (idMin !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) >= idMin)
+      if (idMax !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) < idMax)
+      activityItems = activityItems.sort((a: any, b: any) =>
+        sortAscending ? Number(a.id) - Number(b.id) : Number(b.id) - Number(a.id)
+      )
+      activityItems = activityItems.slice(0, effectiveLimit)
+
       const result = {
         entity_type: 'CredentialSchema',
         entity_id: String(id),
-        activity: activity || [],
+        activity: activityItems,
       }
 
       return ApiResponder.success(ctx, result, 200)

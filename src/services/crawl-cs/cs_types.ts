@@ -2,18 +2,18 @@ export function getModeString(modeNumber: number): string {
   const modes: Record<number, string> = {
     0: 'MODE_UNSPECIFIED',
     1: 'OPEN',
-    2: 'GRANTOR_VALIDATION',
-    3: 'ECOSYSTEM',
+    2: 'ECOSYSTEM_ONBOARDING_PROCESS',
+    3: 'GRANTOR_ONBOARDING_PROCESS',
   }
 
-  return modes[modeNumber] || 'UNKNOWN'
+  return modes[modeNumber] ?? 'MODE_UNSPECIFIED'
 }
 
 export function getHolderOnboardingModeString(modeNumber: number): string {
   const modes: Record<number, string> = {
     0: 'MODE_UNSPECIFIED',
-    1: 'ISSUER_VALIDATION_PROCESS',
-    2: 'PARTICIPANTLESS',
+    1: 'ISSUER_ONBOARDING_PROCESS',
+    2: 'PERMISSIONLESS',
   }
-  return modes[modeNumber] ?? 'UNKNOWN'
+  return modes[modeNumber] ?? 'MODE_UNSPECIFIED'
 }

@@ -18,7 +18,7 @@ export type ParticipantType =
   | 'HOLDER'
   | 'ECOSYSTEM'
 export type ValidationState = 'VALIDATION_STATE_UNSPECIFIED' | 'PENDING' | 'VALIDATED' | 'TERMINATED' | null
-export type SchemaMode = 'GRANTOR_VALIDATION' | 'OPEN' | 'ECOSYSTEM'
+export type SchemaMode = 'GRANTOR_ONBOARDING_PROCESS' | 'OPEN' | 'ECOSYSTEM_ONBOARDING_PROCESS'
 
 export interface ParticipantData {
   repaid?: string | null
@@ -99,11 +99,8 @@ export function calculateParticipantState(participant: ParticipantData, now: Dat
 function normalizeSchemaMode(mode?: string): SchemaMode {
   if (!mode) return 'OPEN'
   const upper = mode.toUpperCase()
-  if (upper === 'GRANTOR_VALIDATION' || upper === 'GRANTOR' || upper === 'GRANTOR_VALIDATION_PROCESS') {
-    return 'GRANTOR_VALIDATION'
-  }
-  if (upper === 'OPEN') return 'OPEN'
-  if (upper === 'ECOSYSTEM' || upper === 'ECOSYSTEM_VALIDATION_PROCESS') return 'ECOSYSTEM'
+  if (upper === 'GRANTOR_ONBOARDING_PROCESS') return 'GRANTOR_ONBOARDING_PROCESS'
+  if (upper === 'ECOSYSTEM_ONBOARDING_PROCESS') return 'ECOSYSTEM_ONBOARDING_PROCESS'
   return 'OPEN'
 }
 
@@ -185,7 +182,7 @@ export function calculateCorporationAvailableActions(
 
   const isValidatorActive = validatorParticipantState === 'ACTIVE'
   if (isIssuerType(type)) {
-    if (issuerMode === 'GRANTOR_VALIDATION' || issuerMode === 'ECOSYSTEM') {
+    if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
       if (participantState === 'REPAID' || participantState === 'REVOKED') {
       } else if (participantState === 'SLASHED') {
         actions.add('PARTICIPANT_REPAY')
@@ -217,7 +214,8 @@ export function calculateCorporationAvailableActions(
 
   if (isVerifierType(type)) {
     const inOpFlow = opState !== null && opState !== 'VALIDATION_STATE_UNSPECIFIED'
-    const useOpFlowRules = verifierMode === 'GRANTOR_VALIDATION' || verifierMode === 'ECOSYSTEM' || inOpFlow
+    const useOpFlowRules =
+      verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
     if (useOpFlowRules) {
       if (participantState === 'REPAID' || participantState === 'REVOKED') {
       } else if (participantState === 'SLASHED') {
@@ -297,7 +295,7 @@ export function calculateValidatorAvailableActions(
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode)
   const opExp = participant.op_exp ? new Date(participant.op_exp) : null
   if (isIssuerType(type)) {
-    if (issuerMode === 'GRANTOR_VALIDATION' || issuerMode === 'ECOSYSTEM') {
+    if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
       actions.add('PARTICIPANT_SLASH')
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
@@ -320,7 +318,8 @@ export function calculateValidatorAvailableActions(
 
   if (isVerifierType(type)) {
     const inOpFlow = opState !== null && opState !== 'VALIDATION_STATE_UNSPECIFIED'
-    const useOpFlowRules = verifierMode === 'GRANTOR_VALIDATION' || verifierMode === 'ECOSYSTEM' || inOpFlow
+    const useOpFlowRules =
+      verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
     if (useOpFlowRules) {
       actions.add('PARTICIPANT_SLASH')
 
