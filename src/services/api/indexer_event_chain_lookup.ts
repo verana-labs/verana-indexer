@@ -17,10 +17,7 @@ function toCorporationId(value: unknown): number | undefined {
   return Number.isInteger(id) && id > 0 ? id : undefined
 }
 
-export async function fetchCorporationById(
-  corporationId: number,
-  blockHeight?: number
-): Promise<ChainCorporation> {
+export async function fetchCorporationById(corporationId: number, blockHeight?: number): Promise<ChainCorporation> {
   try {
     return await withAbciQueryClient(blockHeight, async (rpc) => {
       const query = new CoQueryClientImpl(rpc)
