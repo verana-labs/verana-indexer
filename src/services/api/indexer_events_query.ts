@@ -529,10 +529,11 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     else if (typeof content.withFeegrant === 'boolean') withFeegrant = content.withFeegrant
     const corporationAddress = readAddress(content.corporation)
     if (corporationAddress) {
-      let corp = await loadCorporation({ address: corporationAddress })
-      if (!corp.did) corp = await fetchCorporationByAddress(corporationAddress, Number(row.block_height))
-      if (corp.corporationId !== undefined) corporationId = corp.corporationId
-      if (corp.did) collected.add(corp.did)
+      const corp = await loadCorporation({ address: corporationAddress })
+      const chainCorp = corp.did ? {} : await fetchCorporationByAddress(corporationAddress, Number(row.block_height))
+      corporationId = corp.corporationId ?? chainCorp.corporationId
+      const corpDid = corp.did ?? chainCorp.did
+      if (corpDid) collected.add(corpDid)
     }
     for (const account of [grantee, operator]) {
       const participants = await loadParticipantsByAccount(account)
