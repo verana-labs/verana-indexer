@@ -733,6 +733,8 @@ describe('indexer_events_query', () => {
     expect(record.payload.corporation_id).toBe(corpId)
     expect(record.payload.grantee).toBe('verana1grantee')
     expect(record.payload.with_feegrant).toBe(true)
+    expect(record.payload.entity_type).toBe('OperatorAuthorization')
+    expect(record.payload.entity_id).toBe('verana1grantee')
     expect(record.did).toBe(corpDid)
     expect(record.payload.related_dids).toEqual(expect.arrayContaining([corpDid, granteeParticipantDid]))
   })

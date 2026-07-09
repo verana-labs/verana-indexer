@@ -241,6 +241,11 @@ const ID_ALIASES = {
 } as const
 
 async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
+  if (meta.module === 'delegation') {
+    const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
+    return readAddress(content.grantee) ?? readAddress(content.operator)
+  }
+
   if (meta.module === 'participant') {
     const participantId = readNumber(row.content, ['id', ...ID_ALIASES.participant])
     return participantId ? String(participantId) : resolveEntityIdFromDomain(row, meta)
