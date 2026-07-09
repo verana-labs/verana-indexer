@@ -1,14 +1,14 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
-import { ModulesParamsNamesTypes, SERVICE } from '../../common'
+import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import { validateParticipantParam, validateRequiredAccountParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { getModuleParams } from '../../common/utils/params_service'
+import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import {
   applyOrdering,
   parseSortParameter,
@@ -23,6 +23,7 @@ import {
   calculateCorporationAvailableActions,
   calculateParticipantState,
   calculateValidatorAvailableActions,
+  mapParticipantActionsToVprMessages,
   type ParticipantState,
   PENDING_FLAT_VALIDATOR_PARENT_TYPES,
   pendingFlatMatchesOpPendingWithEligibleParticipantState,
@@ -177,8 +178,6 @@ export default class ParticipantAPIService extends BullableService {
       id: row.id ?? row.session_id,
       corporation_id: Number(row.corporation_id ?? 0) || 0,
       vs_operator: row.vs_operator ?? null,
-      agent_participant_id: Number(row.agent_participant_id ?? 0) || 0,
-      wallet_agent_participant_id: Number(row.wallet_agent_participant_id ?? 0) || 0,
       session_records: sessionRecords,
       created: row.created ?? null,
       modified: row.modified ?? null,
@@ -936,12 +935,16 @@ export default class ParticipantAPIService extends BullableService {
 
   private normalizeOpStateForResponse(value: unknown): string | null {
     if (value === null || value === undefined) return null
-    if (typeof value === 'string') return value.toUpperCase()
+    if (typeof value === 'string') {
+      const upper = value.toUpperCase()
+      if (upper === 'PENDING' || upper === 'VALIDATED' || upper === 'TERMINATED') return upper
+      return null
+    }
     const n = Number(value)
     if (n === 1) return 'PENDING'
     if (n === 2) return 'VALIDATED'
     if (n === 3 || n === 4) return 'TERMINATED'
-    return 'VALIDATION_STATE_UNSPECIFIED'
+    return null
   }
 
   private normalizeDenomAmountArray(value: unknown): unknown {
@@ -1002,11 +1005,6 @@ export default class ParticipantAPIService extends BullableService {
     }
 
     normalized = normalizeParticipantEmptyStringsToNull(normalized)
-
-    normalized.vs_operator_authz_spend_limit = this.normalizeDenomAmountArray(normalized.vs_operator_authz_spend_limit)
-    normalized.vs_operator_authz_fee_spend_limit = this.normalizeDenomAmountArray(
-      normalized.vs_operator_authz_fee_spend_limit
-    )
 
     return mapParticipantApiFields(normalized as Record<string, unknown>) as any
   }
@@ -1412,8 +1410,8 @@ export default class ParticipantAPIService extends BullableService {
     const enriched: any = {
       ...participant,
       participant_state: participantState,
-      corporation_available_actions: corporationActions,
-      validator_available_actions: validatorActions,
+      corporation_available_actions: mapParticipantActionsToVprMessages(corporationActions),
+      validator_available_actions: mapParticipantActionsToVprMessages(validatorActions),
       id: Number(participant.id),
       schema_id: Number(participant.schema_id),
       validator_participant_id: participant.validator_participant_id
@@ -1447,12 +1445,6 @@ export default class ParticipantAPIService extends BullableService {
       expire_soon: expireSoon,
     }
     const normalized = normalizeParticipantEmptyStringsToNull(enriched) as Record<string, unknown>
-    ;(normalized as any).vs_operator_authz_spend_limit = this.normalizeDenomAmountArray(
-      (normalized as any).vs_operator_authz_spend_limit
-    )
-    ;(normalized as any).vs_operator_authz_fee_spend_limit = this.normalizeDenomAmountArray(
-      (normalized as any).vs_operator_authz_fee_spend_limit
-    )
     return mapParticipantApiFields(normalized) as any
   }
 
@@ -1463,6 +1455,7 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET list',
     params: {
       schema_id: { type: 'number', integer: true, optional: true },
+      corporation_id: { type: 'number', integer: true, optional: true },
       corporation: { type: 'string', optional: true },
       did: { type: 'string', optional: true },
       participant_id: { type: 'number', integer: true, optional: true },
@@ -1516,9 +1509,12 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, corporationValidation.error, 400)
       }
       const corporationFilter = corporationValidation.value
-      // VPR v4: resolve the account-address filter to the canonical corporation_id.
+      // VPR v4: filter by canonical corporation_id. Accept it directly, or resolve
+      // the legacy account-address filter to the corresponding corporation_id.
       let corporationIdFilter: number | undefined
-      if (corporationFilter) {
+      if (p.corporation_id != null) {
+        corporationIdFilter = Number(p.corporation_id)
+      } else if (corporationFilter) {
         const resolvedCorpId = await resolveCorporationIdByAddress(corporationFilter)
         if (resolvedCorpId === null) {
           return ApiResponder.success(ctx, { participants: [] }, 200)
@@ -1804,7 +1800,7 @@ export default class ParticipantAPIService extends BullableService {
               historyRecord.role !== undefined && historyRecord.role !== null
                 ? mapParticipantType(historyRecord.role)
                 : historyRecord.role,
-            op_state: this.normalizeOpStateForResponse(historyRecord.op_state) ?? historyRecord.op_state,
+            op_state: this.normalizeOpStateForResponse(historyRecord.op_state),
             revoked: historyRecord.revoked,
             slashed: historyRecord.slashed,
             repaid: historyRecord.repaid,
@@ -2144,6 +2140,11 @@ export default class ParticipantAPIService extends BullableService {
     }
   }
 
+  @Action()
+  async getParams(ctx: Context) {
+    return getModuleParamsAction(ctx, ModulesParamsNamesTypes.PP, MODULE_DISPLAY_NAMES.PARTICIPANT)
+  }
+
   @Action({
     rest: 'GET get/:id',
     params: {
@@ -2256,7 +2257,7 @@ export default class ParticipantAPIService extends BullableService {
             historyRecord.role !== undefined && historyRecord.role !== null
               ? mapParticipantType(historyRecord.role)
               : historyRecord.role,
-          op_state: this.normalizeOpStateForResponse(historyRecord.op_state) ?? historyRecord.op_state,
+          op_state: this.normalizeOpStateForResponse(historyRecord.op_state),
           revoked: historyRecord.revoked,
           slashed: historyRecord.slashed,
           repaid: historyRecord.repaid,
@@ -2405,7 +2406,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const result = {
         entity_type: 'Participant',
-        entity_id: Number(id),
+        entity_id: String(id),
         activity: activity || [],
       }
 
@@ -2425,17 +2426,17 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET beneficiaries',
     params: {
-      issuer_participant_id: { type: 'number', integer: true, optional: true },
-      verifier_participant_id: { type: 'number', integer: true, optional: true },
+      issuer_participant_id: { type: 'number', integer: true },
+      verifier_participant_id: { type: 'number', integer: true },
     },
   })
-  async findBeneficiaries(ctx: Context<{ issuer_participant_id?: number; verifier_participant_id?: number }>) {
+  async findBeneficiaries(ctx: Context<{ issuer_participant_id: number; verifier_participant_id: number }>) {
     const { issuer_participant_id: issuerParticipantId, verifier_participant_id: verifierParticipantId } = ctx.params
     const blockHeight = getBlockHeight(ctx)
     const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
 
     if (!issuerParticipantId && !verifierParticipantId) {
-      return ApiResponder.error(ctx, 'issuer_participant_id or verifier_participant_id must be set', 400)
+      return ApiResponder.error(ctx, 'issuer_participant_id and verifier_participant_id must be set', 400)
     }
 
     try {
@@ -2599,7 +2600,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const activity = await buildActivityTimeline(
         {
-          entityType: 'PARTICIPANT_SESSION',
+          entityType: 'ParticipantSession',
           historyTable: 'participant_session_history',
           idField: 'session_id',
           entityId: id,
@@ -2613,7 +2614,7 @@ export default class ParticipantAPIService extends BullableService {
       )
 
       const result = {
-        entity_type: 'PARTICIPANT_SESSION',
+        entity_type: 'ParticipantSession',
         entity_id: id,
         activity: activity || [],
       }
@@ -2638,18 +2639,16 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET pending/flat',
     params: {
-      account: { type: 'string', optional: true },
-      corporation: { type: 'string', optional: true },
-      response_max_size: { type: 'number', optional: true, default: 64 },
+      account: { type: 'string' },
+      limit: { type: 'number', optional: true, default: 64 },
       sort: { type: 'string', optional: true },
       trust_data: { type: 'string', optional: true },
     },
   })
   async pendingFlat(
     ctx: Context<{
-      account?: string
-      corporation?: string
-      response_max_size?: number
+      account: string
+      limit?: number
       sort?: string
       trust_data?: string
     }>
@@ -2661,12 +2660,8 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, trustDataModeParsed.message, 400)
       }
       const trustDataMode = trustDataModeParsed.mode
-      const participantRaw =
-        (typeof p.corporation === 'string' && p.corporation.trim() !== '' ? p.corporation : undefined) ??
-        (typeof p.account === 'string' && p.account.trim() !== '' ? p.account : undefined)
-      const participantLabel =
-        typeof p.corporation === 'string' && p.corporation.trim() !== '' ? 'corporation' : 'account'
-      const accountValidation = validateRequiredAccountParam(participantRaw, participantLabel)
+      const accountRaw = typeof p.account === 'string' && p.account.trim() !== '' ? p.account : undefined
+      const accountValidation = validateRequiredAccountParam(accountRaw, 'account')
       if (!accountValidation.valid) {
         return ApiResponder.error(ctx, accountValidation.error, 400)
       }
@@ -2684,7 +2679,7 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, err.message, 400)
       }
 
-      const limit = Math.min(Math.max(p.response_max_size || 64, 1), 1024)
+      const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
       const now = new Date()
 
       const blockHeight = getBlockHeight(ctx)
@@ -3022,11 +3017,11 @@ export default class ParticipantAPIService extends BullableService {
             description: csInfo.description,
             pending_tasks: 0,
             participants: csInfo.participants ?? 0,
-            participant_entries: [],
+            pending_participants: [],
           })
         }
         const entry = csMap.get(schemaId)
-        entry.participant_entries.push({ ...participant })
+        entry.pending_participants.push({ ...participant })
         entry.pending_tasks++
       }
 
@@ -3105,7 +3100,6 @@ export default class ParticipantAPIService extends BullableService {
         .map((ec: any) => ({
           id: ec.id,
           did: ec.did,
-          aka: ec.aka,
           pending_tasks: ec.pending_tasks,
           participants: ec.participants || 0,
           schemas: ec.credential_schemas,
