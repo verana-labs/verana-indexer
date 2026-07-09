@@ -1,5 +1,8 @@
 import knex from '../../../../src/common/utils/db_connection'
-import { VeranaDelegationMessageTypes, VeranaParticipantMessageTypes } from '../../../../src/common/verana-message-types'
+import {
+  VeranaDelegationMessageTypes,
+  VeranaParticipantMessageTypes,
+} from '../../../../src/common/verana-message-types'
 import { up as createIndexerEventsTable } from '../../../../src/migrations/20260420000000_create_indexer_events'
 import { up as hardenIndexerEventsTable } from '../../../../src/migrations/20260421000000_harden_indexer_events_replay'
 import { listIndexerEvents, persistIndexerEventsForBlock } from '../../../../src/services/api/indexer_events_query'
@@ -90,6 +93,7 @@ describe('indexer_events_query', () => {
       await knex.schema.createTable('participants', (table) => {
         table.bigInteger('id').primary()
         table.bigInteger('schema_id').nullable()
+        table.text('role').nullable()
         table.text('did').nullable()
         table.bigInteger('corporation_id').nullable()
         table.text('vs_operator').nullable()
@@ -104,6 +108,9 @@ describe('indexer_events_query', () => {
         table.text('did').nullable()
         table.text('corporation').nullable()
         table.text('policy_address').nullable()
+        table.timestamp('created').nullable()
+        table.timestamp('modified').nullable()
+        table.bigInteger('height').nullable()
       })
       createdTables.push('corporation')
     }
@@ -584,6 +591,9 @@ describe('indexer_events_query', () => {
       did: args.did,
       corporation: args.corporation ?? null,
       policy_address: args.policyAddress ?? null,
+      created: new Date('2025-01-15T10:30:00Z'),
+      modified: new Date('2025-01-15T10:30:00Z'),
+      height: args.id,
     })
   }
 
@@ -596,9 +606,10 @@ describe('indexer_events_query', () => {
     participantIds.push(args.id)
     await knex('participants').insert({
       id: args.id,
-      schema_id: null,
+      schema_id: 0,
+      role: 'ISSUER',
       did: args.did ?? null,
-      corporation_id: args.corporationId ?? null,
+      corporation_id: args.corporationId ?? 0,
       vs_operator: args.vsOperator ?? null,
       validator_participant_id: null,
     })
