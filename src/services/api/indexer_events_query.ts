@@ -731,12 +731,16 @@ type VsoaEventRow = {
   tx_hash: string
   tx_index: number
   block_height: number
+  sender: string | null
   timestamp: Date | string
 }
 
 async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
   const eventRows = (await knex('event as e')
     .innerJoin('transaction as tx', 'tx.id', 'e.tx_id')
+    .leftJoin('transaction_message as tm', function () {
+      this.on('tm.tx_id', '=', 'e.tx_id').andOn(knex.raw('tm.index = COALESCE(e.tx_msg_index, 0)'))
+    })
     .where('e.block_height', blockHeight)
     .andWhere('tx.code', 0)
     .whereIn('e.type', VSOA_EVENT_TYPES)
@@ -747,6 +751,7 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       'tx.hash as tx_hash',
       'tx.index as tx_index',
       'tx.height as block_height',
+      'tm.sender as sender',
       'tx.timestamp'
     )
     .orderBy('tx.index', 'asc')
@@ -814,12 +819,12 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       type: 'transaction-executed',
       module: 'delegation',
       action: meta.action,
-      messageType: `/verana.de.v1.${meta.action}`,
+      messageType: row.type,
       blockHeight: Number(row.block_height),
       txHash: row.tx_hash,
       txIndex: Number(row.tx_index),
       messageIndex: Number(row.tx_msg_index ?? 0),
-      sender: vsOperator ?? '',
+      sender: row.sender ?? '',
       did: did ?? null,
       relatedDids: uniqueNormalizedDids(collected),
       entityType: meta.entityType,
