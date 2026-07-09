@@ -17,24 +17,19 @@ export function normalizeVprFeeDiscountRatio(v: unknown): number {
   return Math.min(1, Math.max(0, n))
 }
 
-const PARTICIPANT_V3_STRIP = [
-  'grantee',
-  'authority',
-  'created_by',
-  'revoked_by',
-  'slashed_by',
-  'repaid_by',
-  'extended',
-  'extended_by',
-  'op_term_requested',
-  'op_summary_digest_sri',
-  'country',
+const PARTICIPANT_HIDDEN_COLUMNS = [
+  'corporation',
+  'vs_operator_authz_enabled',
+  'vs_operator_authz_spend_limit',
+  'vs_operator_authz_with_feegrant',
+  'vs_operator_authz_fee_spend_limit',
+  'vs_operator_authz_spend_period',
 ] as const
 
 export function mapParticipantApiFields(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row }
   out.corporation_id = Number(out.corporation_id ?? 0) || 0
-  for (const k of [...PARTICIPANT_V3_STRIP, 'corporation']) {
+  for (const k of PARTICIPANT_HIDDEN_COLUMNS) {
     delete out[k]
   }
   if ('issuance_fee_discount' in out) {

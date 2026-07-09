@@ -781,6 +781,13 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
+    describe('GET /v4/participant/params', () => {
+      itIf('should get participant module params', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/params')
+        expect(response.status).not.toBeGreaterThanOrEqual(500)
+      })
+    })
+
     describe('GET /v4/participant/list - ALL PARAMETERS', () => {
       itIf('should list participants - no parameters (defaults)', async () => {
         const response = await testEndpoint('GET', '/v4/participant/list')
@@ -829,9 +836,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list participants - with type', async () => {
+      itIf('should list participants - with role', async () => {
         const response = await testEndpoint('GET', '/v4/participant/list', {
-          type: 'ISSUER',
+          role: 'ISSUER',
+        })
+        expect(response.status).not.toBeGreaterThanOrEqual(500)
+      })
+
+      itIf('should list participants - with corporation_id', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/list', {
+          corporation_id: 1,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -872,9 +886,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list participants - with country filter', async () => {
+      itIf('should list participants - with trust_data', async () => {
         const response = await testEndpoint('GET', '/v4/participant/list', {
-          country: 'US',
+          trust_data: 'summary',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -961,13 +975,12 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const timestamps = getTimestamps()
         const response = await testEndpoint('GET', '/v4/participant/list', {
           schema_id: SAMPLE_SCHEMA_ID,
-          corporation: SAMPLE_ACCOUNT,
+          corporation_id: 1,
           did: SAMPLE_DID,
           participant_state: 'ACTIVE',
-          type: 'ISSUER',
+          role: 'ISSUER',
           only_valid: true,
           modified_after: timestamps.from,
-          country: 'US',
           op_state: 'VALIDATED',
           response_max_size: 50,
           when: timestamps.from,
@@ -994,10 +1007,10 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get pending flat - with response_max_size', async () => {
+      itIf('should get pending flat - with limit', async () => {
         const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
           account: SAMPLE_ACCOUNT,
-          response_max_size: 100,
+          limit: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -1020,36 +1033,26 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     describe('GET /v4/participant/beneficiaries - ALL PARAMETERS', () => {
-      itIf('should get beneficiaries - with issuer_participant_id', async () => {
+      itIf('should get beneficiaries - with both required participant ids', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
-        })
-        expect(response.status).not.toBeGreaterThanOrEqual(500)
-      })
-
-      itIf('should get beneficiaries - with verifier_participant_id', async () => {
-        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           verifier_participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get beneficiaries - validation: missing required parameters (should fail)', async () => {
-        const response = await testEndpoint('GET', '/v4/participant/beneficiaries')
-        expect(response.status).not.toBeGreaterThanOrEqual(500)
-        if (response.status === 400) {
-          expect(response.data?.error || response.data?.message).toMatch(
-            /issuer_participant_id|verifier_participant_id/
-          )
-        }
-      })
-
-      itIf('should get beneficiaries - with issuer_participant_id and response_max_size', async () => {
+      itIf('should get beneficiaries - validation: missing verifier_participant_id (should fail)', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
-          response_max_size: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
+        expect(response.status).toBeGreaterThanOrEqual(400)
+      })
+
+      itIf('should get beneficiaries - validation: missing both required parameters (should fail)', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries')
+        expect(response.status).not.toBeGreaterThanOrEqual(500)
+        expect(response.status).toBeGreaterThanOrEqual(400)
       })
     })
 

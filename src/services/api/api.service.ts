@@ -343,6 +343,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       createRoute('/v4/participant', {
         'GET get/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipant`,
         'GET list': `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
+        'GET params': `${SERVICE.V1.ParticipantAPIService.path}.getParams`,
         'GET pending/flat': `${SERVICE.V1.ParticipantAPIService.path}.pendingFlat`,
         'GET beneficiaries': `${SERVICE.V1.ParticipantAPIService.path}.findBeneficiaries`,
         'GET history/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipantHistory`,
