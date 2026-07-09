@@ -7,7 +7,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('indexer_events', (table) => {
     table.bigIncrements('id').primary()
     table.text('event_type').notNullable()
-    table.text('did').notNullable()
+    table.text('did').nullable()
     table.bigInteger('block_height').notNullable()
     table.text('tx_hash').notNullable()
     table.integer('tx_index').notNullable().defaultTo(0)

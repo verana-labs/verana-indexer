@@ -11,6 +11,7 @@ import {
   VeranaParticipantMessageTypes,
 } from '../../common/verana-message-types'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
+import { fetchCorporationByAddress, fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
   collectDidsDeep,
   firstNormalizedDid,
@@ -32,7 +33,7 @@ export type IndexerTxEvent = {
   txIndex: number
   messageIndex: number
   sender: string
-  did: string
+  did: string | null
   relatedDids: string[]
   entityType?: string
   entityId?: string
@@ -51,7 +52,7 @@ export type IndexerTxEvent = {
 export type IndexerEventRecord = {
   type: 'indexer-event'
   event_type: string
-  did: string
+  did: string | null
   block_height: number
   tx_hash: string
   timestamp: string
@@ -522,7 +523,8 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     else if (typeof content.withFeegrant === 'boolean') withFeegrant = content.withFeegrant
     const corporationAddress = readAddress(content.corporation)
     if (corporationAddress) {
-      const corp = await loadCorporation({ address: corporationAddress })
+      let corp = await loadCorporation({ address: corporationAddress })
+      if (!corp.did) corp = await fetchCorporationByAddress(corporationAddress, Number(row.block_height))
       if (corp.corporationId !== undefined) corporationId = corp.corporationId
       if (corp.did) collected.add(corp.did)
     }
@@ -541,7 +543,12 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     explicitPrimaryDid ??
     (meta.module === 'participant' ? firstNormalizedDid(relatedDids) : undefined) ??
     firstNormalizedDid(relatedDids)
-  if (!primaryDid) return null
+  if (!primaryDid) {
+    if (meta.module !== 'delegation') return null
+    console.warn(
+      `[IndexerEvents] ${meta.action} at block_height=${row.block_height} tx_hash=${row.tx_hash} has no resolvable DID; emitting with did=null`
+    )
+  }
 
   return {
     type: 'transaction-executed',
@@ -553,7 +560,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     txIndex: Number(row.tx_index),
     messageIndex: Number(row.message_index),
     sender: row.sender,
-    did: primaryDid,
+    did: primaryDid ?? null,
     relatedDids,
     entityType: meta.entityType,
     entityId,
@@ -610,7 +617,7 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
   return {
     type: 'indexer-event',
     event_type: String(row.event_type),
-    did: String(row.did),
+    did: row.did != null ? String(row.did) : null,
     block_height: Number(row.block_height),
     tx_hash: String(row.tx_hash),
     timestamp: toIsoSeconds(row.timestamp),
@@ -626,7 +633,9 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
         ? row.payload.related_dids
         : Array.isArray(row.payload?.relatedDids)
           ? row.payload.relatedDids
-          : [String(row.did)],
+          : row.did != null
+            ? [String(row.did)]
+            : [],
       entity_type: row.payload?.entity_type ?? row.payload?.entityType ?? row.entity_type ?? undefined,
       entity_id: row.payload?.entity_id ?? row.payload?.entityId ?? row.entity_id ?? undefined,
       ecosystem_id: row.payload?.ecosystem_id ?? row.payload?.ecosystemId ?? undefined,
@@ -779,7 +788,21 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       if (participant.did) collected.add(participant.did)
       did = did ?? participant.did
     }
-    if (!did) continue
+    if (!did && rawParticipantId) {
+      const participantDid = await fetchParticipantDid(rawParticipantId, blockHeight)
+      if (participantDid) collected.add(participantDid)
+      did = did ?? participantDid
+    }
+    if (!did && corporationId) {
+      const corporation = await fetchCorporationById(corporationId, blockHeight)
+      if (corporation.did) collected.add(corporation.did)
+      did = did ?? corporation.did
+    }
+    if (!did) {
+      console.warn(
+        `[IndexerEvents] ${meta.action} at block_height=${blockHeight} tx_hash=${row.tx_hash} has no resolvable DID; emitting with did=null`
+      )
+    }
 
     events.push({
       type: 'transaction-executed',
@@ -791,7 +814,7 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       txIndex: Number(row.tx_index),
       messageIndex: Number(row.tx_msg_index ?? 0),
       sender: vsOperator ?? '',
-      did,
+      did: did ?? null,
       relatedDids: uniqueNormalizedDids(collected),
       entityType: meta.entityType,
       entityId: rawParticipantId ? String(rawParticipantId) : vsOperator,
@@ -914,5 +937,23 @@ export async function listIndexerEvents(args: {
   applyBlockHeightFilter(query, args, 'ie.block_height')
 
   const rows = (await query) as Array<Record<string, any>>
+  await resolveMissingDids(rows)
   return rows.map(fromStoredRow)
+}
+
+async function resolveMissingDids(rows: Array<Record<string, any>>): Promise<void> {
+  for (const row of rows) {
+    if (row.did != null) continue
+
+    const participantId = readPositiveInteger(row.payload?.participant_id ?? row.payload?.participantId)
+    const corporationId = toCorporationId(row.payload?.corporation_id ?? row.payload?.corporationId)
+
+    let did: string | undefined
+    if (participantId) did = (await loadParticipantRelation(participantId)).participantDid
+    if (!did && corporationId) did = (await loadCorporationById(corporationId)).did
+    if (!did) continue
+
+    row.did = did
+    await knex('indexer_events').where({ id: row.id }).update({ did })
+  }
 }
