@@ -3,9 +3,13 @@ import { SERVICE } from '../../../../src/common'
 import TrustDeposit from '../../../../src/models/trust_deposit'
 import TrustDepositApiService from '../../../../src/services/crawl-td/td_apis.service'
 import TrustDepositDatabaseService from '../../../../src/services/crawl-td/td_database.service'
+import { resolveAddressByCorporationId } from '../../../../src/services/crawl-co/corporation_resolve'
 
 jest.mock('../../../../src/models/trust_deposit')
 jest.mock('../../../../src/models/modules_params')
+jest.mock('../../../../src/services/crawl-co/corporation_resolve', () => ({
+  resolveAddressByCorporationId: jest.fn(),
+}))
 jest.mock('../../../../src/common/utils/db_connection', () => ({
   transaction: jest.fn((fn) => fn({})),
 }))
@@ -27,6 +31,7 @@ describe('🧪 TrustDepositDatabaseService', () => {
 
   describe('Action: getTrustDeposit', () => {
     it('✅ should return trust deposit successfully', async () => {
+      ;(resolveAddressByCorporationId as jest.Mock).mockResolvedValue('verana1testaccountxyz')
       ;(TrustDeposit.query as any).mockReturnValue({
         findOne: jest.fn().mockResolvedValue({
           corporation: 'verana1testaccountxyz',
@@ -42,29 +47,30 @@ describe('🧪 TrustDepositDatabaseService', () => {
       })
 
       const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
-        corporation: 'verana1testaccountxyz',
+        corporation_id: 2,
       })
 
       expect(res.trust_deposit).toBeDefined()
-      expect(res.trust_deposit.corporation).toBe('verana1testaccountxyz')
+      expect(res.trust_deposit.corporation_id).toBe(2)
       expect(res.trust_deposit.slashed_deposit).toBe(1000)
     })
 
-    it('❌ should return 400 for invalid account', async () => {
+    it('❌ should return 400 for invalid corporation_id', async () => {
       const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
-        corporation: 'notavalidverana1addressformat123456789',
+        corporation_id: 'notanumber',
       })
       expect(res.code).toBe(400)
-      expect(String(res.error)).toContain('Invalid corporation address format')
+      expect(String(res.error)).toContain('Invalid corporation_id')
     })
 
     it('❌ should return 404 if not found', async () => {
+      ;(resolveAddressByCorporationId as jest.Mock).mockResolvedValue('verana1notfoundxyz')
       ;(TrustDeposit.query as any).mockReturnValue({
         findOne: jest.fn().mockResolvedValue(null),
       })
 
       const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
-        corporation: 'verana1notfoundxyz',
+        corporation_id: 999,
       })
       expect(res.error).toContain('No trust deposit found')
       expect(res.code).toBe(404)
