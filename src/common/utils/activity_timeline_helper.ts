@@ -1,3 +1,4 @@
+import { TrustDepositHistoryMsg } from '../constant'
 import {
   VeranaCredentialSchemaMessageTypes,
   VeranaEcosystemMessageTypes,
@@ -5,6 +6,8 @@ import {
 } from '../verana-message-types'
 import knex from './db_connection'
 import { normalizeParticipantEmptyStringsToNull } from './utils'
+
+const TRUST_DEPOSIT_MSGS = new Set<string>(Object.values(TrustDepositHistoryMsg))
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaEcosystemMessageTypes.CreateEcosystem]: 'CreateEcosystem',
@@ -73,6 +76,13 @@ function filterChangedValues(changes: any): any {
   return Object.keys(filtered).length > 0 ? filtered : null
 }
 
+export interface IdPagination {
+  minId?: number
+  maxId?: number
+  limit?: number
+  sort?: 'id' | '-id'
+}
+
 export interface RelatedEntityConfig {
   entityType: string
   historyTable: string
@@ -103,11 +113,12 @@ async function buildHistoryQuery(
     transactionTimestampOlderThan?: string
     atBlockHeight?: string
     perQueryLimit?: number
+    pagination?: IdPagination
   }
 ) {
   try {
     const { entityType, historyTable, idField, entityId, msgTypePrefixes, entityIdField } = config
-    const { transactionTimestampOlderThan, atBlockHeight, perQueryLimit } = options
+    const { transactionTimestampOlderThan, atBlockHeight, perQueryLimit, pagination } = options
     const prefixes = msgTypePrefixes || []
     const msgTypeCondition =
       prefixes.length > 0
@@ -194,10 +205,20 @@ async function buildHistoryQuery(
       })
     }
 
-    historyQuery = historyQuery
-      .orderBy(`${historyTable}.height`, 'desc')
-      .orderBy(`${historyTable}.created_at`, 'desc')
-      .orderBy(`${historyTable}.id`, 'desc')
+    if (pagination) {
+      if (pagination.minId != null) {
+        historyQuery = historyQuery.where(`${historyTable}.id`, '>=', pagination.minId)
+      }
+      if (pagination.maxId != null) {
+        historyQuery = historyQuery.where(`${historyTable}.id`, '<', pagination.maxId)
+      }
+      historyQuery = historyQuery.orderBy(`${historyTable}.id`, pagination.sort === 'id' ? 'asc' : 'desc')
+    } else {
+      historyQuery = historyQuery
+        .orderBy(`${historyTable}.height`, 'desc')
+        .orderBy(`${historyTable}.created_at`, 'desc')
+        .orderBy(`${historyTable}.id`, 'desc')
+    }
 
     if (perQueryLimit && Number.isFinite(perQueryLimit) && perQueryLimit > 0) {
       historyQuery = historyQuery.limit(Math.floor(perQueryLimit))
@@ -217,14 +238,18 @@ export async function buildActivityTimeline(
     responseMaxSize?: number
     transactionTimestampOlderThan?: string
     atBlockHeight?: string
+    pagination?: IdPagination
   } = {}
 ): Promise<any[]> {
   try {
     const { entityType, historyTable, idField, entityId, msgTypePrefixes, relatedEntities } = config
-    const { responseMaxSize = 64, transactionTimestampOlderThan, atBlockHeight } = options
+    const { responseMaxSize = 64, transactionTimestampOlderThan, atBlockHeight, pagination } = options
+    const paginationLimit = pagination?.limit ?? responseMaxSize
     const queryMultiplier = 2
     const minPerQueryLimit = 128
-    const perQueryLimit = Math.max(Number(responseMaxSize) * queryMultiplier, minPerQueryLimit)
+    const perQueryLimit = pagination
+      ? paginationLimit
+      : Math.max(Number(responseMaxSize) * queryMultiplier, minPerQueryLimit)
 
     const queries: any[] = []
 
@@ -238,7 +263,7 @@ export async function buildActivityTimeline(
           msgTypePrefixes,
           entityIdField: idField,
         },
-        { transactionTimestampOlderThan, atBlockHeight, perQueryLimit }
+        { transactionTimestampOlderThan, atBlockHeight, perQueryLimit, pagination }
       )
     )
 
@@ -254,7 +279,7 @@ export async function buildActivityTimeline(
               msgTypePrefixes: related.msgTypePrefixes,
               entityIdField: related.entityIdField,
             },
-            { transactionTimestampOlderThan, atBlockHeight, perQueryLimit }
+            { transactionTimestampOlderThan, atBlockHeight, perQueryLimit, pagination }
           )
         )
       }
@@ -290,42 +315,47 @@ export async function buildActivityTimeline(
 
     allResults.length = 0
 
-    const sortedRecords = allRecords.sort((a, b) => {
-      if (!a.timestamp && !b.timestamp) {
-        const heightDiff = (b.height || 0) - (a.height || 0)
-        if (heightDiff !== 0) return heightDiff
-        const aCreated = a.created_at
-          ? a.created_at instanceof Date
-            ? a.created_at.getTime()
-            : new Date(a.created_at).getTime()
-          : 0
-        const bCreated = b.created_at
-          ? b.created_at instanceof Date
-            ? b.created_at.getTime()
-            : new Date(b.created_at).getTime()
-          : 0
-        return bCreated - aCreated
-      }
-      if (!a.timestamp) return 1
-      if (!b.timestamp) return -1
-      const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      if (timeDiff !== 0) return timeDiff
-      const heightDiff = (b.height || 0) - (a.height || 0)
-      if (heightDiff !== 0) return heightDiff
-      const aCreated = a.created_at
-        ? a.created_at instanceof Date
-          ? a.created_at.getTime()
-          : new Date(a.created_at).getTime()
-        : 0
-      const bCreated = b.created_at
-        ? b.created_at instanceof Date
-          ? b.created_at.getTime()
-          : new Date(b.created_at).getTime()
-        : 0
-      return bCreated - aCreated
-    })
+    const sortedRecords = pagination
+      ? allRecords.sort((a, b) => {
+          const diff = Number(a.id ?? 0) - Number(b.id ?? 0)
+          return pagination.sort === 'id' ? diff : -diff
+        })
+      : allRecords.sort((a, b) => {
+          if (!a.timestamp && !b.timestamp) {
+            const heightDiff = (b.height || 0) - (a.height || 0)
+            if (heightDiff !== 0) return heightDiff
+            const aCreated = a.created_at
+              ? a.created_at instanceof Date
+                ? a.created_at.getTime()
+                : new Date(a.created_at).getTime()
+              : 0
+            const bCreated = b.created_at
+              ? b.created_at instanceof Date
+                ? b.created_at.getTime()
+                : new Date(b.created_at).getTime()
+              : 0
+            return bCreated - aCreated
+          }
+          if (!a.timestamp) return 1
+          if (!b.timestamp) return -1
+          const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          if (timeDiff !== 0) return timeDiff
+          const heightDiff = (b.height || 0) - (a.height || 0)
+          if (heightDiff !== 0) return heightDiff
+          const aCreated = a.created_at
+            ? a.created_at instanceof Date
+              ? a.created_at.getTime()
+              : new Date(a.created_at).getTime()
+            : 0
+          const bCreated = b.created_at
+            ? b.created_at instanceof Date
+              ? b.created_at.getTime()
+              : new Date(b.created_at).getTime()
+            : 0
+          return bCreated - aCreated
+        })
 
-    const limitedRecords = sortedRecords.slice(0, responseMaxSize)
+    const limitedRecords = sortedRecords.slice(0, pagination ? paginationLimit : responseMaxSize)
 
     const gfvByKey: Map<string, any[]> = new Map()
     const gfdByKey: Map<string, any[]> = new Map()
@@ -483,7 +513,13 @@ export async function buildActivityTimeline(
         }
       }
 
-      const action = getActionFromMessageType(record.msg_type, record.event_type, record.action)
+      let action: string
+      if (record.activity_entity_type === 'TrustDeposit') {
+        const token = String(record.event_type ?? '').toUpperCase()
+        action = TRUST_DEPOSIT_MSGS.has(token) ? token : TrustDepositHistoryMsg.Adjust
+      } else {
+        action = getActionFromMessageType(record.msg_type, record.event_type, record.action)
+      }
 
       let activityEntityId: string | number = entityId
       if (record.activity_entity_id !== undefined && record.activity_entity_id !== null) {
@@ -499,7 +535,11 @@ export async function buildActivityTimeline(
 
       if (changes) {
         if (activityEntityType === 'TrustDeposit') {
-          const numericFields = ['share', 'amount', 'claimable', 'slashed_deposit', 'repaid_deposit', 'slash_count']
+          if (Object.hasOwn(changes, 'claimable')) {
+            changes.refunded = changes.claimable
+            delete changes.claimable
+          }
+          const numericFields = ['share', 'deposit', 'refunded', 'slashed_deposit', 'repaid_deposit', 'slash_count']
           for (const field of numericFields) {
             if (Object.hasOwn(changes, field) && changes[field] != null) {
               const n = Number(changes[field])

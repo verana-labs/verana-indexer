@@ -4018,23 +4018,24 @@
         }
       }
     },
-    "/v4/trust-deposit/get/{corporation}": {
+    "/v4/trust-deposit/get/{corporation_id}": {
       "get": {
         "tags": [
           "Trust Deposit"
         ],
         "summary": "Get Trust Deposit by corporation",
-        "description": "Retrieve trust deposit information for a specific corporation address .",
+        "description": "Retrieve the aggregated trust-deposit position of a single Corporation, identified 1:1 by its corporation_id.",
         "operationId": "getTrustDepositByCorporation",
         "parameters": [
           {
-            "name": "corporation",
+            "name": "corporation_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "format": "uint64"
             },
-            "description": "Corporation  address for the trust deposit"
+            "description": "The Corporation ID"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -4050,9 +4051,10 @@
                 },
                 "example": {
                   "trust_deposit": {
-                    "corporation": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                    "corporation_id": 12,
                     "share": 20000000,
                     "deposit": 20000000,
+                    "refunded": 0,
                     "claimable": 0,
                     "slashed_deposit": 0,
                     "repaid_deposit": 0,
@@ -4072,7 +4074,7 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "No trust deposit found for corporation: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                  "error": "No trust deposit found for corporation_id: 12",
                   "code": 404
                 }
               }
@@ -4123,45 +4125,71 @@
         }
       }
     },
-    "/v4/trust-deposit/history/{corporation}": {
+    "/v4/trust-deposit/history/{corporation_id}": {
       "get": {
         "tags": [
           "Trust Deposit"
         ],
         "summary": "Get Trust Deposit activity timeline",
-        "description": "Retrieve the activity timeline for a Trust Deposit, showing all changes ordered by transaction timestamp descending. Returns only changed values in the changes field.",
+        "description": "Retrieve the activity timeline for a Trust Deposit row, ordered by id descending (newest-first). Returns only changed values in the changes field. Paginates on ActivityItem.id via min_id/max_id/limit/sort.",
         "operationId": "getTrustDepositHistory",
         "parameters": [
           {
-            "name": "corporation",
+            "name": "corporation_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "format": "uint64"
             },
-            "description": "Corporation  address to retrieve trust deposit history for"
+            "description": "The Corporation ID (the TrustDeposit row is identified 1:1 by corporation_id)"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
+              "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of activity items to return (default: 64)"
+            "description": "Caps the number of items returned (1..1024, default 64)"
           },
           {
-            "name": "transaction_timestamp_older_than",
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Inclusive lower bound of the half-open id range cursor on ActivityItem.id"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Exclusive upper bound of the half-open id range cursor on ActivityItem.id"
+          },
+          {
+            "name": "sort",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+            "description": "Sort by id: '-id' (default, newest-first) or 'id'/'+id' (oldest-first)"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -4177,40 +4205,43 @@
                 },
                 "example": {
                   "entity_type": "TrustDeposit",
-                  "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                  "entity_id": "12",
                   "activity": [
                     {
+                      "id": 3,
                       "timestamp": "2025-10-27T16:55:04.593Z",
                       "block_height": 425339,
                       "entity_type": "TrustDeposit",
-                      "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
-                      "msg": "AdjustTrustDeposit",
+                      "entity_id": "12",
+                      "msg": "ADJUST_TRUST_DEPOSIT",
                       "changes": {
                         "share": 81000000,
                         "deposit": 81000000
                       }
                     },
                     {
+                      "id": 2,
                       "timestamp": "2025-10-27T16:54:37.920Z",
                       "block_height": 425334,
                       "entity_type": "TrustDeposit",
-                      "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
-                      "msg": "AdjustTrustDeposit",
+                      "entity_id": "12",
+                      "msg": "ADJUST_TRUST_DEPOSIT",
                       "changes": {
                         "share": 80000000,
                         "deposit": 80000000
                       }
                     },
                     {
+                      "id": 1,
                       "timestamp": "2025-10-03T11:59:28.807Z",
                       "block_height": 13733,
                       "entity_type": "TrustDeposit",
-                      "entity_id": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
-                      "msg": "CreateTrustDeposit",
+                      "entity_id": "12",
+                      "msg": "CREATE_TRUST_DEPOSIT",
                       "changes": {
                         "share": 10000000,
                         "deposit": 10000000,
-                        "claimable": 0,
+                        "refunded": 0,
                         "slash_count": 0,
                         "repaid_deposit": 0,
                         "slashed_deposit": 0
@@ -4229,7 +4260,7 @@
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "No trust deposit found for corporation: verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                  "error": "No trust deposit found for corporation_id: 12",
                   "code": 404
                 }
               }
@@ -6107,9 +6138,10 @@
       "TrustDeposit": {
         "type": "object",
         "properties": {
-          "corporation": {
-            "type": "string",
-            "description": "Corporation  key for this trust deposit "
+          "corporation_id": {
+            "type": "integer",
+            "format": "uint64",
+            "description": "Corporation ID (primary key, references Corporation.id, 1:1)"
           },
          "deposit": {
             "type": "integer",
@@ -6119,9 +6151,13 @@
             "type": "integer",
             "description": "Share of the module total deposit"
           },
+          "refunded": {
+            "type": "integer",
+            "description": "Reused-first refunded amount, drawn before pulling from the Corporation's policy_address"
+          },
           "claimable": {
             "type": "integer",
-            "description": "Claimable rewards amount"
+            "description": "Indexer-derived accrued yield currently claimable on reclaim, computed as share * trust_deposit_share_value - deposit"
           },
           "slashed_deposit": {
             "type": "integer",
@@ -6180,7 +6216,7 @@
           },
           "msg": {
             "type": "string",
-            "description": "Message/action type (e.g., CreateEcosystem, AddGovernanceFrameworkDocument, CreateRootParticipant, CreateOrUpdateParticipantSession, AdjustTrustDeposit)"
+            "description": "Message/action type (e.g., CreateEcosystem, AddGovernanceFrameworkDocument, CreateRootParticipant, CreateOrUpdateParticipantSession; TrustDeposit history uses UPPER_SNAKE tokens such as ADJUST_TRUST_DEPOSIT)"
           },
           "changes": {
             "type": "object",
