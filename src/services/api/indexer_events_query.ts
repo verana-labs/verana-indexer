@@ -341,12 +341,16 @@ async function loadParticipantsByAccount(account: string | null | undefined): Pr
     .select('id', 'did', 'corporation_id')
     .where({ vs_operator: account })
     .orderBy('id', 'asc')
-  return {
-    dids: uniqueNormalizedDids(rows.map((row) => row.did)),
-    corporationIds: rows
-      .map((row) => toCorporationId(row.corporation_id))
-      .filter((corporationId): corporationId is number => corporationId !== undefined),
+
+  const dids: string[] = []
+  const corporationIds: number[] = []
+  for (const row of rows) {
+    const did = normalizeDid(row.did)
+    if (did && !dids.includes(did)) dids.push(did)
+    const corporationId = toCorporationId(row.corporation_id)
+    if (corporationId !== undefined && !corporationIds.includes(corporationId)) corporationIds.push(corporationId)
   }
+  return { dids, corporationIds }
 }
 
 function readAddress(value: unknown): string | undefined {
