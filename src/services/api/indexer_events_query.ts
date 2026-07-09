@@ -332,18 +332,20 @@ async function loadCorporationById(corporationId: number | null | undefined): Pr
   return { did: normalizeDid(row.did), corporationId: toCorporationId(row.id) }
 }
 
-async function loadParticipantByAccount(account: string | null | undefined): Promise<{
-  participantId?: string
-  did?: string
-  corporationId?: number
+async function loadParticipantsByAccount(account: string | null | undefined): Promise<{
+  dids: string[]
+  corporationIds: number[]
 }> {
-  if (!account || typeof account !== 'string' || !account.trim()) return {}
-  const row = await knex('participants').select('id', 'did', 'corporation_id').where({ vs_operator: account }).first()
-  if (!row) return {}
+  if (!account || typeof account !== 'string' || !account.trim()) return { dids: [], corporationIds: [] }
+  const rows = await knex('participants')
+    .select('id', 'did', 'corporation_id')
+    .where({ vs_operator: account })
+    .orderBy('id', 'asc')
   return {
-    participantId: row.id != null ? String(row.id) : undefined,
-    did: normalizeDid(row.did),
-    corporationId: toCorporationId(row.corporation_id),
+    dids: uniqueNormalizedDids(rows.map((row) => row.did)),
+    corporationIds: rows
+      .map((row) => toCorporationId(row.corporation_id))
+      .filter((corporationId): corporationId is number => corporationId !== undefined),
   }
 }
 
@@ -529,11 +531,11 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
       if (corp.did) collected.add(corp.did)
     }
     for (const account of [grantee, operator]) {
-      const participant = await loadParticipantByAccount(account)
-      if (participant.did) collected.add(participant.did)
-      if (participant.corporationId !== undefined) {
-        if (corporationId === undefined) corporationId = participant.corporationId
-        else if (participant.corporationId !== corporationId) relatedCorporationIds.add(participant.corporationId)
+      const participants = await loadParticipantsByAccount(account)
+      for (const participantDid of participants.dids) collected.add(participantDid)
+      for (const participantCorporationId of participants.corporationIds) {
+        if (corporationId === undefined) corporationId = participantCorporationId
+        else if (participantCorporationId !== corporationId) relatedCorporationIds.add(participantCorporationId)
       }
     }
   }
@@ -784,9 +786,9 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       did = corporation.did
     }
     if (vsOperator) {
-      const participant = await loadParticipantByAccount(vsOperator)
-      if (participant.did) collected.add(participant.did)
-      did = did ?? participant.did
+      const participants = await loadParticipantsByAccount(vsOperator)
+      for (const participantDid of participants.dids) collected.add(participantDid)
+      did = did ?? participants.dids[0]
     }
     if (!did && rawParticipantId) {
       const participantDid = await fetchParticipantDid(rawParticipantId, blockHeight)
