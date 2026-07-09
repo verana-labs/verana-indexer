@@ -199,8 +199,6 @@ export async function getCorporationBaseAtHeight(
   corporationId: number | string,
   blockHeight: number
 ): Promise<CorporationBaseAtHeight | null> {
-  // Only Create/Update rows carry authoritative base fields; CGF activity rows
-  // (AddCGFDocument, IncreaseCGFActiveVersion) do not change did/policy_address/language/modified.
   const row = await knex('corporation_history')
     .where('corporation_id', corporationId)
     .where('height', '<=', blockHeight)
