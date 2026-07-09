@@ -31,6 +31,12 @@ import {
   parseGfDataMode,
 } from './co_stats'
 
+// Stored event_type -> spec ActivityItem.msg. CGF events are stored under their spec names already.
+const CORPORATION_HISTORY_MSG: Record<string, string> = {
+  Create: 'CreateCorporation',
+  Update: 'UpdateCorporation',
+}
+
 @Service({
   name: SERVICE.V1.CorporationApiService.key,
   version: 1,
@@ -302,29 +308,59 @@ export default class CorporationApiService extends BaseService {
     }
   }
 
+  // IDX-CO-QRY-4 Get Corporation History (v4)
   @Action()
-  public async getCorporationHistory(ctx: Context<{ id: string }>) {
+  public async getCorporationHistory(
+    ctx: Context<{ id: string; limit?: string; min_id?: string; max_id?: string; sort?: string }>
+  ) {
     try {
-      const { id } = ctx.params
-      const numericId = Number(id)
-
-      let corporationId = Number.isInteger(numericId) && numericId > 0 ? numericId : null
-      if (!corporationId) {
-        const corporation = await Corporation.query().where('did', id).orWhere('corporation', id).first()
-        if (!corporation) {
-          return ApiResponder.error(ctx, `Corporation '${id}' not found`, 404)
-        }
-        corporationId = corporation.id
+      const idStr = String(ctx.params.id ?? '').trim()
+      if (!/^\d+$/.test(idStr) || BigInt(idStr) <= BigInt(0)) {
+        return ApiResponder.error(ctx, `Invalid corporation id '${ctx.params.id}'`, 400)
       }
 
-      const history = await CorporationHistory.query()
-        .where('corporation_id', corporationId)
-        .orderBy('height', 'asc')
-        .orderBy('id', 'asc')
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
+      }
+      const { limit, minId, maxId, direction } = pageParsed.value
 
-      return ApiResponder.success(ctx, { history })
+      const corporation = await Corporation.query().findById(idStr)
+      if (!corporation) {
+        return ApiResponder.error(ctx, `Corporation ${idStr} not found`, 404)
+      }
+
+      const blockHeight = getBlockHeight(ctx)
+
+      let query = CorporationHistory.query().where('corporation_id', idStr)
+      if (typeof blockHeight === 'number') query = query.where('height', '<=', blockHeight)
+      if (minId !== undefined) query = query.where('id', '>=', minId)
+      if (maxId !== undefined) query = query.where('id', '<', maxId)
+      const rows = await query.orderBy('id', direction).limit(limit)
+
+      const activity = rows.map((row) => {
+        const plain = row.toJSON() as Record<string, unknown>
+        const rawChanges = plain.changes
+        const changes =
+          typeof rawChanges === 'string' ? JSON.parse(rawChanges) : ((rawChanges as Record<string, unknown>) ?? null)
+        const createdAt = plain.created_at
+        const item: Record<string, unknown> = {
+          id: Number(plain.id),
+          timestamp: createdAt ? new Date(createdAt as string | Date).toISOString() : null,
+          block_height: plain.height != null ? Number(plain.height) : null,
+          entity_type: 'Corporation',
+          entity_id: idStr,
+          msg: CORPORATION_HISTORY_MSG[String(plain.event_type)] ?? String(plain.event_type),
+          changes,
+        }
+        if (plain.account) item.account = plain.account
+        return item
+      })
+
+      return ApiResponder.success(ctx, { entity_type: 'Corporation', entity_id: idStr, activity })
     } catch (err: any) {
-      return ApiResponder.error(ctx, err?.message || String(err), 500)
+      this.logger.error('Error in getCorporationHistory:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }
 
