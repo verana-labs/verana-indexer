@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v1.3.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* do not stop the indexer on a recoverable duplicate-block insert ([#317](https://github.com/verana-labs/verana-indexer/issues/317)) ([61f6ff4](https://github.com/verana-labs/verana-indexer/commit/61f6ff4ebd73d0f81a21431f1e754bc8133d3113))
+
 ## [1.3.1](https://github.com/verana-labs/verana-indexer/compare/v1.3.0...v1.3.1) (2026-04-28)
 
 
