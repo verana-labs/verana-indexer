@@ -1,9 +1,9 @@
 import { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../../../src/common'
 import TrustDeposit from '../../../../src/models/trust_deposit'
+import { resolveAddressByCorporationId } from '../../../../src/services/crawl-co/corporation_resolve'
 import TrustDepositApiService from '../../../../src/services/crawl-td/td_apis.service'
 import TrustDepositDatabaseService from '../../../../src/services/crawl-td/td_database.service'
-import { resolveAddressByCorporationId } from '../../../../src/services/crawl-co/corporation_resolve'
 
 jest.mock('../../../../src/models/trust_deposit')
 jest.mock('../../../../src/models/modules_params')
