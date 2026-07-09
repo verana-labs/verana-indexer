@@ -1640,7 +1640,7 @@
                   "description": "Credential schema JSON Schema definition (with $id overridden by indexer)."
                 },
                 "example": {
-                  "$id": "vpr:verana:vna-testnet-1/cs/v1/js/16",
+                  "$id": "vpr:verana:vna-testnet-1:cs:16",
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "title": "ExampleCredential",
                   "description": "ExampleCredential using JsonSchema",
@@ -1736,34 +1736,57 @@
             "description": "Filter by modification date"
           },
           {
-            "name": "only_active",
+            "name": "archived",
             "in": "query",
             "required": false,
             "schema": {
               "type": "boolean"
             },
-            "description": "Filter by active status. If true, returns only active schemas (archived is null). If false or omitted, returns all schemas (both active and archived). Active/inactive is determined by the archived field."
+            "description": "true returns only archived schemas; false returns only not-archived schemas; omitted returns both. Default: null."
           },
           {
             "name": "issuer_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "GRANTOR_ONBOARDING_PROCESS",
+                "ECOSYSTEM_ONBOARDING_PROCESS"
+              ]
             },
-            "description": "Filter by issuer onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
+            "description": "Filter by issuer onboarding mode."
           },
           {
             "name": "verifier_onboarding_mode",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "GRANTOR_ONBOARDING_PROCESS",
+                "ECOSYSTEM_ONBOARDING_PROCESS"
+              ]
             },
-            "description": "Filter by verifier onboarding mode . Values may be v3 short names or v4 *_PROCESS names — normalized when filtering."
+            "description": "Filter by verifier onboarding mode."
           },
           {
-            "name": "response_max_size",
+            "name": "holder_onboarding_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ISSUER_ONBOARDING_PROCESS",
+                "PERMISSIONLESS"
+              ]
+            },
+            "description": "Filter by holder onboarding mode."
+          },
+          {
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1772,16 +1795,42 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of records to return in the response"
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id upper bound (exclusive)"
           },
           {
             "name": "sort",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Sort by id ascending or descending"
           },
           {
             "name": "participant",
@@ -2106,26 +2155,51 @@
             "description": "The Credential Schema ID to retrieve history for"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
+              "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of activity items to return (default: 64)"
+            "description": "Page size"
           },
           {
-            "name": "transaction_timestamp_older_than",
+            "name": "min_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "pattern": "^[0-9]+$"
             },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2169,7 +2243,7 @@
                         "modified": "2025-10-02T17:23:55.515Z",
                         "verified": 0,
                         "description": "ExampleCredential using JsonSchema",
-                        "json_schema": "{\"$id\":\"vpr:verana:vna-testnet-1/cs/v1/js/1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}",
+                        "json_schema": "{\"$id\":\"vpr:verana:vna-testnet-1:cs:1\",\"type\":\"object\",\"$defs\":{},\"title\":\"ExampleCredential\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\",\"format\":\"email\"}},\"description\":\"ExampleCredential using JsonSchema\",\"additionalProperties\":false}",
                         "participants": 0,
                         "network_slash_events": 0,
                         "ecosystem_slash_events": 0,
@@ -2179,7 +2253,7 @@
                         "network_slashed_amount_repaid": 0,
                         "verifier_onboarding_mode": "OPEN",
                         "ecosystem_slashed_amount_repaid": 0,
-                        "holder_onboarding_mode": "OPEN",
+                        "holder_onboarding_mode": "PERMISSIONLESS",
                         "pricing_asset_type": "NATIVE",
                         "pricing_asset": "uvna",
                         "digest_algorithm": "sha256",
@@ -2338,6 +2412,36 @@
         }
       }
     },
+    "/v4/participant/params": {
+      "get": {
+        "tags": [
+          "Participant"
+        ],
+        "summary": "Get Participant parameters",
+        "description": "Retrieve the network-level Participant module parameters as defined by VPR governance.",
+        "operationId": "getParticipantParams",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with Participant module parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantParamsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/participant/list": {
       "get": {
         "tags": [
@@ -2348,13 +2452,13 @@
         "operationId": "listParticipants",
         "parameters": [
           {
-            "name": "corporation",
+            "name": "corporation_id",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer"
             },
-            "description": "Filter by corporation (participant owner) account "
+            "description": "Filter by participant-owner Corporation id"
           },
           {
             "name": "did",
@@ -2375,7 +2479,7 @@
             "description": "Filter by participant ID"
           },
           {
-            "name": "type",
+            "name": "role",
             "in": "query",
             "required": false,
             "schema": {
@@ -2389,7 +2493,7 @@
                 "HOLDER"
               ]
             },
-            "description": "Filter by participant type"
+            "description": "Filter by participant role"
           },
           {
             "name": "only_valid",
@@ -2429,13 +2533,17 @@
             "description": "Filter by modification date"
           },
           {
-            "name": "country",
+            "name": "trust_data",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "summary",
+                "full"
+              ]
             },
-            "description": "Filter by country code"
+            "description": "Enrich each DID-bearing participant inline with the resolver's trust evaluation"
           },
           {
             "name": "op_state",
@@ -2446,8 +2554,7 @@
               "enum": [
                 "PENDING",
                 "VALIDATED",
-                "TERMINATED",
-                "VALIDATION_STATE_UNSPECIFIED"
+                "TERMINATED"
               ]
             },
             "description": "Filter by validation process state"
@@ -2810,7 +2917,7 @@
             "description": "Account address"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2861,7 +2968,6 @@
                     {
                       "id": 2,
                       "did": "did:example:186af95a000ef890a583f47a0274a800",
-                      "aka": "http://example-aka.com",
                       "pending_tasks": 3,
                       "participants": 3,
                       "schemas": [
@@ -2871,13 +2977,13 @@
                           "description": "ExampleCredential using JsonSchema",
                           "pending_tasks": 3,
                           "participants": 0,
-                          "participants": [
+                          "pending_participants": [
                             {
                               "id": 2,
                               "schema_id": 2,
-                              "type": "VERIFIER",
+                              "role": "VERIFIER",
                               "did": null,
-                              "corporation": "verana1sxau0xyttphpck7vhlvt8s82ez70nlzw2mhya0",
+                              "corporation_id": 5,
                               "created": "2025-10-03T12:30:43.431Z",
                               "modified": "2025-10-03T12:30:43.431Z",
                               "slashed": null,
@@ -2901,8 +3007,8 @@
                               "op_validator_deposit": 0,
                               "participant_state": "INACTIVE",
                               "corporation_available_actions": [
-                                "PARTICIPANT_ADJUST",
-                                "PARTICIPANT_REVOKE"
+                                "SetParticipantEffectiveUntil",
+                                "RevokeParticipant"
                               ],
                               "validator_available_actions": [],
                               "weight": 1000000,
@@ -3351,7 +3457,7 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer"
             },
             "description": "Issuer Participant ID"
           },
@@ -3360,7 +3466,7 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer"
             },
             "description": "Verifier Participant ID"
           },
@@ -3467,14 +3573,14 @@
                       "msg": "CreateRootParticipant",
                       "changes": {
                         "did": "did:example:186af95a000ef890a583f47a0274a800",
-                        "type": "ECOSYSTEM",
+                        "role": "ECOSYSTEM",
                         "issued": 0,
                         "created": "2025-10-03T11:59:38.834Z",
-                        "corporation": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
+                        "corporation_id": 3,
                         "vs_operator": "verana12dyk649yce4dvdppehsyraxe6p6jemzg2qwutf",
                         "modified": "2025-10-03T11:59:38.834Z",
                         "verified": 0,
-                        "op_state": "VALIDATION_STATE_UNSPECIFIED",
+                        "op_state": "VALIDATED",
                         "schema_id": 2,
                         "issuance_fees": 5,
                         "effective_from": "2025-10-03T11:59:49.805Z",
@@ -3545,13 +3651,13 @@
                   "$ref": "#/components/schemas/ActivityTimelineResponse"
                 },
                 "example": {
-                  "entity_type": "PARTICIPANT_SESSION",
+                  "entity_type": "ParticipantSession",
                   "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
                   "activity": [
                     {
                       "timestamp": "2025-10-27T16:55:04.593Z",
                       "block_height": 425339,
-                      "entity_type": "PARTICIPANT_SESSION",
+                      "entity_type": "ParticipantSession",
                       "entity_id": "575ad8eb-3f0a-46bc-a51e-03cce903b864",
                       "msg": "CreateOrUpdateParticipantSession",
                       "changes": {
@@ -3564,7 +3670,7 @@
                         ],
                         "created": "2025-10-27T16:55:04.593Z",
                         "modified": "2025-10-27T16:55:04.593Z",
-                        "corporation": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
+                        "corporation_id": 7,
                         "vs_operator": "verana1gnt6yu57zalyml8kumcypdvtdh28fvzfuqrn9l",
                         "agent_participant_id": 25,
                         "wallet_agent_participant_id": 25
@@ -5383,14 +5489,29 @@
             "type": "integer"
           },
           "issuer_onboarding_mode": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "GRANTOR_ONBOARDING_PROCESS",
+              "ECOSYSTEM_ONBOARDING_PROCESS"
+            ]
           },
           "verifier_onboarding_mode": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "GRANTOR_ONBOARDING_PROCESS",
+              "ECOSYSTEM_ONBOARDING_PROCESS"
+            ]
           },
           "holder_onboarding_mode": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "enum": [
+              "ISSUER_ONBOARDING_PROCESS",
+              "PERMISSIONLESS",
+              null
+            ]
           },
           "pricing_asset_type": {
             "type": "string",
@@ -5559,27 +5680,27 @@
             "items": {
               "type": "string",
               "enum": [
-                "OP_RENEW",
-                "OP_CANCEL",
-                "PARTICIPANT_REVOKE",
-                "PARTICIPANT_ADJUST",
-                "PARTICIPANT_REPAY"
+                "RenewParticipantOP",
+                "CancelParticipantOPLastRequest",
+                "RevokeParticipant",
+                "SetParticipantEffectiveUntil",
+                "RepayParticipantSlashedTrustDeposit"
               ]
             },
-            "description": "Actions available to the participant corporation "
+            "description": "VPR messages the owning Corporation MAY execute against this participant at its current state"
           },
           "validator_available_actions": {
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
-                "OP_SET_VALIDATED",
-                "PARTICIPANT_REVOKE",
-                "PARTICIPANT_ADJUST",
-                "PARTICIPANT_SLASH"
+                "SetParticipantOPtoValidated",
+                "SetParticipantEffectiveUntil",
+                "RevokeParticipant",
+                "SlashParticipantTrustDeposit"
               ]
             },
-            "description": "Actions available to the validator "
+            "description": "VPR messages the validator Corporation MAY execute against this participant at its current state"
           },
           "weight": {
             "type": "integer",
@@ -5624,7 +5745,7 @@
           "schema_id": {
             "type": "integer"
           },
-          "type": {
+          "role": {
             "type": "string",
             "enum": [
               "ISSUER",
@@ -5639,9 +5760,9 @@
             "type": "string",
             "nullable": true
           },
-          "corporation": {
-            "type": "string",
-            "description": "Corporation  that owns this participant "
+          "corporation_id": {
+            "type": "integer",
+            "description": "ID of the Corporation that owns this participant (FK to Corporation.id)"
           },
           "vs_operator": {
             "type": "string",
@@ -5653,68 +5774,6 @@
             "format": "date-time",
             "nullable": true,
             "description": "Last participant adjustment time ."
-          },
-          "vs_operator_authz_enabled": {
-            "type": "boolean"
-          },
-          "vs_operator_authz_spend_limit": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "denom",
-                    "amount"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                    "denom": {
-                      "type": "string"
-                    },
-                    "amount": {
-                      "type": "string"
-                    }
-                  }
-                }
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "vs_operator_authz_with_feegrant": {
-            "type": "boolean"
-          },
-          "vs_operator_authz_fee_spend_limit": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "denom",
-                    "amount"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                    "denom": {
-                      "type": "string"
-                    },
-                    "amount": {
-                      "type": "string"
-                    }
-                  }
-                }
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "vs_operator_authz_spend_period": {
-            "type": "string",
-            "nullable": true
           },
           "issuance_fee_discount": {
             "type": "number"
@@ -5779,11 +5838,12 @@
           },
           "op_state": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "PENDING",
               "VALIDATED",
               "TERMINATED",
-              "VALIDATION_STATE_UNSPECIFIED"
+              null
             ]
           },
           "op_last_state_change": {
@@ -5849,6 +5909,16 @@
           }
         }
       },
+      "ParticipantParamsResponse": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The Participant module parameter set as defined by VPR governance. Exact keys are determined by the on-chain parameter set."
+          }
+        }
+      },
       "EcosystemPending": {
         "type": "object",
         "properties": {
@@ -5856,10 +5926,6 @@
             "type": "integer"
           },
           "did": {
-            "type": "string",
-            "nullable": true
-          },
-          "aka": {
             "type": "string",
             "nullable": true
           },
@@ -5901,13 +5967,15 @@
             "type": "integer"
           },
           "participants": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Active participant count for this schema (scalar; distinct from pending_participants)"
           },
-          "participants": {
+          "pending_participants": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Participant"
-            }
+            },
+            "description": "Participant entries pending action from the validator account"
           }
         }
       },
@@ -5920,12 +5988,12 @@
           "schema_id": {
             "type": "integer"
           },
-          "type": {
+          "role": {
             "type": "string"
           },
-          "corporation": {
-            "type": "string",
-            "description": "Participant corporation at this history point "
+          "corporation_id": {
+            "type": "integer",
+            "description": "ID of the Corporation that owns the participant at this history point"
           },
           "event_type": {
             "type": "string"
@@ -5962,20 +6030,14 @@
             "type": "string",
             "format": "uuid"
           },
-          "corporation": {
-            "type": "string",
-            "description": "Session corporation "
+          "corporation_id": {
+            "type": "integer",
+            "description": "ID of the agent's controlling Corporation"
           },
           "vs_operator": {
             "type": "string",
             "nullable": true,
             "description": "Verifiable service operator "
-          },
-          "agent_participant_id": {
-            "type": "integer"
-          },
-          "wallet_agent_participant_id": {
-            "type": "integer"
           },
           "session_records": {
             "type": "array",
@@ -5986,7 +6048,8 @@
                 "created": { "type": "string", "format": "date-time" },
                 "issuer_participant_id": { "type": "integer", "nullable": true },
                 "verifier_participant_id": { "type": "integer", "nullable": true },
-                "wallet_agent_participant_id": { "type": "integer" }
+                "wallet_agent_participant_id": { "type": "integer", "nullable": true },
+                "agent_participant_id": { "type": "integer", "nullable": true }
               }
             }
           },
@@ -6021,8 +6084,8 @@
           "height": {
             "type": "integer"
           },
-          "corporation": {
-            "type": "string"
+          "corporation_id": {
+            "type": "integer"
           },
           "vs_operator": {
             "type": "string",
@@ -6176,7 +6239,7 @@
               "GovernanceFrameworkVersion",
               "Participant",
               "TrustDeposit",
-              "PARTICIPANT_SESSION"
+              "ParticipantSession"
             ]
           },
           "entity_id": {

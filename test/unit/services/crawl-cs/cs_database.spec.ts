@@ -301,10 +301,10 @@ describe('CredentialSchemaDatabaseService API Integration Tests', () => {
     expect(storedRaw).toBeDefined()
     expect(typeof storedRaw).toBe('string')
     const stored = storedRaw as string
-    expect(stored).toContain(`vpr:verana:${chainId}/cs/v1/js/` + schemaId)
+    expect(stored).toContain(`vpr:verana:${chainId}:cs:` + schemaId)
     expect(stored).toContain('foo')
     const parsed = JSON.parse(stored)
-    expect(parsed.$id).toBe(`vpr:verana:${chainId}/cs/v1/js/` + schemaId)
+    expect(parsed.$id).toBe(`vpr:verana:${chainId}:cs:` + schemaId)
     expect(parsed.properties).toHaveProperty('foo')
   })
 

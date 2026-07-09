@@ -7,6 +7,7 @@ import { CredentialSchema } from '@verana-labs/verana-types/codec/verana/cs/v1/t
 import { withAbciQueryClient } from '../../common/utils/grpc_query'
 import { VeranaCredentialSchemaMessageTypes } from '../../common/verana-message-types'
 import { CS_EVENT_TYPES } from '../../services/crawl-cs/cs_event_mapper'
+import { getHolderOnboardingModeString, getModeString } from '../../services/crawl-cs/cs_types'
 
 const CS_MESSAGE_TYPES = new Set<string>([
   VeranaCredentialSchemaMessageTypes.CreateCredentialSchema,
@@ -107,6 +108,16 @@ export async function getCredentialSchema(
       const res = await query.GetCredentialSchema(QueryGetCredentialSchemaRequest.fromPartial({ id }))
       if (!res?.schema) return null
       const schema = CredentialSchema.toJSON(res.schema) as Record<string, unknown>
+      const issuerMode = getModeString(Number(res.schema.issuerOnboardingMode ?? 0))
+      const verifierMode = getModeString(Number(res.schema.verifierOnboardingMode ?? 0))
+      const holderModeNumber = Number(res.schema.holderOnboardingMode ?? 0)
+      schema.issuer_onboarding_mode = issuerMode
+      schema.issuerOnboardingMode = issuerMode
+      schema.verifier_onboarding_mode = verifierMode
+      schema.verifierOnboardingMode = verifierMode
+      const holderMode = holderModeNumber > 0 ? getHolderOnboardingModeString(holderModeNumber) : null
+      schema.holder_onboarding_mode = holderMode
+      schema.holderOnboardingMode = holderMode
       return (
         applyLedgerV4Normalization(
           normalizeLedgerResponse({ schema }) ?? ({ schema } as LedgerCredentialSchemaResponse)

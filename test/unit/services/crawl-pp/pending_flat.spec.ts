@@ -66,7 +66,7 @@ describe('Pending Flat API', () => {
   it('returns empty when no participants found', async () => {
     ;(knex as any).mockImplementation(() => createKnexChain())
 
-    const ctx: any = { params: { account: 'acc1', response_max_size: 10 }, meta: {} }
+    const ctx: any = { params: { account: 'acc1', limit: 10 }, meta: {} }
     const res = await service.pendingFlat(ctx)
     expect(res).toEqual({ ecosystems: [] })
   })
