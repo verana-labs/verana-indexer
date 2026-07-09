@@ -9,4 +9,5 @@ export class CoGovernanceFrameworkDocument extends BaseModel {
   url!: string
   digest_sri!: string
   created!: Date
+  gfd_id?: number | null
 }

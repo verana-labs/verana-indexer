@@ -221,6 +221,10 @@ export const SERVICE = {
       key: 'CorporationApiService',
       path: 'v1.CorporationApiService',
     },
+    GovernanceFrameworkApiService: {
+      key: 'GovernanceFrameworkApiService',
+      path: 'v1.GovernanceFrameworkApiService',
+    },
     IndexerMetaService: {
       key: 'IndexerMetaService',
       path: 'v1.IndexerMetaService',

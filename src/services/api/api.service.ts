@@ -340,6 +340,9 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET params': `${SERVICE.V1.CorporationApiService.path}.getCorporationParams`,
         'GET history/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationHistory`,
       }),
+      createRoute('/v4/governance-framework', {
+        'GET get/:id': `${SERVICE.V1.GovernanceFrameworkApiService.path}.getGovernanceFrameworkVersionV4`,
+      }),
       createRoute('/v4/participant', {
         'GET get/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipant`,
         'GET list': `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
