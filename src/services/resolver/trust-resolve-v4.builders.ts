@@ -4,6 +4,7 @@ import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toDate, toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { isEcosystemEcsAllowlisted, isEcsAllowlistEnforced } from './ecs-allowlist'
 
 /**
  * Derives the single `participant_state` enum from a permission row's
@@ -424,6 +425,7 @@ type EcsSchemaResolution = {
   credentialSchemaId: number
   ecosystemId: number
   isEcs: boolean
+  ecsSchemaTitle: string | null
 }
 
 const IS_PG = String((knex as { client?: { config?: { client?: string } } }).client?.config?.client || '').includes(
@@ -498,10 +500,13 @@ async function resolveSchemaByUri(uri: string): Promise<EcsSchemaResolution | nu
   if (!row) return null
 
   const title = parseSchemaJson(row.json_schema)?.title
+  const ecosystemId = Number(row.ecosystem_id) || 0
+  const ecsSchemaTitle = isEcsSchemaTitle(title) ? (title as string) : null
   return {
     credentialSchemaId: Number(row.id) || 0,
-    ecosystemId: Number(row.ecosystem_id) || 0,
-    isEcs: isEcsSchemaTitle(title),
+    ecosystemId,
+    isEcs: ecsSchemaTitle !== null && (await isEcosystemEcsAllowlisted(ecosystemId)),
+    ecsSchemaTitle,
   }
 }
 
@@ -511,6 +516,21 @@ async function resolveParticipantId(did: string, credentialSchemaId: number): Pr
     | { id?: number }
     | undefined
   return row?.id != null ? Number(row.id) || 0 : 0
+}
+
+export async function hasAllowlistedEcsServiceCredential(resolveResult: unknown): Promise<boolean> {
+  const serviceSchemaTitle = ECS_SCHEMA_TITLE_BY_TYPE['ecs-service']
+
+  for (const svc of didDocumentServices(resolveResult)) {
+    if (!isLinkedVpType(svc.type)) continue
+    const endpoint = typeof svc.serviceEndpoint === 'string' ? svc.serviceEndpoint : ''
+    for (const cred of await fetchVpCredentials(endpoint)) {
+      const schemaUri = credentialSchemaUri(cred)
+      const schema = schemaUri ? await resolveSchemaByUri(schemaUri) : null
+      if (schema?.isEcs && schema.ecsSchemaTitle === serviceSchemaTitle) return true
+    }
+  }
+  return false
 }
 
 export async function buildPresentations(
@@ -622,7 +642,11 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
 
   for (const p of participants) {
     const cs = schemas.find((s) => Number(s.id) === Number(p.schema_id))
-    if (cs && parseSchemaJson(cs.json_schema)?.title === ecsSchemaTitle) {
+    if (
+      cs &&
+      parseSchemaJson(cs.json_schema)?.title === ecsSchemaTitle &&
+      (await isEcosystemEcsAllowlisted(Number(cs.ecosystem_id) || 0))
+    ) {
       return {
         participantId: Number(p.id) || 0,
         credentialSchemaId: Number(cs.id) || 0,
@@ -658,6 +682,8 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const subjectDid = typeof c.id === 'string' ? c.id : null
     const issuerDid = typeof c.issuer === 'string' ? c.issuer : null
     const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null
+    if (isEcsAllowlistEnforced() && !link) continue
+
     const credentialSchemaId = link?.credentialSchemaId ?? 0
     const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0
 

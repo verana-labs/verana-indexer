@@ -1,4 +1,9 @@
-import { resolveDID, type TrustResolution, type VerifiablePublicRegistry } from '@verana-labs/verre'
+import {
+  resolveDID,
+  type TrustResolution,
+  TrustResolutionOutcome,
+  type VerifiablePublicRegistry,
+} from '@verana-labs/verre'
 import { BULL_JOB_NAME } from '../../common'
 import {
   applySpeedToBatchSize,
@@ -8,7 +13,9 @@ import {
 import knex from '../../common/utils/db_connection'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
 import config from '../../config.json' with { type: 'json' }
+import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
+import { hasAllowlistedEcsServiceCredential } from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -460,6 +467,12 @@ export async function resolveTrustForDidAtHeight(did: string, blockHeight: numbe
       verifiablePublicRegistries,
       skipDigestSRICheck,
     })) as TrustResolution
+
+    // WL-ECS is not enforced by verre; drop the verdict until it is (see verre ResolverConfig.ecsEcosystems).
+    if (isEcsAllowlistEnforced() && result.verified && !(await hasAllowlistedEcsServiceCredential(result))) {
+      result.verified = false
+      result.outcome = TrustResolutionOutcome.NOT_TRUSTED
+    }
 
     const snap = snapshotFromResolution(result)
     await saveTrustResults({
