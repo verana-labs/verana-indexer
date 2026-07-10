@@ -202,6 +202,7 @@ export async function getCorporationBaseAtHeight(
   const row = await knex('corporation_history')
     .where('corporation_id', corporationId)
     .where('height', '<=', blockHeight)
+    .whereIn('event_type', ['Create', 'Update'])
     .orderBy('height', 'desc')
     .orderBy('id', 'desc')
     .first()
