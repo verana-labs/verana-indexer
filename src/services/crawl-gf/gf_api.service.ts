@@ -93,9 +93,11 @@ export default class GovernanceFrameworkApiService extends BaseService {
           ? await getBlockChainTimeAsOf(blockHeight, { logContext: '[gf_api:get]' })
           : undefined
 
-      // The chain assigns one global gfv id across CGF and EGF, so at most one table matches.
+      // CGF lives in co_governance_framework_version (ecosystem_id = 0); EGF is authoritative in
+      // governance_framework_version. The co table also mirrors EGF rows, so scope this to CGF.
       const coRow = await CoGovernanceFrameworkVersion.query()
         .where('gfv_id', idStr)
+        .where('ecosystem_id', 0)
         .withGraphFetched('documents')
         .first()
       const row =

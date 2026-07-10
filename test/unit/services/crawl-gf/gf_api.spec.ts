@@ -108,13 +108,18 @@ describe('GovernanceFrameworkApiService.getGovernanceFrameworkVersionV4', () => 
     })
   })
 
-  it('maps an ecosystem-scoped co-table row (ecosystem_id != 0) as an EGF', async () => {
-    tableResolvesTo(CoGovernanceFrameworkVersion as any, gfvRow({ ecosystem_id: 4 }))
+  it('scopes the co-table lookup to CGF (ecosystem_id = 0) so EGF ids fall through to the ecosystem table', async () => {
+    const coQb = tableResolvesTo(CoGovernanceFrameworkVersion as any, undefined)
+    tableResolvesTo(
+      GovernanceFrameworkVersion as any,
+      gfvRow({ corporation_id: undefined, ecosystem_id: 1, gfv_id: 8, version: 4 })
+    )
 
-    const ctx: any = { params: { id: '7' }, meta: {} }
+    const ctx: any = { params: { id: '8' }, meta: {} }
     const res: any = await service.getGovernanceFrameworkVersionV4(ctx)
 
-    expect(res.version.ecosystem_id).toBe(4)
+    expect(coQb.where).toHaveBeenCalledWith('ecosystem_id', 0)
+    expect(res.version.ecosystem_id).toBe(1)
     expect(res.version.corporation_id).toBeNull()
   })
 
