@@ -1357,8 +1357,6 @@ export default class CrawlTxService extends BullableService {
   public createListEventWithMsgIndex(tx: any): any[] {
     const events: any[] = tx?.tx_response?.events ?? []
 
-    // Since Cosmos SDK v0.50 `tx_response.logs` is empty and the message index is
-    // carried as a `msg_index` attribute on every event emitted while that message ran.
     const eventsWithMsgIndexAttribute = events.map((event: any) => {
       const msgIndex = this.readMsgIndexAttribute(event)
       return msgIndex === undefined ? event : { ...event, msg_index: msgIndex }
