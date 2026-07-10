@@ -498,3 +498,56 @@
 | `entity_id`  | Entity identifier (null for GLOBAL)                                                                                    |
 | `type`       | Participant role type: 0=ANY, 1=ECOSYSTEM, 2=ISSUER_GRANTOR, 3=ISSUER, 4=VERIFIER_GRANTOR, 5=VERIFIER, 6=HOLDER        |
 | `value`      | Current number of participants for the given entity_kind/entity_id/type combination at the specified `height`          |
+
+### `operator_authorizations`
+
+Latest on-chain state of each `OperatorAuthorization` from the `verana.de.v1` (delegation) module. One row per authorization; `(corporation_id, operator)` is unique. Rows are deleted when the authorization is revoked on-chain.
+
+| Column                | Description                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `id`                  | Primary key — the on-chain uint64 id of the OperatorAuthorization                                        |
+| `corporation_id`      | Id of the corporation granting the authorization                                                        |
+| `operator`            | Grantee operator account receiving the authorization                                                    |
+| `msg_types`           | jsonb array of module message types this authorization applies to                                       |
+| `spend_limit`         | jsonb array of `{denom, amount}` — max spendable amount (nullable)                                       |
+| `remaining_spend`     | jsonb array of `{denom, amount}` — runtime balance for `spend_limit` (present when `spend_limit` is set) |
+| `fee_spend_limit`     | jsonb array of `{denom, amount}` — fee allowance ceiling, hydrated from the mirrored `x/feegrant` grant (nullable) |
+| `remaining_fee_spend` | jsonb array of `{denom, amount}` — runtime fee balance from the `x/feegrant` grant (present when a fee allowance exists) |
+| `expiration`          | Timestamp after which the authorization is no longer valid (nullable)                                   |
+| `period`              | Reset period for `spend_limit`, stored as a duration string (nullable)                                  |
+| `height`              | Block height at which this state was captured                                                           |
+| `created_at`          | Timestamp when this row was first inserted                                                              |
+
+### `operator_authorization_history`
+
+Append-only history of `OperatorAuthorization` changes, used to serve `At-Block-Height` queries. A `revoked` row records the deletion.
+
+| Column                      | Description                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `id`                        | Primary key of the history record (auto-increment)                                   |
+| `operator_authorization_id` | The OperatorAuthorization id this record refers to                                   |
+| `corporation_id`            | Id of the corporation granting the authorization                                     |
+| `operator`                  | Grantee operator account                                                             |
+| `msg_types`                 | jsonb array of module message types (nullable for revoke records)                    |
+| `spend_limit`               | jsonb array of `{denom, amount}` (nullable)                                           |
+| `remaining_spend`           | jsonb array of `{denom, amount}` (nullable)                                           |
+| `fee_spend_limit`           | jsonb array of `{denom, amount}` (nullable)                                           |
+| `remaining_fee_spend`       | jsonb array of `{denom, amount}` (nullable)                                           |
+| `expiration`                | Timestamp after which the authorization expires (nullable)                           |
+| `period`                    | Reset period as a duration string (nullable)                                         |
+| `revoked`                   | `true` when this record captures an on-chain revocation (deletion)                   |
+| `height`                    | Block height of this change                                                          |
+| `created_at`                | Timestamp when this row was inserted                                                 |
+
+### `vs_operator_authorizations`
+
+Latest on-chain state of each `VSOperatorAuthorization` from the `verana.de.v1` (delegation) module. One row per authorization; `(corporation_id, vs_operator)` is unique. The row is deleted when the authorization no longer exists on-chain (its last record was revoked).
+
+| Column           | Description                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| `id`             | Primary key — the on-chain uint64 id of the VSOperatorAuthorization                                            |
+| `corporation_id` | Id of the corporation granting the authorization                                                              |
+| `vs_operator`    | Grantee VS-operator account receiving the authorization                                                       |
+| `records`        | jsonb array of `ParticipantAuthorizationRecord` — one per controlled participant, each carrying `participant_id`, `msg_types`, `spend_limit`, `remaining_spend`, `fee_spend_limit`, `remaining_fee_spend`, `with_feegrant`, `expiration`, `period` |
+| `height`         | Block height at which this state was captured                                                                 |
+| `created_at`     | Timestamp when this row was first inserted                                                                    |
