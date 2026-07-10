@@ -2,8 +2,8 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
-import { toJsonbColumn } from '../../common/utils/helper'
 import knex from '../../common/utils/db_connection'
+import { toJsonbColumn } from '../../common/utils/helper'
 import type {
   FeeAllowanceSnapshot,
   OperatorAuthorizationRow,

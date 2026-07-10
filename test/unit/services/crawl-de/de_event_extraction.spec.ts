@@ -39,11 +39,7 @@ describe('de height-sync event extraction', () => {
 
   it('decodes base64-encoded attributes as emitted in block_result', () => {
     const events = [
-      event(
-        'grant_operator_authorization',
-        { authz_id: '5', corporation_id: '3', grantee: 'verana1abc' },
-        true
-      ),
+      event('grant_operator_authorization', { authz_id: '5', corporation_id: '3', grantee: 'verana1abc' }, true),
     ]
 
     expect(extractOperatorAuthorizationTouches(events)).toEqual([
