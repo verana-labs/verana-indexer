@@ -59,9 +59,25 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['modified'])
     table.index(['height'])
   })
+
+  await knex.schema.createTable('vs_operator_authorization_history', (table) => {
+    table.increments('id').primary()
+    table.bigInteger('vs_operator_authorization_id').notNullable()
+    table.bigInteger('corporation_id').notNullable()
+    table.string('vs_operator', 255).notNullable()
+    table.jsonb('records').nullable()
+    table.timestamp('modified').nullable()
+    table.boolean('revoked').notNullable().defaultTo(false)
+    table.integer('height').notNullable()
+    table.timestamp('created_at').defaultTo(knex.fn.now())
+
+    table.index(['vs_operator_authorization_id', 'height'])
+    table.index(['height'])
+  })
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('vs_operator_authorization_history')
   await knex.schema.dropTableIfExists('vs_operator_authorizations')
   await knex.schema.dropTableIfExists('operator_authorization_history')
   await knex.schema.dropTableIfExists('operator_authorizations')

@@ -155,7 +155,6 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
 
   afterAll(async () => {
     await broker.stop()
-    await knex.destroy()
   })
 
   const list = (params: Record<string, unknown> = {}) =>
@@ -214,4 +213,121 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
     const [row] = (await list({ limit: 1 })).authorizations
     expect(row).not.toHaveProperty('modified')
   })
+})
+
+function record(participantId: number, expiration: string | null, extra: Record<string, unknown> = {}) {
+  return {
+    participant_id: participantId,
+    msg_types: [EC_CREATE],
+    spend_limit: null,
+    remaining_spend: null,
+    fee_spend_limit: null,
+    remaining_fee_spend: null,
+    with_feegrant: false,
+    expiration,
+    period: null,
+    ...extra,
+  }
+}
+
+function seedVsoaRow(row: Record<string, unknown>) {
+  return { ...row, records: JSON.stringify(row.records) }
+}
+
+describe('DelegationApiService.listVSOperatorAuthorizations', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const serviceKey = SERVICE.V1.DelegationApiService.path
+
+  beforeAll(async () => {
+    broker.createService(DelegationApiService)
+    await broker.start()
+
+    await knex('vs_operator_authorization_history').del()
+    await knex('vs_operator_authorizations').del()
+
+    await knex('vs_operator_authorizations').insert([
+      seedVsoaRow({
+        id: 1,
+        corporation_id: 1,
+        vs_operator: 'verana1vsA',
+        records: [
+          record(10, null, {
+            with_feegrant: true,
+            spend_limit: [{ denom: 'uvna', amount: '500' }],
+            remaining_spend: [{ denom: 'uvna', amount: '400' }],
+          }),
+        ],
+        modified: T1,
+        height: 100,
+      }),
+      seedVsoaRow({
+        id: 2,
+        corporation_id: 1,
+        vs_operator: 'verana1vsB',
+        records: [record(20, FUTURE)],
+        modified: T2,
+        height: 110,
+      }),
+      seedVsoaRow({
+        id: 3,
+        corporation_id: 2,
+        vs_operator: 'verana1vsA',
+        records: [record(10, PAST)],
+        modified: T3,
+        height: 120,
+      }),
+    ])
+  })
+
+  afterAll(async () => {
+    await broker.stop()
+  })
+
+  const list = (params: Record<string, unknown> = {}) =>
+    broker.call(`${serviceKey}.listVSOperatorAuthorizations`, params) as Promise<any>
+
+  it('returns all rows newest-first by default (-id)', async () => {
+    expect(listedIds(await list())).toEqual([3, 2, 1])
+  })
+
+  it('filters by corporation_id', async () => {
+    expect(listedIds(await list({ corporation_id: 1 }))).toEqual([2, 1])
+  })
+
+  it('filters by vs_operator', async () => {
+    expect(listedIds(await list({ vs_operator: 'verana1vsA' }))).toEqual([3, 1])
+  })
+
+  it('filters by participant_id membership in records[]', async () => {
+    expect(listedIds(await list({ participant_id: 20 }))).toEqual([2])
+    expect(listedIds(await list({ participant_id: 10 }))).toEqual([3, 1])
+  })
+
+  it('only_active keeps entries with at least one non-expired record', async () => {
+    expect(listedIds(await list({ only_active: true }))).toEqual([2, 1])
+  })
+
+  it('modified_after filters strictly after the given datetime', async () => {
+    expect(listedIds(await list({ modified_after: T1 }))).toEqual([3, 2])
+  })
+
+  it('paginates with the half-open id cursor and limit', async () => {
+    expect(listedIds(await list({ max_id: 3 }))).toEqual([2, 1])
+    expect(listedIds(await list({ min_id: 2 }))).toEqual([3, 2])
+    expect(listedIds(await list({ limit: 1 }))).toEqual([3])
+  })
+
+  it('serializes nested records with with_feegrant and conditional spend_limit', async () => {
+    const [row] = (await list({ corporation_id: 1, sort: '+id' })).authorizations
+    expect(row.id).toBe(1)
+    const [rec] = row.records
+    expect(rec.participant_id).toBe(10)
+    expect(rec.with_feegrant).toBe(true)
+    expect(rec.spend_limit).toEqual([{ denom: 'uvna', amount: '500' }])
+    expect(row.records[0]).not.toHaveProperty('fee_spend_limit')
+  })
+})
+
+afterAll(async () => {
+  await knex.destroy()
 })
