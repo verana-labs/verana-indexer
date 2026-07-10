@@ -45,6 +45,7 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger('height').notNullable()
     table.jsonb('changes').nullable()
     table.timestamp('created_at').notNullable()
+    table.text('account').nullable()
 
     table.foreign('corporation_id').references('id').inTable('corporation').onDelete('CASCADE')
 

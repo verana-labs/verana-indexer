@@ -232,8 +232,8 @@
         "tags": [
           "Corporation"
         ],
-        "summary": "Get Corporation activity timeline",
-        "description": "Retrieve the change history for a Corporation (by numeric id, DID, or group_policy_address), ordered by block height ascending.",
+        "summary": "Get Corporation History (v4)",
+        "description": "Activity timeline for a Corporation (IDX-CO-QRY-4), ordered by ActivityItem.id descending (newest-first) by default. Each entry carries only the diff (changed fields). msg is one of CreateCorporation, UpdateCorporation, AddCGFDocument, IncreaseCGFActiveVersion.",
         "operationId": "getCorporationHistory",
         "parameters": [
           {
@@ -241,27 +241,78 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "format": "int64"
             },
-            "description": "Corporation numeric id, DID, or group_policy_address"
+            "description": "The Corporation ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with the Corporation history",
+            "description": "The Corporation activity timeline",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CorporationHistoryResponse"
+                  "$ref": "#/components/schemas/ActivityTimelineResponse"
                 }
               }
             }
           },
-          "404": {
-            "description": "Corporation not found"
-          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "Corporation not found"
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -4914,59 +4965,6 @@
           }
         }
       },
-      "CorporationHistoryItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "corporation_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "did": {
-            "type": "string",
-            "nullable": true
-          },
-          "corporation": {
-            "type": "string",
-            "nullable": true
-          },
-          "language": {
-            "type": "string",
-            "nullable": true
-          },
-          "event_type": {
-            "type": "string",
-            "description": "Create | Update"
-          },
-          "height": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "changes": {
-            "type": "object",
-            "nullable": true,
-            "additionalProperties": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "CorporationHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "history": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CorporationHistoryItem"
-            }
-          }
-        }
-      },
       "Error": {
         "type": "object",
         "properties": {
@@ -6233,6 +6231,7 @@
             "type": "string",
             "description": "The entity type (VPR spec name)",
             "enum": [
+            "Corporation",
               "Ecosystem",
               "CredentialSchema",
               "GovernanceFrameworkDocument",
