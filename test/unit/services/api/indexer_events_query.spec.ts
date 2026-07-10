@@ -1,7 +1,5 @@
 import knex from '../../../../src/common/utils/db_connection'
-import {
-  VeranaParticipantMessageTypes,
-} from '../../../../src/common/verana-message-types'
+import { VeranaParticipantMessageTypes } from '../../../../src/common/verana-message-types'
 import { up as createIndexerEventsTable } from '../../../../src/migrations/20260420000000_create_indexer_events'
 import { up as hardenIndexerEventsTable } from '../../../../src/migrations/20260421000000_harden_indexer_events_replay'
 import { listIndexerEvents, persistIndexerEventsForBlock } from '../../../../src/services/api/indexer_events_query'
