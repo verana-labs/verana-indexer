@@ -4101,6 +4101,54 @@
         }
       }
     },
+    "/v4/delegation/operator-authorization/{id}": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "Get Operator Authorization",
+        "description": "Retrieve a specific OperatorAuthorization entry by its id. Aligned with VPR MOD-DE-QRY-3.",
+        "operationId": "getOperatorAuthorization",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "The OperatorAuthorization ID"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operator authorization found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorization": {
+                      "$ref": "#/components/schemas/OperatorAuthorization"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
@@ -7155,6 +7203,31 @@
           "created": { "type": "string", "format": "date-time" }
         }
       },
+      "DenomAmount": {
+        "type": "object",
+        "required": ["denom", "amount"],
+        "properties": {
+          "denom": { "type": "string" },
+          "amount": { "type": "string" }
+        }
+      },
+      "OperatorAuthorization": {
+        "type": "object",
+        "description": "A corporation's authorization granted to a specific operator account for one or more module message types (IDX-DE-QRY-3).",
+        "required": ["id", "corporation_id", "operator", "msg_types"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64" },
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "operator": { "type": "string" },
+          "msg_types": { "type": "array", "items": { "type": "string" } },
+          "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set." },
+          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
+          "expiration": { "type": "string", "format": "date-time" },
+          "period": { "type": "string", "description": "Reset period for spend_limit, as a duration (e.g. \"86400s\")." }
+        }
+      },
       "ResolutionResponse": {
         "type": "object",
         "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
@@ -7358,6 +7431,20 @@
             }
           }
         }
+      },
+      "NotFound": {
+        "description": "Not Found - The requested resource does not exist",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Resource not found",
+              "code": 404
+            }
+          }
+        }
       }
     }
   },
@@ -7400,6 +7487,10 @@
     {
       "name": "Digest",
       "description": "Digest lookup queries"
+    },
+    {
+      "name": "Delegation",
+      "description": "Operator and VS-operator authorization queries"
     },
     {
       "name": "Statistics",

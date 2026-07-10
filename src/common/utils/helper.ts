@@ -21,3 +21,7 @@ export function toCoin(value: unknown, denom = 'uvna'): string {
   if (!Number.isFinite(n) || n < 0) return `0${denom}`
   return `${Math.trunc(n)}${denom}`
 }
+
+export function toJsonbColumn(value: unknown): string | null {
+  return value === null || value === undefined ? null : JSON.stringify(value)
+}

@@ -361,6 +361,9 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       createRoute('/v4/di', {
         'GET get/:digest': `${SERVICE.V1.DigestApiService.path}.getDigest`,
       }),
+      createRoute('/v4/delegation', {
+        'GET operator-authorization/:id': `${SERVICE.V1.DelegationApiService.path}.getOperatorAuthorization`,
+      }),
       createRoute('/v4/trust-deposit', {
         'GET get/:corporation': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         'GET params': `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,
