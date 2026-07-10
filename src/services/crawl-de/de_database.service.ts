@@ -2,6 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { toJsonbColumn } from '../../common/utils/helper'
 import type {
@@ -29,6 +30,8 @@ export default class DelegationDatabaseService extends BaseService {
   }): Promise<{ success: boolean }> {
     const { authorization, feeAllowance, blockHeight } = ctx.params
 
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
     const row = {
       id: authorization.id,
       corporation_id: authorization.corporation_id,
@@ -40,6 +43,7 @@ export default class DelegationDatabaseService extends BaseService {
       remaining_fee_spend: toJsonbColumn(feeAllowance?.remaining_fee_spend ?? null),
       expiration: authorization.expiration,
       period: authorization.period,
+      modified,
       height: blockHeight,
     }
 
@@ -57,6 +61,7 @@ export default class DelegationDatabaseService extends BaseService {
           'remaining_fee_spend',
           'expiration',
           'period',
+          'modified',
           'height',
         ])
 
@@ -71,6 +76,7 @@ export default class DelegationDatabaseService extends BaseService {
         remaining_fee_spend: row.remaining_fee_spend,
         expiration: row.expiration,
         period: row.period,
+        modified,
         revoked: false,
         height: blockHeight,
       })
@@ -85,6 +91,8 @@ export default class DelegationDatabaseService extends BaseService {
   }): Promise<{ success: boolean }> {
     const { id, corporationId, operator, blockHeight } = ctx.params
 
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
     await knex.transaction(async (trx) => {
       await trx('operator_authorizations').where('id', id).delete()
 
@@ -92,6 +100,7 @@ export default class DelegationDatabaseService extends BaseService {
         operator_authorization_id: id,
         corporation_id: corporationId,
         operator,
+        modified,
         revoked: true,
         height: blockHeight,
       })
@@ -106,16 +115,19 @@ export default class DelegationDatabaseService extends BaseService {
   }): Promise<{ success: boolean }> {
     const { authorization, blockHeight } = ctx.params
 
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
     await knex('vs_operator_authorizations')
       .insert({
         id: authorization.id,
         corporation_id: authorization.corporation_id,
         vs_operator: authorization.vs_operator,
         records: toJsonbColumn(authorization.records),
+        modified,
         height: blockHeight,
       })
       .onConflict('id')
-      .merge(['corporation_id', 'vs_operator', 'records', 'height'])
+      .merge(['corporation_id', 'vs_operator', 'records', 'modified', 'height'])
 
     return { success: true }
   }

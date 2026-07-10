@@ -15,6 +15,7 @@ export default class OperatorAuthorizationHistory extends BaseModel {
   remaining_fee_spend!: DenomAmount[] | null
   expiration!: string | null
   period!: string | null
+  modified!: string | null
   revoked!: boolean
   height!: number
 
@@ -33,6 +34,7 @@ export default class OperatorAuthorizationHistory extends BaseModel {
         remaining_fee_spend: { type: ['array', 'null'] },
         expiration: { type: ['string', 'null'] },
         period: { type: ['string', 'null'] },
+        modified: { type: ['string', 'null'] },
         revoked: { type: 'boolean' },
         height: { type: 'integer' },
       },

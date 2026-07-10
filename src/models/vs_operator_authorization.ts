@@ -20,6 +20,7 @@ export default class VSOperatorAuthorization extends BaseModel {
   corporation_id!: number
   vs_operator!: string
   records!: ParticipantAuthorizationRecord[]
+  modified!: string | null
   height!: number
 
   static get jsonSchema() {
@@ -31,6 +32,7 @@ export default class VSOperatorAuthorization extends BaseModel {
         corporation_id: { type: 'integer' },
         vs_operator: { type: 'string', maxLength: 255 },
         records: { type: 'array' },
+        modified: { type: ['string', 'null'] },
         height: { type: 'integer' },
       },
     }
