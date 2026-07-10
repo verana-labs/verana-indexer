@@ -25,22 +25,21 @@ export async function up(knex: Knex): Promise<void> {
         ON event_partition USING BTREE (block_height ASC NULLS LAST);`
     )
 
-    const startId = config.migrationEventToPartition.startId
-    const endId = config.migrationEventToPartition.endId
-    const step = config.migrationEventToPartition.step
-    for (let i = startId; i < endId; i += step) {
-      const partitionName = `event_partition_${i}_${i + step}`
-      await knex
-        .raw(`CREATE TABLE IF NOT EXISTS ${partitionName} (LIKE event_partition INCLUDING ALL)`)
-        .transacting(trx)
-      await knex
-        .raw(`ALTER TABLE event_partition ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`)
-        .transacting(trx)
-    }
-
-    // Change table name if no data exist on event
     const isExistEventData = await knex.raw(`SELECT * FROM event LIMIT 1`)
     if (isExistEventData.rows.length === 0 && process.env.NODE_ENV !== 'test') {
+      const startId = config.migrationEventToPartition.startId
+      const endId = config.migrationEventToPartition.endId
+      const step = config.migrationEventToPartition.step
+      for (let i = startId; i < endId; i += step) {
+        const partitionName = `event_partition_${i}_${i + step}`
+        await knex
+          .raw(`CREATE TABLE IF NOT EXISTS ${partitionName} (LIKE event_partition INCLUDING ALL)`)
+          .transacting(trx)
+        await knex
+          .raw(`ALTER TABLE event_partition ATTACH PARTITION ${partitionName} FOR VALUES FROM (${i}) TO (${i + step})`)
+          .transacting(trx)
+      }
+
       await knex
         .raw(
           `
