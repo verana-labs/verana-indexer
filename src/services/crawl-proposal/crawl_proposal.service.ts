@@ -137,7 +137,10 @@ export default class CrawlProposalService extends BullableService {
       .andWhere('key', EventAttribute.ATTRIBUTE_KEY.PROPOSAL_ID)
       .select('value')
 
-    if (resultTx.length > 0) proposalIds = Array.from(new Set(resultTx.map((res: any) => parseInt(res.value, 10))))
+    if (resultTx.length > 0)
+      proposalIds = Array.from(
+        new Set(resultTx.map((res: any) => parseInt(res.value, 10)).filter((id: number) => Number.isInteger(id)))
+      )
 
     await knex
       .transaction(async (trx) => {
