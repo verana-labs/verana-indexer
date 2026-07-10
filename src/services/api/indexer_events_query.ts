@@ -4,14 +4,13 @@ import { extractController } from '../../common/utils/extract_controller'
 import {
   VeranaCorporationMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaDelegationMessageTypes,
   VeranaDiMessageTypes,
   VeranaEcosystemMessageTypes,
   VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../../common/verana-message-types'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
-import { fetchCorporationByAddress, fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
+import { fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
   collectDidsDeep,
   firstNormalizedDid,
@@ -43,7 +42,6 @@ export type IndexerTxEvent = {
   corporationId?: number
   relatedCorporationIds: number[]
   grantee?: string
-  operator?: string
   vsOperator?: string
   withFeegrant?: boolean
   timestamp: string
@@ -72,7 +70,6 @@ export type IndexerEventRecord = {
     corporation_id?: number
     related_corporation_ids?: number[]
     grantee?: string
-    operator?: string
     vs_operator?: string
     with_feegrant?: boolean
   }
@@ -203,16 +200,6 @@ const EVENT_META: Record<string, EventMeta> = {
     action: 'StoreDigest',
     entityType: 'DigitalIdentityDigest',
   },
-  [VeranaDelegationMessageTypes.GrantOperatorAuthorization]: {
-    module: 'delegation',
-    action: 'GrantOperatorAuthorization',
-    entityType: 'OperatorAuthorization',
-  },
-  [VeranaDelegationMessageTypes.RevokeOperatorAuthorization]: {
-    module: 'delegation',
-    action: 'RevokeOperatorAuthorization',
-    entityType: 'OperatorAuthorization',
-  },
   [VeranaCorporationMessageTypes.CreateCorporation]: {
     module: 'corporation',
     action: 'CreateNewCorporation',
@@ -242,11 +229,6 @@ const ID_ALIASES = {
 } as const
 
 async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
-  if (meta.module === 'delegation') {
-    const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
-    return readAddress(content.grantee) ?? readAddress(content.operator)
-  }
-
   if (meta.module === 'participant') {
     const participantId = readNumber(row.content, ['id', ...ID_ALIASES.participant])
     return participantId ? String(participantId) : resolveEntityIdFromDomain(row, meta)
@@ -431,9 +413,6 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   let schemaId: string | undefined
   let participantId: string | undefined
   let corporationId: number | undefined
-  let grantee: string | undefined
-  let operator: string | undefined
-  let withFeegrant: boolean | undefined
   const relatedCorporationIds = new Set<number>()
   const explicitPrimaryDid = firstNormalizedDid([
     content.did,
@@ -522,40 +501,12 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     if (relation.did) collected.add(relation.did)
   }
 
-  if (meta.module === 'delegation') {
-    grantee = readAddress(content.grantee)
-    operator = readAddress(content.operator)
-    if (typeof content.with_feegrant === 'boolean') withFeegrant = content.with_feegrant
-    else if (typeof content.withFeegrant === 'boolean') withFeegrant = content.withFeegrant
-    const corporationAddress = readAddress(content.corporation)
-    if (corporationAddress) {
-      const corp = await loadCorporation({ address: corporationAddress })
-      const chainCorp = corp.did ? {} : await fetchCorporationByAddress(corporationAddress, Number(row.block_height))
-      corporationId = corp.corporationId ?? chainCorp.corporationId
-      const corpDid = corp.did ?? chainCorp.did
-      if (corpDid) collected.add(corpDid)
-    }
-    for (const account of [grantee, operator]) {
-      const participants = await loadParticipantsByAccount(account)
-      for (const participantDid of participants.dids) collected.add(participantDid)
-      for (const participantCorporationId of participants.corporationIds) {
-        if (corporationId === undefined) corporationId = participantCorporationId
-        else if (participantCorporationId !== corporationId) relatedCorporationIds.add(participantCorporationId)
-      }
-    }
-  }
-
   const relatedDids = uniqueNormalizedDids(collected)
   const primaryDid =
     explicitPrimaryDid ??
     (meta.module === 'participant' ? firstNormalizedDid(relatedDids) : undefined) ??
     firstNormalizedDid(relatedDids)
-  if (!primaryDid) {
-    if (meta.module !== 'delegation') return null
-    console.warn(
-      `[IndexerEvents] ${meta.action} at block_height=${row.block_height} tx_hash=${row.tx_hash} has no resolvable DID; emitting with did=null`
-    )
-  }
+  if (!primaryDid) return null
 
   return {
     type: 'transaction-executed',
@@ -567,7 +518,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     txIndex: Number(row.tx_index),
     messageIndex: Number(row.message_index),
     sender: row.sender,
-    did: primaryDid ?? null,
+    did: primaryDid,
     relatedDids,
     entityType: meta.entityType,
     entityId,
@@ -576,9 +527,6 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     participantId,
     corporationId,
     relatedCorporationIds: [...relatedCorporationIds],
-    grantee,
-    operator,
-    withFeegrant,
     timestamp: toIsoSeconds(row.timestamp),
   }
 }
@@ -613,7 +561,6 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
       corporation_id: event.corporationId,
       related_corporation_ids: event.relatedCorporationIds,
       grantee: event.grantee,
-      operator: event.operator,
       vs_operator: event.vsOperator,
       with_feegrant: event.withFeegrant,
     },
@@ -659,7 +606,6 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
               .filter((n: number) => Number.isInteger(n) && n > 0)
           : undefined,
       grantee: row.payload?.grantee ?? undefined,
-      operator: row.payload?.operator ?? undefined,
       vs_operator: row.payload?.vs_operator ?? row.payload?.vsOperator ?? undefined,
       with_feegrant:
         typeof row.payload?.with_feegrant === 'boolean'
@@ -708,7 +654,15 @@ async function buildIndexerTxEvents(args: {
   return (await Promise.all(rows.map((row) => toIndexerEvent(row)))).filter(Boolean) as IndexerTxEvent[]
 }
 
-const VSOA_EVENT_META: Record<string, { action: string; entityType: string }> = {
+const DELEGATION_EVENT_META: Record<string, { action: string; entityType: string }> = {
+  grant_operator_authorization: {
+    action: 'GrantOperatorAuthorization',
+    entityType: 'OperatorAuthorization',
+  },
+  revoke_operator_authorization: {
+    action: 'RevokeOperatorAuthorization',
+    entityType: 'OperatorAuthorization',
+  },
   grant_vs_operator_authorization: {
     action: 'GrantVSOperatorAuthorization',
     entityType: 'VSOperatorAuthorization',
@@ -723,9 +677,19 @@ const VSOA_EVENT_META: Record<string, { action: string; entityType: string }> = 
   },
 }
 
-const VSOA_EVENT_TYPES = Object.keys(VSOA_EVENT_META)
+const DELEGATION_EVENT_TYPES = Object.keys(DELEGATION_EVENT_META)
 
-type VsoaEventRow = {
+const DELEGATION_ATTRIBUTE_KEYS = [
+  'authz_id',
+  'vsoa_id',
+  'corporation_id',
+  'participant_id',
+  'grantee',
+  'vs_operator',
+  'with_feegrant',
+]
+
+type DelegationEventRow = {
   event_id: number
   type: string
   tx_msg_index: number | null
@@ -736,7 +700,13 @@ type VsoaEventRow = {
   timestamp: Date | string
 }
 
-async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+async function resolveCorporationDid(corporationId: number, blockHeight: number): Promise<string | undefined> {
+  const corporation = await loadCorporationById(corporationId)
+  if (corporation.did) return corporation.did
+  return (await fetchCorporationById(corporationId, blockHeight)).did
+}
+
+async function buildDelegationEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
   const eventRows = (await knex('event as e')
     .innerJoin('transaction as tx', 'tx.id', 'e.tx_id')
     .leftJoin('transaction_message as tm', function () {
@@ -744,7 +714,7 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
     })
     .where('e.block_height', blockHeight)
     .andWhere('tx.code', 0)
-    .whereIn('e.type', VSOA_EVENT_TYPES)
+    .whereIn('e.type', DELEGATION_EVENT_TYPES)
     .select(
       'e.id as event_id',
       'e.type',
@@ -756,7 +726,7 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       'tx.timestamp'
     )
     .orderBy('tx.index', 'asc')
-    .orderBy('e.id', 'asc')) as VsoaEventRow[]
+    .orderBy('e.id', 'asc')) as DelegationEventRow[]
 
   if (eventRows.length === 0) return []
 
@@ -764,7 +734,7 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
   const attributeRows = (await knex('event_attribute')
     .where('block_height', blockHeight)
     .whereIn('event_id', eventIds)
-    .whereIn('key', ['vs_operator', 'participant_id', 'corporation_id'])
+    .whereIn('key', DELEGATION_ATTRIBUTE_KEYS)
     .select('event_id', 'key', 'value')) as Array<{ event_id: number; key: string; value: string }>
 
   const attributesByEvent = new Map<number, Record<string, string>>()
@@ -776,40 +746,42 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
 
   const events: IndexerTxEvent[] = []
   for (const row of eventRows) {
-    const meta = VSOA_EVENT_META[row.type]
+    const meta = DELEGATION_EVENT_META[row.type]
     const attributes = attributesByEvent.get(row.event_id) ?? {}
+    const entityId = attributes.authz_id ?? attributes.vsoa_id
+    const grantee = readAddress(attributes.grantee)
     const vsOperator = readAddress(attributes.vs_operator)
     const rawParticipantId = readPositiveInteger(attributes.participant_id)
     const corporationId = toCorporationId(attributes.corporation_id)
+    const withFeegrant = attributes.with_feegrant === undefined ? undefined : attributes.with_feegrant === 'true'
 
     const collected = new Set<string>()
+    const relatedCorporationIds = new Set<number>()
     let did: string | undefined
+
     if (rawParticipantId) {
       const participant = await loadParticipantRelation(rawParticipantId)
       if (participant.participantDid) collected.add(participant.participantDid)
       if (participant.ecosystemDid) collected.add(participant.ecosystemDid)
-      did = participant.participantDid
+      did = participant.participantDid ?? (await fetchParticipantDid(rawParticipantId, blockHeight))
+      if (did) collected.add(did)
     }
-    if (!did && corporationId) {
-      const corporation = await loadCorporationById(corporationId)
-      if (corporation.did) collected.add(corporation.did)
-      did = corporation.did
+
+    if (corporationId) {
+      const corporationDid = await resolveCorporationDid(corporationId, blockHeight)
+      if (corporationDid) collected.add(corporationDid)
+      did = did ?? corporationDid
     }
-    if (vsOperator) {
-      const participants = await loadParticipantsByAccount(vsOperator)
+
+    for (const account of [grantee, vsOperator]) {
+      const participants = await loadParticipantsByAccount(account)
       for (const participantDid of participants.dids) collected.add(participantDid)
+      for (const participantCorporationId of participants.corporationIds) {
+        if (participantCorporationId !== corporationId) relatedCorporationIds.add(participantCorporationId)
+      }
       did = did ?? participants.dids[0]
     }
-    if (!did && rawParticipantId) {
-      const participantDid = await fetchParticipantDid(rawParticipantId, blockHeight)
-      if (participantDid) collected.add(participantDid)
-      did = did ?? participantDid
-    }
-    if (!did && corporationId) {
-      const corporation = await fetchCorporationById(corporationId, blockHeight)
-      if (corporation.did) collected.add(corporation.did)
-      did = did ?? corporation.did
-    }
+
     if (!did) {
       console.warn(
         `[IndexerEvents] ${meta.action} at block_height=${blockHeight} tx_hash=${row.tx_hash} has no resolvable DID; emitting with did=null`
@@ -829,11 +801,13 @@ async function buildVsoaEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
       did: did ?? null,
       relatedDids: uniqueNormalizedDids(collected),
       entityType: meta.entityType,
-      entityId: rawParticipantId ? String(rawParticipantId) : vsOperator,
+      entityId,
       participantId: rawParticipantId ? String(rawParticipantId) : undefined,
       corporationId,
-      relatedCorporationIds: [],
+      relatedCorporationIds: [...relatedCorporationIds],
+      grantee,
       vsOperator,
+      withFeegrant,
       timestamp: toIsoSeconds(row.timestamp),
     })
   }
@@ -850,8 +824,8 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
     if (txEvents.length < pageSize) break
     offset += pageSize
   }
-  const vsoaEvents = await buildVsoaEvents(blockHeight)
-  rows.push(...vsoaEvents.map(toEventRow))
+  const delegationEvents = await buildDelegationEvents(blockHeight)
+  rows.push(...delegationEvents.map(toEventRow))
   let insertedIds: number[] = []
 
   if (rows.length > 0) {

@@ -1,6 +1,5 @@
 import knex from '../../../../src/common/utils/db_connection'
 import {
-  VeranaDelegationMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../../../../src/common/verana-message-types'
 import { up as createIndexerEventsTable } from '../../../../src/migrations/20260420000000_create_indexer_events'
@@ -615,43 +614,6 @@ describe('indexer_events_query', () => {
     })
   }
 
-  async function insertDelegationMessage(args: {
-    height: number
-    txIndex: number
-    messageIndex: number
-    hash: string
-    type: string
-    content: Record<string, unknown>
-  }): Promise<void> {
-    txHashes.push(args.hash)
-    const txId = nextId++
-    const messageId = nextId++
-    const [tx] = await knex('transaction')
-      .insert({
-        id: txId,
-        height: args.height,
-        hash: args.hash,
-        codespace: '',
-        code: 0,
-        gas_used: 1,
-        gas_wanted: 1,
-        gas_limit: 1,
-        fee: {},
-        timestamp: new Date('2025-01-15T10:30:00Z'),
-        data: {},
-        index: args.txIndex,
-      })
-      .returning('id')
-    await knex('transaction_message').insert({
-      id: messageId,
-      tx_id: typeof tx === 'object' ? tx.id : tx,
-      index: args.messageIndex,
-      type: args.type,
-      sender: (args.content.corporation as string) ?? '',
-      content: args.content,
-    })
-  }
-
   async function insertKeeperEvent(args: {
     height: number
     txIndex: number
@@ -659,6 +621,7 @@ describe('indexer_events_query', () => {
     hash: string
     type: string
     attributes: Record<string, string>
+    sender?: string
   }): Promise<void> {
     txHashes.push(args.hash)
     const txId = nextId++
@@ -679,6 +642,16 @@ describe('indexer_events_query', () => {
         index: args.txIndex,
       })
       .returning('id')
+    if (args.sender) {
+      await knex('transaction_message').insert({
+        id: nextId++,
+        tx_id: typeof tx === 'object' ? tx.id : tx,
+        index: args.txMsgIndex,
+        type: '/cosmos.group.v1.MsgExec',
+        sender: args.sender,
+        content: {},
+      })
+    }
     await knex('event').insert({
       id: eventId,
       tx_id: typeof tx === 'object' ? tx.id : tx,
@@ -711,18 +684,18 @@ describe('indexer_events_query', () => {
       corporationId: corpId,
       vsOperator: 'verana1grantee',
     })
-    await insertDelegationMessage({
+    await insertKeeperEvent({
       height,
       txIndex: 0,
-      messageIndex: 0,
+      txMsgIndex: 0,
       hash: `tx-${runId}-oa`,
-      type: VeranaDelegationMessageTypes.GrantOperatorAuthorization,
-      content: {
-        corporation: 'verana1corp',
-        operator: '',
+      type: 'grant_operator_authorization',
+      sender: 'verana1signer',
+      attributes: {
+        authz_id: '7',
+        corporation_id: String(corpId),
         grantee: 'verana1grantee',
-        msgTypes: ['/verana.pp.v1.MsgStartParticipantOP'],
-        withFeegrant: true,
+        with_feegrant: 'true',
       },
     })
 
@@ -730,11 +703,13 @@ describe('indexer_events_query', () => {
 
     expect(record.event_type).toBe('GrantOperatorAuthorization')
     expect(record.payload.module).toBe('de')
+    expect(record.payload.message_type).toBe('grant_operator_authorization')
     expect(record.payload.corporation_id).toBe(corpId)
     expect(record.payload.grantee).toBe('verana1grantee')
     expect(record.payload.with_feegrant).toBe(true)
+    expect(record.payload.sender).toBe('verana1signer')
     expect(record.payload.entity_type).toBe('OperatorAuthorization')
-    expect(record.payload.entity_id).toBe('verana1grantee')
+    expect(record.payload.entity_id).toBe('7')
     expect(record.did).toBe(corpDid)
     expect(record.payload.related_dids).toEqual(expect.arrayContaining([corpDid, granteeParticipantDid]))
   })
@@ -745,6 +720,7 @@ describe('indexer_events_query', () => {
     const participantId = nextId++
     const participantDid = `did:web:vsoa-${runId}.example`
     await insertBlock(height)
+    await insertCorporation({ id: corpId, did: `did:web:vsoa-corp-${runId}.example`, policyAddress: 'verana1vsoacorp' })
     await insertParticipant({ id: participantId, did: participantDid, corporationId: corpId })
     await insertKeeperEvent({
       height,
@@ -752,7 +728,9 @@ describe('indexer_events_query', () => {
       txMsgIndex: 0,
       hash: `tx-${runId}-vsoa`,
       type: 'grant_vs_operator_authorization',
+      sender: 'verana1signer',
       attributes: {
+        vsoa_id: '3',
         vs_operator: 'verana1vsoperator',
         participant_id: String(participantId),
         corporation_id: String(corpId),
@@ -763,10 +741,14 @@ describe('indexer_events_query', () => {
 
     expect(record.event_type).toBe('GrantVSOperatorAuthorization')
     expect(record.payload.module).toBe('de')
+    expect(record.payload.message_type).toBe('grant_vs_operator_authorization')
     expect(record.did).toBe(participantDid)
     expect(record.payload.participant_id).toBe(String(participantId))
     expect(record.payload.corporation_id).toBe(corpId)
     expect(record.payload.vs_operator).toBe('verana1vsoperator')
+    expect(record.payload.entity_type).toBe('VSOperatorAuthorization')
+    expect(record.payload.entity_id).toBe('3')
+    expect(record.payload.sender).toBe('verana1signer')
 
     const byCorp = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 })
     expect(byCorp.map((event) => event.event_type)).toContain('GrantVSOperatorAuthorization')
