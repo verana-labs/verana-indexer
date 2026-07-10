@@ -77,7 +77,6 @@ export default class GovernanceFrameworkApiService extends BaseService {
     super(broker)
   }
 
-  // IDX-GF-QRY-1 Get Governance Framework Version (v4)
   @Action()
   public async getGovernanceFrameworkVersionV4(ctx: Context<{ id: string; preferred_language?: string }>) {
     try {

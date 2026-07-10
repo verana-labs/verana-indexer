@@ -60,10 +60,12 @@ export async function up(knex: Knex): Promise<void> {
     table.integer('version').notNullable()
     table.timestamp('created').notNullable()
     table.timestamp('active_since').nullable()
+    table.bigInteger('gfv_id').nullable()
 
     table.foreign('corporation_id').references('id').inTable('corporation').onDelete('CASCADE')
 
     table.unique(['corporation_id', 'ecosystem_id', 'version'], 'co_gfv_corp_ecosystem_version_unique')
+    table.unique(['gfv_id'], 'co_gfv_chain_id_unique')
   })
 
   await knex.schema.createTable('co_governance_framework_document', (table) => {
@@ -73,6 +75,7 @@ export async function up(knex: Knex): Promise<void> {
     table.text('url').notNullable()
     table.text('digest_sri').notNullable()
     table.timestamp('created').notNullable()
+    table.bigInteger('gfd_id').nullable()
 
     table.foreign('gfv_id').references('id').inTable('co_governance_framework_version').onDelete('CASCADE')
   })
