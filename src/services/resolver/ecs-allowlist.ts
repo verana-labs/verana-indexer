@@ -1,27 +1,19 @@
 import knex from '../../common/utils/db_connection'
 import config from '../../config.json' with { type: 'json' }
 
-export type EcsEcosystem = {
-  did: string
-  vpr: string
-}
-
 const ALLOWED_ECOSYSTEM_IDS_TTL_MS = 30_000
 
 let cachedAllowedEcosystemIds: { ids: Set<number>; expiresAt: number } | null = null
 
-function ecsEcosystemsFromEnv(): EcsEcosystem[] {
-  const chainId = (process.env.CHAIN_ID ?? '').trim()
-  const dids = (process.env.ECS_ECOSYSTEM_DIDS ?? '')
+function ecsEcosystemsFromEnv(): string[] {
+  return (process.env.ECS_ECOSYSTEM_DIDS ?? '')
     .split(',')
     .map((did) => did.trim())
     .filter(Boolean)
-  if (!chainId || dids.length === 0) return []
-  return dids.map((did) => ({ did, vpr: `vpr:verana:${chainId}` }))
 }
 
-export function getEcsEcosystems(): EcsEcosystem[] {
-  const c = config as unknown as { resolver?: { ecsEcosystems?: EcsEcosystem[] } }
+export function getEcsEcosystems(): string[] {
+  const c = config as unknown as { resolver?: { ecsEcosystems?: string[] } }
   const declared = c.resolver?.ecsEcosystems
   return declared && declared.length > 0 ? declared : ecsEcosystemsFromEnv()
 }
@@ -34,7 +26,7 @@ export async function getAllowedEcsEcosystemIds(): Promise<Set<number>> {
   const now = Date.now()
   if (cachedAllowedEcosystemIds && cachedAllowedEcosystemIds.expiresAt > now) return cachedAllowedEcosystemIds.ids
 
-  const dids = getEcsEcosystems().map((ecosystem) => ecosystem.did)
+  const dids = getEcsEcosystems()
   const ids = new Set<number>()
   if (dids.length > 0) {
     const rows = (await knex('ecosystem').whereIn('did', dids).select('id')) as Array<{ id: number }>
