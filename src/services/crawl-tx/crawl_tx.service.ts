@@ -1179,6 +1179,7 @@ export default class CrawlTxService extends BullableService {
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
           eventEcosystemIds,
+          txEvents,
         }
       })
 
