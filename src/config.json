@@ -150,7 +150,7 @@
     "useEmbeddedRegistryAdapter": true,
     "disableDigestSriVerification": false,
     "txPrefilterEnabled": true,
-    "verifiablePublicRegistries": [],
+    "ecsEcosystems": [],
     "trustEvaluationTtlSeconds": 3600,
     "pollObjectCachingRetryDays": 7
   },
