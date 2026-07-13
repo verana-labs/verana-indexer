@@ -44,10 +44,12 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('created').notNullable()
     table.integer('version').notNullable()
     table.timestamp('active_since').nullable()
+    table.bigInteger('gfv_id').nullable()
 
     table.foreign('tr_id').references('id').inTable('trust_registry').onDelete('CASCADE')
 
     table.unique(['tr_id', 'version'], 'gfv_trid_version_unique')
+    table.unique(['gfv_id'], 'gfv_chain_id_unique')
   })
 
   await knex.schema.createTable('governance_framework_document', (table) => {
@@ -57,6 +59,7 @@ export async function up(knex: Knex): Promise<void> {
     table.string('language', 2).notNullable()
     table.text('url').notNullable()
     table.text('digest_sri').notNullable()
+    table.bigInteger('gfd_id').nullable()
 
     table.foreign('gfv_id').references('id').inTable('governance_framework_version').onDelete('CASCADE')
   })
