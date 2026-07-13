@@ -12,6 +12,8 @@ describe('indexer_events_query', () => {
   const otherDid = `did:web:indexer-events-other-${runId}.example`
   const txHashes: string[] = []
   const heights: number[] = []
+  const corporationIds: number[] = []
+  const participantIds: number[] = []
   const createdTables: string[] = []
 
   beforeAll(async () => {
@@ -88,10 +90,50 @@ describe('indexer_events_query', () => {
       await knex.schema.createTable('participants', (table) => {
         table.bigInteger('id').primary()
         table.bigInteger('schema_id').nullable()
+        table.text('role').nullable()
         table.text('did').nullable()
+        table.bigInteger('corporation_id').nullable()
+        table.text('vs_operator').nullable()
         table.bigInteger('validator_participant_id').nullable()
       })
       createdTables.push('participants')
+    }
+
+    if (!(await knex.schema.hasTable('corporation'))) {
+      await knex.schema.createTable('corporation', (table) => {
+        table.bigInteger('id').primary()
+        table.text('did').nullable()
+        table.text('corporation').nullable()
+        table.text('policy_address').nullable()
+        table.timestamp('created').nullable()
+        table.timestamp('modified').nullable()
+        table.bigInteger('height').nullable()
+      })
+      createdTables.push('corporation')
+    }
+
+    if (!(await knex.schema.hasTable('event'))) {
+      await knex.schema.createTable('event', (table) => {
+        table.bigInteger('id').primary()
+        table.bigInteger('tx_id').notNullable()
+        table.integer('tx_msg_index').nullable()
+        table.text('type').notNullable()
+        table.bigInteger('block_height').notNullable()
+        table.text('source').nullable()
+      })
+      createdTables.push('event')
+    }
+
+    if (!(await knex.schema.hasTable('event_attribute'))) {
+      await knex.schema.createTable('event_attribute', (table) => {
+        table.bigInteger('event_id').notNullable()
+        table.integer('index').notNullable().defaultTo(0)
+        table.bigInteger('block_height').notNullable()
+        table.text('composite_key').nullable()
+        table.text('key').nullable()
+        table.text('value').nullable()
+      })
+      createdTables.push('event_attribute')
     }
   }
 
@@ -184,12 +226,25 @@ describe('indexer_events_query', () => {
   }
 
   afterEach(async () => {
+    if (heights.length > 0) {
+      await knex('event_attribute').whereIn('block_height', heights).delete()
+      await knex('event').whereIn('block_height', heights).delete()
+    }
     if (txHashes.length > 0) {
       await knex('indexer_events').whereIn('tx_hash', txHashes).delete()
       const txIds = await knex('transaction').whereIn('hash', txHashes).pluck('id')
       if (txIds.length > 0) await knex('transaction_message').whereIn('tx_id', txIds).delete()
       await knex('transaction').whereIn('hash', txHashes).delete()
       txHashes.length = 0
+    }
+
+    if (corporationIds.length > 0) {
+      await knex('corporation').whereIn('id', corporationIds).delete()
+      corporationIds.length = 0
+    }
+    if (participantIds.length > 0) {
+      await knex('participants').whereIn('id', participantIds).delete()
+      participantIds.length = 0
     }
 
     if (heights.length > 0) {
@@ -519,6 +574,182 @@ describe('indexer_events_query', () => {
     const events = await listIndexerEvents({ afterBlockHeight: height - 1, limit: 10 })
 
     expect(events.map((event) => event.tx_hash)).toEqual([`tx-${runId}-wild-1`, `tx-${runId}-wild-2`])
+  })
+
+  async function insertCorporation(args: {
+    id: number
+    did: string
+    corporation?: string
+    policyAddress?: string
+  }): Promise<void> {
+    corporationIds.push(args.id)
+    await knex('corporation').insert({
+      id: args.id,
+      did: args.did,
+      corporation: args.corporation ?? null,
+      policy_address: args.policyAddress ?? null,
+      created: new Date('2025-01-15T10:30:00Z'),
+      modified: new Date('2025-01-15T10:30:00Z'),
+      height: args.id,
+    })
+  }
+
+  async function insertParticipant(args: {
+    id: number
+    did?: string
+    corporationId?: number
+    vsOperator?: string
+  }): Promise<void> {
+    participantIds.push(args.id)
+    await knex('participants').insert({
+      id: args.id,
+      schema_id: 0,
+      role: 'ISSUER',
+      did: args.did ?? null,
+      corporation_id: args.corporationId ?? 0,
+      vs_operator: args.vsOperator ?? null,
+      validator_participant_id: null,
+    })
+  }
+
+  async function insertKeeperEvent(args: {
+    height: number
+    txIndex: number
+    txMsgIndex: number
+    hash: string
+    type: string
+    attributes: Record<string, string>
+    sender?: string
+  }): Promise<void> {
+    txHashes.push(args.hash)
+    const txId = nextId++
+    const eventId = nextId++
+    const [tx] = await knex('transaction')
+      .insert({
+        id: txId,
+        height: args.height,
+        hash: args.hash,
+        codespace: '',
+        code: 0,
+        gas_used: 1,
+        gas_wanted: 1,
+        gas_limit: 1,
+        fee: {},
+        timestamp: new Date('2025-01-15T10:30:00Z'),
+        data: {},
+        index: args.txIndex,
+      })
+      .returning('id')
+    if (args.sender) {
+      await knex('transaction_message').insert({
+        id: nextId++,
+        tx_id: typeof tx === 'object' ? tx.id : tx,
+        index: args.txMsgIndex,
+        type: '/cosmos.group.v1.MsgExec',
+        sender: args.sender,
+        content: {},
+      })
+    }
+    await knex('event').insert({
+      id: eventId,
+      tx_id: typeof tx === 'object' ? tx.id : tx,
+      tx_msg_index: args.txMsgIndex,
+      type: args.type,
+      block_height: args.height,
+      source: 'TX_EVENT',
+    })
+    const attributeRows = Object.entries(args.attributes).map(([key, value], index) => ({
+      event_id: eventId,
+      index,
+      block_height: args.height,
+      composite_key: `${args.type}.${key}`,
+      key,
+      value,
+    }))
+    if (attributeRows.length > 0) await knex('event_attribute').insert(attributeRows)
+  }
+
+  it('enriches GrantOperatorAuthorization with corporation and grantee (gap 2)', async () => {
+    const height = baseHeight + 200
+    const corpId = 51_000 + Math.floor(Math.random() * 1000)
+    const corpDid = `did:web:corp-${runId}.example`
+    const granteeParticipantDid = `did:web:grantee-${runId}.example`
+    await insertBlock(height)
+    await insertCorporation({ id: corpId, did: corpDid, policyAddress: 'verana1corp' })
+    await insertParticipant({
+      id: nextId++,
+      did: granteeParticipantDid,
+      corporationId: corpId,
+      vsOperator: 'verana1grantee',
+    })
+    await insertKeeperEvent({
+      height,
+      txIndex: 0,
+      txMsgIndex: 0,
+      hash: `tx-${runId}-oa`,
+      type: 'grant_operator_authorization',
+      sender: 'verana1signer',
+      attributes: {
+        authz_id: '7',
+        corporation_id: String(corpId),
+        grantee: 'verana1grantee',
+        with_feegrant: 'true',
+      },
+    })
+
+    const [record] = await persistIndexerEventsForBlock(height)
+
+    expect(record.event_type).toBe('GrantOperatorAuthorization')
+    expect(record.payload.module).toBe('de')
+    expect(record.payload.message_type).toBe('grant_operator_authorization')
+    expect(record.payload.corporation_id).toBe(corpId)
+    expect(record.payload.grantee).toBe('verana1grantee')
+    expect(record.payload.with_feegrant).toBe(true)
+    expect(record.payload.sender).toBe('verana1signer')
+    expect(record.payload.entity_type).toBe('OperatorAuthorization')
+    expect(record.payload.entity_id).toBe('7')
+    expect(record.did).toBe(corpDid)
+    expect(record.payload.related_dids).toEqual(expect.arrayContaining([corpDid, granteeParticipantDid]))
+  })
+
+  it('forwards VSOA keeper events with vs_operator/participant/corporation (gap 1)', async () => {
+    const height = baseHeight + 220
+    const corpId = 53_000 + Math.floor(Math.random() * 1000)
+    const participantId = nextId++
+    const participantDid = `did:web:vsoa-${runId}.example`
+    await insertBlock(height)
+    await insertCorporation({ id: corpId, did: `did:web:vsoa-corp-${runId}.example`, policyAddress: 'verana1vsoacorp' })
+    await insertParticipant({ id: participantId, did: participantDid, corporationId: corpId })
+    await insertKeeperEvent({
+      height,
+      txIndex: 0,
+      txMsgIndex: 0,
+      hash: `tx-${runId}-vsoa`,
+      type: 'grant_vs_operator_authorization',
+      sender: 'verana1signer',
+      attributes: {
+        vsoa_id: '3',
+        vs_operator: 'verana1vsoperator',
+        participant_id: String(participantId),
+        corporation_id: String(corpId),
+      },
+    })
+
+    const [record] = await persistIndexerEventsForBlock(height)
+
+    expect(record.event_type).toBe('GrantVSOperatorAuthorization')
+    expect(record.payload.module).toBe('de')
+    expect(record.payload.message_type).toBe('grant_vs_operator_authorization')
+    expect(record.did).toBe(participantDid)
+    expect(record.payload.participant_id).toBe(String(participantId))
+    expect(record.payload.corporation_id).toBe(corpId)
+    expect(record.payload.vs_operator).toBe('verana1vsoperator')
+    expect(record.payload.entity_type).toBe('VSOperatorAuthorization')
+    expect(record.payload.entity_id).toBe('3')
+    expect(record.payload.sender).toBe('verana1signer')
+
+    const byCorp = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 })
+    expect(byCorp.map((event) => event.event_type)).toContain('GrantVSOperatorAuthorization')
   })
 
   it('persists v4 payload values while keeping event_type as the Cosmos action name', async () => {

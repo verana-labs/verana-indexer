@@ -84,7 +84,7 @@ export function parseSubscribeMembership(
 }
 
 export type MembershipTarget = {
-  did: string
+  did: string | null
   relatedDids?: Iterable<string>
   corporationIds?: Iterable<number>
 }
@@ -96,7 +96,7 @@ export function matchesMembership(
 ): boolean {
   const didOk =
     dids === null ||
-    dids.has(target.did) ||
+    (target.did !== null && dids.has(target.did)) ||
     (target.relatedDids ? [...target.relatedDids].some((d) => dids.has(d)) : false)
   const corpOk =
     corporationId === null ||
