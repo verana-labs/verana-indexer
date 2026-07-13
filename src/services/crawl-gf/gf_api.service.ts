@@ -121,7 +121,6 @@ export default class GovernanceFrameworkApiService extends BaseService {
     }
   }
 
-  // IDX-GF-QRY-2 List Governance Framework Versions (v4)
   @Action()
   public async listGovernanceFrameworkVersionsV4(
     ctx: Context<{
