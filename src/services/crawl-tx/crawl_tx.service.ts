@@ -1356,23 +1356,32 @@ export default class CrawlTxService extends BullableService {
   }
 
   public createListEventWithMsgIndex(tx: any): any[] {
-    const returnEvents: any[] = []
-    // if this is failed tx, then no need to set index msg
-    if (!tx.tx_response.logs) {
-      this.logger.warn('Failed tx, no need to set index msg')
-      return []
+    const events: any[] = tx?.tx_response?.events ?? []
+
+    const eventsWithMsgIndexAttribute = events.map((event: any) => {
+      const msgIndex = this.readMsgIndexAttribute(event)
+      return msgIndex === undefined ? event : { ...event, msg_index: msgIndex }
+    })
+    if (eventsWithMsgIndexAttribute.some((event: any) => event.msg_index !== undefined)) {
+      return eventsWithMsgIndexAttribute
     }
+
+    if (!tx.tx_response.logs?.length) {
+      return eventsWithMsgIndexAttribute
+    }
+
+    const returnEvents: any[] = []
     let reachLastEventTypeTx = false
     // last event type in event field which belongs to tx event
     const listTxEventType = config.handleTransaction.lastEventsTypeTx
-    for (let i = 0; i < tx?.tx_response?.events?.length; i += 1) {
-      if (listTxEventType.includes(tx.tx_response.events[i].type)) {
+    for (let i = 0; i < events.length; i += 1) {
+      if (listTxEventType.includes(events[i].type)) {
         reachLastEventTypeTx = true
       }
-      if (reachLastEventTypeTx && !listTxEventType.includes(tx.tx_response.events[i].type)) {
+      if (reachLastEventTypeTx && !listTxEventType.includes(events[i].type)) {
         break
       }
-      returnEvents.push(tx.tx_response.events[i])
+      returnEvents.push(events[i])
     }
     // get messages log and append to list event
     tx.tx_response.logs.forEach((log: any, index: number) => {
@@ -1390,6 +1399,16 @@ export default class CrawlTxService extends BullableService {
     this.checkMappingEventToLog(cloneTx)
 
     return returnEvents
+  }
+
+  private readMsgIndexAttribute(event: any): number | undefined {
+    const decode = this._registry.decodeAttribute ?? ((input: string) => input)
+    for (const attribute of event?.attributes ?? []) {
+      if (!attribute?.key || decode(attribute.key) !== 'msg_index') continue
+      const msgIndex = Number(decode(attribute.value ?? ''))
+      return Number.isInteger(msgIndex) && msgIndex >= 0 ? msgIndex : undefined
+    }
+    return undefined
   }
 
   private _findAttribute(events: any, eventType: string, attributeKey: string): string {
