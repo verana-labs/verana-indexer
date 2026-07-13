@@ -26,12 +26,13 @@ import { Ecosystem } from '../../../../src/models/ecosystem'
 import { GovernanceFrameworkVersion } from '../../../../src/models/governance_framework_version'
 import GovernanceFrameworkApiService from '../../../../src/services/crawl-gf/gf_api.service'
 
-function listQb(rows: Record<string, unknown>[]) {
+function listQb(rows: Record<string, unknown>[], activatedAtHeight?: Record<string, unknown> | null) {
   const qb: any = {}
   qb.where = jest.fn(() => qb)
   qb.whereNotNull = jest.fn(() => qb)
   qb.withGraphFetched = jest.fn(() => qb)
   qb.orderBy = jest.fn(() => qb)
+  qb.first = jest.fn(async () => activatedAtHeight ?? undefined)
   qb.limit = jest.fn(async () => rows.map((r) => ({ toJSON: () => r })))
   return qb
 }
@@ -138,6 +139,35 @@ describe('GovernanceFrameworkApiService.listGovernanceFrameworkVersionsV4', () =
 
     expect(res).toEqual({ versions: [] })
     expect(GovernanceFrameworkVersion.query).not.toHaveBeenCalled()
+  })
+
+  it('active_only at At-Block-Height resolves the version active then, not the current one', async () => {
+    const qb = listQb([gfvRow({ version: 2 })], { version: 2 })
+    ;(CoGovernanceFrameworkVersion.query as jest.Mock).mockReturnValue(qb)
+
+    await service.listGovernanceFrameworkVersionsV4({
+      params: { corporation_id: '2', active_only: 'true' },
+      meta: { blockHeight: 50 },
+    } as any)
+
+    expect(Corporation.query).not.toHaveBeenCalled()
+    expect(qb.whereNotNull).toHaveBeenCalledWith('active_since')
+    expect(qb.where).toHaveBeenCalledWith('active_since', '<=', '2024-03-01T00:00:00.000Z')
+    expect(qb.orderBy).toHaveBeenCalledWith('version', 'desc')
+    expect(qb.where).toHaveBeenCalledWith('version', 2)
+  })
+
+  it('active_only at At-Block-Height returns empty when nothing was active by then', async () => {
+    const qb = listQb([], null)
+    ;(CoGovernanceFrameworkVersion.query as jest.Mock).mockReturnValue(qb)
+
+    const res: any = await service.listGovernanceFrameworkVersionsV4({
+      params: { corporation_id: '2', active_only: 'true' },
+      meta: { blockHeight: 50 },
+    } as any)
+
+    expect(res).toEqual({ versions: [] })
+    expect(qb.limit).not.toHaveBeenCalled()
   })
 
   it('applies gfv_id cursor, sort and limit', async () => {

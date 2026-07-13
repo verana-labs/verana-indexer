@@ -1169,7 +1169,7 @@ export default class CrawlTxService extends BullableService {
       .filter((msg: any) => isEcosystemMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
-        const txEvents = parentTx?.data?.tx_response?.events ?? []
+        const txEvents = this._decodeEventAttributes(parentTx?.data?.tx_response?.events)
         const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents, true)
         return {
           type: msg.type,
@@ -1194,7 +1194,7 @@ export default class CrawlTxService extends BullableService {
           height: Number(parentTx?.data?.tx_response?.height ?? parentTx?.height ?? 0),
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
-          txEvents: parentTx?.data?.tx_response?.events ?? [],
+          txEvents: this._decodeEventAttributes(parentTx?.data?.tx_response?.events),
         }
       })
 
@@ -1662,6 +1662,22 @@ export default class CrawlTxService extends BullableService {
   public setRegistry(registry: ChainRegistry) {
     this._registry = registry
   }
+
+  // Event attributes are base64-encoded on older Cosmos SDK versions; the registry knows which.
+  private _decodeEventAttributes(events: any): any[] {
+    if (!Array.isArray(events)) return []
+    const decode = this._registry?.decodeAttribute
+    if (!decode) return events
+    return events.map((event: any) => ({
+      ...event,
+      attributes: (event?.attributes ?? []).map((attribute: any) => ({
+        ...attribute,
+        key: decode(attribute?.key ?? ''),
+        value: decode(attribute?.value ?? ''),
+      })),
+    }))
+  }
+
   private async processPayloads(payload: any) {
     if (!payload) return
     if (payload.ecosystemList?.length) {

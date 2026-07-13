@@ -31,7 +31,6 @@ interface GfvRowPlain {
   documents?: GfvDocumentRow[]
 }
 
-// One document in preferred_language when present, else all (chain MOD-GF-QRY-1-3 "preferring").
 export function selectGfvDocuments(documents: GfvDocumentRow[], preferredLanguage?: string): GfvDocumentRow[] {
   if (preferredLanguage) {
     const preferred = documents.find((d) => d.language === preferredLanguage)
@@ -168,19 +167,27 @@ export default class GovernanceFrameworkApiService extends BaseService {
 
       let activeVersion: number | null = null
       if (activeOnly) {
-        const subject = hasEco
-          ? await Ecosystem.query().findById(subjectId)
-          : await Corporation.query().findById(subjectId)
-        activeVersion = (subject?.active_version as number | null | undefined) ?? null
+        if (asOf) {
+          // At a height the subject's stored active_version is the latest one, so resolve the
+          // version that was active then: the highest one activated at or before that block.
+          const activated = await this.subjectVersionQuery(hasCorp, subjectId)
+            .whereNotNull('active_since')
+            .where('active_since', '<=', asOf.toISOString())
+            .orderBy('version', 'desc')
+            .first()
+          activeVersion = activated ? Number((activated as unknown as { version: number }).version) : null
+        } else {
+          const subject = hasEco
+            ? await Ecosystem.query().findById(subjectId)
+            : await Corporation.query().findById(subjectId)
+          activeVersion = (subject?.active_version as number | null | undefined) ?? null
+        }
         if (activeVersion == null) {
           return ApiResponder.success(ctx, { versions: [] })
         }
       }
 
-      let query = hasCorp
-        ? CoGovernanceFrameworkVersion.query().where('corporation_id', subjectId).where('ecosystem_id', 0)
-        : GovernanceFrameworkVersion.query().where('ecosystem_id', subjectId)
-      query = query.whereNotNull('gfv_id').withGraphFetched('documents')
+      let query = this.subjectVersionQuery(hasCorp, subjectId).whereNotNull('gfv_id').withGraphFetched('documents')
       if (activeOnly) query = query.where('version', activeVersion as number)
       if (asOf) query = query.where('created', '<=', asOf.toISOString())
       if (minId !== undefined) query = query.where('gfv_id', '>=', minId)
@@ -196,5 +203,11 @@ export default class GovernanceFrameworkApiService extends BaseService {
       this.logger.error('Error in listGovernanceFrameworkVersionsV4:', err)
       return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
+  }
+
+  private subjectVersionQuery(hasCorp: boolean, subjectId: string) {
+    return hasCorp
+      ? CoGovernanceFrameworkVersion.query().where('corporation_id', subjectId).where('ecosystem_id', 0)
+      : GovernanceFrameworkVersion.query().where('ecosystem_id', subjectId)
   }
 }
