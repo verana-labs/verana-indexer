@@ -30,7 +30,6 @@ export type ResolverRuntimeConfig = {
   millisecondPoll?: number
   millisecondCrawl?: number
   blocksPerCall?: number
-  verifiablePublicRegistries?: VerifiablePublicRegistry[]
   useEmbeddedRegistryAdapter?: boolean
   disableDigestSriVerification?: boolean
   trustEvaluationTtlSeconds?: number
@@ -58,7 +57,6 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     enabled: next?.enabled ?? legacy?.enabled,
     millisecondPoll: next?.millisecondPoll ?? next?.millisecondCrawl ?? legacy?.millisecondCrawl,
     blocksPerCall: next?.blocksPerCall ?? legacy?.blocksPerCall,
-    verifiablePublicRegistries: next?.verifiablePublicRegistries,
     useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
     trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
@@ -88,12 +86,7 @@ export function getVerreTrustEvaluationCallOptions(): {
   skipDigestSRICheck: boolean
 } {
   const cfg = getResolverRuntimeConfig()
-  const registriesRaw =
-    cfg?.verifiablePublicRegistries && cfg.verifiablePublicRegistries.length > 0
-      ? cfg.verifiablePublicRegistries
-      : defaultVprRegistriesFromEnv()
-
-  const registries = attachRegistryAdapters(registriesRaw, {
+  const registries = attachRegistryAdapters(defaultVprRegistriesFromEnv(), {
     enabled: cfg?.useEmbeddedRegistryAdapter !== false,
   })
 
