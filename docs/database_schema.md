@@ -515,6 +515,7 @@ Latest on-chain state of each `OperatorAuthorization` from the `verana.de.v1` (d
 | `remaining_fee_spend` | jsonb array of `{denom, amount}` — runtime fee balance from the `x/feegrant` grant (present when a fee allowance exists) |
 | `expiration`          | Timestamp after which the authorization is no longer valid (nullable)                                   |
 | `period`              | Reset period for `spend_limit`, stored as a duration string (nullable)                                  |
+| `modified`            | Block time of the last change to this authorization (drives the `modified_after` list filter)           |
 | `height`              | Block height at which this state was captured                                                           |
 | `created_at`          | Timestamp when this row was first inserted                                                              |
 
@@ -535,6 +536,7 @@ Append-only history of `OperatorAuthorization` changes, used to serve `At-Block-
 | `remaining_fee_spend`       | jsonb array of `{denom, amount}` (nullable)                                           |
 | `expiration`                | Timestamp after which the authorization expires (nullable)                           |
 | `period`                    | Reset period as a duration string (nullable)                                         |
+| `modified`                  | Block time of this change (nullable)                                                 |
 | `revoked`                   | `true` when this record captures an on-chain revocation (deletion)                   |
 | `height`                    | Block height of this change                                                          |
 | `created_at`                | Timestamp when this row was inserted                                                 |
@@ -549,5 +551,22 @@ Latest on-chain state of each `VSOperatorAuthorization` from the `verana.de.v1` 
 | `corporation_id` | Id of the corporation granting the authorization                                                              |
 | `vs_operator`    | Grantee VS-operator account receiving the authorization                                                       |
 | `records`        | jsonb array of `ParticipantAuthorizationRecord` — one per controlled participant, each carrying `participant_id`, `msg_types`, `spend_limit`, `remaining_spend`, `fee_spend_limit`, `remaining_fee_spend`, `with_feegrant`, `expiration`, `period` |
+| `modified`       | Block time of the last change to this authorization (drives the `modified_after` list filter)                |
 | `height`         | Block height at which this state was captured                                                                 |
 | `created_at`     | Timestamp when this row was first inserted                                                                    |
+
+### `vs_operator_authorization_history`
+
+Append-only history of `VSOperatorAuthorization` changes, used to serve `At-Block-Height` queries. A `revoked` row records the deletion (when the authorization's last record was revoked on-chain).
+
+| Column                         | Description                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| `id`                           | Primary key of the history record (auto-increment)                                   |
+| `vs_operator_authorization_id` | The VSOperatorAuthorization id this record refers to                                 |
+| `corporation_id`               | Id of the corporation granting the authorization                                     |
+| `vs_operator`                  | Grantee VS-operator account                                                          |
+| `records`                      | jsonb array of `ParticipantAuthorizationRecord` (nullable for revoke records)        |
+| `modified`                     | Block time of this change (nullable)                                                 |
+| `revoked`                      | `true` when this record captures an on-chain revocation (deletion)                   |
+| `height`                       | Block height of this change                                                          |
+| `created_at`                   | Timestamp when this row was inserted                                                 |

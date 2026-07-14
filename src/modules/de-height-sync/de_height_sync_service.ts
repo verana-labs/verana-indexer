@@ -148,7 +148,10 @@ async function syncVSOperatorAuthorization(broker: ServiceBroker, vsoaId: number
   const ledgerAuthorization = await fetchVSOperatorAuthorization(vsoaId, blockHeight)
 
   if (!ledgerAuthorization) {
-    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.deleteVSOperatorAuthorization`, { id: vsoaId })
+    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.deleteVSOperatorAuthorization`, {
+      id: vsoaId,
+      blockHeight,
+    })
     return
   }
 

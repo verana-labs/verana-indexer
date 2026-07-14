@@ -5,6 +5,7 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { parseIdSortDirection } from '../../common/utils/query_ordering'
 import ExchangeRate from '../../models/exchange_rate'
 import ExchangeRateHistory from '../../models/exchange_rate_history'
 
@@ -218,7 +219,7 @@ export default class ExchangeRateApiService extends BaseService {
     try {
       const p = ctx.params
 
-      const sortDir = this.parseSortDirection(p.sort)
+      const sortDir = parseIdSortDirection(p.sort)
       if (sortDir === null) {
         return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
       }
@@ -248,14 +249,6 @@ export default class ExchangeRateApiService extends BaseService {
       this.logger.error('Error in ExchangeRate.listExchangeRates:', err)
       return ApiResponder.error(ctx, `Failed to list exchange rates: ${err?.message || String(err)}`, 500)
     }
-  }
-
-  private parseSortDirection(sort?: string): 'asc' | 'desc' | null {
-    if (!sort || !sort.trim()) return 'desc'
-    const normalized = sort.trim().toLowerCase()
-    if (normalized === 'id' || normalized === '+id') return 'asc'
-    if (normalized === '-id') return 'desc'
-    return null
   }
 
   private buildAtHeightListQuery(blockHeight: number) {

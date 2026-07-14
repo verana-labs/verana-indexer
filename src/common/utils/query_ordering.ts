@@ -71,6 +71,14 @@ export function parseSortParameter(sortParam?: string): SortOrder[] {
   return sortOrders
 }
 
+export function parseIdSortDirection(sort?: string): 'asc' | 'desc' | null {
+  if (!sort || !sort.trim()) return 'desc'
+  const normalized = sort.trim().toLowerCase()
+  if (normalized === 'id' || normalized === '+id') return 'asc'
+  if (normalized === '-id') return 'desc'
+  return null
+}
+
 // Attributes that exist as database columns (can be used in SQL ORDER BY)
 const DATABASE_COLUMN_ATTRIBUTES = ['id', 'modified', 'created'] as const
 

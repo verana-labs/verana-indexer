@@ -4101,6 +4101,137 @@
         }
       }
     },
+    "/v4/delegation/operator-authorizations": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "List Operator Authorizations",
+        "description": "Retrieve a paginated, filtered list of OperatorAuthorization entries. Aligned with VPR MOD-DE-QRY-1.",
+        "operationId": "listOperatorAuthorizations",
+        "parameters": [
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter by the granting Corporation id"
+          },
+          {
+            "name": "operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by the grantee operator account"
+          },
+          {
+            "name": "msg_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to authorizations whose msg_types[] includes this message type"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, only return non-expired authorizations (expiration > now or null)"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only return authorizations modified strictly after this datetime"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Caps the number of items returned"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Inclusive lower bound of the id range cursor"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Exclusive upper bound of the id range cursor"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["id", "+id", "-id"],
+              "default": "-id"
+            },
+            "description": "Sort by id ascending (id/+id) or descending (-id, default)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of operator authorizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OperatorAuthorization"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/delegation/operator-authorization/{id}": {
       "get": {
         "tags": [
@@ -4142,6 +4273,138 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/delegation/vs-operator-authorizations": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "List VS Operator Authorizations",
+        "description": "Retrieve a paginated, filtered list of VSOperatorAuthorization entries, each holding one ParticipantAuthorizationRecord per controlled Participant. Aligned with VPR MOD-DE-QRY-2.",
+        "operationId": "listVSOperatorAuthorizations",
+        "parameters": [
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter by the granting Corporation id"
+          },
+          {
+            "name": "vs_operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by the grantee VS-operator account"
+          },
+          {
+            "name": "participant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter to entries whose records[] contains a record for this Participant.id"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, only return entries with at least one non-expired record"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only return entries modified strictly after this datetime"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Caps the number of items returned"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Inclusive lower bound of the id range cursor"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Exclusive upper bound of the id range cursor"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["id", "+id", "-id"],
+              "default": "-id"
+            },
+            "description": "Sort by id ascending (id/+id) or descending (-id, default)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of VS operator authorizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VSOperatorAuthorization"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -7399,6 +7662,33 @@
           "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
           "expiration": { "type": "string", "format": "date-time" },
           "period": { "type": "string", "description": "Reset period for spend_limit, as a duration (e.g. \"86400s\")." }
+        }
+      },
+      "ParticipantAuthorizationRecord": {
+        "type": "object",
+        "description": "A per-Participant VS-operator authorization nested inside a VSOperatorAuthorization.",
+        "required": ["participant_id", "msg_types", "with_feegrant"],
+        "properties": {
+          "participant_id": { "type": "integer", "format": "uint64" },
+          "msg_types": { "type": "array", "items": { "type": "string" } },
+          "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set." },
+          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
+          "with_feegrant": { "type": "boolean" },
+          "expiration": { "type": "string", "format": "date-time" },
+          "period": { "type": "string", "description": "Reset period, as a duration (e.g. \"86400s\")." }
+        }
+      },
+      "VSOperatorAuthorization": {
+        "type": "object",
+        "description": "A corporation's VS-operator authorization container, holding one ParticipantAuthorizationRecord per controlled Participant (IDX-DE-QRY-2).",
+        "required": ["id", "corporation_id", "vs_operator", "records"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64" },
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "vs_operator": { "type": "string" },
+          "records": { "type": "array", "items": { "$ref": "#/components/schemas/ParticipantAuthorizationRecord" } }
         }
       },
       "ResolutionResponse": {
