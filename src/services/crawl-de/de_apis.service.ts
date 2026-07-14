@@ -44,7 +44,7 @@ function serializeParticipantRecord(record: any) {
 
 function serializeVSOperatorAuthorizationRow(row: any) {
   return {
-    id: Number(row.id ?? row.vs_operator_authorization_id),
+    id: Number(row.vs_operator_authorization_id ?? row.id),
     corporation_id: Number(row.corporation_id),
     vs_operator: String(row.vs_operator),
     records: (row.records ?? []).map(serializeParticipantRecord),
