@@ -10,6 +10,7 @@ export class GovernanceFrameworkVersion extends BaseModel {
   created!: Date
   active_since?: Date
   version!: number
+  gfv_id?: number | null
 
   documents?: GovernanceFrameworkDocument[]
 

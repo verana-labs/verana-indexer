@@ -4,18 +4,19 @@ import { extractController } from '../../common/utils/extract_controller'
 import {
   VeranaCorporationMessageTypes,
   VeranaCredentialSchemaMessageTypes,
-  VeranaDelegationMessageTypes,
   VeranaDiMessageTypes,
   VeranaEcosystemMessageTypes,
   VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../../common/verana-message-types'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
+import { fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
   collectDidsDeep,
   firstNormalizedDid,
   normalizeDid,
   readFirstPositiveInteger,
+  readPositiveInteger,
   toProtoModule,
   toShortMessageType,
   uniqueNormalizedDids,
@@ -31,7 +32,7 @@ export type IndexerTxEvent = {
   txIndex: number
   messageIndex: number
   sender: string
-  did: string
+  did: string | null
   relatedDids: string[]
   entityType?: string
   entityId?: string
@@ -40,13 +41,16 @@ export type IndexerTxEvent = {
   participantId?: string
   corporationId?: number
   relatedCorporationIds: number[]
+  grantee?: string
+  vsOperator?: string
+  withFeegrant?: boolean
   timestamp: string
 }
 
 export type IndexerEventRecord = {
   type: 'indexer-event'
   event_type: string
-  did: string
+  did: string | null
   block_height: number
   tx_hash: string
   timestamp: string
@@ -65,6 +69,9 @@ export type IndexerEventRecord = {
     participant_id?: string
     corporation_id?: number
     related_corporation_ids?: number[]
+    grantee?: string
+    vs_operator?: string
+    with_feegrant?: boolean
   }
 }
 
@@ -193,16 +200,6 @@ const EVENT_META: Record<string, EventMeta> = {
     action: 'StoreDigest',
     entityType: 'DigitalIdentityDigest',
   },
-  [VeranaDelegationMessageTypes.GrantOperatorAuthorization]: {
-    module: 'delegation',
-    action: 'GrantOperatorAuthorization',
-    entityType: 'OperatorAuthorization',
-  },
-  [VeranaDelegationMessageTypes.RevokeOperatorAuthorization]: {
-    module: 'delegation',
-    action: 'RevokeOperatorAuthorization',
-    entityType: 'OperatorAuthorization',
-  },
   [VeranaCorporationMessageTypes.CreateCorporation]: {
     module: 'corporation',
     action: 'CreateNewCorporation',
@@ -296,12 +293,52 @@ async function loadCorporation(opts: { did?: string; address?: string }): Promis
   corporationId?: number
 }> {
   const query = knex('corporation').select('id', 'did')
-  if (opts.address) query.where({ corporation: opts.address })
-  else if (opts.did) query.where({ did: opts.did })
+  if (opts.address) {
+    query.where(function () {
+      this.where('corporation', opts.address).orWhere('policy_address', opts.address)
+    })
+  } else if (opts.did) query.where({ did: opts.did })
   else return {}
   const row = await query.first()
   if (!row) return {}
   return { did: normalizeDid(row.did), corporationId: toCorporationId(row.id) }
+}
+
+async function loadCorporationById(corporationId: number | null | undefined): Promise<{
+  did?: string
+  corporationId?: number
+}> {
+  if (!corporationId) return {}
+  const row = await knex('corporation').select('id', 'did').where({ id: corporationId }).first()
+  if (!row) return {}
+  return { did: normalizeDid(row.did), corporationId: toCorporationId(row.id) }
+}
+
+async function loadParticipantsByAccount(account: string | null | undefined): Promise<{
+  dids: string[]
+  corporationIds: number[]
+}> {
+  if (!account || typeof account !== 'string' || !account.trim()) return { dids: [], corporationIds: [] }
+  const rows = await knex('participants')
+    .select('id', 'did', 'corporation_id')
+    .where({ vs_operator: account })
+    .orderBy('id', 'asc')
+
+  const dids: string[] = []
+  const corporationIds: number[] = []
+  for (const row of rows) {
+    const did = normalizeDid(row.did)
+    if (did && !dids.includes(did)) dids.push(did)
+    const corporationId = toCorporationId(row.corporation_id)
+    if (corporationId !== undefined && !corporationIds.includes(corporationId)) corporationIds.push(corporationId)
+  }
+  return { dids, corporationIds }
+}
+
+function readAddress(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
 }
 
 async function loadSchemaRelation(schemaId: number | null | undefined): Promise<{
@@ -523,6 +560,9 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
       participant_id: event.participantId,
       corporation_id: event.corporationId,
       related_corporation_ids: event.relatedCorporationIds,
+      grantee: event.grantee,
+      vs_operator: event.vsOperator,
+      with_feegrant: event.withFeegrant,
     },
   }
 }
@@ -531,7 +571,7 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
   return {
     type: 'indexer-event',
     event_type: String(row.event_type),
-    did: String(row.did),
+    did: row.did != null ? String(row.did) : null,
     block_height: Number(row.block_height),
     tx_hash: String(row.tx_hash),
     timestamp: toIsoSeconds(row.timestamp),
@@ -547,7 +587,9 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
         ? row.payload.related_dids
         : Array.isArray(row.payload?.relatedDids)
           ? row.payload.relatedDids
-          : [String(row.did)],
+          : row.did != null
+            ? [String(row.did)]
+            : [],
       entity_type: row.payload?.entity_type ?? row.payload?.entityType ?? row.entity_type ?? undefined,
       entity_id: row.payload?.entity_id ?? row.payload?.entityId ?? row.entity_id ?? undefined,
       ecosystem_id: row.payload?.ecosystem_id ?? row.payload?.ecosystemId ?? undefined,
@@ -563,6 +605,14 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
               .map((v: unknown) => Number(v))
               .filter((n: number) => Number.isInteger(n) && n > 0)
           : undefined,
+      grantee: row.payload?.grantee ?? undefined,
+      vs_operator: row.payload?.vs_operator ?? row.payload?.vsOperator ?? undefined,
+      with_feegrant:
+        typeof row.payload?.with_feegrant === 'boolean'
+          ? row.payload.with_feegrant
+          : typeof row.payload?.withFeegrant === 'boolean'
+            ? row.payload.withFeegrant
+            : undefined,
     },
   }
 }
@@ -604,6 +654,166 @@ async function buildIndexerTxEvents(args: {
   return (await Promise.all(rows.map((row) => toIndexerEvent(row)))).filter(Boolean) as IndexerTxEvent[]
 }
 
+const DELEGATION_EVENT_META: Record<string, { action: string; entityType: string }> = {
+  grant_operator_authorization: {
+    action: 'GrantOperatorAuthorization',
+    entityType: 'OperatorAuthorization',
+  },
+  revoke_operator_authorization: {
+    action: 'RevokeOperatorAuthorization',
+    entityType: 'OperatorAuthorization',
+  },
+  grant_vs_operator_authorization: {
+    action: 'GrantVSOperatorAuthorization',
+    entityType: 'VSOperatorAuthorization',
+  },
+  revoke_vs_operator_authorization: {
+    action: 'RevokeVSOperatorAuthorization',
+    entityType: 'VSOperatorAuthorization',
+  },
+  update_vs_operator_authorization: {
+    action: 'UpdateVSOperatorAuthorization',
+    entityType: 'VSOperatorAuthorization',
+  },
+}
+
+const DELEGATION_EVENT_TYPES = Object.keys(DELEGATION_EVENT_META)
+
+const DELEGATION_ATTRIBUTE_KEYS = [
+  'authz_id',
+  'vsoa_id',
+  'corporation_id',
+  'participant_id',
+  'grantee',
+  'vs_operator',
+  'with_feegrant',
+]
+
+type DelegationEventRow = {
+  event_id: number
+  type: string
+  tx_msg_index: number | null
+  tx_hash: string
+  tx_index: number
+  block_height: number
+  sender: string | null
+  timestamp: Date | string
+}
+
+async function resolveCorporationDid(corporationId: number, blockHeight: number): Promise<string | undefined> {
+  const corporation = await loadCorporationById(corporationId)
+  if (corporation.did) return corporation.did
+  return (await fetchCorporationById(corporationId, blockHeight)).did
+}
+
+async function buildDelegationEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+  const eventRows = (await knex('event as e')
+    .innerJoin('transaction as tx', 'tx.id', 'e.tx_id')
+    .leftJoin('transaction_message as tm', function () {
+      this.on('tm.tx_id', '=', 'e.tx_id').andOn(knex.raw('tm.index = COALESCE(e.tx_msg_index, 0)'))
+    })
+    .where('e.block_height', blockHeight)
+    .andWhere('tx.code', 0)
+    .whereIn('e.type', DELEGATION_EVENT_TYPES)
+    .select(
+      'e.id as event_id',
+      'e.type',
+      'e.tx_msg_index',
+      'tx.hash as tx_hash',
+      'tx.index as tx_index',
+      'tx.height as block_height',
+      'tm.sender as sender',
+      'tx.timestamp'
+    )
+    .orderBy('tx.index', 'asc')
+    .orderBy('e.id', 'asc')) as DelegationEventRow[]
+
+  if (eventRows.length === 0) return []
+
+  const eventIds = eventRows.map((row) => row.event_id)
+  const attributeRows = (await knex('event_attribute')
+    .where('block_height', blockHeight)
+    .whereIn('event_id', eventIds)
+    .whereIn('key', DELEGATION_ATTRIBUTE_KEYS)
+    .select('event_id', 'key', 'value')) as Array<{ event_id: number; key: string; value: string }>
+
+  const attributesByEvent = new Map<number, Record<string, string>>()
+  for (const attribute of attributeRows) {
+    const bucket = attributesByEvent.get(attribute.event_id) ?? {}
+    bucket[attribute.key] = attribute.value
+    attributesByEvent.set(attribute.event_id, bucket)
+  }
+
+  const events: IndexerTxEvent[] = []
+  for (const row of eventRows) {
+    const meta = DELEGATION_EVENT_META[row.type]
+    const attributes = attributesByEvent.get(row.event_id) ?? {}
+    const entityId = attributes.authz_id ?? attributes.vsoa_id
+    const grantee = readAddress(attributes.grantee)
+    const vsOperator = readAddress(attributes.vs_operator)
+    const rawParticipantId = readPositiveInteger(attributes.participant_id)
+    const corporationId = toCorporationId(attributes.corporation_id)
+    const withFeegrant = attributes.with_feegrant === undefined ? undefined : attributes.with_feegrant === 'true'
+
+    const collected = new Set<string>()
+    const relatedCorporationIds = new Set<number>()
+    let did: string | undefined
+
+    if (rawParticipantId) {
+      const participant = await loadParticipantRelation(rawParticipantId)
+      if (participant.participantDid) collected.add(participant.participantDid)
+      if (participant.ecosystemDid) collected.add(participant.ecosystemDid)
+      did = participant.participantDid ?? (await fetchParticipantDid(rawParticipantId, blockHeight))
+      if (did) collected.add(did)
+    }
+
+    if (corporationId) {
+      const corporationDid = await resolveCorporationDid(corporationId, blockHeight)
+      if (corporationDid) collected.add(corporationDid)
+      did = did ?? corporationDid
+    }
+
+    for (const account of [grantee, vsOperator]) {
+      const participants = await loadParticipantsByAccount(account)
+      for (const participantDid of participants.dids) collected.add(participantDid)
+      for (const participantCorporationId of participants.corporationIds) {
+        if (participantCorporationId !== corporationId) relatedCorporationIds.add(participantCorporationId)
+      }
+      did = did ?? participants.dids[0]
+    }
+
+    if (!did) {
+      console.warn(
+        `[IndexerEvents] ${meta.action} at block_height=${blockHeight} tx_hash=${row.tx_hash} has no resolvable DID; emitting with did=null`
+      )
+    }
+
+    events.push({
+      type: 'transaction-executed',
+      module: 'delegation',
+      action: meta.action,
+      messageType: row.type,
+      blockHeight: Number(row.block_height),
+      txHash: row.tx_hash,
+      txIndex: Number(row.tx_index),
+      messageIndex: Number(row.tx_msg_index ?? 0),
+      sender: row.sender ?? '',
+      did: did ?? null,
+      relatedDids: uniqueNormalizedDids(collected),
+      entityType: meta.entityType,
+      entityId,
+      participantId: rawParticipantId ? String(rawParticipantId) : undefined,
+      corporationId,
+      relatedCorporationIds: [...relatedCorporationIds],
+      grantee,
+      vsOperator,
+      withFeegrant,
+      timestamp: toIsoSeconds(row.timestamp),
+    })
+  }
+  return events
+}
+
 export async function persistIndexerEventsForBlock(blockHeight: number): Promise<IndexerEventRecord[]> {
   const rows: Array<Record<string, unknown>> = []
   const pageSize = 500
@@ -614,6 +824,8 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
     if (txEvents.length < pageSize) break
     offset += pageSize
   }
+  const delegationEvents = await buildDelegationEvents(blockHeight)
+  rows.push(...delegationEvents.map(toEventRow))
   let insertedIds: number[] = []
 
   if (rows.length > 0) {
@@ -711,5 +923,23 @@ export async function listIndexerEvents(args: {
   applyBlockHeightFilter(query, args, 'ie.block_height')
 
   const rows = (await query) as Array<Record<string, any>>
+  await resolveMissingDids(rows)
   return rows.map(fromStoredRow)
+}
+
+async function resolveMissingDids(rows: Array<Record<string, any>>): Promise<void> {
+  for (const row of rows) {
+    if (row.did != null) continue
+
+    const participantId = readPositiveInteger(row.payload?.participant_id ?? row.payload?.participantId)
+    const corporationId = toCorporationId(row.payload?.corporation_id ?? row.payload?.corporationId)
+
+    let did: string | undefined
+    if (participantId) did = (await loadParticipantRelation(participantId)).participantDid
+    if (!did && corporationId) did = (await loadCorporationById(corporationId)).did
+    if (!did) continue
+
+    row.did = did
+    await knex('indexer_events').where({ id: row.id }).update({ did })
+  }
 }

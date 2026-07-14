@@ -16,7 +16,7 @@ function serializeOperatorAuthorizationRow(row: any) {
   const feeSpendLimit = row.fee_spend_limit ?? null
 
   return {
-    id: Number(row.id ?? row.operator_authorization_id),
+    id: Number(row.operator_authorization_id ?? row.id),
     corporation_id: Number(row.corporation_id),
     operator: String(row.operator),
     msg_types: row.msg_types ?? [],

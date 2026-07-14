@@ -247,11 +247,13 @@ export default class EcosystemDatabaseService extends BaseService {
             const versionNum = Number((v as any).version ?? 0) || 0
             if (!Number.isInteger(versionNum) || versionNum <= 0) continue
 
+            const chainGfvId = Number((v as any).id ?? (v as any).version_id ?? 0)
             const gfvBase: any = {
               ecosystem_id: ecosystemId,
               created: (v as any).created ?? null,
               version: versionNum,
               active_since: (v as any).active_since ?? (v as any).activeSince ?? null,
+              gfv_id: Number.isInteger(chainGfvId) && chainGfvId > 0 ? chainGfvId : null,
             }
 
             let gfvRow = await trx('governance_framework_version')
@@ -333,12 +335,14 @@ export default class EcosystemDatabaseService extends BaseService {
                 })
                 .first()
 
+              const chainGfdId = Number((d as any).id ?? (d as any).document_id ?? 0)
               const docPayload: any = {
                 gfv_id: gfvId,
                 created: (d as any).created ?? null,
                 language,
                 url: (d as any).url ?? null,
                 digest_sri: digest,
+                gfd_id: Number.isInteger(chainGfdId) && chainGfdId > 0 ? chainGfdId : null,
               }
 
               const oldDoc = existingDoc ? { ...existingDoc } : null
