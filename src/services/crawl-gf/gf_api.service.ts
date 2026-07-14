@@ -8,7 +8,10 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { CoGovernanceFrameworkVersion } from '../../models/co_governance_framework_version'
+import { Corporation } from '../../models/corporation'
+import { Ecosystem } from '../../models/ecosystem'
 import { GovernanceFrameworkVersion } from '../../models/governance_framework_version'
+import { parseCorporationListPagination } from '../crawl-co/co_stats'
 
 interface GfvDocumentRow {
   gfd_id?: number | null
@@ -28,7 +31,6 @@ interface GfvRowPlain {
   documents?: GfvDocumentRow[]
 }
 
-// One document in preferred_language when present, else all (chain MOD-GF-QRY-1-3 "preferring").
 export function selectGfvDocuments(documents: GfvDocumentRow[], preferredLanguage?: string): GfvDocumentRow[] {
   if (preferredLanguage) {
     const preferred = documents.find((d) => d.language === preferredLanguage)
@@ -116,5 +118,96 @@ export default class GovernanceFrameworkApiService extends BaseService {
       this.logger.error('Error in getGovernanceFrameworkVersionV4:', err)
       return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
+  }
+
+  @Action()
+  public async listGovernanceFrameworkVersionsV4(
+    ctx: Context<{
+      ecosystem_id?: string
+      corporation_id?: string
+      active_only?: string
+      preferred_language?: string
+      limit?: string
+      min_id?: string
+      max_id?: string
+      sort?: string
+    }>
+  ) {
+    try {
+      const ecoRaw = ctx.params.ecosystem_id
+      const corpRaw = ctx.params.corporation_id
+      const hasEco = ecoRaw !== undefined && String(ecoRaw) !== ''
+      const hasCorp = corpRaw !== undefined && String(corpRaw) !== ''
+      if (hasEco === hasCorp) {
+        return ApiResponder.error(ctx, 'Exactly one of "ecosystem_id" or "corporation_id" must be set', 400)
+      }
+      const subjectId = String(hasEco ? ecoRaw : corpRaw).trim()
+      if (!/^\d+$/.test(subjectId) || BigInt(subjectId) <= BigInt(0)) {
+        return ApiResponder.error(ctx, `Invalid ${hasEco ? 'ecosystem_id' : 'corporation_id'} '${subjectId}'`, 400)
+      }
+
+      const activeOnlyRaw = ctx.params.active_only
+      if (activeOnlyRaw !== undefined && !['true', 'false', ''].includes(String(activeOnlyRaw).toLowerCase())) {
+        return ApiResponder.error(ctx, '"active_only" must be a boolean', 400)
+      }
+      const activeOnly = String(activeOnlyRaw).toLowerCase() === 'true'
+
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
+      }
+      const { limit, minId, maxId, direction } = pageParsed.value
+
+      const preferredLanguage = ctx.params.preferred_language
+      const blockHeight = getBlockHeight(ctx)
+      const asOf =
+        typeof blockHeight === 'number'
+          ? await getBlockChainTimeAsOf(blockHeight, { logContext: '[gf_api:list]' })
+          : undefined
+
+      let activeVersion: number | null = null
+      if (activeOnly) {
+        if (asOf) {
+          // At a height the subject's stored active_version is the latest one, so resolve the
+          // version that was active then: the highest one activated at or before that block.
+          const activated = await this.subjectVersionQuery(hasCorp, subjectId)
+            .whereNotNull('active_since')
+            .where('active_since', '<=', asOf.toISOString())
+            .orderBy('version', 'desc')
+            .first()
+          activeVersion = activated ? Number((activated as unknown as { version: number }).version) : null
+        } else {
+          const subject = hasEco
+            ? await Ecosystem.query().findById(subjectId)
+            : await Corporation.query().findById(subjectId)
+          activeVersion = (subject?.active_version as number | null | undefined) ?? null
+        }
+        if (activeVersion == null) {
+          return ApiResponder.success(ctx, { versions: [] })
+        }
+      }
+
+      let query = this.subjectVersionQuery(hasCorp, subjectId).whereNotNull('gfv_id').withGraphFetched('documents')
+      if (activeOnly) query = query.where('version', activeVersion as number)
+      if (asOf) query = query.where('created', '<=', asOf.toISOString())
+      if (minId !== undefined) query = query.where('gfv_id', '>=', minId)
+      if (maxId !== undefined) query = query.where('gfv_id', '<', maxId)
+      const rows = await query.orderBy('gfv_id', direction).limit(limit)
+
+      const source = hasCorp ? 'corporation' : 'ecosystem'
+      const versions = rows.map((r) =>
+        buildGfvObject(r.toJSON() as unknown as GfvRowPlain, source, preferredLanguage, asOf)
+      )
+      return ApiResponder.success(ctx, { versions })
+    } catch (err: any) {
+      this.logger.error('Error in listGovernanceFrameworkVersionsV4:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
+    }
+  }
+
+  private subjectVersionQuery(hasCorp: boolean, subjectId: string) {
+    return hasCorp
+      ? CoGovernanceFrameworkVersion.query().where('corporation_id', subjectId).where('ecosystem_id', 0)
+      : GovernanceFrameworkVersion.query().where('ecosystem_id', subjectId)
   }
 }

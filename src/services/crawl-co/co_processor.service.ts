@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import type { Knex } from 'knex'
 import { Context, ServiceBroker } from 'moleculer'
@@ -60,21 +59,10 @@ function extractCreateCorporationEvent(txEvents: CoTxEvent[] | undefined): {
   did?: string
 } {
   if (!Array.isArray(txEvents)) return {}
-  const decode = (raw: string | undefined): string => {
-    if (!raw) return ''
-    if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length % 4 === 0 && !raw.startsWith('verana')) {
-      try {
-        return Buffer.from(raw, 'base64').toString('utf-8')
-      } catch {
-        return raw
-      }
-    }
-    return raw
-  }
   for (const ev of txEvents) {
     if ((ev.type ?? '') !== 'create_corporation') continue
     const attrs = new Map<string, string>()
-    for (const a of ev.attributes ?? []) attrs.set(decode(a.key), decode(a.value).replace(/^"|"$/g, ''))
+    for (const a of ev.attributes ?? []) attrs.set(a.key ?? '', (a.value ?? '').replace(/^"|"$/g, ''))
     const idNum = Number(attrs.get('corporation_id'))
     return {
       corporationId: Number.isInteger(idNum) && idNum > 0 ? idNum : undefined,

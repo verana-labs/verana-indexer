@@ -342,6 +342,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       }),
       createRoute('/v4/governance-framework', {
         'GET get/:id': `${SERVICE.V1.GovernanceFrameworkApiService.path}.getGovernanceFrameworkVersionV4`,
+        'GET list': `${SERVICE.V1.GovernanceFrameworkApiService.path}.listGovernanceFrameworkVersionsV4`,
       }),
       createRoute('/v4/participant', {
         'GET get/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipant`,
