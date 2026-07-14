@@ -10,11 +10,15 @@ import type {
   ParticipantAuthorizationRecord as LedgerParticipantAuthorizationRecord,
   VSOperatorAuthorization as LedgerVSOperatorAuthorization,
 } from '@verana-labs/verana-types/codec/verana/de/v1/types'
-import { AllowedMsgAllowance, BasicAllowance, PeriodicAllowance } from 'cosmjs-types/cosmos/feegrant/v1beta1/feegrant'
+import {
+  AllowedMsgAllowance,
+  BasicAllowance,
+  PeriodicAllowance,
+} from 'cosmjs-types/cosmos/feegrant/v1beta1/feegrant.js'
 import {
   QueryClientImpl as FeegrantQueryClientImpl,
   QueryAllowanceRequest,
-} from 'cosmjs-types/cosmos/feegrant/v1beta1/query'
+} from 'cosmjs-types/cosmos/feegrant/v1beta1/query.js'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import { withAbciQueryClient } from '../../common/utils/grpc_query'
 
