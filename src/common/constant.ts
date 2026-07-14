@@ -40,6 +40,7 @@ export const BULL_JOB_NAME = {
   CRAWL_VALIDATOR: 'crawl:validator',
   HANDLE_TRUST_DEPOSIT: 'handle:trust-deposit',
   HANDLE_DIGEST: 'handle:digest',
+  HANDLE_DELEGATION: 'handle:delegation',
   CRAWL_GENESIS_VALIDATOR: 'crawl:genesis-validator',
   CRAWL_SIGNING_INFO: 'crawl:signing-info',
   HANDLE_ADDRESS: 'handle:address',
@@ -304,6 +305,18 @@ export const SERVICE = {
     DigestProcessorService: {
       key: 'DigestProcessorService',
       path: 'v1.DigestProcessorService',
+    },
+    DelegationApiService: {
+      key: 'DelegationApiService',
+      path: 'v1.DelegationApiService',
+    },
+    DelegationDatabaseService: {
+      key: 'DelegationDatabaseService',
+      path: 'v1.DelegationDatabaseService',
+    },
+    DelegationProcessorService: {
+      key: 'DelegationProcessorService',
+      path: 'v1.DelegationProcessorService',
     },
     CrawlAccountService: {
       key: 'CrawlAccountService',
