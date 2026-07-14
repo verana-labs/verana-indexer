@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import type { Knex } from 'knex'
 import { Context, ServiceBroker } from 'moleculer'
@@ -6,6 +5,7 @@ import BullableService from '../../base/bullable.service'
 import { SERVICE } from '../../common'
 import { formatTimestamp } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { extractAddGfDocumentEvents, matchAddGfDocumentEvent } from '../../common/utils/gf_events'
 import { MessageProcessorBase } from '../../common/utils/message_processor_base'
 import { VeranaCorporationMessageTypes, VeranaGovernanceFrameworkMessageTypes } from '../../common/verana-message-types'
 
@@ -59,21 +59,10 @@ function extractCreateCorporationEvent(txEvents: CoTxEvent[] | undefined): {
   did?: string
 } {
   if (!Array.isArray(txEvents)) return {}
-  const decode = (raw: string | undefined): string => {
-    if (!raw) return ''
-    if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length % 4 === 0 && !raw.startsWith('verana')) {
-      try {
-        return Buffer.from(raw, 'base64').toString('utf-8')
-      } catch {
-        return raw
-      }
-    }
-    return raw
-  }
   for (const ev of txEvents) {
     if ((ev.type ?? '') !== 'create_corporation') continue
     const attrs = new Map<string, string>()
-    for (const a of ev.attributes ?? []) attrs.set(decode(a.key), decode(a.value).replace(/^"|"$/g, ''))
+    for (const a of ev.attributes ?? []) attrs.set(a.key ?? '', (a.value ?? '').replace(/^"|"$/g, ''))
     const idNum = Number(attrs.get('corporation_id'))
     return {
       corporationId: Number.isInteger(idNum) && idNum > 0 ? idNum : undefined,
@@ -348,6 +337,7 @@ export default class CorporationMessageProcessorService extends BullableService 
       )
 
       if (row.doc_url || row.doc_digest_sri) {
+        const seedEvent = matchAddGfDocumentEvent(extractAddGfDocumentEvents(message.txEvents), 1, row.language)
         const [gfv] = (await trx('co_governance_framework_version')
           .insert({
             corporation_id: corporation.id,
@@ -355,9 +345,10 @@ export default class CorporationMessageProcessorService extends BullableService 
             version: 1,
             created: timestamp,
             active_since: timestamp,
+            gfv_id: seedEvent?.gfvId ?? null,
           })
           .onConflict(['corporation_id', 'ecosystem_id', 'version'])
-          .merge({ active_since: timestamp })
+          .merge({ active_since: timestamp, gfv_id: seedEvent?.gfvId ?? null })
           .returning('*')) as GfvRow[]
 
         await trx('co_governance_framework_document').insert({
@@ -366,6 +357,7 @@ export default class CorporationMessageProcessorService extends BullableService 
           url: row.doc_url ?? '',
           digest_sri: row.doc_digest_sri ?? '',
           created: timestamp,
+          gfd_id: seedEvent?.gfdId ?? null,
         })
       }
 
@@ -414,6 +406,8 @@ export default class CorporationMessageProcessorService extends BullableService 
       const url = message.doc_url ?? message.docUrl ?? ''
       const digestSri = message.doc_digest_sri ?? message.docDigestSri ?? ''
 
+      const docEvent = matchAddGfDocumentEvent(extractAddGfDocumentEvents(message.txEvents), version, language)
+
       let gfv = (await trx('co_governance_framework_version')
         .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId, version })
         .first()) as GfvRow | undefined
@@ -425,8 +419,13 @@ export default class CorporationMessageProcessorService extends BullableService 
             ecosystem_id: ecosystemId,
             version,
             created: timestamp,
+            gfv_id: docEvent?.gfvId ?? null,
           })
           .returning('*')) as GfvRow[]
+      } else if (docEvent?.gfvId) {
+        await trx('co_governance_framework_version').where({ id: gfv.id }).whereNull('gfv_id').update({
+          gfv_id: docEvent.gfvId,
+        })
       }
 
       await trx('co_governance_framework_document').insert({
@@ -435,6 +434,7 @@ export default class CorporationMessageProcessorService extends BullableService 
         url,
         digest_sri: digestSri,
         created: timestamp,
+        gfd_id: docEvent?.gfdId ?? null,
       })
 
       if (ecosystemId === 0) {

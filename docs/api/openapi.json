@@ -4890,6 +4890,179 @@
           }
         }
       }
+    },
+    "/v4/governance-framework/get/{id}": {
+      "get": {
+        "tags": [
+          "GovernanceFramework"
+        ],
+        "summary": "Get Governance Framework Version (v4)",
+        "description": "Retrieve a GovernanceFrameworkVersion by its chain-assigned global ID with its nested documents (IDX-GF-QRY-1). Aligned with VPR MOD-GF-QRY-1. Exactly one of ecosystem_id (EGF) and corporation_id (CGF) is set. Rows indexed before the chain-id capture need a reindex to be reachable by ID.",
+        "operationId": "getGovernanceFrameworkVersionV4",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The GovernanceFrameworkVersion ID (chain-assigned, global across EGF and CGF)"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "If set, return only the document in this language when present; otherwise all documents"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The GovernanceFrameworkVersion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceFrameworkVersionV4Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "GovernanceFrameworkVersion not found"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/governance-framework/list": {
+      "get": {
+        "tags": [
+          "GovernanceFramework"
+        ],
+        "summary": "List Governance Framework Versions (v4)",
+        "description": "List GovernanceFrameworkVersion entries for one owning subject, either an Ecosystem or a Corporation (IDX-GF-QRY-2). Aligned with VPR MOD-GF-QRY-2. Exactly one of ecosystem_id and corporation_id must be provided, otherwise HTTP 400. Each entry has the same shape as Get Governance Framework Version. Within a subject, ascending id equals ascending version.",
+        "operationId": "listGovernanceFrameworkVersionsV4",
+        "parameters": [
+          {
+            "name": "ecosystem_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Filter by owning Ecosystem. Set iff corporation_id is null"
+          },
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Filter by owning Corporation. Set iff ecosystem_id is null"
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, return only the entry for the subject's active_version"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "If set, return only one document per version, preferring this language"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: gfv id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: gfv id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by gfv id; +id is chronological (oldest-first)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Governance Framework Versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceFrameworkVersionV4ListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7531,6 +7704,102 @@
         },
         "required": [
           "params"
+        ]
+      },
+      "GovernanceFrameworkDocumentV4": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Chain-assigned document ID; null for rows indexed before chain-id capture"
+          },
+          "gfv_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Owning GovernanceFrameworkVersion chain ID"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "language": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "digest_sri": {
+            "type": "string"
+          }
+        }
+      },
+      "GovernanceFrameworkVersionV4": {
+        "type": "object",
+        "description": "Exactly one of ecosystem_id and corporation_id is set",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Chain-assigned global GovernanceFrameworkVersion ID"
+          },
+          "ecosystem_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Owning Ecosystem (set iff EGF)"
+          },
+          "corporation_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Owning Corporation (set iff CGF)"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "active_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceFrameworkDocumentV4"
+            }
+          }
+        }
+      },
+      "GovernanceFrameworkVersionV4Response": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "GovernanceFrameworkVersionV4ListResponse": {
+        "type": "object",
+        "properties": {
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
+            }
+          }
+        },
+        "required": [
+          "versions"
         ]
       }
     },

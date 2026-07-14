@@ -4,6 +4,7 @@ import BullableService from '../../base/bullable.service'
 import { SERVICE } from '../../common'
 import { formatTimestamp } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { extractAddGfDocumentEvents, matchAddGfDocumentEvent } from '../../common/utils/gf_events'
 import { finalizeEcosystemHistoryInsert } from '../../common/utils/installed_table_columns'
 import { MessageProcessorBase } from '../../common/utils/message_processor_base'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
@@ -783,6 +784,8 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
       await this.recordTRHistory(trx, ec.id, 'Create', blockHeight, null, ec)
 
+      const seedEvent = matchAddGfDocumentEvent(extractAddGfDocumentEvents(message.txEvents), 1, message.language)
+
       let gfv = await trx('governance_framework_version')
         .where({
           ecosystem_id: ec.id,
@@ -797,13 +800,17 @@ export default class EcosystemMessageProcessorService extends BullableService {
             created: timestamp,
             version: 1,
             active_since: timestamp,
+            gfv_id: seedEvent?.gfvId ?? null,
           })
           .returning('*')
       } else if (isReindexing) {
-        await trx('governance_framework_version').where({ id: gfv.id }).update({
-          created: timestamp,
-          active_since: timestamp,
-        })
+        await trx('governance_framework_version')
+          .where({ id: gfv.id })
+          .update({
+            created: timestamp,
+            active_since: timestamp,
+            gfv_id: seedEvent?.gfvId ?? gfv.gfv_id ?? null,
+          })
         gfv = await trx('governance_framework_version').where({ id: gfv.id }).first()
       }
 
@@ -828,6 +835,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
             language,
             url: message.doc_url,
             digest_sri: digestSri,
+            gfd_id: seedEvent?.gfdId ?? null,
           })
           .returning('*')
       }
