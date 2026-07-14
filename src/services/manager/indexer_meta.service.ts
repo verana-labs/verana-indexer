@@ -170,7 +170,7 @@ export default class IndexerMetaService extends BaseService {
   @Action()
   public async getVersion(ctx: Context) {
     try {
-      const includeRuntimeInfo = process.env.VERSION_INCLUDE_RUNTIME_NETWORK_INFO === 'true'
+      const includeRuntimeInfo = process.env.VERSION_INCLUDE_RUNTIME_NETWORK_INFO !== 'false'
       const nodeInfo = includeRuntimeInfo
         ? await this.getNodeInfoWithTimeout(Number(process.env.VERSION_NODE_INFO_TIMEOUT_MS || 250))
         : null
