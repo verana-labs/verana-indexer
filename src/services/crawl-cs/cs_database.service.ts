@@ -1484,8 +1484,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_onboarding_mode: { type: 'string', optional: true },
       verifier_onboarding_mode: { type: 'string', optional: true },
       holder_onboarding_mode: { type: 'string', optional: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
       sort: { type: 'string', optional: true, default: '-id' },
       min_participants: { type: 'number', optional: true },
@@ -1524,8 +1524,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_onboarding_mode?: string
       verifier_onboarding_mode?: string
       holder_onboarding_mode?: string
-      min_id?: number
-      max_id?: number
+      min_id?: string
+      max_id?: string
       limit?: number
       sort?: string
       min_participants?: number
@@ -2287,8 +2287,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     name: 'getHistory',
     params: {
       id: { type: 'number', integer: true, positive: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
       sort: { type: 'string', optional: true, default: '-id' },
     },
@@ -2296,8 +2296,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async getHistory(
     ctx: Context<{
       id: number
-      min_id?: number
-      max_id?: number
+      min_id?: string
+      max_id?: string
       limit?: number
       sort?: string
     }>

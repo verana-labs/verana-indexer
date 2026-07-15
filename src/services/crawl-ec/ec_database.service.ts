@@ -1483,8 +1483,8 @@ export default class EcosystemDatabaseService extends BaseService {
       gf_data: { type: 'string', optional: true },
       preferred_language: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       sort: { type: 'string', optional: true },
       min_active_schemas: { type: 'number', optional: true },
       max_active_schemas: { type: 'number', optional: true },
@@ -1527,8 +1527,8 @@ export default class EcosystemDatabaseService extends BaseService {
       gf_data?: string
       preferred_language?: string
       limit?: number
-      min_id?: number
-      max_id?: number
+      min_id?: string
+      max_id?: string
       sort?: string
       min_active_schemas?: number
       max_active_schemas?: number

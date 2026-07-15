@@ -109,14 +109,14 @@ export default class TrustDepositApiService extends BullableService {
     name: 'getTrustDepositHistory',
     params: {
       corporation: { type: 'string', min: 5 },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
       sort: { type: 'string', optional: true, default: '-id' },
     },
   })
   public async getTrustDepositHistory(
-    ctx: Context<{ corporation: string; min_id?: number; max_id?: number; limit?: number; sort?: string }>
+    ctx: Context<{ corporation: string; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
       const accountValidation = validateRequiredAccountParam(ctx.params.corporation, 'corporation')

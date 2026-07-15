@@ -1384,8 +1384,8 @@ export default class ParticipantAPIService extends BullableService {
       modified_after: { type: 'string', optional: true },
       op_state: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       when: { type: 'string', optional: true },
       sort: { type: 'string', optional: true },
       min_participants: { type: 'number', integer: true, optional: true },
@@ -2215,14 +2215,14 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET history/:id',
     params: {
       id: { type: 'number', integer: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
       sort: { type: 'string', optional: true, default: '-id' },
     },
   })
   async getParticipantHistory(
-    ctx: Context<{ id: number; min_id?: number; max_id?: number; limit?: number; sort?: string }>
+    ctx: Context<{ id: number; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
       const { id } = ctx.params
@@ -2409,14 +2409,14 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET participant-session-history/:id',
     params: {
       id: { type: 'string', pattern: /^[0-9a-fA-F-]+$/ },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
       sort: { type: 'string', optional: true, default: '-id' },
     },
   })
   async getParticipantSessionHistory(
-    ctx: Context<{ id: string; min_id?: number; max_id?: number; limit?: number; sort?: string }>
+    ctx: Context<{ id: string; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
       const { id } = ctx.params

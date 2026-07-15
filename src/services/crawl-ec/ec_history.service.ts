@@ -409,7 +409,7 @@ export default class EcosystemHistoryService extends BaseService {
 
   @Action()
   public async getTRHistory(
-    ctx: Context<{ ecosystem_id: number; min_id?: number; max_id?: number; limit?: number; sort?: string }>
+    ctx: Context<{ ecosystem_id: number; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
       const { ecosystem_id: ecosystemId } = ctx.params
