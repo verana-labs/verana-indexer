@@ -2992,15 +2992,6 @@
             "description": "Maximum number of ecosystems to return"
           },
           {
-            "name": "sort",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
-          },
-          {
             "name": "trust_data",
             "in": "query",
             "required": false,

@@ -9,7 +9,6 @@ import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
-import { sortByStandardAttributes, validateSortParameter } from '../../common/utils/query_ordering'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
 import { compareById, parseIdSortDirection } from '../crawl-co/co_stats'
@@ -2462,7 +2461,6 @@ export default class ParticipantAPIService extends BullableService {
     params: {
       account: { type: 'string' },
       limit: { type: 'number', optional: true, default: 64 },
-      sort: { type: 'string', optional: true },
       trust_data: { type: 'string', optional: true },
     },
   })
@@ -2470,7 +2468,6 @@ export default class ParticipantAPIService extends BullableService {
     ctx: Context<{
       account: string
       limit?: number
-      sort?: string
       trust_data?: string
     }>
   ) {
@@ -2491,13 +2488,6 @@ export default class ParticipantAPIService extends BullableService {
       const accountCorpId = await resolveCorporationIdByAddress(account)
       if (accountCorpId === null) {
         return ApiResponder.success(ctx, { ecosystems: [] }, 200)
-      }
-
-      const sortParam = p.sort ?? '-modified'
-      try {
-        validateSortParameter(sortParam)
-      } catch (err: any) {
-        return ApiResponder.error(ctx, err.message, 400)
       }
 
       const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
@@ -2696,27 +2686,7 @@ export default class ParticipantAPIService extends BullableService {
         }
         return false
       })
-      const sortedFiltered = sortByStandardAttributes(filtered, sortParam, {
-        getId: (item: any) => item.id,
-        getCreated: (item: any) => item.created,
-        getModified: (item: any) => item.modified,
-        getParticipants: (item: any) => item.participants,
-        getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
-        getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
-        getParticipantsIssuer: (item: any) => item.participants_issuer,
-        getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
-        getParticipantsVerifier: (item: any) => item.participants_verifier,
-        getParticipantsHolder: (item: any) => item.participants_holder,
-        getWeight: (item: any) => item.weight,
-        getIssued: (item: any) => item.issued,
-        getVerified: (item: any) => item.verified,
-        getEcosystemSlashEvents: (item: any) => item.ecosystem_slash_events,
-        getEcosystemSlashedAmount: (item: any) => item.ecosystem_slashed_amount,
-        getNetworkSlashEvents: (item: any) => item.network_slash_events,
-        getNetworkSlashedAmount: (item: any) => item.network_slashed_amount,
-        defaultAttribute: 'modified',
-        defaultDirection: 'desc',
-      })
+      const sortedFiltered = [...filtered].sort((a: any, b: any) => compareById(a.id, b.id, 'desc'))
       const participantsWithTrustData =
         trustDataMode === 'none'
           ? sortedFiltered
