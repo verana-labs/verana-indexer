@@ -409,15 +409,37 @@ export function parseCorporationListPagination(params: {
   const maxId = parseCursorParam(params.max_id)
   if (!maxId.ok) return { ok: false, message: '"max_id" must be a non-negative integer' }
 
-  let direction: 'asc' | 'desc' = 'desc'
-  if (params.sort !== undefined && params.sort !== '') {
-    const sort = String(params.sort).trim()
-    if (sort === 'id' || sort === '+id') direction = 'asc'
-    else if (sort === '-id') direction = 'desc'
-    else return { ok: false, message: 'Only "id" sort is supported (use "id", "+id", or "-id")' }
-  }
+  const sortParsed = parseIdSortDirection(params.sort)
+  if (!sortParsed.ok) return { ok: false, message: sortParsed.message }
 
-  return { ok: true, value: { limit, minId: minId.value, maxId: maxId.value, direction } }
+  return { ok: true, value: { limit, minId: minId.value, maxId: maxId.value, direction: sortParsed.direction } }
+}
+
+export function parseIdSortDirection(
+  sort?: string | number
+): { ok: true; direction: 'asc' | 'desc' } | { ok: false; message: string } {
+  if (sort === undefined) return { ok: true, direction: 'desc' }
+  const s = String(sort).trim()
+  if (s === '') return { ok: true, direction: 'desc' }
+  if (s === 'id' || s === '+id') return { ok: true, direction: 'asc' }
+  if (s === '-id') return { ok: true, direction: 'desc' }
+  return { ok: false, message: 'Only "id" sort is supported (use "id", "+id", or "-id")' }
+}
+
+// Comparator for in-memory id ordering. Compares as BigInt so uint64 ids beyond
+// Number.MAX_SAFE_INTEGER keep their exact order.
+export function compareById(aId: unknown, bId: unknown, direction: 'asc' | 'desc'): number {
+  let av: bigint
+  let bv: bigint
+  try {
+    av = BigInt(String(aId))
+    bv = BigInt(String(bId))
+  } catch {
+    return 0
+  }
+  if (av === bv) return 0
+  const ascending = av < bv ? -1 : 1
+  return direction === 'asc' ? ascending : -ascending
 }
 
 export async function getResolvedBlockHeight(blockHeight?: number): Promise<number> {
