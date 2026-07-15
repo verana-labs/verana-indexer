@@ -32,6 +32,7 @@ import {
   countControlledEcosystemsBatch,
   emptyTrustDepositSnapshot,
   getCorporationTrustDepositBatch,
+  paginateActivityItems,
   parseCorporationListPagination,
   parseIdSortDirection,
 } from '../../../../src/services/crawl-co/co_stats'
@@ -198,6 +199,31 @@ describe('co_stats.parseIdSortDirection', () => {
     for (const s of ['modified', '-modified', 'weight', 'participants', 'created', 'id,modified']) {
       expect(parseIdSortDirection(s).ok).toBe(false)
     }
+  })
+})
+
+describe('co_stats.paginateActivityItems', () => {
+  const items = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]
+
+  it('defaults to id descending and caps at limit', () => {
+    const res = paginateActivityItems(items, { limit: 3, direction: 'desc' })
+    expect(res.map((r) => r.id)).toEqual([5, 4, 3])
+  })
+
+  it('applies min_id inclusive and max_id exclusive', () => {
+    const res = paginateActivityItems(items, { minId: '2', maxId: '4', limit: 64, direction: 'asc' })
+    expect(res.map((r) => r.id)).toEqual([2, 3])
+  })
+
+  it('orders ascending when requested', () => {
+    const res = paginateActivityItems(items, { limit: 2, direction: 'asc' })
+    expect(res.map((r) => r.id)).toEqual([1, 2])
+  })
+
+  it('keeps uint64 ids beyond Number.MAX_SAFE_INTEGER exact', () => {
+    const big = [{ id: '9223372036854775806' }, { id: '9223372036854775807' }]
+    const res = paginateActivityItems(big, { minId: '9223372036854775807', limit: 64, direction: 'asc' })
+    expect(res.map((r) => r.id)).toEqual(['9223372036854775807'])
   })
 })
 

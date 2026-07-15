@@ -5,11 +5,11 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { validateRequiredAccountParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
-import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { getModuleParamsAction } from '../../common/utils/params_service'
 import { mapTrustDepositApiFields } from '../../common/vpr-v4-mapping'
 import TrustDeposit from '../../models/trust_deposit'
+import { paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 
 @Service({
   name: SERVICE.V1.TrustDepositApiService.key,
@@ -109,12 +109,14 @@ export default class TrustDepositApiService extends BullableService {
     name: 'getTrustDepositHistory',
     params: {
       corporation: { type: 'string', min: 5 },
-      response_max_size: { type: 'number', optional: true, default: 64 },
-      transaction_timestamp_older_than: { type: 'string', optional: true },
+      min_id: { type: 'number', optional: true },
+      max_id: { type: 'number', optional: true },
+      limit: { type: 'number', optional: true },
+      sort: { type: 'string', optional: true, default: '-id' },
     },
   })
   public async getTrustDepositHistory(
-    ctx: Context<{ corporation: string; response_max_size?: number; transaction_timestamp_older_than?: string }>
+    ctx: Context<{ corporation: string; min_id?: number; max_id?: number; limit?: number; sort?: string }>
   ) {
     try {
       const accountValidation = validateRequiredAccountParam(ctx.params.corporation, 'corporation')
@@ -122,24 +124,11 @@ export default class TrustDepositApiService extends BullableService {
         return ApiResponder.error(ctx, accountValidation.error, 400)
       }
       const account = accountValidation.value
-      const {
-        response_max_size: responseMaxSize = 64,
-        transaction_timestamp_older_than: transactionTimestampOlderThan,
-      } = ctx.params
-
-      if (transactionTimestampOlderThan) {
-        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          )
-        }
-        const timestampDate = new Date(transactionTimestampOlderThan)
-        if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid transaction_timestamp_older_than format', 400)
-        }
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
       }
+      const { limit, minId, maxId, direction } = pageParsed.value
 
       const atBlockHeight =
         (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
@@ -163,6 +152,7 @@ export default class TrustDepositApiService extends BullableService {
         return ApiResponder.error(ctx, `No trust deposit found for corporation: ${account}`, 404)
       }
 
+      const fetchSize = minId !== undefined || maxId !== undefined ? Math.max(limit * 4, 256) : limit
       const activity = await buildActivityTimeline(
         {
           entityType: 'TrustDeposit',
@@ -172,8 +162,7 @@ export default class TrustDepositApiService extends BullableService {
           msgTypePrefixes: ['/verana.td.v1'],
         },
         {
-          responseMaxSize,
-          transactionTimestampOlderThan,
+          responseMaxSize: fetchSize,
           atBlockHeight,
         }
       )
@@ -181,7 +170,7 @@ export default class TrustDepositApiService extends BullableService {
       const result = {
         entity_type: 'TrustDeposit',
         entity_id: account,
-        activity: activity || [],
+        activity: paginateActivityItems(Array.isArray(activity) ? activity : [], { minId, maxId, limit, direction }),
       }
 
       return ApiResponder.success(ctx, result, 200)

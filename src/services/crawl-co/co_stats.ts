@@ -442,6 +442,38 @@ export function compareById(aId: unknown, bId: unknown, direction: 'asc' | 'desc
   return direction === 'asc' ? ascending : -ascending
 }
 
+// Apply the v4 id-cursor page to an in-memory activity timeline: half-open [minId, maxId) on
+// ActivityItem.id (inclusive lower, exclusive upper), ordered by id, capped at limit. Compares as
+// BigInt so uint64 ids stay exact.
+export function paginateActivityItems<T extends { id: unknown }>(
+  items: T[],
+  opts: { minId?: string; maxId?: string; limit: number; direction: 'asc' | 'desc' }
+): T[] {
+  const toBig = (v: unknown): bigint | null => {
+    try {
+      return BigInt(String(v))
+    } catch {
+      return null
+    }
+  }
+  let filtered = items
+  if (opts.minId !== undefined) {
+    const min = toBig(opts.minId)
+    filtered = filtered.filter((a) => {
+      const id = toBig(a.id)
+      return id !== null && id >= (min as bigint)
+    })
+  }
+  if (opts.maxId !== undefined) {
+    const max = toBig(opts.maxId)
+    filtered = filtered.filter((a) => {
+      const id = toBig(a.id)
+      return id !== null && id < (max as bigint)
+    })
+  }
+  return [...filtered].sort((a, b) => compareById(a.id, b.id, opts.direction)).slice(0, opts.limit)
+}
+
 export async function getResolvedBlockHeight(blockHeight?: number): Promise<number> {
   if (typeof blockHeight === 'number') return blockHeight
   const checkpoint = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION).first()

@@ -1007,7 +1007,7 @@
             "description": "Preferred language for document content"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -1016,7 +1016,27 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of records to return"
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id upper bound (exclusive)"
           },
           {
             "name": "modified_after",
@@ -1420,26 +1440,51 @@
             "description": "The Ecosystem ID to retrieve history for"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
+              "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of activity items to return (default: 64)"
+            "description": "Page size"
           },
           {
-            "name": "transaction_timestamp_older_than",
+            "name": "min_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "pattern": "^[0-9]+$"
             },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -2617,7 +2662,7 @@
             "description": "Filter by validation process state"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -2626,7 +2671,27 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of records to return"
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: id upper bound (exclusive)"
           },
           {
             "name": "when",
@@ -3582,26 +3647,51 @@
             "description": "Participant ID whose history will be returned"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
+              "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of activity items to return (default: 64)"
+            "description": "Page size"
           },
           {
-            "name": "transaction_timestamp_older_than",
+            "name": "min_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "pattern": "^[0-9]+$"
             },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3691,6 +3781,53 @@
               "format": "uuid"
             },
             "description": "Participant Session ID to fetch history for"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -4533,26 +4670,51 @@
             "description": "Corporation  address to retrieve trust deposit history for"
           },
           {
-            "name": "response_max_size",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
+              "maximum": 1024,
               "default": 64
             },
-            "description": "Maximum number of activity items to return (default: 64)"
+            "description": "Page size"
           },
           {
-            "name": "transaction_timestamp_older_than",
+            "name": "min_id",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "pattern": "^[0-9]+$"
             },
-            "description": "ISO 8601 timestamp to paginate results. Returns only activities with timestamps older than this value."
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -7968,7 +8130,7 @@
               "$ref": "#/components/schemas/Error"
             },
             "example": {
-              "error": "Invalid parameter: response_max_size must be between 1 and 1024",
+              "error": "Invalid parameter: limit must be between 1 and 1024",
               "code": 400
             }
           }
