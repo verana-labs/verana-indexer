@@ -1322,9 +1322,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Sort by id ascending or descending"
           },
           {
             "name": "trust_data",
@@ -2673,9 +2679,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Sort by id ascending or descending"
           },
           {
             "name": "min_participants",

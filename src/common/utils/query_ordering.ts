@@ -26,10 +26,6 @@ export interface SortOrder {
   direction: 'asc' | 'desc'
 }
 
-interface OrderableQueryBuilder {
-  orderBy(column: string, direction?: 'asc' | 'desc'): any
-}
-
 export function parseSortParameter(sortParam?: string): SortOrder[] {
   if (!sortParam || typeof sortParam !== 'string') {
     return []
@@ -69,44 +65,6 @@ export function parseSortParameter(sortParam?: string): SortOrder[] {
   }
 
   return sortOrders
-}
-
-// Attributes that exist as database columns (can be used in SQL ORDER BY)
-const DATABASE_COLUMN_ATTRIBUTES = ['id', 'modified', 'created'] as const
-
-export function applyOrdering<T extends OrderableQueryBuilder>(
-  queryBuilder: T,
-  sortParam?: string,
-  tablePrefix: string = ''
-): T {
-  const sortOrders = parseSortParameter(sortParam)
-  let hasIdInSort = false
-  let resultQuery = queryBuilder
-
-  // Only apply SQL ORDER BY for attributes that exist as database columns
-  for (const { attribute, direction } of sortOrders) {
-    if (DATABASE_COLUMN_ATTRIBUTES.includes(attribute as any)) {
-      const columnName = `${tablePrefix}${attribute}`
-      resultQuery = resultQuery.orderBy(columnName, direction) as T
-
-      if (attribute === 'id') {
-        hasIdInSort = true
-      }
-    }
-  }
-
-  const hasModifiedInSort = sortOrders.some((s) => s.attribute === 'modified')
-  if (!hasModifiedInSort && sortOrders.length === 0) {
-    const modifiedColumnName = `${tablePrefix}modified`
-    resultQuery = resultQuery.orderBy(modifiedColumnName, 'desc') as T
-  }
-
-  if (!hasIdInSort) {
-    const idColumnName = `${tablePrefix}id`
-    resultQuery = resultQuery.orderBy(idColumnName, 'desc') as T
-  }
-
-  return resultQuery
 }
 
 export function sortByStandardAttributes<T>(
