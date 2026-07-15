@@ -7,7 +7,6 @@ import ApiResponder from '../../common/utils/apiResponse'
 import knex from '../../common/utils/db_connection'
 import { BlockCheckpoint } from '../../models'
 import {
-  buildTrustSummaryFromStoredRow,
   getTrustEvaluationTtlSeconds,
   getTrustResultLatestByDidAtOrBeforeHeight,
   resolveTrustForDidAtHeight,
@@ -21,8 +20,8 @@ import {
   buildServices,
   type EcosystemsOptions,
   type PresentationsOptions,
-  resolveCorporationId,
 } from './trust-resolve-v4.builders'
+import { buildVtResponseCore, computeTrusted } from './trust-vt-response'
 
 function isDidParam(did: string): did is string {
   return did.startsWith('did:')
@@ -84,14 +83,7 @@ export class TrustApiService extends BaseService {
       | undefined
   ): boolean {
     if (!row) return false
-    const summary = buildTrustSummaryFromStoredRow({
-      did: row.did as string,
-      resolveResult: row.resolve_result ?? null,
-      evaluatedAtBlock: row.height as number,
-      createdAt: (row.evaluated_at ?? row.created_at) as Date | string | undefined,
-      trustTtlSeconds: getTrustEvaluationTtlSeconds(),
-    })
-    return summary.trust_status === 'TRUSTED' || summary.trust_status === 'PARTIAL'
+    return computeTrusted(row.resolve_result ?? null)
   }
 
   private shouldReevaluateTrustRow(
@@ -222,48 +214,24 @@ export class TrustApiService extends BaseService {
     const ttlSeconds = getTrustEvaluationTtlSeconds()
     const blockTime = await this.blockTimeAtHeight(effectiveHeight)
 
-    let evaluatedAtTime: string
-    let evaluatedAtBlock: number
-    let expiresAtTime: string
-    let trusted: boolean
-
-    if (row) {
-      const evaluatedAtSource = row.evaluated_at ?? row.created_at
-      const summary = buildTrustSummaryFromStoredRow({
-        did,
-        resolveResult,
-        evaluatedAtBlock: row.height,
-        createdAt: evaluatedAtSource,
-        trustTtlSeconds: ttlSeconds,
-      })
-      evaluatedAtTime =
-        evaluatedAtSource != null ? new Date(evaluatedAtSource as Date | string).toISOString() : summary.evaluated_at
-      expiresAtTime =
-        summary.expires_at ?? new Date(new Date(evaluatedAtTime).getTime() + ttlSeconds * 1000).toISOString()
-      evaluatedAtBlock = row.height
-      trusted = summary.trust_status === 'TRUSTED' || summary.trust_status === 'PARTIAL'
-    } else {
-      evaluatedAtTime = (blockTime ?? new Date()).toISOString()
-      evaluatedAtBlock = effectiveHeight
-      expiresAtTime = new Date(new Date(evaluatedAtTime).getTime() + ttlSeconds * 1000).toISOString()
-      trusted = false
-    }
-
-    const body: Record<string, unknown> = {
+    const core = await buildVtResponseCore({
       did,
-      trusted,
-      evaluatedAtTime,
-      evaluatedAtBlock,
-      expiresAtTime,
-      corporationId: await resolveCorporationId(did, requestedHeight),
-    }
+      resolveResult,
+      evaluatedAtBlock: row ? row.height : effectiveHeight,
+      evaluatedAtSource: row ? (row.evaluated_at ?? row.created_at) : null,
+      fallbackEvaluatedAtTime: (blockTime ?? new Date()).toISOString(),
+      ttlSeconds,
+      atHeight: requestedHeight,
+    })
+
+    const body: Record<string, unknown> = { ...core }
 
     if (ctx.params.corporation === true) {
       const corporation = await buildCorporation(did, requestedHeight)
       if (corporation) body.corporation = corporation
     }
 
-    const now = blockTime ?? new Date(evaluatedAtTime)
+    const now = blockTime ?? new Date(core.evaluatedAtTime)
     const states = this.parseParticipationsSelector(ctx.params.participations)
     if (states) body.participations = await buildParticipations(did, now, states, requestedHeight)
     const ecosystemsOpts = this.parseEcosystemsSelector(ctx.params.ecosystems)
