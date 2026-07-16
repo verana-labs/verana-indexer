@@ -90,11 +90,7 @@ async function fetchEntitiesAtHeight(args: {
     .distinctOn(source.entityIdColumn)
     .select('*')
     .where('height', '<=', blockHeight)
-    .orderBy([
-      { column: source.entityIdColumn },
-      { column: 'height', order: 'desc' },
-      { column: 'id', order: 'desc' },
-    ])
+    .orderBy([{ column: source.entityIdColumn }, { column: 'height', order: 'desc' }, { column: 'id', order: 'desc' }])
 
   const query = knex.from(latestRowPerEntity.as('state_at_height')).select('*')
   applyFilter(query)

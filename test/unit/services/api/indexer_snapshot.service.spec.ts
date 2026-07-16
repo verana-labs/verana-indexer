@@ -143,7 +143,10 @@ describe('IndexerSnapshotService snapshot endpoint', () => {
     return args.ecosystemId
   }
 
-  async function insertCredentialSchemaParent(args: { credentialSchemaId: number; ecosystemId: number }): Promise<void> {
+  async function insertCredentialSchemaParent(args: {
+    credentialSchemaId: number
+    ecosystemId: number
+  }): Promise<void> {
     const existing = await knex('credential_schemas').where('id', args.credentialSchemaId).first()
     if (existing) return
     await insertRow('credential_schemas', {
