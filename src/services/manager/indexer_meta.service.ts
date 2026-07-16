@@ -111,21 +111,6 @@ export default class IndexerMetaService extends BaseService {
     super(broker)
   }
 
-  private async getNodeInfoWithTimeout(timeoutMs: number): Promise<GetNodeInfoResponseSDKType | null> {
-    try {
-      const lcdClient = await getLcdClient()
-      const nodeInfo = await Promise.race([
-        lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo(),
-        new Promise<null>((resolve) => {
-          setTimeout(() => resolve(null), timeoutMs)
-        }),
-      ])
-      return nodeInfo as GetNodeInfoResponseSDKType | null
-    } catch {
-      return null
-    }
-  }
-
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
     const maxHeight = await this.getLatestIndexedHeight()
     if (maxHeight <= 0) return null
@@ -170,10 +155,8 @@ export default class IndexerMetaService extends BaseService {
   @Action()
   public async getVersion(ctx: Context) {
     try {
-      const includeRuntimeInfo = process.env.VERSION_INCLUDE_RUNTIME_NETWORK_INFO === 'true'
-      const nodeInfo = includeRuntimeInfo
-        ? await this.getNodeInfoWithTimeout(Number(process.env.VERSION_NODE_INFO_TIMEOUT_MS || 250))
-        : null
+      const lcdClient = await getLcdClient()
+      const nodeInfo: GetNodeInfoResponseSDKType = await lcdClient.provider.cosmos.base.tendermint.v1beta1.getNodeInfo()
 
       const networkInfo = {
         chain_id: nodeInfo?.default_node_info?.network || Network.chainId || 'unknown',

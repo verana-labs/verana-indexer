@@ -16,18 +16,13 @@ import {
   resolveParticipantsParticipantColumn,
 } from '../../common/utils/installed_table_columns'
 import { getModuleParamsAction } from '../../common/utils/params_service'
-import {
-  applyOrdering,
-  parseSortParameter,
-  sortByStandardAttributes,
-  validateSortParameter,
-} from '../../common/utils/query_ordering'
 import { overrideSchemaIdInString } from '../../common/utils/schema_id_normalizer'
 import { mapCredentialSchemaApiFields } from '../../common/vpr-v4-mapping'
 import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
+import { compareById, parseIdSortDirection } from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
 import { calculateCredentialSchemaStats } from './cs_stats'
 
@@ -529,89 +524,6 @@ function applyHalfOpenRangeToRows<T>(
     filtered = filtered.filter((row) => readValue(row) < maxNum)
   }
   return filtered
-}
-
-function sortCredentialSchemaRows<
-  T extends {
-    id: number
-    created: string
-    modified: string
-    participants: number
-    weight: number
-    issued: number
-    verified: number
-    ecosystem_slash_events: number
-    ecosystem_slashed_amount: number
-    network_slash_events: number
-    network_slashed_amount: number
-  },
->(rows: T[], sort: string | undefined, limit: number): T[] {
-  return sortByStandardAttributes<T>(rows, sort, {
-    getId: (item) => item.id,
-    getCreated: (item) => item.created,
-    getModified: (item) => item.modified,
-    getParticipants: (item) => item.participants,
-    getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
-    getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
-    getParticipantsIssuer: (item: any) => item.participants_issuer,
-    getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
-    getParticipantsVerifier: (item: any) => item.participants_verifier,
-    getParticipantsHolder: (item: any) => item.participants_holder,
-    getWeight: (item) => item.weight,
-    getIssued: (item) => item.issued,
-    getVerified: (item) => item.verified,
-    getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-    getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-    getNetworkSlashEvents: (item) => item.network_slash_events,
-    getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-    defaultAttribute: 'modified',
-    defaultDirection: 'desc',
-  }).slice(0, limit)
-}
-
-const SQL_SORTABLE_CREDENTIAL_SCHEMA_ATTRIBUTES = new Set<string>([
-  'id',
-  'modified',
-  'created',
-  'participants',
-  'participants_ecosystem',
-  'participants_issuer_grantor',
-  'participants_issuer',
-  'participants_verifier_grantor',
-  'participants_verifier',
-  'participants_holder',
-  'weight',
-  'issued',
-  'verified',
-  'ecosystem_slash_events',
-  'ecosystem_slashed_amount',
-  'network_slash_events',
-  'network_slashed_amount',
-])
-
-function applyCredentialSchemaSqlSort(query: any, sort: string | undefined): { fullyApplied: boolean } {
-  if (!sort || typeof sort !== 'string' || !sort.trim()) {
-    query.orderBy('modified', 'desc').orderBy('id', 'desc')
-    return { fullyApplied: true }
-  }
-
-  const sortOrders = parseSortParameter(sort)
-  let hasIdSort = false
-  let fullyApplied = true
-  for (const { attribute, direction } of sortOrders) {
-    if (!SQL_SORTABLE_CREDENTIAL_SCHEMA_ATTRIBUTES.has(attribute)) {
-      fullyApplied = false
-      continue
-    }
-    query.orderBy(attribute, direction)
-    if (attribute === 'id') hasIdSort = true
-  }
-
-  if (!hasIdSort) {
-    query.orderBy('id', 'desc')
-  }
-
-  return { fullyApplied }
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -1696,12 +1608,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       const participantAccount = participantValidation.value
 
-      const effectiveSort = sort ?? '-id'
-      try {
-        validateSortParameter(effectiveSort)
-      } catch (err: any) {
-        return ApiResponder.error(ctx, err.message, 400)
+      const sortParsed = parseIdSortDirection(sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDirection = sortParsed.direction
 
       const blockHeight = (ctx.meta as any)?.blockHeight
       const requestedLimit = limitParam ?? maxSize
@@ -1828,7 +1739,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .orderBy('csh.created_at', 'desc')
             .orderBy('csh.id', 'desc')
             .as('latest')
-          const orderedLatest = applyOrdering(knex.from(latestSub).select('*'), effectiveSort)
+          const orderedLatest = knex.from(latestSub).select('*').orderBy('credential_schema_id', sortDirection)
           items = await orderedLatest.limit(limit)
         } else {
           const ranked = knex('credential_schema_history as csh')
@@ -1854,7 +1765,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               applyMetricRangeFilters(qb)
             })
             .as('ranked')
-          const orderedLatest = applyOrdering(knex.from(ranked).select('*').where('rn', 1), effectiveSort)
+          const orderedLatest = knex
+            .from(ranked)
+            .select('*')
+            .where('rn', 1)
+            .orderBy('credential_schema_id', sortDirection)
           items = await orderedLatest.limit(limit)
         }
 
@@ -2171,7 +2086,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         const typedFilteredItems = filteredWithStats as FilteredItemWithStats[]
-        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, effectiveSort, limit)
+        const sortedItems = [...typedFilteredItems]
+          .sort((a, b) => compareById(a.id, b.id, sortDirection))
+          .slice(0, limit)
 
         return ApiResponder.success(
           ctx,
@@ -2237,9 +2154,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (effectiveHolderOnboarding !== undefined) {
         query.where('holder_onboarding_mode', effectiveHolderOnboarding)
       }
-      const { fullyApplied: liveSortFullyApplied } = applyCredentialSchemaSqlSort(query, effectiveSort)
-      const liveFetchLimit = liveSortFullyApplied ? limit : Math.max(limit * 2, 256)
-      const items = await query.limit(liveFetchLimit)
+      const items = await query.orderBy('id', sortDirection).limit(limit)
 
       const schemasWithStats = items.map((item) => {
         const storedSchemaString = getStoredSchemaString(item.json_schema)
@@ -2308,9 +2223,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const filteredItems = cleanItems
 
       type SchemaWithStats = (typeof filteredItems)[0]
-      const sortedItems = liveSortFullyApplied
-        ? (filteredItems as SchemaWithStats[]).slice(0, limit)
-        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], effectiveSort, limit)
+      const sortedItems = (filteredItems as SchemaWithStats[]).slice(0, limit)
 
       return ApiResponder.success(
         ctx,
@@ -2419,7 +2332,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const idMin = minId != null && Number.isFinite(Number(minId)) ? Number(minId) : undefined
       const idMax = maxId != null && Number.isFinite(Number(maxId)) ? Number(maxId) : undefined
       const effectiveLimit = Math.min(Math.max(Number(limitParam ?? responseMaxSize) || 64, 1), 1024)
-      const sortAscending = String(sortParam).trim().replace(/^\+/, '') === 'id'
+      const sortParsed = parseIdSortDirection(sortParam)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
+      }
+      const sortAscending = sortParsed.direction === 'asc'
 
       if (transactionTimestampOlderThan) {
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
@@ -2463,9 +2380,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       let activityItems = Array.isArray(activity) ? activity : []
       if (idMin !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) >= idMin)
       if (idMax !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) < idMax)
-      activityItems = activityItems.sort((a: any, b: any) =>
-        sortAscending ? Number(a.id) - Number(b.id) : Number(b.id) - Number(a.id)
-      )
+      activityItems = activityItems.sort((a: any, b: any) => compareById(a.id, b.id, sortAscending ? 'asc' : 'desc'))
       activityItems = activityItems.slice(0, effectiveLimit)
 
       const result = {

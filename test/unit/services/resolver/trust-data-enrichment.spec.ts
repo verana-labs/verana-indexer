@@ -12,17 +12,16 @@ jest.mock('../../../../src/common/utils/db_connection', () => {
   return knexMock
 })
 
-jest.mock('../../../../src/services/resolver/trust-resolve', () => ({
+jest.mock('../../../../src/services/resolver/trust-vt-response', () => ({
   __esModule: true,
-  getTrustEvaluationTtlSeconds: jest.fn(() => 3600),
-  extractQ1CredentialArrays: jest.fn(() => ({ credentials: [], failedCredentials: [] })),
-  buildTrustSummaryFromStoredRow: jest.fn((args: any) => ({
+  buildVtResponse: jest.fn(async (args: any, mode: 'summary' | 'full') => ({
     did: args.did,
-    trust_status: 'UNTRUSTED',
-    production: false,
-    evaluated_at: '2026-01-01T00:00:00Z',
-    evaluated_at_block: args.evaluatedAtBlock,
-    expires_at: '2026-01-01T01:00:00Z',
+    trusted: false,
+    evaluatedAtTime: '2026-01-01T00:00:00Z',
+    evaluatedAtBlock: args.evaluatedAtBlock,
+    expiresAtTime: '2026-01-01T01:00:00Z',
+    corporationId: 0,
+    ...(mode === 'full' ? { ecsCredentials: [] } : {}),
   })),
 }))
 
