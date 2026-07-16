@@ -4,7 +4,6 @@ import { knexConfig } from '../../knexfile'
 import { Config } from '../index'
 
 pgTypes.setTypeParser(20, (val: string) => (val === null ? null : Number(val)))
-pgTypes.setTypeParser(1700, (val: string) => (val === null ? null : Number(val)))
 
 const environment = process.env.NODE_ENV || 'development'
 const cfg = knexConfig[environment]

@@ -8,6 +8,11 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+} from '../../common/utils/exact_numeric_range'
+import {
   ensureDepositDefaultIfColumnExists,
   finalizeEcosystemHistoryInsert,
   resolveEcosystemHistoryParticipantColumn,
@@ -183,15 +188,15 @@ function addStatsToHistoryRow(historyRow: any, stats: any): void {
   target.participants_verifier_grantor = stats.participants_verifier_grantor
   target.participants_verifier = stats.participants_verifier
   target.participants_holder = stats.participants_holder
-  target.weight = Number(stats.weight ?? 0)
+  target.weight = String(stats.weight ?? '0')
   target.issued = Number(stats.issued ?? 0)
   target.verified = Number(stats.verified ?? 0)
   target.ecosystem_slash_events = stats.ecosystem_slash_events
-  target.ecosystem_slashed_amount = Number(stats.ecosystem_slashed_amount ?? 0)
-  target.ecosystem_slashed_amount_repaid = Number(stats.ecosystem_slashed_amount_repaid ?? 0)
+  target.ecosystem_slashed_amount = String(stats.ecosystem_slashed_amount ?? '0')
+  target.ecosystem_slashed_amount_repaid = String(stats.ecosystem_slashed_amount_repaid ?? '0')
   target.network_slash_events = stats.network_slash_events
-  target.network_slashed_amount = Number(stats.network_slashed_amount ?? 0)
-  target.network_slashed_amount_repaid = Number(stats.network_slashed_amount_repaid ?? 0)
+  target.network_slashed_amount = String(stats.network_slashed_amount ?? '0')
+  target.network_slashed_amount_repaid = String(stats.network_slashed_amount_repaid ?? '0')
 }
 
 function getCSStatsUpdateObject(stats: any): any {
@@ -203,15 +208,15 @@ function getCSStatsUpdateObject(stats: any): any {
     participants_verifier_grantor: stats.participants_verifier_grantor,
     participants_verifier: stats.participants_verifier,
     participants_holder: stats.participants_holder,
-    weight: Number(stats.weight ?? 0),
+    weight: String(stats.weight ?? '0'),
     issued: Number(stats.issued ?? 0),
     verified: Number(stats.verified ?? 0),
     ecosystem_slash_events: stats.ecosystem_slash_events,
-    ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-    ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+    ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+    ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
     network_slash_events: stats.network_slash_events,
-    network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-    network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+    network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+    network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
   }
 }
 
@@ -310,15 +315,15 @@ export async function syncEcosystemStatsAndHistoryFromSchemaChange(
     participants_holder: Number(trStats.participants_holder ?? 0),
     active_schemas: Number(trStats.active_schemas ?? 0),
     archived_schemas: Number(trStats.archived_schemas ?? 0),
-    weight: Number(trStats.weight ?? 0),
+    weight: String(trStats.weight ?? '0'),
     issued: Number(trStats.issued ?? 0),
     verified: Number(trStats.verified ?? 0),
     ecosystem_slash_events: Number(trStats.ecosystem_slash_events ?? 0),
-    ecosystem_slashed_amount: Number(trStats.ecosystem_slashed_amount ?? 0),
-    ecosystem_slashed_amount_repaid: Number(trStats.ecosystem_slashed_amount_repaid ?? 0),
+    ecosystem_slashed_amount: String(trStats.ecosystem_slashed_amount ?? '0'),
+    ecosystem_slashed_amount_repaid: String(trStats.ecosystem_slashed_amount_repaid ?? '0'),
     network_slash_events: Number(trStats.network_slash_events ?? 0),
-    network_slashed_amount: Number(trStats.network_slashed_amount ?? 0),
-    network_slashed_amount_repaid: Number(trStats.network_slashed_amount_repaid ?? 0),
+    network_slashed_amount: String(trStats.network_slashed_amount ?? '0'),
+    network_slashed_amount_repaid: String(trStats.network_slashed_amount_repaid ?? '0'),
   }
 
   await db('ecosystem').where('id', ecosystemId).update(trStatsUpdate)
@@ -1280,15 +1285,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               participants_verifier_grantor: stats.participants_verifier_grantor,
               participants_verifier: stats.participants_verifier,
               participants_holder: stats.participants_holder,
-              weight: Number(stats.weight ?? 0),
+              weight: String(stats.weight ?? '0'),
               issued: Number(stats.issued ?? 0),
               verified: Number(stats.verified ?? 0),
               ecosystem_slash_events: stats.ecosystem_slash_events,
-              ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-              ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+              ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+              ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
               network_slash_events: stats.network_slash_events,
-              network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-              network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+              network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+              network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
             })
         } catch (statsUpdateError: any) {
           this.logger.warn(
@@ -1498,12 +1503,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       max_participants_verifier: { type: 'number', optional: true },
       min_participants_holder: { type: 'number', optional: true },
       max_participants_holder: { type: 'number', optional: true },
-      min_weight: { type: 'number', optional: true },
-      max_weight: { type: 'number', optional: true },
-      min_issued: { type: 'number', optional: true },
-      max_issued: { type: 'number', optional: true },
-      min_verified: { type: 'number', optional: true },
-      max_verified: { type: 'number', optional: true },
+      min_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
       min_ecosystem_slash_events: { type: 'number', optional: true },
       max_ecosystem_slash_events: { type: 'number', optional: true },
       min_network_slash_events: { type: 'number', optional: true },
@@ -1539,12 +1544,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       max_participants_verifier?: number
       min_participants_holder?: number
       max_participants_holder?: number
-      min_weight?: number
-      max_weight?: number
-      min_issued?: number
-      max_issued?: number
-      min_verified?: number
-      max_verified?: number
+      min_weight?: string
+      max_weight?: string
+      min_issued?: string
+      max_issued?: string
+      min_verified?: string
+      max_verified?: string
       min_ecosystem_slash_events?: number
       max_ecosystem_slash_events?: number
       min_network_slash_events?: number
@@ -1705,9 +1710,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           )
           applyHalfOpenRangeToQuery(qb, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
           applyHalfOpenRangeToQuery(qb, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
-          applyHalfOpenRangeToQuery(qb, 'weight', minWeight, maxWeight)
-          applyHalfOpenRangeToQuery(qb, 'issued', minIssued, maxIssued)
-          applyHalfOpenRangeToQuery(qb, 'verified', minVerified, maxVerified)
+          applyExactRangeToQuery(qb, 'weight', minWeight, maxWeight)
+          applyExactRangeToQuery(qb, 'issued', minIssued, maxIssued)
+          applyExactRangeToQuery(qb, 'verified', minVerified, maxVerified)
           applyHalfOpenRangeToQuery(qb, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
           applyHalfOpenRangeToQuery(qb, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
         }
@@ -1833,9 +1838,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
                 participants_verifier_grantor: Number(historyRecord.participants_verifier_grantor || 0),
                 participants_verifier: Number(historyRecord.participants_verifier || 0),
                 participants_holder: Number(historyRecord.participants_holder || 0),
-                weight: Number(historyRecord.weight || 0),
-                issued: Number(historyRecord.issued || 0),
-                verified: Number(historyRecord.verified || 0),
+                weight: String(historyRecord.weight ?? '0'),
+                issued: Number(historyRecord.issued ?? 0),
+                verified: Number(historyRecord.verified ?? 0),
                 ecosystem_slash_events: Number(historyRecord.ecosystem_slash_events || 0),
                 ecosystem_slashed_amount: Number(historyRecord.ecosystem_slashed_amount || 0),
                 ecosystem_slashed_amount_repaid: Number(historyRecord.ecosystem_slashed_amount_repaid || 0),
@@ -1917,15 +1922,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
                 participants_verifier_grantor: Number(stats.participants_verifier_grantor ?? 0),
                 participants_verifier: Number(stats.participants_verifier ?? 0),
                 participants_holder: Number(stats.participants_holder ?? 0),
-                weight: Number(stats.weight ?? 0),
+                weight: String(stats.weight ?? '0'),
                 issued: Number(stats.issued ?? 0),
                 verified: Number(stats.verified ?? 0),
                 ecosystem_slash_events: Number(stats.ecosystem_slash_events ?? 0),
-                ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-                ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+                ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+                ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
                 network_slash_events: Number(stats.network_slash_events ?? 0),
-                network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-                network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+                network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+                network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
               }
             })
           }
@@ -1991,9 +1996,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               participants_verifier_grantor: num((stats as any).participants_verifier_grantor),
               participants_verifier: num((stats as any).participants_verifier),
               participants_holder: num((stats as any).participants_holder),
-              weight: num(stats.weight),
-              issued: num(stats.issued),
-              verified: num(stats.verified),
+              weight: String(stats.weight ?? '0'),
+              issued: Number(stats.issued ?? 0),
+              verified: Number(stats.verified ?? 0),
               ecosystem_slash_events: num(stats.ecosystem_slash_events),
               ecosystem_slashed_amount: num(stats.ecosystem_slashed_amount),
               ecosystem_slashed_amount_repaid: num(stats.ecosystem_slashed_amount_repaid),
@@ -2044,15 +2049,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           maxParticipantsHolder,
           (s) => toFiniteNumber((s as any).participants_holder)
         )
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minWeight, maxWeight, (s) =>
-          toFiniteNumber(s.weight)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minIssued, maxIssued, (s) =>
-          toFiniteNumber(s.issued)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minVerified, maxVerified, (s) =>
-          toFiniteNumber(s.verified)
-        )
+        filteredWithStats = filterRowsByExactRange(filteredWithStats, minWeight, maxWeight, (s) => s.weight)
+        filteredWithStats = filterRowsByExactRange(filteredWithStats, minIssued, maxIssued, (s) => s.issued)
+        filteredWithStats = filterRowsByExactRange(filteredWithStats, minVerified, maxVerified, (s) => s.verified)
         filteredWithStats = applyHalfOpenRangeToRows(
           filteredWithStats,
           minEcosystemSlashEvents,
@@ -2074,7 +2073,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           participants_verifier_grantor: number
           participants_verifier: number
           participants_holder: number
-          weight: number
+          weight: string
           issued: number
           verified: number
           ecosystem_slash_events: number
@@ -2127,9 +2126,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       )
       applyHalfOpenRangeToQuery(query, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
       applyHalfOpenRangeToQuery(query, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
-      applyHalfOpenRangeToQuery(query, 'weight', minWeight, maxWeight)
-      applyHalfOpenRangeToQuery(query, 'issued', minIssued, maxIssued)
-      applyHalfOpenRangeToQuery(query, 'verified', minVerified, maxVerified)
+      applyExactRangeToQuery(query, 'weight', minWeight, maxWeight)
+      applyExactRangeToQuery(query, 'issued', minIssued, maxIssued)
+      applyExactRangeToQuery(query, 'verified', minVerified, maxVerified)
       applyHalfOpenRangeToQuery(query, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
       applyHalfOpenRangeToQuery(query, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
 
@@ -2188,7 +2187,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             typeof (item as any).participants_holder === 'number'
               ? (item as any).participants_holder
               : Number((item as any).participants_holder || 0),
-          weight: typeof item.weight === 'number' ? item.weight : Number(item.weight || 0),
+          weight: String(item.weight ?? '0'),
           issued: typeof item.issued === 'number' ? item.issued : Number(item.issued || 0),
           verified: typeof item.verified === 'number' ? item.verified : Number(item.verified || 0),
           ecosystem_slash_events:

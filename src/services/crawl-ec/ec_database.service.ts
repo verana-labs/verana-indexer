@@ -8,6 +8,11 @@ import { validateParticipantParam } from '../../common/utils/accountValidation'
 import ApiResponder from '../../common/utils/apiResponse'
 import knex from '../../common/utils/db_connection'
 import {
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+} from '../../common/utils/exact_numeric_range'
+import {
   ensureDepositDefaultIfColumnExists,
   finalizeEcosystemHistoryInsert,
   prepareEcosystemSnapshotRowForInsert,
@@ -861,15 +866,9 @@ export default class EcosystemDatabaseService extends BaseService {
     filtered = this.applyRangeToRows(filtered, filters.minParticipantsHolder, filters.maxParticipantsHolder, (r) =>
       EcosystemDatabaseService.toFiniteNumber(r.participants_holder)
     )
-    filtered = this.applyRangeToRows(filtered, filters.minWeight, filters.maxWeight, (r) =>
-      EcosystemDatabaseService.toFiniteNumber(r.weight)
-    )
-    filtered = this.applyRangeToRows(filtered, filters.minIssued, filters.maxIssued, (r) =>
-      EcosystemDatabaseService.toFiniteNumber(r.issued)
-    )
-    filtered = this.applyRangeToRows(filtered, filters.minVerified, filters.maxVerified, (r) =>
-      EcosystemDatabaseService.toFiniteNumber(r.verified)
-    )
+    filtered = filterRowsByExactRange(filtered, filters.minWeight, filters.maxWeight, (r) => r.weight)
+    filtered = filterRowsByExactRange(filtered, filters.minIssued, filters.maxIssued, (r) => r.issued)
+    filtered = filterRowsByExactRange(filtered, filters.minVerified, filters.maxVerified, (r) => r.verified)
     filtered = this.applyRangeToRows(filtered, filters.minEcosystemSlashEvents, filters.maxEcosystemSlashEvents, (r) =>
       EcosystemDatabaseService.toFiniteNumber(r.ecosystem_slash_events)
     )
@@ -1501,12 +1500,12 @@ export default class EcosystemDatabaseService extends BaseService {
       max_participants_verifier: { type: 'number', optional: true },
       min_participants_holder: { type: 'number', optional: true },
       max_participants_holder: { type: 'number', optional: true },
-      min_weight: { type: 'string', optional: true },
-      max_weight: { type: 'string', optional: true },
-      min_issued: { type: 'string', optional: true },
-      max_issued: { type: 'string', optional: true },
-      min_verified: { type: 'string', optional: true },
-      max_verified: { type: 'string', optional: true },
+      min_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
       min_ecosystem_slash_events: { type: 'number', optional: true },
       max_ecosystem_slash_events: { type: 'number', optional: true },
       min_network_slash_events: { type: 'number', optional: true },
@@ -1760,7 +1759,7 @@ export default class EcosystemDatabaseService extends BaseService {
               participants_holder: Number(row.participants_holder ?? 0),
               active_schemas: Number(row.active_schemas ?? 0),
               archived_schemas: Number(row.archived_schemas ?? 0),
-              weight: Number(row.weight ?? 0),
+              weight: String(row.weight ?? '0'),
               issued: Number(row.issued ?? 0),
               verified: Number(row.verified ?? 0),
               ecosystem_slash_events: Number(row.ecosystem_slash_events ?? 0),
@@ -1863,7 +1862,7 @@ export default class EcosystemDatabaseService extends BaseService {
               participants_holder: Number((ecosystemHistory as any).participants_holder ?? 0),
               active_schemas: Number((ecosystemHistory as any).active_schemas ?? 0),
               archived_schemas: Number((ecosystemHistory as any).archived_schemas ?? 0),
-              weight: Number((ecosystemHistory as any).weight ?? 0),
+              weight: String((ecosystemHistory as any).weight ?? '0'),
               issued: Number((ecosystemHistory as any).issued ?? 0),
               verified: Number((ecosystemHistory as any).verified ?? 0),
               ecosystem_slash_events: Number((ecosystemHistory as any).ecosystem_slash_events ?? 0),
@@ -1948,24 +1947,9 @@ export default class EcosystemDatabaseService extends BaseService {
           maxParticipantsHolder
         )
         batchQuery = this.applyRangeToQuery(batchQuery, 'active_schemas', minActiveSchemas, maxActiveSchemas)
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'weight',
-          minWeight !== undefined ? Number(minWeight) : undefined,
-          maxWeight !== undefined ? Number(maxWeight) : undefined
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'issued',
-          minIssued !== undefined ? Number(minIssued) : undefined,
-          maxIssued !== undefined ? Number(maxIssued) : undefined
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'verified',
-          minVerified !== undefined ? Number(minVerified) : undefined,
-          maxVerified !== undefined ? Number(maxVerified) : undefined
-        )
+        batchQuery = applyExactRangeToQuery(batchQuery, 'weight', minWeight, maxWeight)
+        batchQuery = applyExactRangeToQuery(batchQuery, 'issued', minIssued, maxIssued)
+        batchQuery = applyExactRangeToQuery(batchQuery, 'verified', minVerified, maxVerified)
         batchQuery = this.applyRangeToQuery(
           batchQuery,
           'ecosystem_slash_events',
@@ -2068,7 +2052,7 @@ export default class EcosystemDatabaseService extends BaseService {
             participants_holder: Number(ec.participants_holder ?? 0),
             active_schemas: Number(ec.active_schemas ?? 0),
             archived_schemas: Number(ec.archived_schemas ?? 0),
-            weight: Number(ec.weight ?? 0),
+            weight: String(ec.weight ?? '0'),
             issued: Number(ec.issued ?? 0),
             verified: Number(ec.verified ?? 0),
             ecosystem_slash_events: Number(ec.ecosystem_slash_events ?? 0),
@@ -2131,24 +2115,9 @@ export default class EcosystemDatabaseService extends BaseService {
       query = this.applyRangeToQuery(query, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
       query = this.applyRangeToQuery(query, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
       query = this.applyRangeToQuery(query, 'active_schemas', minActiveSchemas, maxActiveSchemas)
-      query = this.applyRangeToQuery(
-        query,
-        'weight',
-        minWeight !== undefined ? Number(minWeight) : undefined,
-        maxWeight !== undefined ? Number(maxWeight) : undefined
-      )
-      query = this.applyRangeToQuery(
-        query,
-        'issued',
-        minIssued !== undefined ? Number(minIssued) : undefined,
-        maxIssued !== undefined ? Number(maxIssued) : undefined
-      )
-      query = this.applyRangeToQuery(
-        query,
-        'verified',
-        minVerified !== undefined ? Number(minVerified) : undefined,
-        maxVerified !== undefined ? Number(maxVerified) : undefined
-      )
+      query = applyExactRangeToQuery(query, 'weight', minWeight, maxWeight)
+      query = applyExactRangeToQuery(query, 'issued', minIssued, maxIssued)
+      query = applyExactRangeToQuery(query, 'verified', minVerified, maxVerified)
       query = this.applyRangeToQuery(query, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
       query = this.applyRangeToQuery(query, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
 
@@ -2203,9 +2172,9 @@ export default class EcosystemDatabaseService extends BaseService {
           participants_holder: Number((plain as any).participants_holder || 0),
           active_schemas: Number(plain.active_schemas || 0),
           archived_schemas: Number(plain.archived_schemas || 0),
-          weight: Number(plain.weight || 0),
-          issued: Number(plain.issued || 0),
-          verified: Number(plain.verified || 0),
+          weight: String(plain.weight ?? '0'),
+          issued: Number(plain.issued ?? 0),
+          verified: Number(plain.verified ?? 0),
           ecosystem_slash_events: Number(plain.ecosystem_slash_events || 0),
           ecosystem_slashed_amount: Number(plain.ecosystem_slashed_amount || 0),
           ecosystem_slashed_amount_repaid: Number(plain.ecosystem_slashed_amount_repaid || 0),
