@@ -3,10 +3,13 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import knex from '../../common/utils/db_connection'
 import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
+import { parseIdSortDirection } from '../crawl-co/co_stats'
 
 function serializeOperatorAuthorizationRow(row: any) {
   const spendLimit = row.spend_limit ?? null
@@ -26,6 +29,18 @@ function serializeOperatorAuthorizationRow(row: any) {
 
 interface GetOperatorAuthorizationParams {
   id: number
+}
+
+interface ListOperatorAuthorizationsParams {
+  corporation_id?: number
+  operator?: string
+  msg_type?: string
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
 }
 
 @Service({
@@ -73,5 +88,89 @@ export default class DelegationApiService extends BaseService {
       this.logger.error('Error in Delegation.getOperatorAuthorization:', err)
       return ApiResponder.error(ctx, `Failed to get operator authorization: ${err?.message || String(err)}`, 500)
     }
+  }
+
+  @Action({
+    rest: 'GET operator-authorizations',
+    params: {
+      corporation_id: { type: 'number', integer: true, positive: true, optional: true, convert: true },
+      operator: { type: 'string', optional: true },
+      msg_type: { type: 'string', optional: true },
+      only_active: { type: 'boolean', optional: true, convert: true },
+      modified_after: { type: 'string', optional: true },
+      limit: { type: 'number', integer: true, optional: true, convert: true },
+      min_id: { type: 'number', integer: true, optional: true, convert: true },
+      max_id: { type: 'number', integer: true, optional: true, convert: true },
+      sort: { type: 'string', optional: true },
+    },
+  })
+  async listOperatorAuthorizations(ctx: Context<ListOperatorAuthorizationsParams>) {
+    try {
+      const p = ctx.params
+
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
+      }
+      const sortDir = sortParsed.direction
+
+      let modifiedAfter: Date | undefined
+      if (p.modified_after) {
+        modifiedAfter = new Date(p.modified_after)
+        if (Number.isNaN(modifiedAfter.getTime())) {
+          return ApiResponder.error(ctx, 'Invalid modified_after datetime format', 400)
+        }
+      }
+
+      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
+      const blockHeight = getBlockHeight(ctx)
+
+      const query =
+        blockHeight !== undefined
+          ? this.buildAtHeightListQuery(blockHeight)
+          : knex<any>('operator_authorizations').select('*')
+      const idColumn = blockHeight !== undefined ? 'operator_authorization_id' : 'id'
+
+      let now: Date | undefined
+      if (p.only_active) {
+        now = blockHeight !== undefined ? await getBlockChainTimeAsOf(blockHeight, { logger: this.logger }) : new Date()
+      }
+
+      this.applyListFilters(query, p, { modifiedAfter, now, idColumn })
+      const rows = await query.orderBy(idColumn, sortDir).limit(limit)
+
+      return ApiResponder.success(ctx, {
+        authorizations: rows.map(serializeOperatorAuthorizationRow),
+      })
+    } catch (err: any) {
+      this.logger.error('Error in Delegation.listOperatorAuthorizations:', err)
+      return ApiResponder.error(ctx, `Failed to list operator authorizations: ${err?.message || String(err)}`, 500)
+    }
+  }
+
+  private buildAtHeightListQuery(blockHeight: number) {
+    const latestPerId = knex('operator_authorization_history')
+      .distinctOn('operator_authorization_id')
+      .select('*')
+      .where('height', '<=', blockHeight)
+      .orderBy('operator_authorization_id', 'asc')
+      .orderBy('height', 'desc')
+    return knex.from(latestPerId.as('oa')).select('*').where('revoked', false)
+  }
+
+  private applyListFilters(
+    query: any,
+    p: ListOperatorAuthorizationsParams,
+    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string }
+  ) {
+    if (p.corporation_id !== undefined) query.where('corporation_id', p.corporation_id)
+    if (p.operator) query.where('operator', p.operator)
+    if (p.msg_type) query.whereRaw('msg_types @> ?::jsonb', [JSON.stringify([p.msg_type])])
+    if (ctx.now) {
+      query.where((builder: any) => builder.whereNull('expiration').orWhere('expiration', '>', ctx.now))
+    }
+    if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
+    if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
+    if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)
   }
 }
