@@ -37,9 +37,7 @@ export async function buildVtResponseCore(args: VtResponseCoreArgs): Promise<VtR
     args.evaluatedAtSource != null
       ? new Date(args.evaluatedAtSource as Date | string).toISOString()
       : (args.fallbackEvaluatedAtTime ?? new Date().toISOString())
-  const expiresAtTime = new Date(
-    new Date(evaluatedAtTime).getTime() + Math.max(0, ttlSeconds) * 1000
-  ).toISOString()
+  const expiresAtTime = new Date(new Date(evaluatedAtTime).getTime() + Math.max(0, ttlSeconds) * 1000).toISOString()
 
   return {
     did: args.did,
