@@ -1,4 +1,5 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { Knex } from 'knex'
 import { Context, Errors, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { BULL_JOB_NAME, SERVICE } from '../../common'
@@ -29,43 +30,32 @@ type SnapshotResponse = {
   }
 }
 
-type SnapshotTables = {
-  hasEcosystem: boolean
-  hasCredentialSchemas: boolean
-  hasParticipants: boolean
-  ecosystemHasHeight: boolean
-  credentialSchemasHasHeight: boolean
-  participantsHasHeight: boolean
+type HistorySource = {
+  table: string
+  entityIdColumn: string
 }
 
-const TABLE_CHECK_TTL_MS = 60_000
-let cachedTables: { expiresAt: number; value: Promise<SnapshotTables> } | null = null
+const ECOSYSTEM_HISTORY: HistorySource = { table: 'ecosystem_history', entityIdColumn: 'ecosystem_id' }
+const CREDENTIAL_SCHEMA_HISTORY: HistorySource = {
+  table: 'credential_schema_history',
+  entityIdColumn: 'credential_schema_id',
+}
+const PARTICIPANT_HISTORY: HistorySource = { table: 'participant_history', entityIdColumn: 'participant_id' }
 
-async function getSnapshotTables(): Promise<SnapshotTables> {
+const HISTORY_SOURCES = [ECOSYSTEM_HISTORY, CREDENTIAL_SCHEMA_HISTORY, PARTICIPANT_HISTORY]
+
+const HISTORY_BOOKKEEPING_COLUMNS = new Set(['event_type', 'action', 'changes', 'created_at'])
+
+const TABLE_CHECK_TTL_MS = 60_000
+let cachedTables: { expiresAt: number; value: Promise<Record<string, boolean>> } | null = null
+
+async function getAvailableHistoryTables(): Promise<Record<string, boolean>> {
   const now = Date.now()
   if (cachedTables && cachedTables.expiresAt > now) return cachedTables.value
 
   const value = (async () => {
-    const [hasEcosystem, hasCredentialSchemas, hasParticipants] = await Promise.all([
-      knex.schema.hasTable('ecosystem'),
-      knex.schema.hasTable('credential_schemas'),
-      knex.schema.hasTable('participants'),
-    ])
-
-    const [ecosystemHasHeight, credentialSchemasHasHeight, participantsHasHeight] = await Promise.all([
-      hasEcosystem ? knex.schema.hasColumn('ecosystem', 'height') : Promise.resolve(false),
-      hasCredentialSchemas ? knex.schema.hasColumn('credential_schemas', 'height') : Promise.resolve(false),
-      hasParticipants ? knex.schema.hasColumn('participants', 'height') : Promise.resolve(false),
-    ])
-
-    return {
-      hasEcosystem,
-      hasCredentialSchemas,
-      hasParticipants,
-      ecosystemHasHeight,
-      credentialSchemasHasHeight,
-      participantsHasHeight,
-    }
+    const present = await Promise.all(HISTORY_SOURCES.map((source) => knex.schema.hasTable(source.table)))
+    return Object.fromEntries(HISTORY_SOURCES.map((source, index) => [source.table, present[index]]))
   })()
 
   cachedTables = { expiresAt: now + TABLE_CHECK_TTL_MS, value }
@@ -76,62 +66,80 @@ function uniquePositiveIds(values: unknown[]): number[] {
   return Array.from(new Set(values.map((value) => Number(value ?? 0)).filter((id) => Number.isInteger(id) && id > 0)))
 }
 
-async function fetchEcosystemsByDidOrIds(
-  did: string,
-  ids: number[],
-  height: number,
-  tables: SnapshotTables
-): Promise<SnapshotRow[]> {
-  if (!tables.hasEcosystem) return []
-
-  const query = knex('ecosystem')
-    .select('*')
-    .where((qb) => {
-      qb.where('did', did)
-      if (ids.length > 0) qb.orWhereIn('id', ids)
-    })
-
-  if (tables.ecosystemHasHeight) {
-    query.andWhere('height', '<=', height)
+function toEntityRow(row: SnapshotRow, entityIdColumn: string): SnapshotRow {
+  const entityRow: SnapshotRow = { id: Number(row[entityIdColumn] ?? 0) }
+  for (const [column, value] of Object.entries(row)) {
+    if (column === 'id' || column === entityIdColumn) continue
+    if (HISTORY_BOOKKEEPING_COLUMNS.has(column)) continue
+    entityRow[column] = value
   }
-
-  return query.orderBy('id', 'asc')
+  return entityRow
 }
 
-async function fetchParticipantsByDid(did: string, height: number, tables: SnapshotTables): Promise<SnapshotRow[]> {
-  if (!tables.hasParticipants) return []
+async function fetchEntitiesAtHeight(args: {
+  source: HistorySource
+  blockHeight: number
+  applyFilter: (query: Knex.QueryBuilder) => void
+}): Promise<SnapshotRow[]> {
+  const { source, blockHeight, applyFilter } = args
 
-  const query = knex('participants').select('*').where('did', did)
-  if (tables.participantsHasHeight) {
-    query.andWhere('height', '<=', height)
-  }
+  const tables = await getAvailableHistoryTables()
+  if (!tables[source.table]) return []
 
-  return query.orderBy('id', 'asc')
+  const latestRowPerEntity = knex(source.table)
+    .distinctOn(source.entityIdColumn)
+    .select('*')
+    .where('height', '<=', blockHeight)
+    .orderBy([
+      { column: source.entityIdColumn },
+      { column: 'height', order: 'desc' },
+      { column: 'id', order: 'desc' },
+    ])
+
+  const query = knex.from(latestRowPerEntity.as('state_at_height')).select('*')
+  applyFilter(query)
+
+  const rows: SnapshotRow[] = await query.orderBy(source.entityIdColumn, 'asc')
+  return rows.map((row) => toEntityRow(row, source.entityIdColumn))
+}
+
+async function fetchEcosystemsByDidOrIds(did: string, ids: number[], blockHeight: number): Promise<SnapshotRow[]> {
+  return fetchEntitiesAtHeight({
+    source: ECOSYSTEM_HISTORY,
+    blockHeight,
+    applyFilter: (query) =>
+      query.where((qb) => {
+        qb.where('did', did)
+        if (ids.length > 0) qb.orWhereIn('ecosystem_id', ids)
+      }),
+  })
+}
+
+async function fetchParticipantsByDid(did: string, blockHeight: number): Promise<SnapshotRow[]> {
+  return fetchEntitiesAtHeight({
+    source: PARTICIPANT_HISTORY,
+    blockHeight,
+    applyFilter: (query) => query.where('did', did),
+  })
 }
 
 async function fetchCredentialSchemas(args: {
   ecosystemIds: number[]
   schemaIds: number[]
-  height: number
-  tables: SnapshotTables
+  blockHeight: number
 }): Promise<SnapshotRow[]> {
-  const { ecosystemIds, schemaIds, height, tables } = args
-  if (!tables.hasCredentialSchemas) return []
+  const { ecosystemIds, schemaIds, blockHeight } = args
   if (ecosystemIds.length === 0 && schemaIds.length === 0) return []
 
-  const query = knex('credential_schemas')
-    .select('*')
-    .where((qb) => {
-      if (ecosystemIds.length > 0) qb.orWhereIn('ecosystem_id', ecosystemIds)
-      if (schemaIds.length > 0) qb.orWhereIn('id', schemaIds)
-    })
-    .orderBy('id', 'asc')
-
-  if (tables.credentialSchemasHasHeight) {
-    query.andWhere('height', '<=', height)
-  }
-
-  return query
+  return fetchEntitiesAtHeight({
+    source: CREDENTIAL_SCHEMA_HISTORY,
+    blockHeight,
+    applyFilter: (query) =>
+      query.where((qb) => {
+        if (ecosystemIds.length > 0) qb.orWhereIn('ecosystem_id', ecosystemIds)
+        if (schemaIds.length > 0) qb.orWhereIn('credential_schema_id', schemaIds)
+      }),
+  })
 }
 
 async function fetchParticipants(args: {
@@ -139,65 +147,44 @@ async function fetchParticipants(args: {
   blockHeight: number
   schemaIds: number[]
   corporationIds: number[]
-  tables: SnapshotTables
 }): Promise<SnapshotRow[]> {
-  const { did, schemaIds, corporationIds, tables, blockHeight } = args
-  if (!tables.hasParticipants) return []
+  const { did, blockHeight, schemaIds, corporationIds } = args
 
-  const query = knex('participants')
-    .select('*')
-    .where((qb) => {
-      qb.where('did', did)
-      if (corporationIds.length > 0) qb.orWhereIn('corporation_id', corporationIds)
-      if (schemaIds.length > 0) qb.orWhereIn('schema_id', schemaIds)
-    })
-    .orderBy('id', 'asc')
-
-  if (tables.participantsHasHeight) {
-    query.andWhere('height', '<=', blockHeight)
-  }
-
-  return query
+  return fetchEntitiesAtHeight({
+    source: PARTICIPANT_HISTORY,
+    blockHeight,
+    applyFilter: (query) =>
+      query.where((qb) => {
+        qb.where('did', did)
+        if (corporationIds.length > 0) qb.orWhereIn('corporation_id', corporationIds)
+        if (schemaIds.length > 0) qb.orWhereIn('schema_id', schemaIds)
+      }),
+  })
 }
 
 export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: number }): Promise<SnapshotResponse> {
   const { did, blockHeight } = args
-  const tables = await getSnapshotTables()
 
   const [ecosystemsByDid, participantsByDid] = await Promise.all([
-    fetchEcosystemsByDidOrIds(did, [], blockHeight, tables),
-    fetchParticipantsByDid(did, blockHeight, tables),
+    fetchEcosystemsByDidOrIds(did, [], blockHeight),
+    fetchParticipantsByDid(did, blockHeight),
   ])
 
   const schemas = await fetchCredentialSchemas({
     ecosystemIds: uniquePositiveIds(ecosystemsByDid.map((row) => row.id)),
     schemaIds: uniquePositiveIds(participantsByDid.map((row) => row.schema_id)),
-    height: blockHeight,
-    tables,
+    blockHeight,
   })
 
   const ecosystems = await fetchEcosystemsByDidOrIds(
     did,
     uniquePositiveIds(schemas.map((row) => row.ecosystem_id)),
-    blockHeight,
-    tables
+    blockHeight
   )
 
-  // TODO: Height filtering currently relies on Ecosystem because IDX-INDEXER-QRY-4 does not permit querying history tables.
-  if (ecosystems.length === 0) {
-    return {
-      did,
-      block_height: blockHeight,
-      ecosystems: [],
-      schemas: [],
-      participants: [],
-      count: { ecosystems: 0, schemas: 0, participants: 0 },
-    }
-  }
-
   const corporationIds = uniquePositiveIds([
-    ...ecosystems.map((row) => (row as { corporation_id?: unknown }).corporation_id),
-    ...participantsByDid.map((row) => (row as { corporation_id?: unknown }).corporation_id),
+    ...ecosystems.map((row) => row.corporation_id),
+    ...participantsByDid.map((row) => row.corporation_id),
   ])
 
   const participants = await fetchParticipants({
@@ -205,7 +192,6 @@ export async function getDidSnapshotAtHeight(args: { did: string; blockHeight: n
     blockHeight,
     schemaIds: uniquePositiveIds(schemas.map((row) => row.id)),
     corporationIds,
-    tables,
   })
 
   return {
