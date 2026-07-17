@@ -116,25 +116,59 @@ export default class DelegationDatabaseService extends BaseService {
     const { authorization, blockHeight } = ctx.params
 
     const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+    const records = toJsonbColumn(authorization.records)
 
-    await knex('vs_operator_authorizations')
-      .insert({
-        id: authorization.id,
+    await knex.transaction(async (trx) => {
+      await trx('vs_operator_authorizations')
+        .insert({
+          id: authorization.id,
+          corporation_id: authorization.corporation_id,
+          vs_operator: authorization.vs_operator,
+          records,
+          modified,
+          height: blockHeight,
+        })
+        .onConflict('id')
+        .merge(['corporation_id', 'vs_operator', 'records', 'modified', 'height'])
+
+      await trx('vs_operator_authorization_history').insert({
+        vs_operator_authorization_id: authorization.id,
         corporation_id: authorization.corporation_id,
         vs_operator: authorization.vs_operator,
-        records: toJsonbColumn(authorization.records),
+        records,
         modified,
+        revoked: false,
         height: blockHeight,
       })
-      .onConflict('id')
-      .merge(['corporation_id', 'vs_operator', 'records', 'modified', 'height'])
+    })
 
     return { success: true }
   }
 
   @Action({ name: 'deleteVSOperatorAuthorization' })
-  async deleteVSOperatorAuthorization(ctx: { params: { id: number } }): Promise<{ success: boolean }> {
-    await knex('vs_operator_authorizations').where('id', ctx.params.id).delete()
+  async deleteVSOperatorAuthorization(ctx: {
+    params: { id: number; blockHeight: number }
+  }): Promise<{ success: boolean }> {
+    const { id, blockHeight } = ctx.params
+
+    const existing = await knex('vs_operator_authorizations').where('id', id).first()
+    if (!existing) return { success: true }
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    await knex.transaction(async (trx) => {
+      await trx('vs_operator_authorizations').where('id', id).delete()
+
+      await trx('vs_operator_authorization_history').insert({
+        vs_operator_authorization_id: id,
+        corporation_id: existing.corporation_id,
+        vs_operator: existing.vs_operator,
+        modified,
+        revoked: true,
+        height: blockHeight,
+      })
+    })
+
     return { success: true }
   }
 }
