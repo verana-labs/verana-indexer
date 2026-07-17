@@ -9,6 +9,8 @@ import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
+import VSOperatorAuthorization from '../../models/vs_operator_authorization'
+import VSOperatorAuthorizationHistory from '../../models/vs_operator_authorization_history'
 import { parseIdSortDirection } from '../crawl-co/co_stats'
 
 function serializeOperatorAuthorizationRow(row: any) {
@@ -49,10 +51,6 @@ function serializeVSOperatorAuthorizationRow(row: any) {
     vs_operator: String(row.vs_operator),
     records: (row.records ?? []).map(serializeParticipantRecord),
   }
-}
-
-interface GetOperatorAuthorizationParams {
-  id: number
 }
 
 interface ListOperatorAuthorizationsParams {
@@ -103,7 +101,7 @@ export default class DelegationApiService extends BaseService {
       id: { type: 'number', integer: true, positive: true, convert: true },
     },
   })
-  async getOperatorAuthorization(ctx: Context<GetOperatorAuthorizationParams>) {
+  async getOperatorAuthorization(ctx: Context<{ id: number }>) {
     try {
       const { id } = ctx.params
       const blockHeight = getBlockHeight(ctx)
@@ -297,5 +295,43 @@ export default class DelegationApiService extends BaseService {
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
     if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
     if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)
+  }
+
+  private async resolveVSOAAtHeight(id: number, blockHeight: number): Promise<any | undefined> {
+    return VSOperatorAuthorizationHistory.query()
+      .where('vs_operator_authorization_id', id)
+      .where('height', '<=', blockHeight)
+      .orderBy('height', 'desc')
+      .orderBy('id', 'desc')
+      .first()
+  }
+
+  @Action({
+    rest: 'GET vs-operator-authorization/:id',
+    params: {
+      id: { type: 'number', integer: true, positive: true, convert: true },
+    },
+  })
+  async getVSOperatorAuthorization(ctx: Context<{ id: number }>) {
+    try {
+      const { id } = ctx.params
+      const blockHeight = getBlockHeight(ctx)
+
+      const row =
+        blockHeight !== undefined
+          ? await this.resolveVSOAAtHeight(id, blockHeight)
+          : await VSOperatorAuthorization.query().findById(id)
+
+      if (!row || row.revoked) {
+        return ApiResponder.error(ctx, 'VS operator authorization not found', 404)
+      }
+
+      return ApiResponder.success(ctx, {
+        authorization: serializeVSOperatorAuthorizationRow(row),
+      })
+    } catch (err: any) {
+      this.logger.error('Error in Delegation.getVSOperatorAuthorization:', err)
+      return ApiResponder.error(ctx, `Failed to get VS operator authorization: ${err?.message || String(err)}`, 500)
+    }
   }
 }
