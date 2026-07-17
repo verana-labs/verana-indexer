@@ -180,8 +180,8 @@ export default class CrawlDelegatorsTest {
       validator_id: validator?.id,
       delegator_address: 'delegator_addr_2',
     })
-    expect(d1?.amount).toBe(2000000)
-    expect(d2?.amount).toBe(2000000)
+    expect(d1?.amount).toBe('2000000')
+    expect(d2?.amount).toBe('2000000')
   }
 
   // ================================== EXISTING DB-DRIVEN TESTS ==================================
@@ -212,7 +212,7 @@ export default class CrawlDelegatorsTest {
       delegator_address: this.mockDelegatorAddress,
     })
 
-    expect(delegator?.amount).toBe(100000000)
+    expect(delegator?.amount).toBe('100000000')
     expect(validator?.delegators_count).toBe(1)
   }
 
@@ -250,7 +250,7 @@ export default class CrawlDelegatorsTest {
       delegator_address: this.mockDelegatorAddress,
     })
 
-    expect(delegator?.amount).toBe(200000000)
+    expect(delegator?.amount).toBe('200000000')
     expect(validator?.delegators_count).toBe(1)
   }
 
@@ -297,7 +297,7 @@ export default class CrawlDelegatorsTest {
       delegator_address: this.mockDelegatorAddress,
     })
 
-    expect(delegator?.amount).toBe(100000000)
+    expect(delegator?.amount).toBe('100000000')
     expect(validator?.delegators_count).toBe(1)
   }
 
@@ -382,7 +382,7 @@ export default class CrawlDelegatorsTest {
       delegator_address: this.mockDelegatorAddress,
     })
 
-    expect(delegator?.amount).toBe(100000000)
+    expect(delegator?.amount).toBe('100000000')
     expect(validator?.delegators_count).toBe(1)
   }
 
@@ -424,8 +424,8 @@ export default class CrawlDelegatorsTest {
       delegator_address: `${this.mockDelegatorAddress}_2`,
     })
 
-    expect(delegator1?.amount).toBe(100000000)
-    expect(delegator2?.amount).toBe(100000000)
+    expect(delegator1?.amount).toBe('100000000')
+    expect(delegator2?.amount).toBe('100000000')
     expect(validator?.delegators_count).toBe(2)
   }
 
@@ -486,7 +486,7 @@ export default class CrawlDelegatorsTest {
     })
 
     expect(delegatorSrc).toBeUndefined()
-    expect(delegatorDst?.amount).toBe(100000000)
+    expect(delegatorDst?.amount).toBe('100000000')
     expect(validatorSrc?.delegators_count).toBe(0)
     expect(validatorDst?.delegators_count).toBe(1)
   }

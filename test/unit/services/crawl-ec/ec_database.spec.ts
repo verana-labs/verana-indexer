@@ -25,6 +25,7 @@ jest.mock('../../../../src/common/utils/db_connection', () => {
   mockQuery.orderBy = jest.fn(() => mockQuery)
   mockQuery.limit = jest.fn(() => mockQuery)
   mockQuery.first = jest.fn(() => mockQuery)
+  mockQuery.raw = jest.fn((sql: string) => sql)
   mockQuery.schema = { hasTable: jest.fn().mockResolvedValue(false) }
   return mockQuery
 })
@@ -163,6 +164,7 @@ describe('EcosystemDatabaseService', () => {
 
       // Complete mock for chained calls
       const mockQuery: any = {
+        select: jest.fn().mockReturnThis(),
         withGraphFetched: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),

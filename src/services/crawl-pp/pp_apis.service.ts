@@ -8,6 +8,12 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import {
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+  isImpossibleExactRange,
+} from '../../common/utils/exact_numeric_range'
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
@@ -381,9 +387,9 @@ export default class ParticipantAPIService extends BullableService {
         db: 'participants_holder',
         enabled: options.participantRoles,
       },
-      { min: 'min_weight', max: 'max_weight', db: 'weight', enabled: options.weight },
-      { min: 'min_issued', max: 'max_issued', db: 'issued', enabled: options.issued },
-      { min: 'min_verified', max: 'max_verified', db: 'verified', enabled: options.verified },
+      { min: 'min_weight', max: 'max_weight', db: 'weight', enabled: options.weight, exact: true },
+      { min: 'min_issued', max: 'max_issued', db: 'issued', enabled: options.issued, exact: true },
+      { min: 'min_verified', max: 'max_verified', db: 'verified', enabled: options.verified, exact: true },
       {
         min: 'min_ecosystem_slash_events',
         max: 'max_ecosystem_slash_events',
@@ -408,6 +414,16 @@ export default class ParticipantAPIService extends BullableService {
 
       if (!spec.enabled) {
         requiresPostFilter = true
+        continue
+      }
+
+      if (spec.exact) {
+        if (isImpossibleExactRange(minRaw, maxRaw)) {
+          query.whereRaw('1 = 0')
+          impossibleRange = true
+          continue
+        }
+        applyExactRangeToQuery(query, col(spec.db), minRaw, maxRaw)
         continue
       }
 
@@ -442,9 +458,9 @@ export default class ParticipantAPIService extends BullableService {
       },
       { min: 'min_participants_verifier', max: 'max_participants_verifier', field: 'participants_verifier' },
       { min: 'min_participants_holder', max: 'max_participants_holder', field: 'participants_holder' },
-      { min: 'min_weight', max: 'max_weight', field: 'weight' },
-      { min: 'min_issued', max: 'max_issued', field: 'issued' },
-      { min: 'min_verified', max: 'max_verified', field: 'verified' },
+      { min: 'min_weight', max: 'max_weight', field: 'weight', exact: true },
+      { min: 'min_issued', max: 'max_issued', field: 'issued', exact: true },
+      { min: 'min_verified', max: 'max_verified', field: 'verified', exact: true },
       { min: 'min_ecosystem_slash_events', max: 'max_ecosystem_slash_events', field: 'ecosystem_slash_events' },
       { min: 'min_network_slash_events', max: 'max_network_slash_events', field: 'network_slash_events' },
     ]
@@ -454,6 +470,12 @@ export default class ParticipantAPIService extends BullableService {
       const minRaw = params[spec.min]
       const maxRaw = params[spec.max]
       if (minRaw === undefined && maxRaw === undefined) continue
+
+      if (spec.exact) {
+        if (isImpossibleExactRange(minRaw, maxRaw)) return []
+        results = filterRowsByExactRange(results, minRaw, maxRaw, (participant) => participant?.[spec.field])
+        continue
+      }
 
       const minValue = minRaw !== undefined ? Number(minRaw) : undefined
       const maxValue = maxRaw !== undefined ? Number(maxRaw) : undefined
@@ -869,7 +891,7 @@ export default class ParticipantAPIService extends BullableService {
       op_current_fees: participant.op_current_fees != null ? Number(participant.op_current_fees) : 0,
       op_current_deposit: participant.op_current_deposit != null ? Number(participant.op_current_deposit) : 0,
       op_validator_deposit: participant.op_validator_deposit != null ? Number(participant.op_validator_deposit) : 0,
-      weight: participant.weight != null ? Number(participant.weight) : 0,
+      weight: participant.weight != null ? String(participant.weight) : '0',
       issued: participant.issued != null ? Number(participant.issued) : 0,
       verified: participant.verified != null ? Number(participant.verified) : 0,
       participants: participant.participants != null ? Number(participant.participants) : 0,
@@ -1225,7 +1247,7 @@ export default class ParticipantAPIService extends BullableService {
       now
     )
 
-    const weight = typeof participant.weight === 'number' ? participant.weight : Number(participant.weight || 0)
+    const weight = String(participant.weight ?? '0')
     const statistics = {
       issued: typeof participant.issued === 'number' ? participant.issued : Number(participant.issued || 0),
       verified: typeof participant.verified === 'number' ? participant.verified : Number(participant.verified || 0),
@@ -1378,12 +1400,12 @@ export default class ParticipantAPIService extends BullableService {
       max_participants_verifier: { type: 'number', integer: true, optional: true },
       min_participants_holder: { type: 'number', integer: true, optional: true },
       max_participants_holder: { type: 'number', integer: true, optional: true },
-      min_weight: { type: 'number', optional: true },
-      max_weight: { type: 'number', optional: true },
-      min_issued: { type: 'number', optional: true },
-      max_issued: { type: 'number', optional: true },
-      min_verified: { type: 'number', optional: true },
-      max_verified: { type: 'number', optional: true },
+      min_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
       min_ecosystem_slash_events: { type: 'number', integer: true, optional: true },
       max_ecosystem_slash_events: { type: 'number', integer: true, optional: true },
       min_network_slash_events: { type: 'number', integer: true, optional: true },
