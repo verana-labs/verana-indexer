@@ -7,7 +7,6 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { parseIdSortDirection } from '../../common/utils/query_ordering'
 import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
 import VSOperatorAuthorization from '../../models/vs_operator_authorization'
@@ -51,6 +50,102 @@ function serializeVSOperatorAuthorizationRow(row: any) {
     vs_operator: String(row.vs_operator),
     records: (row.records ?? []).map(serializeParticipantRecord),
   }
+}
+
+function serializeParticipantRecord(record: any) {
+  const spendLimit = record.spend_limit ?? null
+  const feeSpendLimit = record.fee_spend_limit ?? null
+
+  return {
+    participant_id: Number(record.participant_id),
+    msg_types: record.msg_types ?? [],
+    ...(spendLimit ? { spend_limit: spendLimit, remaining_spend: record.remaining_spend ?? [] } : {}),
+    ...(feeSpendLimit ? { fee_spend_limit: feeSpendLimit, remaining_fee_spend: record.remaining_fee_spend ?? [] } : {}),
+    with_feegrant: Boolean(record.with_feegrant),
+    ...(record.expiration ? { expiration: dateToIsoOrNull(record.expiration) } : {}),
+    ...(record.period ? { period: String(record.period) } : {}),
+  }
+}
+
+function serializeVSOperatorAuthorizationRow(row: any) {
+  return {
+    id: Number(row.vs_operator_authorization_id ?? row.id),
+    corporation_id: Number(row.corporation_id),
+    vs_operator: String(row.vs_operator),
+    records: (row.records ?? []).map(serializeParticipantRecord),
+  }
+}
+
+function serializeParticipantRecord(record: any) {
+  const spendLimit = record.spend_limit ?? null
+  const feeSpendLimit = record.fee_spend_limit ?? null
+
+  return {
+    participant_id: Number(record.participant_id),
+    msg_types: record.msg_types ?? [],
+    ...(spendLimit ? { spend_limit: spendLimit, remaining_spend: record.remaining_spend ?? [] } : {}),
+    ...(feeSpendLimit ? { fee_spend_limit: feeSpendLimit, remaining_fee_spend: record.remaining_fee_spend ?? [] } : {}),
+    with_feegrant: Boolean(record.with_feegrant),
+    ...(record.expiration ? { expiration: dateToIsoOrNull(record.expiration) } : {}),
+    ...(record.period ? { period: String(record.period) } : {}),
+  }
+}
+
+function serializeVSOperatorAuthorizationRow(row: any) {
+  return {
+    id: Number(row.vs_operator_authorization_id ?? row.id),
+    corporation_id: Number(row.corporation_id),
+    vs_operator: String(row.vs_operator),
+    records: (row.records ?? []).map(serializeParticipantRecord),
+  }
+}
+
+interface ListOperatorAuthorizationsParams {
+  corporation_id?: number
+  operator?: string
+  msg_type?: string
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
+}
+
+interface ListVSOperatorAuthorizationsParams {
+  corporation_id?: number
+  vs_operator?: string
+  participant_id?: number
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
+}
+
+interface ListOperatorAuthorizationsParams {
+  corporation_id?: number
+  operator?: string
+  msg_type?: string
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
+}
+
+interface ListVSOperatorAuthorizationsParams {
+  corporation_id?: number
+  vs_operator?: string
+  participant_id?: number
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
 }
 
 interface ListOperatorAuthorizationsParams {

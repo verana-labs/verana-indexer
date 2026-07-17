@@ -95,7 +95,7 @@ export default class CrawlIbcIcs20Test {
       expect(result?.ibc_message_id).toEqual(message.id)
       expect(result?.sender).toEqual(ibcMessage.data.sender)
       expect(result?.receiver).toEqual(ibcMessage.data.receiver)
-      expect(result?.amount).toEqual(10000)
+      expect(result?.amount).toEqual('10000')
       expect(result?.denom).toEqual(ibcMessage.data.denom)
       expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ONGOING)
       expect(result?.sequence_key).toEqual(ibcMessage.sequence_key)
@@ -205,7 +205,7 @@ export default class CrawlIbcIcs20Test {
       expect(result?.ibc_message_id).toEqual(ibcMsg.id)
       expect(result?.receiver).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.RECEIVER))
       expect(result?.sender).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.SENDER))
-      expect(result?.amount).toEqual(10000)
+      expect(result?.amount).toEqual('10000')
       expect(result?.denom).toEqual(
         `${ibcMessage.dst_port_id}/${
           ibcMessage.dst_channel_id
@@ -295,7 +295,7 @@ export default class CrawlIbcIcs20Test {
       expect(result?.ibc_message_id).toEqual(ibcMsg.id)
       expect(result?.receiver).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.RECEIVER))
       expect(result?.sender).toEqual(getAttributeFrom(event1Attrs, EventAttribute.ATTRIBUTE_KEY.SENDER))
-      expect(result?.amount).toEqual(10000)
+      expect(result?.amount).toEqual('10000')
       expect(result?.denom).toEqual('uatom')
       expect(result?.status).toEqual(IbcIcs20.STATUS_TYPE.ACK_SUCCESS)
       expect(result?.sequence_key).toEqual(ibcMessage.sequence_key)

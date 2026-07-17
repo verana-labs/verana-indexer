@@ -26,15 +26,15 @@ function getDefaultTRStats(fallbackData?: any): any {
     participants_holder: Number(fallbackData?.participants_holder ?? 0) || 0,
     active_schemas: Number(fallbackData?.active_schemas ?? 0) || 0,
     archived_schemas: Number(fallbackData?.archived_schemas ?? 0) || 0,
-    weight: Number(fallbackData?.weight ?? 0) || 0,
+    weight: String(fallbackData?.weight ?? '0'),
     issued: Number(fallbackData?.issued ?? 0) || 0,
     verified: Number(fallbackData?.verified ?? 0) || 0,
     ecosystem_slash_events: Number(fallbackData?.ecosystem_slash_events ?? 0) || 0,
-    ecosystem_slashed_amount: Number(fallbackData?.ecosystem_slashed_amount ?? 0) || 0,
-    ecosystem_slashed_amount_repaid: Number(fallbackData?.ecosystem_slashed_amount_repaid ?? 0) || 0,
+    ecosystem_slashed_amount: String(fallbackData?.ecosystem_slashed_amount ?? '0'),
+    ecosystem_slashed_amount_repaid: String(fallbackData?.ecosystem_slashed_amount_repaid ?? '0'),
     network_slash_events: Number(fallbackData?.network_slash_events ?? 0) || 0,
-    network_slashed_amount: Number(fallbackData?.network_slashed_amount ?? 0) || 0,
-    network_slashed_amount_repaid: Number(fallbackData?.network_slashed_amount_repaid ?? 0) || 0,
+    network_slashed_amount: String(fallbackData?.network_slashed_amount ?? '0'),
+    network_slashed_amount_repaid: String(fallbackData?.network_slashed_amount_repaid ?? '0'),
   }
 }
 
@@ -253,15 +253,15 @@ export default class EcosystemMessageProcessorService extends BullableService {
         participants_holder: Number(stats.participants_holder ?? 0),
         active_schemas: Number(stats.active_schemas ?? 0),
         archived_schemas: Number(stats.archived_schemas ?? 0),
-        weight: Number(stats.weight ?? 0),
+        weight: String(stats.weight ?? BigInt(0)),
         issued: Number(stats.issued ?? 0),
         verified: Number(stats.verified ?? 0),
         ecosystem_slash_events: Number(stats.ecosystem_slash_events ?? 0),
-        ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-        ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+        ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+        ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
         network_slash_events: Number(stats.network_slash_events ?? 0),
-        network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-        network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+        network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+        network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
       }
 
       const statsChanged =
@@ -274,15 +274,15 @@ export default class EcosystemMessageProcessorService extends BullableService {
         Number(oldTr.participants_holder ?? 0) !== statsUpdate.participants_holder ||
         Number(oldTr.active_schemas ?? 0) !== statsUpdate.active_schemas ||
         Number(oldTr.archived_schemas ?? 0) !== statsUpdate.archived_schemas ||
-        Number(oldTr.weight ?? 0) !== statsUpdate.weight ||
+        String(oldTr.weight ?? '0') !== statsUpdate.weight ||
         Number(oldTr.issued ?? 0) !== statsUpdate.issued ||
         Number(oldTr.verified ?? 0) !== statsUpdate.verified ||
         Number(oldTr.ecosystem_slash_events ?? 0) !== statsUpdate.ecosystem_slash_events ||
-        Number(oldTr.ecosystem_slashed_amount ?? 0) !== statsUpdate.ecosystem_slashed_amount ||
-        Number(oldTr.ecosystem_slashed_amount_repaid ?? 0) !== statsUpdate.ecosystem_slashed_amount_repaid ||
+        String(oldTr.ecosystem_slashed_amount ?? '0') !== statsUpdate.ecosystem_slashed_amount ||
+        String(oldTr.ecosystem_slashed_amount_repaid ?? '0') !== statsUpdate.ecosystem_slashed_amount_repaid ||
         Number(oldTr.network_slash_events ?? 0) !== statsUpdate.network_slash_events ||
-        Number(oldTr.network_slashed_amount ?? 0) !== statsUpdate.network_slashed_amount ||
-        Number(oldTr.network_slashed_amount_repaid ?? 0) !== statsUpdate.network_slashed_amount_repaid
+        String(oldTr.network_slashed_amount ?? '0') !== statsUpdate.network_slashed_amount ||
+        String(oldTr.network_slashed_amount_repaid ?? '0') !== statsUpdate.network_slashed_amount_repaid
 
       if (statsChanged) {
         this.logger.info(`Stats changed for EC ${ecosystemId}, updating main table and recording StatsUpdate history`)
@@ -426,15 +426,15 @@ export default class EcosystemMessageProcessorService extends BullableService {
       participants_holder: Number(stats.participants_holder ?? 0),
       active_schemas: Number(stats.active_schemas ?? 0),
       archived_schemas: Number(stats.archived_schemas ?? 0),
-      weight: Number(stats.weight ?? 0),
+      weight: String(stats.weight ?? BigInt(0)),
       issued: Number(stats.issued ?? 0),
       verified: Number(stats.verified ?? 0),
       ecosystem_slash_events: Number(stats.ecosystem_slash_events ?? 0),
-      ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-      ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+      ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+      ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
       network_slash_events: Number(stats.network_slash_events ?? 0),
-      network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-      network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+      network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+      network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
       event_type: eventType,
       height: Number(height),
       changes: Object.keys(changes).length > 0 ? JSON.stringify(changes) : null,

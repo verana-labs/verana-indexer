@@ -8,6 +8,11 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+} from '../../common/utils/exact_numeric_range'
+import {
   ensureDepositDefaultIfColumnExists,
   finalizeEcosystemHistoryInsert,
   resolveEcosystemHistoryParticipantColumn,
@@ -16,18 +21,13 @@ import {
   resolveParticipantsParticipantColumn,
 } from '../../common/utils/installed_table_columns'
 import { getModuleParamsAction } from '../../common/utils/params_service'
-import {
-  applyOrdering,
-  parseSortParameter,
-  sortByStandardAttributes,
-  validateSortParameter,
-} from '../../common/utils/query_ordering'
 import { overrideSchemaIdInString } from '../../common/utils/schema_id_normalizer'
 import { mapCredentialSchemaApiFields } from '../../common/vpr-v4-mapping'
 import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
+import { compareById, parseIdSortDirection } from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
 import { calculateCredentialSchemaStats } from './cs_stats'
 
@@ -188,15 +188,15 @@ function addStatsToHistoryRow(historyRow: any, stats: any): void {
   target.participants_verifier_grantor = stats.participants_verifier_grantor
   target.participants_verifier = stats.participants_verifier
   target.participants_holder = stats.participants_holder
-  target.weight = Number(stats.weight ?? 0)
+  target.weight = String(stats.weight ?? '0')
   target.issued = Number(stats.issued ?? 0)
   target.verified = Number(stats.verified ?? 0)
   target.ecosystem_slash_events = stats.ecosystem_slash_events
-  target.ecosystem_slashed_amount = Number(stats.ecosystem_slashed_amount ?? 0)
-  target.ecosystem_slashed_amount_repaid = Number(stats.ecosystem_slashed_amount_repaid ?? 0)
+  target.ecosystem_slashed_amount = String(stats.ecosystem_slashed_amount ?? '0')
+  target.ecosystem_slashed_amount_repaid = String(stats.ecosystem_slashed_amount_repaid ?? '0')
   target.network_slash_events = stats.network_slash_events
-  target.network_slashed_amount = Number(stats.network_slashed_amount ?? 0)
-  target.network_slashed_amount_repaid = Number(stats.network_slashed_amount_repaid ?? 0)
+  target.network_slashed_amount = String(stats.network_slashed_amount ?? '0')
+  target.network_slashed_amount_repaid = String(stats.network_slashed_amount_repaid ?? '0')
 }
 
 function getCSStatsUpdateObject(stats: any): any {
@@ -208,15 +208,15 @@ function getCSStatsUpdateObject(stats: any): any {
     participants_verifier_grantor: stats.participants_verifier_grantor,
     participants_verifier: stats.participants_verifier,
     participants_holder: stats.participants_holder,
-    weight: Number(stats.weight ?? 0),
+    weight: String(stats.weight ?? '0'),
     issued: Number(stats.issued ?? 0),
     verified: Number(stats.verified ?? 0),
     ecosystem_slash_events: stats.ecosystem_slash_events,
-    ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-    ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+    ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+    ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
     network_slash_events: stats.network_slash_events,
-    network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-    network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+    network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+    network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
   }
 }
 
@@ -315,15 +315,15 @@ export async function syncEcosystemStatsAndHistoryFromSchemaChange(
     participants_holder: Number(trStats.participants_holder ?? 0),
     active_schemas: Number(trStats.active_schemas ?? 0),
     archived_schemas: Number(trStats.archived_schemas ?? 0),
-    weight: Number(trStats.weight ?? 0),
+    weight: String(trStats.weight ?? '0'),
     issued: Number(trStats.issued ?? 0),
     verified: Number(trStats.verified ?? 0),
     ecosystem_slash_events: Number(trStats.ecosystem_slash_events ?? 0),
-    ecosystem_slashed_amount: Number(trStats.ecosystem_slashed_amount ?? 0),
-    ecosystem_slashed_amount_repaid: Number(trStats.ecosystem_slashed_amount_repaid ?? 0),
+    ecosystem_slashed_amount: String(trStats.ecosystem_slashed_amount ?? '0'),
+    ecosystem_slashed_amount_repaid: String(trStats.ecosystem_slashed_amount_repaid ?? '0'),
     network_slash_events: Number(trStats.network_slash_events ?? 0),
-    network_slashed_amount: Number(trStats.network_slashed_amount ?? 0),
-    network_slashed_amount_repaid: Number(trStats.network_slashed_amount_repaid ?? 0),
+    network_slashed_amount: String(trStats.network_slashed_amount ?? '0'),
+    network_slashed_amount_repaid: String(trStats.network_slashed_amount_repaid ?? '0'),
   }
 
   await db('ecosystem').where('id', ecosystemId).update(trStatsUpdate)
@@ -529,89 +529,6 @@ function applyHalfOpenRangeToRows<T>(
     filtered = filtered.filter((row) => readValue(row) < maxNum)
   }
   return filtered
-}
-
-function sortCredentialSchemaRows<
-  T extends {
-    id: number
-    created: string
-    modified: string
-    participants: number
-    weight: number
-    issued: number
-    verified: number
-    ecosystem_slash_events: number
-    ecosystem_slashed_amount: number
-    network_slash_events: number
-    network_slashed_amount: number
-  },
->(rows: T[], sort: string | undefined, limit: number): T[] {
-  return sortByStandardAttributes<T>(rows, sort, {
-    getId: (item) => item.id,
-    getCreated: (item) => item.created,
-    getModified: (item) => item.modified,
-    getParticipants: (item) => item.participants,
-    getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
-    getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
-    getParticipantsIssuer: (item: any) => item.participants_issuer,
-    getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
-    getParticipantsVerifier: (item: any) => item.participants_verifier,
-    getParticipantsHolder: (item: any) => item.participants_holder,
-    getWeight: (item) => item.weight,
-    getIssued: (item) => item.issued,
-    getVerified: (item) => item.verified,
-    getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-    getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-    getNetworkSlashEvents: (item) => item.network_slash_events,
-    getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-    defaultAttribute: 'modified',
-    defaultDirection: 'desc',
-  }).slice(0, limit)
-}
-
-const SQL_SORTABLE_CREDENTIAL_SCHEMA_ATTRIBUTES = new Set<string>([
-  'id',
-  'modified',
-  'created',
-  'participants',
-  'participants_ecosystem',
-  'participants_issuer_grantor',
-  'participants_issuer',
-  'participants_verifier_grantor',
-  'participants_verifier',
-  'participants_holder',
-  'weight',
-  'issued',
-  'verified',
-  'ecosystem_slash_events',
-  'ecosystem_slashed_amount',
-  'network_slash_events',
-  'network_slashed_amount',
-])
-
-function applyCredentialSchemaSqlSort(query: any, sort: string | undefined): { fullyApplied: boolean } {
-  if (!sort || typeof sort !== 'string' || !sort.trim()) {
-    query.orderBy('modified', 'desc').orderBy('id', 'desc')
-    return { fullyApplied: true }
-  }
-
-  const sortOrders = parseSortParameter(sort)
-  let hasIdSort = false
-  let fullyApplied = true
-  for (const { attribute, direction } of sortOrders) {
-    if (!SQL_SORTABLE_CREDENTIAL_SCHEMA_ATTRIBUTES.has(attribute)) {
-      fullyApplied = false
-      continue
-    }
-    query.orderBy(attribute, direction)
-    if (attribute === 'id') hasIdSort = true
-  }
-
-  if (!hasIdSort) {
-    query.orderBy('id', 'desc')
-  }
-
-  return { fullyApplied }
 }
 
 function mapToHistoryRow(row: any, overrides: Partial<any> = {}, includeHeight: boolean = true) {
@@ -1368,15 +1285,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               participants_verifier_grantor: stats.participants_verifier_grantor,
               participants_verifier: stats.participants_verifier,
               participants_holder: stats.participants_holder,
-              weight: Number(stats.weight ?? 0),
+              weight: String(stats.weight ?? '0'),
               issued: Number(stats.issued ?? 0),
               verified: Number(stats.verified ?? 0),
               ecosystem_slash_events: stats.ecosystem_slash_events,
-              ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-              ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+              ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+              ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
               network_slash_events: stats.network_slash_events,
-              network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-              network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+              network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+              network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
             })
         } catch (statsUpdateError: any) {
           this.logger.warn(
@@ -1586,12 +1503,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       max_participants_verifier: { type: 'number', optional: true },
       min_participants_holder: { type: 'number', optional: true },
       max_participants_holder: { type: 'number', optional: true },
-      min_weight: { type: 'number', optional: true },
-      max_weight: { type: 'number', optional: true },
-      min_issued: { type: 'number', optional: true },
-      max_issued: { type: 'number', optional: true },
-      min_verified: { type: 'number', optional: true },
-      max_verified: { type: 'number', optional: true },
+      min_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
       min_ecosystem_slash_events: { type: 'number', optional: true },
       max_ecosystem_slash_events: { type: 'number', optional: true },
       min_network_slash_events: { type: 'number', optional: true },
@@ -1627,12 +1544,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       max_participants_verifier?: number
       min_participants_holder?: number
       max_participants_holder?: number
-      min_weight?: number
-      max_weight?: number
-      min_issued?: number
-      max_issued?: number
-      min_verified?: number
-      max_verified?: number
+      min_weight?: string
+      max_weight?: string
+      min_issued?: string
+      max_issued?: string
+      min_verified?: string
+      max_verified?: string
       min_ecosystem_slash_events?: number
       max_ecosystem_slash_events?: number
       min_network_slash_events?: number
@@ -1696,12 +1613,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       const participantAccount = participantValidation.value
 
-      const effectiveSort = sort ?? '-id'
-      try {
-        validateSortParameter(effectiveSort)
-      } catch (err: any) {
-        return ApiResponder.error(ctx, err.message, 400)
+      const sortParsed = parseIdSortDirection(sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDirection = sortParsed.direction
 
       const blockHeight = (ctx.meta as any)?.blockHeight
       const requestedLimit = limitParam ?? maxSize
@@ -1794,9 +1710,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           )
           applyHalfOpenRangeToQuery(qb, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
           applyHalfOpenRangeToQuery(qb, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
-          applyHalfOpenRangeToQuery(qb, 'weight', minWeight, maxWeight)
-          applyHalfOpenRangeToQuery(qb, 'issued', minIssued, maxIssued)
-          applyHalfOpenRangeToQuery(qb, 'verified', minVerified, maxVerified)
+          applyExactRangeToQuery(qb, 'weight', minWeight, maxWeight)
+          applyExactRangeToQuery(qb, 'issued', minIssued, maxIssued)
+          applyExactRangeToQuery(qb, 'verified', minVerified, maxVerified)
           applyHalfOpenRangeToQuery(qb, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
           applyHalfOpenRangeToQuery(qb, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
         }
@@ -1828,7 +1744,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .orderBy('csh.created_at', 'desc')
             .orderBy('csh.id', 'desc')
             .as('latest')
-          const orderedLatest = applyOrdering(knex.from(latestSub).select('*'), effectiveSort)
+          const orderedLatest = knex.from(latestSub).select('*').orderBy('credential_schema_id', sortDirection)
           items = await orderedLatest.limit(limit)
         } else {
           const ranked = knex('credential_schema_history as csh')
@@ -1854,7 +1770,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               applyMetricRangeFilters(qb)
             })
             .as('ranked')
-          const orderedLatest = applyOrdering(knex.from(ranked).select('*').where('rn', 1), effectiveSort)
+          const orderedLatest = knex
+            .from(ranked)
+            .select('*')
+            .where('rn', 1)
+            .orderBy('credential_schema_id', sortDirection)
           items = await orderedLatest.limit(limit)
         }
 
@@ -1918,9 +1838,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
                 participants_verifier_grantor: Number(historyRecord.participants_verifier_grantor || 0),
                 participants_verifier: Number(historyRecord.participants_verifier || 0),
                 participants_holder: Number(historyRecord.participants_holder || 0),
-                weight: Number(historyRecord.weight || 0),
-                issued: Number(historyRecord.issued || 0),
-                verified: Number(historyRecord.verified || 0),
+                weight: String(historyRecord.weight ?? '0'),
+                issued: Number(historyRecord.issued ?? 0),
+                verified: Number(historyRecord.verified ?? 0),
                 ecosystem_slash_events: Number(historyRecord.ecosystem_slash_events || 0),
                 ecosystem_slashed_amount: Number(historyRecord.ecosystem_slashed_amount || 0),
                 ecosystem_slashed_amount_repaid: Number(historyRecord.ecosystem_slashed_amount_repaid || 0),
@@ -2002,15 +1922,15 @@ export default class CredentialSchemaDatabaseService extends BullableService {
                 participants_verifier_grantor: Number(stats.participants_verifier_grantor ?? 0),
                 participants_verifier: Number(stats.participants_verifier ?? 0),
                 participants_holder: Number(stats.participants_holder ?? 0),
-                weight: Number(stats.weight ?? 0),
+                weight: String(stats.weight ?? '0'),
                 issued: Number(stats.issued ?? 0),
                 verified: Number(stats.verified ?? 0),
                 ecosystem_slash_events: Number(stats.ecosystem_slash_events ?? 0),
-                ecosystem_slashed_amount: Number(stats.ecosystem_slashed_amount ?? 0),
-                ecosystem_slashed_amount_repaid: Number(stats.ecosystem_slashed_amount_repaid ?? 0),
+                ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+                ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
                 network_slash_events: Number(stats.network_slash_events ?? 0),
-                network_slashed_amount: Number(stats.network_slashed_amount ?? 0),
-                network_slashed_amount_repaid: Number(stats.network_slashed_amount_repaid ?? 0),
+                network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+                network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
               }
             })
           }
@@ -2076,9 +1996,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               participants_verifier_grantor: num((stats as any).participants_verifier_grantor),
               participants_verifier: num((stats as any).participants_verifier),
               participants_holder: num((stats as any).participants_holder),
-              weight: num(stats.weight),
-              issued: num(stats.issued),
-              verified: num(stats.verified),
+              weight: String(stats.weight ?? '0'),
+              issued: Number(stats.issued ?? 0),
+              verified: Number(stats.verified ?? 0),
               ecosystem_slash_events: num(stats.ecosystem_slash_events),
               ecosystem_slashed_amount: num(stats.ecosystem_slashed_amount),
               ecosystem_slashed_amount_repaid: num(stats.ecosystem_slashed_amount_repaid),
@@ -2129,15 +2049,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           maxParticipantsHolder,
           (s) => toFiniteNumber((s as any).participants_holder)
         )
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minWeight, maxWeight, (s) =>
-          toFiniteNumber(s.weight)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minIssued, maxIssued, (s) =>
-          toFiniteNumber(s.issued)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minVerified, maxVerified, (s) =>
-          toFiniteNumber(s.verified)
-        )
+        filteredWithStats = filterRowsByExactRange(filteredWithStats, minWeight, maxWeight, (s) => s.weight)
+        filteredWithStats = filterRowsByExactRange(filteredWithStats, minIssued, maxIssued, (s) => s.issued)
+        filteredWithStats = filterRowsByExactRange(filteredWithStats, minVerified, maxVerified, (s) => s.verified)
         filteredWithStats = applyHalfOpenRangeToRows(
           filteredWithStats,
           minEcosystemSlashEvents,
@@ -2159,7 +2073,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           participants_verifier_grantor: number
           participants_verifier: number
           participants_holder: number
-          weight: number
+          weight: string
           issued: number
           verified: number
           ecosystem_slash_events: number
@@ -2171,7 +2085,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         const typedFilteredItems = filteredWithStats as FilteredItemWithStats[]
-        const sortedItems = sortCredentialSchemaRows(typedFilteredItems, effectiveSort, limit)
+        const sortedItems = [...typedFilteredItems]
+          .sort((a, b) => compareById(a.id, b.id, sortDirection))
+          .slice(0, limit)
 
         return ApiResponder.success(
           ctx,
@@ -2210,9 +2126,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       )
       applyHalfOpenRangeToQuery(query, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
       applyHalfOpenRangeToQuery(query, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
-      applyHalfOpenRangeToQuery(query, 'weight', minWeight, maxWeight)
-      applyHalfOpenRangeToQuery(query, 'issued', minIssued, maxIssued)
-      applyHalfOpenRangeToQuery(query, 'verified', minVerified, maxVerified)
+      applyExactRangeToQuery(query, 'weight', minWeight, maxWeight)
+      applyExactRangeToQuery(query, 'issued', minIssued, maxIssued)
+      applyExactRangeToQuery(query, 'verified', minVerified, maxVerified)
       applyHalfOpenRangeToQuery(query, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
       applyHalfOpenRangeToQuery(query, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
 
@@ -2237,9 +2153,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (effectiveHolderOnboarding !== undefined) {
         query.where('holder_onboarding_mode', effectiveHolderOnboarding)
       }
-      const { fullyApplied: liveSortFullyApplied } = applyCredentialSchemaSqlSort(query, effectiveSort)
-      const liveFetchLimit = liveSortFullyApplied ? limit : Math.max(limit * 2, 256)
-      const items = await query.limit(liveFetchLimit)
+      const items = await query.orderBy('id', sortDirection).limit(limit)
 
       const schemasWithStats = items.map((item) => {
         const storedSchemaString = getStoredSchemaString(item.json_schema)
@@ -2273,7 +2187,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             typeof (item as any).participants_holder === 'number'
               ? (item as any).participants_holder
               : Number((item as any).participants_holder || 0),
-          weight: typeof item.weight === 'number' ? item.weight : Number(item.weight || 0),
+          weight: String(item.weight ?? '0'),
           issued: typeof item.issued === 'number' ? item.issued : Number(item.issued || 0),
           verified: typeof item.verified === 'number' ? item.verified : Number(item.verified || 0),
           ecosystem_slash_events:
@@ -2308,9 +2222,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const filteredItems = cleanItems
 
       type SchemaWithStats = (typeof filteredItems)[0]
-      const sortedItems = liveSortFullyApplied
-        ? (filteredItems as SchemaWithStats[]).slice(0, limit)
-        : sortCredentialSchemaRows(filteredItems as SchemaWithStats[], effectiveSort, limit)
+      const sortedItems = (filteredItems as SchemaWithStats[]).slice(0, limit)
 
       return ApiResponder.success(
         ctx,
@@ -2419,7 +2331,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const idMin = minId != null && Number.isFinite(Number(minId)) ? Number(minId) : undefined
       const idMax = maxId != null && Number.isFinite(Number(maxId)) ? Number(maxId) : undefined
       const effectiveLimit = Math.min(Math.max(Number(limitParam ?? responseMaxSize) || 64, 1), 1024)
-      const sortAscending = String(sortParam).trim().replace(/^\+/, '') === 'id'
+      const sortParsed = parseIdSortDirection(sortParam)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
+      }
+      const sortAscending = sortParsed.direction === 'asc'
 
       if (transactionTimestampOlderThan) {
         if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
@@ -2463,9 +2379,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       let activityItems = Array.isArray(activity) ? activity : []
       if (idMin !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) >= idMin)
       if (idMax !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) < idMax)
-      activityItems = activityItems.sort((a: any, b: any) =>
-        sortAscending ? Number(a.id) - Number(b.id) : Number(b.id) - Number(a.id)
-      )
+      activityItems = activityItems.sort((a: any, b: any) => compareById(a.id, b.id, sortAscending ? 'asc' : 'desc'))
       activityItems = activityItems.slice(0, effectiveLimit)
 
       const result = {

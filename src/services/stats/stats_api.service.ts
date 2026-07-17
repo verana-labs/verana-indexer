@@ -3,9 +3,28 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import Stats, { EntityType, Granularity } from '../../models/stats'
+import { getResolvedBlockHeight } from '../crawl-co/co_stats'
+
+const NON_STATS_ENTRY_FIELDS = [
+  'created_at',
+  'updated_at',
+  'cumulative_participants_ecosystem',
+  'cumulative_participants_issuer_grantor',
+  'cumulative_participants_issuer',
+  'cumulative_participants_verifier_grantor',
+  'cumulative_participants_verifier',
+  'cumulative_participants_holder',
+  'delta_participants_ecosystem',
+  'delta_participants_issuer_grantor',
+  'delta_participants_issuer',
+  'delta_participants_verifier_grantor',
+  'delta_participants_verifier',
+  'delta_participants_holder',
+]
 
 @Service({
   name: SERVICE.V1.StatsAPIService.key,
@@ -20,16 +39,12 @@ export default class StatsAPIService extends BaseService {
     if (!record) return record
 
     const normalized = { ...record }
+    for (const field of NON_STATS_ENTRY_FIELDS) delete normalized[field]
+
     const numericFields = [
       'id',
       'entity_id',
       'cumulative_participants',
-      'cumulative_participants_ecosystem',
-      'cumulative_participants_issuer_grantor',
-      'cumulative_participants_issuer',
-      'cumulative_participants_verifier_grantor',
-      'cumulative_participants_verifier',
-      'cumulative_participants_holder',
       'cumulative_active_schemas',
       'cumulative_archived_schemas',
       'cumulative_weight',
@@ -42,12 +57,6 @@ export default class StatsAPIService extends BaseService {
       'cumulative_network_slashed_amount',
       'cumulative_network_slashed_amount_repaid',
       'delta_participants',
-      'delta_participants_ecosystem',
-      'delta_participants_issuer_grantor',
-      'delta_participants_issuer',
-      'delta_participants_verifier_grantor',
-      'delta_participants_verifier',
-      'delta_participants_holder',
       'delta_active_schemas',
       'delta_archived_schemas',
       'delta_weight',
@@ -446,12 +455,6 @@ export default class StatsAPIService extends BaseService {
         const totalResult = await totalQuery
           .select(
             knex.raw('COALESCE(SUM(delta_participants), 0) as delta_participants'),
-            knex.raw('COALESCE(SUM(delta_participants_ecosystem), 0) as delta_participants_ecosystem'),
-            knex.raw('COALESCE(SUM(delta_participants_issuer_grantor), 0) as delta_participants_issuer_grantor'),
-            knex.raw('COALESCE(SUM(delta_participants_issuer), 0) as delta_participants_issuer'),
-            knex.raw('COALESCE(SUM(delta_participants_verifier_grantor), 0) as delta_participants_verifier_grantor'),
-            knex.raw('COALESCE(SUM(delta_participants_verifier), 0) as delta_participants_verifier'),
-            knex.raw('COALESCE(SUM(delta_participants_holder), 0) as delta_participants_holder'),
             knex.raw('COALESCE(SUM(delta_active_schemas), 0) as delta_active_schemas'),
             knex.raw('COALESCE(SUM(delta_archived_schemas), 0) as delta_archived_schemas'),
             knex.raw('COALESCE(SUM(CAST(delta_weight AS NUMERIC)), 0) as delta_weight'),
@@ -490,12 +493,6 @@ export default class StatsAPIService extends BaseService {
           return this.normalizeStatsRecord({
             timestamp: timestamp.toISOString().replace(/\.\d{3}Z$/, 'Z'),
             cumulative_participants: bucket.cumulative_participants,
-            cumulative_participants_ecosystem: bucket.cumulative_participants_ecosystem,
-            cumulative_participants_issuer_grantor: bucket.cumulative_participants_issuer_grantor,
-            cumulative_participants_issuer: bucket.cumulative_participants_issuer,
-            cumulative_participants_verifier_grantor: bucket.cumulative_participants_verifier_grantor,
-            cumulative_participants_verifier: bucket.cumulative_participants_verifier,
-            cumulative_participants_holder: bucket.cumulative_participants_holder,
             cumulative_active_schemas: bucket.cumulative_active_schemas,
             cumulative_archived_schemas: bucket.cumulative_archived_schemas,
             cumulative_weight: bucket.cumulative_weight,
@@ -508,12 +505,6 @@ export default class StatsAPIService extends BaseService {
             cumulative_network_slashed_amount: bucket.cumulative_network_slashed_amount,
             cumulative_network_slashed_amount_repaid: bucket.cumulative_network_slashed_amount_repaid,
             delta_participants: bucket.delta_participants,
-            delta_participants_ecosystem: bucket.delta_participants_ecosystem,
-            delta_participants_issuer_grantor: bucket.delta_participants_issuer_grantor,
-            delta_participants_issuer: bucket.delta_participants_issuer,
-            delta_participants_verifier_grantor: bucket.delta_participants_verifier_grantor,
-            delta_participants_verifier: bucket.delta_participants_verifier,
-            delta_participants_holder: bucket.delta_participants_holder,
             delta_active_schemas: bucket.delta_active_schemas,
             delta_archived_schemas: bucket.delta_archived_schemas,
             delta_weight: bucket.delta_weight,
@@ -532,12 +523,6 @@ export default class StatsAPIService extends BaseService {
       if (resultType === 'TOTAL' || resultType === 'BUCKETS_AND_TOTAL') {
         response.total = {
           delta_participants: Number(total?.delta_participants || 0),
-          delta_participants_ecosystem: Number(total?.delta_participants_ecosystem || 0),
-          delta_participants_issuer_grantor: Number(total?.delta_participants_issuer_grantor || 0),
-          delta_participants_issuer: Number(total?.delta_participants_issuer || 0),
-          delta_participants_verifier_grantor: Number(total?.delta_participants_verifier_grantor || 0),
-          delta_participants_verifier: Number(total?.delta_participants_verifier || 0),
-          delta_participants_holder: Number(total?.delta_participants_holder || 0),
           delta_active_schemas: Number(total?.delta_active_schemas || 0),
           delta_archived_schemas: Number(total?.delta_archived_schemas || 0),
           delta_weight: Number(total?.delta_weight || 0),
@@ -565,7 +550,6 @@ export default class StatsAPIService extends BaseService {
       entity_kind: { type: 'number', integer: true, min: 0, max: 3, convert: true },
       entity_id: { type: 'any', optional: true },
       role_type: { type: 'number', integer: true, min: 0, max: 6, convert: true },
-      height: { type: 'number', integer: true, positive: true, convert: true },
     },
   })
   public async getParticipantsAtHeight(
@@ -573,11 +557,11 @@ export default class StatsAPIService extends BaseService {
       entity_kind: number
       entity_id?: unknown
       role_type: number
-      height: number
     }>
   ): Promise<unknown> {
     try {
-      const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType, height } = ctx.params
+      const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType } = ctx.params
+      const height = await getResolvedBlockHeight(getBlockHeight(ctx))
 
       let entityId: number = 0
       if (entityKind === 0) {
@@ -607,10 +591,10 @@ export default class StatsAPIService extends BaseService {
         ctx,
         {
           entity_kind: entityKind,
-          entity_id: entityId,
+          entity_id: entityKind === 0 ? null : entityId,
           role_type: roleType,
-          height,
-          value,
+          block_height: height,
+          participants: value,
         },
         200
       )

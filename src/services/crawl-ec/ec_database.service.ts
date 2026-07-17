@@ -8,6 +8,11 @@ import { validateParticipantParam } from '../../common/utils/accountValidation'
 import ApiResponder from '../../common/utils/apiResponse'
 import knex from '../../common/utils/db_connection'
 import {
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+} from '../../common/utils/exact_numeric_range'
+import {
   ensureDepositDefaultIfColumnExists,
   finalizeEcosystemHistoryInsert,
   prepareEcosystemSnapshotRowForInsert,
@@ -16,15 +21,9 @@ import {
   resolveParticipantHistoryParticipantColumn,
   resolveParticipantsParticipantColumn,
 } from '../../common/utils/installed_table_columns'
-import {
-  applyOrdering,
-  parseSortParameter,
-  sortByStandardAttributes,
-  validateSortParameter,
-} from '../../common/utils/query_ordering'
 import { mapEcosystemApiFields } from '../../common/vpr-v4-mapping'
 import { Ecosystem } from '../../models/ecosystem'
-import { type GfDataMode, parseGfDataMode } from '../crawl-co/co_stats'
+import { compareById, type GfDataMode, parseGfDataMode, parseIdSortDirection } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
 import { calculateEcosystemStats, TR_STATS_FIELDS } from './ec_stats'
@@ -40,26 +39,6 @@ function ledgerHasKey(obj: unknown, key: string): boolean {
 export default class EcosystemDatabaseService extends BaseService {
   private ecosystemHistoryColumnExistsCache = new Map<string, boolean>()
   private ecosystemHistoryColumnsCache: Set<string> | null = null
-  private static readonly SQL_SORTABLE_TR_ATTRIBUTES = new Set<string>([
-    'id',
-    'modified',
-    'created',
-    'participants',
-    'participants_ecosystem',
-    'participants_issuer_grantor',
-    'participants_issuer',
-    'participants_verifier_grantor',
-    'participants_verifier',
-    'participants_holder',
-    'active_schemas',
-    'weight',
-    'issued',
-    'verified',
-    'ecosystem_slash_events',
-    'ecosystem_slashed_amount',
-    'network_slash_events',
-    'network_slashed_amount',
-  ])
 
   public constructor(public broker: ServiceBroker) {
     super(broker)
@@ -781,48 +760,6 @@ export default class EcosystemDatabaseService extends BaseService {
     return finalizeEcosystemHistoryInsert(historyColumns, payload, ecosystemRow) as Record<string, any>
   }
 
-  private usesDerivedMetricSort(sort?: string): boolean {
-    if (!sort || typeof sort !== 'string') return false
-    const lower = sort.toLowerCase()
-    const derivedKeys = [
-      'participants',
-      'active_schemas',
-      'weight',
-      'issued',
-      'verified',
-      'ecosystem_slash_events',
-      'ecosystem_slashed_amount',
-      'network_slash_events',
-      'network_slashed_amount',
-    ]
-    return derivedKeys.some((key) => lower.includes(key))
-  }
-
-  private applyEcosystemSqlSort(query: any, sort?: string): { fullyApplied: boolean } {
-    if (!sort || typeof sort !== 'string' || !sort.trim()) {
-      query.orderBy('modified', 'desc').orderBy('id', 'desc')
-      return { fullyApplied: true }
-    }
-
-    const sortOrders = parseSortParameter(sort)
-    let hasIdSort = false
-    let fullyApplied = true
-    for (const { attribute, direction } of sortOrders) {
-      if (!EcosystemDatabaseService.SQL_SORTABLE_TR_ATTRIBUTES.has(attribute)) {
-        fullyApplied = false
-        continue
-      }
-      query.orderBy(attribute, direction)
-      if (attribute === 'id') hasIdSort = true
-    }
-
-    if (!hasIdSort) {
-      query.orderBy('id', 'desc')
-    }
-
-    return { fullyApplied }
-  }
-
   private static toFiniteNumber(value: unknown): number {
     const num = typeof value === 'number' ? value : Number(value ?? 0)
     return Number.isFinite(num) ? num : 0
@@ -929,15 +866,9 @@ export default class EcosystemDatabaseService extends BaseService {
     filtered = this.applyRangeToRows(filtered, filters.minParticipantsHolder, filters.maxParticipantsHolder, (r) =>
       EcosystemDatabaseService.toFiniteNumber(r.participants_holder)
     )
-    filtered = this.applyRangeToRows(filtered, filters.minWeight, filters.maxWeight, (r) =>
-      EcosystemDatabaseService.toFiniteNumber(r.weight)
-    )
-    filtered = this.applyRangeToRows(filtered, filters.minIssued, filters.maxIssued, (r) =>
-      EcosystemDatabaseService.toFiniteNumber(r.issued)
-    )
-    filtered = this.applyRangeToRows(filtered, filters.minVerified, filters.maxVerified, (r) =>
-      EcosystemDatabaseService.toFiniteNumber(r.verified)
-    )
+    filtered = filterRowsByExactRange(filtered, filters.minWeight, filters.maxWeight, (r) => r.weight)
+    filtered = filterRowsByExactRange(filtered, filters.minIssued, filters.maxIssued, (r) => r.issued)
+    filtered = filterRowsByExactRange(filtered, filters.minVerified, filters.maxVerified, (r) => r.verified)
     filtered = this.applyRangeToRows(filtered, filters.minEcosystemSlashEvents, filters.maxEcosystemSlashEvents, (r) =>
       EcosystemDatabaseService.toFiniteNumber(r.ecosystem_slash_events)
     )
@@ -947,32 +878,8 @@ export default class EcosystemDatabaseService extends BaseService {
     return filtered
   }
 
-  private sortRegistries(rows: any[], sort: string | undefined, limit: number): any[] {
-    if (!this.usesDerivedMetricSort(sort)) {
-      return rows.slice(0, limit)
-    }
-    return sortByStandardAttributes(rows, sort, {
-      getId: (row) => row.id,
-      getCreated: (row) => row.created,
-      getModified: (row) => row.modified,
-      getParticipants: (row) => row.participants,
-      getParticipantsEcosystem: (row) => row.participants_ecosystem,
-      getParticipantsIssuerGrantor: (row) => row.participants_issuer_grantor,
-      getParticipantsIssuer: (row) => row.participants_issuer,
-      getParticipantsVerifierGrantor: (row) => row.participants_verifier_grantor,
-      getParticipantsVerifier: (row) => row.participants_verifier,
-      getParticipantsHolder: (row) => row.participants_holder,
-      getActiveSchemas: (row) => row.active_schemas,
-      getWeight: (row) => row.weight,
-      getIssued: (row) => row.issued,
-      getVerified: (row) => row.verified,
-      getEcosystemSlashEvents: (row) => row.ecosystem_slash_events,
-      getEcosystemSlashedAmount: (row) => row.ecosystem_slashed_amount,
-      getNetworkSlashEvents: (row) => row.network_slash_events,
-      getNetworkSlashedAmount: (row) => row.network_slashed_amount,
-      defaultAttribute: 'modified',
-      defaultDirection: 'desc',
-    }).slice(0, limit)
+  private sortRegistries(rows: any[], direction: 'asc' | 'desc', limit: number): any[] {
+    return [...rows].sort((a, b) => compareById(a.id, b.id, direction)).slice(0, limit)
   }
 
   private hasImpossibleMetricRanges(filters: {
@@ -1593,12 +1500,12 @@ export default class EcosystemDatabaseService extends BaseService {
       max_participants_verifier: { type: 'number', optional: true },
       min_participants_holder: { type: 'number', optional: true },
       max_participants_holder: { type: 'number', optional: true },
-      min_weight: { type: 'string', optional: true },
-      max_weight: { type: 'string', optional: true },
-      min_issued: { type: 'string', optional: true },
-      max_issued: { type: 'string', optional: true },
-      min_verified: { type: 'string', optional: true },
-      max_verified: { type: 'string', optional: true },
+      min_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
       min_ecosystem_slash_events: { type: 'number', optional: true },
       max_ecosystem_slash_events: { type: 'number', optional: true },
       min_network_slash_events: { type: 'number', optional: true },
@@ -1725,11 +1632,11 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       }
 
-      try {
-        validateSortParameter(sort)
-      } catch (err: any) {
-        return ApiResponder.error(ctx, err.message, 400)
+      const sortParsed = parseIdSortDirection(sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDirection = sortParsed.direction
 
       const hasArchived = archivedRaw !== undefined && archivedRaw !== null && String(archivedRaw).trim() !== ''
       let hasOnlyActive: boolean
@@ -1812,7 +1719,7 @@ export default class EcosystemDatabaseService extends BaseService {
             .select(knex.raw('ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, id DESC) as rn'))
             .from(snapshotBase.as('snap'))
           const snapshotListQuery = knex.from(ranked.as('r')).where('rn', 1)
-          this.applyEcosystemSqlSort(snapshotListQuery as any, sort)
+          snapshotListQuery.orderBy('ecosystem_id', sortDirection)
           const latestSnapshots = await snapshotListQuery.limit(Math.max(responseMaxSize * 2, 256))
           const registriesWithStats = (latestSnapshots as any[]).map((row: any) => {
             let versions = Array.isArray(row.versions_snapshot) ? row.versions_snapshot : []
@@ -1852,7 +1759,7 @@ export default class EcosystemDatabaseService extends BaseService {
               participants_holder: Number(row.participants_holder ?? 0),
               active_schemas: Number(row.active_schemas ?? 0),
               archived_schemas: Number(row.archived_schemas ?? 0),
-              weight: Number(row.weight ?? 0),
+              weight: String(row.weight ?? '0'),
               issued: Number(row.issued ?? 0),
               verified: Number(row.verified ?? 0),
               ecosystem_slash_events: Number(row.ecosystem_slash_events ?? 0),
@@ -1864,7 +1771,7 @@ export default class EcosystemDatabaseService extends BaseService {
             }
           })
           const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters)
-          const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize)
+          const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, responseMaxSize)
           const responsePayload = this.applyGfDataModeToResponsePayload(
             {
               ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
@@ -1916,13 +1823,9 @@ export default class EcosystemDatabaseService extends BaseService {
 
         const latestEcosystemHistoryQuery = knex.from(rankedSubquery).where('rn', 1)
 
-        const latestEcosystemHistory = (await applyOrdering(latestEcosystemHistoryQuery as any, sort).limit(
-          Math.max(responseMaxSize * 2, 256)
-        )) as any[]
-        const hasDerivedSort = this.usesDerivedMetricSort(sort)
-        const sortedHistory = hasDerivedSort
-          ? latestEcosystemHistory.slice(0, Math.max(responseMaxSize * 2, 256))
-          : latestEcosystemHistory.slice(0, responseMaxSize)
+        const sortedHistory = (await latestEcosystemHistoryQuery
+          .orderBy('ecosystem_id', sortDirection)
+          .limit(Math.max(responseMaxSize * 2, 256))) as any[]
 
         if (sortedHistory.length === 0) {
           return ApiResponder.success(ctx, { ecosystems: [] }, 200)
@@ -1959,7 +1862,7 @@ export default class EcosystemDatabaseService extends BaseService {
               participants_holder: Number((ecosystemHistory as any).participants_holder ?? 0),
               active_schemas: Number((ecosystemHistory as any).active_schemas ?? 0),
               archived_schemas: Number((ecosystemHistory as any).archived_schemas ?? 0),
-              weight: Number((ecosystemHistory as any).weight ?? 0),
+              weight: String((ecosystemHistory as any).weight ?? '0'),
               issued: Number((ecosystemHistory as any).issued ?? 0),
               verified: Number((ecosystemHistory as any).verified ?? 0),
               ecosystem_slash_events: Number((ecosystemHistory as any).ecosystem_slash_events ?? 0),
@@ -1977,7 +1880,7 @@ export default class EcosystemDatabaseService extends BaseService {
           metricFilters
         )
 
-        const sortedRegistries = this.sortRegistries(filteredRegistries, sort, responseMaxSize)
+        const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, responseMaxSize)
 
         const responsePayload = this.applyGfDataModeToResponsePayload(
           {
@@ -2044,24 +1947,9 @@ export default class EcosystemDatabaseService extends BaseService {
           maxParticipantsHolder
         )
         batchQuery = this.applyRangeToQuery(batchQuery, 'active_schemas', minActiveSchemas, maxActiveSchemas)
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'weight',
-          minWeight !== undefined ? Number(minWeight) : undefined,
-          maxWeight !== undefined ? Number(maxWeight) : undefined
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'issued',
-          minIssued !== undefined ? Number(minIssued) : undefined,
-          maxIssued !== undefined ? Number(maxIssued) : undefined
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'verified',
-          minVerified !== undefined ? Number(minVerified) : undefined,
-          maxVerified !== undefined ? Number(maxVerified) : undefined
-        )
+        batchQuery = applyExactRangeToQuery(batchQuery, 'weight', minWeight, maxWeight)
+        batchQuery = applyExactRangeToQuery(batchQuery, 'issued', minIssued, maxIssued)
+        batchQuery = applyExactRangeToQuery(batchQuery, 'verified', minVerified, maxVerified)
         batchQuery = this.applyRangeToQuery(
           batchQuery,
           'ecosystem_slash_events',
@@ -2079,9 +1967,8 @@ export default class EcosystemDatabaseService extends BaseService {
           if (onlyActive) batchQuery = batchQuery.whereNull('archived')
           else batchQuery = batchQuery.whereNotNull('archived')
         }
-        const { fullyApplied: batchSortFullyApplied } = this.applyEcosystemSqlSort(batchQuery as any, sort)
-        const batchLimit = batchSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256)
-        const ecosystemRows = (await batchQuery.limit(batchLimit)) as any[]
+        batchQuery = batchQuery.orderBy('id', sortDirection)
+        const ecosystemRows = (await batchQuery.limit(Math.max(responseMaxSize * 2, 256))) as any[]
         if (ecosystemRows.length === 0) {
           return ApiResponder.success(ctx, { ecosystems: [] }, 200)
         }
@@ -2165,7 +2052,7 @@ export default class EcosystemDatabaseService extends BaseService {
             participants_holder: Number(ec.participants_holder ?? 0),
             active_schemas: Number(ec.active_schemas ?? 0),
             archived_schemas: Number(ec.archived_schemas ?? 0),
-            weight: Number(ec.weight ?? 0),
+            weight: String(ec.weight ?? '0'),
             issued: Number(ec.issued ?? 0),
             verified: Number(ec.verified ?? 0),
             ecosystem_slash_events: Number(ec.ecosystem_slash_events ?? 0),
@@ -2177,7 +2064,7 @@ export default class EcosystemDatabaseService extends BaseService {
           }
         })
         const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters)
-        const sortedBatch = this.sortRegistries(filteredBatch, sort, responseMaxSize)
+        const sortedBatch = this.sortRegistries(filteredBatch, sortDirection, responseMaxSize)
         const responsePayload = this.applyGfDataModeToResponsePayload(
           {
             ecosystems: sortedBatch.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
@@ -2228,24 +2115,9 @@ export default class EcosystemDatabaseService extends BaseService {
       query = this.applyRangeToQuery(query, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
       query = this.applyRangeToQuery(query, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
       query = this.applyRangeToQuery(query, 'active_schemas', minActiveSchemas, maxActiveSchemas)
-      query = this.applyRangeToQuery(
-        query,
-        'weight',
-        minWeight !== undefined ? Number(minWeight) : undefined,
-        maxWeight !== undefined ? Number(maxWeight) : undefined
-      )
-      query = this.applyRangeToQuery(
-        query,
-        'issued',
-        minIssued !== undefined ? Number(minIssued) : undefined,
-        maxIssued !== undefined ? Number(maxIssued) : undefined
-      )
-      query = this.applyRangeToQuery(
-        query,
-        'verified',
-        minVerified !== undefined ? Number(minVerified) : undefined,
-        maxVerified !== undefined ? Number(maxVerified) : undefined
-      )
+      query = applyExactRangeToQuery(query, 'weight', minWeight, maxWeight)
+      query = applyExactRangeToQuery(query, 'issued', minIssued, maxIssued)
+      query = applyExactRangeToQuery(query, 'verified', minVerified, maxVerified)
       query = this.applyRangeToQuery(query, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
       query = this.applyRangeToQuery(query, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
 
@@ -2261,9 +2133,8 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       }
 
-      const { fullyApplied: liveSortFullyApplied } = this.applyEcosystemSqlSort(query as any, sort)
-      const liveFetchLimit = liveSortFullyApplied ? responseMaxSize : Math.max(responseMaxSize * 2, 256)
-      const registries = await query.limit(liveFetchLimit)
+      query = query.orderBy('id', sortDirection)
+      const registries = await query.limit(Math.max(responseMaxSize * 2, 256))
 
       const registriesWithStats = registries.map((ec) => {
         const plain = ec.toJSON()
@@ -2301,9 +2172,9 @@ export default class EcosystemDatabaseService extends BaseService {
           participants_holder: Number((plain as any).participants_holder || 0),
           active_schemas: Number(plain.active_schemas || 0),
           archived_schemas: Number(plain.archived_schemas || 0),
-          weight: Number(plain.weight || 0),
-          issued: Number(plain.issued || 0),
-          verified: Number(plain.verified || 0),
+          weight: String(plain.weight ?? '0'),
+          issued: Number(plain.issued ?? 0),
+          verified: Number(plain.verified ?? 0),
           ecosystem_slash_events: Number(plain.ecosystem_slash_events || 0),
           ecosystem_slashed_amount: Number(plain.ecosystem_slashed_amount || 0),
           ecosystem_slashed_amount_repaid: Number(plain.ecosystem_slashed_amount_repaid || 0),
@@ -2313,9 +2184,7 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       })
 
-      const sortedRegistries = liveSortFullyApplied
-        ? registriesWithStats.slice(0, responseMaxSize)
-        : this.sortRegistries(registriesWithStats, sort, responseMaxSize)
+      const sortedRegistries = this.sortRegistries(registriesWithStats, sortDirection, responseMaxSize)
 
       const responsePayload = this.applyGfDataModeToResponsePayload(
         {

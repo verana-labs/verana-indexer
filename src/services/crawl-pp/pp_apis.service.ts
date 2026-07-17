@@ -8,15 +8,16 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import {
-  applyOrdering,
-  parseSortParameter,
-  sortByStandardAttributes,
-  validateSortParameter,
-} from '../../common/utils/query_ordering'
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+  isImpossibleExactRange,
+} from '../../common/utils/exact_numeric_range'
+import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
+import { compareById, parseIdSortDirection } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
@@ -205,40 +206,7 @@ export default class ParticipantAPIService extends BullableService {
     const hasExpensiveMetricFilter = expensiveMetricFilters.some((k) => params[k] !== undefined)
     if (hasExpensiveMetricFilter) return false
 
-    if (typeof params?.sort === 'string') {
-      const sortRaw = params.sort.toLowerCase()
-      const expensiveSortKeys = [
-        'participants',
-        'weight',
-        'issued',
-        'verified',
-        'ecosystem_slash_events',
-        'ecosystem_slashed_amount',
-        'network_slash_events',
-        'network_slashed_amount',
-      ]
-      if (expensiveSortKeys.some((key) => sortRaw.includes(key))) {
-        return false
-      }
-    }
-
     return true
-  }
-
-  private usesDerivedMetricSort(sort: any): boolean {
-    if (typeof sort !== 'string') return false
-    const sortRaw = sort.toLowerCase()
-    const derivedSortKeys = [
-      'participants',
-      'weight',
-      'issued',
-      'verified',
-      'ecosystem_slash_events',
-      'ecosystem_slashed_amount',
-      'network_slash_events',
-      'network_slashed_amount',
-    ]
-    return derivedSortKeys.some((key) => sortRaw.includes(key))
   }
 
   private shouldUseStrictTrustResolutionLightweightMode(params: any, limit: number): boolean {
@@ -419,9 +387,9 @@ export default class ParticipantAPIService extends BullableService {
         db: 'participants_holder',
         enabled: options.participantRoles,
       },
-      { min: 'min_weight', max: 'max_weight', db: 'weight', enabled: options.weight },
-      { min: 'min_issued', max: 'max_issued', db: 'issued', enabled: options.issued },
-      { min: 'min_verified', max: 'max_verified', db: 'verified', enabled: options.verified },
+      { min: 'min_weight', max: 'max_weight', db: 'weight', enabled: options.weight, exact: true },
+      { min: 'min_issued', max: 'max_issued', db: 'issued', enabled: options.issued, exact: true },
+      { min: 'min_verified', max: 'max_verified', db: 'verified', enabled: options.verified, exact: true },
       {
         min: 'min_ecosystem_slash_events',
         max: 'max_ecosystem_slash_events',
@@ -449,6 +417,16 @@ export default class ParticipantAPIService extends BullableService {
         continue
       }
 
+      if (spec.exact) {
+        if (isImpossibleExactRange(minRaw, maxRaw)) {
+          query.whereRaw('1 = 0')
+          impossibleRange = true
+          continue
+        }
+        applyExactRangeToQuery(query, col(spec.db), minRaw, maxRaw)
+        continue
+      }
+
       const minValue = minRaw !== undefined ? Number(minRaw) : undefined
       const maxValue = maxRaw !== undefined ? Number(maxRaw) : undefined
       if (minValue !== undefined && maxValue !== undefined && minValue === maxValue) {
@@ -461,74 +439,6 @@ export default class ParticipantAPIService extends BullableService {
     }
 
     return { requiresPostFilter, impossibleRange }
-  }
-
-  private canPushDerivedSortToSql(
-    sort: any,
-    options: {
-      hasParticipantsColumn: boolean
-      hasParticipantRoleColumns: boolean
-      hasWeightColumn: boolean
-      hasIssuedColumn: boolean
-      hasVerifiedColumn: boolean
-      hasEcosystemSlashEventsColumn: boolean
-    }
-  ): boolean {
-    if (typeof sort !== 'string' || !sort.trim()) return false
-
-    try {
-      const sortOrders = parseSortParameter(sort)
-      for (const { attribute } of sortOrders) {
-        if (attribute === 'id' || attribute === 'modified' || attribute === 'created') continue
-        if (attribute === 'participants' && options.hasParticipantsColumn) continue
-        if (
-          (attribute === 'participants_ecosystem' ||
-            attribute === 'participants_issuer_grantor' ||
-            attribute === 'participants_issuer' ||
-            attribute === 'participants_verifier_grantor' ||
-            attribute === 'participants_verifier' ||
-            attribute === 'participants_holder') &&
-          options.hasParticipantRoleColumns
-        ) {
-          continue
-        }
-        if (attribute === 'weight' && options.hasWeightColumn) continue
-        if (attribute === 'issued' && options.hasIssuedColumn) continue
-        if (attribute === 'verified' && options.hasVerifiedColumn) continue
-        if (
-          (attribute === 'ecosystem_slash_events' ||
-            attribute === 'ecosystem_slashed_amount' ||
-            attribute === 'network_slash_events' ||
-            attribute === 'network_slashed_amount') &&
-          options.hasEcosystemSlashEventsColumn
-        ) {
-          continue
-        }
-        return false
-      }
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  private applyRequestedSortToQuery(query: any, sort: string | undefined): any {
-    if (typeof sort !== 'string' || !sort.trim()) {
-      return query.orderBy('modified', 'desc').orderBy('id', 'desc')
-    }
-
-    const sortOrders = parseSortParameter(sort)
-    let hasIdSort = false
-    for (const { attribute, direction } of sortOrders) {
-      query.orderBy(attribute, direction)
-      if (attribute === 'id') hasIdSort = true
-    }
-
-    if (!hasIdSort) {
-      query.orderBy('id', 'desc')
-    }
-
-    return query
   }
 
   private applyMetricFiltersInMemory(participants: any[], params: any): any[] {
@@ -548,9 +458,9 @@ export default class ParticipantAPIService extends BullableService {
       },
       { min: 'min_participants_verifier', max: 'max_participants_verifier', field: 'participants_verifier' },
       { min: 'min_participants_holder', max: 'max_participants_holder', field: 'participants_holder' },
-      { min: 'min_weight', max: 'max_weight', field: 'weight' },
-      { min: 'min_issued', max: 'max_issued', field: 'issued' },
-      { min: 'min_verified', max: 'max_verified', field: 'verified' },
+      { min: 'min_weight', max: 'max_weight', field: 'weight', exact: true },
+      { min: 'min_issued', max: 'max_issued', field: 'issued', exact: true },
+      { min: 'min_verified', max: 'max_verified', field: 'verified', exact: true },
       { min: 'min_ecosystem_slash_events', max: 'max_ecosystem_slash_events', field: 'ecosystem_slash_events' },
       { min: 'min_network_slash_events', max: 'max_network_slash_events', field: 'network_slash_events' },
     ]
@@ -560,6 +470,12 @@ export default class ParticipantAPIService extends BullableService {
       const minRaw = params[spec.min]
       const maxRaw = params[spec.max]
       if (minRaw === undefined && maxRaw === undefined) continue
+
+      if (spec.exact) {
+        if (isImpossibleExactRange(minRaw, maxRaw)) return []
+        results = filterRowsByExactRange(results, minRaw, maxRaw, (participant) => participant?.[spec.field])
+        continue
+      }
 
       const minValue = minRaw !== undefined ? Number(minRaw) : undefined
       const maxValue = maxRaw !== undefined ? Number(maxRaw) : undefined
@@ -975,7 +891,7 @@ export default class ParticipantAPIService extends BullableService {
       op_current_fees: participant.op_current_fees != null ? Number(participant.op_current_fees) : 0,
       op_current_deposit: participant.op_current_deposit != null ? Number(participant.op_current_deposit) : 0,
       op_validator_deposit: participant.op_validator_deposit != null ? Number(participant.op_validator_deposit) : 0,
-      weight: participant.weight != null ? Number(participant.weight) : 0,
+      weight: participant.weight != null ? String(participant.weight) : '0',
       issued: participant.issued != null ? Number(participant.issued) : 0,
       verified: participant.verified != null ? Number(participant.verified) : 0,
       participants: participant.participants != null ? Number(participant.participants) : 0,
@@ -1331,7 +1247,7 @@ export default class ParticipantAPIService extends BullableService {
       now
     )
 
-    const weight = typeof participant.weight === 'number' ? participant.weight : Number(participant.weight || 0)
+    const weight = String(participant.weight ?? '0')
     const statistics = {
       issued: typeof participant.issued === 'number' ? participant.issued : Number(participant.issued || 0),
       verified: typeof participant.verified === 'number' ? participant.verified : Number(participant.verified || 0),
@@ -1484,12 +1400,12 @@ export default class ParticipantAPIService extends BullableService {
       max_participants_verifier: { type: 'number', integer: true, optional: true },
       min_participants_holder: { type: 'number', integer: true, optional: true },
       max_participants_holder: { type: 'number', integer: true, optional: true },
-      min_weight: { type: 'number', optional: true },
-      max_weight: { type: 'number', optional: true },
-      min_issued: { type: 'number', optional: true },
-      max_issued: { type: 'number', optional: true },
-      min_verified: { type: 'number', optional: true },
-      max_verified: { type: 'number', optional: true },
+      min_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_weight: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_issued: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      min_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
+      max_verified: { type: 'string', pattern: INTEGER_PARAM_PATTERN, optional: true },
       min_ecosystem_slash_events: { type: 'number', integer: true, optional: true },
       max_ecosystem_slash_events: { type: 'number', integer: true, optional: true },
       min_network_slash_events: { type: 'number', integer: true, optional: true },
@@ -1551,11 +1467,11 @@ export default class ParticipantAPIService extends BullableService {
         blockHeight: useHistoryQuery ? blockHeight : undefined,
       }
 
-      try {
-        validateSortParameter(normalizedParams.sort)
-      } catch (err: any) {
-        return ApiResponder.error(ctx, err.message, 400)
+      const sortParsed = parseIdSortDirection(normalizedParams.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDirection = sortParsed.direction
 
       const onlyValid = normalizedParams.only_valid === 'true' || normalizedParams.only_valid === true
       const onlySlashed = normalizedParams.only_slashed === 'true' || normalizedParams.only_slashed === true
@@ -1587,7 +1503,6 @@ export default class ParticipantAPIService extends BullableService {
           if (!Number.isNaN(whenTs.getTime())) whenIso = whenTs.toISOString()
         }
       }
-      const derivedSortRequested = this.usesDerivedMetricSort(normalizedParams.sort)
       const lightweightDerivedStats =
         this.shouldUseStrictTrustResolutionLightweightMode(normalizedParams, limit) ||
         this.isTrustResolutionListQuery(normalizedParams, useHistoryQuery ? blockHeight : undefined)
@@ -1762,24 +1677,12 @@ export default class ParticipantAPIService extends BullableService {
           historyQuery = knex.from(rankedHistory).select('*').where('rn', 1)
         }
 
-        const historySortPushedToSql = this.canPushDerivedSortToSql(normalizedParams.sort, {
-          hasParticipantsColumn,
-          hasParticipantRoleColumns,
-          hasWeightColumn,
-          hasIssuedColumn,
-          hasVerifiedColumn,
-          hasEcosystemSlashEventsColumn,
-        })
-
         const needsPostEnrichFiltering =
           (!historyParticipantStatePushedDown && !!normalizedParams.participant_state) ||
-          historyRequiresMetricPostFilter ||
-          (derivedSortRequested && !historySortPushedToSql)
+          historyRequiresMetricPostFilter
         const historyFetchLimit = needsPostEnrichFiltering ? Math.min(Math.max(limit * 10, 500), 5000) : limit
 
-        const orderedHistoryQuery = historySortPushedToSql
-          ? this.applyRequestedSortToQuery(historyQuery, normalizedParams.sort)
-          : applyOrdering(historyQuery, derivedSortRequested ? undefined : normalizedParams.sort)
+        const orderedHistoryQuery = historyQuery.orderBy('id', sortDirection)
         const historyRows = await orderedHistoryQuery.limit(historyFetchLimit)
         perfMarks.dbQueryEnd = Date.now()
 
@@ -1887,29 +1790,7 @@ export default class ParticipantAPIService extends BullableService {
           filteredParticipants = this.applyMetricFiltersInMemory(filteredParticipants, normalizedParams)
         }
 
-        if (derivedSortRequested && !historySortPushedToSql) {
-          filteredParticipants = sortByStandardAttributes(filteredParticipants, normalizedParams.sort, {
-            getId: (item) => Number(item.id),
-            getCreated: (item) => item.created,
-            getModified: (item) => item.modified,
-            getParticipants: (item) => item.participants,
-            getParticipantsEcosystem: (item) => item.participants_ecosystem,
-            getParticipantsIssuerGrantor: (item) => item.participants_issuer_grantor,
-            getParticipantsIssuer: (item) => item.participants_issuer,
-            getParticipantsVerifierGrantor: (item) => item.participants_verifier_grantor,
-            getParticipantsVerifier: (item) => item.participants_verifier,
-            getParticipantsHolder: (item) => item.participants_holder,
-            getWeight: (item) => item.weight,
-            getIssued: (item) => item.issued,
-            getVerified: (item) => item.verified,
-            getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-            getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-            getNetworkSlashEvents: (item) => item.network_slash_events,
-            getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-            defaultAttribute: 'modified',
-            defaultDirection: 'desc',
-          })
-        }
+        filteredParticipants.sort((a: any, b: any) => compareById(a.id, b.id, sortDirection))
         filteredParticipants = filteredParticipants.slice(0, limit)
 
         const participantsWithTrustData =
@@ -2034,28 +1915,11 @@ export default class ParticipantAPIService extends BullableService {
         normalizedParams.participant_state,
         now
       )
-      const liveSortPushedToSql = this.canPushDerivedSortToSql(normalizedParams.sort, {
-        hasParticipantsColumn,
-        hasParticipantRoleColumns,
-        hasWeightColumn,
-        hasIssuedColumn,
-        hasVerifiedColumn,
-        hasEcosystemSlashEventsColumn,
-      })
-
       const liveNeedsPostEnrich =
         (!liveParticipantStatePushdown.pushedDown && !!normalizedParams.participant_state) ||
-        liveMetricPushdown.requiresPostFilter ||
-        (derivedSortRequested && !liveSortPushedToSql)
+        liveMetricPushdown.requiresPostFilter
       const liveFetchLimit = liveNeedsPostEnrich ? Math.min(Math.max(limit * 10, 500), 5000) : limit
-      const liveSortParamForDb = liveSortPushedToSql
-        ? normalizedParams.sort
-        : derivedSortRequested && liveMetricPushdown.requiresPostFilter
-          ? undefined
-          : normalizedParams.sort
-      const orderedQuery = liveSortPushedToSql
-        ? this.applyRequestedSortToQuery(query, normalizedParams.sort)
-        : applyOrdering(query, liveSortParamForDb)
+      const orderedQuery = query.orderBy('id', sortDirection)
       perfMarks.dbQueryStart = Date.now()
       const results = await orderedQuery.limit(liveFetchLimit)
       perfMarks.dbQueryEnd = Date.now()
@@ -2077,29 +1941,7 @@ export default class ParticipantAPIService extends BullableService {
         finalResults = this.applyMetricFiltersInMemory(finalResults, normalizedParams)
       }
 
-      if (derivedSortRequested && !liveSortPushedToSql) {
-        finalResults = sortByStandardAttributes(finalResults, normalizedParams.sort, {
-          getId: (item) => Number(item.id),
-          getCreated: (item) => item.created,
-          getModified: (item) => item.modified,
-          getParticipants: (item) => item.participants,
-          getParticipantsEcosystem: (item) => item.participants_ecosystem,
-          getParticipantsIssuerGrantor: (item) => item.participants_issuer_grantor,
-          getParticipantsIssuer: (item) => item.participants_issuer,
-          getParticipantsVerifierGrantor: (item) => item.participants_verifier_grantor,
-          getParticipantsVerifier: (item) => item.participants_verifier,
-          getParticipantsHolder: (item) => item.participants_holder,
-          getWeight: (item) => item.weight,
-          getIssued: (item) => item.issued,
-          getVerified: (item) => item.verified,
-          getEcosystemSlashEvents: (item) => item.ecosystem_slash_events,
-          getEcosystemSlashedAmount: (item) => item.ecosystem_slashed_amount,
-          getNetworkSlashEvents: (item) => item.network_slash_events,
-          getNetworkSlashedAmount: (item) => item.network_slashed_amount,
-          defaultAttribute: 'modified',
-          defaultDirection: 'asc',
-        })
-      }
+      finalResults.sort((a: any, b: any) => compareById(a.id, b.id, sortDirection))
       finalResults = finalResults.slice(0, limit)
       const participantsWithTrustData =
         trustDataMode === 'none'
@@ -2641,7 +2483,6 @@ export default class ParticipantAPIService extends BullableService {
     params: {
       account: { type: 'string' },
       limit: { type: 'number', optional: true, default: 64 },
-      sort: { type: 'string', optional: true },
       trust_data: { type: 'string', optional: true },
     },
   })
@@ -2649,7 +2490,6 @@ export default class ParticipantAPIService extends BullableService {
     ctx: Context<{
       account: string
       limit?: number
-      sort?: string
       trust_data?: string
     }>
   ) {
@@ -2670,13 +2510,6 @@ export default class ParticipantAPIService extends BullableService {
       const accountCorpId = await resolveCorporationIdByAddress(account)
       if (accountCorpId === null) {
         return ApiResponder.success(ctx, { ecosystems: [] }, 200)
-      }
-
-      const sortParam = p.sort ?? '-modified'
-      try {
-        validateSortParameter(sortParam)
-      } catch (err: any) {
-        return ApiResponder.error(ctx, err.message, 400)
       }
 
       const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
@@ -2875,27 +2708,7 @@ export default class ParticipantAPIService extends BullableService {
         }
         return false
       })
-      const sortedFiltered = sortByStandardAttributes(filtered, sortParam, {
-        getId: (item: any) => item.id,
-        getCreated: (item: any) => item.created,
-        getModified: (item: any) => item.modified,
-        getParticipants: (item: any) => item.participants,
-        getParticipantsEcosystem: (item: any) => item.participants_ecosystem,
-        getParticipantsIssuerGrantor: (item: any) => item.participants_issuer_grantor,
-        getParticipantsIssuer: (item: any) => item.participants_issuer,
-        getParticipantsVerifierGrantor: (item: any) => item.participants_verifier_grantor,
-        getParticipantsVerifier: (item: any) => item.participants_verifier,
-        getParticipantsHolder: (item: any) => item.participants_holder,
-        getWeight: (item: any) => item.weight,
-        getIssued: (item: any) => item.issued,
-        getVerified: (item: any) => item.verified,
-        getEcosystemSlashEvents: (item: any) => item.ecosystem_slash_events,
-        getEcosystemSlashedAmount: (item: any) => item.ecosystem_slashed_amount,
-        getNetworkSlashEvents: (item: any) => item.network_slash_events,
-        getNetworkSlashedAmount: (item: any) => item.network_slashed_amount,
-        defaultAttribute: 'modified',
-        defaultDirection: 'desc',
-      })
+      const sortedFiltered = [...filtered].sort((a: any, b: any) => compareById(a.id, b.id, 'desc'))
       const participantsWithTrustData =
         trustDataMode === 'none'
           ? sortedFiltered

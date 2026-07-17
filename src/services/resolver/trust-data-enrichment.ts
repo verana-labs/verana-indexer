@@ -1,24 +1,14 @@
 import knex from '../../common/utils/db_connection'
-import {
-  buildTrustSummaryFromStoredRow,
-  extractQ1CredentialArrays,
-  getTrustEvaluationTtlSeconds,
-  type TrustSummaryPayload,
-} from './trust-resolve'
+import { buildVtResponse } from './trust-vt-response'
 
 export type TrustDataMode = 'none' | 'summary' | 'full'
-export type { TrustSummaryPayload }
 
 type TrustRowLite = {
   did: string
   height: number
   resolve_result: unknown
-  full_result_json?: unknown
+  evaluated_at?: unknown
   created_at?: unknown
-}
-
-function toIsoSeconds(d: Date): string {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -71,7 +61,7 @@ async function fetchTrustResultsLatestByDid(dids: string[], blockHeight?: number
   for (let i = 0; i < uniq.length; i += chunkSize) {
     const chunk = uniq.slice(i, i + chunkSize)
     let q: any = knex('trust_results')
-      .select(['did', 'height', 'resolve_result', 'full_result_json', 'created_at'])
+      .select(['did', 'height', 'resolve_result', 'evaluated_at', 'created_at'])
       .whereIn('did', chunk)
     if (typeof blockHeight === 'number' && Number.isFinite(blockHeight) && blockHeight >= 0) {
       q = q.andWhere('height', '<=', Math.trunc(blockHeight))
@@ -90,7 +80,7 @@ async function fetchTrustResultsLatestByDid(dids: string[], blockHeight?: number
         did,
         height: Math.trunc(height),
         resolve_result: row?.resolve_result,
-        full_result_json: row?.full_result_json,
+        evaluated_at: row?.evaluated_at,
         created_at: row?.created_at,
       })
     }
@@ -99,39 +89,23 @@ async function fetchTrustResultsLatestByDid(dids: string[], blockHeight?: number
   return out
 }
 
-function buildTrustPayload(row: TrustRowLite, mode: TrustDataMode): Record<string, unknown> | null {
+async function buildTrustPayload(
+  row: TrustRowLite,
+  mode: TrustDataMode,
+  blockHeight?: number
+): Promise<Record<string, unknown> | null> {
   if (mode === 'none') return null
 
-  const trustTtlSeconds = getTrustEvaluationTtlSeconds()
-  const summary = buildTrustSummaryFromStoredRow({
-    did: row.did,
-    resolveResult: row.resolve_result,
-    evaluatedAtBlock: row.height,
-    createdAt: row.created_at as any,
-    trustTtlSeconds,
-  })
-
-  if (mode === 'summary') return summary
-
-  if (row.full_result_json && typeof row.full_result_json === 'object') {
-    return row.full_result_json as Record<string, unknown>
-  }
-
-  const evaluatedAtIso = row.created_at != null ? new Date(row.created_at as any).toISOString() : summary.evaluated_at
-  const { credentials, failedCredentials } = extractQ1CredentialArrays(row.resolve_result)
-  const payload: Record<string, unknown> = {
-    did: summary.did,
-    trust_status: summary.trust_status,
-    production: summary.production,
-    evaluated_at: evaluatedAtIso,
-    evaluated_at_block: row.height,
-    credentials,
-    failed_credentials: failedCredentials,
-  }
-  if (trustTtlSeconds > 0) {
-    payload.expires_at = toIsoSeconds(new Date(new Date(evaluatedAtIso).getTime() + trustTtlSeconds * 1000))
-  }
-  return payload
+  return buildVtResponse(
+    {
+      did: row.did,
+      resolveResult: row.resolve_result,
+      evaluatedAtBlock: row.height,
+      evaluatedAtSource: (row.evaluated_at ?? row.created_at) as Date | string | null | undefined,
+      atHeight: blockHeight,
+    },
+    mode
+  )
 }
 
 function injectTrustDataDeep<T>(
@@ -179,10 +153,12 @@ export async function enrichTrustDataDeep<T>(value: T, mode: TrustDataMode, bloc
 
   const trustRowsByDid = await fetchTrustResultsLatestByDid(Array.from(dids), blockHeight)
   const trustDataByDid = new Map<string, Record<string, unknown> | null>()
-  for (const did of dids) {
-    const row = trustRowsByDid.get(did)
-    trustDataByDid.set(did, row ? buildTrustPayload(row, mode) : null)
-  }
+  await Promise.all(
+    Array.from(dids).map(async (did) => {
+      const row = trustRowsByDid.get(did)
+      trustDataByDid.set(did, row ? await buildTrustPayload(row, mode, blockHeight) : null)
+    })
+  )
 
   return injectTrustDataDeep(value, mode, trustDataByDid, new WeakMap<object, unknown>())
 }
