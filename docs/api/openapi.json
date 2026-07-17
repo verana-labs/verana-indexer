@@ -4409,6 +4409,52 @@
         }
       }
     },
+    "/v4/delegation/vs-operator-authorization/{id}": {
+      "get": {
+        "tags": ["Delegation"],
+        "summary": "Get VS Operator Authorization",
+        "description": "Retrieve a specific VSOperatorAuthorization entry by its id, including its nested records[]. Aligned with VPR MOD-DE-QRY-4.",
+        "operationId": "getVSOperatorAuthorization",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "The VSOperatorAuthorization ID"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VS operator authorization found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorization": {
+                      "$ref": "#/components/schemas/VSOperatorAuthorization"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
