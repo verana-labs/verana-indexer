@@ -8,6 +8,12 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import {
+  applyExactRangeToQuery,
+  filterRowsByExactRange,
+  INTEGER_PARAM_PATTERN,
+  isImpossibleExactRange,
+} from '../../common/utils/exact_numeric_range'
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
