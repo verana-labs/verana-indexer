@@ -1,4 +1,3 @@
-import { TrustDepositHistoryMsg } from '../constant'
 import {
   VeranaCredentialSchemaMessageTypes,
   VeranaEcosystemMessageTypes,
@@ -6,8 +5,6 @@ import {
 } from '../verana-message-types'
 import knex from './db_connection'
 import { normalizeParticipantEmptyStringsToNull } from './utils'
-
-const TRUST_DEPOSIT_MSGS = new Set<string>(Object.values(TrustDepositHistoryMsg))
 
 const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaEcosystemMessageTypes.CreateEcosystem]: 'CreateEcosystem',
@@ -516,7 +513,7 @@ export async function buildActivityTimeline(
       let action: string
       if (record.activity_entity_type === 'TrustDeposit') {
         const token = String(record.event_type ?? '').toUpperCase()
-        action = TRUST_DEPOSIT_MSGS.has(token) ? token : TrustDepositHistoryMsg.Adjust
+        action = token || 'SYNC_LEDGER'
       } else {
         action = getActionFromMessageType(record.msg_type, record.event_type, record.action)
       }
