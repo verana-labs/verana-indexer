@@ -107,7 +107,7 @@ describe('🧪 TrustDepositDatabaseService', () => {
       account: 'verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st',
       newAmount: BigInt(100),
       newShare: BigInt(10),
-      newClaimable: BigInt(0),
+      newRefunded: BigInt(0),
     })
 
     expect(result.success).toBe(true)
@@ -134,7 +134,7 @@ describe('🧪 TrustDepositDatabaseService', () => {
       account: 'verana1evvrzxw9yg5staqdvumd6fupy3jhaxfflla7st',
       newAmount: BigInt(50),
       newShare: BigInt(5),
-      newClaimable: BigInt(0),
+      newRefunded: BigInt(0),
     })
 
     expect(result.success).toBe(true)
