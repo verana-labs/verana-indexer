@@ -11,6 +11,7 @@ import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
 import VSOperatorAuthorization from '../../models/vs_operator_authorization'
 import VSOperatorAuthorizationHistory from '../../models/vs_operator_authorization_history'
+import { parseIdSortDirection } from '../crawl-co/co_stats'
 
 function serializeOperatorAuthorizationRow(row: any) {
   const spendLimit = row.spend_limit ?? null
@@ -172,6 +173,30 @@ interface ListVSOperatorAuthorizationsParams {
   sort?: string
 }
 
+interface ListOperatorAuthorizationsParams {
+  corporation_id?: number
+  operator?: string
+  msg_type?: string
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
+}
+
+interface ListVSOperatorAuthorizationsParams {
+  corporation_id?: number
+  vs_operator?: string
+  participant_id?: number
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
+}
+
 @Service({
   name: SERVICE.V1.DelegationApiService.key,
   version: 1,
@@ -237,10 +262,11 @@ export default class DelegationApiService extends BaseService {
     try {
       const p = ctx.params
 
-      const sortDir = parseIdSortDirection(p.sort)
-      if (sortDir === null) {
-        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDir = sortParsed.direction
 
       let modifiedAfter: Date | undefined
       if (p.modified_after) {
@@ -320,10 +346,11 @@ export default class DelegationApiService extends BaseService {
     try {
       const p = ctx.params
 
-      const sortDir = parseIdSortDirection(p.sort)
-      if (sortDir === null) {
-        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDir = sortParsed.direction
 
       let modifiedAfter: Date | undefined
       if (p.modified_after) {
