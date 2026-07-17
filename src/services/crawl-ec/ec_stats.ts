@@ -1,4 +1,5 @@
 import knex from '../../common/utils/db_connection'
+import { parseExactInteger } from '../../common/utils/exact_numeric_range'
 import { TR_STATS_FIELDS } from '../../common/utils/stats_fields'
 import { Ecosystem } from '../../models/ecosystem'
 import { resolveAddressByCorporationId } from '../crawl-co/corporation_resolve'
@@ -16,15 +17,15 @@ export interface EcosystemStats {
   participants_holder: number
   active_schemas: number
   archived_schemas: number
-  weight: number
+  weight: bigint
   issued: number
   verified: number
   ecosystem_slash_events: number
-  ecosystem_slashed_amount: number
-  ecosystem_slashed_amount_repaid: number
+  ecosystem_slashed_amount: bigint
+  ecosystem_slashed_amount_repaid: bigint
   network_slash_events: number
-  network_slashed_amount: number
-  network_slashed_amount_repaid: number
+  network_slashed_amount: bigint
+  network_slashed_amount_repaid: bigint
 }
 
 export { TR_STATS_FIELDS }
@@ -127,27 +128,27 @@ export async function calculateSlashStatsForSchema(
   blockHeight?: number
 ): Promise<{
   ecosystem_slash_events: number
-  ecosystem_slashed_amount: number
-  ecosystem_slashed_amount_repaid: number
+  ecosystem_slashed_amount: bigint
+  ecosystem_slashed_amount_repaid: bigint
   network_slash_events: number
-  network_slashed_amount: number
-  network_slashed_amount_repaid: number
+  network_slashed_amount: bigint
+  network_slashed_amount_repaid: bigint
 }> {
   let ecosystemSlashEvents = 0
-  let ecosystemSlashedAmount = 0
-  let ecosystemSlashedAmountRepaid = 0
+  let ecosystemSlashedAmount = BigInt(0)
+  let ecosystemSlashedAmountRepaid = BigInt(0)
   let networkSlashEvents = 0
-  let networkSlashedAmount = 0
-  let networkSlashedAmountRepaid = 0
+  let networkSlashedAmount = BigInt(0)
+  let networkSlashedAmountRepaid = BigInt(0)
 
   if (participantIds.size === 0) {
     return {
       ecosystem_slash_events: 0,
-      ecosystem_slashed_amount: 0,
-      ecosystem_slashed_amount_repaid: 0,
+      ecosystem_slashed_amount: BigInt(0),
+      ecosystem_slashed_amount_repaid: BigInt(0),
       network_slash_events: 0,
-      network_slashed_amount: 0,
-      network_slashed_amount_repaid: 0,
+      network_slashed_amount: BigInt(0),
+      network_slashed_amount_repaid: BigInt(0),
     }
   }
 
@@ -175,21 +176,18 @@ export async function calculateSlashStatsForSchema(
       .orderBy('created_at', 'asc')
   }
 
-  const prevSlashedDeposits = new Map<string, number>()
-  const prevRepaidDeposits = new Map<string, number>()
+  const prevSlashedDeposits = new Map<string, bigint>()
+  const prevRepaidDeposits = new Map<string, bigint>()
 
   for (const event of slashEvents) {
     const participantIdStr = String(event.participant_id)
-    const prevSlashed = prevSlashedDeposits.get(participantIdStr) || 0
-    const currentSlashed =
-      typeof event.slashed_deposit === 'number' ? event.slashed_deposit : Number(event.slashed_deposit)
+    const prevSlashed = prevSlashedDeposits.get(participantIdStr) ?? BigInt(0)
+    const currentSlashed = parseExactInteger(event.slashed_deposit) ?? BigInt(0)
     const incrementalSlashed = currentSlashed - prevSlashed
 
-    if (incrementalSlashed <= 0) {
+    if (incrementalSlashed <= BigInt(0)) {
       prevSlashedDeposits.set(participantIdStr, currentSlashed)
-      const currentRepaid =
-        typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit)
-      prevRepaidDeposits.set(participantIdStr, currentRepaid)
+      prevRepaidDeposits.set(participantIdStr, parseExactInteger(event.repaid_deposit) ?? BigInt(0))
       continue
     }
 
@@ -201,10 +199,10 @@ export async function calculateSlashStatsForSchema(
       networkSlashEvents++
       networkSlashedAmount += incrementalSlashed
 
-      const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit)
-      const prevRepaid = prevRepaidDeposits.get(participantIdStr) || 0
+      const repaid = parseExactInteger(event.repaid_deposit) ?? BigInt(0)
+      const prevRepaid = prevRepaidDeposits.get(participantIdStr) ?? BigInt(0)
       const incrementalRepaid = repaid - prevRepaid
-      if (incrementalRepaid > 0) {
+      if (incrementalRepaid > BigInt(0)) {
         networkSlashedAmountRepaid += incrementalRepaid
       }
       prevRepaidDeposits.set(participantIdStr, repaid)
@@ -212,10 +210,10 @@ export async function calculateSlashStatsForSchema(
       ecosystemSlashEvents++
       ecosystemSlashedAmount += incrementalSlashed
 
-      const repaid = typeof event.repaid_deposit === 'number' ? event.repaid_deposit : Number(event.repaid_deposit)
-      const prevRepaid = prevRepaidDeposits.get(participantIdStr) || 0
+      const repaid = parseExactInteger(event.repaid_deposit) ?? BigInt(0)
+      const prevRepaid = prevRepaidDeposits.get(participantIdStr) ?? BigInt(0)
       const incrementalRepaid = repaid - prevRepaid
-      if (incrementalRepaid > 0) {
+      if (incrementalRepaid > BigInt(0)) {
         ecosystemSlashedAmountRepaid += incrementalRepaid
       }
       prevRepaidDeposits.set(participantIdStr, repaid)
@@ -245,15 +243,15 @@ export async function calculateEcosystemStats(ecosystemId: number, blockHeight?:
       participants_holder: 0,
       active_schemas: 0,
       archived_schemas: 0,
-      weight: 0,
+      weight: BigInt(0),
       issued: 0,
       verified: 0,
       ecosystem_slash_events: 0,
-      ecosystem_slashed_amount: 0,
-      ecosystem_slashed_amount_repaid: 0,
+      ecosystem_slashed_amount: BigInt(0),
+      ecosystem_slashed_amount_repaid: BigInt(0),
       network_slash_events: 0,
-      network_slashed_amount: 0,
-      network_slashed_amount_repaid: 0,
+      network_slashed_amount: BigInt(0),
+      network_slashed_amount_repaid: BigInt(0),
     }
   )
 }
@@ -312,15 +310,15 @@ export async function calculateEcosystemStatsBatch(
       participants_holder: 0,
       active_schemas: 0,
       archived_schemas: 0,
-      weight: 0,
+      weight: BigInt(0),
       issued: 0,
       verified: 0,
       ecosystem_slash_events: 0,
-      ecosystem_slashed_amount: 0,
-      ecosystem_slashed_amount_repaid: 0,
+      ecosystem_slashed_amount: BigInt(0),
+      ecosystem_slashed_amount_repaid: BigInt(0),
       network_slash_events: 0,
-      network_slashed_amount: 0,
-      network_slashed_amount_repaid: 0,
+      network_slashed_amount: BigInt(0),
+      network_slashed_amount_repaid: BigInt(0),
     })
   }
 
@@ -353,15 +351,15 @@ export async function calculateEcosystemStatsBatch(
     trStats.participants_verifier_grantor += Number(stats.participants_verifier_grantor || 0)
     trStats.participants_verifier += Number(stats.participants_verifier || 0)
     trStats.participants_holder += Number(stats.participants_holder || 0)
-    trStats.weight += Number(stats.weight || 0)
+    trStats.weight += stats.weight
     trStats.issued += Number(stats.issued || 0)
     trStats.verified += Number(stats.verified || 0)
     trStats.ecosystem_slash_events += Number(stats.ecosystem_slash_events || 0)
-    trStats.ecosystem_slashed_amount += Number(stats.ecosystem_slashed_amount || 0)
-    trStats.ecosystem_slashed_amount_repaid += Number(stats.ecosystem_slashed_amount_repaid || 0)
+    trStats.ecosystem_slashed_amount += stats.ecosystem_slashed_amount
+    trStats.ecosystem_slashed_amount_repaid += stats.ecosystem_slashed_amount_repaid
     trStats.network_slash_events += Number(stats.network_slash_events || 0)
-    trStats.network_slashed_amount += Number(stats.network_slashed_amount || 0)
-    trStats.network_slashed_amount_repaid += Number(stats.network_slashed_amount_repaid || 0)
+    trStats.network_slashed_amount += stats.network_slashed_amount
+    trStats.network_slashed_amount_repaid += stats.network_slashed_amount_repaid
   }
 
   return result
