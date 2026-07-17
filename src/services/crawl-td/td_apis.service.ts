@@ -174,7 +174,7 @@ export default class TrustDepositApiService extends BullableService {
       share,
       deposit,
       refunded: Number(row.claimable ?? 0),
-      claimable: share * shareValue - deposit,
+      claimable: Math.max(0, share * shareValue - deposit),
       slashed_deposit: Number(row.slashed_deposit ?? 0),
       repaid_deposit: Number(row.repaid_deposit ?? 0),
       last_slashed: row.last_slashed ?? null,
