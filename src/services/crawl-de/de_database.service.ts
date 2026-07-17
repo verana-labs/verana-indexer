@@ -3,6 +3,7 @@ import { ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { toJsonbColumn } from '../../common/utils/helper'
 import type {
@@ -116,6 +117,8 @@ export default class DelegationDatabaseService extends BaseService {
     const { authorization, blockHeight } = ctx.params
 
     const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
     const records = toJsonbColumn(authorization.records)
 
     await knex.transaction(async (trx) => {
@@ -141,6 +144,8 @@ export default class DelegationDatabaseService extends BaseService {
         height: blockHeight,
       })
     })
+      .onConflict('id')
+      .merge(['corporation_id', 'vs_operator', 'records', 'modified', 'height'])
 
     return { success: true }
   }

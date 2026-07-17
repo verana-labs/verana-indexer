@@ -4,12 +4,13 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { parseIdSortDirection } from '../../common/utils/query_ordering'
 import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
+import { parseIdSortDirection } from '../crawl-co/co_stats'
 
 function serializeOperatorAuthorizationRow(row: any) {
   const spendLimit = row.spend_limit ?? null
