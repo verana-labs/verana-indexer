@@ -169,7 +169,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -256,7 +256,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -1016,7 +1016,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -1449,7 +1449,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -1897,7 +1897,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -2266,7 +2266,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -2671,7 +2671,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -3384,7 +3384,8 @@
             "name": "min_id",
             "in": "query",
             "schema": {
-              "type": "integer"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
             "description": "Half-open range cursor on id (inclusive)"
           },
@@ -3392,7 +3393,8 @@
             "name": "max_id",
             "in": "query",
             "schema": {
-              "type": "integer"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
             "description": "Half-open range cursor on id (exclusive)"
           },
@@ -3656,7 +3658,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -3792,7 +3794,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -4308,8 +4310,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "uint64"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
             "description": "Inclusive lower bound of the id range cursor"
           },
@@ -4318,8 +4320,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "uint64"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
             "description": "Exclusive upper bound of the id range cursor"
           },
@@ -4488,8 +4490,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "uint64"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
             "description": "Inclusive lower bound of the id range cursor"
           },
@@ -4498,8 +4500,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "format": "uint64"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             },
             "description": "Exclusive upper bound of the id range cursor"
           },
@@ -4679,7 +4681,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",
@@ -5294,7 +5296,7 @@
               "maximum": 1024,
               "default": 64
             },
-            "description": "Page size"
+            "description": "Page size, 1..1024 (default 64), per the v4 Pagination spec"
           },
           {
             "name": "min_id",

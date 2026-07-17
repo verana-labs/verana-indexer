@@ -135,8 +135,8 @@ export default class DelegationApiService extends BaseService {
       only_active: { type: 'boolean', optional: true, convert: true },
       modified_after: { type: 'string', optional: true },
       limit: { type: 'number', integer: true, optional: true, convert: true },
-      min_id: { type: 'number', integer: true, optional: true, convert: true },
-      max_id: { type: 'number', integer: true, optional: true, convert: true },
+      min_id: { type: 'string', optional: true, convert: true },
+      max_id: { type: 'string', optional: true, convert: true },
       sort: { type: 'string', optional: true },
     },
   })
@@ -219,8 +219,8 @@ export default class DelegationApiService extends BaseService {
       only_active: { type: 'boolean', optional: true, convert: true },
       modified_after: { type: 'string', optional: true },
       limit: { type: 'number', integer: true, optional: true, convert: true },
-      min_id: { type: 'number', integer: true, optional: true, convert: true },
-      max_id: { type: 'number', integer: true, optional: true, convert: true },
+      min_id: { type: 'string', optional: true, convert: true },
+      max_id: { type: 'string', optional: true, convert: true },
       sort: { type: 'string', optional: true },
     },
   })

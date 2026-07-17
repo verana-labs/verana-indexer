@@ -210,8 +210,8 @@ export default class ExchangeRateApiService extends BaseService {
       state: { type: 'boolean', optional: true, convert: true },
       expire: { type: 'string', optional: true },
       limit: { type: 'number', integer: true, optional: true, convert: true },
-      min_id: { type: 'number', integer: true, optional: true, convert: true },
-      max_id: { type: 'number', integer: true, optional: true, convert: true },
+      min_id: { type: 'string', optional: true, convert: true },
+      max_id: { type: 'string', optional: true, convert: true },
       sort: { type: 'string', optional: true },
     },
   })
