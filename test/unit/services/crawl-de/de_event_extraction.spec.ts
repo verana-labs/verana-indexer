@@ -2,15 +2,11 @@ import { Buffer } from 'node:buffer'
 import { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../../../src/common'
 import knex from '../../../../src/common/utils/db_connection'
-import { ServiceBroker } from 'moleculer'
-import { SERVICE } from '../../../../src/common'
-import knex from '../../../../src/common/utils/db_connection'
 import {
   extractOperatorAuthorizationTouches,
   extractVSOperatorAuthorizationIds,
   hasDelegationEvents,
 } from '../../../../src/modules/de-height-sync/de_height_sync_service'
-import DelegationApiService from '../../../../src/services/crawl-de/de_apis.service'
 import DelegationApiService from '../../../../src/services/crawl-de/de_apis.service'
 
 const b64 = (value: string) => Buffer.from(value, 'utf8').toString('base64')

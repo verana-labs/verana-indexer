@@ -4,7 +4,6 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
@@ -145,10 +144,11 @@ export default class DelegationApiService extends BaseService {
     try {
       const p = ctx.params
 
-      const sortDir = parseIdSortDirection(p.sort)
-      if (sortDir === null) {
-        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDir = sortParsed.direction
 
       let modifiedAfter: Date | undefined
       if (p.modified_after) {
@@ -228,10 +228,11 @@ export default class DelegationApiService extends BaseService {
     try {
       const p = ctx.params
 
-      const sortDir = parseIdSortDirection(p.sort)
-      if (sortDir === null) {
-        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDir = sortParsed.direction
 
       let modifiedAfter: Date | undefined
       if (p.modified_after) {
