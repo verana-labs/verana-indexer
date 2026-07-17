@@ -7,6 +7,7 @@ import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import ExchangeRate from '../../models/exchange_rate'
 import ExchangeRateHistory from '../../models/exchange_rate_history'
+import { parseIdSortDirection } from '../crawl-co/co_stats'
 
 function computePrice(amount: string, rate: string, rateScale: number): string {
   const scaled = BigInt(amount) * BigInt(rate)
@@ -218,10 +219,11 @@ export default class ExchangeRateApiService extends BaseService {
     try {
       const p = ctx.params
 
-      const sortDir = this.parseSortDirection(p.sort)
-      if (sortDir === null) {
-        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
       }
+      const sortDir = sortParsed.direction
 
       let expireDate: Date | undefined
       if (p.expire) {
@@ -248,14 +250,6 @@ export default class ExchangeRateApiService extends BaseService {
       this.logger.error('Error in ExchangeRate.listExchangeRates:', err)
       return ApiResponder.error(ctx, `Failed to list exchange rates: ${err?.message || String(err)}`, 500)
     }
-  }
-
-  private parseSortDirection(sort?: string): 'asc' | 'desc' | null {
-    if (!sort || !sort.trim()) return 'desc'
-    const normalized = sort.trim().toLowerCase()
-    if (normalized === 'id' || normalized === '+id') return 'asc'
-    if (normalized === '-id') return 'desc'
-    return null
   }
 
   private buildAtHeightListQuery(blockHeight: number) {

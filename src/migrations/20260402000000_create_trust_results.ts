@@ -18,7 +18,6 @@ export async function up(knex: Knex): Promise<void> {
       table.boolean('production').nullable()
       table.timestamp('evaluated_at', { useTz: true }).nullable()
       table.timestamp('expires_at', { useTz: true }).nullable()
-      table.jsonb('full_result_json').nullable()
 
       table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now())
 
@@ -35,7 +34,6 @@ export async function up(knex: Knex): Promise<void> {
         t.boolean('production').nullable()
         t.timestamp('evaluated_at', { useTz: true }).nullable()
         t.timestamp('expires_at', { useTz: true }).nullable()
-        t.jsonb('full_result_json').nullable()
       })
     }
     try {

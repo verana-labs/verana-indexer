@@ -232,8 +232,8 @@
         "tags": [
           "Corporation"
         ],
-        "summary": "Get Corporation activity timeline",
-        "description": "Retrieve the change history for a Corporation (by numeric id, DID, or group_policy_address), ordered by block height ascending.",
+        "summary": "Get Corporation History (v4)",
+        "description": "Activity timeline for a Corporation (IDX-CO-QRY-4), ordered by ActivityItem.id descending (newest-first) by default. Each entry carries only the diff (changed fields). msg is one of CreateCorporation, UpdateCorporation, AddCGFDocument, IncreaseCGFActiveVersion.",
         "operationId": "getCorporationHistory",
         "parameters": [
           {
@@ -241,27 +241,78 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "format": "int64"
             },
-            "description": "Corporation numeric id, DID, or group_policy_address"
+            "description": "The Corporation ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: ActivityItem.id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by ActivityItem.id ascending or descending"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response with the Corporation history",
+            "description": "The Corporation activity timeline",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CorporationHistoryResponse"
+                  "$ref": "#/components/schemas/ActivityTimelineResponse"
                 }
               }
             }
           },
-          "404": {
-            "description": "Corporation not found"
-          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "Corporation not found"
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -1271,9 +1322,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "Comma separated list of sort criteria. Prefix with - for descending, + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, active_schemas, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Sort by id ascending or descending"
           },
           {
             "name": "trust_data",
@@ -2622,9 +2679,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
             },
-            "description": "Comma-separated list of sort criteria, prefixed with - for descending, and + (or nothing) for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
+            "description": "Sort by id ascending or descending"
           },
           {
             "name": "min_participants",
@@ -2927,15 +2990,6 @@
               "default": 64
             },
             "description": "Maximum number of ecosystems to return"
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Comma-separated list of sort criteria. Prefix with '-' for descending, '+' or nothing for ascending. Allowed attributes: id, modified, created, participants, participants_ecosystem, participants_issuer_grantor, participants_issuer, participants_verifier_grantor, participants_verifier, participants_holder, weight, issued, verified, ecosystem_slash_events, ecosystem_slashed_amount, network_slash_events, network_slashed_amount. Default: -modified"
           },
           {
             "name": "trust_data",
@@ -3913,7 +3967,7 @@
           "Statistics"
         ],
         "summary": "Get Participants at Height",
-        "description": "Returns the number of participants for a given entity (GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, or PARTICIPANT) and role type at a specific block height, based on the entity_participant_changes log.",
+        "description": "Returns the number of participants for a given entity (GLOBAL, ECOSYSTEM, CREDENTIAL_SCHEMA, or PARTICIPANT) and role type at the block selected by the At-Block-Height header (or the latest indexed block when omitted), based on the entity_participant_changes log.",
         "operationId": "getParticipantsAtHeight",
         "parameters": [
           {
@@ -3948,19 +4002,12 @@
             "description": "Participant role type: 0=ANY, 1=ECOSYSTEM, 2=ISSUER_GRANTOR, 3=ISSUER, 4=VERIFIER_GRANTOR, 5=VERIFIER, 6=HOLDER"
           },
           {
-            "name": "height",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Block height at which to evaluate participants"
+            "$ref": "#/components/parameters/At-Block-Height"
           }
         ],
         "responses": {
           "200": {
-            "description": "Participants count at the requested height",
+            "description": "Participants count at the resolved block height",
             "content": {
               "application/json": {
                 "schema": {
@@ -3976,19 +4023,20 @@
                     "role_type": {
                       "type": "integer"
                     },
-                    "height": {
-                      "type": "integer"
-                    },
-                    "value": {
+                    "block_height": {
                       "type": "integer",
-                      "description": "Number of participants at the given height"
+                      "description": "The resolved evaluation block height"
+                    },
+                    "participants": {
+                      "type": "integer",
+                      "description": "Number of participants at the resolved block height"
                     }
                   },
                   "required": [
                     "entity_kind",
                     "role_type",
-                    "height",
-                    "value"
+                    "block_height",
+                    "participants"
                   ]
                 }
               }
@@ -4050,7 +4098,318 @@
         }
       }
     },
-    "/v4/trust-deposit/get/{corporation_id}": {
+    "/v4/delegation/operator-authorizations": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "List Operator Authorizations",
+        "description": "Retrieve a paginated, filtered list of OperatorAuthorization entries. Aligned with VPR MOD-DE-QRY-1.",
+        "operationId": "listOperatorAuthorizations",
+        "parameters": [
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter by the granting Corporation id"
+          },
+          {
+            "name": "operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by the grantee operator account"
+          },
+          {
+            "name": "msg_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to authorizations whose msg_types[] includes this message type"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, only return non-expired authorizations (expiration > now or null)"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only return authorizations modified strictly after this datetime"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Caps the number of items returned"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Inclusive lower bound of the id range cursor"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Exclusive upper bound of the id range cursor"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["id", "+id", "-id"],
+              "default": "-id"
+            },
+            "description": "Sort by id ascending (id/+id) or descending (-id, default)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of operator authorizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OperatorAuthorization"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/delegation/operator-authorization/{id}": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "Get Operator Authorization",
+        "description": "Retrieve a specific OperatorAuthorization entry by its id. Aligned with VPR MOD-DE-QRY-3.",
+        "operationId": "getOperatorAuthorization",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "The OperatorAuthorization ID"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operator authorization found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorization": {
+                      "$ref": "#/components/schemas/OperatorAuthorization"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/delegation/vs-operator-authorizations": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "List VS Operator Authorizations",
+        "description": "Retrieve a paginated, filtered list of VSOperatorAuthorization entries, each holding one ParticipantAuthorizationRecord per controlled Participant. Aligned with VPR MOD-DE-QRY-2.",
+        "operationId": "listVSOperatorAuthorizations",
+        "parameters": [
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter by the granting Corporation id"
+          },
+          {
+            "name": "vs_operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by the grantee VS-operator account"
+          },
+          {
+            "name": "participant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter to entries whose records[] contains a record for this Participant.id"
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, only return entries with at least one non-expired record"
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only return entries modified strictly after this datetime"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Caps the number of items returned"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Inclusive lower bound of the id range cursor"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Exclusive upper bound of the id range cursor"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["id", "+id", "-id"],
+              "default": "-id"
+            },
+            "description": "Sort by id ascending (id/+id) or descending (-id, default)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of VS operator authorizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VSOperatorAuthorization"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
           "Trust Deposit"
@@ -4691,6 +5050,179 @@
           }
         }
       }
+    },
+    "/v4/governance-framework/get/{id}": {
+      "get": {
+        "tags": [
+          "GovernanceFramework"
+        ],
+        "summary": "Get Governance Framework Version (v4)",
+        "description": "Retrieve a GovernanceFrameworkVersion by its chain-assigned global ID with its nested documents (IDX-GF-QRY-1). Aligned with VPR MOD-GF-QRY-1. Exactly one of ecosystem_id (EGF) and corporation_id (CGF) is set. Rows indexed before the chain-id capture need a reindex to be reachable by ID.",
+        "operationId": "getGovernanceFrameworkVersionV4",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The GovernanceFrameworkVersion ID (chain-assigned, global across EGF and CGF)"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "If set, return only the document in this language when present; otherwise all documents"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The GovernanceFrameworkVersion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceFrameworkVersionV4Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "GovernanceFrameworkVersion not found"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/governance-framework/list": {
+      "get": {
+        "tags": [
+          "GovernanceFramework"
+        ],
+        "summary": "List Governance Framework Versions (v4)",
+        "description": "List GovernanceFrameworkVersion entries for one owning subject, either an Ecosystem or a Corporation (IDX-GF-QRY-2). Aligned with VPR MOD-GF-QRY-2. Exactly one of ecosystem_id and corporation_id must be provided, otherwise HTTP 400. Each entry has the same shape as Get Governance Framework Version. Within a subject, ascending id equals ascending version.",
+        "operationId": "listGovernanceFrameworkVersionsV4",
+        "parameters": [
+          {
+            "name": "ecosystem_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Filter by owning Ecosystem. Set iff corporation_id is null"
+          },
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Filter by owning Corporation. Set iff ecosystem_id is null"
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, return only the entry for the subject's active_version"
+          },
+          {
+            "name": "preferred_language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "If set, return only one document per version, preferring this language"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Page size"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: gfv id lower bound (inclusive)"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Cursor: gfv id upper bound (exclusive)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by gfv id; +id is chronological (oldest-first)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Governance Framework Versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceFrameworkVersionV4ListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4887,59 +5419,6 @@
           },
           "offset": {
             "type": "integer"
-          }
-        }
-      },
-      "CorporationHistoryItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "corporation_id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "did": {
-            "type": "string",
-            "nullable": true
-          },
-          "corporation": {
-            "type": "string",
-            "nullable": true
-          },
-          "language": {
-            "type": "string",
-            "nullable": true
-          },
-          "event_type": {
-            "type": "string",
-            "description": "Create | Update"
-          },
-          "height": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "changes": {
-            "type": "object",
-            "nullable": true,
-            "additionalProperties": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "CorporationHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "history": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CorporationHistoryItem"
-            }
           }
         }
       },
@@ -6214,6 +6693,7 @@
             "type": "string",
             "description": "The entity type (VPR spec name)",
             "enum": [
+            "Corporation",
               "Ecosystem",
               "CredentialSchema",
               "GovernanceFrameworkDocument",
@@ -7192,6 +7672,58 @@
           "created": { "type": "string", "format": "date-time" }
         }
       },
+      "DenomAmount": {
+        "type": "object",
+        "required": ["denom", "amount"],
+        "properties": {
+          "denom": { "type": "string" },
+          "amount": { "type": "string" }
+        }
+      },
+      "OperatorAuthorization": {
+        "type": "object",
+        "description": "A corporation's authorization granted to a specific operator account for one or more module message types (IDX-DE-QRY-3).",
+        "required": ["id", "corporation_id", "operator", "msg_types"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64" },
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "operator": { "type": "string" },
+          "msg_types": { "type": "array", "items": { "type": "string" } },
+          "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set." },
+          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
+          "expiration": { "type": "string", "format": "date-time" },
+          "period": { "type": "string", "description": "Reset period for spend_limit, as a duration (e.g. \"86400s\")." }
+        }
+      },
+      "ParticipantAuthorizationRecord": {
+        "type": "object",
+        "description": "A per-Participant VS-operator authorization nested inside a VSOperatorAuthorization.",
+        "required": ["participant_id", "msg_types", "with_feegrant"],
+        "properties": {
+          "participant_id": { "type": "integer", "format": "uint64" },
+          "msg_types": { "type": "array", "items": { "type": "string" } },
+          "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set." },
+          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
+          "with_feegrant": { "type": "boolean" },
+          "expiration": { "type": "string", "format": "date-time" },
+          "period": { "type": "string", "description": "Reset period, as a duration (e.g. \"86400s\")." }
+        }
+      },
+      "VSOperatorAuthorization": {
+        "type": "object",
+        "description": "A corporation's VS-operator authorization container, holding one ParticipantAuthorizationRecord per controlled Participant (IDX-DE-QRY-2).",
+        "required": ["id", "corporation_id", "vs_operator", "records"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64" },
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "vs_operator": { "type": "string" },
+          "records": { "type": "array", "items": { "$ref": "#/components/schemas/ParticipantAuthorizationRecord" } }
+        }
+      },
       "ResolutionResponse": {
         "type": "object",
         "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
@@ -7365,6 +7897,102 @@
         "required": [
           "params"
         ]
+      },
+      "GovernanceFrameworkDocumentV4": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Chain-assigned document ID; null for rows indexed before chain-id capture"
+          },
+          "gfv_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Owning GovernanceFrameworkVersion chain ID"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "language": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "digest_sri": {
+            "type": "string"
+          }
+        }
+      },
+      "GovernanceFrameworkVersionV4": {
+        "type": "object",
+        "description": "Exactly one of ecosystem_id and corporation_id is set",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Chain-assigned global GovernanceFrameworkVersion ID"
+          },
+          "ecosystem_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Owning Ecosystem (set iff EGF)"
+          },
+          "corporation_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Owning Corporation (set iff CGF)"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "active_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceFrameworkDocumentV4"
+            }
+          }
+        }
+      },
+      "GovernanceFrameworkVersionV4Response": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "GovernanceFrameworkVersionV4ListResponse": {
+        "type": "object",
+        "properties": {
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
+            }
+          }
+        },
+        "required": [
+          "versions"
+        ]
       }
     },
     "responses": {
@@ -7392,6 +8020,20 @@
             "example": {
               "error": "Internal server error occurred",
               "code": 500
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not Found - The requested resource does not exist",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Resource not found",
+              "code": 404
             }
           }
         }
@@ -7437,6 +8079,10 @@
     {
       "name": "Digest",
       "description": "Digest lookup queries"
+    },
+    {
+      "name": "Delegation",
+      "description": "Operator and VS-operator authorization queries"
     },
     {
       "name": "Statistics",

@@ -1,0 +1,174 @@
+import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import { ServiceBroker } from 'moleculer'
+import BaseService from '../../base/base.service'
+import { SERVICE } from '../../common'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import knex from '../../common/utils/db_connection'
+import { toJsonbColumn } from '../../common/utils/helper'
+import type {
+  FeeAllowanceSnapshot,
+  OperatorAuthorizationRow,
+  VSOperatorAuthorizationRow,
+} from '../../modules/de-height-sync/de_height_sync_helpers'
+
+@Service({
+  name: SERVICE.V1.DelegationDatabaseService.key,
+  version: 1,
+})
+export default class DelegationDatabaseService extends BaseService {
+  public constructor(public broker: ServiceBroker) {
+    super(broker)
+  }
+
+  @Action({ name: 'syncOperatorAuthorization' })
+  async syncOperatorAuthorization(ctx: {
+    params: {
+      authorization: OperatorAuthorizationRow
+      feeAllowance: FeeAllowanceSnapshot | null
+      blockHeight: number
+    }
+  }): Promise<{ success: boolean }> {
+    const { authorization, feeAllowance, blockHeight } = ctx.params
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    const row = {
+      id: authorization.id,
+      corporation_id: authorization.corporation_id,
+      operator: authorization.operator,
+      msg_types: toJsonbColumn(authorization.msg_types),
+      spend_limit: toJsonbColumn(authorization.spend_limit),
+      remaining_spend: toJsonbColumn(authorization.remaining_spend),
+      fee_spend_limit: toJsonbColumn(feeAllowance?.fee_spend_limit ?? null),
+      remaining_fee_spend: toJsonbColumn(feeAllowance?.remaining_fee_spend ?? null),
+      expiration: authorization.expiration,
+      period: authorization.period,
+      modified,
+      height: blockHeight,
+    }
+
+    await knex.transaction(async (trx) => {
+      await trx('operator_authorizations')
+        .insert(row)
+        .onConflict('id')
+        .merge([
+          'corporation_id',
+          'operator',
+          'msg_types',
+          'spend_limit',
+          'remaining_spend',
+          'fee_spend_limit',
+          'remaining_fee_spend',
+          'expiration',
+          'period',
+          'modified',
+          'height',
+        ])
+
+      await trx('operator_authorization_history').insert({
+        operator_authorization_id: row.id,
+        corporation_id: row.corporation_id,
+        operator: row.operator,
+        msg_types: row.msg_types,
+        spend_limit: row.spend_limit,
+        remaining_spend: row.remaining_spend,
+        fee_spend_limit: row.fee_spend_limit,
+        remaining_fee_spend: row.remaining_fee_spend,
+        expiration: row.expiration,
+        period: row.period,
+        modified,
+        revoked: false,
+        height: blockHeight,
+      })
+    })
+
+    return { success: true }
+  }
+
+  @Action({ name: 'revokeOperatorAuthorization' })
+  async revokeOperatorAuthorization(ctx: {
+    params: { id: number; corporationId: number; operator: string; blockHeight: number }
+  }): Promise<{ success: boolean }> {
+    const { id, corporationId, operator, blockHeight } = ctx.params
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    await knex.transaction(async (trx) => {
+      await trx('operator_authorizations').where('id', id).delete()
+
+      await trx('operator_authorization_history').insert({
+        operator_authorization_id: id,
+        corporation_id: corporationId,
+        operator,
+        modified,
+        revoked: true,
+        height: blockHeight,
+      })
+    })
+
+    return { success: true }
+  }
+
+  @Action({ name: 'syncVSOperatorAuthorization' })
+  async syncVSOperatorAuthorization(ctx: {
+    params: { authorization: VSOperatorAuthorizationRow; blockHeight: number }
+  }): Promise<{ success: boolean }> {
+    const { authorization, blockHeight } = ctx.params
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+    const records = toJsonbColumn(authorization.records)
+
+    await knex.transaction(async (trx) => {
+      await trx('vs_operator_authorizations')
+        .insert({
+          id: authorization.id,
+          corporation_id: authorization.corporation_id,
+          vs_operator: authorization.vs_operator,
+          records,
+          modified,
+          height: blockHeight,
+        })
+        .onConflict('id')
+        .merge(['corporation_id', 'vs_operator', 'records', 'modified', 'height'])
+
+      await trx('vs_operator_authorization_history').insert({
+        vs_operator_authorization_id: authorization.id,
+        corporation_id: authorization.corporation_id,
+        vs_operator: authorization.vs_operator,
+        records,
+        modified,
+        revoked: false,
+        height: blockHeight,
+      })
+    })
+
+    return { success: true }
+  }
+
+  @Action({ name: 'deleteVSOperatorAuthorization' })
+  async deleteVSOperatorAuthorization(ctx: {
+    params: { id: number; blockHeight: number }
+  }): Promise<{ success: boolean }> {
+    const { id, blockHeight } = ctx.params
+
+    const existing = await knex('vs_operator_authorizations').where('id', id).first()
+    if (!existing) return { success: true }
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    await knex.transaction(async (trx) => {
+      await trx('vs_operator_authorizations').where('id', id).delete()
+
+      await trx('vs_operator_authorization_history').insert({
+        vs_operator_authorization_id: id,
+        corporation_id: existing.corporation_id,
+        vs_operator: existing.vs_operator,
+        modified,
+        revoked: true,
+        height: blockHeight,
+      })
+    })
+
+    return { success: true }
+  }
+}

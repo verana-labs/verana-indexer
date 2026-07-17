@@ -340,6 +340,10 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET params': `${SERVICE.V1.CorporationApiService.path}.getCorporationParams`,
         'GET history/:id': `${SERVICE.V1.CorporationApiService.path}.getCorporationHistory`,
       }),
+      createRoute('/v4/governance-framework', {
+        'GET get/:id': `${SERVICE.V1.GovernanceFrameworkApiService.path}.getGovernanceFrameworkVersionV4`,
+        'GET list': `${SERVICE.V1.GovernanceFrameworkApiService.path}.listGovernanceFrameworkVersionsV4`,
+      }),
       createRoute('/v4/participant', {
         'GET get/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipant`,
         'GET list': `${SERVICE.V1.ParticipantAPIService.path}.listParticipants`,
@@ -360,6 +364,11 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       }),
       createRoute('/v4/di', {
         'GET get/:digest': `${SERVICE.V1.DigestApiService.path}.getDigest`,
+      }),
+      createRoute('/v4/delegation', {
+        'GET operator-authorizations': `${SERVICE.V1.DelegationApiService.path}.listOperatorAuthorizations`,
+        'GET operator-authorization/:id': `${SERVICE.V1.DelegationApiService.path}.getOperatorAuthorization`,
+        'GET vs-operator-authorizations': `${SERVICE.V1.DelegationApiService.path}.listVSOperatorAuthorizations`,
       }),
       createRoute('/v4/trust-deposit', {
         'GET get/:corporation_id': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,

@@ -11,6 +11,7 @@ export class CoGovernanceFrameworkVersion extends BaseModel {
   version!: number
   created!: Date
   active_since?: Date | null
+  gfv_id?: number | null
 
   documents?: CoGovernanceFrameworkDocument[]
 

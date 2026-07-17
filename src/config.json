@@ -84,6 +84,11 @@
     "millisecondCrawl": 300,
     "chunkSize": 500
   },
+  "crawlDelegation": {
+    "key": "crawlDelegation",
+    "millisecondCrawl": 300,
+    "chunkSize": 500
+  },
   "crawlAccounts": {
     "key": "crawlAccounts",
     "freshStart": {
@@ -150,7 +155,7 @@
     "useEmbeddedRegistryAdapter": true,
     "disableDigestSriVerification": false,
     "txPrefilterEnabled": true,
-    "verifiablePublicRegistries": [],
+    "ecsEcosystems": [],
     "trustEvaluationTtlSeconds": 3600,
     "pollObjectCachingRetryDays": 7
   },

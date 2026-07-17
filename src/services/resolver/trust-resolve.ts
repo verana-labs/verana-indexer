@@ -1,4 +1,9 @@
-import { resolveDID, type TrustResolution, type VerifiablePublicRegistry } from '@verana-labs/verre'
+import {
+  resolveDID,
+  type TrustResolution,
+  TrustResolutionOutcome,
+  type VerifiablePublicRegistry,
+} from '@verana-labs/verre'
 import { BULL_JOB_NAME } from '../../common'
 import {
   applySpeedToBatchSize,
@@ -8,7 +13,9 @@ import {
 import knex from '../../common/utils/db_connection'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
 import config from '../../config.json' with { type: 'json' }
+import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
+import { hasAllowlistedEcsServiceCredential } from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -23,7 +30,6 @@ export type ResolverRuntimeConfig = {
   millisecondPoll?: number
   millisecondCrawl?: number
   blocksPerCall?: number
-  verifiablePublicRegistries?: VerifiablePublicRegistry[]
   useEmbeddedRegistryAdapter?: boolean
   disableDigestSriVerification?: boolean
   trustEvaluationTtlSeconds?: number
@@ -51,7 +57,6 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     enabled: next?.enabled ?? legacy?.enabled,
     millisecondPoll: next?.millisecondPoll ?? next?.millisecondCrawl ?? legacy?.millisecondCrawl,
     blocksPerCall: next?.blocksPerCall ?? legacy?.blocksPerCall,
-    verifiablePublicRegistries: next?.verifiablePublicRegistries,
     useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
     trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
@@ -81,12 +86,7 @@ export function getVerreTrustEvaluationCallOptions(): {
   skipDigestSRICheck: boolean
 } {
   const cfg = getResolverRuntimeConfig()
-  const registriesRaw =
-    cfg?.verifiablePublicRegistries && cfg.verifiablePublicRegistries.length > 0
-      ? cfg.verifiablePublicRegistries
-      : defaultVprRegistriesFromEnv()
-
-  const registries = attachRegistryAdapters(registriesRaw, {
+  const registries = attachRegistryAdapters(defaultVprRegistriesFromEnv(), {
     enabled: cfg?.useEmbeddedRegistryAdapter !== false,
   })
 
@@ -315,46 +315,7 @@ export type TrustResultsRow = {
   production?: boolean | null
   evaluated_at?: Date | string | null
   expires_at?: Date | string | null
-  full_result_json?: unknown
   created_at?: Date | string
-}
-
-function toIsoSeconds(d: Date): string {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z')
-}
-
-function buildStableApiPayload(args: {
-  did: string
-  evaluatedAt: Date
-  evaluatedAtBlock: number
-  resolveResult: unknown
-  trustTtlSeconds: number
-}): Record<string, unknown> {
-  const evaluatedAtIso = toIsoSeconds(args.evaluatedAt)
-  const expiresAtIso =
-    args.trustTtlSeconds > 0 ? toIsoSeconds(new Date(args.evaluatedAt.getTime() + args.trustTtlSeconds * 1000)) : null
-
-  const summary = buildTrustSummaryFromStoredRow({
-    did: args.did,
-    resolveResult: args.resolveResult,
-    evaluatedAtBlock: args.evaluatedAtBlock,
-    createdAt: args.evaluatedAt,
-    trustTtlSeconds: args.trustTtlSeconds,
-  })
-
-  const { credentials, failedCredentials } = extractQ1CredentialArrays(args.resolveResult)
-
-  const payload: Record<string, unknown> = {
-    did: summary.did,
-    trust_status: summary.trust_status,
-    production: summary.production,
-    evaluated_at: evaluatedAtIso,
-    evaluated_at_block: args.evaluatedAtBlock,
-    credentials,
-    failed_credentials: failedCredentials,
-  }
-  if (expiresAtIso) payload.expires_at = expiresAtIso
-  return payload
 }
 
 export async function saveTrustResults(row: {
@@ -367,16 +328,7 @@ export async function saveTrustResults(row: {
 }): Promise<void> {
   const trustTtlSeconds = getTrustEvaluationTtlSeconds()
   const evaluatedAt = new Date()
-  const payload = buildStableApiPayload({
-    did: row.did,
-    evaluatedAt,
-    evaluatedAtBlock: row.height,
-    resolveResult: row.resolve_result,
-    trustTtlSeconds,
-  })
-
-  const trustStatus = String(payload.trust_status ?? 'UNTRUSTED')
-  const production = Boolean(payload.production)
+  const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
   const expiresAt =
     trustTtlSeconds > 0 ? new Date(evaluatedAt.getTime() + trustTtlSeconds * 1000) : new Date(evaluatedAt.getTime())
 
@@ -392,7 +344,6 @@ export async function saveTrustResults(row: {
       production,
       evaluated_at: evaluatedAt,
       expires_at: expiresAt,
-      full_result_json: payload,
     })
     .onConflict(['did', 'height'])
     .merge({
@@ -404,7 +355,6 @@ export async function saveTrustResults(row: {
       production,
       evaluated_at: evaluatedAt,
       expires_at: expiresAt,
-      full_result_json: payload,
     })
 }
 
@@ -460,6 +410,12 @@ export async function resolveTrustForDidAtHeight(did: string, blockHeight: numbe
       verifiablePublicRegistries,
       skipDigestSRICheck,
     })) as TrustResolution
+
+    // WL-ECS is not enforced by verre; drop the verdict until it is (see verre ResolverConfig.ecsEcosystems).
+    if (isEcsAllowlistEnforced() && result.verified && !(await hasAllowlistedEcsServiceCredential(result))) {
+      result.verified = false
+      result.outcome = TrustResolutionOutcome.NOT_TRUSTED
+    }
 
     const snap = snapshotFromResolution(result)
     await saveTrustResults({
@@ -523,15 +479,6 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
   await runPool(impactedDids, tuning.didConcurrency, async (did) => resolveTrustForDidAtHeight(did, blockHeight))
 }
 
-export type TrustSummaryPayload = {
-  did: string
-  trust_status: string
-  production: boolean
-  evaluated_at: string
-  evaluated_at_block: number
-  expires_at?: string
-}
-
 function mapOutcomeToTrustStatus(verified: boolean, outcome: unknown): string {
   if (!verified) return 'UNTRUSTED'
   if (outcome === 'verified') return 'TRUSTED'
@@ -544,89 +491,14 @@ function mapOutcomeToProduction(verified: boolean, outcome: unknown): boolean {
   return outcome === 'verified'
 }
 
-export function buildTrustSummaryFromStoredRow(args: {
-  did: string
-  resolveResult: unknown
-  evaluatedAtBlock: number
-  createdAt: Date | string | null | undefined
-  trustTtlSeconds?: number
-}): TrustSummaryPayload {
-  const evaluatedAt =
-    args.createdAt != null ? new Date(args.createdAt as Date | string).toISOString() : new Date().toISOString()
-  const trustTtlSeconds = args.trustTtlSeconds ?? getTrustEvaluationTtlSeconds()
-
-  if (
-    !args.resolveResult ||
-    typeof args.resolveResult !== 'object' ||
-    (args.resolveResult as { error?: boolean }).error
-  ) {
-    const base: TrustSummaryPayload = {
-      did: args.did,
-      trust_status: 'UNTRUSTED',
-      production: false,
-      evaluated_at: evaluatedAt,
-      evaluated_at_block: args.evaluatedAtBlock,
-    }
-    if (trustTtlSeconds > 0) {
-      base.expires_at = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString()
-    }
-    return base
+export function deriveStoredTrustState(resolveResult: unknown): { trustStatus: string; production: boolean } {
+  if (!resolveResult || typeof resolveResult !== 'object' || (resolveResult as { error?: boolean }).error) {
+    return { trustStatus: 'UNTRUSTED', production: false }
   }
-
-  const r = args.resolveResult as { verified?: boolean; outcome?: unknown }
+  const r = resolveResult as { verified?: boolean; outcome?: unknown }
   const verified = Boolean(r.verified)
-  const outcome = r.outcome
-  const summary: TrustSummaryPayload = {
-    did: args.did,
-    trust_status: mapOutcomeToTrustStatus(verified, outcome),
-    production: mapOutcomeToProduction(verified, outcome),
-    evaluated_at: evaluatedAt,
-    evaluated_at_block: args.evaluatedAtBlock,
+  return {
+    trustStatus: mapOutcomeToTrustStatus(verified, r.outcome),
+    production: mapOutcomeToProduction(verified, r.outcome),
   }
-  if (trustTtlSeconds > 0) {
-    summary.expires_at = new Date(new Date(evaluatedAt).getTime() + trustTtlSeconds * 1000).toISOString()
-  }
-  return summary
-}
-
-export function extractQ1CredentialArrays(resolveResult: unknown): {
-  credentials: unknown[]
-  failedCredentials: unknown[]
-} {
-  if (!resolveResult || typeof resolveResult !== 'object') {
-    return { credentials: [], failedCredentials: [] }
-  }
-  const r = resolveResult as Record<string, unknown>
-  const failedCredentials = Array.isArray(r.failedCredentials) ? r.failedCredentials : []
-  const explicit = Array.isArray(r.credentials)
-    ? r.credentials
-    : Array.isArray(r.validCredentials)
-      ? r.validCredentials
-      : null
-  if (explicit && explicit.length > 0) {
-    return { credentials: explicit, failedCredentials }
-  }
-
-  const derived = deriveCredentialsFromVerreResolution(r)
-  return { credentials: derived.length > 0 ? derived : (explicit ?? []), failedCredentials }
-}
-
-function deriveCredentialsFromVerreResolution(r: Record<string, unknown>): unknown[] {
-  const result = r.verified === true ? 'VALID' : 'FAILED'
-  const out: unknown[] = []
-  const push = (cred: unknown) => {
-    if (!cred || typeof cred !== 'object') return
-    const c = cred as Record<string, unknown>
-    const schemaType = typeof c.schemaType === 'string' ? c.schemaType : ''
-    out.push({
-      ...c,
-      result,
-      vtjscId: typeof c.vtjscId === 'string' ? c.vtjscId : schemaType || undefined,
-      issuedBy: typeof c.issuer === 'string' ? c.issuer : undefined,
-      claims: c.claims ?? c,
-    })
-  }
-  push(r.serviceProvider)
-  push(r.service)
-  return out
 }

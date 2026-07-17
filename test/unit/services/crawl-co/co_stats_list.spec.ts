@@ -28,10 +28,12 @@ import TrustDeposit from '../../../../src/models/trust_deposit'
 import {
   buildCorporationObject,
   calculateCorporationParticipantStatsBatch,
+  compareById,
   countControlledEcosystemsBatch,
   emptyTrustDepositSnapshot,
   getCorporationTrustDepositBatch,
   parseCorporationListPagination,
+  parseIdSortDirection,
 } from '../../../../src/services/crawl-co/co_stats'
 
 describe('co_stats.parseCorporationListPagination', () => {
@@ -177,6 +179,47 @@ describe('co_stats.countControlledEcosystemsBatch', () => {
 
     expect(map.get('1')).toBe(2)
     expect(map.get('2')).toBe(0)
+  })
+})
+
+describe('co_stats.parseIdSortDirection', () => {
+  it('defaults to descending when sort is absent or empty', () => {
+    expect(parseIdSortDirection(undefined)).toEqual({ ok: true, direction: 'desc' })
+    expect(parseIdSortDirection('')).toEqual({ ok: true, direction: 'desc' })
+  })
+
+  it('maps id and +id to ascending, -id to descending', () => {
+    expect(parseIdSortDirection('id')).toEqual({ ok: true, direction: 'asc' })
+    expect(parseIdSortDirection('+id')).toEqual({ ok: true, direction: 'asc' })
+    expect(parseIdSortDirection('-id')).toEqual({ ok: true, direction: 'desc' })
+  })
+
+  it('rejects any non-id sort column', () => {
+    for (const s of ['modified', '-modified', 'weight', 'participants', 'created', 'id,modified']) {
+      expect(parseIdSortDirection(s).ok).toBe(false)
+    }
+  })
+})
+
+describe('co_stats.compareById', () => {
+  it('orders ascending and descending', () => {
+    expect(compareById(1, 2, 'asc')).toBeLessThan(0)
+    expect(compareById(1, 2, 'desc')).toBeGreaterThan(0)
+    expect(compareById(5, 5, 'asc')).toBe(0)
+  })
+
+  it('keeps exact order for uint64 ids beyond Number.MAX_SAFE_INTEGER', () => {
+    const a = '9223372036854775806'
+    const b = '9223372036854775807'
+    // Number(a) === Number(b) would collapse these to the same value; BigInt must not.
+    expect(Number(a)).toBe(Number(b))
+    expect(compareById(a, b, 'asc')).toBeLessThan(0)
+    expect(compareById(a, b, 'desc')).toBeGreaterThan(0)
+  })
+
+  it('accepts string and number ids interchangeably', () => {
+    expect(compareById('10', 2, 'asc')).toBeGreaterThan(0)
+    expect(compareById(2, '10', 'asc')).toBeLessThan(0)
   })
 })
 

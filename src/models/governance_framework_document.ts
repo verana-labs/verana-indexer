@@ -9,4 +9,5 @@ export class GovernanceFrameworkDocument extends BaseModel {
   language!: string
   url!: string
   digest_sri!: string
+  gfd_id?: number | null
 }
