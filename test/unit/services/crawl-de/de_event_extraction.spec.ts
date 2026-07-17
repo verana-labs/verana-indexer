@@ -155,7 +155,6 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
 
   afterAll(async () => {
     await broker.stop()
-    await knex.destroy()
   })
 
   const list = (params: Record<string, unknown> = {}) =>
