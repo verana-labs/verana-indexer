@@ -328,6 +328,102 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
   })
 })
 
+describe('DelegationApiService.getVSOperatorAuthorization', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const serviceKey = SERVICE.V1.DelegationApiService.path
+
+  beforeAll(async () => {
+    broker.createService(DelegationApiService)
+    await broker.start()
+
+    await knex('vs_operator_authorization_history').del()
+    await knex('vs_operator_authorizations').del()
+
+    await knex('vs_operator_authorizations').insert([
+      seedVsoaRow({
+        id: 7,
+        corporation_id: 1,
+        vs_operator: 'verana1vsA',
+        records: [record(10, FUTURE, { with_feegrant: true, spend_limit: [{ denom: 'uvna', amount: '500' }] })],
+        modified: T2,
+        height: 110,
+      }),
+    ])
+
+    await knex('vs_operator_authorization_history').insert([
+      seedVsoaRow({
+        vs_operator_authorization_id: 7,
+        corporation_id: 1,
+        vs_operator: 'verana1vsA',
+        records: [record(10, FUTURE)],
+        modified: T1,
+        revoked: false,
+        height: 100,
+      }),
+      seedVsoaRow({
+        vs_operator_authorization_id: 7,
+        corporation_id: 1,
+        vs_operator: 'verana1vsA',
+        records: [record(10, FUTURE), record(20, FUTURE)],
+        modified: T2,
+        revoked: false,
+        height: 110,
+      }),
+      seedVsoaRow({
+        vs_operator_authorization_id: 8,
+        corporation_id: 2,
+        vs_operator: 'verana1vsB',
+        records: [],
+        modified: T3,
+        revoked: true,
+        height: 120,
+      }),
+    ])
+  })
+
+  afterAll(async () => {
+    await broker.stop()
+  })
+
+  const get = (id: number, blockHeight?: number) =>
+    broker.call(`${serviceKey}.getVSOperatorAuthorization`, { id }, { meta: { blockHeight } }) as Promise<any>
+
+  it('returns the live row with its nested records', async () => {
+    const { authorization } = await get(7)
+    expect(authorization.id).toBe(7)
+    expect(authorization.corporation_id).toBe(1)
+    expect(authorization.vs_operator).toBe('verana1vsA')
+    expect(authorization.records).toHaveLength(1)
+    expect(authorization.records[0]).toMatchObject({
+      participant_id: 10,
+      with_feegrant: true,
+      spend_limit: [{ denom: 'uvna', amount: '500' }],
+    })
+    expect(authorization.records[0]).not.toHaveProperty('fee_spend_limit')
+  })
+
+  it('returns 404 for an unknown id', async () => {
+    expect(await get(999)).toMatchObject({ code: 404 })
+  })
+
+  it('resolves the state as of the requested block height', async () => {
+    expect((await get(7, 100)).authorization.records.map((r: any) => r.participant_id)).toEqual([10])
+    expect((await get(7, 110)).authorization.records.map((r: any) => r.participant_id)).toEqual([10, 20])
+  })
+
+  it('returns the authorization id at height, not the history row id', async () => {
+    expect((await get(7, 110)).authorization.id).toBe(7)
+  })
+
+  it('returns 404 before the authorization existed', async () => {
+    expect(await get(7, 99)).toMatchObject({ code: 404 })
+  })
+
+  it('returns 404 for a revoked authorization at height', async () => {
+    expect(await get(8, 120)).toMatchObject({ code: 404 })
+  })
+})
+
 afterAll(async () => {
   await knex.destroy()
 })
