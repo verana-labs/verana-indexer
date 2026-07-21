@@ -148,6 +148,16 @@ export enum TrustDepositEventType {
   YieldTransfer = 'yield_transfer',
 }
 
+export enum TrustDepositHistoryMsg {
+  Create = 'CREATE_TRUST_DEPOSIT',
+  Adjust = 'ADJUST_TRUST_DEPOSIT',
+  Slash = 'SLASH_TRUST_DEPOSIT',
+  SlashParticipant = 'SLASH_PARTICIPANT_TRUST_DEPOSIT',
+  ReclaimYield = 'RECLAIM_YIELD',
+  ReclaimDeposit = 'RECLAIM_DEPOSIT',
+  RepaySlashed = 'REPAY_SLASHED',
+}
+
 export const TrustDepositEventAttributeKey = {
   Account: 'account',
   Amount: 'amount',

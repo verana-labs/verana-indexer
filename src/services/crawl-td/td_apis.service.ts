@@ -2,14 +2,13 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
-import { validateRequiredAccountParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
-import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { getModuleParamsAction } from '../../common/utils/params_service'
+import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapTrustDepositApiFields } from '../../common/vpr-v4-mapping'
 import TrustDeposit from '../../models/trust_deposit'
+import { resolveAddressByCorporationId } from '../crawl-co/corporation_resolve'
 
 @Service({
   name: SERVICE.V1.TrustDepositApiService.key,
@@ -23,22 +22,23 @@ export default class TrustDepositApiService extends BullableService {
   @Action({
     name: 'getTrustDeposit',
     params: {
-      corporation: { type: 'string', min: 5 },
+      corporation_id: [{ type: 'string' }, { type: 'number' }],
     },
   })
-  public async getTrustDeposit(ctx: Context<{ corporation: string }>) {
+  public async getTrustDeposit(ctx: Context<{ corporation_id: string | number }>) {
     try {
-      const accountValidation = validateRequiredAccountParam(ctx.params.corporation, 'corporation')
-      if (!accountValidation.valid) {
-        return ApiResponder.error(ctx, accountValidation.error, 400)
+      const corporationId = this.parseCorporationId(ctx.params.corporation_id)
+      if (corporationId == null) {
+        return ApiResponder.error(ctx, 'Invalid corporation_id: must be a positive integer', 400)
       }
-      const account = accountValidation.value
-      const blockHeight = (ctx.meta as any)?.blockHeight
 
-      if (!this.isValidAccount(account)) {
-        this.logger.warn(`Invalid corporation address format: ${account}`)
-        return ApiResponder.error(ctx, 'Invalid corporation address format', 400)
+      const account = await resolveAddressByCorporationId(corporationId)
+      if (!account) {
+        return ApiResponder.error(ctx, `No corporation found for id: ${corporationId}`, 404)
       }
+
+      const blockHeight = (ctx.meta as any)?.blockHeight
+      const shareValue = await this.getTrustDepositShareValue(typeof blockHeight === 'number' ? blockHeight : undefined)
 
       // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === 'number') {
@@ -50,22 +50,12 @@ export default class TrustDepositApiService extends BullableService {
           .first()
 
         if (!historyRecord) {
-          this.logger.info(`No trust deposit found for account: ${account}`)
-          return ApiResponder.error(ctx, `No trust deposit found for account: ${account}`, 404)
+          this.logger.info(`No trust deposit found for corporation_id: ${corporationId}`)
+          return ApiResponder.error(ctx, `No trust deposit found for corporation_id: ${corporationId}`, 404)
         }
 
         const result = {
-          trust_deposit: mapTrustDepositApiFields({
-            corporation: historyRecord.corporation,
-            share: Number(historyRecord.share ?? 0),
-            deposit: Number(historyRecord.deposit ?? 0),
-            claimable: Number(historyRecord.claimable ?? 0),
-            slashed_deposit: Number(historyRecord.slashed_deposit ?? 0),
-            repaid_deposit: Number(historyRecord.repaid_deposit ?? 0),
-            last_slashed: historyRecord.last_slashed,
-            last_repaid: historyRecord.last_repaid,
-            slash_count: historyRecord.slash_count || 0,
-          } as Record<string, unknown>),
+          trust_deposit: this.buildTrustDepositResponse(historyRecord, corporationId, shareValue),
         }
 
         return ApiResponder.success(ctx, result, 200)
@@ -75,21 +65,11 @@ export default class TrustDepositApiService extends BullableService {
       const trustDeposit = await TrustDeposit.query().findOne({ corporation: account })
 
       if (!trustDeposit) {
-        this.logger.info(`No trust deposit found for corporation: ${account}`)
-        return ApiResponder.error(ctx, `No trust deposit found for corporation: ${account}`, 404)
+        this.logger.info(`No trust deposit found for corporation_id: ${corporationId}`)
+        return ApiResponder.error(ctx, `No trust deposit found for corporation_id: ${corporationId}`, 404)
       }
       const result = {
-        trust_deposit: mapTrustDepositApiFields({
-          corporation: trustDeposit.corporation,
-          share: Number(trustDeposit.share ?? 0),
-          deposit: Number(trustDeposit.deposit ?? 0),
-          claimable: Number(trustDeposit.claimable ?? 0),
-          slashed_deposit: Number(trustDeposit.slashed_deposit ?? 0),
-          repaid_deposit: Number(trustDeposit.repaid_deposit ?? 0),
-          last_slashed: trustDeposit.last_slashed,
-          last_repaid: trustDeposit.last_repaid,
-          slash_count: Number(trustDeposit.slash_count ?? 0),
-        } as Record<string, unknown>),
+        trust_deposit: this.buildTrustDepositResponse(trustDeposit, corporationId, shareValue),
       }
       return ApiResponder.success(ctx, result, 200)
     } catch (err: any) {
@@ -108,60 +88,37 @@ export default class TrustDepositApiService extends BullableService {
   @Action({
     name: 'getTrustDepositHistory',
     params: {
-      corporation: { type: 'string', min: 5 },
-      response_max_size: { type: 'number', optional: true, default: 64 },
-      transaction_timestamp_older_than: { type: 'string', optional: true },
+      corporation_id: [{ type: 'string' }, { type: 'number' }],
+      limit: { type: 'number', integer: true, optional: true, convert: true },
+      min_id: { type: 'number', integer: true, optional: true, convert: true },
+      max_id: { type: 'number', integer: true, optional: true, convert: true },
+      sort: { type: 'string', optional: true },
     },
   })
   public async getTrustDepositHistory(
-    ctx: Context<{ corporation: string; response_max_size?: number; transaction_timestamp_older_than?: string }>
+    ctx: Context<{ corporation_id: string | number; limit?: number; min_id?: number; max_id?: number; sort?: string }>
   ) {
     try {
-      const accountValidation = validateRequiredAccountParam(ctx.params.corporation, 'corporation')
-      if (!accountValidation.valid) {
-        return ApiResponder.error(ctx, accountValidation.error, 400)
+      const corporationId = this.parseCorporationId(ctx.params.corporation_id)
+      if (corporationId == null) {
+        return ApiResponder.error(ctx, 'Invalid corporation_id: must be a positive integer', 400)
       }
-      const account = accountValidation.value
-      const {
-        response_max_size: responseMaxSize = 64,
-        transaction_timestamp_older_than: transactionTimestampOlderThan,
-      } = ctx.params
 
-      if (transactionTimestampOlderThan) {
-        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          )
-        }
-        const timestampDate = new Date(transactionTimestampOlderThan)
-        if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid transaction_timestamp_older_than format', 400)
-        }
+      const sortDir = this.parseSortDirection(ctx.params.sort)
+      if (sortDir === null) {
+        return ApiResponder.error(ctx, "Invalid sort: only 'id', '+id' or '-id' are supported", 400)
+      }
+
+      const { min_id: minId, max_id: maxId } = ctx.params
+      const limit = Math.min(Math.max(Number(ctx.params.limit) || 64, 1), 1024)
+
+      const account = await resolveAddressByCorporationId(corporationId)
+      if (!account) {
+        return ApiResponder.error(ctx, `No corporation found for id: ${corporationId}`, 404)
       }
 
       const atBlockHeight =
         (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
-
-      if (!this.isValidAccount(account)) {
-        return ApiResponder.error(ctx, 'Invalid corporation address format', 400)
-      }
-
-      const [trustDeposit, trustDepositHistory] = await Promise.all([
-        TrustDeposit.query().findOne({ corporation: account }),
-        knex('trust_deposit_history')
-          .where({ corporation: account })
-          .modify((qb) => {
-            if (atBlockHeight && Number.isFinite(Number(atBlockHeight))) {
-              qb.where('height', '<=', Number(atBlockHeight))
-            }
-          })
-          .first(),
-      ])
-      if (!trustDeposit && !trustDepositHistory) {
-        return ApiResponder.error(ctx, `No trust deposit found for corporation: ${account}`, 404)
-      }
 
       const activity = await buildActivityTimeline(
         {
@@ -172,16 +129,25 @@ export default class TrustDepositApiService extends BullableService {
           msgTypePrefixes: ['/verana.td.v1'],
         },
         {
-          responseMaxSize,
-          transactionTimestampOlderThan,
           atBlockHeight,
+          pagination: {
+            minId,
+            maxId,
+            limit,
+            sort: sortDir === 'asc' ? 'id' : '-id',
+          },
         }
       )
 
+      const items = (activity || []).map((item: Record<string, unknown>) => ({
+        ...item,
+        entity_id: String(corporationId),
+      }))
+
       const result = {
         entity_type: 'TrustDeposit',
-        entity_id: account,
-        activity: activity || [],
+        entity_id: String(corporationId),
+        activity: items,
       }
 
       return ApiResponder.success(ctx, result, 200)
@@ -191,8 +157,44 @@ export default class TrustDepositApiService extends BullableService {
     }
   }
 
-  private isValidAccount(account: string): boolean {
-    const accountRegex = /^verana1[0-9a-z]{10,}$/
-    return accountRegex.test(account)
+  private async getTrustDepositShareValue(blockHeight?: number): Promise<number> {
+    const result = await getModuleParams(ModulesParamsNamesTypes.TD, blockHeight)
+    return Number(result?.params?.trust_deposit_share_value ?? 0)
+  }
+
+  private buildTrustDepositResponse(
+    row: Record<string, any>,
+    corporationId: number,
+    shareValue: number
+  ): Record<string, unknown> {
+    const share = Number(row.share ?? 0)
+    const deposit = Number(row.deposit ?? 0)
+    return mapTrustDepositApiFields({
+      corporation_id: corporationId,
+      share,
+      deposit,
+      refunded: Number(row.claimable ?? 0),
+      claimable: Math.max(0, share * shareValue - deposit),
+      slashed_deposit: Number(row.slashed_deposit ?? 0),
+      repaid_deposit: Number(row.repaid_deposit ?? 0),
+      last_slashed: row.last_slashed ?? null,
+      last_repaid: row.last_repaid ?? null,
+      slash_count: Number(row.slash_count ?? 0),
+    } as Record<string, unknown>)
+  }
+
+  private parseCorporationId(value: string | number): number | null {
+    const raw = String(value).trim()
+    if (!/^\d+$/.test(raw)) return null
+    const id = Number(raw)
+    return Number.isInteger(id) && id > 0 ? id : null
+  }
+
+  private parseSortDirection(sort?: string): 'asc' | 'desc' | null {
+    if (!sort || !sort.trim()) return 'desc'
+    const normalized = sort.trim().toLowerCase()
+    if (normalized === 'id' || normalized === '+id') return 'asc'
+    if (normalized === '-id') return 'desc'
+    return null
   }
 }
