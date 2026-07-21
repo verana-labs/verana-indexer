@@ -3015,22 +3015,24 @@ export default class ParticipantIngestService extends Service {
         }
       })
 
-      try {
-        const slashed = await knex('participants').where({ id: msg.id }).first()
-        // TrustDeposit is still address-based: resolve the owner's policy address.
-        const corporation = await resolveAddressByCorporationId(Number(slashed?.corporation_id ?? 0) || 0)
-        if (corporation) {
-          await (this as any).broker.call(
-            `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_participant_trust_deposit`,
-            {
-              corporation,
-              amount: String(amountNum),
-              ts: now,
-            }
-          )
+      if (process.env.USE_HEIGHT_SYNC_TD !== 'true') {
+        try {
+          const slashed = await knex('participants').where({ id: msg.id }).first()
+          // TrustDeposit is still address-based: resolve the owner's policy address.
+          const corporation = await resolveAddressByCorporationId(Number(slashed?.corporation_id ?? 0) || 0)
+          if (corporation) {
+            await (this as any).broker.call(
+              `${SERVICE.V1.TrustDepositDatabaseService.path}.slash_participant_trust_deposit`,
+              {
+                corporation,
+                amount: String(amountNum),
+                ts: now,
+              }
+            )
+          }
+        } catch (err) {
+          this.logger.warn('TD processor slash call failed, continuing: ', err)
         }
-      } catch (err) {
-        this.logger.warn('TD processor slash call failed, continuing: ', err)
       }
 
       try {
