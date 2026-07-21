@@ -382,14 +382,24 @@
         "operationId": "listIndexerEvents",
         "parameters": [
           {
-            "name": "did",
+            "name": "dids",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
-              "pattern": "^did:[a-z0-9]+:.+"
+              "type": "string"
             },
-            "description": "DID to replay events for. Only rows persisted for this DID are returned."
+            "description": "Comma-separated DIDs. When present, restricts the response to events matching the DID branch of the membership filter — resources whose primary DID is in the list (Corporation.did, Ecosystem.did, or Participant.did, with sub-entities surfaced under their parent's DID), plus Participants whose validator's DID is in the list (one hop via validator_participant_id)."
+          },
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 1
+            },
+            "description": "When present, restricts the response to events matching the Corporation branch of the membership filter — the Corporation itself, every Ecosystem and Participant with corporation_id equal to this value, all sub-entities transitively embedded in any of those, plus Participants whose validator's corporation_id equals this value (one hop via validator_participant_id)."
           },
           {
             "name": "after_block_height",
