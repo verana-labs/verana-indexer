@@ -132,6 +132,8 @@ export function blockchainEventTypeToHistoryEventType(blockchainEventType: strin
       return 'YIELD_DISTRIBUTION'
     case TrustDepositEventType.YieldTransfer:
       return 'YIELD_TRANSFER'
+    case TrustDepositEventType.BurnEcosystemSlashedTrustDeposit:
+      return 'SLASH_PARTICIPANT_TRUST_DEPOSIT'
     default:
       return 'SYNC_LEDGER'
   }

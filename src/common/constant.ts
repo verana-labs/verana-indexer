@@ -146,6 +146,7 @@ export enum TrustDepositEventType {
   AdjustTrustDeposit = 'adjust_trust_deposit',
   YieldDistribution = 'yield_distribution',
   YieldTransfer = 'yield_transfer',
+  BurnEcosystemSlashedTrustDeposit = 'burn_ecosystem_slashed_trust_deposit',
 }
 
 export enum TrustDepositHistoryMsg {
