@@ -381,6 +381,10 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET changes': `${SERVICE.V1.IndexerMetaService.path}.listVtChanges`,
         'GET dids': `${SERVICE.V1.IndexerMetaService.path}.listIndexedDids`,
       }),
+      createRoute('/v4/trqp/v2', {
+        'POST authorization': `${SERVICE.V1.TrqpApiService.path}.authorize`,
+        'GET profile': `${SERVICE.V1.TrqpApiService.path}.getProfile`,
+      }),
       createRoute('/v4/indexer', {
         'GET snapshot': `${SERVICE.V1.IndexerSnapshotService.path}.getSnapshot`,
         'GET changes': `${SERVICE.V1.IndexerMetaService.path}.listChanges`,

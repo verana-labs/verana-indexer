@@ -309,6 +309,10 @@ export const SERVICE = {
       key: 'DigestApiService',
       path: 'v1.DigestApiService',
     },
+    TrqpApiService: {
+      key: 'TrqpApiService',
+      path: 'v1.TrqpApiService',
+    },
     DigestDatabaseService: {
       key: 'DigestDatabaseService',
       path: 'v1.DigestDatabaseService',
