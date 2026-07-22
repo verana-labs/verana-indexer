@@ -12,6 +12,167 @@
     }
   ],
   "paths": {
+    "/v4/trqp/v2/authorization": {
+      "post": {
+        "tags": [
+          "TRQP"
+        ],
+        "summary": "TRQP Authorize (IDX-TRQP-QRY-1)",
+        "description": "Trust Registry Query Protocol v2 authorization predicate (ecosystem -> corporation). Answers whether entity_id (a corporation DID) is authorized by authority_id (an ecosystem DID) for action on resource (a VPR schema URI) at a given time. Derived from ACTIVE Participant entries. Request/response use the upstream ToIP TSWG TRQP schemas verbatim; the response additionally carries an optional top-level `verana` breadcrumb object as described by the Verana TRQP profile descriptor (GET /v4/trqp/v2/profile).",
+        "operationId": "trqpAuthorize",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "authority_id",
+                  "entity_id",
+                  "action",
+                  "resource"
+                ],
+                "properties": {
+                  "authority_id": {
+                    "type": "string",
+                    "pattern": "^did:",
+                    "description": "Ecosystem DID (the authority)."
+                  },
+                  "entity_id": {
+                    "type": "string",
+                    "pattern": "^did:",
+                    "description": "Corporation DID (the entity being asked about)."
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "issue",
+                      "verify",
+                      "grant_issue",
+                      "grant_verify",
+                      "govern"
+                    ],
+                    "description": "Maps to Participant.role via the Verana TRQP profile action_role_map."
+                  },
+                  "resource": {
+                    "type": "string",
+                    "pattern": "^vpr:verana:[a-z0-9-]+:cs:[0-9]+$",
+                    "description": "VPR schema URI, e.g. vpr:verana:vna-mainnet-1:cs:42."
+                  },
+                  "context": {
+                    "type": "object",
+                    "description": "Optional TRQP context. `session_id` (Verana profile extension) takes precedence over `time`.",
+                    "properties": {
+                      "time": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Evaluation time (RFC 3339). Defaults to now."
+                      },
+                      "session_id": {
+                        "type": "string",
+                        "description": "Binds the answer to a Verana participant session; denied with `session not found` when it does not exist or does not match the entity's corporation."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorization decision (upstream TRQP authorization response plus the optional Verana breadcrumb).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authority_id": {
+                      "type": "string"
+                    },
+                    "entity_id": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "authorized": {
+                      "type": "boolean"
+                    },
+                    "time_requested": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "time_evaluated": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Present only on session-scoped denials (e.g. `session not found`)."
+                    },
+                    "verana": {
+                      "type": "object",
+                      "description": "Verana-specific breadcrumb for the grounding Participant row. Omitted when no Participant matched.",
+                      "properties": {
+                        "participant_state": {
+                          "type": "string",
+                          "enum": [
+                            "ACTIVE",
+                            "FUTURE",
+                            "INACTIVE",
+                            "EXPIRED",
+                            "REVOKED",
+                            "SLASHED",
+                            "REPAID"
+                          ]
+                        },
+                        "since": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "deposit": {
+                          "type": "string",
+                          "description": "Cosmos amount-denom pair, e.g. 10000000uvna."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request (invalid action, resource grammar, or context.time)."
+          }
+        }
+      }
+    },
+    "/v4/trqp/v2/profile": {
+      "get": {
+        "tags": [
+          "TRQP"
+        ],
+        "summary": "TRQP Profile descriptor",
+        "description": "Serves the Verana TRQP profile descriptor byte-identical to schemas/v4/trqp/profile.json, with Content-Type application/json. Discovery entry for the TRQP endpoints.",
+        "operationId": "trqpProfile",
+        "responses": {
+          "200": {
+            "description": "The Verana TRQP profile descriptor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v4/corporation/get/{id}": {
       "get": {
         "tags": [
@@ -8097,6 +8258,10 @@
     }
   },
   "tags": [
+    {
+      "name": "TRQP",
+      "description": "Trust Registry Query Protocol v2 (authorization, recognition, profile discovery)."
+    },
     {
       "name": "Corporation",
       "description": "Corporations and their Governance Frameworks"
