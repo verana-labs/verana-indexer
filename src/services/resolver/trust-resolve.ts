@@ -399,11 +399,33 @@ async function getImpactedDids(blockHeight: number, limit: number): Promise<stri
   return out
 }
 
-export async function resolveTrustForDidAtHeight(did: string, blockHeight: number): Promise<void> {
+function isResolveError(resolveResult: unknown): boolean {
+  return Boolean(resolveResult && typeof resolveResult === 'object' && (resolveResult as { error?: unknown }).error)
+}
+
+function trustResultMeaningfullyChanged(nextResolve: unknown, prevRow: TrustResultsRow | null): boolean {
+  const next = deriveStoredTrustState(nextResolve)
+  const prevStatus = prevRow ? String(prevRow.trust_status ?? 'UNTRUSTED').toUpperCase() : 'UNTRUSTED'
+  const prevProduction = prevRow ? Boolean(prevRow.production) : false
+  if (next.trustStatus !== prevStatus) return true
+  if (next.production !== prevProduction) return true
+  const prevError = prevRow ? isResolveError(prevRow.resolve_result) : true
+  return isResolveError(nextResolve) !== prevError
+}
+
+export async function resolveTrustForDidAtHeight(
+  did: string,
+  blockHeight: number,
+  landingHeight?: number
+): Promise<boolean> {
   const { verifiablePublicRegistries, skipDigestSRICheck } = getVerreTrustEvaluationCallOptions()
   const cfg = getResolverRuntimeConfig()
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0
   const resourceId = `${did}@${blockHeight}`
+
+  let resolveResult: unknown
+  let snap: TrustRoleSnapshot
+  let failureMessage: string | null = null
 
   try {
     const result = (await resolveDID(did, {
@@ -417,57 +439,67 @@ export async function resolveTrustForDidAtHeight(did: string, blockHeight: numbe
       result.outcome = TrustResolutionOutcome.NOT_TRUSTED
     }
 
-    const snap = snapshotFromResolution(result)
-    await saveTrustResults({
-      did,
-      height: blockHeight,
-      resolve_result: result,
-      issuer_auth: snap,
-      verifier_auth: snap,
-      ecosystem_participant: snap,
-    })
-
-    await clearReattemptable(resourceId)
+    resolveResult = result
+    snap = snapshotFromResolution(result)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
-    const snap = snapshotFromError(message)
+    failureMessage = message
     const lower = message.toLowerCase()
     const errorCode =
       lower.includes('not found') || lower.includes('not_found') || lower.includes('404')
         ? 'not_found'
         : 'resolution_failed'
 
-    await saveTrustResults({
-      did,
-      height: blockHeight,
-      resolve_result: {
-        error: true,
-        message,
-        dereferenceErrors: [],
-        credentials: [],
-        failedCredentials: [
-          {
-            id: did,
-            error: `DID resolution failed for ${did}`,
-            format: 'N/A',
-            errorCode,
-            message,
-          },
-        ],
-      },
-      issuer_auth: snap,
-      verifier_auth: snap,
-      ecosystem_participant: snap,
-    })
+    resolveResult = {
+      error: true,
+      message,
+      dereferenceErrors: [],
+      credentials: [],
+      failedCredentials: [
+        {
+          id: did,
+          error: `DID resolution failed for ${did}`,
+          format: 'N/A',
+          errorCode,
+          message,
+        },
+      ],
+    }
+    snap = snapshotFromError(message)
+  }
 
+  let saveHeight = blockHeight
+  let forwarded = false
+  if (typeof landingHeight === 'number' && Number.isInteger(landingHeight) && landingHeight !== blockHeight) {
+    const prevRow = await getTrustResultLatestByDidAtOrBeforeHeight(did, blockHeight)
+    if (trustResultMeaningfullyChanged(resolveResult, prevRow)) {
+      saveHeight = landingHeight
+      forwarded = true
+    }
+  }
+
+  await saveTrustResults({
+    did,
+    height: saveHeight,
+    resolve_result: resolveResult,
+    issuer_auth: snap,
+    verifier_auth: snap,
+    ecosystem_participant: snap,
+  })
+
+  if (failureMessage !== null) {
     await markReattemptableFailure({
       resourceId,
       resourceType: 'did-evaluation',
       errorType: 'resolveDID',
-      lastError: message,
+      lastError: failureMessage,
       retryDays,
     })
+  } else {
+    await clearReattemptable(resourceId)
   }
+
+  return forwarded
 }
 
 export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
@@ -476,7 +508,9 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
   const tuning = await getResolverTuning()
   const impactedDids = await getImpactedDids(blockHeight, tuning.maxDidsPerBlock)
 
-  await runPool(impactedDids, tuning.didConcurrency, async (did) => resolveTrustForDidAtHeight(did, blockHeight))
+  await runPool(impactedDids, tuning.didConcurrency, async (did) => {
+    await resolveTrustForDidAtHeight(did, blockHeight)
+  })
 }
 
 function mapOutcomeToTrustStatus(verified: boolean, outcome: unknown): string {

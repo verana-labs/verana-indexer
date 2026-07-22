@@ -33,15 +33,15 @@ const ResolverPollService = {
   },
 
   methods: {
-    async refreshExpiredTrustResults(this: any): Promise<void> {
+    async refreshExpiredTrustResults(this: any, landingHeight: number): Promise<boolean> {
       const cfg = getResolverRuntimeConfig()
-      if (!cfg?.enabled) return
+      if (!cfg?.enabled) return false
 
       const trustTtlSeconds = getTrustEvaluationTtlSeconds()
-      if (!Number.isFinite(trustTtlSeconds) || trustTtlSeconds <= 0) return
+      if (!Number.isFinite(trustTtlSeconds) || trustTtlSeconds <= 0) return false
 
       const lastTrust = await this.getOrCreateResolverCheckpointHeight()
-      if (lastTrust <= 0) return
+      if (lastTrust <= 0) return false
 
       // Refresh a small batch per poll cycle to avoid overwhelming the DB.
       const now = new Date()
@@ -53,20 +53,22 @@ const ResolverPollService = {
         .orderBy('expires_at', 'asc')
         .limit(50)) as Array<{ did: string; height: number; expires_at: Date | string }>
 
-      if (rows.length === 0) return
+      if (rows.length === 0) return false
 
+      let forwarded = false
       for (const r of rows) {
         const did = String(r.did ?? '')
         const height = Number(r.height ?? 0)
         if (!did || !Number.isInteger(height) || height < 0) continue
         try {
-          await resolveTrustForDidAtHeight(did, height)
+          forwarded = (await resolveTrustForDidAtHeight(did, height, landingHeight)) || forwarded
         } catch {
           this.logger.warn(
             `[RESOLVER] Failed to refresh trust for ${did}@${height}, will retry again later if still eligible.`
           )
         }
       }
+      return forwarded
     },
     async initialSyncIfNeeded(this: any): Promise<void> {
       const cfg = getResolverRuntimeConfig()
@@ -81,13 +83,14 @@ const ResolverPollService = {
       await this.processBlock(indexedHeight)
       await this.advanceResolverCheckpoint(indexedHeight)
     },
-    async retryDueFailures(this: any): Promise<void> {
+    async retryDueFailures(this: any, landingHeight: number): Promise<boolean> {
       const retryDays = getDeclaredPollObjectCachingRetryDays() ?? 0
-      if (retryDays <= 0) return
+      if (retryDays <= 0) return false
 
       const due = await listDueReattemptables(200)
-      if (due.length === 0) return
+      if (due.length === 0) return false
 
+      let forwarded = false
       for (const item of due) {
         const rid = String(item.resource_id ?? '')
         if (!rid) continue
@@ -100,11 +103,12 @@ const ResolverPollService = {
         const height = Number(m[2])
         if (!Number.isInteger(height) || height < 0) continue
         try {
-          await resolveTrustForDidAtHeight(did, height)
+          forwarded = (await resolveTrustForDidAtHeight(did, height, landingHeight)) || forwarded
         } catch {
           console.error(`[RESOLVER] Reattempt for ${rid} failed, will retry again later if still eligible.`)
         }
       }
+      return forwarded
     },
     async getIndexedHeight(this: any): Promise<number> {
       const checkpoint = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION).first()
@@ -182,10 +186,6 @@ const ResolverPollService = {
 
       await this.initialSyncIfNeeded()
 
-      await this.retryDueFailures()
-
-      await this.refreshExpiredTrustResults()
-
       const currentHeight = await this.getOrCreateResolverCheckpointHeight()
       const indexedHeight = await this.getIndexedHeight()
       if (indexedHeight <= currentHeight) return
@@ -193,9 +193,14 @@ const ResolverPollService = {
       const tuning = await getResolverTuning(this.logger)
       const targetEnd = Math.min(indexedHeight, currentHeight + tuning.blocksPerCall)
 
+      let forwardedLate = false
+      forwardedLate = (await this.retryDueFailures(targetEnd)) || forwardedLate
+      forwardedLate = (await this.refreshExpiredTrustResults(targetEnd)) || forwardedLate
+
       if (trustTxPrefilterEnabled()) {
         const activeHeights = await findHeightsWithTrustModuleMessages(currentHeight, targetEnd)
         const activeSet = new Set<number>(activeHeights.map((h) => Number(h)))
+        if (forwardedLate) activeSet.add(targetEnd)
         try {
           for (let height = currentHeight + 1; height <= targetEnd; height++) {
             if (activeSet.has(height)) {
