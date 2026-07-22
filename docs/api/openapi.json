@@ -151,6 +151,133 @@
         }
       }
     },
+    "/v4/trqp/v2/recognition": {
+      "post": {
+        "tags": [
+          "TRQP"
+        ],
+        "summary": "TRQP Recognize (IDX-TRQP-QRY-2)",
+        "description": "Trust Registry Query Protocol v2 recognition predicate (corporation -> ecosystem). Answers whether authority_id (a corporation DID) recognizes entity_id (an ecosystem DID) as authoritative for resource (a VPR schema URI) at a given time. Action-invariant in v4: the answer is true iff authority_id is the controlling Corporation of entity_id AND resource is a Credential Schema governed by that ecosystem. Request/response use the upstream ToIP TSWG TRQP schemas verbatim; the response additionally carries an optional top-level `verana` breadcrumb object as described by the Verana TRQP profile descriptor (GET /v4/trqp/v2/profile).",
+        "operationId": "trqpRecognize",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "authority_id",
+                  "entity_id",
+                  "action",
+                  "resource"
+                ],
+                "properties": {
+                  "authority_id": {
+                    "type": "string",
+                    "pattern": "^did:",
+                    "description": "Corporation DID (the authority doing the recognizing)."
+                  },
+                  "entity_id": {
+                    "type": "string",
+                    "pattern": "^did:",
+                    "description": "Ecosystem DID (the entity being recognized)."
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "issue",
+                      "verify",
+                      "grant_issue",
+                      "grant_verify",
+                      "govern"
+                    ],
+                    "description": "Preserved on the wire for TRQP conformance; the v4 answer is action-invariant."
+                  },
+                  "resource": {
+                    "type": "string",
+                    "pattern": "^vpr:verana:[a-z0-9-]+:cs:[0-9]+$",
+                    "description": "VPR schema URI, e.g. vpr:verana:vna-mainnet-1:cs:42."
+                  },
+                  "context": {
+                    "type": "object",
+                    "description": "Optional TRQP context. `session_id` (Verana profile extension) takes precedence over `time`.",
+                    "properties": {
+                      "time": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Evaluation time (RFC 3339). Defaults to now."
+                      },
+                      "session_id": {
+                        "type": "string",
+                        "description": "Binds the answer to a Verana participant session; denied with `session not found` when it does not exist or does not match the authority's corporation."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recognition decision (upstream TRQP recognition response plus the optional Verana breadcrumb).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authority_id": {
+                      "type": "string"
+                    },
+                    "entity_id": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "recognized": {
+                      "type": "boolean"
+                    },
+                    "time_requested": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "time_evaluated": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Present on out-of-scope denials (`out of v4 recognition scope (corporation → ecosystem only)`) or session-scoped denials (`session not found`)."
+                    },
+                    "verana": {
+                      "type": "object",
+                      "description": "Verana-specific breadcrumb for the controlling relationship. Present when authority_id controls entity_id; omitted otherwise.",
+                      "properties": {
+                        "ecosystem_active_egf_version": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "controlling_since": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request (invalid action, resource grammar, or context.time)."
+          }
+        }
+      }
+    },
     "/v4/trqp/v2/profile": {
       "get": {
         "tags": [
