@@ -238,8 +238,21 @@ describe('parseVtChangesQuery', () => {
     expect(res.ok).toBe(false)
   })
 
-  it('requires at least one channel', () => {
+  it('enables all channels when channels is omitted', () => {
     const res = parseVtChangesQuery({ fromBlock: '100' })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.value.channels.trust).toBe(true)
+    expect(res.value.channels.ecsCredentials).toBe(true)
+    expect(res.value.channels.presentations).toBe(true)
+    expect(res.value.channels.services).toBe(true)
+    expect(res.value.channels.corporation.include).toBe(true)
+    expect(res.value.channels.participations.include).toBe(true)
+    expect(res.value.channels.ecosystems.include).toBe(true)
+  })
+
+  it('rejects an unknown channel name', () => {
+    const res = parseVtChangesQuery({ fromBlock: '100', channels: 'bogus' })
     expect(res.ok).toBe(false)
   })
 
