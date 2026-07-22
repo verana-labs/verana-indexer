@@ -543,14 +543,24 @@
         "operationId": "listIndexerEvents",
         "parameters": [
           {
-            "name": "did",
+            "name": "dids",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
-              "pattern": "^did:[a-z0-9]+:.+"
+              "type": "string"
             },
-            "description": "DID to replay events for. Only rows persisted for this DID are returned."
+            "description": "Comma-separated DIDs. When present, restricts the response to events matching the DID branch of the membership filter — resources whose primary DID is in the list (Corporation.did, Ecosystem.did, or Participant.did, with sub-entities surfaced under their parent's DID), plus Participants whose validator's DID is in the list (one hop via validator_participant_id)."
+          },
+          {
+            "name": "corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 1
+            },
+            "description": "When present, restricts the response to events matching the Corporation branch of the membership filter — the Corporation itself, every Ecosystem and Participant with corporation_id equal to this value, all sub-entities transitively embedded in any of those, plus Participants whose validator's corporation_id equals this value (one hop via validator_participant_id)."
           },
           {
             "name": "after_block_height",
@@ -8301,7 +8311,7 @@
     },
     {
       "name": "Indexer WebSocket",
-      "description": "## WebSocket Events\n\nThe same path supports the legacy global stream and the DID-specific room.\n\n### All events\nConnect to `ws://localhost:3001/v4/indexer/events` without a `did` query parameter. The first message is `connected`, followed by the legacy `block-indexed` object. This object shape is kept backward compatible:\n```json\n{\n  \"type\": \"block-indexed\",\n  \"height\": 123456,\n  \"timestamp\": \"2025-01-15T10:30:00Z\"\n}\n```\nRequired fields: `type`, `height`, `timestamp`.\n\n### DID room\nConnect to `ws://localhost:3001/v4/indexer/events?did=<DID>`. The first message is `connected` and includes `did` and `block_height`. Use `GET /v4/indexer/events?did=<DID>&after_block_height=<height>&limit=<n>` to replay missed persisted events.\n\nLive DID events use this shape:\n```json\n{\n  \"type\": \"indexer-event\",\n  \"event_type\": \"StartParticipantOP\",\n  \"did\": \"did:web:agent.example\",\n  \"block_height\": 123456,\n  \"tx_hash\": \"A1B2C3\",\n  \"timestamp\": \"2025-01-15T10:30:00Z\",\n  \"payload\": {\n    \"module\": \"participant\",\n    \"action\": \"StartParticipantOP\",\n    \"message_type\": \"/verana.pp.v1.MsgStartParticipantOP\",\n    \"tx_index\": 0,\n    \"message_index\": 0,\n    \"sender\": \"did:web:agent.example\",\n    \"related_dids\": [\"did:web:agent.example\"],\n    \"entity_type\": \"Participant\",\n    \"entity_id\": \"42\"\n  }\n}\n```\nRequired fields: `type`, `event_type`, `did`, `block_height`, `tx_hash`, `timestamp`, `payload`.\n\nManual tests:\n```bash\nnode --import=tsx test/manual/test-websocket.ts\nDID=did:web:agent.example AFTER_BLOCK_HEIGHT=123456 node --import=tsx test/manual/test-websocket-did-room.ts\n```"
+      "description": "## Subscribe to indexer events\n\nReal-time push of Ecosystem, Credential Schema, Participant, Trust Deposit, Delegation, Digest, and Exchange Rate events over a WebSocket at `/v4/indexer/subscribe`.\n\n### Connect\nOn connect, before any subscription, the server sends a `ready` message:\n```json\n{\n  \"type\": \"ready\",\n  \"block\": 1500005,\n  \"blockTime\": \"2026-05-11T13:00:05Z\",\n  \"blockIntervalMs\": 5000\n}\n```\n`block` is the next block the server will deliver (`lastProcessedBlock + 1`); use `block - 1` as the catch-up cursor for `GET /v4/indexer/events`.\n\n### Subscribe\nSend a control message (the first message must be a `subscribe`):\n```json\n{\n  \"action\": \"subscribe\",\n  \"dids\": [\"did:web:agent.example\"],\n  \"corporationId\": 42\n}\n```\n`dids[]` and `corporationId` are both optional and use the same membership semantics as `GET /v4/indexer/events`. Both present -> intersection; both absent -> wildcard. A later `subscribe` replaces the active subscription. Send `{ \"action\": \"unsubscribe\" }` or close the socket to stop.\n\n### Block messages\nAfter the first `subscribe`, the server sends one `block` message per processed block, in strictly increasing `block` order:\n```json\n{\n  \"type\": \"block\",\n  \"block\": 1500005,\n  \"blockTime\": \"2026-05-11T13:00:05Z\",\n  \"events\": [\n    {\n      \"type\": \"indexer-event\",\n      \"event_type\": \"StartParticipantOP\",\n      \"did\": \"did:web:agent.example\",\n      \"block_height\": 1500005,\n      \"tx_hash\": \"AB12...\",\n      \"timestamp\": \"2026-05-11T13:00:05Z\",\n      \"payload\": { \"module\": \"pp\", \"action\": \"start_participant_op\", \"message_type\": \"/verana.pp.v1.MsgStartParticipantOP\", \"tx_index\": 3, \"message_index\": 0, \"sender\": \"verana1...\", \"related_dids\": [], \"entity_type\": \"Participant\", \"entity_id\": \"...\" }\n    }\n  ]\n}\n```\nEach `events[]` entry has the same shape as the items returned by `GET /v4/indexer/events`. An empty `events[]` still acts as a heartbeat."
     }
   ]
 }
