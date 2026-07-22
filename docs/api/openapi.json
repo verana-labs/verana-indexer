@@ -5055,7 +5055,7 @@
             "in": "query",
             "required": false,
             "schema": { "type": "string" },
-            "description": "Comma-separated channel names: trust, ecsCredentials, presentations, services, corporation, participations, ecosystems. At least one must be enabled."
+            "description": "Comma-separated channel names: trust, ecsCredentials, presentations, services, corporation, participations, ecosystems. Optional; when omitted, all channels are enabled."
           },
           {
             "name": "includeParticipantCounts",
