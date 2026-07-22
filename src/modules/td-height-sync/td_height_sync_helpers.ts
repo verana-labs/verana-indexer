@@ -132,9 +132,29 @@ export function blockchainEventTypeToHistoryEventType(blockchainEventType: strin
       return 'YIELD_DISTRIBUTION'
     case TrustDepositEventType.YieldTransfer:
       return 'YIELD_TRANSFER'
+    case TrustDepositEventType.BurnEcosystemSlashedTrustDeposit:
+      return 'SLASH_PARTICIPANT_TRUST_DEPOSIT'
     default:
       return 'SYNC_LEDGER'
   }
+}
+
+const LEGACY_DEC_FRACTIONAL_DIGITS = 18
+
+export function legacyDecWireToNumber(value: string | number | undefined | null): number {
+  if (value === null || value === undefined) return 0
+  const str = String(value).trim()
+  if (str === '') return 0
+  if (str.includes('.')) return Number(str)
+  if (!/^-?\d+$/.test(str)) return 0
+
+  const negative = str.startsWith('-')
+  const digits = negative ? str.slice(1) : str
+  const padded = digits.padStart(LEGACY_DEC_FRACTIONAL_DIGITS + 1, '0')
+  const integerPart = padded.slice(0, padded.length - LEGACY_DEC_FRACTIONAL_DIGITS)
+  const fractionalPart = padded.slice(padded.length - LEGACY_DEC_FRACTIONAL_DIGITS).replace(/0+$/, '')
+  const decimalString = fractionalPart ? `${integerPart}.${fractionalPart}` : integerPart
+  return Number(negative ? `-${decimalString}` : decimalString)
 }
 
 export async function fetchTrustDeposit(
@@ -154,7 +174,7 @@ export async function fetchTrustDeposit(
       return {
         corporation: resolved.address,
         deposit: Number(td.deposit ?? 0),
-        share: Number(td.share ?? 0),
+        share: legacyDecWireToNumber(td.share),
         claimable: Number(td.refunded ?? 0),
         slashed_deposit: Number(td.slashedDeposit ?? 0),
         repaid_deposit: Number(td.repaidDeposit ?? 0),

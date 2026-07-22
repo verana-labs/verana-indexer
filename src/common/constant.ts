@@ -146,6 +146,17 @@ export enum TrustDepositEventType {
   AdjustTrustDeposit = 'adjust_trust_deposit',
   YieldDistribution = 'yield_distribution',
   YieldTransfer = 'yield_transfer',
+  BurnEcosystemSlashedTrustDeposit = 'burn_ecosystem_slashed_trust_deposit',
+}
+
+export enum TrustDepositHistoryMsg {
+  Create = 'CREATE_TRUST_DEPOSIT',
+  Adjust = 'ADJUST_TRUST_DEPOSIT',
+  Slash = 'SLASH_TRUST_DEPOSIT',
+  SlashParticipant = 'SLASH_PARTICIPANT_TRUST_DEPOSIT',
+  ReclaimYield = 'RECLAIM_YIELD',
+  ReclaimDeposit = 'RECLAIM_DEPOSIT',
+  RepaySlashed = 'REPAY_SLASHED',
 }
 
 export const TrustDepositEventAttributeKey = {

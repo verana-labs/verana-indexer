@@ -184,7 +184,7 @@ export default class TrustDepositDatabaseService extends BullableService {
     },
   })
   public async adjustTrustDeposit(ctx: any) {
-    const { account, newAmount, newShare, newClaimable, height } = ctx.params
+    const { account, newAmount, newShare, newRefunded, height } = ctx.params
     const blockHeight = Number(height) || 0
     try {
       await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.upsertAccount`, { address: account })
@@ -200,7 +200,7 @@ export default class TrustDepositDatabaseService extends BullableService {
               corporation: account,
               deposit: Number(newAmount ?? BigInt(0)),
               share: Number(newShare ?? BigInt(0)),
-              claimable: Number(newClaimable ?? BigInt(0)),
+              claimable: Number(newRefunded ?? BigInt(0)),
             })
             .returning('*')
 
@@ -217,7 +217,7 @@ export default class TrustDepositDatabaseService extends BullableService {
         const updated = await TrustDeposit.query(trx).patchAndFetchById(existing.id, {
           deposit: Number(newAmount ?? BigInt(existing.deposit)),
           share: Number(newShare ?? BigInt(existing.share)),
-          claimable: Number(newClaimable ?? BigInt(existing.claimable || '0')),
+          claimable: Number(newRefunded ?? BigInt(existing.claimable || '0')),
         })
 
         // Record history for update

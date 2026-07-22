@@ -1163,16 +1163,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   })
 
   describe('Trust Deposit Endpoints - All Parameters Tested', () => {
-    describe('GET /v4/trust-deposit/get/:corporation', () => {
+    describe('GET /v4/trust-deposit/get/:corporation_id', () => {
       itIf('should get trust deposit - basic', async () => {
-        const response = await testEndpoint('GET', `/v4/trust-deposit/get/${SAMPLE_ACCOUNT}`)
+        const response = await testEndpoint('GET', `/v4/trust-deposit/get/${SAMPLE_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get trust deposit - with At-Block-Height header', async () => {
         const response = await testEndpoint(
           'GET',
-          `/v4/trust-deposit/get/${SAMPLE_ACCOUNT}`,
+          `/v4/trust-deposit/get/${SAMPLE_ID}`,
           {},
           {
             'At-Block-Height': SAMPLE_BLOCK_HEIGHT,
@@ -1181,8 +1181,8 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should handle invalid account format', async () => {
-        const response = await testEndpoint('GET', '/v4/trust-deposit/get/invalid-account')
+      itIf('should handle invalid corporation_id format', async () => {
+        const response = await testEndpoint('GET', '/v4/trust-deposit/get/invalid-id')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
     })
@@ -1194,32 +1194,33 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       })
     })
 
-    describe('GET /v4/trust-deposit/history/:corporation - ALL PARAMETERS', () => {
+    describe('GET /v4/trust-deposit/history/:corporation_id - ALL PARAMETERS', () => {
       itIf('should get TD history - basic (defaults)', async () => {
-        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`)
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get TD history - with limit', async () => {
-        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`, {
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ID}`, {
           limit: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get TD history - with max_id cursor', async () => {
-        const _timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`, {
-          max_id: '1000000',
+      itIf('should get TD history - with min_id/max_id cursor', async () => {
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ID}`, {
+          min_id: 1,
+          max_id: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get TD history - with ALL parameters', async () => {
-        const _timestamps = getTimestamps()
-        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ACCOUNT}`, {
+        const response = await testEndpoint('GET', `/v4/trust-deposit/history/${SAMPLE_ID}`, {
           limit: 50,
-          max_id: '1000000',
+          min_id: 1,
+          max_id: 100,
+          sort: '-id',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })

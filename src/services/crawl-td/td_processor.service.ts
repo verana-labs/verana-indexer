@@ -34,7 +34,7 @@ interface TrustDepositAdjustPayload {
   account: string
   newAmount: bigint | null
   newShare: bigint | null
-  newClaimable: bigint | null
+  newRefunded: bigint | null
 }
 
 @Service({
@@ -346,11 +346,14 @@ export default class CrawlTrustDepositService extends BullableService {
         return
       }
 
+      // TODO: drop the legacy `new_claimable` fallback once the testnet is reset onto a v4 genesis;
+      // it only exists to keep pre-v4 historical blocks (which emit `new_claimable`) reindexable.
+      const newRefundedAttr = attrs.new_refunded ?? attrs.new_claimable
       const payload: TrustDepositAdjustPayload & { height: number } = {
         account,
         newAmount: attrs.new_amount ? BigInt(attrs.new_amount.split('.')[0]) : null,
         newShare: attrs.new_share ? BigInt(attrs.new_share.split('.')[0]) : null,
-        newClaimable: attrs.new_claimable ? BigInt(attrs.new_claimable.split('.')[0]) : null,
+        newRefunded: newRefundedAttr ? BigInt(newRefundedAttr.split('.')[0]) : null,
         height,
       }
 
