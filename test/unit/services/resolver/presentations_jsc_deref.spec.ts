@@ -1,9 +1,3 @@
-/**
- * Regression: a VC whose `credentialSchema` is a `JsonSchemaCredential` (W3C indirection over an
- * https URL) must resolve to its on-chain schema and land in `vtcCredentials`, not in
- * `unresolvableCredentialIds`. Before the fix the indexer exact-matched the https URL against local
- * `$id`s and always missed.
- */
 const tableRows: Record<string, any[]> = {}
 
 jest.mock('../../../../src/common/utils/db_connection', () => {
