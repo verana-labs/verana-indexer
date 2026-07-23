@@ -140,10 +140,10 @@ describe('EcosystemDatabaseService', () => {
   })
 
   describe('listEcosystems', () => {
-    it('should return error for invalid response_max_size', async () => {
-      const ctx: any = { params: { response_max_size: 2000 } }
+    it('should return error for invalid limit', async () => {
+      const ctx: any = { params: { limit: 2000 } }
       await service.listEcosystems(ctx)
-      expect(ApiResponder.error).toHaveBeenCalledWith(ctx, 'response_max_size must be between 1 and 1024', 400)
+      expect(ApiResponder.error).toHaveBeenCalledWith(ctx, '"limit" must be an integer between 1 and 1024', 400)
     })
 
     it('should return filtered list with preferred language and active_gf_only', async () => {
@@ -208,7 +208,7 @@ describe('EcosystemDatabaseService', () => {
       })
 
       const ctx: any = {
-        params: { active_gf_only: 'true', preferred_language: 'fr', response_max_size: 2 },
+        params: { active_gf_only: 'true', preferred_language: 'fr', limit: 2 },
       }
       await service.listEcosystems(ctx)
 

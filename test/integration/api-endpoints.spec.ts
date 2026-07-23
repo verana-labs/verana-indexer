@@ -294,19 +294,19 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
   describe('API Response Timing Headers', () => {
     itIf('should include x-response-time-ms for participant list endpoint', async () => {
-      const response = await testEndpoint('GET', '/v4/participant/list', { response_max_size: 1 })
+      const response = await testEndpoint('GET', '/v4/participant/list', { limit: 1 })
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
     })
 
     itIf('should include x-response-time-ms for EC list endpoint', async () => {
-      const response = await testEndpoint('GET', '/v4/ecosystem/list', { response_max_size: 1 })
+      const response = await testEndpoint('GET', '/v4/ecosystem/list', { limit: 1 })
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
     })
 
     itIf('should include x-response-time-ms for CS list endpoint', async () => {
-      const response = await testEndpoint('GET', '/v4/credential-schema/list', { response_max_size: 1 })
+      const response = await testEndpoint('GET', '/v4/credential-schema/list', { limit: 1 })
       expect(response.status).not.toBeGreaterThanOrEqual(500)
       expectResponseTimeHeader(response)
     })
@@ -322,17 +322,17 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   describe('Participant Role Attributes and Filters', () => {
     itIf('should accept participant-role min/max filters on participant/cs/ec list', async () => {
       const participant = await testEndpoint('GET', '/v4/participant/list', {
-        response_max_size: 1,
+        limit: 1,
         min_participants_ecosystem: 0,
         max_participants_ecosystem: 10,
       })
       const cs = await testEndpoint('GET', '/v4/credential-schema/list', {
-        response_max_size: 1,
+        limit: 1,
         min_participants_issuer: 0,
         max_participants_issuer: 10,
       })
       const ec = await testEndpoint('GET', '/v4/ecosystem/list', {
-        response_max_size: 1,
+        limit: 1,
         min_participants_verifier_grantor: 0,
         max_participants_verifier_grantor: 10,
       })
@@ -388,16 +388,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list trust registries - with response_max_size at minimum (1)', async () => {
+      itIf('should list trust registries - with limit at minimum (1)', async () => {
         const response = await testEndpoint('GET', '/v4/ecosystem/list', {
-          response_max_size: 1,
+          limit: 1,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list trust registries - with response_max_size at maximum (1024)', async () => {
+      itIf('should list trust registries - with limit at maximum (1024)', async () => {
         const response = await testEndpoint('GET', '/v4/ecosystem/list', {
-          response_max_size: 1024,
+          limit: 1024,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -511,7 +511,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       itIf('should list trust registries - with ALL filters combined', async () => {
         const timestamps = getTimestamps()
         const response = await testEndpoint('GET', '/v4/ecosystem/list', {
-          response_max_size: 50,
+          limit: 50,
           controller: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
           only_active: true,
@@ -523,9 +523,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list trust registries - validation: response_max_size exceeds max', async () => {
+      itIf('should list trust registries - validation: limit exceeds max', async () => {
         const response = await testEndpoint('GET', '/v4/ecosystem/list', {
-          response_max_size: 2000,
+          limit: 2000,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -544,26 +544,26 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get EC history - with response_max_size', async () => {
+      itIf('should get EC history - with limit', async () => {
         const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`, {
-          response_max_size: 100,
+          limit: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get EC history - with transaction_timestamp_older_than', async () => {
-        const timestamps = getTimestamps()
+      itIf('should get EC history - with max_id cursor', async () => {
+        const _timestamps = getTimestamps()
         const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`, {
-          transaction_timestamp_older_than: timestamps.lastWeek,
+          max_id: '1000000',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get EC history - with ALL parameters', async () => {
-        const timestamps = getTimestamps()
+        const _timestamps = getTimestamps()
         const response = await testEndpoint('GET', `/v4/ecosystem/history/${SAMPLE_TR_ID}`, {
-          response_max_size: 50,
-          transaction_timestamp_older_than: timestamps.lastWeek,
+          limit: 50,
+          max_id: '1000000',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -603,9 +603,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list credential schemas - with response_max_size', async () => {
+      itIf('should list credential schemas - with limit', async () => {
         const response = await testEndpoint('GET', '/v4/credential-schema/list', {
-          response_max_size: 10,
+          limit: 10,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -719,7 +719,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       itIf('should list credential schemas - with ALL filters combined', async () => {
         const timestamps = getTimestamps()
         const response = await testEndpoint('GET', '/v4/credential-schema/list', {
-          response_max_size: 50,
+          limit: 50,
           ecosystem_id: SAMPLE_TR_ID,
           participant: SAMPLE_ACCOUNT,
           modified_after: timestamps.from,
@@ -747,26 +747,26 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get CS history - with response_max_size', async () => {
+      itIf('should get CS history - with limit', async () => {
         const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`, {
-          response_max_size: 100,
+          limit: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get CS history - with transaction_timestamp_older_than', async () => {
-        const timestamps = getTimestamps()
+      itIf('should get CS history - with max_id cursor', async () => {
+        const _timestamps = getTimestamps()
         const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`, {
-          transaction_timestamp_older_than: timestamps.lastWeek,
+          max_id: '1000000',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get CS history - with ALL parameters', async () => {
-        const timestamps = getTimestamps()
+        const _timestamps = getTimestamps()
         const response = await testEndpoint('GET', `/v4/credential-schema/history/${SAMPLE_ID}`, {
-          response_max_size: 50,
-          transaction_timestamp_older_than: timestamps.lastWeek,
+          limit: 50,
+          max_id: '1000000',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -900,9 +900,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list participants - with response_max_size', async () => {
+      itIf('should list participants - with limit', async () => {
         const response = await testEndpoint('GET', '/v4/participant/list', {
-          response_max_size: 50,
+          limit: 50,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -982,7 +982,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
           only_valid: true,
           modified_after: timestamps.from,
           op_state: 'VALIDATED',
-          response_max_size: 50,
+          limit: 50,
           when: timestamps.from,
           sort: 'modified',
           min_participants: 1,
@@ -1062,26 +1062,26 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get participant history - with response_max_size', async () => {
+      itIf('should get participant history - with limit', async () => {
         const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`, {
-          response_max_size: 100,
+          limit: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get participant history - with transaction_timestamp_older_than', async () => {
-        const timestamps = getTimestamps()
+      itIf('should get participant history - with max_id cursor', async () => {
+        const _timestamps = getTimestamps()
         const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`, {
-          transaction_timestamp_older_than: timestamps.lastWeek,
+          max_id: '1000000',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get participant history - with ALL parameters', async () => {
-        const timestamps = getTimestamps()
+        const _timestamps = getTimestamps()
         const response = await testEndpoint('GET', `/v4/participant/history/${SAMPLE_PARTICIPANT_ID}`, {
-          response_max_size: 50,
-          transaction_timestamp_older_than: timestamps.lastWeek,
+          limit: 50,
+          max_id: '1000000',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -1103,37 +1103,37 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get participant session history - with response_max_size', async () => {
+      itIf('should get participant session history - with limit', async () => {
         const response = await testEndpoint(
           'GET',
           `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
           {
-            response_max_size: 100,
+            limit: 100,
           }
         )
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get participant session history - with transaction_timestamp_older_than', async () => {
-        const timestamps = getTimestamps()
+      itIf('should get participant session history - with max_id cursor', async () => {
+        const _timestamps = getTimestamps()
         const response = await testEndpoint(
           'GET',
           `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
           {
-            transaction_timestamp_older_than: timestamps.lastWeek,
+            max_id: '1000000',
           }
         )
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get participant session history - with ALL parameters', async () => {
-        const timestamps = getTimestamps()
+        const _timestamps = getTimestamps()
         const response = await testEndpoint(
           'GET',
           `/v4/participant/participant-session-history/${SAMPLE_PARTICIPANT_ID}`,
           {
-            response_max_size: 50,
-            transaction_timestamp_older_than: timestamps.lastWeek,
+            limit: 50,
+            max_id: '1000000',
           }
         )
         expect(response.status).not.toBeGreaterThanOrEqual(500)

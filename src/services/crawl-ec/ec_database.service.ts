@@ -23,7 +23,7 @@ import {
 } from '../../common/utils/installed_table_columns'
 import { mapEcosystemApiFields } from '../../common/vpr-v4-mapping'
 import { Ecosystem } from '../../models/ecosystem'
-import { compareById, type GfDataMode, parseGfDataMode, parseIdSortDirection } from '../crawl-co/co_stats'
+import { compareById, type GfDataMode, parseCorporationListPagination, parseGfDataMode } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
 import { calculateEcosystemStats, TR_STATS_FIELDS } from './ec_stats'
@@ -1482,7 +1482,9 @@ export default class EcosystemDatabaseService extends BaseService {
       active_gf_only: { type: 'any', optional: true },
       gf_data: { type: 'string', optional: true },
       preferred_language: { type: 'string', optional: true },
-      response_max_size: { type: 'number', optional: true, default: 64 },
+      limit: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       sort: { type: 'string', optional: true },
       min_active_schemas: { type: 'number', optional: true },
       max_active_schemas: { type: 'number', optional: true },
@@ -1524,7 +1526,9 @@ export default class EcosystemDatabaseService extends BaseService {
       active_gf_only?: string | boolean
       gf_data?: string
       preferred_language?: string
-      response_max_size?: number
+      limit?: number
+      min_id?: string
+      max_id?: string
       sort?: string
       min_active_schemas?: number
       max_active_schemas?: number
@@ -1564,8 +1568,6 @@ export default class EcosystemDatabaseService extends BaseService {
         preferred_language: preferredLanguage,
         archived: archivedRaw,
         only_active: onlyActiveRaw,
-        response_max_size: responseMaxSizeRaw,
-        sort,
         min_active_schemas: minActiveSchemas,
         max_active_schemas: maxActiveSchemas,
         min_participants: minParticipants,
@@ -1632,11 +1634,11 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       }
 
-      const sortParsed = parseIdSortDirection(sort)
-      if (!sortParsed.ok) {
-        return ApiResponder.error(ctx, sortParsed.message, 400)
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
       }
-      const sortDirection = sortParsed.direction
+      const { limit, minId: idMin, maxId: idMax, direction: sortDirection } = pageParsed.value
 
       const hasArchived = archivedRaw !== undefined && archivedRaw !== null && String(archivedRaw).trim() !== ''
       let hasOnlyActive: boolean
@@ -1650,12 +1652,6 @@ export default class EcosystemDatabaseService extends BaseService {
       }
       const activeGfOnly = gfDataMode === 'only_active'
       const blockHeight = (ctx.meta as any)?.blockHeight
-
-      const responseMaxSize = !responseMaxSizeRaw ? 64 : Math.min(Math.max(responseMaxSizeRaw, 1), 1024)
-
-      if (responseMaxSizeRaw && (responseMaxSizeRaw < 1 || responseMaxSizeRaw > 1024)) {
-        return ApiResponder.error(ctx, 'response_max_size must be between 1 and 1024', 400)
-      }
 
       const metricFilters = {
         minActiveSchemas,
@@ -1719,8 +1715,10 @@ export default class EcosystemDatabaseService extends BaseService {
             .select(knex.raw('ROW_NUMBER() OVER (PARTITION BY ecosystem_id ORDER BY height DESC, id DESC) as rn'))
             .from(snapshotBase.as('snap'))
           const snapshotListQuery = knex.from(ranked.as('r')).where('rn', 1)
+          if (idMin !== undefined) snapshotListQuery.where('ecosystem_id', '>=', idMin)
+          if (idMax !== undefined) snapshotListQuery.where('ecosystem_id', '<', idMax)
           snapshotListQuery.orderBy('ecosystem_id', sortDirection)
-          const latestSnapshots = await snapshotListQuery.limit(Math.max(responseMaxSize * 2, 256))
+          const latestSnapshots = await snapshotListQuery.limit(Math.max(limit * 2, 256))
           const registriesWithStats = (latestSnapshots as any[]).map((row: any) => {
             let versions = Array.isArray(row.versions_snapshot) ? row.versions_snapshot : []
             if (activeGfOnly) {
@@ -1771,7 +1769,7 @@ export default class EcosystemDatabaseService extends BaseService {
             }
           })
           const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters)
-          const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, responseMaxSize)
+          const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, limit)
           const responsePayload = this.applyGfDataModeToResponsePayload(
             {
               ecosystems: sortedRegistries.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
@@ -1822,10 +1820,12 @@ export default class EcosystemDatabaseService extends BaseService {
           .as('ranked')
 
         const latestEcosystemHistoryQuery = knex.from(rankedSubquery).where('rn', 1)
+        if (idMin !== undefined) latestEcosystemHistoryQuery.where('ecosystem_id', '>=', idMin)
+        if (idMax !== undefined) latestEcosystemHistoryQuery.where('ecosystem_id', '<', idMax)
 
         const sortedHistory = (await latestEcosystemHistoryQuery
           .orderBy('ecosystem_id', sortDirection)
-          .limit(Math.max(responseMaxSize * 2, 256))) as any[]
+          .limit(Math.max(limit * 2, 256))) as any[]
 
         if (sortedHistory.length === 0) {
           return ApiResponder.success(ctx, { ecosystems: [] }, 200)
@@ -1880,7 +1880,7 @@ export default class EcosystemDatabaseService extends BaseService {
           metricFilters
         )
 
-        const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, responseMaxSize)
+        const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, limit)
 
         const responsePayload = this.applyGfDataModeToResponsePayload(
           {
@@ -1967,8 +1967,10 @@ export default class EcosystemDatabaseService extends BaseService {
           if (onlyActive) batchQuery = batchQuery.whereNull('archived')
           else batchQuery = batchQuery.whereNotNull('archived')
         }
+        if (idMin !== undefined) batchQuery = batchQuery.where('id', '>=', idMin)
+        if (idMax !== undefined) batchQuery = batchQuery.where('id', '<', idMax)
         batchQuery = batchQuery.orderBy('id', sortDirection)
-        const ecosystemRows = (await batchQuery.limit(Math.max(responseMaxSize * 2, 256))) as any[]
+        const ecosystemRows = (await batchQuery.limit(Math.max(limit * 2, 256))) as any[]
         if (ecosystemRows.length === 0) {
           return ApiResponder.success(ctx, { ecosystems: [] }, 200)
         }
@@ -2064,7 +2066,7 @@ export default class EcosystemDatabaseService extends BaseService {
           }
         })
         const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters)
-        const sortedBatch = this.sortRegistries(filteredBatch, sortDirection, responseMaxSize)
+        const sortedBatch = this.sortRegistries(filteredBatch, sortDirection, limit)
         const responsePayload = this.applyGfDataModeToResponsePayload(
           {
             ecosystems: sortedBatch.map((r) => mapEcosystemApiFields(r as Record<string, unknown>)),
@@ -2133,8 +2135,10 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       }
 
+      if (idMin !== undefined) query = query.where('id', '>=', idMin)
+      if (idMax !== undefined) query = query.where('id', '<', idMax)
       query = query.orderBy('id', sortDirection)
-      const registries = await query.limit(Math.max(responseMaxSize * 2, 256))
+      const registries = await query.limit(Math.max(limit * 2, 256))
 
       const registriesWithStats = registries.map((ec) => {
         const plain = ec.toJSON()
@@ -2184,7 +2188,7 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       })
 
-      const sortedRegistries = this.sortRegistries(registriesWithStats, sortDirection, responseMaxSize)
+      const sortedRegistries = this.sortRegistries(registriesWithStats, sortDirection, limit)
 
       const responsePayload = this.applyGfDataModeToResponsePayload(
         {

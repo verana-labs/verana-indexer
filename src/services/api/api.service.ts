@@ -383,6 +383,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
       }),
       createRoute('/v4/trqp/v2', {
         'POST authorization': `${SERVICE.V1.TrqpApiService.path}.authorize`,
+        'POST recognition': `${SERVICE.V1.TrqpApiService.path}.recognize`,
         'GET profile': `${SERVICE.V1.TrqpApiService.path}.getProfile`,
       }),
       createRoute('/v4/indexer', {
