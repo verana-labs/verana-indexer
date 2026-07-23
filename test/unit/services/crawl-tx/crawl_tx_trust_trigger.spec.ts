@@ -84,8 +84,8 @@ describe('CrawlTxService (trust resolver decoupled)', () => {
     await svc.jobHandlerCrawlTxBody()
 
     expect(svc.broker.call).toHaveBeenCalledWith(
-      `${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`,
-      expect.objectContaining({ height: 10 })
+      `${SERVICE.V1.IndexerEventsService.path}.broadcastEmptyBlocks`,
+      expect.objectContaining({ fromHeight: 1, toHeight: 10 })
     )
     expect(trustQueue.add).not.toHaveBeenCalled()
   })
