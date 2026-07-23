@@ -1411,6 +1411,13 @@ export default class CrawlBlockService extends BullableService {
           'BLOCKCHAIN_HEALTH'
         )
       },
+      onHealthy: () => {
+        if (indexerStatusManager.isCrawlingActive()) return
+        this.logger.info('Blockchain API healthy again, resuming crawling...')
+        indexerStatusManager.resumeIndexer().catch((err) => {
+          this.logger.error('Failed to resume crawling after blockchain API recovery:', err)
+        })
+      },
       logger: this.logger,
     })
 
