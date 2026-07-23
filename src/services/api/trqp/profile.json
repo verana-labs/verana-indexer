@@ -111,7 +111,7 @@
     "governance_framework_discoverable_via": "authority_id (per TRQP v2.0, Identifiers / authority_id, and Conformance / TRQP Endpoint Conformance)"
   },
   "errors": {
-    "out_of_scope_recognition_message": "out of spec-v4 recognition scope (corporation → ecosystem only)",
+    "out_of_scope_recognition_message": "out of v4 recognition scope (corporation → ecosystem only)",
     "session_out_of_window_message": "session out of window",
     "session_not_found_message": "session not found"
   }

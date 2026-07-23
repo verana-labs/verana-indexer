@@ -20,7 +20,7 @@ const ACTION_ROLE_MAP: Record<string, ParticipantType> = {
 
 const RESOURCE_PATTERN = /^vpr:verana:([a-z0-9-]+):cs:([0-9]+)$/
 
-interface AuthorizeParams {
+interface TrqpQueryParams {
   authority_id: string
   entity_id: string
   action: string
@@ -91,7 +91,7 @@ export default class TrqpApiService extends BaseService {
       context: { type: 'object', optional: true },
     },
   })
-  async authorize(ctx: Context<AuthorizeParams>) {
+  async authorize(ctx: Context<TrqpQueryParams>) {
     try {
       const { authority_id: authorityId, entity_id: entityId, action, resource } = ctx.params
       const requestContext = ctx.params.context ?? {}
@@ -124,9 +124,6 @@ export default class TrqpApiService extends BaseService {
         time_evaluated: timeEvaluated,
       }
 
-      // session_id (precedence over time). No temporal window exists on-chain (ParticipantSession
-      // carries no validity window), so only existence + corporation scope are enforced; the
-      // "session out of window" sub-clause is a documented no-op until the node introduces a TTL.
       if (requestContext.session_id) {
         const entityCorporation = await knex('corporation').select('id').where({ did: entityId }).first()
         const session = entityCorporation
@@ -140,7 +137,6 @@ export default class TrqpApiService extends BaseService {
         }
       }
 
-      // A resource for another network cannot match a schema indexed here.
       if (resourceNetwork !== Network.chainId) {
         return ApiResponder.success(ctx, { ...baseResponse, authorized: false }, 200)
       }
@@ -191,6 +187,115 @@ export default class TrqpApiService extends BaseService {
     } catch (err: any) {
       this.logger.error('Error in TRQP.authorize:', err)
       return ApiResponder.error(ctx, `Failed to evaluate TRQP authorization: ${err?.message || String(err)}`, 500)
+    }
+  }
+
+  @Action({
+    rest: 'POST recognition',
+    params: {
+      authority_id: { type: 'string' },
+      entity_id: { type: 'string' },
+      action: { type: 'enum', values: ['issue', 'verify', 'grant_issue', 'grant_verify', 'govern'] },
+      resource: { type: 'string' },
+      context: { type: 'object', optional: true },
+    },
+  })
+  async recognize(ctx: Context<TrqpQueryParams>) {
+    try {
+      const { authority_id: authorityId, entity_id: entityId, action, resource } = ctx.params
+      const requestContext = ctx.params.context ?? {}
+
+      const resourceMatch = RESOURCE_PATTERN.exec(resource)
+      if (!resourceMatch) {
+        return ApiResponder.error(ctx, 'Invalid "resource": expected vpr:verana:<network>:cs:<id>', 400)
+      }
+      const resourceNetwork = resourceMatch[1]
+      const schemaId = Number(resourceMatch[2])
+
+      let evaluatedAt = new Date()
+      if (requestContext.time) {
+        evaluatedAt = new Date(requestContext.time)
+        if (Number.isNaN(evaluatedAt.getTime())) {
+          return ApiResponder.error(ctx, 'Invalid "context.time" datetime format', 400)
+        }
+      }
+      const timeRequested = requestContext.time ? toIsoZ(requestContext.time) : toIsoZ(evaluatedAt)
+      const timeEvaluated = toIsoZ(evaluatedAt)
+
+      const baseResponse = {
+        authority_id: authorityId,
+        entity_id: entityId,
+        action,
+        resource,
+        time_requested: timeRequested,
+        time_evaluated: timeEvaluated,
+      }
+
+      if (requestContext.session_id) {
+        const authorityCorporation = await knex('corporation').select('id').where({ did: authorityId }).first()
+        const session = authorityCorporation
+          ? await knex('participant_sessions')
+              .select('id')
+              .where({ id: requestContext.session_id, corporation_id: authorityCorporation.id })
+              .first()
+          : undefined
+        if (!session) {
+          return ApiResponder.success(ctx, { ...baseResponse, recognized: false, message: 'session not found' }, 200)
+        }
+      }
+
+      const corporation = await knex('corporation').select('id').where({ did: authorityId }).first()
+      const activeEcosystem = await knex('ecosystem')
+        .select('id')
+        .where({ did: entityId })
+        .whereNull('archived')
+        .first()
+      if (!corporation || !activeEcosystem) {
+        return ApiResponder.success(
+          ctx,
+          { ...baseResponse, recognized: false, message: 'out of v4 recognition scope (corporation → ecosystem only)' },
+          200
+        )
+      }
+
+      const ecosystem = (await knex('ecosystem as e')
+        .join('corporation as c', 'e.corporation_id', 'c.id')
+        .where('e.did', entityId)
+        .where('c.did', authorityId)
+        .where('e.created', '<=', evaluatedAt)
+        .where((builder) => builder.whereNull('e.archived').orWhere('e.archived', '>', evaluatedAt))
+        .select('e.id as id', 'e.created as created', 'e.active_version as active_version')
+        .first()) as { id: number; created: Date | string | null; active_version: number | null } | undefined
+
+      if (!ecosystem) {
+        return ApiResponder.success(ctx, { ...baseResponse, recognized: false }, 200)
+      }
+
+      const schema =
+        resourceNetwork === Network.chainId
+          ? await knex('credential_schemas')
+              .select('id')
+              .where({ id: schemaId, ecosystem_id: ecosystem.id })
+              .where('created', '<=', evaluatedAt)
+              .where((builder) => builder.whereNull('archived').orWhere('archived', '>', evaluatedAt))
+              .first()
+          : undefined
+
+      return ApiResponder.success(
+        ctx,
+        {
+          ...baseResponse,
+          recognized: !!schema,
+          verana: {
+            ecosystem_active_egf_version: ecosystem.active_version ?? 0,
+            controlling_since: toIsoZ(ecosystem.created),
+          },
+        },
+        200
+      )
+    } catch (err: any) {
+      this.logger.error('Error in TRQP.recognize:', err)
+      return ApiResponder.error(ctx, `Failed to evaluate TRQP recognition: ${err?.message || String(err)}`, 500)
     }
   }
 }
