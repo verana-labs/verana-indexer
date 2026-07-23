@@ -30,6 +30,36 @@ export interface IndexerStatus {
 
 type StatusChangeCallback = (status: IndexerStatusEvent) => void
 
+const RECOVERABLE_CONNECTIVITY_SERVICES = new Set(['BLOCKCHAIN_HEALTH', 'DB_POOL'])
+
+const RECOVERABLE_CONNECTIVITY_PATTERNS = [
+  'timeout',
+  'timed out',
+  'network',
+  'connection',
+  'econnrefused',
+  'econnreset',
+  'etimedout',
+  'enotfound',
+  'eai_again',
+  'epipe',
+  'socket hang up',
+  'fetch failed',
+  'getaddrinfo',
+  'service unavailable',
+]
+
+function isRecoverableConnectivityError(error: Error, service?: string): boolean {
+  if (service && RECOVERABLE_CONNECTIVITY_SERVICES.has(service)) return true
+
+  const code = String((error as { code?: unknown })?.code ?? '').toLowerCase()
+  const status = Number((error as { status?: unknown })?.status ?? 0)
+  if (status === 502 || status === 503 || status === 504) return true
+
+  const haystack = `${error?.message ?? String(error)} ${code}`.toLowerCase()
+  return RECOVERABLE_CONNECTIVITY_PATTERNS.some((pattern) => haystack.includes(pattern))
+}
+
 class IndexerStatusManager {
   private static instance: IndexerStatusManager
   private status: IndexerStatus = {
@@ -150,19 +180,11 @@ class IndexerStatusManager {
     }
     this.status.stoppedReason = `Indexer stopped due to error in ${service || 'unknown'}: ${error.message}`
 
-    await this.stopAllCrawlingJobs()
+    await this.stopAllCrawlingJobs({ preserveRepeatableJobs: true })
     this.stopDbStorageChecker()
 
-    const errorMessage = error.message || String(error)
-    const isNetworkError =
-      errorMessage.toLowerCase().includes('timeout') ||
-      errorMessage.toLowerCase().includes('network') ||
-      errorMessage.toLowerCase().includes('connection') ||
-      errorMessage.toLowerCase().includes('econnrefused') ||
-      errorMessage.toLowerCase().includes('etimedout')
-
-    if (isNetworkError) {
-      this.startRecoveryChecker()
+    if (isRecoverableConnectivityError(error, service)) {
+      this.ensureRecoveryChecker()
     }
 
     this.notifyStatusChange()
@@ -170,6 +192,7 @@ class IndexerStatusManager {
 
   public async stopCrawlingOnly(error: Error, service?: string): Promise<void> {
     if (!this.status.isCrawling) {
+      this.ensureRecoveryChecker()
       return
     }
 
@@ -194,7 +217,7 @@ class IndexerStatusManager {
     } else {
       console.warn(`Crawling stopped (service=${service || 'unknown'}). Starting recovery checker...`)
     }
-    this.startRecoveryChecker()
+    this.ensureRecoveryChecker()
 
     this.notifyStatusChange()
   }
@@ -212,6 +235,11 @@ class IndexerStatusManager {
     await this.resumeAllCrawlingJobs()
 
     this.notifyStatusChange()
+  }
+
+  private ensureRecoveryChecker(): void {
+    if (this.recoveryCheckTimerId !== null) return
+    this.startRecoveryChecker()
   }
 
   private startRecoveryChecker(): void {
