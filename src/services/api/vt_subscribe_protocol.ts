@@ -265,7 +265,8 @@ export function parseVtChangesQuery(params: Record<string, unknown>): VtChangesQ
       return { ok: false, error: `Unknown channel in 'channels': ${name}` }
     }
   }
-  const has = (name: string) => channelNames.includes(name)
+  const channelsOmittedEnablesAll = channelNames.length === 0
+  const has = (name: string) => channelsOmittedEnablesAll || channelNames.includes(name)
   const includeParticipantCounts = readBooleanFlag(params.includeParticipantCounts)
   const includeIssuedCredentials = readBooleanFlag(params.includeIssuedCredentials)
   const includeVerifiedCredentials = readBooleanFlag(params.includeVerifiedCredentials)
