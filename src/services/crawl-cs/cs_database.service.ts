@@ -27,7 +27,7 @@ import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
-import { compareById, parseIdSortDirection } from '../crawl-co/co_stats'
+import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
 import { calculateCredentialSchemaStats } from './cs_stats'
 
@@ -1484,10 +1484,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_onboarding_mode: { type: 'string', optional: true },
       verifier_onboarding_mode: { type: 'string', optional: true },
       holder_onboarding_mode: { type: 'string', optional: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
-      response_max_size: { type: 'number', optional: true, default: 64 },
       sort: { type: 'string', optional: true, default: '-id' },
       min_participants: { type: 'number', optional: true },
       max_participants: { type: 'number', optional: true },
@@ -1525,10 +1524,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       issuer_onboarding_mode?: string
       verifier_onboarding_mode?: string
       holder_onboarding_mode?: string
-      min_id?: number
-      max_id?: number
+      min_id?: string
+      max_id?: string
       limit?: number
-      response_max_size?: number
       sort?: string
       min_participants?: number
       max_participants?: number
@@ -1563,11 +1561,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         modified_after: modifiedAfter,
         archived: archivedParam,
         only_active: onlyActive,
-        min_id: minId,
-        max_id: maxId,
-        limit: limitParam,
-        response_max_size: maxSize,
-        sort,
         min_participants: minParticipants,
         max_participants: maxParticipants,
         min_participants_ecosystem: minParticipantsEcosystem,
@@ -1613,17 +1606,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       const participantAccount = participantValidation.value
 
-      const sortParsed = parseIdSortDirection(sort)
-      if (!sortParsed.ok) {
-        return ApiResponder.error(ctx, sortParsed.message, 400)
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
       }
-      const sortDirection = sortParsed.direction
+      const { limit, minId: idMin, maxId: idMax, direction: sortDirection } = pageParsed.value
 
       const blockHeight = (ctx.meta as any)?.blockHeight
-      const requestedLimit = limitParam ?? maxSize
-      const limit = Math.min(Math.max(Number(requestedLimit) || 64, 1), 1024)
-      const idMin = minId != null && Number.isFinite(Number(minId)) ? Number(minId) : undefined
-      const idMax = maxId != null && Number.isFinite(Number(maxId)) ? Number(maxId) : undefined
       let modifiedAfterIso: string | undefined
       if (modifiedAfter) {
         if (!isValidISO8601UTC(modifiedAfter)) {
@@ -2298,58 +2287,28 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     name: 'getHistory',
     params: {
       id: { type: 'number', integer: true, positive: true },
-      min_id: { type: 'number', optional: true },
-      max_id: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       limit: { type: 'number', optional: true },
       sort: { type: 'string', optional: true, default: '-id' },
-      response_max_size: { type: 'number', optional: true, default: 64 },
-      transaction_timestamp_older_than: { type: 'string', optional: true },
     },
   })
   async getHistory(
     ctx: Context<{
       id: number
-      min_id?: number
-      max_id?: number
+      min_id?: string
+      max_id?: string
       limit?: number
       sort?: string
-      response_max_size?: number
-      transaction_timestamp_older_than?: string
     }>
   ) {
     try {
-      const {
-        id,
-        min_id: minId,
-        max_id: maxId,
-        limit: limitParam,
-        sort: sortParam = '-id',
-        response_max_size: responseMaxSize = 64,
-        transaction_timestamp_older_than: transactionTimestampOlderThan,
-      } = ctx.params
-
-      const idMin = minId != null && Number.isFinite(Number(minId)) ? Number(minId) : undefined
-      const idMax = maxId != null && Number.isFinite(Number(maxId)) ? Number(maxId) : undefined
-      const effectiveLimit = Math.min(Math.max(Number(limitParam ?? responseMaxSize) || 64, 1), 1024)
-      const sortParsed = parseIdSortDirection(sortParam)
-      if (!sortParsed.ok) {
-        return ApiResponder.error(ctx, sortParsed.message, 400)
+      const { id } = ctx.params
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
       }
-      const sortAscending = sortParsed.direction === 'asc'
-
-      if (transactionTimestampOlderThan) {
-        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          )
-        }
-        const timestampDate = new Date(transactionTimestampOlderThan)
-        if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid transaction_timestamp_older_than format', 400)
-        }
-      }
+      const { limit, minId, maxId, direction } = pageParsed.value
 
       const atBlockHeight =
         (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
@@ -2359,7 +2318,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404)
       }
 
-      const fetchSize = idMin !== undefined || idMax !== undefined ? Math.max(effectiveLimit * 4, 256) : effectiveLimit
+      const fetchSize = minId !== undefined || maxId !== undefined ? Math.max(limit * 4, 256) : limit
 
       const activity = await buildActivityTimeline(
         {
@@ -2371,16 +2330,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         },
         {
           responseMaxSize: fetchSize,
-          transactionTimestampOlderThan,
           atBlockHeight,
         }
       )
 
-      let activityItems = Array.isArray(activity) ? activity : []
-      if (idMin !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) >= idMin)
-      if (idMax !== undefined) activityItems = activityItems.filter((a: any) => Number(a.id) < idMax)
-      activityItems = activityItems.sort((a: any, b: any) => compareById(a.id, b.id, sortAscending ? 'asc' : 'desc'))
-      activityItems = activityItems.slice(0, effectiveLimit)
+      const activityItems = paginateActivityItems(Array.isArray(activity) ? activity : [], {
+        minId,
+        maxId,
+        limit,
+        direction,
+      })
 
       const result = {
         entity_type: 'CredentialSchema',

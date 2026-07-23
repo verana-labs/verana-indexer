@@ -5,8 +5,8 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
-import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 
 @Service({
   name: SERVICE.V1.EcosystemHistoryService.key,
@@ -240,25 +240,17 @@ export default class EcosystemHistoryService extends BaseService {
 
   private async getTRHistoryFromSnapshot(
     ecosystemId: number,
-    responseMaxSize: number,
-    transactionTimestampOlderThan?: string,
+    fetchSize: number,
     atBlockHeight?: string
   ): Promise<any[]> {
     let query = knex('ecosystem_snapshot')
       .where({ ecosystem_id: ecosystemId })
       .orderBy('height', 'desc')
-      .limit(responseMaxSize)
+      .limit(fetchSize)
 
     if (atBlockHeight) {
       const h = parseInt(String(atBlockHeight), 10)
       if (!Number.isNaN(h)) query = query.where('height', '<=', h)
-    }
-
-    if (transactionTimestampOlderThan) {
-      const ts = new Date(transactionTimestampOlderThan)
-      if (!Number.isNaN(ts.getTime())) {
-        query = query.where('created_at', '<', ts)
-      }
     }
 
     const rows = await query.select(
@@ -417,49 +409,32 @@ export default class EcosystemHistoryService extends BaseService {
 
   @Action()
   public async getTRHistory(
-    ctx: Context<{ ecosystem_id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>
+    ctx: Context<{ ecosystem_id: number; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
-      const {
-        ecosystem_id: ecosystemId,
-        response_max_size: responseMaxSize = 64,
-        transaction_timestamp_older_than: transactionTimestampOlderThan,
-      } = ctx.params
-
-      if (transactionTimestampOlderThan) {
-        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          )
-        }
-        const timestampDate = new Date(transactionTimestampOlderThan)
-        if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid transaction_timestamp_older_than format', 400)
-        }
+      const { ecosystem_id: ecosystemId } = ctx.params
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
       }
+      const { limit, minId, maxId, direction } = pageParsed.value
 
       const atBlockHeight =
         (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
       const useHeightSync = process.env.USE_HEIGHT_SYNC_TR === 'true'
+      const fetchSize = minId !== undefined || maxId !== undefined ? Math.max(limit * 4, 256) : limit
 
       const ec = await knex('ecosystem').where('id', ecosystemId).first()
       if (!ec) return ApiResponder.error(ctx, 'Trust Registry not found', 404)
 
       if (useHeightSync) {
-        const activity = await this.getTRHistoryFromSnapshot(
-          ecosystemId,
-          responseMaxSize,
-          transactionTimestampOlderThan,
-          atBlockHeight
-        )
+        const snapshotActivity = await this.getTRHistoryFromSnapshot(ecosystemId, fetchSize, atBlockHeight)
         return ApiResponder.success(
           ctx,
           {
             entity_type: 'Ecosystem',
             entity_id: String(ecosystemId),
-            activity,
+            activity: paginateActivityItems(snapshotActivity, { minId, maxId, limit, direction }),
           },
           200
         )
@@ -490,14 +465,15 @@ export default class EcosystemHistoryService extends BaseService {
           ],
         },
         {
-          responseMaxSize,
-          transactionTimestampOlderThan,
+          responseMaxSize: fetchSize,
           atBlockHeight,
         }
       )
 
+      const page = paginateActivityItems(Array.isArray(activity) ? activity : [], { minId, maxId, limit, direction })
+
       const enrichedActivity = await Promise.all(
-        (activity || []).map(async (item: any) => {
+        page.map(async (item: any) => {
           const blockHeight = item.block_height ? parseInt(item.block_height, 10) : null
 
           const originalChanges = item.changes || {}

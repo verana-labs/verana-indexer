@@ -17,7 +17,7 @@ import {
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
-import { compareById, parseIdSortDirection } from '../crawl-co/co_stats'
+import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
@@ -1383,7 +1383,9 @@ export default class ParticipantAPIService extends BullableService {
       only_repaid: { type: 'any', optional: true },
       modified_after: { type: 'string', optional: true },
       op_state: { type: 'string', optional: true },
-      response_max_size: { type: 'number', optional: true, default: 64 },
+      limit: { type: 'number', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
       when: { type: 'string', optional: true },
       sort: { type: 'string', optional: true },
       min_participants: { type: 'number', integer: true, optional: true },
@@ -1457,7 +1459,12 @@ export default class ParticipantAPIService extends BullableService {
       const blockHeight = getBlockHeight(ctx)
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
       const now = new Date().toISOString()
-      const limit = Math.min(Math.max(normalizedParams.response_max_size || 64, 1), 1024)
+
+      const pageParsed = parseCorporationListPagination(normalizedParams)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
+      }
+      const { limit, minId: idMin, maxId: idMax, direction: sortDirection } = pageParsed.value
 
       perfMeta = {
         did: normalizedParams.did ? '[set]' : undefined,
@@ -1466,12 +1473,6 @@ export default class ParticipantAPIService extends BullableService {
         limit,
         blockHeight: useHistoryQuery ? blockHeight : undefined,
       }
-
-      const sortParsed = parseIdSortDirection(normalizedParams.sort)
-      if (!sortParsed.ok) {
-        return ApiResponder.error(ctx, sortParsed.message, 400)
-      }
-      const sortDirection = sortParsed.direction
 
       const onlyValid = normalizedParams.only_valid === 'true' || normalizedParams.only_valid === true
       const onlySlashed = normalizedParams.only_slashed === 'true' || normalizedParams.only_slashed === true
@@ -1682,6 +1683,8 @@ export default class ParticipantAPIService extends BullableService {
           historyRequiresMetricPostFilter
         const historyFetchLimit = needsPostEnrichFiltering ? Math.min(Math.max(limit * 10, 500), 5000) : limit
 
+        if (idMin !== undefined) historyQuery.where('id', '>=', idMin)
+        if (idMax !== undefined) historyQuery.where('id', '<', idMax)
         const orderedHistoryQuery = historyQuery.orderBy('id', sortDirection)
         const historyRows = await orderedHistoryQuery.limit(historyFetchLimit)
         perfMarks.dbQueryEnd = Date.now()
@@ -1919,6 +1922,8 @@ export default class ParticipantAPIService extends BullableService {
         (!liveParticipantStatePushdown.pushedDown && !!normalizedParams.participant_state) ||
         liveMetricPushdown.requiresPostFilter
       const liveFetchLimit = liveNeedsPostEnrich ? Math.min(Math.max(limit * 10, 500), 5000) : limit
+      if (idMin !== undefined) query.where('id', '>=', idMin)
+      if (idMax !== undefined) query.where('id', '<', idMax)
       const orderedQuery = query.orderBy('id', sortDirection)
       perfMarks.dbQueryStart = Date.now()
       const results = await orderedQuery.limit(liveFetchLimit)
@@ -2210,19 +2215,22 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET history/:id',
     params: {
       id: { type: 'number', integer: true },
-      response_max_size: { type: 'number', optional: true, default: 64 },
-      transaction_timestamp_older_than: { type: 'string', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
+      limit: { type: 'number', optional: true },
+      sort: { type: 'string', optional: true, default: '-id' },
     },
   })
   async getParticipantHistory(
-    ctx: Context<{ id: number; response_max_size?: number; transaction_timestamp_older_than?: string }>
+    ctx: Context<{ id: number; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
-      const {
-        id,
-        response_max_size: responseMaxSize = 64,
-        transaction_timestamp_older_than: transactionTimestampOlderThan,
-      } = ctx.params
+      const { id } = ctx.params
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
+      }
+      const { limit, minId, maxId, direction } = pageParsed.value
       const atBlockHeight =
         (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
 
@@ -2231,6 +2239,7 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, `Participant with id=${id} not found`, 404)
       }
 
+      const fetchSize = minId !== undefined || maxId !== undefined ? Math.max(limit * 4, 256) : limit
       const activity = await buildActivityTimeline(
         {
           entityType: 'Participant',
@@ -2240,8 +2249,7 @@ export default class ParticipantAPIService extends BullableService {
           msgTypePrefixes: ['/verana.pp.v1'],
         },
         {
-          responseMaxSize,
-          transactionTimestampOlderThan,
+          responseMaxSize: fetchSize,
           atBlockHeight,
         }
       )
@@ -2249,7 +2257,7 @@ export default class ParticipantAPIService extends BullableService {
       const result = {
         entity_type: 'Participant',
         entity_id: String(id),
-        activity: activity || [],
+        activity: paginateActivityItems(Array.isArray(activity) ? activity : [], { minId, maxId, limit, direction }),
       }
 
       return ApiResponder.success(ctx, result, 200)
@@ -2401,33 +2409,22 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET participant-session-history/:id',
     params: {
       id: { type: 'string', pattern: /^[0-9a-fA-F-]+$/ },
-      response_max_size: { type: 'number', optional: true, default: 64 },
-      transaction_timestamp_older_than: { type: 'string', optional: true },
+      min_id: { type: 'string', optional: true },
+      max_id: { type: 'string', optional: true },
+      limit: { type: 'number', optional: true },
+      sort: { type: 'string', optional: true, default: '-id' },
     },
   })
   async getParticipantSessionHistory(
-    ctx: Context<{ id: string; response_max_size?: number; transaction_timestamp_older_than?: string }>
+    ctx: Context<{ id: string; min_id?: string; max_id?: string; limit?: number; sort?: string }>
   ) {
     try {
-      const {
-        id,
-        response_max_size: responseMaxSize = 64,
-        transaction_timestamp_older_than: transactionTimestampOlderThan,
-      } = ctx.params
-
-      if (transactionTimestampOlderThan) {
-        if (!isValidISO8601UTC(transactionTimestampOlderThan)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid transaction_timestamp_older_than format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          )
-        }
-        const timestampDate = new Date(transactionTimestampOlderThan)
-        if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid transaction_timestamp_older_than format', 400)
-        }
+      const { id } = ctx.params
+      const pageParsed = parseCorporationListPagination(ctx.params)
+      if (!pageParsed.ok) {
+        return ApiResponder.error(ctx, pageParsed.message, 400)
       }
+      const { limit, minId, maxId, direction } = pageParsed.value
 
       const atBlockHeight =
         (ctx.meta as any)?.$headers?.['at-block-height'] || (ctx.meta as any)?.$headers?.['At-Block-Height']
@@ -2440,6 +2437,7 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, `ParticipantSession ${id} not found`, 404)
       }
 
+      const fetchSize = minId !== undefined || maxId !== undefined ? Math.max(limit * 4, 256) : limit
       const activity = await buildActivityTimeline(
         {
           entityType: 'ParticipantSession',
@@ -2449,8 +2447,7 @@ export default class ParticipantAPIService extends BullableService {
           msgTypePrefixes: ['/verana.pp.v1'],
         },
         {
-          responseMaxSize,
-          transactionTimestampOlderThan,
+          responseMaxSize: fetchSize,
           atBlockHeight,
         }
       )
@@ -2458,7 +2455,7 @@ export default class ParticipantAPIService extends BullableService {
       const result = {
         entity_type: 'ParticipantSession',
         entity_id: id,
-        activity: activity || [],
+        activity: paginateActivityItems(Array.isArray(activity) ? activity : [], { minId, maxId, limit, direction }),
       }
 
       return ApiResponder.success(ctx, result, 200)
