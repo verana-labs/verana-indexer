@@ -65,13 +65,10 @@ export default class IndexerStatusService extends BaseService {
       is_crawling: Boolean(status?.isCrawling),
       stopped_at: status?.stoppedAt,
       stopped_reason: status?.stoppedReason,
-      last_processed_block: status?.lastProcessedBlock != null ? Number(status.lastProcessedBlock) : undefined,
-      blockchain_api_healthy:
-        typeof status?.blockchainApiHealthy === 'boolean' ? status.blockchainApiHealthy : undefined,
-      blockchain_api_last_check_at: status?.blockchainApiLastCheckAt,
       last_error: status?.lastError
         ? {
             message: status.lastError.message,
+            stack: status.lastError.stack,
             timestamp: status.lastError.timestamp,
             service: status.lastError.service,
           }
