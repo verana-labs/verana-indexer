@@ -18,6 +18,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
   private readonly MAX_CLIENTS = 10000 // TODO: Review this values
   private readonly PING_INTERVAL = 30000
   private readonly MAX_CONTROL_MESSAGE_BYTES = 64 * 1024
+  private readonly MAX_BUFFERED_BYTES = Number(process.env.WS_MAX_BUFFERED_BYTES || 8 * 1024 * 1024)
   protected logger = createLogger(console)
 
   protected abstract readonly path: string
@@ -138,6 +139,16 @@ export abstract class BaseSubscribeServer<TControl, TState> {
 
   protected sendJson(ws: WebSocket, payload: Record<string, unknown>, closeCodeOnFailure = 0): boolean {
     if (ws.readyState !== WebSocket.OPEN) {
+      this.cleanupClient(ws)
+      return false
+    }
+    if (ws.bufferedAmount > this.MAX_BUFFERED_BYTES) {
+      this.logger.warn(
+        `[${this.constructor.name}] Client backpressure exceeded (${ws.bufferedAmount} bytes buffered), closing with 1011`
+      )
+      try {
+        ws.close(1011, 'Server overloaded')
+      } catch {}
       this.cleanupClient(ws)
       return false
     }

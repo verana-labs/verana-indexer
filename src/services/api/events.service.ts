@@ -2,6 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, Errors, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
+import knex from '../../common/utils/db_connection'
 import { parseCsvList } from './indexer_event_utils'
 import { listIndexerEvents, persistIndexerEventsForBlock } from './indexer_events_query'
 import { subscribeBroadcaster } from './subscribe_broadcaster'
@@ -51,6 +52,45 @@ export default class IndexerEventsService extends BaseService {
       height,
       timestamp: eventTimestamp.toISOString(),
     }
+  }
+
+  @Action({
+    name: 'broadcastEmptyBlocks',
+    params: {
+      fromHeight: { type: 'number', integer: true, positive: true, convert: true },
+      toHeight: { type: 'number', integer: true, positive: true, convert: true },
+    },
+  })
+  public async broadcastEmptyBlocks(ctx: Context<{ fromHeight: number; toHeight: number }>) {
+    const { fromHeight, toHeight } = ctx.params
+    if (toHeight < fromHeight) return { success: true, blocksNotified: 0 }
+    if (subscribeBroadcaster.getClientCount() === 0) return { success: true, blocksNotified: 0 }
+
+    let blockTimeByHeight = new Map<number, string>()
+    try {
+      const rows = (await knex('block')
+        .select('height', 'time')
+        .where('height', '>=', fromHeight)
+        .andWhere('height', '<=', toHeight)) as Array<{ height: number; time: Date | string }>
+      blockTimeByHeight = new Map(
+        rows.map((row) => [Number(row.height), new Date(row.time).toISOString()] as [number, string])
+      )
+    } catch (error) {
+      this.logger.warn('[IndexerEventsService] Could not load block times for empty-block range:', error)
+    }
+
+    const fallbackTime = new Date().toISOString()
+    let blocksNotified = 0
+    for (let height = fromHeight; height <= toHeight; height++) {
+      subscribeBroadcaster.broadcastBlockEnvelope({
+        block: height,
+        blockTime: blockTimeByHeight.get(height) ?? fallbackTime,
+        events: [],
+      })
+      blocksNotified++
+    }
+
+    return { success: true, blocksNotified }
   }
 
   @Action({

@@ -275,16 +275,16 @@ export default class CrawlTxService extends BullableService {
           ` [HANDLE_TRANSACTION] No new transactions, advanced checkpoint from ${previousHeight} to ${crawlTxHeight}`
         )
         try {
-          await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`, {
-            height: crawlTxHeight,
-            timestamp: blockCheckpoint.updated_at.toISOString(),
+          await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastEmptyBlocks`, {
+            fromHeight: previousHeight + 1,
+            toHeight: crawlTxHeight,
           })
           this.logger.debug(
-            ` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${crawlTxHeight} (no-tx advance)`
+            ` [HANDLE_TRANSACTION] Emitted block-indexed events for heights ${previousHeight + 1}..${crawlTxHeight} (no-tx advance)`
           )
         } catch (error) {
           this.logger.warn(
-            `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed for height ${crawlTxHeight}:`,
+            `⚠️ [HANDLE_TRANSACTION] Failed to broadcast block-indexed for heights ${previousHeight + 1}..${crawlTxHeight}:`,
             error
           )
         }
@@ -355,6 +355,7 @@ export default class CrawlTxService extends BullableService {
       // Process each block's transactions
       for (const [blockHeight, blockTxs] of transactionsByBlock.entries()) {
         await throwIfHeapCriticalDuringCrawl(`handle-transaction:block-${blockHeight}`, this.logger)
+        const heightBeforeBlock = lastProcessedHeight
         try {
           if (blockHeight > lastProcessedHeight + 1) {
             await this.applyScheduledFlipsForRange(lastProcessedHeight + 1, blockHeight - 1)
@@ -399,6 +400,12 @@ export default class CrawlTxService extends BullableService {
 
           // Broadcast websocket event for processed block
           try {
+            if (blockHeight > heightBeforeBlock + 1) {
+              await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastEmptyBlocks`, {
+                fromHeight: heightBeforeBlock + 1,
+                toHeight: blockHeight - 1,
+              })
+            }
             await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`, {
               height: blockHeight,
               timestamp: new Date().toISOString(),
