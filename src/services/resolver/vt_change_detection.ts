@@ -284,16 +284,7 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
   }
 
   const trustRows = (await knex('trust_results')
-    .select(
-      'did',
-      'height',
-      'trust_status',
-      'production',
-      'evaluated_at',
-      'expires_at',
-      'corporation_id',
-      'created_at'
-    )
+    .select('did', 'height', 'trust_status', 'production', 'evaluated_at', 'expires_at', 'corporation_id', 'created_at')
     .where('height', blockHeight)) as TrustResultsRow[]
   if (trustRows.length > 0) {
     const trustDids = [...new Set(trustRows.map((r) => r.did).filter(isValidDid))]
