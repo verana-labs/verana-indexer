@@ -465,11 +465,28 @@ function credentialSubjectDid(c: Record<string, unknown>): string | null {
   return typeof id === 'string' ? id : null
 }
 
-function credentialSchemaUri(c: Record<string, unknown>): string | null {
-  const cs = c.credentialSchema
-  const first = Array.isArray(cs) ? cs[0] : cs
-  const id = (first as { id?: unknown })?.id
-  return typeof id === 'string' ? id : null
+async function buildEcsResolutionFromRow(row: {
+  id?: unknown
+  ecosystem_id?: unknown
+  json_schema?: unknown
+}): Promise<EcsSchemaResolution> {
+  const title = parseSchemaJson(row.json_schema)?.title
+  const ecosystemId = Number(row.ecosystem_id) || 0
+  const ecsSchemaTitle = isEcsSchemaTitle(title) ? (title as string) : null
+  return {
+    credentialSchemaId: Number(row.id) || 0,
+    ecosystemId,
+    isEcs: ecsSchemaTitle !== null && (await isEcosystemEcsAllowlisted(ecosystemId)),
+    ecsSchemaTitle,
+  }
+}
+
+async function resolveSchemaByNumericId(id: number): Promise<EcsSchemaResolution | null> {
+  if (!Number.isInteger(id) || id <= 0) return null
+  const row = (await knex('credential_schemas').select('id', 'ecosystem_id', 'json_schema').where('id', id).first()) as
+    | { id?: unknown; ecosystem_id?: unknown; json_schema?: unknown }
+    | undefined
+  return row ? buildEcsResolutionFromRow(row) : null
 }
 
 async function resolveSchemaByUri(uri: string): Promise<EcsSchemaResolution | null> {
@@ -497,17 +514,45 @@ async function resolveSchemaByUri(uri: string): Promise<EcsSchemaResolution | nu
       return js?.$id === uri || js?.id === uri || js?.['@id'] === uri
     })
   }
-  if (!row) return null
+  return row ? buildEcsResolutionFromRow(row) : null
+}
 
-  const title = parseSchemaJson(row.json_schema)?.title
-  const ecosystemId = Number(row.ecosystem_id) || 0
-  const ecsSchemaTitle = isEcsSchemaTitle(title) ? (title as string) : null
-  return {
-    credentialSchemaId: Number(row.id) || 0,
-    ecosystemId,
-    isEcs: ecsSchemaTitle !== null && (await isEcosystemEcsAllowlisted(ecosystemId)),
-    ecsSchemaTitle,
+function schemaRefNumericId(ref: string): number | null {
+  const direct = Number(ref)
+  if (Number.isInteger(direct) && direct > 0) return direct
+  const tail = ref.split(/[/:]/).filter(Boolean).at(-1)
+  const n = Number(tail)
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
+async function dereferenceSchemaRef(csId: string): Promise<string | null> {
+  try {
+    const jsc = await fetchJson<Record<string, unknown>>(csId)
+    const subject = (Array.isArray(jsc?.credentialSubject) ? jsc.credentialSubject[0] : jsc?.credentialSubject) as
+      | { jsonSchema?: { $ref?: unknown }; id?: unknown }
+      | undefined
+    const ref = subject?.jsonSchema?.$ref ?? subject?.id
+    return typeof ref === 'string' ? ref : null
+  } catch {
+    return null
   }
+}
+
+async function resolveCredentialSchema(cred: Record<string, unknown>): Promise<EcsSchemaResolution | null> {
+  const cs = cred.credentialSchema
+  const first = (Array.isArray(cs) ? cs[0] : cs) as { id?: unknown; type?: unknown } | undefined
+  const rawId = typeof first?.id === 'string' ? first.id : ''
+  if (!rawId) return null
+
+  const needsDeref = first?.type === 'JsonSchemaCredential' || /^https?:/i.test(rawId)
+  const schemaRef = needsDeref ? ((await dereferenceSchemaRef(rawId)) ?? rawId) : rawId
+
+  const numericId = schemaRefNumericId(schemaRef)
+  if (numericId) {
+    const byId = await resolveSchemaByNumericId(numericId)
+    if (byId) return byId
+  }
+  return resolveSchemaByUri(schemaRef)
 }
 
 async function resolveParticipantId(did: string, credentialSchemaId: number): Promise<number> {
@@ -525,8 +570,7 @@ export async function hasAllowlistedEcsServiceCredential(resolveResult: unknown)
     if (!isLinkedVpType(svc.type)) continue
     const endpoint = typeof svc.serviceEndpoint === 'string' ? svc.serviceEndpoint : ''
     for (const cred of await fetchVpCredentials(endpoint)) {
-      const schemaUri = credentialSchemaUri(cred)
-      const schema = schemaUri ? await resolveSchemaByUri(schemaUri) : null
+      const schema = await resolveCredentialSchema(cred)
       if (schema?.isEcs && schema.ecsSchemaTitle === serviceSchemaTitle) return true
     }
   }
@@ -556,8 +600,7 @@ export async function buildPresentations(
     const unresolvableCredentialIds: string[] = []
     for (const cred of credentials) {
       const id = credentialId(cred)
-      const schemaUri = credentialSchemaUri(cred)
-      const schema = schemaUri ? await resolveSchemaByUri(schemaUri) : null
+      const schema = await resolveCredentialSchema(cred)
       if (!schema) {
         if (id) unresolvableCredentialIds.push(id)
         continue
