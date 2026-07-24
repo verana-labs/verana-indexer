@@ -15,7 +15,7 @@ import { detectStartMode } from '../../common/utils/start_mode_detector'
 import config from '../../config.json' with { type: 'json' }
 import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
-import { hasAllowlistedEcsServiceCredential } from './trust-resolve-v4.builders'
+import { computeExpiresAtBoundary, hasAllowlistedEcsServiceCredential } from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -66,12 +66,6 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     freshStart: next?.freshStart ?? legacy?.freshStart,
     reindexing: next?.reindexing ?? legacy?.reindexing,
   }
-}
-
-export function getTrustEvaluationTtlSeconds(): number {
-  const cfg = getResolverRuntimeConfig()
-  const s = Number(cfg?.trustEvaluationTtlSeconds ?? 3600)
-  return Number.isFinite(s) && s > 0 ? Math.floor(s) : 3600
 }
 
 export function getDeclaredPollObjectCachingRetryDays(): number | null {
@@ -326,11 +320,9 @@ export async function saveTrustResults(row: {
   verifier_auth: unknown
   ecosystem_participant: unknown
 }): Promise<void> {
-  const trustTtlSeconds = getTrustEvaluationTtlSeconds()
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
-  const expiresAt =
-    trustTtlSeconds > 0 ? new Date(evaluatedAt.getTime() + trustTtlSeconds * 1000) : new Date(evaluatedAt.getTime())
+  const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
 
   await knex('trust_results')
     .insert({

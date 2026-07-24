@@ -5,7 +5,7 @@ export type VtTrustCore = {
   trusted: boolean
   evaluatedAtTime: string
   evaluatedAtBlock: number
-  expiresAtTime: string
+  expiresAtTime: string | null
   corporationId: number | null
 }
 
