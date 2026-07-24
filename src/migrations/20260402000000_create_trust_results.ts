@@ -43,6 +43,17 @@ export async function up(knex: Knex): Promise<void> {
         'Failed to create index trust_results_expires_at_idx; this may impact performance of trust result refreshing.'
       )
     }
+    try {
+      await knex.schema.raw(`
+        CREATE INDEX IF NOT EXISTS trust_results_service_issuer_idx
+        ON trust_results ((resolve_result->'service'->>'issuer'))
+        WHERE resolve_result->'service'->>'issuer' IS NOT NULL
+      `)
+    } catch {
+      console.warn(
+        'Failed to create index trust_results_service_issuer_idx; the IDX-VT-EVAL-4 dependency cascade will fall back to a sequential scan.'
+      )
+    }
   }
 
   const hasRetryTable = await knex.schema.hasTable('trust_reattemptable')
@@ -86,6 +97,11 @@ export async function down(knex: Knex): Promise<void> {
       console.warn(
         'Failed to drop index trust_results_expires_at_idx; this may impact performance of trust result refreshing.'
       )
+    }
+    try {
+      await knex.schema.raw(`DROP INDEX IF EXISTS trust_results_service_issuer_idx`)
+    } catch {
+      console.warn('Failed to drop index trust_results_service_issuer_idx.')
     }
     await knex.schema.dropTableIfExists('trust_results')
   }
