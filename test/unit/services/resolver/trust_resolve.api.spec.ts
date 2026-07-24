@@ -113,13 +113,26 @@ describe('TrustV1ApiService POST /v4/verifiable-trust/resolve (resolveV4)', () =
       corporationId: 0,
     })
     expect(typeof res.evaluatedAtTime).toBe('string')
-    expect(typeof res.expiresAtTime).toBe('string')
+    // IDX-VT-EVAL-2: no indexed boundary => null, never evaluatedAt + TTL
+    expect(res.expiresAtTime).toBeNull()
     // legacy fields must be gone
     expect(res.trust_status).toBeUndefined()
     expect(res.evaluated_at_block).toBeUndefined()
     // opt-in sections excluded by default
     expect(res.participations).toBeUndefined()
     expect(res.ecosystems).toBeUndefined()
+  })
+
+  it('serves the persisted expiresAtTime boundary verbatim (IDX-VT-EVAL-5)', async () => {
+    const TrustResolve = await import('../../../../src/services/resolver/trust-resolve')
+    jest
+      .spyOn(TrustResolve, 'getTrustResultLatestByDidAtOrBeforeHeight')
+      .mockResolvedValue(mockStoredRow({ expires_at: '2027-01-31T23:59:59.000Z' }))
+
+    const ctx: any = { params: { did: 'did:verana:test123' }, meta: {} }
+    const res = await service.resolveV4(ctx)
+
+    expect(res.expiresAtTime).toBe('2027-01-31T23:59:59.000Z')
   })
 
   it('trusted is true for PARTIAL (verified-test) outcomes', async () => {

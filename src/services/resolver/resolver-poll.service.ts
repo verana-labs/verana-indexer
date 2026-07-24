@@ -10,7 +10,6 @@ import {
   getDeclaredPollObjectCachingRetryDays,
   getResolverRuntimeConfig,
   getResolverTuning,
-  getTrustEvaluationTtlSeconds,
   listDueReattemptables,
   markReattemptableAttempt,
   resolveTrustForBlock,
@@ -33,43 +32,6 @@ const ResolverPollService = {
   },
 
   methods: {
-    async refreshExpiredTrustResults(this: any, landingHeight: number): Promise<boolean> {
-      const cfg = getResolverRuntimeConfig()
-      if (!cfg?.enabled) return false
-
-      const trustTtlSeconds = getTrustEvaluationTtlSeconds()
-      if (!Number.isFinite(trustTtlSeconds) || trustTtlSeconds <= 0) return false
-
-      const lastTrust = await this.getOrCreateResolverCheckpointHeight()
-      if (lastTrust <= 0) return false
-
-      // Refresh a small batch per poll cycle to avoid overwhelming the DB.
-      const now = new Date()
-      const rows = (await knex('trust_results')
-        .select('did', 'height', 'expires_at')
-        .whereNotNull('expires_at')
-        .andWhere('expires_at', '<=', now)
-        .andWhere('height', '<=', lastTrust)
-        .orderBy('expires_at', 'asc')
-        .limit(50)) as Array<{ did: string; height: number; expires_at: Date | string }>
-
-      if (rows.length === 0) return false
-
-      let forwarded = false
-      for (const r of rows) {
-        const did = String(r.did ?? '')
-        const height = Number(r.height ?? 0)
-        if (!did || !Number.isInteger(height) || height < 0) continue
-        try {
-          forwarded = (await resolveTrustForDidAtHeight(did, height, landingHeight)) || forwarded
-        } catch {
-          this.logger.warn(
-            `[RESOLVER] Failed to refresh trust for ${did}@${height}, will retry again later if still eligible.`
-          )
-        }
-      }
-      return forwarded
-    },
     async initialSyncIfNeeded(this: any): Promise<void> {
       const cfg = getResolverRuntimeConfig()
       if (!cfg?.enabled) return
@@ -195,7 +157,6 @@ const ResolverPollService = {
 
       let forwardedLate = false
       forwardedLate = (await this.retryDueFailures(targetEnd)) || forwardedLate
-      forwardedLate = (await this.refreshExpiredTrustResults(targetEnd)) || forwardedLate
 
       if (trustTxPrefilterEnabled()) {
         const activeHeights = await findHeightsWithTrustModuleMessages(currentHeight, targetEnd)

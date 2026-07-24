@@ -6,11 +6,7 @@ import { ALL_PARTICIPANT_STATES, type ParticipantState } from '../../common/type
 import ApiResponder from '../../common/utils/apiResponse'
 import knex from '../../common/utils/db_connection'
 import { BlockCheckpoint } from '../../models'
-import {
-  getTrustEvaluationTtlSeconds,
-  getTrustResultLatestByDidAtOrBeforeHeight,
-  resolveTrustForDidAtHeight,
-} from './trust-resolve'
+import { getTrustResultLatestByDidAtOrBeforeHeight, resolveTrustForDidAtHeight } from './trust-resolve'
 import {
   buildCorporation,
   buildEcosystems,
@@ -66,16 +62,6 @@ export class TrustApiService extends BaseService {
     return ApiResponder.error(ctx, 'DID not found', 404)
   }
 
-  private isTrustRowExpired(row: { evaluated_at?: unknown; created_at?: unknown } | null | undefined): boolean {
-    if (!row) return true
-    const ttlSeconds = getTrustEvaluationTtlSeconds()
-    const evaluatedAtSource = row.evaluated_at ?? row.created_at
-    if (evaluatedAtSource == null) return true
-    const evaluatedMs = new Date(evaluatedAtSource as Date | string).getTime()
-    if (!Number.isFinite(evaluatedMs)) return true
-    return Date.now() >= evaluatedMs + ttlSeconds * 1000
-  }
-
   private isTrustRowTrusted(
     row:
       | { did?: string; resolve_result?: unknown; height?: number; evaluated_at?: unknown; created_at?: unknown }
@@ -92,7 +78,8 @@ export class TrustApiService extends BaseService {
       | null
       | undefined
   ): boolean {
-    return this.isTrustRowExpired(row) || !this.isTrustRowTrusted(row)
+    if (!row) return true
+    return !this.isTrustRowTrusted(row)
   }
 
   private async getLastProcessedTrustBlockHeight(): Promise<number> {
@@ -211,7 +198,6 @@ export class TrustApiService extends BaseService {
     }
 
     const resolveResult = row?.resolve_result ?? null
-    const ttlSeconds = getTrustEvaluationTtlSeconds()
     const blockTime = await this.blockTimeAtHeight(effectiveHeight)
 
     const core = await buildVtResponseCore({
@@ -220,7 +206,7 @@ export class TrustApiService extends BaseService {
       evaluatedAtBlock: row ? row.height : effectiveHeight,
       evaluatedAtSource: row ? (row.evaluated_at ?? row.created_at) : null,
       fallbackEvaluatedAtTime: (blockTime ?? new Date()).toISOString(),
-      ttlSeconds,
+      expiresAtSource: row ? (row.expires_at ?? null) : null,
       atHeight: requestedHeight,
     })
 
