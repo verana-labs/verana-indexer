@@ -1,8 +1,3 @@
-/**
- * IDX-VT-EVAL-3/4: re-evaluation is driven by consumed `TriggerResolver` events and by the
- * dependency cascade (services whose ECS-SERVICE credential is issued by a re-evaluated DID),
- * never by a TTL sweep. The cascade must terminate on cycles and respect the per-block budget.
- */
 const TrustResolutionOutcome = {
   VERIFIED: 'verified',
   VERIFIED_TEST: 'verified-test',
