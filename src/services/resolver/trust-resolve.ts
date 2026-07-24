@@ -16,7 +16,11 @@ import { VeranaParticipantMessageTypes } from '../../common/verana-message-types
 import config from '../../config.json' with { type: 'json' }
 import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
-import { computeExpiresAtBoundary, hasAllowlistedEcsServiceCredential } from './trust-resolve-v4.builders'
+import {
+  computeExpiresAtBoundary,
+  hasAllowlistedEcsServiceCredential,
+  resolveCorporationId,
+} from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -322,7 +326,6 @@ const SERVICES_ANCHORED_ON_ISSUERS_SQL = `
   ) AS latest
   WHERE latest.resolve_result->'service'->>'issuer' = ANY(?::text[])
     AND latest.did LIKE 'did:%'
-  LIMIT ?
 `
 
 const MAX_CASCADE_DEPTH = 4
@@ -338,6 +341,7 @@ export type TrustResultsRow = {
   production?: boolean | null
   evaluated_at?: Date | string | null
   expires_at?: Date | string | null
+  corporation_id?: number | null
   created_at?: Date | string
 }
 
@@ -352,6 +356,7 @@ export async function saveTrustResults(row: {
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
   const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
+  const corporationId = await resolveCorporationId(row.did, row.height)
 
   await knex('trust_results')
     .insert({
@@ -365,6 +370,7 @@ export async function saveTrustResults(row: {
       production,
       evaluated_at: evaluatedAt,
       expires_at: expiresAt,
+      corporation_id: corporationId,
     })
     .onConflict(['did', 'height'])
     .merge({
@@ -376,6 +382,7 @@ export async function saveTrustResults(row: {
       production,
       evaluated_at: evaluatedAt,
       expires_at: expiresAt,
+      corporation_id: corporationId,
     })
 }
 
@@ -429,13 +436,9 @@ async function getTriggeredDids(blockHeight: number, limit: number): Promise<str
   )
 }
 
-async function getServicesAnchoredOnIssuers(
-  issuerDids: string[],
-  blockHeight: number,
-  limit: number
-): Promise<string[]> {
-  if (issuerDids.length === 0 || limit <= 0) return []
-  return didsFromRows(await knex.raw(SERVICES_ANCHORED_ON_ISSUERS_SQL, [blockHeight, issuerDids, limit]))
+async function getServicesAnchoredOnIssuers(issuerDids: string[], blockHeight: number): Promise<string[]> {
+  if (issuerDids.length === 0) return []
+  return didsFromRows(await knex.raw(SERVICES_ANCHORED_ON_ISSUERS_SQL, [blockHeight, issuerDids]))
 }
 
 function isResolveError(resolveResult: unknown): boolean {
@@ -554,10 +557,7 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
   let frontier = [...new Set([...impactedDids, ...triggeredDids])]
 
   for (let depth = 0; depth <= MAX_CASCADE_DEPTH && frontier.length > 0; depth++) {
-    const budget = tuning.maxDidsPerBlock - evaluated.size
-    if (budget <= 0) break
-
-    const batch = frontier.filter((did) => !evaluated.has(did)).slice(0, budget)
+    const batch = frontier.filter((did) => !evaluated.has(did))
     if (batch.length === 0) break
     for (const did of batch) evaluated.add(did)
 
@@ -565,8 +565,7 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
       await resolveTrustForDidAtHeight(did, blockHeight)
     })
 
-    const remaining = tuning.maxDidsPerBlock - evaluated.size
-    const children = await getServicesAnchoredOnIssuers(batch, blockHeight, remaining)
+    const children = await getServicesAnchoredOnIssuers(batch, blockHeight)
     frontier = children.filter((did) => !evaluated.has(did))
   }
 }

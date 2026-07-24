@@ -20,6 +20,11 @@ export function computeTrusted(resolveResult: unknown): boolean {
   return r.outcome === 'verified' || r.outcome === 'verified-test'
 }
 
+export function trustedFromStatus(trustStatus: unknown): boolean {
+  const status = String(trustStatus ?? 'UNTRUSTED').toUpperCase()
+  return status === 'TRUSTED' || status === 'PARTIAL'
+}
+
 export type VtResponseCoreArgs = {
   did: string
   resolveResult: unknown
@@ -27,6 +32,8 @@ export type VtResponseCoreArgs = {
   evaluatedAtSource?: Date | string | null
   fallbackEvaluatedAtTime?: string
   expiresAtSource?: Date | string | null
+  trustStatusSource?: string | null
+  corporationIdSource?: number | null
   atHeight?: number
 }
 
@@ -40,11 +47,12 @@ export async function buildVtResponseCore(args: VtResponseCoreArgs): Promise<VtR
 
   return {
     did: args.did,
-    trusted: computeTrusted(args.resolveResult),
+    trusted:
+      args.trustStatusSource != null ? trustedFromStatus(args.trustStatusSource) : computeTrusted(args.resolveResult),
     evaluatedAtTime,
     evaluatedAtBlock: args.evaluatedAtBlock,
     expiresAtTime,
-    corporationId: await resolveCorporationId(args.did, args.atHeight),
+    corporationId: args.corporationIdSource ?? (await resolveCorporationId(args.did, args.atHeight)),
   }
 }
 

@@ -1,3 +1,5 @@
+export {}
+
 const TrustResolutionOutcome = {
   VERIFIED: 'verified',
   VERIFIED_TEST: 'verified-test',
@@ -127,6 +129,18 @@ describe('resolveTrustForBlock — TriggerResolver consumption and dependency ca
     const seen = resolvedDids()
     expect(seen.sort()).toEqual([AGENT, CHILD].sort())
     expect(new Set(seen).size).toBe(seen.length)
+  })
+
+  it('re-evaluates every anchored service even past the per-block DID cap (IDX-VT-EVAL-4)', async () => {
+    const { resolveTrustForBlock } = await import('../../../../src/services/resolver/trust-resolve')
+    const children = Array.from({ length: 120 }, (_, i) => `did:webvh:QmChild${i}:c${i}.example.org`)
+    driveSql({ [AGENT]: children }, [], [AGENT])
+
+    await resolveTrustForBlock(BLOCK)
+
+    const seen = resolvedDids()
+    expect(seen).toHaveLength(121)
+    for (const child of children) expect(seen).toContain(child)
   })
 
   it('does not resolve anything when the block carries no trigger and no impacted DID', async () => {

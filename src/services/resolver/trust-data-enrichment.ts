@@ -8,6 +8,9 @@ type TrustRowLite = {
   height: number
   resolve_result: unknown
   evaluated_at?: unknown
+  expires_at?: unknown
+  trust_status?: string | null
+  corporation_id?: number | null
   created_at?: unknown
 }
 
@@ -61,7 +64,16 @@ async function fetchTrustResultsLatestByDid(dids: string[], blockHeight?: number
   for (let i = 0; i < uniq.length; i += chunkSize) {
     const chunk = uniq.slice(i, i + chunkSize)
     let q: any = knex('trust_results')
-      .select(['did', 'height', 'resolve_result', 'evaluated_at', 'created_at'])
+      .select([
+        'did',
+        'height',
+        'resolve_result',
+        'evaluated_at',
+        'expires_at',
+        'trust_status',
+        'corporation_id',
+        'created_at',
+      ])
       .whereIn('did', chunk)
     if (typeof blockHeight === 'number' && Number.isFinite(blockHeight) && blockHeight >= 0) {
       q = q.andWhere('height', '<=', Math.trunc(blockHeight))
@@ -81,6 +93,9 @@ async function fetchTrustResultsLatestByDid(dids: string[], blockHeight?: number
         height: Math.trunc(height),
         resolve_result: row?.resolve_result,
         evaluated_at: row?.evaluated_at,
+        expires_at: row?.expires_at,
+        trust_status: row?.trust_status ?? null,
+        corporation_id: row?.corporation_id ?? null,
         created_at: row?.created_at,
       })
     }
@@ -102,6 +117,9 @@ async function buildTrustPayload(
       resolveResult: row.resolve_result,
       evaluatedAtBlock: row.height,
       evaluatedAtSource: (row.evaluated_at ?? row.created_at) as Date | string | null | undefined,
+      expiresAtSource: (row.expires_at ?? null) as Date | string | null,
+      trustStatusSource: row.trust_status ?? null,
+      corporationIdSource: row.corporation_id ?? null,
       atHeight: blockHeight,
     },
     mode
