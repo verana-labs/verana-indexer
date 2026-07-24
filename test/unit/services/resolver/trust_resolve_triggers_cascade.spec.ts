@@ -43,6 +43,8 @@ jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
 jest.mock('../../../../src/services/resolver/trust-resolve-v4.builders', () => ({
   __esModule: true,
   hasAllowlistedEcsServiceCredential: async () => true,
+  computeExpiresAtBoundary: async () => null,
+  resolveCorporationId: async () => 0,
 }))
 
 jest.mock('../../../../src/services/resolver/verre-registry-adapter', () => ({
