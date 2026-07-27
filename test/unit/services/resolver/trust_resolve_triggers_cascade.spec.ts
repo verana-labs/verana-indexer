@@ -92,7 +92,7 @@ describe('resolveTrustForBlock — TriggerResolver consumption and dependency ca
       if (sql.includes('ecosystem_history')) return rowsOf(impacted)
       if (sql.includes('transaction_message')) return rowsOf(triggered)
       if (sql.includes("resolve_result->'service'")) {
-        const issuers = (bindings[1] as string[]) ?? []
+        const issuers = (bindings.find(Array.isArray) as string[]) ?? []
         const children = issuers.flatMap((issuer) => cascade[issuer] ?? [])
         return rowsOf([...new Set(children)])
       }
