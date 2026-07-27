@@ -21,9 +21,11 @@ function positiveInt(value: unknown): number | null {
   return n
 }
 
-function schemaIdFromUrl(url: string): number | null {
+export function schemaIdFromUrl(url: string): number | null {
   const direct = positiveInt(url)
   if (direct) return direct
+  const colonForm = /(?:^|[:/])cs(?:[:/]v\d+[:/]js)?[:/](\d+)$/.exec(url)
+  if (colonForm) return positiveInt(colonForm[1])
   try {
     const segments = new URL(url).pathname.split('/').filter(Boolean)
     return positiveInt(segments.at(-1))
