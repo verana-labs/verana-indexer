@@ -32,7 +32,6 @@ export type ResolverRuntimeConfig = {
   blocksPerCall?: number
   useEmbeddedRegistryAdapter?: boolean
   disableDigestSriVerification?: boolean
-  trustEvaluationTtlSeconds?: number
   pollObjectCachingRetryDays?: number
 
   txPrefilterEnabled?: boolean
@@ -59,7 +58,6 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     blocksPerCall: next?.blocksPerCall ?? legacy?.blocksPerCall,
     useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
-    trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
     pollObjectCachingRetryDays: next?.pollObjectCachingRetryDays ?? legacy?.pollObjectCachingRetryDays,
     didResolveConcurrency: next?.didResolveConcurrency ?? legacy?.didResolveConcurrency,
     maxDidsPerTrustBlock: next?.maxDidsPerTrustBlock ?? legacy?.maxDidsPerTrustBlock,

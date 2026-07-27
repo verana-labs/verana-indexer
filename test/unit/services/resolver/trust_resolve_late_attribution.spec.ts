@@ -26,7 +26,6 @@ jest.mock('../../../../src/config.json', () => {
       resolver: {
         ...actual.resolver,
         enabled: true,
-        trustEvaluationTtlSeconds: 3600,
         pollObjectCachingRetryDays: 7,
       },
     },

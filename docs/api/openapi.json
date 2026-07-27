@@ -8216,7 +8216,11 @@
           "trusted": { "type": "boolean" },
           "evaluatedAtTime": { "type": "string", "format": "date-time" },
           "evaluatedAtBlock": { "type": "integer", "minimum": 0 },
-          "expiresAtTime": { "type": "string", "format": "date-time" },
+          "expiresAtTime": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Earliest expiry boundary of the credentials the DID's trust state rests on: the soonest `validUntil` of its ECS service / service-provider credential and the soonest `effective_until` of the matching Participant entries. Null when none of them declares an expiry, and therefore when the DID has no stored evaluation at the requested block."
+          },
           "corporationId": { "type": "integer", "minimum": 0 },
           "corporation": { "$ref": "#/components/schemas/VtCorporation" },
           "participations": { "type": "array", "items": { "$ref": "#/components/schemas/VtParticipation" } },
