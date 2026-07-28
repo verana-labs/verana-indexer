@@ -12,6 +12,7 @@ import {
 } from '../../common/utils/crawl_speed_config'
 import knex from '../../common/utils/db_connection'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
+import { VeranaParticipantMessageTypes } from '../../common/verana-message-types'
 import config from '../../config.json' with { type: 'json' }
 import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
@@ -304,6 +305,55 @@ const IMPACTED_DIDS_SQL = `
   LIMIT ?
 `
 
+const TRIGGERED_DIDS_SQL = `
+  SELECT DISTINCT p.did AS d
+  FROM transaction t
+  INNER JOIN transaction_message tm ON tm.tx_id = t.id
+  INNER JOIN participants p ON p.id = (tm.content->>'id')::bigint
+  WHERE t.height = ?
+    AND t.code = 0
+    AND tm.type = ?
+    AND tm.content->>'id' ~ '^[0-9]+$'
+    AND p.did LIKE 'did:%'
+  LIMIT ?
+`
+
+// The issuer filter is applied twice on purpose. The `anchored` CTE narrows the table down to the
+// DIDs that were anchored on one of these issuers at some point, which is an index lookup on
+// trust_results_service_issuer_idx; without it the DISTINCT ON would have to scan and sort the whole
+// table before any filtering could happen. `anchored` is only a candidate set (a DID may have moved
+// to another issuer since), so the final WHERE re-applies the filter to the latest row per DID,
+// which is what actually decides membership.
+const SERVICES_ANCHORED_ON_ISSUERS_SQL = `
+  WITH anchored AS (
+    SELECT DISTINCT did
+    FROM trust_results
+    WHERE resolve_result->'service'->>'issuer' IS NOT NULL
+      AND resolve_result->'service'->>'issuer' = ANY(?::text[])
+      AND height <= ?
+      AND did LIKE 'did:%'
+  ),
+  latest AS (
+    SELECT DISTINCT ON (tr.did) tr.did, tr.resolve_result
+    FROM trust_results tr
+    INNER JOIN anchored a ON a.did = tr.did
+    WHERE tr.height <= ?
+    ORDER BY tr.did, tr.height DESC
+  )
+  SELECT latest.did AS d
+  FROM latest
+  WHERE latest.resolve_result->'service'->>'issuer' = ANY(?::text[])
+  LIMIT ?
+`
+
+// How many issuer-anchoring hops a single block may fan out to (service -> its issuer's dependents
+// -> theirs, ...). Termination does not depend on this: `evaluated` resolves each DID at most once
+// even on a cyclic issuer graph, and maxDidsPerBlock caps the total work. It only bounds how many
+// extra fan-out queries one block can trigger, so a pathological chain cannot stall block
+// processing. Anything deeper is picked up by the TTL refresh in resolver-poll, so truncating a
+// cascade delays a re-evaluation rather than losing it.
+const MAX_CASCADE_DEPTH = 4
+
 export type TrustResultsRow = {
   did: string
   height: number
@@ -387,9 +437,7 @@ function snapshotFromError(message: string): TrustRoleSnapshot {
   return { verified: false, error: message }
 }
 
-async function getImpactedDids(blockHeight: number, limit: number): Promise<string[]> {
-  const h = blockHeight
-  const res = await knex.raw(IMPACTED_DIDS_SQL, [h, h, limit])
+function didsFromRows(res: unknown): string[] {
   const rows = (res as { rows?: Array<{ d?: string }> }).rows ?? []
   const out: string[] = []
   for (const row of rows) {
@@ -397,6 +445,28 @@ async function getImpactedDids(blockHeight: number, limit: number): Promise<stri
     if (isDidString(d)) out.push(d)
   }
   return out
+}
+
+async function getImpactedDids(blockHeight: number, limit: number): Promise<string[]> {
+  const h = blockHeight
+  return didsFromRows(await knex.raw(IMPACTED_DIDS_SQL, [h, h, limit]))
+}
+
+async function getTriggeredDids(blockHeight: number, limit: number): Promise<string[]> {
+  return didsFromRows(
+    await knex.raw(TRIGGERED_DIDS_SQL, [blockHeight, VeranaParticipantMessageTypes.TriggerResolver, limit])
+  )
+}
+
+async function getServicesAnchoredOnIssuers(
+  issuerDids: string[],
+  blockHeight: number,
+  limit: number
+): Promise<string[]> {
+  if (issuerDids.length === 0 || limit <= 0) return []
+  return didsFromRows(
+    await knex.raw(SERVICES_ANCHORED_ON_ISSUERS_SQL, [issuerDids, blockHeight, blockHeight, issuerDids, limit])
+  )
 }
 
 function isResolveError(resolveResult: unknown): boolean {
@@ -506,11 +576,30 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
   if (!Number.isInteger(blockHeight) || blockHeight < 0) return
 
   const tuning = await getResolverTuning()
-  const impactedDids = await getImpactedDids(blockHeight, tuning.maxDidsPerBlock)
+  const [impactedDids, triggeredDids] = await Promise.all([
+    getImpactedDids(blockHeight, tuning.maxDidsPerBlock),
+    getTriggeredDids(blockHeight, tuning.maxDidsPerBlock),
+  ])
 
-  await runPool(impactedDids, tuning.didConcurrency, async (did) => {
-    await resolveTrustForDidAtHeight(did, blockHeight)
-  })
+  const evaluated = new Set<string>()
+  let frontier = [...new Set([...impactedDids, ...triggeredDids])]
+
+  for (let depth = 0; depth <= MAX_CASCADE_DEPTH && frontier.length > 0; depth++) {
+    const budget = tuning.maxDidsPerBlock - evaluated.size
+    if (budget <= 0) break
+
+    const batch = frontier.filter((did) => !evaluated.has(did)).slice(0, budget)
+    if (batch.length === 0) break
+    for (const did of batch) evaluated.add(did)
+
+    await runPool(batch, tuning.didConcurrency, async (did) => {
+      await resolveTrustForDidAtHeight(did, blockHeight)
+    })
+
+    const remaining = tuning.maxDidsPerBlock - evaluated.size
+    const children = await getServicesAnchoredOnIssuers(batch, blockHeight, remaining)
+    frontier = children.filter((did) => !evaluated.has(did))
+  }
 }
 
 function mapOutcomeToTrustStatus(verified: boolean, outcome: unknown): string {
