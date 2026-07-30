@@ -413,6 +413,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   let schemaId: string | undefined
   let participantId: string | undefined
   let corporationId: number | undefined
+  let participantResourceDid: string | undefined
   const relatedCorporationIds = new Set<number>()
   const explicitPrimaryDid = firstNormalizedDid([
     content.did,
@@ -450,7 +451,11 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     const rawParticipantId = readNumber(row.content, [...ID_ALIASES.participant, 'id'])
     const rawSchemaId = readNumber(row.content, ID_ALIASES.credentialSchema)
     const rawValidatorParticipantId = readNumber(row.content, ID_ALIASES.validatorParticipant)
-    const relation = await loadParticipantRelation(rawParticipantId)
+    // Start-class messages have no participant id; reuse the did-scoped one from getEntityId.
+    const entityParticipantId =
+      normalizeDid(content.did) && entityId && /^\d+$/.test(entityId) ? Number(entityId) : null
+    const relation = await loadParticipantRelation(rawParticipantId ?? entityParticipantId)
+    participantResourceDid = relation.participantDid
     participantId = relation.participantId ?? (rawParticipantId ? String(rawParticipantId) : entityId)
     schemaId = relation.schemaId ?? (rawSchemaId ? String(rawSchemaId) : undefined)
     ecosystemId = relation.ecosystemId
@@ -479,6 +484,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
       if (!sessionParticipantId) continue
       const sessionRelation = await loadParticipantRelation(sessionParticipantId)
       participantId = participantId ?? sessionRelation.participantId
+      participantResourceDid = participantResourceDid ?? sessionRelation.participantDid
       ecosystemId = ecosystemId ?? sessionRelation.ecosystemId
       schemaId = schemaId ?? sessionRelation.schemaId
       if (sessionRelation.corporationId !== undefined) {
@@ -502,10 +508,12 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   }
 
   const relatedDids = uniqueNormalizedDids(collected)
-  const primaryDid =
-    explicitPrimaryDid ??
-    (meta.module === 'participant' ? firstNormalizedDid(relatedDids) : undefined) ??
-    firstNormalizedDid(relatedDids)
+  // Participant events are labeled with Participant.did, never a sorted related DID.
+  const participantPrimaryDid =
+    meta.module === 'participant'
+      ? (firstNormalizedDid([content.did, content.participant_did, content.participantDid]) ?? participantResourceDid)
+      : undefined
+  const primaryDid = participantPrimaryDid ?? explicitPrimaryDid ?? firstNormalizedDid(relatedDids)
   if (!primaryDid) return null
 
   return {

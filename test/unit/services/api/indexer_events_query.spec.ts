@@ -155,6 +155,7 @@ describe('indexer_events_query', () => {
     hash: string
     sender?: string
     content?: Record<string, unknown>
+    type?: string
   }): Promise<void> {
     txHashes.push(args.hash)
     const txId = nextId++
@@ -180,7 +181,7 @@ describe('indexer_events_query', () => {
       id: messageId,
       tx_id: typeof tx === 'object' ? tx.id : tx,
       index: args.messageIndex,
-      type: VeranaParticipantMessageTypes.StartParticipantOP,
+      type: args.type ?? VeranaParticipantMessageTypes.StartParticipantOP,
       sender: args.sender ?? did,
       content: args.content ?? { id: 42, applicant: did },
     })
@@ -764,5 +765,267 @@ describe('indexer_events_query', () => {
     expect(record.payload.action).toBe('start_participant_op')
     expect(record.payload.message_type).toBe('MsgStartParticipantOP')
     expect(record.payload.entity_type).toBe('Participant')
+  })
+
+  describe('participant event identity (issue #376)', () => {
+    // The ecosystem DID sorts first, so the old sorted fallback would pick it.
+    const ecosystemDid = `did:web:aaa-eco-${runId}.example`
+    const validatorDid = `did:web:mmm-validator-${runId}.example`
+    const applicantDid = `did:web:zzz-applicant-${runId}.example`
+    const applicantCorpId = 55_000 + Math.floor(Math.random() * 1000)
+    const validatorCorpId = applicantCorpId + 1
+
+    let ecosystemId: number
+    let schemaId: number
+    let validatorParticipantId: number
+    let applicantParticipantId: number
+    const historyIds: number[] = []
+
+    beforeEach(async () => {
+      ecosystemId = nextId++
+      schemaId = nextId++
+      validatorParticipantId = nextId++
+      applicantParticipantId = nextId++
+
+      await knex('ecosystem').insert({
+        id: ecosystemId,
+        did: ecosystemDid,
+        created: new Date('2025-01-15T10:30:00Z'),
+        modified: new Date('2025-01-15T10:30:00Z'),
+        language: 'en',
+        height: 1,
+      })
+      await knex('credential_schemas').insert({
+        id: schemaId,
+        ecosystem_id: ecosystemId,
+        json_schema: '{}',
+        issuer_grantor_validation_validity_period: 0,
+        verifier_grantor_validation_validity_period: 0,
+        issuer_validation_validity_period: 0,
+        verifier_validation_validity_period: 0,
+        holder_validation_validity_period: 0,
+        issuer_onboarding_mode: 'ECOSYSTEM',
+        verifier_onboarding_mode: 'ECOSYSTEM',
+      })
+      await knex('participants').insert([
+        {
+          id: validatorParticipantId,
+          schema_id: schemaId,
+          role: 'ISSUER_GRANTOR',
+          did: validatorDid,
+          corporation_id: validatorCorpId,
+        },
+        {
+          id: applicantParticipantId,
+          schema_id: schemaId,
+          role: 'ISSUER',
+          did: applicantDid,
+          corporation_id: applicantCorpId,
+          validator_participant_id: validatorParticipantId,
+        },
+      ])
+      participantIds.push(validatorParticipantId, applicantParticipantId)
+    })
+
+    afterEach(async () => {
+      if (historyIds.length > 0) {
+        await knex('participant_history').whereIn('id', historyIds).delete()
+        historyIds.length = 0
+      }
+      await knex('credential_schemas').where({ id: schemaId }).delete()
+      await knex('ecosystem').where({ id: ecosystemId }).delete()
+    })
+
+    async function insertParticipantHistory(
+      height: number,
+      overrides: { participantId?: number; did?: string } = {}
+    ): Promise<void> {
+      const [row] = await knex('participant_history')
+        .insert({
+          participant_id: overrides.participantId ?? applicantParticipantId,
+          schema_id: schemaId,
+          role: 'ISSUER',
+          did: overrides.did ?? applicantDid,
+          event_type: 'StartParticipantOP',
+          height,
+        })
+        .returning('id')
+      historyIds.push(Number(typeof row === 'object' ? row.id : row))
+    }
+
+    async function insertDecoyParticipant(height: number): Promise<string> {
+      const decoyId = nextId++
+      const decoyDid = `did:web:bbb-decoy-${runId}-${decoyId}.example`
+      await knex('participants').insert({
+        id: decoyId,
+        schema_id: schemaId,
+        role: 'ISSUER',
+        did: decoyDid,
+        corporation_id: validatorCorpId + 100,
+      })
+      participantIds.push(decoyId)
+      await insertParticipantHistory(height, { participantId: decoyId, did: decoyDid })
+      return decoyDid
+    }
+
+    it('labels RenewParticipantOP with the participant own DID, not the ecosystem DID', async () => {
+      const height = baseHeight + 300
+      await insertBlock(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-renew-did`,
+        sender: 'verana1operatoraddress',
+        type: VeranaParticipantMessageTypes.RenewParticipantOP,
+        content: { corporation: 'verana1corpaddress', operator: 'verana1operatoraddress', id: applicantParticipantId },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.did).toBe(applicantDid)
+      expect(record.payload.corporation_id).toBe(applicantCorpId)
+      expect(record.payload.related_corporation_ids).toContain(validatorCorpId)
+      expect(record.payload.related_dids).toEqual(expect.arrayContaining([ecosystemDid, validatorDid, applicantDid]))
+      expect(record.payload.entity_id).toBe(String(applicantParticipantId))
+    })
+
+    it('labels SetParticipantEffectiveUntil with the participant own DID', async () => {
+      const height = baseHeight + 301
+      await insertBlock(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-effective-until-did`,
+        sender: 'verana1operatoraddress',
+        type: VeranaParticipantMessageTypes.SetParticipantEffectiveUntil,
+        content: {
+          corporation: 'verana1corpaddress',
+          operator: 'verana1operatoraddress',
+          id: applicantParticipantId,
+          effective_until: '2026-12-31T00:00:00Z',
+        },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.did).toBe(applicantDid)
+      expect(record.payload.corporation_id).toBe(applicantCorpId)
+    })
+
+    it('attaches the applicant corporation_id to StartParticipantOP (no id in the message)', async () => {
+      const height = baseHeight + 302
+      await insertBlock(height)
+      await insertParticipantHistory(height)
+      // Another participant changed at the same height must not be picked up.
+      await insertDecoyParticipant(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-start-corp`,
+        sender: 'verana1operatoraddress',
+        type: VeranaParticipantMessageTypes.StartParticipantOP,
+        content: {
+          corporation: 'verana1corpaddress',
+          operator: 'verana1operatoraddress',
+          role: 'ISSUER',
+          validator_participant_id: validatorParticipantId,
+          did: applicantDid,
+        },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.did).toBe(applicantDid)
+      expect(record.payload.entity_id).toBe(String(applicantParticipantId))
+      expect(record.payload.corporation_id).toBe(applicantCorpId)
+      expect(record.payload.related_dids).toEqual(expect.arrayContaining([ecosystemDid, validatorDid, applicantDid]))
+    })
+
+    it('labels CreateOrUpdateParticipantSession with the issuer participant DID, not a same-height decoy', async () => {
+      const height = baseHeight + 304
+      await insertBlock(height)
+      // The UUID session id must not bind this decoy history row.
+      const decoyDid = await insertDecoyParticipant(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-session-did`,
+        sender: 'verana1operatoraddress',
+        type: VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession,
+        content: {
+          corporation: 'verana1corpaddress',
+          operator: 'verana1operatoraddress',
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          issuer_participant_id: applicantParticipantId,
+        },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.did).toBe(applicantDid)
+      expect(record.did).not.toBe(decoyDid)
+      expect(record.payload.corporation_id).toBe(applicantCorpId)
+    })
+
+    it('delivers participant events under the applicant corporation filter', async () => {
+      const height = baseHeight + 303
+      await insertBlock(height)
+      await insertParticipantHistory(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-corp-filter-start`,
+        sender: 'verana1operatoraddress',
+        type: VeranaParticipantMessageTypes.StartParticipantOP,
+        content: {
+          corporation: 'verana1corpaddress',
+          operator: 'verana1operatoraddress',
+          role: 'ISSUER',
+          validator_participant_id: validatorParticipantId,
+          did: applicantDid,
+        },
+      })
+      await insertTxMessage({
+        height,
+        txIndex: 1,
+        messageIndex: 0,
+        hash: `tx-${runId}-corp-filter-renew`,
+        sender: 'verana1operatoraddress',
+        type: VeranaParticipantMessageTypes.RenewParticipantOP,
+        content: { corporation: 'verana1corpaddress', operator: 'verana1operatoraddress', id: applicantParticipantId },
+      })
+
+      await persistIndexerEventsForBlock(height)
+
+      const byCorp = await listIndexerEvents({
+        corporationId: applicantCorpId,
+        afterBlockHeight: height - 1,
+        limit: 10,
+      })
+      expect(byCorp.map((event) => event.event_type).sort()).toEqual(['RenewParticipantOP', 'StartParticipantOP'])
+
+      const byDid = await listIndexerEvents({
+        dids: [applicantDid],
+        afterBlockHeight: height - 1,
+        limit: 10,
+      })
+      expect(byDid.map((event) => event.event_type).sort()).toEqual(['RenewParticipantOP', 'StartParticipantOP'])
+
+      // One-hop validator-tree match: the validator's DID also receives them.
+      const byValidatorDid = await listIndexerEvents({
+        dids: [validatorDid],
+        afterBlockHeight: height - 1,
+        limit: 10,
+      })
+      expect(byValidatorDid.map((event) => event.event_type).sort()).toEqual([
+        'RenewParticipantOP',
+        'StartParticipantOP',
+      ])
+    })
   })
 })
