@@ -761,13 +761,18 @@ async function anchoringParticipantEffectiveUntils(subjectDid: string, ecsSchema
 
   const schemaIds = [...new Set(participants.map((p) => Number(p.schema_id)).filter((n) => Number.isFinite(n)))]
   if (schemaIds.length === 0) return []
-  const schemas = (await knex('credential_schemas').whereIn('id', schemaIds).select('id', 'json_schema')) as Array<{
-    id: number
-    json_schema: unknown
-  }>
-  const matchingSchemaIds = new Set(
-    schemas.filter((s) => parseSchemaJson(s.json_schema)?.title === ecsSchemaTitle).map((s) => Number(s.id))
-  )
+  const schemas = (await knex('credential_schemas')
+    .whereIn('id', schemaIds)
+    .select('id', 'ecosystem_id', 'json_schema')) as Array<{ id: number; ecosystem_id: number; json_schema: unknown }>
+  const matchingSchemaIds = new Set<number>()
+  for (const s of schemas) {
+    if (
+      parseSchemaJson(s.json_schema)?.title === ecsSchemaTitle &&
+      (await isEcosystemEcsAllowlisted(Number(s.ecosystem_id) || 0))
+    ) {
+      matchingSchemaIds.add(Number(s.id))
+    }
+  }
 
   return participants
     .filter((p) => matchingSchemaIds.has(Number(p.schema_id)) && p.effective_until != null)
