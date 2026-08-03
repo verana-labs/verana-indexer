@@ -25,6 +25,10 @@ jest.mock('@verana-labs/verre', () => ({
   fetchJson: jest.fn(async () => ({})),
 }))
 
+jest.mock('canonicalize', () => ({ __esModule: true, default: (value: unknown) => JSON.stringify(value) }), {
+  virtual: true,
+})
+
 import {
   buildCorporation,
   buildEcsCredentials,
