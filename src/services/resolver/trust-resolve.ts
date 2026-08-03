@@ -16,7 +16,11 @@ import { VeranaParticipantMessageTypes } from '../../common/verana-message-types
 import config from '../../config.json' with { type: 'json' }
 import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
-import { computeExpiresAtBoundary, hasAllowlistedEcsServiceCredential } from './trust-resolve-v4.builders'
+import {
+  computeExpiresAtBoundary,
+  hasAllowlistedEcsServiceCredential,
+  resolveCorporationId,
+} from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -357,6 +361,7 @@ export type TrustResultsRow = {
   production?: boolean | null
   evaluated_at?: Date | string | null
   expires_at?: Date | string | null
+  corporation_id?: number | null
   created_at?: Date | string
 }
 
@@ -371,6 +376,7 @@ export async function saveTrustResults(row: {
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
   const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
+  const corporationId = await resolveCorporationId(row.did, row.height)
 
   await knex('trust_results')
     .insert({
@@ -384,6 +390,7 @@ export async function saveTrustResults(row: {
       production,
       evaluated_at: evaluatedAt,
       expires_at: expiresAt,
+      corporation_id: corporationId,
     })
     .onConflict(['did', 'height'])
     .merge({
@@ -395,6 +402,7 @@ export async function saveTrustResults(row: {
       production,
       evaluated_at: evaluatedAt,
       expires_at: expiresAt,
+      corporation_id: corporationId,
     })
 }
 
