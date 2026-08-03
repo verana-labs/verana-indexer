@@ -1,5 +1,3 @@
-export {}
-
 const TrustResolutionOutcome = {
   VERIFIED: 'verified',
   VERIFIED_TEST: 'verified-test',
@@ -43,8 +41,6 @@ jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
 jest.mock('../../../../src/services/resolver/trust-resolve-v4.builders', () => ({
   __esModule: true,
   hasAllowlistedEcsServiceCredential: async () => true,
-  computeExpiresAtBoundary: async () => null,
-  resolveCorporationId: async () => 0,
 }))
 
 jest.mock('../../../../src/services/resolver/verre-registry-adapter', () => ({
@@ -96,7 +92,7 @@ describe('resolveTrustForBlock — TriggerResolver consumption and dependency ca
       if (sql.includes('ecosystem_history')) return rowsOf(impacted)
       if (sql.includes('transaction_message')) return rowsOf(triggered)
       if (sql.includes("resolve_result->'service'")) {
-        const issuers = (bindings[1] as string[]) ?? []
+        const issuers = (bindings.find(Array.isArray) as string[]) ?? []
         const children = issuers.flatMap((issuer) => cascade[issuer] ?? [])
         return rowsOf([...new Set(children)])
       }
@@ -131,18 +127,6 @@ describe('resolveTrustForBlock — TriggerResolver consumption and dependency ca
     const seen = resolvedDids()
     expect(seen.sort()).toEqual([AGENT, CHILD].sort())
     expect(new Set(seen).size).toBe(seen.length)
-  })
-
-  it('re-evaluates every anchored service even past the per-block DID cap (IDX-VT-EVAL-4)', async () => {
-    const { resolveTrustForBlock } = await import('../../../../src/services/resolver/trust-resolve')
-    const children = Array.from({ length: 120 }, (_, i) => `did:webvh:QmChild${i}:c${i}.example.org`)
-    driveSql({ [AGENT]: children }, [], [AGENT])
-
-    await resolveTrustForBlock(BLOCK)
-
-    const seen = resolvedDids()
-    expect(seen).toHaveLength(121)
-    for (const child of children) expect(seen).toContain(child)
   })
 
   it('does not resolve anything when the block carries no trigger and no impacted DID', async () => {

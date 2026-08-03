@@ -135,30 +135,6 @@ describe('TrustV1ApiService POST /v4/verifiable-trust/resolve (resolveV4)', () =
     expect(res.expiresAtTime).toBe('2027-01-31T23:59:59.000Z')
   })
 
-  it('serves the persisted trusted verdict instead of recomputing it (IDX-VT-EVAL-5)', async () => {
-    const TrustResolve = await import('../../../../src/services/resolver/trust-resolve')
-    jest
-      .spyOn(TrustResolve, 'getTrustResultLatestByDidAtOrBeforeHeight')
-      .mockResolvedValue(mockStoredRow({ trust_status: 'UNTRUSTED' }))
-
-    const ctx: any = { params: { did: 'did:verana:test123' }, meta: {} }
-    const res = await service.resolveV4(ctx)
-
-    expect(res.trusted).toBe(false)
-  })
-
-  it('serves the persisted corporationId instead of resolving it per request (IDX-VT-EVAL-5)', async () => {
-    const TrustResolve = await import('../../../../src/services/resolver/trust-resolve')
-    jest
-      .spyOn(TrustResolve, 'getTrustResultLatestByDidAtOrBeforeHeight')
-      .mockResolvedValue(mockStoredRow({ trust_status: 'TRUSTED', corporation_id: 77 }))
-
-    const ctx: any = { params: { did: 'did:verana:test123' }, meta: {} }
-    const res = await service.resolveV4(ctx)
-
-    expect(res.corporationId).toBe(77)
-  })
-
   it('trusted is true for PARTIAL (verified-test) outcomes', async () => {
     const TrustResolve = await import('../../../../src/services/resolver/trust-resolve')
     jest

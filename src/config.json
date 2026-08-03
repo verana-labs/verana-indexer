@@ -156,7 +156,6 @@
     "disableDigestSriVerification": false,
     "txPrefilterEnabled": true,
     "ecsEcosystems": [],
-    "trustEvaluationTtlSeconds": 3600,
     "pollObjectCachingRetryDays": 7
   },
   "crawlSigningInfo": {

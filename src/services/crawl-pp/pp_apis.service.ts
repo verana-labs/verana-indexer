@@ -313,7 +313,13 @@ export default class ParticipantAPIService extends BullableService {
     if (params.role) query.where(col('role'), params.role)
     if (params.op_state) query.where(col('op_state'), params.op_state)
     if (modifiedAfterIso) query.where(col('modified'), '>', modifiedAfterIso)
-    if (whenIso) query.where(col('modified'), '<=', whenIso)
+    if (whenIso) {
+      query.where((qb: any) => {
+        qb.where((q: any) => q.whereNull(col('effective_from')).orWhere(col('effective_from'), '<=', whenIso)).andWhere(
+          (q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>', whenIso)
+        )
+      })
+    }
 
     if (onlyValid) {
       query.where((qb: any) => {

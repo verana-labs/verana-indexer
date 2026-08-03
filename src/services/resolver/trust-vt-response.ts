@@ -32,8 +32,6 @@ export type VtResponseCoreArgs = {
   evaluatedAtSource?: Date | string | null
   fallbackEvaluatedAtTime?: string
   expiresAtSource?: Date | string | null
-  trustStatusSource?: string | null
-  corporationIdSource?: number | null
   atHeight?: number
 }
 

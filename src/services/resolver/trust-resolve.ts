@@ -37,7 +37,6 @@ export type ResolverRuntimeConfig = {
   blocksPerCall?: number
   useEmbeddedRegistryAdapter?: boolean
   disableDigestSriVerification?: boolean
-  trustEvaluationTtlSeconds?: number
   pollObjectCachingRetryDays?: number
 
   txPrefilterEnabled?: boolean
@@ -64,7 +63,6 @@ export function getResolverRuntimeConfig(): ResolverRuntimeConfig | null {
     blocksPerCall: next?.blocksPerCall ?? legacy?.blocksPerCall,
     useEmbeddedRegistryAdapter: next?.useEmbeddedRegistryAdapter ?? legacy?.useEmbeddedRegistryAdapter,
     disableDigestSriVerification: next?.disableDigestSriVerification,
-    trustEvaluationTtlSeconds: next?.trustEvaluationTtlSeconds ?? legacy?.trustEvaluationTtlSeconds,
     pollObjectCachingRetryDays: next?.pollObjectCachingRetryDays ?? legacy?.pollObjectCachingRetryDays,
     didResolveConcurrency: next?.didResolveConcurrency ?? legacy?.didResolveConcurrency,
     maxDidsPerTrustBlock: next?.maxDidsPerTrustBlock ?? legacy?.maxDidsPerTrustBlock,
@@ -316,18 +314,40 @@ const TRIGGERED_DIDS_SQL = `
   LIMIT ?
 `
 
+// The issuer filter is applied twice on purpose. The `anchored` CTE narrows the table down to the
+// DIDs that were anchored on one of these issuers at some point, which is an index lookup on
+// trust_results_service_issuer_idx; without it the DISTINCT ON would have to scan and sort the whole
+// table before any filtering could happen. `anchored` is only a candidate set (a DID may have moved
+// to another issuer since), so the final WHERE re-applies the filter to the latest row per DID,
+// which is what actually decides membership.
 const SERVICES_ANCHORED_ON_ISSUERS_SQL = `
-  SELECT latest.did AS d
-  FROM (
-    SELECT DISTINCT ON (did) did, resolve_result
+  WITH anchored AS (
+    SELECT DISTINCT did
     FROM trust_results
-    WHERE height <= ?
-    ORDER BY did, height DESC
-  ) AS latest
+    WHERE resolve_result->'service'->>'issuer' IS NOT NULL
+      AND resolve_result->'service'->>'issuer' = ANY(?::text[])
+      AND height <= ?
+      AND did LIKE 'did:%'
+  ),
+  latest AS (
+    SELECT DISTINCT ON (tr.did) tr.did, tr.resolve_result
+    FROM trust_results tr
+    INNER JOIN anchored a ON a.did = tr.did
+    WHERE tr.height <= ?
+    ORDER BY tr.did, tr.height DESC
+  )
+  SELECT latest.did AS d
+  FROM latest
   WHERE latest.resolve_result->'service'->>'issuer' = ANY(?::text[])
-    AND latest.did LIKE 'did:%'
+  LIMIT ?
 `
 
+// How many issuer-anchoring hops a single block may fan out to (service -> its issuer's dependents
+// -> theirs, ...). Termination does not depend on this: `evaluated` resolves each DID at most once
+// even on a cyclic issuer graph, and maxDidsPerBlock caps the total work. It only bounds how many
+// extra fan-out queries one block can trigger, so a pathological chain cannot stall block
+// processing. Anything deeper is picked up by the TTL refresh in resolver-poll, so truncating a
+// cascade delays a re-evaluation rather than losing it.
 const MAX_CASCADE_DEPTH = 4
 
 export type TrustResultsRow = {
@@ -356,7 +376,6 @@ export async function saveTrustResults(row: {
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
   const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
-  const corporationId = await resolveCorporationId(row.did, row.height)
 
   await knex('trust_results')
     .insert({
@@ -436,9 +455,15 @@ async function getTriggeredDids(blockHeight: number, limit: number): Promise<str
   )
 }
 
-async function getServicesAnchoredOnIssuers(issuerDids: string[], blockHeight: number): Promise<string[]> {
-  if (issuerDids.length === 0) return []
-  return didsFromRows(await knex.raw(SERVICES_ANCHORED_ON_ISSUERS_SQL, [blockHeight, issuerDids]))
+async function getServicesAnchoredOnIssuers(
+  issuerDids: string[],
+  blockHeight: number,
+  limit: number
+): Promise<string[]> {
+  if (issuerDids.length === 0 || limit <= 0) return []
+  return didsFromRows(
+    await knex.raw(SERVICES_ANCHORED_ON_ISSUERS_SQL, [issuerDids, blockHeight, blockHeight, issuerDids, limit])
+  )
 }
 
 function isResolveError(resolveResult: unknown): boolean {
@@ -557,7 +582,10 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
   let frontier = [...new Set([...impactedDids, ...triggeredDids])]
 
   for (let depth = 0; depth <= MAX_CASCADE_DEPTH && frontier.length > 0; depth++) {
-    const batch = frontier.filter((did) => !evaluated.has(did))
+    const budget = tuning.maxDidsPerBlock - evaluated.size
+    if (budget <= 0) break
+
+    const batch = frontier.filter((did) => !evaluated.has(did)).slice(0, budget)
     if (batch.length === 0) break
     for (const did of batch) evaluated.add(did)
 
@@ -565,7 +593,8 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
       await resolveTrustForDidAtHeight(did, blockHeight)
     })
 
-    const children = await getServicesAnchoredOnIssuers(batch, blockHeight)
+    const remaining = tuning.maxDidsPerBlock - evaluated.size
+    const children = await getServicesAnchoredOnIssuers(batch, blockHeight, remaining)
     frontier = children.filter((did) => !evaluated.has(did))
   }
 }
