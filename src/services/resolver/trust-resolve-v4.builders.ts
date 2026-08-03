@@ -730,14 +730,12 @@ const DIGEST_ALGO_BY_NAME: Record<string, string> = {
   sha512: 'sha512',
 }
 
-// Recompute the credential's VPR-anchored digest per [IDX-VT-EVAL-1]: JCS-canonicalize the raw VC and
-// hash it with the referenced CredentialSchema's digest_algorithm. The ledger's Get-Digest key is the
-// SRI string `<algorithm>-<base64(hash)>` (e.g. `sha256-…`), so the recomputed value is looked up by
-// value against the indexed `digests` table.
 async function computeDigestJCS(raw: unknown, digestAlgorithm: string | null): Promise<string | null> {
   if (!raw || typeof raw !== 'object') return null
   const algo = DIGEST_ALGO_BY_NAME[String(digestAlgorithm ?? 'sha2-256').toLowerCase()] ?? 'sha256'
-  const canonical = await canonicalizeJson(raw)
+  // The VC `id` is excluded before hashing, mirroring verre's schema-digest convention (`schemaWithoutId`).
+  const { id, ...withoutId } = raw as Record<string, unknown>
+  const canonical = await canonicalizeJson(withoutId)
   return `${algo}-${createHash(algo).update(canonical).digest('base64')}`
 }
 
