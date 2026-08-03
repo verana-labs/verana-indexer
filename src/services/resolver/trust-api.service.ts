@@ -17,7 +17,7 @@ import {
   type EcosystemsOptions,
   type PresentationsOptions,
 } from './trust-resolve-v4.builders'
-import { buildVtResponseCore } from './trust-vt-response'
+import { buildVtResponseCore, computeTrusted } from './trust-vt-response'
 
 function isDidParam(did: string): did is string {
   return did.startsWith('did:')
@@ -196,6 +196,8 @@ export class TrustApiService extends BaseService {
       evaluatedAtSource: row ? (row.evaluated_at ?? row.created_at) : null,
       fallbackEvaluatedAtTime: (blockTime ?? new Date()).toISOString(),
       expiresAtSource: row ? (row.expires_at ?? null) : null,
+      trustStatusSource: row ? (row.trust_status ?? null) : null,
+      corporationIdSource: row ? (row.corporation_id ?? null) : null,
       atHeight: requestedHeight,
     })
 

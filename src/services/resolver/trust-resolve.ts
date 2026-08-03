@@ -376,6 +376,7 @@ export async function saveTrustResults(row: {
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
   const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
+  const corporationId = await resolveCorporationId(row.did, row.height)
 
   await knex('trust_results')
     .insert({

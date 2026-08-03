@@ -89,7 +89,7 @@ function trustCoreFromRow(row: TrustResultsRow, corporationId: number | null): V
     evaluatedAtTime: toIsoSeconds(row.evaluated_at ?? row.created_at),
     evaluatedAtBlock: Number(row.height ?? 0),
     expiresAtTime: row.expires_at != null ? toIsoSeconds(row.expires_at) : null,
-    corporationId,
+    corporationId: row.corporation_id != null ? Number(row.corporation_id) : corporationId,
   }
 }
 
