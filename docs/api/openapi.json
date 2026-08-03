@@ -8064,8 +8064,8 @@
           "ecosystemId": { "type": "integer", "minimum": 0 },
           "participantId": { "type": "integer", "minimum": 0 },
           "id": { "type": "string" },
-          "validFrom": { "type": "string", "format": "date-time" },
-          "validUntil": { "type": "string", "format": "date-time" },
+          "validFrom": { "type": "string", "format": "date-time", "nullable": true },
+          "validUntil": { "type": "string", "format": "date-time", "nullable": true },
           "credentialSubject": { "type": "object" }
         }
       },

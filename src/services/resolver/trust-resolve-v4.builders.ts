@@ -710,6 +710,24 @@ async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId:
   return row?.id != null ? Number(row.id) || 0 : 0
 }
 
+function readCredentialValidityWindow(cred: Record<string, unknown>): {
+  validFrom: string | null
+  validUntil: string | null
+} {
+  const raw = (cred.raw && typeof cred.raw === 'object' ? (cred.raw as Record<string, unknown>) : {}) as Record<
+    string,
+    unknown
+  >
+  const pick = (...candidates: unknown[]): string | null => {
+    for (const value of candidates) if (typeof value === 'string' && value.length > 0) return toIso(value) ?? null
+    return null
+  }
+  return {
+    validFrom: pick(cred.validFrom, raw.validFrom, raw.issuanceDate),
+    validUntil: pick(cred.validUntil, raw.validUntil, raw.expirationDate),
+  }
+}
+
 export async function buildEcsCredentials(resolveResult: unknown): Promise<Array<Record<string, unknown>>> {
   if (!resolveResult || typeof resolveResult !== 'object') return []
   const r = resolveResult as Record<string, unknown>
@@ -730,10 +748,7 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const credentialSchemaId = link?.credentialSchemaId ?? 0
     const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0
 
-    // TODO: validFrom/validUntil should mirror the VC body's validity window. verre's flattened
-    // ICredential does not expose them and TrustResolution carries no raw VC, so we fall back to
-    // now / now+1d. Pending to define the real source (raw VC via the VP, or a verre upgrade).
-    const nowMs = Date.now()
+    const { validFrom, validUntil } = readCredentialValidityWindow(c)
     const entry: Record<string, unknown> = {
       ecsSchema,
       ecsSchemaVersion: link?.ecsSchemaVersion ?? '',
@@ -741,8 +756,8 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
       issuerParticipantId,
       ecosystemId: link?.ecosystemId ?? 0,
       participantId: link?.participantId ?? 0,
-      validFrom: typeof c.validFrom === 'string' ? c.validFrom : new Date(nowMs).toISOString(),
-      validUntil: typeof c.validUntil === 'string' ? c.validUntil : new Date(nowMs + 24 * 60 * 60 * 1000).toISOString(),
+      validFrom,
+      validUntil,
       credentialSubject: toCredentialSubject(c),
     }
     out.push(entry)

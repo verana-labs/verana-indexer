@@ -25,12 +25,20 @@ jest.mock('@verana-labs/verre', () => ({
   fetchJson: jest.fn(async () => ({})),
 }))
 
+const isEcosystemEcsAllowlistedMock = jest.fn(async (_id: number) => true)
+jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
+  __esModule: true,
+  isEcosystemEcsAllowlisted: (id: number) => isEcosystemEcsAllowlistedMock(id),
+  isEcsAllowlistEnforced: () => false,
+}))
+
 import {
   buildCorporation,
   buildEcsCredentials,
   buildParticipations,
   buildPresentations,
   buildServices,
+  computeExpiresAtBoundary,
   deriveParticipantState,
 } from '../../../../src/services/resolver/trust-resolve-v4.builders'
 
@@ -252,6 +260,26 @@ describe('buildEcsCredentials', () => {
     })
   })
 
+  it('mirrors the VC body validity window from the flattened credential', async () => {
+    const out = await buildEcsCredentials({
+      service: { ...service, validFrom: '2010-01-01T19:23:24Z', validUntil: '2030-01-01T19:23:24Z' },
+    })
+    expect(out[0]).toMatchObject({ validFrom: '2010-01-01T19:23:24.000Z', validUntil: '2030-01-01T19:23:24.000Z' })
+  })
+
+  it('falls back to the raw VC body for the validity window', async () => {
+    const out = await buildEcsCredentials({
+      service: { ...service, raw: { issuanceDate: '2011-02-03T00:00:00Z', expirationDate: '2031-02-03T00:00:00Z' } },
+    })
+    expect(out[0]).toMatchObject({ validFrom: '2011-02-03T00:00:00.000Z', validUntil: '2031-02-03T00:00:00.000Z' })
+  })
+
+  it('emits null validFrom/validUntil when the VC body declares no validity window', async () => {
+    const out = await buildEcsCredentials({ service })
+    expect(out[0].validFrom).toBeNull()
+    expect(out[0].validUntil).toBeNull()
+  })
+
   it('ignores non-ECS resolutions', async () => {
     expect(await buildEcsCredentials({ service: { schemaType: 'unknown', id: 'did:x' } })).toEqual([])
     expect(await buildEcsCredentials({ error: true })).toEqual([])
@@ -306,5 +334,65 @@ describe('buildCorporation', () => {
     expect(out).toMatchObject({ id: 5, policyAddress: 'verana1p2', deposit: '0uvna' })
     expect(out).not.toHaveProperty('slashedEvents')
     expect(out).not.toHaveProperty('cgf')
+  })
+})
+
+/**
+ * IDX-VT-EVAL-2: `expiresAtTime` is the minimum over four boundaries — `validUntil` of the ECS-SERVICE
+ * credential and of the anchor ECS-ORG/PERSONA credential, plus `effective_until` of the Participant
+ * entries anchoring each. `null` when none declares a boundary. verre 0.3.2 surfaces `validUntil` on
+ * `service`/`serviceProvider`, so all four sources are live.
+ */
+describe('computeExpiresAtBoundary', () => {
+  const SERVICE_DID = 'did:example:service'
+  const ORG_DID = 'did:example:org'
+
+  const resolveResult = (o: { serviceValidUntil?: string; orgValidUntil?: string } = {}) => ({
+    service: { schemaType: 'ecs-service', id: SERVICE_DID, issuer: ORG_DID, validUntil: o.serviceValidUntil },
+    serviceProvider: { schemaType: 'ecs-org', id: ORG_DID, issuer: ORG_DID, validUntil: o.orgValidUntil },
+  })
+
+  beforeEach(() => {
+    for (const k of Object.keys(tableRows)) delete tableRows[k]
+    isEcosystemEcsAllowlistedMock.mockReset()
+    isEcosystemEcsAllowlistedMock.mockResolvedValue(true)
+    tableRows.participants = [
+      { did: SERVICE_DID, role: 'HOLDER', revoked: null, schema_id: 1, effective_until: '2028-06-01T00:00:00Z' },
+      { did: ORG_DID, role: 'HOLDER', revoked: null, schema_id: 2, effective_until: '2027-01-31T23:59:59Z' },
+    ]
+    tableRows.credential_schemas = [
+      { id: 1, ecosystem_id: 10, json_schema: { title: 'ServiceCredential' } },
+      { id: 2, ecosystem_id: 20, json_schema: { title: 'OrganizationCredential' } },
+    ]
+  })
+
+  it('returns the minimum across the four boundaries', async () => {
+    const out = await computeExpiresAtBoundary(
+      resolveResult({ serviceValidUntil: '2030-01-01T00:00:00Z', orgValidUntil: '2029-01-01T00:00:00Z' })
+    )
+    expect(out?.toISOString()).toBe(new Date('2027-01-31T23:59:59Z').toISOString())
+  })
+
+  it('uses a credential validUntil when it precedes every effective_until', async () => {
+    tableRows.participants = [
+      { did: SERVICE_DID, role: 'HOLDER', revoked: null, schema_id: 1, effective_until: '2099-01-01T00:00:00Z' },
+      { did: ORG_DID, role: 'HOLDER', revoked: null, schema_id: 2, effective_until: null },
+    ]
+    const out = await computeExpiresAtBoundary(resolveResult({ serviceValidUntil: '2026-03-15T10:00:00Z' }))
+    expect(out?.toISOString()).toBe(new Date('2026-03-15T10:00:00Z').toISOString())
+  })
+
+  it('returns null when no boundary exists (no validUntil, all effective_until null)', async () => {
+    tableRows.participants = [
+      { did: SERVICE_DID, role: 'HOLDER', revoked: null, schema_id: 1, effective_until: null },
+      { did: ORG_DID, role: 'HOLDER', revoked: null, schema_id: 2, effective_until: null },
+    ]
+    expect(await computeExpiresAtBoundary(resolveResult())).toBeNull()
+  })
+
+  it('ignores a same-titled schema in a non-allowlisted ecosystem', async () => {
+    isEcosystemEcsAllowlistedMock.mockImplementation(async (id: number) => id !== 20)
+    const out = await computeExpiresAtBoundary(resolveResult({ serviceValidUntil: '2030-01-01T00:00:00Z' }))
+    expect(out?.toISOString()).toBe(new Date('2028-06-01T00:00:00Z').toISOString())
   })
 })
