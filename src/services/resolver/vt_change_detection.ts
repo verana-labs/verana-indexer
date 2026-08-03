@@ -2,6 +2,7 @@ import knex from '../../common/utils/db_connection'
 import { isValidDid, toIsoSeconds } from '../api/api_shared'
 import type { VtRawChange, VtTrustCore } from '../api/vt_subscribe_protocol'
 import { getTrustResultLatestByDidAtOrBeforeHeight, type TrustResultsRow } from './trust-resolve'
+import { trustedFromStatus } from './trust-vt-response'
 
 const ROW_BOOKKEEPING_KEYS = new Set(['id', 'height', 'event_type', 'action', 'created', 'created_at', 'modified'])
 
@@ -83,19 +84,22 @@ function classifyDeposit(changes: unknown): boolean {
 }
 
 function trustCoreFromRow(row: TrustResultsRow, corporationId: number | null): VtTrustCore {
-  const status = String(row.trust_status ?? 'UNTRUSTED').toUpperCase()
   return {
-    trusted: status === 'TRUSTED' || status === 'PARTIAL',
+    trusted: trustedFromStatus(row.trust_status),
     evaluatedAtTime: toIsoSeconds(row.evaluated_at ?? row.created_at),
     evaluatedAtBlock: Number(row.height ?? 0),
     expiresAtTime: row.expires_at != null ? toIsoSeconds(row.expires_at) : null,
-    corporationId,
+    corporationId: row.corporation_id != null ? Number(row.corporation_id) : corporationId,
   }
 }
 
 function trustResultChanged(next: VtTrustCore, prev: VtTrustCore | null): boolean {
   if (!prev) return true
-  return next.trusted !== prev.trusted || next.corporationId !== prev.corporationId
+  return (
+    next.trusted !== prev.trusted ||
+    next.corporationId !== prev.corporationId ||
+    next.expiresAtTime !== prev.expiresAtTime
+  )
 }
 
 export class VtChangeAccumulator {
@@ -280,7 +284,7 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
   }
 
   const trustRows = (await knex('trust_results')
-    .select('did', 'height', 'trust_status', 'production', 'evaluated_at', 'expires_at', 'created_at')
+    .select('did', 'height', 'trust_status', 'production', 'evaluated_at', 'expires_at', 'corporation_id', 'created_at')
     .where('height', blockHeight)) as TrustResultsRow[]
   if (trustRows.length > 0) {
     const trustDids = [...new Set(trustRows.map((r) => r.did).filter(isValidDid))]
@@ -300,6 +304,7 @@ export async function buildVtChangesForBlock(blockHeight: number): Promise<VtRaw
       const corporationId = corpIdByDid.get(row.did) ?? null
       if (corporationId != null) rc.corporationIds.add(corporationId)
       const nextCore = trustCoreFromRow(row, corporationId)
+      if (nextCore.corporationId != null) rc.corporationIds.add(nextCore.corporationId)
       const prevRow = await getTrustResultLatestByDidAtOrBeforeHeight(row.did, blockHeight - 1)
       const prevCore = prevRow ? trustCoreFromRow(prevRow, corporationId) : null
       if (trustResultChanged(nextCore, prevCore)) rc.trust = nextCore
