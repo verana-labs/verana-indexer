@@ -660,7 +660,11 @@ function ecsSchemaVersionFromId(schemaJson: unknown): string {
 }
 
 function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
-  const { schemaType, issuer, ...subject } = cred
+  const rawSubject = (cred.raw as { credentialSubject?: unknown } | undefined)?.credentialSubject
+  if (rawSubject && typeof rawSubject === 'object' && !Array.isArray(rawSubject)) {
+    return rawSubject as Record<string, unknown>
+  }
+  const { schemaType, issuer, raw, validFrom, validUntil, ...subject } = cred
   return subject
 }
 
@@ -669,6 +673,7 @@ type EcsSchemaLink = {
   credentialSchemaId: number
   ecosystemId: number
   ecsSchemaVersion: string
+  digestAlgorithm: string | null
 }
 
 async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string): Promise<EcsSchemaLink | null> {
@@ -681,7 +686,12 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
   if (schemaIds.length === 0) return null
   const schemas = (await knex('credential_schemas')
     .whereIn('id', schemaIds)
-    .select('id', 'ecosystem_id', 'json_schema')) as Array<{ id: number; ecosystem_id: number; json_schema: unknown }>
+    .select('id', 'ecosystem_id', 'json_schema', 'digest_algorithm')) as Array<{
+    id: number
+    ecosystem_id: number
+    json_schema: unknown
+    digest_algorithm: string | null
+  }>
 
   for (const p of participants) {
     const cs = schemas.find((s) => Number(s.id) === Number(p.schema_id))
@@ -695,6 +705,7 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
         credentialSchemaId: Number(cs.id) || 0,
         ecosystemId: Number(cs.ecosystem_id) || 0,
         ecsSchemaVersion: ecsSchemaVersionFromId(cs.json_schema),
+        digestAlgorithm: cs.digest_algorithm ?? null,
       }
     }
   }
@@ -710,11 +721,58 @@ async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId:
   return row?.id != null ? Number(row.id) || 0 : 0
 }
 
+const DIGEST_ALGO_BY_NAME: Record<string, string> = {
+  'sha2-256': 'sha256',
+  'sha2-384': 'sha384',
+  'sha2-512': 'sha512',
+  sha256: 'sha256',
+  sha384: 'sha384',
+  sha512: 'sha512',
+}
+
+// Recompute the credential's VPR-anchored digest per [IDX-VT-EVAL-1]: JCS-canonicalize the raw VC and
+// hash it with the referenced CredentialSchema's digest_algorithm. The ledger's Get-Digest key is the
+// SRI string `<algorithm>-<base64(hash)>` (e.g. `sha256-…`), so the recomputed value is looked up by
+// value against the indexed `digests` table.
+async function computeDigestJCS(raw: unknown, digestAlgorithm: string | null): Promise<string | null> {
+  if (!raw || typeof raw !== 'object') return null
+  const algo = DIGEST_ALGO_BY_NAME[String(digestAlgorithm ?? 'sha2-256').toLowerCase()] ?? 'sha256'
+  const canonical = await canonicalizeJson(raw)
+  return `${algo}-${createHash(algo).update(canonical).digest('base64')}`
+}
+
+async function fetchDigestIssuedAt(digestJCS: string): Promise<string | null> {
+  if (!digestJCS) return null
+  const row = (await knex('digests').select('created').where({ digest: digestJCS }).first()) as
+    | { created?: Date | string | null }
+    | undefined
+  return row?.created != null ? (toIso(row.created) ?? null) : null
+}
+
+function readCredentialValidityWindow(cred: Record<string, unknown>): {
+  validFrom: string | null
+  validUntil: string | null
+} {
+  const raw = (cred.raw && typeof cred.raw === 'object' ? (cred.raw as Record<string, unknown>) : {}) as Record<
+    string,
+    unknown
+  >
+  const pick = (...candidates: unknown[]): string | null => {
+    for (const value of candidates) if (typeof value === 'string' && value.length > 0) return toIso(value) ?? null
+    return null
+  }
+  return {
+    validFrom: pick(cred.validFrom, raw.validFrom, raw.issuanceDate),
+    validUntil: pick(cred.validUntil, raw.validUntil, raw.expirationDate),
+  }
+}
+
 export async function buildEcsCredentials(resolveResult: unknown): Promise<Array<Record<string, unknown>>> {
   if (!resolveResult || typeof resolveResult !== 'object') return []
   const r = resolveResult as Record<string, unknown>
 
   const out: Array<Record<string, unknown>> = []
+  const seenIds = new Set<string>()
   for (const key of ['service', 'serviceProvider']) {
     const cred = r[key]
     if (!cred || typeof cred !== 'object') continue
@@ -727,25 +785,33 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null
     if (isEcsAllowlistEnforced() && !link) continue
 
+    const raw = c.raw && typeof c.raw === 'object' ? (c.raw as Record<string, unknown>) : null
+    const id = typeof raw?.id === 'string' ? raw.id : ''
+    if (!id || seenIds.has(id)) continue
+
+    const digestJCS = await computeDigestJCS(raw, link?.digestAlgorithm ?? null)
+    const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
+    if (!digestJCS || !issuedAtTime) continue
+
     const credentialSchemaId = link?.credentialSchemaId ?? 0
     const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0
+    const { validFrom, validUntil } = readCredentialValidityWindow(c)
 
-    // TODO: validFrom/validUntil should mirror the VC body's validity window. verre's flattened
-    // ICredential does not expose them and TrustResolution carries no raw VC, so we fall back to
-    // now / now+1d. Pending to define the real source (raw VC via the VP, or a verre upgrade).
-    const nowMs = Date.now()
-    const entry: Record<string, unknown> = {
+    seenIds.add(id)
+    out.push({
       ecsSchema,
       ecsSchemaVersion: link?.ecsSchemaVersion ?? '',
       credentialSchemaId,
       issuerParticipantId,
       ecosystemId: link?.ecosystemId ?? 0,
       participantId: link?.participantId ?? 0,
-      validFrom: typeof c.validFrom === 'string' ? c.validFrom : new Date(nowMs).toISOString(),
-      validUntil: typeof c.validUntil === 'string' ? c.validUntil : new Date(nowMs + 24 * 60 * 60 * 1000).toISOString(),
+      id,
+      digestJCS,
+      issuedAtTime,
+      validFrom,
+      validUntil,
       credentialSubject: toCredentialSubject(c),
-    }
-    out.push(entry)
+    })
   }
   return out
 }

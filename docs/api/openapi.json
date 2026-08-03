@@ -8055,7 +8055,7 @@
       },
       "VtEcsCredential": {
         "type": "object",
-        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "validFrom", "validUntil", "credentialSubject"],
+        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "id", "digestJCS", "issuedAtTime", "validFrom", "validUntil", "credentialSubject"],
         "properties": {
           "ecsSchema": { "type": "string", "enum": ["ServiceCredential", "OrganizationCredential", "PersonaCredential", "UserAgentCredential"] },
           "ecsSchemaVersion": { "type": "string" },
@@ -8064,8 +8064,10 @@
           "ecosystemId": { "type": "integer", "minimum": 0 },
           "participantId": { "type": "integer", "minimum": 0 },
           "id": { "type": "string" },
-          "validFrom": { "type": "string", "format": "date-time" },
-          "validUntil": { "type": "string", "format": "date-time" },
+          "digestJCS": { "type": "string" },
+          "issuedAtTime": { "type": "string", "format": "date-time" },
+          "validFrom": { "type": "string", "format": "date-time", "nullable": true },
+          "validUntil": { "type": "string", "format": "date-time", "nullable": true },
           "credentialSubject": { "type": "object" }
         }
       },
