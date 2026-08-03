@@ -88,7 +88,7 @@ function trustCoreFromRow(row: TrustResultsRow, corporationId: number | null): V
     trusted: status === 'TRUSTED' || status === 'PARTIAL',
     evaluatedAtTime: toIsoSeconds(row.evaluated_at ?? row.created_at),
     evaluatedAtBlock: Number(row.height ?? 0),
-    expiresAtTime: toIsoSeconds(row.expires_at),
+    expiresAtTime: row.expires_at != null ? toIsoSeconds(row.expires_at) : null,
     corporationId,
   }
 }
