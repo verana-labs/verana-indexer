@@ -32,6 +32,7 @@ import {
   buildPresentations,
   buildServices,
   deriveParticipantState,
+  resolveCorporationId,
 } from '../../../../src/services/resolver/trust-resolve-v4.builders'
 
 const NOW = new Date('2026-06-02T00:00:00Z')
@@ -306,5 +307,37 @@ describe('buildCorporation', () => {
     expect(out).toMatchObject({ id: 5, policyAddress: 'verana1p2', deposit: '0uvna' })
     expect(out).not.toHaveProperty('slashedEvents')
     expect(out).not.toHaveProperty('cgf')
+  })
+})
+
+describe('resolveCorporationId', () => {
+  beforeEach(() => {
+    for (const k of Object.keys(tableRows)) delete tableRows[k]
+  })
+
+  it('returns the id of the Corporation whose did matches', async () => {
+    tableRows.corporation = [{ id: 42 }]
+    tableRows.ecosystem = [{ corporation_id: 7 }]
+    expect(await resolveCorporationId('did:example:owner')).toBe(42)
+  })
+
+  it('falls back to the claiming Ecosystem corporation_id', async () => {
+    tableRows.ecosystem = [{ corporation_id: 7 }]
+    expect(await resolveCorporationId('did:example:eco')).toBe(7)
+  })
+
+  it('falls back to the claiming Participant corporation_id', async () => {
+    tableRows.participants = [{ corporation_id: 9 }]
+    expect(await resolveCorporationId('did:example:issuer')).toBe(9)
+  })
+
+  it('returns the 0 sentinel (never null) for a DID with no indexed owner', async () => {
+    const out = await resolveCorporationId('did:example:unknown')
+    expect(out).toBe(0)
+    expect(out).not.toBeNull()
+  })
+
+  it('returns 0 for an empty did', async () => {
+    expect(await resolveCorporationId('')).toBe(0)
   })
 })
