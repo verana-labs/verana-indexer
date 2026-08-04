@@ -40,6 +40,7 @@ import {
   buildServices,
   computeExpiresAtBoundary,
   deriveParticipantState,
+  resolveCorporationId,
 } from '../../../../src/services/resolver/trust-resolve-v4.builders'
 
 const NOW = new Date('2026-06-02T00:00:00Z')
@@ -337,62 +338,34 @@ describe('buildCorporation', () => {
   })
 })
 
-/**
- * IDX-VT-EVAL-2: `expiresAtTime` is the minimum over four boundaries — `validUntil` of the ECS-SERVICE
- * credential and of the anchor ECS-ORG/PERSONA credential, plus `effective_until` of the Participant
- * entries anchoring each. `null` when none declares a boundary. verre 0.3.2 surfaces `validUntil` on
- * `service`/`serviceProvider`, so all four sources are live.
- */
-describe('computeExpiresAtBoundary', () => {
-  const SERVICE_DID = 'did:example:service'
-  const ORG_DID = 'did:example:org'
-
-  const resolveResult = (o: { serviceValidUntil?: string; orgValidUntil?: string } = {}) => ({
-    service: { schemaType: 'ecs-service', id: SERVICE_DID, issuer: ORG_DID, validUntil: o.serviceValidUntil },
-    serviceProvider: { schemaType: 'ecs-org', id: ORG_DID, issuer: ORG_DID, validUntil: o.orgValidUntil },
-  })
-
+describe('resolveCorporationId', () => {
   beforeEach(() => {
     for (const k of Object.keys(tableRows)) delete tableRows[k]
-    isEcosystemEcsAllowlistedMock.mockReset()
-    isEcosystemEcsAllowlistedMock.mockResolvedValue(true)
-    tableRows.participants = [
-      { did: SERVICE_DID, role: 'HOLDER', revoked: null, schema_id: 1, effective_until: '2028-06-01T00:00:00Z' },
-      { did: ORG_DID, role: 'HOLDER', revoked: null, schema_id: 2, effective_until: '2027-01-31T23:59:59Z' },
-    ]
-    tableRows.credential_schemas = [
-      { id: 1, ecosystem_id: 10, json_schema: { title: 'ServiceCredential' } },
-      { id: 2, ecosystem_id: 20, json_schema: { title: 'OrganizationCredential' } },
-    ]
   })
 
-  it('returns the minimum across the four boundaries', async () => {
-    const out = await computeExpiresAtBoundary(
-      resolveResult({ serviceValidUntil: '2030-01-01T00:00:00Z', orgValidUntil: '2029-01-01T00:00:00Z' })
-    )
-    expect(out?.toISOString()).toBe(new Date('2027-01-31T23:59:59Z').toISOString())
+  it('returns the id of the Corporation whose did matches', async () => {
+    tableRows.corporation = [{ id: 42 }]
+    tableRows.ecosystem = [{ corporation_id: 7 }]
+    expect(await resolveCorporationId('did:example:owner')).toBe(42)
   })
 
-  it('uses a credential validUntil when it precedes every effective_until', async () => {
-    tableRows.participants = [
-      { did: SERVICE_DID, role: 'HOLDER', revoked: null, schema_id: 1, effective_until: '2099-01-01T00:00:00Z' },
-      { did: ORG_DID, role: 'HOLDER', revoked: null, schema_id: 2, effective_until: null },
-    ]
-    const out = await computeExpiresAtBoundary(resolveResult({ serviceValidUntil: '2026-03-15T10:00:00Z' }))
-    expect(out?.toISOString()).toBe(new Date('2026-03-15T10:00:00Z').toISOString())
+  it('falls back to the claiming Ecosystem corporation_id', async () => {
+    tableRows.ecosystem = [{ corporation_id: 7 }]
+    expect(await resolveCorporationId('did:example:eco')).toBe(7)
   })
 
-  it('returns null when no boundary exists (no validUntil, all effective_until null)', async () => {
-    tableRows.participants = [
-      { did: SERVICE_DID, role: 'HOLDER', revoked: null, schema_id: 1, effective_until: null },
-      { did: ORG_DID, role: 'HOLDER', revoked: null, schema_id: 2, effective_until: null },
-    ]
-    expect(await computeExpiresAtBoundary(resolveResult())).toBeNull()
+  it('falls back to the claiming Participant corporation_id', async () => {
+    tableRows.participants = [{ corporation_id: 9 }]
+    expect(await resolveCorporationId('did:example:issuer')).toBe(9)
   })
 
-  it('ignores a same-titled schema in a non-allowlisted ecosystem', async () => {
-    isEcosystemEcsAllowlistedMock.mockImplementation(async (id: number) => id !== 20)
-    const out = await computeExpiresAtBoundary(resolveResult({ serviceValidUntil: '2030-01-01T00:00:00Z' }))
-    expect(out?.toISOString()).toBe(new Date('2028-06-01T00:00:00Z').toISOString())
+  it('returns the 0 sentinel (never null) for a DID with no indexed owner', async () => {
+    const out = await resolveCorporationId('did:example:unknown')
+    expect(out).toBe(0)
+    expect(out).not.toBeNull()
+  })
+
+  it('returns 0 for an empty did', async () => {
+    expect(await resolveCorporationId('')).toBe(0)
   })
 })
