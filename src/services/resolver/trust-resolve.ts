@@ -361,16 +361,26 @@ export type TrustResultsRow = {
   created_at?: Date | string
 }
 
-function readExpiresAtTime(resolveResult: unknown): string | null {
-  if (!resolveResult || typeof resolveResult !== 'object') return null
-  const value = (resolveResult as { expiresAtTime?: unknown }).expiresAtTime
+export type ResolveErrorResult = {
+  error: true
+  message: string
+  dereferenceErrors: unknown[]
+  credentials: unknown[]
+  failedCredentials: Array<{ id: string; error: string; format: string; errorCode: string; message: string }>
+}
+
+export type StoredResolveResult = TrustResolution | ResolveErrorResult
+
+function readExpiresAtTime(resolveResult: StoredResolveResult): string | null {
+  if ('error' in resolveResult) return null
+  const value = resolveResult.expiresAtTime
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 export async function saveTrustResults(row: {
   did: string
   height: number
-  resolve_result: unknown
+  resolve_result: StoredResolveResult
   issuer_auth: unknown
   verifier_auth: unknown
   ecosystem_participant: unknown
@@ -493,7 +503,7 @@ export async function resolveTrustForDidAtHeight(
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0
   const resourceId = `${did}@${blockHeight}`
 
-  let resolveResult: unknown
+  let resolveResult: StoredResolveResult
   let snap: TrustRoleSnapshot
   let failureMessage: string | null = null
 
