@@ -16,11 +16,7 @@ import { VeranaParticipantMessageTypes } from '../../common/verana-message-types
 import config from '../../config.json' with { type: 'json' }
 import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
-import {
-  computeExpiresAtBoundary,
-  hasAllowlistedEcsServiceCredential,
-  resolveCorporationId,
-} from './trust-resolve-v4.builders'
+import { hasAllowlistedEcsServiceCredential, resolveCorporationId } from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -365,6 +361,12 @@ export type TrustResultsRow = {
   created_at?: Date | string
 }
 
+function readExpiresAtTime(resolveResult: unknown): string | null {
+  if (!resolveResult || typeof resolveResult !== 'object') return null
+  const value = (resolveResult as { expiresAtTime?: unknown }).expiresAtTime
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 export async function saveTrustResults(row: {
   did: string
   height: number
@@ -375,7 +377,7 @@ export async function saveTrustResults(row: {
 }): Promise<void> {
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
-  const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
+  const expiresAt = readExpiresAtTime(row.resolve_result)
   const corporationId = await resolveCorporationId(row.did, row.height)
 
   await knex('trust_results')

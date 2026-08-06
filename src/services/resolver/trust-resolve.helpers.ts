@@ -24,7 +24,8 @@ export function defaultVprRegistriesFromEnv(): VerifiablePublicRegistry[] {
   return [
     {
       id,
-      baseUrls: [`https://idx.${cleanedChainId}.verana.network/verana`],
+      scheme: id,
+      api: [`https://idx.${cleanedChainId}.verana.network/verana`],
       production: guessProductionFromChainId(chainId),
     },
   ]

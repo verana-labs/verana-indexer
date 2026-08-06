@@ -38,7 +38,6 @@ import {
   buildParticipations,
   buildPresentations,
   buildServices,
-  computeExpiresAtBoundary,
   deriveParticipantState,
   resolveCorporationId,
 } from '../../../../src/services/resolver/trust-resolve-v4.builders'
