@@ -16,11 +16,7 @@ import { VeranaParticipantMessageTypes } from '../../common/verana-message-types
 import config from '../../config.json' with { type: 'json' }
 import { isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
-import {
-  computeExpiresAtBoundary,
-  hasAllowlistedEcsServiceCredential,
-  resolveCorporationId,
-} from './trust-resolve-v4.builders'
+import { hasAllowlistedEcsServiceCredential, resolveCorporationId } from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
 
 export type ResolverTierConfig = {
@@ -365,17 +361,33 @@ export type TrustResultsRow = {
   created_at?: Date | string
 }
 
+export type ResolveErrorResult = {
+  error: true
+  message: string
+  dereferenceErrors: unknown[]
+  credentials: unknown[]
+  failedCredentials: Array<{ id: string; error: string; format: string; errorCode: string; message: string }>
+}
+
+export type StoredResolveResult = TrustResolution | ResolveErrorResult
+
+function readExpiresAtTime(resolveResult: StoredResolveResult): string | null {
+  if ('error' in resolveResult) return null
+  const value = resolveResult.expiresAtTime
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 export async function saveTrustResults(row: {
   did: string
   height: number
-  resolve_result: unknown
+  resolve_result: StoredResolveResult
   issuer_auth: unknown
   verifier_auth: unknown
   ecosystem_participant: unknown
 }): Promise<void> {
   const evaluatedAt = new Date()
   const { trustStatus, production } = deriveStoredTrustState(row.resolve_result)
-  const expiresAt = await computeExpiresAtBoundary(row.resolve_result)
+  const expiresAt = readExpiresAtTime(row.resolve_result)
   const corporationId = await resolveCorporationId(row.did, row.height)
 
   await knex('trust_results')
@@ -491,7 +503,7 @@ export async function resolveTrustForDidAtHeight(
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0
   const resourceId = `${did}@${blockHeight}`
 
-  let resolveResult: unknown
+  let resolveResult: StoredResolveResult
   let snap: TrustRoleSnapshot
   let failureMessage: string | null = null
 

@@ -785,6 +785,8 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
 
     seenIds.add(id)
     out.push({
+    const { validFrom, validUntil } = readCredentialValidityWindow(c)
+    const entry: Record<string, unknown> = {
       ecsSchema,
       ecsSchemaVersion: link?.ecsSchemaVersion ?? '',
       credentialSchemaId,
@@ -800,56 +802,4 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     })
   }
   return out
-}
-
-const TRUST_ANCHOR_CREDENTIAL_KEYS = ['service', 'serviceProvider'] as const
-
-async function anchoringParticipantEffectiveUntils(subjectDid: string, ecsSchemaTitle: string): Promise<Date[]> {
-  const participants = (await knex('participants')
-    .where({ did: subjectDid, role: 'HOLDER' })
-    .whereNull('revoked')
-    .select('schema_id', 'effective_until')) as Array<{ schema_id: number; effective_until: Date | string | null }>
-  if (participants.length === 0) return []
-
-  const schemaIds = [...new Set(participants.map((p) => Number(p.schema_id)).filter((n) => Number.isFinite(n)))]
-  if (schemaIds.length === 0) return []
-  const schemas = (await knex('credential_schemas')
-    .whereIn('id', schemaIds)
-    .select('id', 'ecosystem_id', 'json_schema')) as Array<{ id: number; ecosystem_id: number; json_schema: unknown }>
-  const matchingSchemaIds = new Set<number>()
-  for (const s of schemas) {
-    if (
-      parseSchemaJson(s.json_schema)?.title === ecsSchemaTitle &&
-      (await isEcosystemEcsAllowlisted(Number(s.ecosystem_id) || 0))
-    ) {
-      matchingSchemaIds.add(Number(s.id))
-    }
-  }
-
-  return participants
-    .filter((p) => matchingSchemaIds.has(Number(p.schema_id)) && p.effective_until != null)
-    .map((p) => new Date(p.effective_until as Date | string))
-}
-
-export async function computeExpiresAtBoundary(resolveResult: unknown): Promise<Date | null> {
-  if (!resolveResult || typeof resolveResult !== 'object') return null
-  const r = resolveResult as Record<string, unknown>
-
-  const boundaries: Date[] = []
-  for (const key of TRUST_ANCHOR_CREDENTIAL_KEYS) {
-    const cred = r[key]
-    if (!cred || typeof cred !== 'object') continue
-    const c = cred as Record<string, unknown>
-    const ecsSchemaTitle = ECS_SCHEMA_TITLE_BY_TYPE[String(c.schemaType ?? '').toLowerCase()]
-    if (!ecsSchemaTitle) continue
-
-    if (typeof c.validUntil === 'string') boundaries.push(new Date(c.validUntil))
-
-    const subjectDid = typeof c.id === 'string' ? c.id : ''
-    if (subjectDid) boundaries.push(...(await anchoringParticipantEffectiveUntils(subjectDid, ecsSchemaTitle)))
-  }
-
-  const valid = boundaries.filter((d) => Number.isFinite(d.getTime()))
-  if (valid.length === 0) return null
-  return valid.reduce((min, d) => (d.getTime() < min.getTime() ? d : min))
 }

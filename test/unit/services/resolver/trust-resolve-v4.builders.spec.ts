@@ -29,6 +29,12 @@ jest.mock('@verana-labs/verre', () => ({
 jest.mock('canonicalize', () => ({ __esModule: true, default: (value: unknown) => JSON.stringify(value) }), {
   virtual: true,
 })
+const isEcosystemEcsAllowlistedMock = jest.fn(async (_id: number) => true)
+jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
+  __esModule: true,
+  isEcosystemEcsAllowlisted: (id: number) => isEcosystemEcsAllowlistedMock(id),
+  isEcsAllowlistEnforced: () => false,
+}))
 
 import {
   buildCorporation,
@@ -37,6 +43,7 @@ import {
   buildPresentations,
   buildServices,
   deriveParticipantState,
+  resolveCorporationId,
 } from '../../../../src/services/resolver/trust-resolve-v4.builders'
 
 const NOW = new Date('2026-06-02T00:00:00Z')
@@ -287,6 +294,26 @@ describe('buildEcsCredentials', () => {
     expect(out[0].id).toBe('urn:uuid:service-vc-1')
   })
 
+  it('mirrors the VC body validity window from the flattened credential', async () => {
+    const out = await buildEcsCredentials({
+      service: { ...service, validFrom: '2010-01-01T19:23:24Z', validUntil: '2030-01-01T19:23:24Z' },
+    })
+    expect(out[0]).toMatchObject({ validFrom: '2010-01-01T19:23:24.000Z', validUntil: '2030-01-01T19:23:24.000Z' })
+  })
+
+  it('falls back to the raw VC body for the validity window', async () => {
+    const out = await buildEcsCredentials({
+      service: { ...service, raw: { issuanceDate: '2011-02-03T00:00:00Z', expirationDate: '2031-02-03T00:00:00Z' } },
+    })
+    expect(out[0]).toMatchObject({ validFrom: '2011-02-03T00:00:00.000Z', validUntil: '2031-02-03T00:00:00.000Z' })
+  })
+
+  it('emits null validFrom/validUntil when the VC body declares no validity window', async () => {
+    const out = await buildEcsCredentials({ service })
+    expect(out[0].validFrom).toBeNull()
+    expect(out[0].validUntil).toBeNull()
+  })
+
   it('ignores non-ECS resolutions', async () => {
     expect(await buildEcsCredentials({ service: { schemaType: 'unknown', id: 'did:x' } })).toEqual([])
     expect(await buildEcsCredentials({ error: true })).toEqual([])
@@ -341,5 +368,37 @@ describe('buildCorporation', () => {
     expect(out).toMatchObject({ id: 5, policyAddress: 'verana1p2', deposit: '0uvna' })
     expect(out).not.toHaveProperty('slashedEvents')
     expect(out).not.toHaveProperty('cgf')
+  })
+})
+
+describe('resolveCorporationId', () => {
+  beforeEach(() => {
+    for (const k of Object.keys(tableRows)) delete tableRows[k]
+  })
+
+  it('returns the id of the Corporation whose did matches', async () => {
+    tableRows.corporation = [{ id: 42 }]
+    tableRows.ecosystem = [{ corporation_id: 7 }]
+    expect(await resolveCorporationId('did:example:owner')).toBe(42)
+  })
+
+  it('falls back to the claiming Ecosystem corporation_id', async () => {
+    tableRows.ecosystem = [{ corporation_id: 7 }]
+    expect(await resolveCorporationId('did:example:eco')).toBe(7)
+  })
+
+  it('falls back to the claiming Participant corporation_id', async () => {
+    tableRows.participants = [{ corporation_id: 9 }]
+    expect(await resolveCorporationId('did:example:issuer')).toBe(9)
+  })
+
+  it('returns the 0 sentinel (never null) for a DID with no indexed owner', async () => {
+    const out = await resolveCorporationId('did:example:unknown')
+    expect(out).toBe(0)
+    expect(out).not.toBeNull()
+  })
+
+  it('returns 0 for an empty did', async () => {
+    expect(await resolveCorporationId('')).toBe(0)
   })
 })
