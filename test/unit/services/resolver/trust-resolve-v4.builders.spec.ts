@@ -25,6 +25,13 @@ jest.mock('@verana-labs/verre', () => ({
   fetchJson: jest.fn(async () => ({})),
 }))
 
+const isEcosystemEcsAllowlistedMock = jest.fn(async (_id: number) => true)
+jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
+  __esModule: true,
+  isEcosystemEcsAllowlisted: (id: number) => isEcosystemEcsAllowlistedMock(id),
+  isEcsAllowlistEnforced: () => false,
+}))
+
 import {
   buildCorporation,
   buildEcsCredentials,
@@ -251,6 +258,26 @@ describe('buildEcsCredentials', () => {
       participantId: 0,
       credentialSubject: { id: 'did:example:sub' },
     })
+  })
+
+  it('mirrors the VC body validity window from the flattened credential', async () => {
+    const out = await buildEcsCredentials({
+      service: { ...service, validFrom: '2010-01-01T19:23:24Z', validUntil: '2030-01-01T19:23:24Z' },
+    })
+    expect(out[0]).toMatchObject({ validFrom: '2010-01-01T19:23:24.000Z', validUntil: '2030-01-01T19:23:24.000Z' })
+  })
+
+  it('falls back to the raw VC body for the validity window', async () => {
+    const out = await buildEcsCredentials({
+      service: { ...service, raw: { issuanceDate: '2011-02-03T00:00:00Z', expirationDate: '2031-02-03T00:00:00Z' } },
+    })
+    expect(out[0]).toMatchObject({ validFrom: '2011-02-03T00:00:00.000Z', validUntil: '2031-02-03T00:00:00.000Z' })
+  })
+
+  it('emits null validFrom/validUntil when the VC body declares no validity window', async () => {
+    const out = await buildEcsCredentials({ service })
+    expect(out[0].validFrom).toBeNull()
+    expect(out[0].validUntil).toBeNull()
   })
 
   it('ignores non-ECS resolutions', async () => {
