@@ -263,7 +263,6 @@ describe('buildEcsCredentials', () => {
   })
 
   it('excludes a credential whose recomputed digest has no ledger entry', async () => {
-    // no tableRows.digests -> no provable issuance time -> excluded per IDX-VT-EVAL-1
     expect(await buildEcsCredentials({ service })).toEqual([])
   })
 

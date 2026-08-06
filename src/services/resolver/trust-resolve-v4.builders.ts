@@ -638,6 +638,7 @@ const ECS_SCHEMA_TITLE_BY_TYPE: Record<string, string> = {
   'ecs-org': 'OrganizationCredential',
   'ecs-persona': 'PersonaCredential',
   'ecs-user-agent': 'UserAgentCredential',
+  'ecs-badge': 'BadgeCredential',
 }
 
 function parseSchemaJson(value: unknown): Record<string, unknown> | null {
