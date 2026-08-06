@@ -23,8 +23,12 @@ jest.mock('../../../../src/common/utils/db_connection', () => {
 
 jest.mock('@verana-labs/verre', () => ({
   fetchJson: jest.fn(async () => ({})),
+  computeCredentialDigestJCS: jest.fn(() => 'q2VwbGFjZWRkaWdlc3Q='),
 }))
 
+jest.mock('canonicalize', () => ({ __esModule: true, default: (value: unknown) => JSON.stringify(value) }), {
+  virtual: true,
+})
 const isEcosystemEcsAllowlistedMock = jest.fn(async (_id: number) => true)
 jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
   __esModule: true,
@@ -219,19 +223,32 @@ describe('buildEcsCredentials', () => {
     for (const k of Object.keys(tableRows)) delete tableRows[k]
   })
 
+  const rawVc = {
+    id: 'urn:uuid:service-vc-1',
+    validFrom: '2026-05-28T13:35:24.887Z',
+    validUntil: '2036-05-25T13:35:24.887Z',
+    credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
+  }
   const service = {
     schemaType: 'ecs-service',
     id: 'did:example:sub',
     issuer: 'did:example:org',
-    name: 'Gov ID issuer',
-    type: 'VerifiableService',
+    raw: rawVc,
+    validFrom: rawVc.validFrom,
+    validUntil: rawVc.validUntil,
   }
 
-  it('surfaces the subject and resolves stable ids from participants/schemas', async () => {
+  it('emits id/digestJCS/issuedAtTime and resolves stable ids from participants/schemas', async () => {
     tableRows.participants = [{ id: 501, schema_id: 1, did: 'did:example:sub', role: 'HOLDER' }]
     tableRows.credential_schemas = [
-      { id: 1, ecosystem_id: 9, json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' } },
+      {
+        id: 1,
+        ecosystem_id: 9,
+        json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' },
+        digest_algorithm: 'sha2-256',
+      },
     ]
+    tableRows.digests = [{ created: '2026-02-10T09:15:00Z' }]
 
     const out = await buildEcsCredentials({ service })
     expect(out).toHaveLength(1)
@@ -241,23 +258,40 @@ describe('buildEcsCredentials', () => {
       credentialSchemaId: 1,
       ecosystemId: 9,
       participantId: 501,
+      id: 'urn:uuid:service-vc-1',
+      issuedAtTime: '2026-02-10T09:15:00.000Z',
+      validFrom: '2026-05-28T13:35:24.887Z',
+      validUntil: '2036-05-25T13:35:24.887Z',
       credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
     })
+    expect(out[0].digestJCS).toBe('q2VwbGFjZWRkaWdlc3Q=')
     expect(out[0].credentialSubject).not.toHaveProperty('schemaType')
-    expect(out[0].credentialSubject).not.toHaveProperty('issuer')
+    expect(out[0].credentialSubject).not.toHaveProperty('raw')
   })
 
-  it('still surfaces the credential with 0 ids when no participant is indexed', async () => {
-    const out = await buildEcsCredentials({ service })
-    expect(out[0]).toMatchObject({
-      ecsSchema: 'ServiceCredential',
-      ecsSchemaVersion: '',
-      credentialSchemaId: 0,
-      issuerParticipantId: 0,
-      ecosystemId: 0,
-      participantId: 0,
-      credentialSubject: { id: 'did:example:sub' },
-    })
+  it('excludes a credential whose recomputed digest has no ledger entry', async () => {
+    expect(await buildEcsCredentials({ service })).toEqual([])
+  })
+
+  it('excludes a credential with no VC id', async () => {
+    const { raw, ...noRaw } = service
+    tableRows.digests = [{ created: '2026-02-10T09:15:00Z' }]
+    expect(await buildEcsCredentials({ service: noRaw })).toEqual([])
+  })
+
+  it('excludes same-response duplicates by id', async () => {
+    tableRows.digests = [{ created: '2026-02-10T09:15:00Z' }]
+    const serviceProvider = {
+      schemaType: 'ecs-org',
+      id: 'did:example:org',
+      issuer: 'did:example:org',
+      raw: { ...rawVc },
+      validFrom: rawVc.validFrom,
+      validUntil: rawVc.validUntil,
+    }
+    const out = await buildEcsCredentials({ service, serviceProvider })
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe('urn:uuid:service-vc-1')
   })
 
   it('mirrors the VC body validity window from the flattened credential', async () => {

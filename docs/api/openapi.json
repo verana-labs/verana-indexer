@@ -8055,15 +8055,17 @@
       },
       "VtEcsCredential": {
         "type": "object",
-        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "validFrom", "validUntil", "credentialSubject"],
+        "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "id", "digestJCS", "issuedAtTime", "validFrom", "validUntil", "credentialSubject"],
         "properties": {
-          "ecsSchema": { "type": "string", "enum": ["ServiceCredential", "OrganizationCredential", "PersonaCredential", "UserAgentCredential"] },
+          "ecsSchema": { "type": "string", "enum": ["ServiceCredential", "OrganizationCredential", "PersonaCredential", "UserAgentCredential", "BadgeCredential"] },
           "ecsSchemaVersion": { "type": "string" },
           "credentialSchemaId": { "type": "integer", "minimum": 0 },
           "issuerParticipantId": { "type": "integer", "minimum": 0 },
           "ecosystemId": { "type": "integer", "minimum": 0 },
           "participantId": { "type": "integer", "minimum": 0 },
           "id": { "type": "string" },
+          "digestJCS": { "type": "string" },
+          "issuedAtTime": { "type": "string", "format": "date-time" },
           "validFrom": { "type": "string", "format": "date-time", "nullable": true },
           "validUntil": { "type": "string", "format": "date-time", "nullable": true },
           "credentialSubject": { "type": "object" }
