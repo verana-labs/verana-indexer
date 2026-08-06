@@ -764,4 +764,3 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
   }
   return out
 }
-

@@ -5,8 +5,8 @@ import type {
   ParticipantRole,
   VerifiablePublicRegistry,
 } from '@verana-labs/verre'
-import knex from '../../common/utils/db_connection'
 import { toIso } from '../../common/utils/date_utils'
+import knex from '../../common/utils/db_connection'
 import { calculateParticipantState } from '../crawl-pp/pp_state_utils'
 
 type SchemaRow = {
@@ -138,7 +138,13 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
       .where('cs.id', schemaId)
       .whereNull('cs.archived')
       .first()) as
-      | { id?: unknown; ecosystem_id?: unknown; digest_algorithm?: unknown; json_schema?: unknown; ecosystem_did?: unknown }
+      | {
+          id?: unknown
+          ecosystem_id?: unknown
+          digest_algorithm?: unknown
+          json_schema?: unknown
+          ecosystem_did?: unknown
+        }
       | undefined
 
     const result: CredentialSchemaRef | undefined = row
