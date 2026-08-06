@@ -136,7 +136,6 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
       .leftJoin('ecosystem as e', 'e.id', 'cs.ecosystem_id')
       .select('cs.id', 'cs.ecosystem_id', 'cs.digest_algorithm', 'cs.json_schema', 'e.did as ecosystem_did')
       .where('cs.id', schemaId)
-      .whereNull('cs.archived')
       .first()) as
       | {
           id?: unknown
@@ -171,10 +170,7 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
       .where({ schema_id: schemaId, did, role: String(role) })
       .whereNotNull('effective_from')
       .andWhere('effective_from', '<=', when)
-      .andWhere((qb) => qb.whereNull('effective_until').orWhere('effective_until', '>=', when))
-      .andWhere((qb) => qb.whereNull('revoked').orWhere('revoked', '>', when))
-      .andWhere((qb) => qb.whereNull('slashed').orWhere('slashed', '>', when))
-      .andWhere((qb) => qb.whereNull('repaid').orWhere('repaid', '>', when))) as Array<{
+      .andWhere((qb) => qb.whereNull('effective_until').orWhere('effective_until', '>=', when))) as Array<{
       id: number
       role: string
       created: Date | string | null
@@ -200,7 +196,7 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
           effective_from: toIso(row.effective_from) ?? null,
           effective_until: toIso(row.effective_until) ?? null,
         },
-        new Date(when)
+        new Date()
       ) as Participant['participant_state'],
     }))
   }
