@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { fetchJson } from '@verana-labs/verre'
+import { computeCredentialDigestJCS, fetchJson } from '@verana-labs/verre'
 import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toDate, toIso } from '../../common/utils/date_utils'
@@ -721,24 +721,6 @@ async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId:
   return row?.id != null ? Number(row.id) || 0 : 0
 }
 
-const DIGEST_ALGO_BY_NAME: Record<string, string> = {
-  'sha2-256': 'sha256',
-  'sha2-384': 'sha384',
-  'sha2-512': 'sha512',
-  sha256: 'sha256',
-  sha384: 'sha384',
-  sha512: 'sha512',
-}
-
-async function computeDigestJCS(raw: unknown, digestAlgorithm: string | null): Promise<string | null> {
-  if (!raw || typeof raw !== 'object') return null
-  const algo = DIGEST_ALGO_BY_NAME[String(digestAlgorithm ?? 'sha2-256').toLowerCase()] ?? 'sha256'
-  // The VC `id` is excluded before hashing, mirroring verre's schema-digest convention (`schemaWithoutId`).
-  const { id, ...withoutId } = raw as Record<string, unknown>
-  const canonical = await canonicalizeJson(withoutId)
-  return `${algo}-${createHash(algo).update(canonical).digest('base64')}`
-}
-
 async function fetchDigestIssuedAt(digestJCS: string): Promise<string | null> {
   if (!digestJCS) return null
   const row = (await knex('digests').select('created').where({ digest: digestJCS }).first()) as
@@ -787,7 +769,12 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const id = typeof raw?.id === 'string' ? raw.id : ''
     if (!id || seenIds.has(id)) continue
 
-    const digestJCS = await computeDigestJCS(raw, link?.digestAlgorithm ?? null)
+    const digestJCS = raw
+      ? computeCredentialDigestJCS(
+          raw as Parameters<typeof computeCredentialDigestJCS>[0],
+          String(link?.digestAlgorithm ?? 'sha384')
+        )
+      : null
     const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
     if (!digestJCS || !issuedAtTime) continue
 

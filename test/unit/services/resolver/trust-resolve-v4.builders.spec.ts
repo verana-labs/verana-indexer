@@ -23,6 +23,7 @@ jest.mock('../../../../src/common/utils/db_connection', () => {
 
 jest.mock('@verana-labs/verre', () => ({
   fetchJson: jest.fn(async () => ({})),
+  computeCredentialDigestJCS: jest.fn(() => 'q2VwbGFjZWRkaWdlc3Q='),
 }))
 
 jest.mock('canonicalize', () => ({ __esModule: true, default: (value: unknown) => JSON.stringify(value) }), {
@@ -256,7 +257,7 @@ describe('buildEcsCredentials', () => {
       validUntil: '2036-05-25T13:35:24.887Z',
       credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
     })
-    expect(out[0].digestJCS).toMatch(/^sha256-.+/)
+    expect(out[0].digestJCS).toBe('q2VwbGFjZWRkaWdlc3Q=')
     expect(out[0].credentialSubject).not.toHaveProperty('schemaType')
     expect(out[0].credentialSubject).not.toHaveProperty('raw')
   })

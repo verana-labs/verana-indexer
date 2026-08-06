@@ -1,5 +1,13 @@
-import type { IRegistryAdapter, PermissionType, VerifiablePublicRegistry } from '@verana-labs/verre'
+import type {
+  CredentialSchemaRef,
+  IRegistryAdapter,
+  Participant,
+  ParticipantRole,
+  VerifiablePublicRegistry,
+} from '@verana-labs/verre'
+import { toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { calculateParticipantState } from '../crawl-pp/pp_state_utils'
 
 type SchemaRow = {
   id: number
@@ -9,6 +17,11 @@ type SchemaRow = {
 type AdapterOptions = {
   enabled: boolean
 }
+
+type AnchoringParticipant = Pick<
+  Participant,
+  'id' | 'role' | 'created' | 'effective_from' | 'effective_until' | 'participant_state'
+>
 
 function asSchemaJsonString(value: unknown): string {
   if (typeof value === 'string') return value
@@ -87,7 +100,7 @@ async function findSchemaByUrl(url: string): Promise<SchemaRow | null> {
 class IndexerRegistryAdapter implements IRegistryAdapter {
   private readonly schemaCache = new Map<string, SchemaRow | null>()
 
-  private readonly permissionCache = new Map<string, any>()
+  private readonly credentialSchemaCache = new Map<number, CredentialSchemaRef | undefined>()
 
   private async cachedSchema(url: string): Promise<SchemaRow | null> {
     const key = String(url ?? '').trim()
@@ -106,37 +119,90 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
     return asSchemaJsonString(row.json_schema)
   }
 
-  async fetchPermission(schemaId: string, did: string, permissionType: PermissionType) {
-    const cacheKey = `${schemaId}::${did}::${String(permissionType)}`
-    if (this.permissionCache.has(cacheKey)) return this.permissionCache.get(cacheKey)
+  async fetchDigest(digestJCS: string): Promise<{ created: string; height?: number } | undefined> {
+    if (!digestJCS) return undefined
+    const row = (await knex('digests').select('created', 'height').where({ digest: digestJCS }).first()) as
+      | { created?: Date | string | null; height?: number | null }
+      | undefined
+    const created = toIso(row?.created)
+    if (!created) return undefined
+    return { created, height: row?.height != null ? Number(row.height) : undefined }
+  }
 
-    const dbSchemaId = schemaIdFromUrl(schemaId) ?? (await this.cachedSchema(schemaId))?.id
-    if (!dbSchemaId) {
-      this.permissionCache.set(cacheKey, undefined)
-      return undefined
-    }
+  async fetchCredentialSchema(schemaId: number): Promise<CredentialSchemaRef | undefined> {
+    if (this.credentialSchemaCache.has(schemaId)) return this.credentialSchemaCache.get(schemaId)
 
-    const row = await knex('participants')
-      .select('role', 'created', 'effective_from', 'effective_until')
-      .where('schema_id', dbSchemaId)
-      .andWhere('did', did)
-      .andWhere('role', String(permissionType))
-      .whereNull('revoked')
-      .whereNull('slashed')
-      .whereNull('repaid')
-      .orderBy('created', 'desc')
-      .first()
+    const row = (await knex('credential_schemas as cs')
+      .leftJoin('ecosystem as e', 'e.id', 'cs.ecosystem_id')
+      .select('cs.id', 'cs.ecosystem_id', 'cs.digest_algorithm', 'cs.json_schema', 'e.did as ecosystem_did')
+      .where('cs.id', schemaId)
+      .whereNull('cs.archived')
+      .first()) as
+      | {
+          id?: unknown
+          ecosystem_id?: unknown
+          digest_algorithm?: unknown
+          json_schema?: unknown
+          ecosystem_did?: unknown
+        }
+      | undefined
 
-    const result = row
+    const result: CredentialSchemaRef | undefined = row
       ? {
-          type: String((row as any).role),
-          created: (row as any).created,
-          effective_from: (row as any).effective_from ?? null,
-          effective_until: (row as any).effective_until ?? null,
+          id: Number(row.id),
+          ecosystemId: Number(row.ecosystem_id) || 0,
+          ecosystemDid: typeof row.ecosystem_did === 'string' ? row.ecosystem_did : '',
+          digestAlgorithm: typeof row.digest_algorithm === 'string' ? row.digest_algorithm : '',
+          jsonSchema: asSchemaJsonString(row.json_schema),
         }
       : undefined
-    this.permissionCache.set(cacheKey, result)
+    this.credentialSchemaCache.set(schemaId, result)
     return result
+  }
+
+  async listParticipants(
+    schemaId: number,
+    did: string,
+    role: ParticipantRole,
+    when: string
+  ): Promise<AnchoringParticipant[]> {
+    const rows = (await knex('participants')
+      .select('id', 'role', 'created', 'effective_from', 'effective_until', 'revoked', 'slashed', 'repaid')
+      .where({ schema_id: schemaId, did, role: String(role) })
+      .whereNotNull('effective_from')
+      .andWhere('effective_from', '<=', when)
+      .andWhere((qb) => qb.whereNull('effective_until').orWhere('effective_until', '>=', when))
+      .andWhere((qb) => qb.whereNull('revoked').orWhere('revoked', '>', when))
+      .andWhere((qb) => qb.whereNull('slashed').orWhere('slashed', '>', when))
+      .andWhere((qb) => qb.whereNull('repaid').orWhere('repaid', '>', when))) as Array<{
+      id: number
+      role: string
+      created: Date | string | null
+      effective_from: Date | string | null
+      effective_until: Date | string | null
+      revoked: Date | string | null
+      slashed: Date | string | null
+      repaid: Date | string | null
+    }>
+
+    return rows.map((row) => ({
+      id: Number(row.id),
+      role: row.role as ParticipantRole,
+      created: toIso(row.created) ?? '',
+      effective_from: toIso(row.effective_from) ?? null,
+      effective_until: toIso(row.effective_until) ?? null,
+      participant_state: calculateParticipantState(
+        {
+          role: row.role as any,
+          revoked: toIso(row.revoked) ?? null,
+          slashed: toIso(row.slashed) ?? null,
+          repaid: toIso(row.repaid) ?? null,
+          effective_from: toIso(row.effective_from) ?? null,
+          effective_until: toIso(row.effective_until) ?? null,
+        },
+        new Date(when)
+      ) as Participant['participant_state'],
+    }))
   }
 }
 
