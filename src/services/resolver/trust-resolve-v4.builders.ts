@@ -4,7 +4,7 @@ import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toDate, toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { isEcosystemEcsAllowlisted, isEcsAllowlistEnforced } from './ecs-allowlist'
+import { isEcosystemEcsAllowlisted } from './ecs-allowlist'
 
 /**
  * Derives the single `participant_state` enum from a permission row's
@@ -657,7 +657,7 @@ function parseSchemaJson(value: unknown): Record<string, unknown> | null {
 function ecsSchemaVersionFromId(schemaJson: unknown): string {
   const sid = parseSchemaJson(schemaJson)?.$id
   const m = typeof sid === 'string' ? sid.match(/\/cs\/(v\d+)\//) : null
-  return m ? m[1] : ''
+  return m ? m[1] : 'v4'
 }
 
 function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
@@ -764,13 +764,13 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const subjectDid = typeof c.id === 'string' ? c.id : null
     const issuerDid = typeof c.issuer === 'string' ? c.issuer : null
     const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null
-    if (isEcsAllowlistEnforced() && !link) continue
+    if (!link) continue
 
     const raw = c.raw && typeof c.raw === 'object' ? (c.raw as Record<string, unknown>) : null
     const id = typeof raw?.id === 'string' ? raw.id : ''
     if (!id || seenIds.has(id)) continue
 
-    const digestAlgorithm = link?.digestAlgorithm
+    const digestAlgorithm = link.digestAlgorithm
     const digestJCS =
       raw && (digestAlgorithm === 'sha384' || digestAlgorithm === 'sha512')
         ? computeCredentialDigestJCS(raw as Parameters<typeof computeCredentialDigestJCS>[0], digestAlgorithm)
@@ -778,18 +778,18 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
     if (!digestJCS || !issuedAtTime) continue
 
-    const credentialSchemaId = link?.credentialSchemaId ?? 0
+    const credentialSchemaId = link.credentialSchemaId
     const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0
     const { validFrom, validUntil } = readCredentialValidityWindow(c)
 
     seenIds.add(id)
     out.push({
       ecsSchema,
-      ecsSchemaVersion: link?.ecsSchemaVersion ?? '',
+      ecsSchemaVersion: link.ecsSchemaVersion,
       credentialSchemaId,
       issuerParticipantId,
-      ecosystemId: link?.ecosystemId ?? 0,
-      participantId: link?.participantId ?? 0,
+      ecosystemId: link.ecosystemId,
+      participantId: link.participantId,
       id,
       digestJCS,
       issuedAtTime,
