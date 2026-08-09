@@ -770,12 +770,11 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const id = typeof raw?.id === 'string' ? raw.id : ''
     if (!id || seenIds.has(id)) continue
 
-    const digestJCS = raw
-      ? computeCredentialDigestJCS(
-          raw as Parameters<typeof computeCredentialDigestJCS>[0],
-          String(link?.digestAlgorithm ?? 'sha384')
-        )
-      : null
+    const digestAlgorithm = link?.digestAlgorithm
+    const digestJCS =
+      raw && (digestAlgorithm === 'sha384' || digestAlgorithm === 'sha512')
+        ? computeCredentialDigestJCS(raw as Parameters<typeof computeCredentialDigestJCS>[0], digestAlgorithm)
+        : null
     const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
     if (!digestJCS || !issuedAtTime) continue
 
@@ -785,8 +784,6 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
 
     seenIds.add(id)
     out.push({
-    const { validFrom, validUntil } = readCredentialValidityWindow(c)
-    const entry: Record<string, unknown> = {
       ecsSchema,
       ecsSchemaVersion: link?.ecsSchemaVersion ?? '',
       credentialSchemaId,
