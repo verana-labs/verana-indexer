@@ -216,6 +216,7 @@ export default class ParticipantAPIService extends BullableService {
 
     const disallowedKeys = [
       'corporation_id',
+      'ecosystem_id',
       'participant_id',
       'validator_participant_id',
       'participant_state',
@@ -300,6 +301,12 @@ export default class ParticipantAPIService extends BullableService {
     const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name)
 
     if (params.schema_id !== undefined) query.where(col('schema_id'), Number(params.schema_id))
+    if (params.ecosystem_id !== undefined) {
+      query.whereIn(
+        col('schema_id'),
+        knex('credential_schemas').select('id').where('ecosystem_id', Number(params.ecosystem_id))
+      )
+    }
     if (corporationIdFilter !== undefined) query.where(col('corporation_id'), corporationIdFilter)
     if (params.did) query.where(col('did'), params.did)
     if (params.participant_id !== undefined) query.where(col(participantIdColumn), Number(params.participant_id))
@@ -583,6 +590,7 @@ export default class ParticipantAPIService extends BullableService {
     options?: {
       lightweightDerivedStats?: boolean
       schemaModesById?: Map<number, SchemaData>
+      ecosystemIdBySchemaId?: Map<number, number | null>
       validatorParticipantStateById?: Map<number, ParticipantState | null>
       moduleParams?: any
     }
@@ -603,6 +611,14 @@ export default class ParticipantAPIService extends BullableService {
       new Set(
         participants
           .filter((participant) => requiresSchemaModes(String(participant?.role || '').toUpperCase()))
+          .map((participant) => Number(participant.schema_id))
+          .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
+      )
+    )
+
+    const allSchemaIds = Array.from(
+      new Set(
+        participants
           .map((participant) => Number(participant.schema_id))
           .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
       )
@@ -647,8 +663,9 @@ export default class ParticipantAPIService extends BullableService {
       (participant) => participant?.effective_until !== null && participant?.effective_until !== undefined
     )
 
-    const [schemaModesById, validatorParticipantStateById, moduleParams] = await Promise.all([
+    const [schemaModesById, ecosystemIdBySchemaId, validatorParticipantStateById, moduleParams] = await Promise.all([
       options?.schemaModesById ?? this.getSchemaModesBatch(schemaIds, blockHeight),
+      options?.ecosystemIdBySchemaId ?? this.getEcosystemIdsBySchemaIds(allSchemaIds),
       options?.validatorParticipantStateById ??
         this.getValidatorParticipantStateMap(missingValidatorParticipantIds, blockHeight, now),
       options?.moduleParams !== undefined || !shouldLoadModuleParams
@@ -667,6 +684,7 @@ export default class ParticipantAPIService extends BullableService {
     const mergedOptions = {
       ...options,
       schemaModesById,
+      ecosystemIdBySchemaId,
       validatorParticipantStateById: mergedValidatorParticipantStateById,
       moduleParams,
     }
@@ -682,6 +700,22 @@ export default class ParticipantAPIService extends BullableService {
       results.push(...batchResults)
     }
     return results
+  }
+
+  private async getEcosystemIdsBySchemaIds(schemaIds: number[]): Promise<Map<number, number | null>> {
+    const ecosystemIdBySchemaId = new Map<number, number | null>()
+    const uniqueSchemaIds = Array.from(
+      new Set(
+        schemaIds.map((schemaId) => Number(schemaId)).filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
+      )
+    )
+    if (uniqueSchemaIds.length === 0) return ecosystemIdBySchemaId
+
+    const rows = await knex('credential_schemas').whereIn('id', uniqueSchemaIds).select('id', 'ecosystem_id')
+    for (const row of rows) {
+      ecosystemIdBySchemaId.set(Number(row.id), row.ecosystem_id != null ? Number(row.ecosystem_id) : null)
+    }
+    return ecosystemIdBySchemaId
   }
 
   private async getSchemaModesBatch(schemaIds: number[], blockHeight?: number): Promise<Map<number, SchemaData>> {
@@ -1186,6 +1220,7 @@ export default class ParticipantAPIService extends BullableService {
     options?: {
       lightweightDerivedStats?: boolean
       schemaModesById?: Map<number, SchemaData>
+      ecosystemIdBySchemaId?: Map<number, number | null>
       validatorParticipantStateById?: Map<number, ParticipantState | null>
       moduleParams?: any
     }
@@ -1195,6 +1230,10 @@ export default class ParticipantAPIService extends BullableService {
     const schema =
       schemaFromBatch ||
       (options?.schemaModesById !== undefined ? {} : await this.getSchemaModes(schemaId, blockHeight))
+
+    const ecosystemIdBySchemaId =
+      options?.ecosystemIdBySchemaId ?? (await this.getEcosystemIdsBySchemaIds([schemaId]).catch(() => undefined))
+    const ecosystemId = ecosystemIdBySchemaId?.get(schemaId) ?? null
 
     let validatorParticipantState: ParticipantState | null = null
     const validatorParticipantStateById = options?.validatorParticipantStateById
@@ -1336,6 +1375,7 @@ export default class ParticipantAPIService extends BullableService {
       validator_available_actions: mapParticipantActionsToVprMessages(validatorActions),
       id: Number(participant.id),
       schema_id: Number(participant.schema_id),
+      ecosystem_id: ecosystemId,
       validator_participant_id: participant.validator_participant_id
         ? Number(participant.validator_participant_id)
         : null,
@@ -1377,6 +1417,7 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET list',
     params: {
       schema_id: { type: 'number', integer: true, optional: true },
+      ecosystem_id: { type: 'number', integer: true, optional: true },
       corporation_id: { type: 'number', integer: true, optional: true },
       corporation: { type: 'string', optional: true },
       did: { type: 'string', optional: true },
