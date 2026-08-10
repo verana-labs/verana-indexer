@@ -2323,17 +2323,21 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET beneficiaries',
     params: {
-      issuer_participant_id: { type: 'number', integer: true },
-      verifier_participant_id: { type: 'number', integer: true },
+      issuer_participant_id: { type: 'number', integer: true, positive: true, optional: true },
+      verifier_participant_id: { type: 'number', integer: true, positive: true, optional: true },
     },
   })
-  async findBeneficiaries(ctx: Context<{ issuer_participant_id: number; verifier_participant_id: number }>) {
+  async findBeneficiaries(ctx: Context<{ issuer_participant_id?: number; verifier_participant_id?: number }>) {
     const { issuer_participant_id: issuerParticipantId, verifier_participant_id: verifierParticipantId } = ctx.params
     const blockHeight = getBlockHeight(ctx)
     const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
 
     if (!issuerParticipantId && !verifierParticipantId) {
-      return ApiResponder.error(ctx, 'issuer_participant_id and verifier_participant_id must be set', 400)
+      return ApiResponder.error(
+        ctx,
+        'At least one of issuer_participant_id and verifier_participant_id must be set',
+        400
+      )
     }
 
     try {

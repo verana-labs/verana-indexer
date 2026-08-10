@@ -1033,7 +1033,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     describe('GET /v4/participant/beneficiaries - ALL PARAMETERS', () => {
-      itIf('should get beneficiaries - with both required participant ids', async () => {
+      itIf('should get beneficiaries - with both participant ids', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
           verifier_participant_id: SAMPLE_PARTICIPANT_ID,
@@ -1041,15 +1041,23 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get beneficiaries - validation: missing verifier_participant_id (should fail)', async () => {
+      itIf('should get beneficiaries - issuance only (issuer_participant_id alone)', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
-        expect(response.status).toBeGreaterThanOrEqual(400)
+        expect(response.status).toBeLessThan(400)
       })
 
-      itIf('should get beneficiaries - validation: missing both required parameters (should fail)', async () => {
+      itIf('should get beneficiaries - verification only (verifier_participant_id alone)', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
+          verifier_participant_id: SAMPLE_PARTICIPANT_ID,
+        })
+        expect(response.status).not.toBeGreaterThanOrEqual(500)
+        expect(response.status).toBeLessThan(400)
+      })
+
+      itIf('should get beneficiaries - validation: neither participant id (should fail)', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries')
         expect(response.status).not.toBeGreaterThanOrEqual(500)
         expect(response.status).toBeGreaterThanOrEqual(400)

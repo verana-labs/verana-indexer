@@ -3887,26 +3887,28 @@
           "Participant"
         ],
         "summary": "Find Beneficiaries",
-        "description": "Find participant beneficiaries based on issuer and verifier participants",
+        "description": "Compute the beneficiary Participants for a credential transaction. Given an issuer Participant and/or a verifier Participant, returns every ancestor Participant in the involved tree branch(es) that participates in the fee-distribution flow. At least one of the two ids must be provided.",
         "operationId": "findBeneficiaries",
         "parameters": [
           {
             "name": "issuer_participant_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Issuer Participant ID"
+            "description": "Issuer Participant ID. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400. Alone it computes an issuance (credential offer) fee preview"
           },
           {
             "name": "verifier_participant_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Verifier Participant ID"
+            "description": "Verifier Participant ID. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
