@@ -409,9 +409,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list trust registries - with participant filter', async () => {
+      itIf('should list trust registries - with participant_corporation_id filter', async () => {
         const response = await testEndpoint('GET', '/v4/ecosystem/list', {
-          participant: SAMPLE_ACCOUNT,
+          participant_corporation_id: SAMPLE_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -617,9 +617,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should list credential schemas - with participant filter', async () => {
+      itIf('should list credential schemas - with participant_corporation_id filter', async () => {
         const response = await testEndpoint('GET', '/v4/credential-schema/list', {
-          participant: SAMPLE_ACCOUNT,
+          participant_corporation_id: SAMPLE_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
@@ -721,7 +721,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         const response = await testEndpoint('GET', '/v4/credential-schema/list', {
           limit: 50,
           ecosystem_id: SAMPLE_TR_ID,
-          participant: SAMPLE_ACCOUNT,
+          participant_corporation_id: SAMPLE_ID,
           modified_after: timestamps.from,
           only_active: true,
           issuer_onboarding_mode: '2',
