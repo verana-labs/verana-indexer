@@ -35,6 +35,7 @@ import {
   paginateActivityItems,
   parseCorporationListPagination,
   parseIdSortDirection,
+  parsePolicyAddressFilter,
 } from '../../../../src/services/crawl-co/co_stats'
 
 describe('co_stats.parseCorporationListPagination', () => {
@@ -180,6 +181,47 @@ describe('co_stats.countControlledEcosystemsBatch', () => {
 
     expect(map.get('1')).toBe(2)
     expect(map.get('2')).toBe(0)
+  })
+})
+
+describe('co_stats.parsePolicyAddressFilter', () => {
+  it('treats an absent value as no filter', () => {
+    expect(parsePolicyAddressFilter(undefined)).toEqual({ ok: true })
+    expect(parsePolicyAddressFilter(null)).toEqual({ ok: true })
+  })
+
+  it('rejects present-but-empty values (min 1 entry)', () => {
+    expect(parsePolicyAddressFilter('').ok).toBe(false)
+    expect(parsePolicyAddressFilter('   ').ok).toBe(false)
+  })
+
+  it('parses a single address and comma-separated lists, trimming whitespace', () => {
+    expect(parsePolicyAddressFilter('verana1abc')).toEqual({ ok: true, addresses: ['verana1abc'] })
+    expect(parsePolicyAddressFilter(' verana1abc , verana1def ')).toEqual({
+      ok: true,
+      addresses: ['verana1abc', 'verana1def'],
+    })
+  })
+
+  it('drops empty entries and deduplicates', () => {
+    expect(parsePolicyAddressFilter('verana1abc,,verana1abc,')).toEqual({ ok: true, addresses: ['verana1abc'] })
+  })
+
+  it('rejects values that contain no addresses at all', () => {
+    expect(parsePolicyAddressFilter(',,,').ok).toBe(false)
+  })
+
+  it('accepts exactly 64 entries and rejects 65', () => {
+    const list = (n: number) => Array.from({ length: n }, (_, i) => `verana1addr${i}`).join(',')
+    expect(parsePolicyAddressFilter(list(64))).toMatchObject({ ok: true })
+    const over = parsePolicyAddressFilter(list(65))
+    expect(over.ok).toBe(false)
+    if (!over.ok) expect(over.message).toContain('64')
+  })
+
+  it('applies the 64-entry cap before deduplication', () => {
+    const dupes = Array.from({ length: 65 }, () => 'verana1same').join(',')
+    expect(parsePolicyAddressFilter(dupes).ok).toBe(false)
   })
 })
 
