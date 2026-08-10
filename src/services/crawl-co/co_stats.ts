@@ -415,6 +415,24 @@ export function parseCorporationListPagination(params: {
   return { ok: true, value: { limit, minId: minId.value, maxId: maxId.value, direction: sortParsed.direction } }
 }
 
+// IDX-CO-QRY-2 `policy_address` filter: min 1, max 64 entries, over-limit and present-but-empty are HTTP 400 — a zero-membership x/group walk joins to '' and must not degrade into the full list.
+export function parsePolicyAddressFilter(
+  raw: unknown
+): { ok: true; addresses?: string[] } | { ok: false; message: string } {
+  if (raw === undefined || raw === null) return { ok: true }
+  const entries = String(raw)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+  if (entries.length === 0) {
+    return { ok: false, message: '"policy_address" must contain between 1 and 64 comma-separated addresses' }
+  }
+  if (entries.length > 64) {
+    return { ok: false, message: '"policy_address" accepts at most 64 comma-separated addresses' }
+  }
+  return { ok: true, addresses: [...new Set(entries)] }
+}
+
 export function parseIdSortDirection(
   sort?: string | number
 ): { ok: true; direction: 'asc' | 'desc' } | { ok: false; message: string } {
