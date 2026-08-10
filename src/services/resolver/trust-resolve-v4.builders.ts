@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { fetchJson } from '@verana-labs/verre'
+import { computeCredentialDigestJCS, fetchJson } from '@verana-labs/verre'
 import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toDate, toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { isEcosystemEcsAllowlisted, isEcsAllowlistEnforced } from './ecs-allowlist'
+import { isEcosystemEcsAllowlisted } from './ecs-allowlist'
 
 /**
  * Derives the single `participant_state` enum from a permission row's
@@ -638,6 +638,7 @@ const ECS_SCHEMA_TITLE_BY_TYPE: Record<string, string> = {
   'ecs-org': 'OrganizationCredential',
   'ecs-persona': 'PersonaCredential',
   'ecs-user-agent': 'UserAgentCredential',
+  'ecs-badge': 'BadgeCredential',
 }
 
 function parseSchemaJson(value: unknown): Record<string, unknown> | null {
@@ -656,11 +657,26 @@ function parseSchemaJson(value: unknown): Record<string, unknown> | null {
 function ecsSchemaVersionFromId(schemaJson: unknown): string {
   const sid = parseSchemaJson(schemaJson)?.$id
   const m = typeof sid === 'string' ? sid.match(/\/cs\/(v\d+)\//) : null
-  return m ? m[1] : ''
+  return m ? m[1] : 'v4'
+}
+
+type VerifiableCredential = {
+  id?: string
+  issuer?: string
+  credentialSubject?: Record<string, unknown>
+  validFrom?: string
+  validUntil?: string
+  issuanceDate?: string
+  expirationDate?: string
+  proof?: unknown
 }
 
 function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
-  const { schemaType, issuer, ...subject } = cred
+  const rawSubject = (cred.raw as { credentialSubject?: unknown } | undefined)?.credentialSubject
+  if (rawSubject && typeof rawSubject === 'object' && !Array.isArray(rawSubject)) {
+    return rawSubject as Record<string, unknown>
+  }
+  const { schemaType, issuer, raw, validFrom, validUntil, ...subject } = cred
   return subject
 }
 
@@ -669,6 +685,7 @@ type EcsSchemaLink = {
   credentialSchemaId: number
   ecosystemId: number
   ecsSchemaVersion: string
+  digestAlgorithm: string | null
 }
 
 async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string): Promise<EcsSchemaLink | null> {
@@ -681,7 +698,12 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
   if (schemaIds.length === 0) return null
   const schemas = (await knex('credential_schemas')
     .whereIn('id', schemaIds)
-    .select('id', 'ecosystem_id', 'json_schema')) as Array<{ id: number; ecosystem_id: number; json_schema: unknown }>
+    .select('id', 'ecosystem_id', 'json_schema', 'digest_algorithm')) as Array<{
+    id: number
+    ecosystem_id: number
+    json_schema: unknown
+    digest_algorithm: string | null
+  }>
 
   for (const p of participants) {
     const cs = schemas.find((s) => Number(s.id) === Number(p.schema_id))
@@ -695,6 +717,7 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
         credentialSchemaId: Number(cs.id) || 0,
         ecosystemId: Number(cs.ecosystem_id) || 0,
         ecsSchemaVersion: ecsSchemaVersionFromId(cs.json_schema),
+        digestAlgorithm: cs.digest_algorithm,
       }
     }
   }
@@ -708,6 +731,14 @@ async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId:
     .select('id')
     .first()) as { id?: number } | undefined
   return row?.id != null ? Number(row.id) || 0 : 0
+}
+
+async function fetchDigestIssuedAt(digestJCS: string): Promise<string | null> {
+  if (!digestJCS) return null
+  const row = (await knex('digests').select('created').where({ digest: digestJCS }).first()) as
+    | { created?: Date | string | null }
+    | undefined
+  return row?.created != null ? (toIso(row.created) ?? null) : null
 }
 
 function readCredentialValidityWindow(cred: Record<string, unknown>): {
@@ -733,6 +764,7 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
   const r = resolveResult as Record<string, unknown>
 
   const out: Array<Record<string, unknown>> = []
+  const seenIds = new Set<string>()
   for (const key of ['service', 'serviceProvider']) {
     const cred = r[key]
     if (!cred || typeof cred !== 'object') continue
@@ -743,24 +775,39 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const subjectDid = typeof c.id === 'string' ? c.id : null
     const issuerDid = typeof c.issuer === 'string' ? c.issuer : null
     const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null
-    if (isEcsAllowlistEnforced() && !link) continue
+    if (!link) continue
 
-    const credentialSchemaId = link?.credentialSchemaId ?? 0
+    const raw = c.raw && typeof c.raw === 'object' ? (c.raw as VerifiableCredential) : null
+    const id = typeof raw?.id === 'string' ? raw.id : ''
+    if (!id || seenIds.has(id)) continue
+
+    const digestAlgorithm = link.digestAlgorithm
+    const digestJCS =
+      raw && (digestAlgorithm === 'sha384' || digestAlgorithm === 'sha512')
+        ? computeCredentialDigestJCS(raw, digestAlgorithm)
+        : null
+    const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
+    if (!digestJCS || !issuedAtTime) continue
+
+    const credentialSchemaId = link.credentialSchemaId
     const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0
-
     const { validFrom, validUntil } = readCredentialValidityWindow(c)
-    const entry: Record<string, unknown> = {
+
+    seenIds.add(id)
+    out.push({
       ecsSchema,
-      ecsSchemaVersion: link?.ecsSchemaVersion ?? '',
+      ecsSchemaVersion: link.ecsSchemaVersion,
       credentialSchemaId,
       issuerParticipantId,
-      ecosystemId: link?.ecosystemId ?? 0,
-      participantId: link?.participantId ?? 0,
+      ecosystemId: link.ecosystemId,
+      participantId: link.participantId,
+      id,
+      digestJCS,
+      issuedAtTime,
       validFrom,
       validUntil,
       credentialSubject: toCredentialSubject(c),
-    }
-    out.push(entry)
+    })
   }
   return out
 }
