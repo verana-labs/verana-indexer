@@ -241,8 +241,18 @@ describe('buildEcsCredentials', () => {
       { id: 502, schema_id: 2, did: 'did:example:org', role: 'HOLDER' },
     ]
     tableRows.credential_schemas = [
-      { id: 1, ecosystem_id: 9, json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' }, digest_algorithm: 'sha384' },
-      { id: 2, ecosystem_id: 9, json_schema: { title: 'OrganizationCredential', $id: 'vpr:verana:net/cs/v1/js/2' }, digest_algorithm: 'sha384' },
+      {
+        id: 1,
+        ecosystem_id: 9,
+        json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' },
+        digest_algorithm: 'sha384',
+      },
+      {
+        id: 2,
+        ecosystem_id: 9,
+        json_schema: { title: 'OrganizationCredential', $id: 'vpr:verana:net/cs/v1/js/2' },
+        digest_algorithm: 'sha384',
+      },
     ]
     tableRows.digests = [{ created: '2026-02-10T09:15:00Z' }]
   })
@@ -304,7 +314,11 @@ describe('buildEcsCredentials', () => {
         ...service,
         validFrom: undefined,
         validUntil: undefined,
-        raw: { id: 'urn:uuid:service-vc-2', issuanceDate: '2011-02-03T00:00:00Z', expirationDate: '2031-02-03T00:00:00Z' },
+        raw: {
+          id: 'urn:uuid:service-vc-2',
+          issuanceDate: '2011-02-03T00:00:00Z',
+          expirationDate: '2031-02-03T00:00:00Z',
+        },
       },
     })
     expect(out[0]).toMatchObject({ validFrom: '2011-02-03T00:00:00.000Z', validUntil: '2031-02-03T00:00:00.000Z' })
