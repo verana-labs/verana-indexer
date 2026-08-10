@@ -3011,6 +3011,15 @@
             "description": "Filter by schema ID"
           },
           {
+            "name": "ecosystem_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Filter by the Ecosystem owning the participant's Credential Schema (the denormalised ecosystem_id response field)"
+          },
+          {
             "name": "validator_participant_id",
             "in": "query",
             "required": false,
@@ -6682,6 +6691,11 @@
           },
           "schema_id": {
             "type": "integer"
+          },
+          "ecosystem_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Indexer-derived: the Ecosystem owning the participant's Credential Schema, denormalised from CredentialSchema.ecosystem_id"
           },
           "role": {
             "type": "string",
