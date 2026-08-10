@@ -53,6 +53,32 @@ function serializeVSOperatorAuthorizationRow(row: any) {
   }
 }
 
+function serializeFeeGrantRow(row: any) {
+  const spendLimit = row.spend_limit ?? null
+
+  return {
+    id: Number(row.fee_grant_id ?? row.id),
+    grantor_corporation_id: Number(row.grantor_corporation_id),
+    grantee: String(row.grantee),
+    msg_types: row.msg_types ?? [],
+    ...(spendLimit ? { spend_limit: spendLimit, remaining_spend: row.remaining_spend ?? [] } : {}),
+    ...(row.expiration ? { expiration: dateToIsoOrNull(row.expiration) } : {}),
+    ...(row.period ? { period: String(row.period) } : {}),
+  }
+}
+
+interface ListFeeGrantsParams {
+  grantor_corporation_id?: number
+  grantee?: string
+  msg_type?: string
+  only_active?: boolean
+  modified_after?: string
+  limit?: number
+  min_id?: number
+  max_id?: number
+  sort?: string
+}
+
 interface ListOperatorAuthorizationsParams {
   corporation_id?: number
   operator?: string
@@ -290,6 +316,93 @@ export default class DelegationApiService extends BaseService {
       query.whereRaw(
         "EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec WHERE rec->>'expiration' IS NULL OR (rec->>'expiration')::timestamptz > ?)",
         [ctx.now]
+      )
+    }
+    if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
+    if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
+    if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)
+  }
+
+  @Action({
+    rest: 'GET fee-grants',
+    params: {
+      grantor_corporation_id: { type: 'number', integer: true, positive: true, optional: true, convert: true },
+      grantee: { type: 'string', optional: true },
+      msg_type: { type: 'string', optional: true },
+      only_active: { type: 'boolean', optional: true, convert: true },
+      modified_after: { type: 'string', optional: true },
+      limit: { type: 'number', integer: true, optional: true, convert: true },
+      min_id: { type: 'string', optional: true, convert: true },
+      max_id: { type: 'string', optional: true, convert: true },
+      sort: { type: 'string', optional: true },
+    },
+  })
+  async listFeeGrants(ctx: Context<ListFeeGrantsParams>) {
+    try {
+      const p = ctx.params
+
+      const sortParsed = parseIdSortDirection(p.sort)
+      if (!sortParsed.ok) {
+        return ApiResponder.error(ctx, sortParsed.message, 400)
+      }
+      const sortDir = sortParsed.direction
+
+      let modifiedAfter: Date | undefined
+      if (p.modified_after) {
+        modifiedAfter = new Date(p.modified_after)
+        if (Number.isNaN(modifiedAfter.getTime())) {
+          return ApiResponder.error(ctx, 'Invalid modified_after datetime format', 400)
+        }
+      }
+
+      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
+      const blockHeight = getBlockHeight(ctx)
+
+      const query =
+        blockHeight !== undefined
+          ? this.buildAtHeightFeeGrantListQuery(blockHeight)
+          : knex<any>('fee_grants').select('*')
+      const idColumn = blockHeight !== undefined ? 'fee_grant_id' : 'id'
+
+      let now: Date | undefined
+      if (p.only_active) {
+        now = blockHeight !== undefined ? await getBlockChainTimeAsOf(blockHeight, { logger: this.logger }) : new Date()
+      }
+
+      this.applyFeeGrantListFilters(query, p, { modifiedAfter, now, idColumn })
+      const rows = await query.orderBy(idColumn, sortDir).limit(limit)
+
+      return ApiResponder.success(ctx, {
+        fee_grants: rows.map(serializeFeeGrantRow),
+      })
+    } catch (err: any) {
+      this.logger.error('Error in Delegation.listFeeGrants:', err)
+      return ApiResponder.error(ctx, `Failed to list fee grants: ${err?.message || String(err)}`, 500)
+    }
+  }
+
+  private buildAtHeightFeeGrantListQuery(blockHeight: number) {
+    const latestPerId = knex('fee_grant_history')
+      .distinctOn('fee_grant_id')
+      .select('*')
+      .where('height', '<=', blockHeight)
+      .orderBy('fee_grant_id', 'asc')
+      .orderBy('height', 'desc')
+    return knex.from(latestPerId.as('fg')).select('*').where('revoked', false)
+  }
+
+  private applyFeeGrantListFilters(
+    query: any,
+    p: ListFeeGrantsParams,
+    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string }
+  ) {
+    if (p.grantor_corporation_id !== undefined) query.where('grantor_corporation_id', p.grantor_corporation_id)
+    if (p.grantee) query.where('grantee', p.grantee)
+    if (p.msg_type) query.whereRaw('msg_types @> ?::jsonb', [JSON.stringify([p.msg_type])])
+    if (ctx.now) {
+      // Periodic grants auto-renew: a past cycle boundary never makes them inactive.
+      query.where((builder: any) =>
+        builder.whereNull('expiration').orWhere('expiration', '>', ctx.now).orWhereNotNull('period')
       )
     }
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)

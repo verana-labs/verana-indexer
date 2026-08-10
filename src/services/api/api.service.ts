@@ -370,6 +370,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET operator-authorization/:id': `${SERVICE.V1.DelegationApiService.path}.getOperatorAuthorization`,
         'GET vs-operator-authorizations': `${SERVICE.V1.DelegationApiService.path}.listVSOperatorAuthorizations`,
         'GET vs-operator-authorization/:id': `${SERVICE.V1.DelegationApiService.path}.getVSOperatorAuthorization`,
+        'GET fee-grants': `${SERVICE.V1.DelegationApiService.path}.listFeeGrants`,
       }),
       createRoute('/v4/trust-deposit', {
         'GET get/:corporation_id': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,

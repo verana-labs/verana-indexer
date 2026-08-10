@@ -1,6 +1,10 @@
 import type { Coin } from '@verana-labs/verana-types/codec/cosmos/base/v1beta1/coin'
 import type { Duration } from '@verana-labs/verana-types/codec/google/protobuf/duration'
 import {
+  QueryClientImpl as CoQueryClientImpl,
+  QueryGetCorporationRequest,
+} from '@verana-labs/verana-types/codec/verana/co/v1/query'
+import {
   QueryClientImpl as DeQueryClientImpl,
   QueryGetOperatorAuthorizationRequest,
   QueryGetVSOperatorAuthorizationRequest,
@@ -19,6 +23,8 @@ import {
   QueryClientImpl as FeegrantQueryClientImpl,
   QueryAllowanceRequest,
 } from 'cosmjs-types/cosmos/feegrant/v1beta1/query.js'
+import type { Timestamp } from 'cosmjs-types/google/protobuf/timestamp.js'
+import { fromTimestamp } from 'cosmjs-types/helpers.js'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import { withAbciQueryClient } from '../../common/utils/grpc_query'
 
@@ -180,4 +186,92 @@ export async function fetchFeeAllowance(
   const allowed = AllowedMsgAllowance.decode(allowance.value)
   if (!allowed.allowance) return undefined
   return unwrapFeeAllowance(allowed.allowance.typeUrl, allowed.allowance.value)
+}
+
+export interface FeeGrantAllowanceSnapshot {
+  msg_types: string[]
+  spend_limit: DenomAmount[] | null
+  remaining_spend: DenomAmount[] | null
+  expiration: string | null
+  period: string | null
+}
+
+function timestampToIso(ts: Timestamp | undefined): string | null {
+  if (!ts) return null
+  const date = fromTimestamp(ts)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null
+}
+
+function fetchAllowanceGrant(granter: string, grantee: string, blockHeight: number | undefined) {
+  return withAbciQueryClient(blockHeight, async (rpc) => {
+    const query = new FeegrantQueryClientImpl(rpc)
+    const res = await query.Allowance(QueryAllowanceRequest.fromPartial({ granter, grantee }))
+    return res?.allowance ?? undefined
+  })
+}
+
+export async function fetchCorporationPolicyAddress(
+  corporationId: number,
+  blockHeight: number | undefined
+): Promise<string | undefined> {
+  return withAbciQueryClient(blockHeight, async (rpc) => {
+    const query = new CoQueryClientImpl(rpc)
+    const res = await query.GetCorporation(QueryGetCorporationRequest.fromPartial({ corporationId }))
+    return res?.corporation?.policyAddress || undefined
+  })
+}
+
+function unwrapFeeGrantAllowance(
+  typeUrl: string,
+  value: Uint8Array
+): Omit<FeeGrantAllowanceSnapshot, 'msg_types'> | undefined {
+  if (typeUrl === PERIODIC_ALLOWANCE_TYPE_URL) {
+    const periodic = PeriodicAllowance.decode(value)
+    return {
+      spend_limit: serializeCoins(periodic.periodSpendLimit as Coin[]),
+      remaining_spend: serializeCoins(periodic.periodCanSpend as Coin[]),
+      // Spec: periodic expiration reflects the allowance's current period_reset.
+      expiration: timestampToIso(periodic.periodReset),
+      period: serializeDuration(periodic.period as Duration | undefined),
+    }
+  }
+  if (typeUrl === BASIC_ALLOWANCE_TYPE_URL) {
+    const basic = BasicAllowance.decode(value)
+    const limit = serializeCoins(basic.spendLimit as Coin[])
+    return {
+      spend_limit: limit,
+      remaining_spend: limit,
+      expiration: timestampToIso(basic.expiration),
+      period: null,
+    }
+  }
+  return undefined
+}
+
+export async function fetchFeeGrantAllowance(
+  granter: string,
+  grantee: string,
+  blockHeight: number | undefined
+): Promise<FeeGrantAllowanceSnapshot | undefined> {
+  let grant: Awaited<ReturnType<typeof fetchAllowanceGrant>>
+  try {
+    grant = await fetchAllowanceGrant(granter, grantee, blockHeight)
+  } catch (err: any) {
+    // A missing allowance surfaces as a thrown ABCI error, never an empty response.
+    if (/fee-grant not found/i.test(err?.message || String(err))) return undefined
+    throw err
+  }
+
+  const allowance = grant?.allowance
+  if (!allowance) return undefined
+
+  if (allowance.typeUrl !== ALLOWED_MSG_ALLOWANCE_TYPE_URL) {
+    const inner = unwrapFeeGrantAllowance(allowance.typeUrl, allowance.value)
+    return inner ? { msg_types: [], ...inner } : undefined
+  }
+
+  const allowed = AllowedMsgAllowance.decode(allowance.value)
+  if (!allowed.allowance) return undefined
+  const inner = unwrapFeeGrantAllowance(allowed.allowance.typeUrl, allowed.allowance.value)
+  return inner ? { msg_types: allowed.allowedMessages ?? [], ...inner } : undefined
 }
