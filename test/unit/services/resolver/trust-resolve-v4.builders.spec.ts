@@ -23,8 +23,12 @@ jest.mock('../../../../src/common/utils/db_connection', () => {
 
 jest.mock('@verana-labs/verre', () => ({
   fetchJson: jest.fn(async () => ({})),
+  computeCredentialDigestJCS: jest.fn(() => 'q2VwbGFjZWRkaWdlc3Q='),
 }))
 
+jest.mock('canonicalize', () => ({ __esModule: true, default: (value: unknown) => JSON.stringify(value) }), {
+  virtual: true,
+})
 const isEcosystemEcsAllowlistedMock = jest.fn(async (_id: number) => true)
 jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
   __esModule: true,
@@ -215,24 +219,45 @@ describe('buildPresentations', () => {
 })
 
 describe('buildEcsCredentials', () => {
-  beforeEach(() => {
-    for (const k of Object.keys(tableRows)) delete tableRows[k]
-  })
-
+  const rawVc = {
+    id: 'urn:uuid:service-vc-1',
+    validFrom: '2026-05-28T13:35:24.887Z',
+    validUntil: '2036-05-25T13:35:24.887Z',
+    credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
+  }
   const service = {
     schemaType: 'ecs-service',
     id: 'did:example:sub',
     issuer: 'did:example:org',
-    name: 'Gov ID issuer',
-    type: 'VerifiableService',
+    raw: rawVc,
+    validFrom: rawVc.validFrom,
+    validUntil: rawVc.validUntil,
   }
 
-  it('surfaces the subject and resolves stable ids from participants/schemas', async () => {
-    tableRows.participants = [{ id: 501, schema_id: 1, did: 'did:example:sub', role: 'HOLDER' }]
-    tableRows.credential_schemas = [
-      { id: 1, ecosystem_id: 9, json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' } },
+  beforeEach(() => {
+    for (const k of Object.keys(tableRows)) delete tableRows[k]
+    tableRows.participants = [
+      { id: 501, schema_id: 1, did: 'did:example:sub', role: 'HOLDER' },
+      { id: 502, schema_id: 2, did: 'did:example:org', role: 'HOLDER' },
     ]
+    tableRows.credential_schemas = [
+      {
+        id: 1,
+        ecosystem_id: 9,
+        json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' },
+        digest_algorithm: 'sha384',
+      },
+      {
+        id: 2,
+        ecosystem_id: 9,
+        json_schema: { title: 'OrganizationCredential', $id: 'vpr:verana:net/cs/v1/js/2' },
+        digest_algorithm: 'sha384',
+      },
+    ]
+    tableRows.digests = [{ created: '2026-02-10T09:15:00Z' }]
+  })
 
+  it('emits id/digestJCS/issuedAtTime and resolves stable ids from participants/schemas', async () => {
     const out = await buildEcsCredentials({ service })
     expect(out).toHaveLength(1)
     expect(out[0]).toMatchObject({
@@ -241,23 +266,39 @@ describe('buildEcsCredentials', () => {
       credentialSchemaId: 1,
       ecosystemId: 9,
       participantId: 501,
+      id: 'urn:uuid:service-vc-1',
+      issuedAtTime: '2026-02-10T09:15:00.000Z',
+      validFrom: '2026-05-28T13:35:24.887Z',
+      validUntil: '2036-05-25T13:35:24.887Z',
       credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
     })
+    expect(out[0].digestJCS).toBe('q2VwbGFjZWRkaWdlc3Q=')
     expect(out[0].credentialSubject).not.toHaveProperty('schemaType')
-    expect(out[0].credentialSubject).not.toHaveProperty('issuer')
+    expect(out[0].credentialSubject).not.toHaveProperty('raw')
   })
 
-  it('still surfaces the credential with 0 ids when no participant is indexed', async () => {
-    const out = await buildEcsCredentials({ service })
-    expect(out[0]).toMatchObject({
-      ecsSchema: 'ServiceCredential',
-      ecsSchemaVersion: '',
-      credentialSchemaId: 0,
-      issuerParticipantId: 0,
-      ecosystemId: 0,
-      participantId: 0,
-      credentialSubject: { id: 'did:example:sub' },
-    })
+  it('excludes a credential whose recomputed digest has no ledger entry', async () => {
+    tableRows.digests = []
+    expect(await buildEcsCredentials({ service })).toEqual([])
+  })
+
+  it('excludes a credential with no VC id', async () => {
+    const { raw, ...noRaw } = service
+    expect(await buildEcsCredentials({ service: noRaw })).toEqual([])
+  })
+
+  it('excludes same-response duplicates by id', async () => {
+    const serviceProvider = {
+      schemaType: 'ecs-org',
+      id: 'did:example:org',
+      issuer: 'did:example:org',
+      raw: { ...rawVc },
+      validFrom: rawVc.validFrom,
+      validUntil: rawVc.validUntil,
+    }
+    const out = await buildEcsCredentials({ service, serviceProvider })
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe('urn:uuid:service-vc-1')
   })
 
   it('mirrors the VC body validity window from the flattened credential', async () => {
@@ -269,13 +310,24 @@ describe('buildEcsCredentials', () => {
 
   it('falls back to the raw VC body for the validity window', async () => {
     const out = await buildEcsCredentials({
-      service: { ...service, raw: { issuanceDate: '2011-02-03T00:00:00Z', expirationDate: '2031-02-03T00:00:00Z' } },
+      service: {
+        ...service,
+        validFrom: undefined,
+        validUntil: undefined,
+        raw: {
+          id: 'urn:uuid:service-vc-2',
+          issuanceDate: '2011-02-03T00:00:00Z',
+          expirationDate: '2031-02-03T00:00:00Z',
+        },
+      },
     })
     expect(out[0]).toMatchObject({ validFrom: '2011-02-03T00:00:00.000Z', validUntil: '2031-02-03T00:00:00.000Z' })
   })
 
   it('emits null validFrom/validUntil when the VC body declares no validity window', async () => {
-    const out = await buildEcsCredentials({ service })
+    const out = await buildEcsCredentials({
+      service: { ...service, validFrom: undefined, validUntil: undefined, raw: { id: 'urn:uuid:service-vc-3' } },
+    })
     expect(out[0].validFrom).toBeNull()
     expect(out[0].validUntil).toBeNull()
   })
