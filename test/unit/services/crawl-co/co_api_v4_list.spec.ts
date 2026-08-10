@@ -148,13 +148,14 @@ describe('CorporationApiService.listCorporationsV4', () => {
     expect(res.corporations[1]).toMatchObject({ id: 2, controlled_ecosystems: 0, deposit: 0 })
   })
 
-  it('applies did, modified_after and cursor filters plus sort/limit to the query', async () => {
+  it('applies did, policy_address, modified_after and cursor filters plus sort/limit to the query', async () => {
     const qb = queryResolvesTo([])
     ;(calculateCorporationParticipantStatsBatch as jest.Mock).mockResolvedValue(new Map())
 
     const ctx: any = {
       params: {
         did: 'did:example:co',
+        policy_address: 'verana1pol',
         modified_after: '2024-05-01T00:00:00Z',
         min_id: '5',
         max_id: '10',
@@ -169,8 +170,52 @@ describe('CorporationApiService.listCorporationsV4', () => {
     expect(qb.where).toHaveBeenCalledWith('modified', '>', '2024-05-01T00:00:00.000Z')
     expect(qb.where).toHaveBeenCalledWith('id', '>=', '5')
     expect(qb.where).toHaveBeenCalledWith('id', '<', '10')
+    // the grouped policy_address clause is ANDed onto the same chain as the other filters
+    expect((qb.where as jest.Mock).mock.calls.filter((call: unknown[]) => typeof call[0] === 'function')).toHaveLength(
+      1
+    )
     expect(qb.orderBy).toHaveBeenCalledWith('id', 'asc')
     expect(qb.limit).toHaveBeenCalledWith(25)
+  })
+
+  it('applies the policy_address filter over both policy_address and the legacy corporation column', async () => {
+    const qb = queryResolvesTo([])
+    const ctx: any = { params: { policy_address: 'verana1pol, verana1pol2,verana1pol' }, meta: {} }
+    await service.listCorporationsV4(ctx)
+
+    const groupedCall = (qb.where as jest.Mock).mock.calls.find((call: unknown[]) => typeof call[0] === 'function')
+    expect(groupedCall).toBeDefined()
+
+    const outer: any = { whereIn: jest.fn(() => outer), orWhere: jest.fn(() => outer) }
+    groupedCall![0](outer)
+    expect(outer.whereIn).toHaveBeenCalledWith('policy_address', ['verana1pol', 'verana1pol2'])
+
+    const legacyFn = (outer.orWhere as jest.Mock).mock.calls[0][0]
+    const legacy: any = { whereNull: jest.fn(() => legacy), whereIn: jest.fn(() => legacy) }
+    legacyFn(legacy)
+    expect(legacy.whereNull).toHaveBeenCalledWith('policy_address')
+    expect(legacy.whereIn).toHaveBeenCalledWith('corporation', ['verana1pol', 'verana1pol2'])
+  })
+
+  it('rejects a present-but-empty policy_address with 400', async () => {
+    queryResolvesTo([])
+    const ctx: any = { params: { policy_address: '' }, meta: {} }
+    const res: any = await service.listCorporationsV4(ctx)
+    expect(res).toMatchObject({ code: 400 })
+  })
+
+  it('accepts a full 64-entry policy_address list and forwards every address', async () => {
+    const qb = queryResolvesTo([])
+    const addresses = Array.from({ length: 64 }, (_, i) => `verana1addr${i}`)
+    const ctx: any = { params: { policy_address: addresses.join(',') }, meta: {} }
+    const res: any = await service.listCorporationsV4(ctx)
+    expect(res).toEqual({ corporations: [] })
+
+    const groupedCall = (qb.where as jest.Mock).mock.calls.find((call: unknown[]) => typeof call[0] === 'function')
+    expect(groupedCall).toBeDefined()
+    const outer: any = { whereIn: jest.fn(() => outer), orWhere: jest.fn(() => outer) }
+    groupedCall![0](outer)
+    expect(outer.whereIn).toHaveBeenCalledWith('policy_address', addresses)
   })
 
   it('defaults to newest-first (id desc) and limit 64', async () => {
@@ -230,6 +275,17 @@ describe('CorporationApiService.listCorporationsV4', () => {
     expect(qb.where).toHaveBeenCalledWith('created', '<=', '2024-03-01T00:00:00.000Z')
   })
 
+  it('composes the policy_address filter with the At-Block-Height created cutoff', async () => {
+    const qb = queryResolvesTo([])
+    const ctx: any = { params: { policy_address: 'verana1pol' }, meta: { blockHeight: 5 } }
+    await service.listCorporationsV4(ctx)
+
+    expect(qb.where).toHaveBeenCalledWith('created', '<=', '2024-03-01T00:00:00.000Z')
+    expect((qb.where as jest.Mock).mock.calls.filter((call: unknown[]) => typeof call[0] === 'function')).toHaveLength(
+      1
+    )
+  })
+
   it('does not apply the created filter when no At-Block-Height is set', async () => {
     const qb = queryResolvesTo([])
     const ctx: any = { params: {}, meta: {} }
@@ -271,6 +327,8 @@ describe('CorporationApiService.listCorporationsV4', () => {
       { min_id: 'abc' },
       { sort: 'weight' },
       { modified_after: 'not-a-date' },
+      { policy_address: ',,,' },
+      { policy_address: Array.from({ length: 65 }, (_, i) => `verana1addr${i}`).join(',') },
     ]) {
       jest.clearAllMocks()
       ;(parseTrustDataMode as jest.Mock).mockReturnValue({ ok: true, mode: 'none' })

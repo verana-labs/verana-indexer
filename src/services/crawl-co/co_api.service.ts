@@ -29,6 +29,7 @@ import {
   getResolvedBlockHeight,
   parseCorporationListPagination,
   parseGfDataMode,
+  parsePolicyAddressFilter,
 } from './co_stats'
 
 // Stored event_type -> spec ActivityItem.msg. CGF events are stored under their spec names already.
@@ -189,6 +190,7 @@ export default class CorporationApiService extends BaseService {
       gf_data?: string
       preferred_language?: string
       did?: string
+      policy_address?: string
       modified_after?: string
       trust_data?: string
       limit?: string
@@ -218,6 +220,12 @@ export default class CorporationApiService extends BaseService {
       }
       const { limit, minId, maxId, direction } = pageParsed.value
 
+      const policyParsed = parsePolicyAddressFilter(ctx.params.policy_address)
+      if (!policyParsed.ok) {
+        return ApiResponder.error(ctx, policyParsed.message, 400)
+      }
+      const policyAddresses = policyParsed.addresses
+
       let modifiedAfterIso: string | undefined
       if (ctx.params.modified_after) {
         const ts = new Date(ctx.params.modified_after)
@@ -233,6 +241,14 @@ export default class CorporationApiService extends BaseService {
         gfData === 'none' ? 'governanceFrameworkVersions' : 'governanceFrameworkVersions.documents'
       )
       if (did) query = query.where('did', String(did))
+      // Matches the effective address (policy_address ?? corporation) — legacy rows store it only in `corporation`.
+      if (policyAddresses) {
+        query = query.where((qb) => {
+          qb.whereIn('policy_address', policyAddresses).orWhere((legacy) => {
+            legacy.whereNull('policy_address').whereIn('corporation', policyAddresses)
+          })
+        })
+      }
       if (modifiedAfterIso) query = query.where('modified', '>', modifiedAfterIso)
       if (minId !== undefined) query = query.where('id', '>=', minId)
       if (maxId !== undefined) query = query.where('id', '<', maxId)

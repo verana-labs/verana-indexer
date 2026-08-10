@@ -4,7 +4,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('corporation', (table) => {
     table.bigIncrements('id').primary()
     table.string('did').notNullable().unique()
-    table.text('policy_address').nullable()
+    table.text('policy_address').nullable().unique()
     table.string('corporation').nullable()
     table.string('creator').nullable()
     table.string('language', 8).nullable()
