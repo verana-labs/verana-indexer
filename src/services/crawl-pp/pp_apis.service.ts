@@ -2,7 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
-import { validateParticipantParam, validateRequiredAccountParam } from '../../common/utils/accountValidation'
+import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
@@ -2484,14 +2484,14 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET pending/flat',
     params: {
-      account: { type: 'string' },
+      corporation_id: { type: 'number', integer: true, positive: true },
       limit: { type: 'number', optional: true, default: 64 },
       trust_data: { type: 'string', optional: true },
     },
   })
   async pendingFlat(
     ctx: Context<{
-      account: string
+      corporation_id: number
       limit?: number
       trust_data?: string
     }>
@@ -2503,16 +2503,9 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, trustDataModeParsed.message, 400)
       }
       const trustDataMode = trustDataModeParsed.mode
-      const accountRaw = typeof p.account === 'string' && p.account.trim() !== '' ? p.account : undefined
-      const accountValidation = validateRequiredAccountParam(accountRaw, 'account')
-      if (!accountValidation.valid) {
-        return ApiResponder.error(ctx, accountValidation.error, 400)
-      }
-      const account = accountValidation.value
-      // VPR v4: validator ownership is corporation-based; resolve the account once.
-      const accountCorpId = await resolveCorporationIdByAddress(account)
-      if (accountCorpId === null) {
-        return ApiResponder.success(ctx, { ecosystems: [] }, 200)
+      const corporationId = Number(p.corporation_id)
+      if (!Number.isInteger(corporationId) || corporationId <= 0) {
+        return ApiResponder.error(ctx, '"corporation_id" must be a positive integer', 400)
       }
 
       const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
@@ -2525,7 +2518,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const validatorParentTypeList = [...PENDING_FLAT_VALIDATOR_PARENT_TYPES]
 
-      /** At-height: latest row per participant where account holds a grantor/validator parent role. */
+      /** At-height: latest row per participant where the Corporation holds a grantor/validator parent role. */
       let parentIdsAtHeightSubquery: ReturnType<typeof knex> | null = null
       if (useHistory) {
         const rankedParentAtHeight = knex('participant_history')
@@ -2536,7 +2529,7 @@ export default class ParticipantAPIService extends BullableService {
             )
           )
           .whereRaw('height <= ?', [Number(blockHeight)])
-          .andWhere('corporation_id', accountCorpId)
+          .andWhere('corporation_id', corporationId)
           .whereIn('role', validatorParentTypeList)
           .as('ranked_parent')
 
@@ -2550,7 +2543,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const validatorParentIdsSubquery = knex('participants')
         .select('id')
-        .where('corporation_id', accountCorpId)
+        .where('corporation_id', corporationId)
         .whereIn('role', validatorParentTypeList)
 
       if (!useHistory) {
@@ -2609,7 +2602,7 @@ export default class ParticipantAPIService extends BullableService {
           )
           .whereRaw('height <= ?', [Number(blockHeight)])
           .where((qb) => {
-            qb.where('corporation_id', accountCorpId)
+            qb.where('corporation_id', corporationId)
             if (parentIdsAtHeightSubquery) {
               qb.orWhereIn('validator_participant_id', parentIdsAtHeightSubquery.clone())
             }
@@ -2679,7 +2672,7 @@ export default class ParticipantAPIService extends BullableService {
         const rows = await knex('participants')
           .select(baseColumns)
           .where((qb) => {
-            qb.where('corporation_id', accountCorpId)
+            qb.where('corporation_id', corporationId)
             qb.orWhereIn('validator_participant_id', validatorParentIdsSubquery.clone())
           })
           .limit(fetchLimit)
@@ -2700,7 +2693,7 @@ export default class ParticipantAPIService extends BullableService {
         50
       )
       const filtered = enriched.filter((participant: any) => {
-        if (Number(participant.corporation_id ?? 0) === accountCorpId) {
+        if (Number(participant.corporation_id ?? 0) === corporationId) {
           if (pendingFlatMatchesOpPendingWithEligibleParticipantState(participant)) return true
           if (participant.participant_state === 'SLASHED') return true
           if (participant.participant_state === 'ACTIVE' && participant.expire_soon === true) return true
