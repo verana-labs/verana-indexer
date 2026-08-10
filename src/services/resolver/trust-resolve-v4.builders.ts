@@ -660,6 +660,17 @@ function ecsSchemaVersionFromId(schemaJson: unknown): string {
   return m ? m[1] : 'v4'
 }
 
+type VerifiableCredential = {
+  id?: string
+  issuer?: string
+  credentialSubject?: Record<string, unknown>
+  validFrom?: string
+  validUntil?: string
+  issuanceDate?: string
+  expirationDate?: string
+  proof?: unknown
+}
+
 function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
   const rawSubject = (cred.raw as { credentialSubject?: unknown } | undefined)?.credentialSubject
   if (rawSubject && typeof rawSubject === 'object' && !Array.isArray(rawSubject)) {
@@ -706,7 +717,7 @@ async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string):
         credentialSchemaId: Number(cs.id) || 0,
         ecosystemId: Number(cs.ecosystem_id) || 0,
         ecsSchemaVersion: ecsSchemaVersionFromId(cs.json_schema),
-        digestAlgorithm: cs.digest_algorithm ?? null,
+        digestAlgorithm: cs.digest_algorithm,
       }
     }
   }
@@ -766,14 +777,14 @@ export async function buildEcsCredentials(resolveResult: unknown): Promise<Array
     const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null
     if (!link) continue
 
-    const raw = c.raw && typeof c.raw === 'object' ? (c.raw as Record<string, unknown>) : null
+    const raw = c.raw && typeof c.raw === 'object' ? (c.raw as VerifiableCredential) : null
     const id = typeof raw?.id === 'string' ? raw.id : ''
     if (!id || seenIds.has(id)) continue
 
     const digestAlgorithm = link.digestAlgorithm
     const digestJCS =
       raw && (digestAlgorithm === 'sha384' || digestAlgorithm === 'sha512')
-        ? computeCredentialDigestJCS(raw as Parameters<typeof computeCredentialDigestJCS>[0], digestAlgorithm)
+        ? computeCredentialDigestJCS(raw, digestAlgorithm)
         : null
     const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
     if (!digestJCS || !issuedAtTime) continue

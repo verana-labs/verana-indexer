@@ -8058,7 +8058,7 @@
         "required": ["ecsSchema", "ecsSchemaVersion", "credentialSchemaId", "issuerParticipantId", "ecosystemId", "participantId", "id", "digestJCS", "issuedAtTime", "validFrom", "validUntil", "credentialSubject"],
         "properties": {
           "ecsSchema": { "type": "string", "enum": ["ServiceCredential", "OrganizationCredential", "PersonaCredential", "UserAgentCredential", "BadgeCredential"] },
-          "ecsSchemaVersion": { "type": "string" },
+          "ecsSchemaVersion": { "type": "string", "enum": ["v1", "v4"] },
           "credentialSchemaId": { "type": "integer", "minimum": 0 },
           "issuerParticipantId": { "type": "integer", "minimum": 0 },
           "ecosystemId": { "type": "integer", "minimum": 0 },
