@@ -3348,17 +3348,18 @@
           "Participant"
         ],
         "summary": "Get pending tasks",
-        "description": "Return pending tasks for a given account grouped by Ecosystem and Credential Schema. Supports At-Block-Height header for historical state.",
+        "description": "Return the open task list for a given Corporation — every Participant whose validator Participant entry is owned by that Corporation and whose state requires the validator's action — grouped by Ecosystem and Credential Schema. Supports At-Block-Height header for historical state.",
         "operationId": "pendingFlat",
         "parameters": [
           {
-            "name": "account",
+            "name": "corporation_id",
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Account address"
+            "description": "Id of the Corporation whose pending tasks are returned (the Corporation owning the validator Participant entries). Which of its operators may execute a pending action is resolved separately against the Corporation's authorization grants"
           },
           {
             "name": "limit",
@@ -6936,7 +6937,7 @@
             "items": {
               "$ref": "#/components/schemas/Participant"
             },
-            "description": "Participant entries pending action from the validator account"
+            "description": "Participant entries pending action from the validator Corporation"
           }
         }
       },
