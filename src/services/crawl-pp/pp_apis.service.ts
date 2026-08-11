@@ -21,10 +21,12 @@ import { compareById, paginateActivityItems, parseCorporationListPagination } fr
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
+  applyActiveEffectiveFromFilter,
   calculateCorporationAvailableActions,
   calculateParticipantState,
   calculateValidatorAvailableActions,
   mapParticipantActionsToVprMessages,
+  ONBOARDING_PENDING_OP_STATES,
   type ParticipantState,
   PENDING_FLAT_VALIDATOR_PARENT_TYPES,
   pendingFlatMatchesOpPendingWithEligibleParticipantState,
@@ -521,6 +523,9 @@ export default class ParticipantAPIService extends BullableService {
     const notRevokedAsOfNow = (qb: any) => {
       qb.whereNull(col('revoked')).orWhere(col('revoked'), '>=', nowIso)
     }
+    const onboardingPending = (qb: any) => {
+      qb.whereIn(col('op_state'), ONBOARDING_PENDING_OP_STATES)
+    }
 
     if (participantState === 'REPAID') {
       query.whereNotNull(col('repaid'))
@@ -554,7 +559,7 @@ export default class ParticipantAPIService extends BullableService {
         baseNotRepaidSlashed(qb)
         qb.where(notRevokedAsOfNow)
         qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNotNull(col('effective_from')).andWhere(col('effective_from'), '<=', nowIso)
+        applyActiveEffectiveFromFilter(qb, nowIso, col)
       })
       return { pushedDown: true }
     }
@@ -574,7 +579,7 @@ export default class ParticipantAPIService extends BullableService {
         baseNotRepaidSlashed(qb)
         qb.where(notRevokedAsOfNow)
         qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNull(col('effective_from'))
+        qb.whereNull(col('effective_from')).andWhere(onboardingPending)
       })
       return { pushedDown: true }
     }

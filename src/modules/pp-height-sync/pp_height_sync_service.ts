@@ -10,6 +10,12 @@ import {
 const PARTICIPANT_INGEST_SERVICE = 'participantIngest'
 const PARTICIPANT_MULTI_HEIGHT_WINDOW = 3
 
+export type ParticipantHeightSyncResult = {
+  attempted: number
+  synced: number
+  syncedIds: number[]
+}
+
 type ParticipantHeightSyncLogger = {
   info?: (message: string) => void
   warn?: (message: string) => void
@@ -28,10 +34,12 @@ function getParticipantHeightSyncLogger(broker: ServiceBroker): ParticipantHeigh
 export async function runHeightSyncParticipant(
   broker: ServiceBroker,
   messages: ParticipantMessagePayload[]
-): Promise<void> {
-  if (!Array.isArray(messages) || messages.length === 0) return
+): Promise<ParticipantHeightSyncResult> {
+  const result: ParticipantHeightSyncResult = { attempted: 0, synced: 0, syncedIds: [] }
+  if (!Array.isArray(messages) || messages.length === 0) return result
 
   const logger = getParticipantHeightSyncLogger(broker)
+  const syncedIds = new Set<number>()
 
   for (const msg of messages) {
     const blockHeight = Number(msg.height || 0)
@@ -41,6 +49,7 @@ export async function runHeightSyncParticipant(
 
     const participantIds = extractImpactedParticipantIds(msg)
     const sessionIds = extractImpactedSessionIds(msg)
+    result.attempted += participantIds.length
     if (participantIds.length === 0 && sessionIds.length === 0) {
       logger.warn?.(
         `[PP Height Sync] No impacted participant/session IDs resolved from message/events; skipping txHash=${msg.txHash || 'unknown'} at block=${blockHeight}`
@@ -62,6 +71,10 @@ export async function runHeightSyncParticipant(
         txHash: msg.txHash,
         msgType: msg.type,
       })) as any
+
+      if (syncResult?.success === true) {
+        syncedIds.add(participantId)
+      }
 
       const immediateCompare = (await broker.call(`${PARTICIPANT_INGEST_SERVICE}.compareParticipantWithLedger`, {
         participantId,
@@ -137,4 +150,8 @@ export async function runHeightSyncParticipant(
       }
     }
   }
+
+  result.syncedIds = [...syncedIds]
+  result.synced = result.syncedIds.length
+  return result
 }

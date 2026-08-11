@@ -108,12 +108,18 @@ describe('🧪 pp_state_utils', () => {
       expect(calculateParticipantState(participant, NOW)).toBe('FUTURE')
     })
 
-    it('returns INACTIVE when no timestamps are set', () => {
-      const participant: ParticipantData = {
-        ...baseParticipant,
-      }
+    it('returns ACTIVE when effective_from is null and no onboarding process is pending', () => {
+      expect(calculateParticipantState({ ...baseParticipant }, NOW)).toBe('ACTIVE')
+      expect(calculateParticipantState({ ...baseParticipant, op_state: null }, NOW)).toBe('ACTIVE')
+      expect(calculateParticipantState({ ...baseParticipant, op_state: 'VALIDATED' }, NOW)).toBe('ACTIVE')
+      expect(
+        calculateParticipantState({ ...baseParticipant, op_state: 'VALIDATION_STATE_UNSPECIFIED' }, NOW)
+      ).toBe('ACTIVE')
+    })
 
-      expect(calculateParticipantState(participant, NOW)).toBe('INACTIVE')
+    it('returns INACTIVE when effective_from is null and the onboarding process is PENDING or TERMINATED', () => {
+      expect(calculateParticipantState({ ...baseParticipant, op_state: 'PENDING' }, NOW)).toBe('INACTIVE')
+      expect(calculateParticipantState({ ...baseParticipant, op_state: 'TERMINATED' }, NOW)).toBe('INACTIVE')
     })
   })
 
