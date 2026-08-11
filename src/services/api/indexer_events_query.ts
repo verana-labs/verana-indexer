@@ -24,7 +24,14 @@ import {
 
 export type IndexerTxEvent = {
   type: 'transaction-executed'
-  module: 'ecosystem' | 'credential-schema' | 'participant' | 'digital-identity' | 'delegation' | 'corporation'
+  module:
+    | 'ecosystem'
+    | 'credential-schema'
+    | 'participant'
+    | 'digital-identity'
+    | 'delegation'
+    | 'corporation'
+    | 'group'
   action: string
   messageType: string
   blockHeight: number
@@ -822,6 +829,159 @@ async function buildDelegationEvents(blockHeight: number): Promise<IndexerTxEven
   return events
 }
 
+const GROUP_ROUTED_MESSAGE_TYPES = [
+  '/cosmos.group.v1.MsgSubmitProposal',
+  '/cosmos.group.v1.MsgVote',
+  '/cosmos.group.v1.MsgExec',
+  '/cosmos.group.v1.MsgWithdrawProposal',
+  '/cosmos.group.v1.MsgUpdateGroupMembers',
+  '/cosmos.group.v1.MsgUpdateGroupMetadata',
+  '/cosmos.group.v1.MsgUpdateGroupAdmin',
+  '/cosmos.group.v1.MsgUpdateGroupPolicyDecisionPolicy',
+  '/cosmos.group.v1.MsgUpdateGroupPolicyMetadata',
+  '/cosmos.group.v1.MsgUpdateGroupPolicyAdmin',
+  '/cosmos.group.v1.MsgLeaveGroup',
+]
+
+// Anchors on the corporation table itself, so routing does not wait for the (separately checkpointed)
+// group processor to fill corporation_group.
+async function loadCorporationByPolicyAddress(policyAddress: string): Promise<{
+  corporationId?: number
+  did?: string
+}> {
+  const row = await knex('corporation')
+    .where(function () {
+      this.where('policy_address', policyAddress).orWhere('corporation', policyAddress)
+    })
+    .select('id', 'did')
+    .first()
+  if (!row) return {}
+  return { corporationId: toCorporationId(row.id), did: normalizeDid(row.did) }
+}
+
+async function loadCorporationByGroupId(groupId: number): Promise<{ corporationId?: number; did?: string }> {
+  const row = await knex('corporation_group as cg')
+    .innerJoin('corporation as co', 'co.id', 'cg.corporation_id')
+    .where('cg.group_id', groupId)
+    .select('cg.corporation_id', 'co.did')
+    .first()
+  if (!row) return {}
+  return { corporationId: toCorporationId(row.corporation_id), did: normalizeDid(row.did) }
+}
+
+// Falls back to the submit tx stored in the DB, so pruned proposals and not-yet-processed blocks still resolve.
+async function resolveProposalPolicyAddress(proposalId: number): Promise<string | undefined> {
+  const proposal = await knex('group_proposal').select('group_policy_address').where('id', proposalId).first()
+  if (proposal?.group_policy_address) return String(proposal.group_policy_address)
+  const submitAttr = await knex('event_attribute as ea')
+    .innerJoin('event as e', 'e.id', 'ea.event_id')
+    .where('e.type', 'cosmos.group.v1.EventSubmitProposal')
+    .where('ea.key', 'proposal_id')
+    .where('ea.value', JSON.stringify(String(proposalId)))
+    .select('e.tx_id', 'e.tx_msg_index')
+    .first()
+  if (!submitAttr?.tx_id) return undefined
+  // Match the submitting message by index: one tx can batch several MsgSubmitProposal for different policies.
+  const submitMessage = await knex('transaction_message')
+    .where('tx_id', submitAttr.tx_id)
+    .where('type', '/cosmos.group.v1.MsgSubmitProposal')
+    .where('index', Number(submitAttr.tx_msg_index ?? 0))
+    .select('content')
+    .first()
+  const content = submitMessage?.content as Record<string, unknown> | undefined
+  const address = content?.group_policy_address
+  return typeof address === 'string' && address ? address : undefined
+}
+
+// MsgSubmitProposal carries no proposal id (assigned on-chain) — read it from the tx's own event.
+async function resolveSubmittedProposalId(txHash: string, messageIndex: number): Promise<string | undefined> {
+  const row = await knex('event as e')
+    .innerJoin('transaction as tx', 'tx.id', 'e.tx_id')
+    .innerJoin('event_attribute as ea', 'ea.event_id', 'e.id')
+    .where('tx.hash', txHash)
+    .where('e.type', 'cosmos.group.v1.EventSubmitProposal')
+    .where('ea.key', 'proposal_id')
+    .select('ea.value', 'e.tx_msg_index')
+    .orderBy('e.id', 'asc')
+  const match = row.find((entry) => Number(entry.tx_msg_index ?? 0) === messageIndex) ?? row[0]
+  if (!match) return undefined
+  const value = String(match.value ?? '').replace(/^"|"$/g, '')
+  return /^\d+$/.test(value) ? value : undefined
+}
+
+async function buildGroupEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+  const rows = (await knex('transaction_message as tm')
+    .innerJoin('transaction as tx', 'tx.id', 'tm.tx_id')
+    .where('tx.height', blockHeight)
+    .andWhere('tx.code', 0)
+    .whereIn('tm.type', GROUP_ROUTED_MESSAGE_TYPES)
+    .select(
+      'tm.index as message_index',
+      'tm.type as message_type',
+      'tm.sender',
+      'tm.content',
+      'tx.height as block_height',
+      'tx.hash as tx_hash',
+      'tx.index as tx_index',
+      'tx.timestamp'
+    )
+    .orderBy('tx.index', 'asc')
+    .orderBy('tm.index', 'asc')) as EventRow[]
+  if (rows.length === 0) return []
+
+  const events: IndexerTxEvent[] = []
+  for (const row of rows) {
+    const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
+    const action = toShortMessageType(row.message_type).replace(/^Msg/, '')
+
+    let anchor: { corporationId?: number; did?: string } = {}
+    let entityType = 'CorporationGroup'
+    let entityId: string | undefined
+    const policyAddress = readAddress(content.group_policy_address)
+    const groupId = readFirstPositiveInteger(content, ['group_id', 'groupId'])
+    const proposalId = readFirstPositiveInteger(content, ['proposal_id', 'proposalId'])
+    if (policyAddress) {
+      anchor = await loadCorporationByPolicyAddress(policyAddress)
+    } else if (groupId) {
+      anchor = await loadCorporationByGroupId(groupId)
+    } else if (proposalId) {
+      const resolvedAddress = await resolveProposalPolicyAddress(proposalId)
+      if (resolvedAddress) anchor = await loadCorporationByPolicyAddress(resolvedAddress)
+      entityType = 'GroupProposal'
+      entityId = String(proposalId)
+    }
+    if (row.message_type === '/cosmos.group.v1.MsgSubmitProposal') {
+      entityType = 'GroupProposal'
+      entityId = await resolveSubmittedProposalId(row.tx_hash, Number(row.message_index))
+    }
+    // CorporationGroup entities are keyed by corporation_id; group_id lives in a different id space.
+    if (entityType === 'CorporationGroup' && anchor.corporationId) entityId = String(anchor.corporationId)
+
+    // Group events anchoring no Corporation stay wildcard-only (did null, no corporation scope).
+    events.push({
+      type: 'transaction-executed',
+      module: 'group',
+      action,
+      messageType: row.message_type,
+      blockHeight: Number(row.block_height),
+      txHash: row.tx_hash,
+      txIndex: Number(row.tx_index),
+      messageIndex: Number(row.message_index),
+      sender: row.sender ?? '',
+      did: anchor.did ?? null,
+      relatedDids: anchor.did ? [anchor.did] : [],
+      entityType,
+      entityId,
+      corporationId: anchor.corporationId,
+      relatedCorporationIds: [],
+      timestamp: toIsoSeconds(row.timestamp),
+    })
+  }
+  return events
+}
+
+export const buildGroupEventsForTest = buildGroupEvents
+
 export async function persistIndexerEventsForBlock(blockHeight: number): Promise<IndexerEventRecord[]> {
   const rows: Array<Record<string, unknown>> = []
   const pageSize = 500
@@ -834,6 +994,8 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   }
   const delegationEvents = await buildDelegationEvents(blockHeight)
   rows.push(...delegationEvents.map(toEventRow))
+  const groupEvents = await buildGroupEvents(blockHeight)
+  rows.push(...groupEvents.map(toEventRow))
   let insertedIds: number[] = []
 
   if (rows.length > 0) {
