@@ -28,6 +28,12 @@ function asSchemaJsonString(value: unknown): string {
   return JSON.stringify(value ?? {})
 }
 
+const SRI_DIGEST_ALGORITHMS = ['sha384', 'sha512'] as const
+
+export function anchoredDigestForms(digestJCS: string): string[] {
+  return [digestJCS, ...SRI_DIGEST_ALGORITHMS.map((algorithm) => `${algorithm}-${digestJCS}`)]
+}
+
 function positiveInt(value: unknown): number | null {
   const n = Number(value)
   if (!Number.isInteger(n) || n <= 0) return null
@@ -121,7 +127,10 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
 
   async fetchDigest(digestJCS: string): Promise<{ created: string; height?: number } | undefined> {
     if (!digestJCS) return undefined
-    const row = (await knex('digests').select('created', 'height').where({ digest: digestJCS }).first()) as
+    const row = (await knex('digests')
+      .select('created', 'height')
+      .whereIn('digest', anchoredDigestForms(digestJCS))
+      .first()) as
       | { created?: Date | string | null; height?: number | null }
       | undefined
     const created = toIso(row?.created)
