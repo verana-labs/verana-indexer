@@ -398,7 +398,10 @@ export default class DelegationApiService extends BaseService {
   ) {
     if (p.grantor_corporation_id !== undefined) query.where('grantor_corporation_id', p.grantor_corporation_id)
     if (p.grantee) query.where('grantee', p.grantee)
-    if (p.msg_type) query.whereRaw('msg_types @> ?::jsonb', [JSON.stringify([p.msg_type])])
+    // Empty msg_types means the allowance carries no message filter, so it covers every type.
+    if (p.msg_type) {
+      query.whereRaw("(msg_types @> ?::jsonb OR msg_types = '[]'::jsonb)", [JSON.stringify([p.msg_type])])
+    }
     if (ctx.now) {
       // Periodic grants auto-renew: a past cycle boundary never makes them inactive.
       query.where((builder: any) =>

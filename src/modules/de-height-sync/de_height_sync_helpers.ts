@@ -266,6 +266,7 @@ export async function fetchFeeGrantAllowance(
   if (!allowance) return undefined
 
   if (allowance.typeUrl !== ALLOWED_MSG_ALLOWANCE_TYPE_URL) {
+    // No AllowedMsgAllowance wrapper means no message filter: empty msg_types reads as unrestricted.
     const inner = unwrapFeeGrantAllowance(allowance.typeUrl, allowance.value)
     return inner ? { msg_types: [], ...inner } : undefined
   }

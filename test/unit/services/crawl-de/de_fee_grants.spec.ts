@@ -282,6 +282,62 @@ describe('DelegationApiService.listFeeGrants', () => {
   })
 })
 
+describe('DelegationApiService.listFeeGrants msg_type filter', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const serviceKey = SERVICE.V1.DelegationApiService.path
+
+  beforeAll(async () => {
+    broker.createService(DelegationApiService)
+    await broker.start()
+
+    await knex('fee_grant_history').del()
+    await knex('fee_grants').del()
+
+    await knex('fee_grants').insert([
+      seedFeeGrantRow({
+        id: 10,
+        grantor_corporation_id: 1,
+        grantee: 'verana1restricted',
+        msg_types: [EC_CREATE],
+        modified: T1,
+        height: 100,
+      }),
+      seedFeeGrantRow({
+        id: 11,
+        grantor_corporation_id: 1,
+        grantee: 'verana1unrestricted',
+        msg_types: [],
+        modified: T1,
+        height: 100,
+      }),
+    ])
+  })
+
+  afterAll(async () => {
+    await broker.stop()
+  })
+
+  const list = (params: Record<string, unknown> = {}) =>
+    broker.call(`${serviceKey}.listFeeGrants`, params) as Promise<any>
+
+  it('returns both restricted and unrestricted grants when unfiltered', async () => {
+    expect(listedIds(await list({ sort: '+id' }))).toEqual([10, 11])
+  })
+
+  it('matches a grant whose msg_types includes the type, plus unrestricted grants', async () => {
+    expect(listedIds(await list({ msg_type: EC_CREATE, sort: '+id' }))).toEqual([10, 11])
+  })
+
+  it('keeps unrestricted grants for a type no restricted grant covers', async () => {
+    expect(listedIds(await list({ msg_type: CS_CREATE }))).toEqual([11])
+  })
+
+  it('serializes an unrestricted grant with an empty msg_types array', async () => {
+    const [row] = (await list({ msg_type: CS_CREATE })).fee_grants
+    expect(row.msg_types).toEqual([])
+  })
+})
+
 describe('DelegationDatabaseService fee grant actions', () => {
   const broker = new ServiceBroker({ logger: false })
   const serviceKey = SERVICE.V1.DelegationDatabaseService.path

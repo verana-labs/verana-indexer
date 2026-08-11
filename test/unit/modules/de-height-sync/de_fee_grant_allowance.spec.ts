@@ -73,6 +73,19 @@ describe('fetchFeeGrantAllowance', () => {
     })
   })
 
+  it('reports an unwrapped allowance as unrestricted (empty msg_types)', async () => {
+    const basic = BasicAllowance.encode(
+      BasicAllowance.fromPartial({ spendLimit: [{ denom: 'uvna', amount: '600' }] })
+    ).finish()
+    mockAbci.mockResolvedValue({
+      allowance: { typeUrl: '/cosmos.feegrant.v1beta1.BasicAllowance', value: basic },
+    })
+
+    const snapshot = await fetchFeeGrantAllowance('verana1policy', 'verana1op', 100)
+    expect(snapshot?.msg_types).toEqual([])
+    expect(snapshot?.spend_limit).toEqual([{ denom: 'uvna', amount: '600' }])
+  })
+
   it('returns undefined when the chain reports the allowance absent', async () => {
     mockAbci.mockRejectedValue(
       new Error('Query failed with (38): rpc error: code = Internal desc = fee-grant not found: not found')

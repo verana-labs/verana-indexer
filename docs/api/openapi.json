@@ -4901,6 +4901,139 @@
         }
       }
     },
+    "/v4/delegation/fee-grants": {
+      "get": {
+        "tags": ["Delegation"],
+        "summary": "List Fee Grants",
+        "description": "Retrieve a paginated, filtered list of FeeGrant entries: the grants through which a Corporation pays network transaction fees on behalf of a grantee. Aligned with the VPR FeeGrant entity (IDX-DE-QRY-5).",
+        "operationId": "listFeeGrants",
+        "parameters": [
+          {
+            "name": "grantor_corporation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint64"
+            },
+            "description": "Filter by the granting Corporation id"
+          },
+          {
+            "name": "grantee",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by the grantee account"
+          },
+          {
+            "name": "msg_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to grants whose msg_types[] includes this message type. Grants with an empty msg_types carry no message filter and match every type."
+          },
+          {
+            "name": "only_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, only return non-expired grants (expiration > now or null). A periodic grant's auto-renewing cycle boundary never makes it inactive."
+          },
+          {
+            "name": "modified_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only return grants modified strictly after this datetime. A grant is modified by its creation, update or revocation, and by any change to remaining_spend (fee draw or cycle reset)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "default": 64
+            },
+            "description": "Caps the number of items returned"
+          },
+          {
+            "name": "min_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Inclusive lower bound of the id range cursor"
+          },
+          {
+            "name": "max_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Exclusive upper bound of the id range cursor"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "+id",
+                "-id"
+              ],
+              "default": "-id"
+            },
+            "description": "Sort by id ascending (id/+id) or descending (-id, default)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of fee grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fee_grants": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FeeGrant"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
     "/v4/trust-deposit/get/{corporation}": {
       "get": {
         "tags": [
@@ -8218,6 +8351,21 @@
           "records": { "type": "array", "items": { "$ref": "#/components/schemas/ParticipantAuthorizationRecord" } }
         }
       },
+      "FeeGrant": {
+        "type": "object",
+        "description": "A grant through which a Corporation pays network transaction fees on behalf of a grantee account (IDX-DE-QRY-5).",
+        "required": ["id", "grantor_corporation_id", "grantee", "msg_types"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64", "description": "Indexer-assigned per-row id, used as the pagination cursor. The VPR FeeGrant has no on-chain id." },
+          "grantor_corporation_id": { "type": "integer", "format": "uint64" },
+          "grantee": { "type": "string" },
+          "msg_types": { "type": "array", "items": { "type": "string" }, "description": "Message types the fee allowance applies to. Empty means the allowance carries no message filter and covers every type." },
+          "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
+          "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set. Sourced from the underlying x/feegrant allowance's running balance; zero once the allowance is exhausted." },
+          "expiration": { "type": "string", "format": "date-time", "description": "For periodic grants this is the allowance's current period_reset, the end of the current auto-renewing cycle." },
+          "period": { "type": "string", "description": "Reset period for spend_limit, as a duration (e.g. \"86400s\")." }
+        }
+      },
       "ResolutionResponse": {
         "type": "object",
         "required": ["did", "trusted", "evaluatedAtTime", "evaluatedAtBlock", "expiresAtTime", "corporationId"],
@@ -8584,7 +8732,7 @@
     },
     {
       "name": "Delegation",
-      "description": "Operator and VS-operator authorization queries"
+      "description": "Operator and VS-operator authorization queries, and corporation fee grants"
     },
     {
       "name": "Statistics",
