@@ -130,9 +130,7 @@ class IndexerRegistryAdapter implements IRegistryAdapter {
     const row = (await knex('digests')
       .select('created', 'height')
       .whereIn('digest', anchoredDigestForms(digestJCS))
-      .first()) as
-      | { created?: Date | string | null; height?: number | null }
-      | undefined
+      .first()) as { created?: Date | string | null; height?: number | null } | undefined
     const created = toIso(row?.created)
     if (!created) return undefined
     return { created, height: row?.height != null ? Number(row.height) : undefined }

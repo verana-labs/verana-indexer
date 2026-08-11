@@ -40,6 +40,7 @@ jest.mock('../../../../src/common/utils/start_mode_detector', () => ({
 jest.mock('../../../../src/services/resolver/ecs-allowlist', () => ({
   __esModule: true,
   isEcsAllowlistEnforced: () => false,
+  getEcsEcosystems: () => [],
 }))
 
 jest.mock('../../../../src/services/resolver/trust-resolve-v4.builders', () => ({

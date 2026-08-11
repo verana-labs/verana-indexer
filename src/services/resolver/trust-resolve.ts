@@ -86,9 +86,7 @@ export function getVerreTrustEvaluationCallOptions(): {
   })
 
   const allowlistedDids = getEcsEcosystems()
-  const ecsEcosystems = registries.flatMap((registry) =>
-    allowlistedDids.map((did) => ({ did, vpr: registry.scheme }))
-  )
+  const ecsEcosystems = registries.flatMap((registry) => allowlistedDids.map((did) => ({ did, vpr: registry.scheme })))
 
   return {
     verifiablePublicRegistries: registries,
