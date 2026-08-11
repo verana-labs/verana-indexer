@@ -6,10 +6,18 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { toJsonbColumn } from '../../common/utils/helper'
 import type {
+  DenomAmount,
   FeeAllowanceSnapshot,
+  FeeGrantAllowanceSnapshot,
   OperatorAuthorizationRow,
   VSOperatorAuthorizationRow,
 } from '../../modules/de-height-sync/de_height_sync_helpers'
+
+function parseJsonb<T>(value: unknown): T | null {
+  if (value == null) return null
+  if (typeof value === 'string') return JSON.parse(value)
+  return value as T
+}
 
 @Service({
   name: SERVICE.V1.DelegationDatabaseService.key,
@@ -100,6 +108,132 @@ export default class DelegationDatabaseService extends BaseService {
         operator_authorization_id: id,
         corporation_id: corporationId,
         operator,
+        modified,
+        revoked: true,
+        height: blockHeight,
+      })
+    })
+
+    return { success: true }
+  }
+
+  @Action({ name: 'syncFeeGrant' })
+  async syncFeeGrant(ctx: {
+    params: {
+      grantorCorporationId: number
+      grantee: string
+      snapshot: FeeGrantAllowanceSnapshot
+      blockHeight: number
+    }
+  }): Promise<{ success: boolean }> {
+    const { grantorCorporationId, grantee, snapshot, blockHeight } = ctx.params
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    const row = {
+      grantor_corporation_id: grantorCorporationId,
+      grantee,
+      msg_types: toJsonbColumn(snapshot.msg_types),
+      spend_limit: toJsonbColumn(snapshot.spend_limit),
+      remaining_spend: toJsonbColumn(snapshot.remaining_spend),
+      expiration: snapshot.expiration,
+      period: snapshot.period,
+      modified,
+      height: blockHeight,
+    }
+
+    await knex.transaction(async (trx) => {
+      const [upserted] = await trx('fee_grants')
+        .insert(row)
+        .onConflict(['grantor_corporation_id', 'grantee'])
+        .merge(['msg_types', 'spend_limit', 'remaining_spend', 'expiration', 'period', 'modified', 'height'])
+        .returning('id')
+
+      await trx('fee_grant_history').insert({
+        fee_grant_id: upserted.id,
+        ...row,
+        revoked: false,
+      })
+    })
+
+    return { success: true }
+  }
+
+  @Action({ name: 'refreshFeeGrantSpend' })
+  async refreshFeeGrantSpend(ctx: {
+    params: {
+      grantorCorporationId: number
+      grantee: string
+      snapshot: FeeGrantAllowanceSnapshot | null
+      blockHeight: number
+    }
+  }): Promise<{ success: boolean }> {
+    const { grantorCorporationId, grantee, snapshot, blockHeight } = ctx.params
+
+    const existing = await knex('fee_grants')
+      .where('grantor_corporation_id', grantorCorporationId)
+      .where('grantee', grantee)
+      .first()
+    if (!existing) return { success: true }
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    const spendLimit = parseJsonb<DenomAmount[]>(existing.spend_limit)
+    // Allowance gone while the grant row persists means fully exhausted: report zero.
+    const remainingSpend = snapshot
+      ? snapshot.remaining_spend
+      : (spendLimit?.map((coin) => ({ denom: coin.denom, amount: '0' })) ?? null)
+    const expiration = snapshot ? snapshot.expiration : existing.expiration
+
+    await knex.transaction(async (trx) => {
+      await trx('fee_grants')
+        .where('id', existing.id)
+        .update({
+          remaining_spend: toJsonbColumn(remainingSpend),
+          expiration,
+          modified,
+          height: blockHeight,
+        })
+
+      await trx('fee_grant_history').insert({
+        fee_grant_id: existing.id,
+        grantor_corporation_id: grantorCorporationId,
+        grantee,
+        msg_types: toJsonbColumn(parseJsonb<string[]>(existing.msg_types)),
+        spend_limit: toJsonbColumn(spendLimit),
+        remaining_spend: toJsonbColumn(remainingSpend),
+        expiration,
+        period: existing.period,
+        modified,
+        revoked: false,
+        height: blockHeight,
+      })
+    })
+
+    return { success: true }
+  }
+
+  @Action({ name: 'revokeFeeGrant' })
+  async revokeFeeGrant(ctx: {
+    params: { grantorCorporationId: number; grantee: string; blockHeight: number }
+  }): Promise<{ success: boolean }> {
+    const { grantorCorporationId, grantee, blockHeight } = ctx.params
+
+    const existing = await knex('fee_grants')
+      .where('grantor_corporation_id', grantorCorporationId)
+      .where('grantee', grantee)
+      .first()
+    if (!existing) return { success: true }
+
+    const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
+
+    await knex.transaction(async (trx) => {
+      await trx('fee_grants').where('id', existing.id).delete()
+
+      await trx('fee_grant_history').insert({
+        fee_grant_id: existing.id,
+        grantor_corporation_id: grantorCorporationId,
+        grantee,
         modified,
         revoked: true,
         height: blockHeight,
