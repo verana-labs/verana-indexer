@@ -2,7 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
-import { validateParticipantParam, validateRequiredAccountParam } from '../../common/utils/accountValidation'
+import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
@@ -216,6 +216,7 @@ export default class ParticipantAPIService extends BullableService {
 
     const disallowedKeys = [
       'corporation_id',
+      'ecosystem_id',
       'participant_id',
       'validator_participant_id',
       'participant_state',
@@ -300,6 +301,12 @@ export default class ParticipantAPIService extends BullableService {
     const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name)
 
     if (params.schema_id !== undefined) query.where(col('schema_id'), Number(params.schema_id))
+    if (params.ecosystem_id !== undefined) {
+      query.whereIn(
+        col('schema_id'),
+        knex('credential_schemas').select('id').where('ecosystem_id', Number(params.ecosystem_id))
+      )
+    }
     if (corporationIdFilter !== undefined) query.where(col('corporation_id'), corporationIdFilter)
     if (params.did) query.where(col('did'), params.did)
     if (params.participant_id !== undefined) query.where(col(participantIdColumn), Number(params.participant_id))
@@ -583,6 +590,7 @@ export default class ParticipantAPIService extends BullableService {
     options?: {
       lightweightDerivedStats?: boolean
       schemaModesById?: Map<number, SchemaData>
+      ecosystemIdBySchemaId?: Map<number, number | null>
       validatorParticipantStateById?: Map<number, ParticipantState | null>
       moduleParams?: any
     }
@@ -603,6 +611,14 @@ export default class ParticipantAPIService extends BullableService {
       new Set(
         participants
           .filter((participant) => requiresSchemaModes(String(participant?.role || '').toUpperCase()))
+          .map((participant) => Number(participant.schema_id))
+          .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
+      )
+    )
+
+    const allSchemaIds = Array.from(
+      new Set(
+        participants
           .map((participant) => Number(participant.schema_id))
           .filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
       )
@@ -647,8 +663,9 @@ export default class ParticipantAPIService extends BullableService {
       (participant) => participant?.effective_until !== null && participant?.effective_until !== undefined
     )
 
-    const [schemaModesById, validatorParticipantStateById, moduleParams] = await Promise.all([
+    const [schemaModesById, ecosystemIdBySchemaId, validatorParticipantStateById, moduleParams] = await Promise.all([
       options?.schemaModesById ?? this.getSchemaModesBatch(schemaIds, blockHeight),
+      options?.ecosystemIdBySchemaId ?? this.getEcosystemIdsBySchemaIds(allSchemaIds),
       options?.validatorParticipantStateById ??
         this.getValidatorParticipantStateMap(missingValidatorParticipantIds, blockHeight, now),
       options?.moduleParams !== undefined || !shouldLoadModuleParams
@@ -667,6 +684,7 @@ export default class ParticipantAPIService extends BullableService {
     const mergedOptions = {
       ...options,
       schemaModesById,
+      ecosystemIdBySchemaId,
       validatorParticipantStateById: mergedValidatorParticipantStateById,
       moduleParams,
     }
@@ -682,6 +700,22 @@ export default class ParticipantAPIService extends BullableService {
       results.push(...batchResults)
     }
     return results
+  }
+
+  private async getEcosystemIdsBySchemaIds(schemaIds: number[]): Promise<Map<number, number | null>> {
+    const ecosystemIdBySchemaId = new Map<number, number | null>()
+    const uniqueSchemaIds = Array.from(
+      new Set(
+        schemaIds.map((schemaId) => Number(schemaId)).filter((schemaId) => Number.isFinite(schemaId) && schemaId > 0)
+      )
+    )
+    if (uniqueSchemaIds.length === 0) return ecosystemIdBySchemaId
+
+    const rows = await knex('credential_schemas').whereIn('id', uniqueSchemaIds).select('id', 'ecosystem_id')
+    for (const row of rows) {
+      ecosystemIdBySchemaId.set(Number(row.id), row.ecosystem_id != null ? Number(row.ecosystem_id) : null)
+    }
+    return ecosystemIdBySchemaId
   }
 
   private async getSchemaModesBatch(schemaIds: number[], blockHeight?: number): Promise<Map<number, SchemaData>> {
@@ -1186,6 +1220,7 @@ export default class ParticipantAPIService extends BullableService {
     options?: {
       lightweightDerivedStats?: boolean
       schemaModesById?: Map<number, SchemaData>
+      ecosystemIdBySchemaId?: Map<number, number | null>
       validatorParticipantStateById?: Map<number, ParticipantState | null>
       moduleParams?: any
     }
@@ -1195,6 +1230,10 @@ export default class ParticipantAPIService extends BullableService {
     const schema =
       schemaFromBatch ||
       (options?.schemaModesById !== undefined ? {} : await this.getSchemaModes(schemaId, blockHeight))
+
+    const ecosystemIdBySchemaId =
+      options?.ecosystemIdBySchemaId ?? (await this.getEcosystemIdsBySchemaIds([schemaId]).catch(() => undefined))
+    const ecosystemId = ecosystemIdBySchemaId?.get(schemaId) ?? null
 
     let validatorParticipantState: ParticipantState | null = null
     const validatorParticipantStateById = options?.validatorParticipantStateById
@@ -1336,6 +1375,7 @@ export default class ParticipantAPIService extends BullableService {
       validator_available_actions: mapParticipantActionsToVprMessages(validatorActions),
       id: Number(participant.id),
       schema_id: Number(participant.schema_id),
+      ecosystem_id: ecosystemId,
       validator_participant_id: participant.validator_participant_id
         ? Number(participant.validator_participant_id)
         : null,
@@ -1377,6 +1417,7 @@ export default class ParticipantAPIService extends BullableService {
     rest: 'GET list',
     params: {
       schema_id: { type: 'number', integer: true, optional: true },
+      ecosystem_id: { type: 'number', integer: true, optional: true },
       corporation_id: { type: 'number', integer: true, optional: true },
       corporation: { type: 'string', optional: true },
       did: { type: 'string', optional: true },
@@ -2484,14 +2525,14 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET pending/flat',
     params: {
-      account: { type: 'string' },
+      corporation_id: { type: 'number', integer: true, positive: true },
       limit: { type: 'number', optional: true, default: 64 },
       trust_data: { type: 'string', optional: true },
     },
   })
   async pendingFlat(
     ctx: Context<{
-      account: string
+      corporation_id: number
       limit?: number
       trust_data?: string
     }>
@@ -2503,16 +2544,9 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, trustDataModeParsed.message, 400)
       }
       const trustDataMode = trustDataModeParsed.mode
-      const accountRaw = typeof p.account === 'string' && p.account.trim() !== '' ? p.account : undefined
-      const accountValidation = validateRequiredAccountParam(accountRaw, 'account')
-      if (!accountValidation.valid) {
-        return ApiResponder.error(ctx, accountValidation.error, 400)
-      }
-      const account = accountValidation.value
-      // VPR v4: validator ownership is corporation-based; resolve the account once.
-      const accountCorpId = await resolveCorporationIdByAddress(account)
-      if (accountCorpId === null) {
-        return ApiResponder.success(ctx, { ecosystems: [] }, 200)
+      const corporationId = Number(p.corporation_id)
+      if (!Number.isInteger(corporationId) || corporationId <= 0) {
+        return ApiResponder.error(ctx, '"corporation_id" must be a positive integer', 400)
       }
 
       const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
@@ -2525,7 +2559,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const validatorParentTypeList = [...PENDING_FLAT_VALIDATOR_PARENT_TYPES]
 
-      /** At-height: latest row per participant where account holds a grantor/validator parent role. */
+      /** At-height: latest row per participant where the Corporation holds a grantor/validator parent role. */
       let parentIdsAtHeightSubquery: ReturnType<typeof knex> | null = null
       if (useHistory) {
         const rankedParentAtHeight = knex('participant_history')
@@ -2536,7 +2570,7 @@ export default class ParticipantAPIService extends BullableService {
             )
           )
           .whereRaw('height <= ?', [Number(blockHeight)])
-          .andWhere('corporation_id', accountCorpId)
+          .andWhere('corporation_id', corporationId)
           .whereIn('role', validatorParentTypeList)
           .as('ranked_parent')
 
@@ -2550,7 +2584,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const validatorParentIdsSubquery = knex('participants')
         .select('id')
-        .where('corporation_id', accountCorpId)
+        .where('corporation_id', corporationId)
         .whereIn('role', validatorParentTypeList)
 
       if (!useHistory) {
@@ -2609,7 +2643,7 @@ export default class ParticipantAPIService extends BullableService {
           )
           .whereRaw('height <= ?', [Number(blockHeight)])
           .where((qb) => {
-            qb.where('corporation_id', accountCorpId)
+            qb.where('corporation_id', corporationId)
             if (parentIdsAtHeightSubquery) {
               qb.orWhereIn('validator_participant_id', parentIdsAtHeightSubquery.clone())
             }
@@ -2679,7 +2713,7 @@ export default class ParticipantAPIService extends BullableService {
         const rows = await knex('participants')
           .select(baseColumns)
           .where((qb) => {
-            qb.where('corporation_id', accountCorpId)
+            qb.where('corporation_id', corporationId)
             qb.orWhereIn('validator_participant_id', validatorParentIdsSubquery.clone())
           })
           .limit(fetchLimit)
@@ -2700,7 +2734,7 @@ export default class ParticipantAPIService extends BullableService {
         50
       )
       const filtered = enriched.filter((participant: any) => {
-        if (Number(participant.corporation_id ?? 0) === accountCorpId) {
+        if (Number(participant.corporation_id ?? 0) === corporationId) {
           if (pendingFlatMatchesOpPendingWithEligibleParticipantState(participant)) return true
           if (participant.participant_state === 'SLASHED') return true
           if (participant.participant_state === 'ACTIVE' && participant.expire_soon === true) return true

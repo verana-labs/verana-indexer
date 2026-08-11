@@ -3020,6 +3020,15 @@
             "description": "Filter by schema ID"
           },
           {
+            "name": "ecosystem_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Filter by the Ecosystem owning the participant's Credential Schema (the denormalised ecosystem_id response field)"
+          },
+          {
             "name": "validator_participant_id",
             "in": "query",
             "required": false,
@@ -3339,17 +3348,18 @@
           "Participant"
         ],
         "summary": "Get pending tasks",
-        "description": "Return pending tasks for a given account grouped by Ecosystem and Credential Schema. Supports At-Block-Height header for historical state.",
+        "description": "Return the open task list for a given Corporation — every Participant whose validator Participant entry is owned by that Corporation and whose state requires the validator's action — grouped by Ecosystem and Credential Schema. Supports At-Block-Height header for historical state.",
         "operationId": "pendingFlat",
         "parameters": [
           {
-            "name": "account",
+            "name": "corporation_id",
             "in": "query",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Account address"
+            "description": "Id of the Corporation whose pending tasks are returned (the Corporation owning the validator Participant entries). Which of its operators may execute a pending action is resolved separately against the Corporation's authorization grants"
           },
           {
             "name": "limit",
@@ -6825,6 +6835,11 @@
           "schema_id": {
             "type": "integer"
           },
+          "ecosystem_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Indexer-derived: the Ecosystem owning the participant's Credential Schema, denormalised from CredentialSchema.ecosystem_id"
+          },
           "role": {
             "type": "string",
             "enum": [
@@ -7055,7 +7070,7 @@
             "items": {
               "$ref": "#/components/schemas/Participant"
             },
-            "description": "Participant entries pending action from the validator account"
+            "description": "Participant entries pending action from the validator Corporation"
           }
         }
       },
@@ -8309,7 +8324,7 @@
       },
       "OperatorAuthorization": {
         "type": "object",
-        "description": "A corporation's authorization granted to a specific operator account for one or more module message types (IDX-DE-QRY-3).",
+        "description": "A corporation's authorization granted to a specific operator account for one or more module message types (IDX-DE-QRY-3). Fee-payment capability is not part of OperatorAuthorization; it lives on the separate FeeGrant entity, queried via List Fee Grants (IDX-DE-QRY-5).",
         "required": ["id", "corporation_id", "operator", "msg_types"],
         "properties": {
           "id": { "type": "integer", "format": "uint64" },
@@ -8318,8 +8333,6 @@
           "msg_types": { "type": "array", "items": { "type": "string" } },
           "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
           "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set." },
-          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
-          "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
           "expiration": { "type": "string", "format": "date-time" },
           "period": { "type": "string", "description": "Reset period for spend_limit, as a duration (e.g. \"86400s\")." }
         }

@@ -13,9 +13,9 @@ import VSOperatorAuthorization from '../../models/vs_operator_authorization'
 import VSOperatorAuthorizationHistory from '../../models/vs_operator_authorization_history'
 import { parseIdSortDirection } from '../crawl-co/co_stats'
 
+// Per IDX-DE-QRY-1/3 (spec #48) OperatorAuthorization carries no fee fields — fee-payment capability is a FeeGrant, served by listFeeGrants.
 function serializeOperatorAuthorizationRow(row: any) {
   const spendLimit = row.spend_limit ?? null
-  const feeSpendLimit = row.fee_spend_limit ?? null
 
   return {
     id: Number(row.operator_authorization_id ?? row.id),
@@ -23,7 +23,6 @@ function serializeOperatorAuthorizationRow(row: any) {
     operator: String(row.operator),
     msg_types: row.msg_types ?? [],
     ...(spendLimit ? { spend_limit: spendLimit, remaining_spend: row.remaining_spend ?? [] } : {}),
-    ...(feeSpendLimit ? { fee_spend_limit: feeSpendLimit, remaining_fee_spend: row.remaining_fee_spend ?? [] } : {}),
     ...(row.expiration ? { expiration: dateToIsoOrNull(row.expiration) } : {}),
     ...(row.period ? { period: String(row.period) } : {}),
   }
