@@ -112,8 +112,9 @@ export function calculateParticipantState(participant: ParticipantData, now: Dat
 
 export const ONBOARDING_PENDING_OP_STATES: readonly string[] = ['PENDING', 'TERMINATED']
 
-export function isOnboardingPending(opState?: ValidationState | string | null): boolean {
-  return ONBOARDING_PENDING_OP_STATES.includes(String(opState ?? '').toUpperCase())
+export function isOnboardingPending(opState?: ValidationState | string | number | null): boolean {
+  const normalized = normalizeOpState(opState)
+  return normalized !== null && ONBOARDING_PENDING_OP_STATES.includes(normalized)
 }
 
 export function applyActiveEffectiveFromFilter(

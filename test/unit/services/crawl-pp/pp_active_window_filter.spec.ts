@@ -26,5 +26,4 @@ describe('🧪 applyActiveEffectiveFromFilter', () => {
   it('honours the table prefix used by history queries', () => {
     expect(sqlFor((name) => `ph.${name}`)).toContain('"ph"."effective_from"')
   })
-
 })

@@ -112,9 +112,9 @@ describe('🧪 pp_state_utils', () => {
       expect(calculateParticipantState({ ...baseParticipant }, NOW)).toBe('ACTIVE')
       expect(calculateParticipantState({ ...baseParticipant, op_state: null }, NOW)).toBe('ACTIVE')
       expect(calculateParticipantState({ ...baseParticipant, op_state: 'VALIDATED' }, NOW)).toBe('ACTIVE')
-      expect(
-        calculateParticipantState({ ...baseParticipant, op_state: 'VALIDATION_STATE_UNSPECIFIED' }, NOW)
-      ).toBe('ACTIVE')
+      expect(calculateParticipantState({ ...baseParticipant, op_state: 'VALIDATION_STATE_UNSPECIFIED' }, NOW)).toBe(
+        'ACTIVE'
+      )
     })
 
     it('returns INACTIVE when effective_from is null and the onboarding process is PENDING or TERMINATED', () => {
