@@ -859,14 +859,38 @@ async function loadCorporationByPolicyAddress(policyAddress: string): Promise<{
   return { corporationId: toCorporationId(row.id), did: normalizeDid(row.did) }
 }
 
+// Falls back to the create events so routing never waits for the group processor's checkpoint.
 async function loadCorporationByGroupId(groupId: number): Promise<{ corporationId?: number; did?: string }> {
   const row = await knex('corporation_group as cg')
     .innerJoin('corporation as co', 'co.id', 'cg.corporation_id')
     .where('cg.group_id', groupId)
     .select('cg.corporation_id', 'co.did')
     .first()
-  if (!row) return {}
-  return { corporationId: toCorporationId(row.corporation_id), did: normalizeDid(row.did) }
+  if (row) return { corporationId: toCorporationId(row.corporation_id), did: normalizeDid(row.did) }
+
+  const createGroup = await knex('event as e')
+    .innerJoin('event_attribute as ea', 'ea.event_id', 'e.id')
+    .where('e.type', 'cosmos.group.v1.EventCreateGroup')
+    .where('ea.key', 'group_id')
+    .where('ea.value', JSON.stringify(String(groupId)))
+    .select('e.id', 'e.tx_id', 'e.tx_msg_index')
+    .orderBy('e.id', 'asc')
+    .first()
+  if (!createGroup?.tx_id) return {}
+
+  // Same tx and message index: one tx can create several corporations.
+  const policyAddress = await knex('event as e')
+    .innerJoin('event_attribute as ea', 'ea.event_id', 'e.id')
+    .where('e.type', 'cosmos.group.v1.EventCreateGroupPolicy')
+    .where('e.tx_id', createGroup.tx_id)
+    .whereRaw('COALESCE(e.tx_msg_index, 0) = ?', [Number(createGroup.tx_msg_index ?? 0)])
+    .where('ea.key', 'address')
+    .where('e.id', '>', Number(createGroup.id))
+    .select('ea.value')
+    .orderBy('e.id', 'asc')
+    .first()
+  const address = String(policyAddress?.value ?? '').replace(/^"|"$/g, '')
+  return address ? loadCorporationByPolicyAddress(address) : {}
 }
 
 // Falls back to the submit tx stored in the DB, so pruned proposals and not-yet-processed blocks still resolve.

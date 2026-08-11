@@ -124,6 +124,16 @@ describe('group_helpers.decideProposalOutcome', () => {
     expect(decideProposalOutcome(percentage, 1, 4)).toBe('REJECTED')
   })
 
+  it('caps the threshold at total weight, so a shrunken group can still accept', () => {
+    // members left until total weight (2) fell below the threshold (3)
+    expect(decideProposalOutcome({ '@type': '/cosmos.group.v1.ThresholdDecisionPolicy', threshold: '3' }, 2, 2)).toBe(
+      'ACCEPTED'
+    )
+    expect(decideProposalOutcome({ '@type': '/cosmos.group.v1.ThresholdDecisionPolicy', threshold: '3' }, 1, 2)).toBe(
+      'REJECTED'
+    )
+  })
+
   it('returns null rather than guessing when the policy cannot be evaluated', () => {
     expect(decideProposalOutcome(null, 5, 5)).toBeNull()
     expect(decideProposalOutcome({}, 5, 5)).toBeNull()

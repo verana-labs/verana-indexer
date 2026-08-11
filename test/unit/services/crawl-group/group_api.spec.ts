@@ -28,10 +28,13 @@ function chainable(table: string, rows: unknown[]) {
     'whereIn',
     'whereRaw',
     'whereNotNull',
+    'whereExists',
+    'whereNotExists',
     'orderBy',
     'limit',
     'innerJoin',
     'distinctOn',
+    'from',
     'as',
   ]) {
     qb[method] = record(method)
@@ -46,6 +49,7 @@ jest.mock('../../../../src/common/utils/db_connection', () => ({
   __esModule: true,
   default: Object.assign((table: string) => chainable(table.split(' ')[0], tables[table.split(' ')[0]] ?? []), {
     from: () => chainable('__from', tables.__from ?? []),
+    raw: (sql: string, bindings?: unknown) => ({ sql, bindings }),
   }),
 }))
 
@@ -317,73 +321,90 @@ describe('GroupApiService', () => {
     })
 
     describe('pending_voter', () => {
-      const open = (over: Record<string, unknown> = {}) =>
-        proposalRow({
-          status: 'SUBMITTED',
-          executor_result: 'NOT_RUN',
-          final_tally_result: null,
-          voting_period_end: '2099-01-01T00:00:00.000Z',
-          ...over,
-        })
+      const subBuilder = () => {
+        const sub: any = {}
+        for (const m of ['select', 'from', 'where', 'whereRaw']) sub[m] = jest.fn(() => sub)
+        return sub
+      }
+      const runSubquery = (method: string) => {
+        const call = calls.find((c) => c.method === method)
+        expect(call).toBeDefined()
+        const sub = subBuilder()
+        ;(call!.args[0] as (qb: unknown) => void)(sub)
+        return sub
+      }
 
-      it('keeps only SUBMITTED proposals inside the voting window for a member who has not voted', async () => {
-        tables.group_proposal = [open({ id: 4 })]
-        tables.group_vote = []
-        tables.corporation_member = [{ corporation_id: 1, address: 'verana1voter', weight: '1' }]
+      it('pushes status and voting-window predicates into SQL', async () => {
+        tables.group_proposal = []
+        await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
 
-        const res: any = await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
-        expect(res.proposals.map((p: any) => p.id)).toEqual([4])
+        expect(called('group_proposal', 'where', (args) => args[0] === 'status' && args[1] === 'SUBMITTED')).toBe(true)
+        expect(called('group_proposal', 'whereNotNull', (args) => args[0] === 'voting_period_end')).toBe(true)
+        expect(called('group_proposal', 'where', (args) => args[0] === 'voting_period_end' && args[1] === '>')).toBe(
+          true
+        )
       })
 
-      it('drops proposals the account already voted on', async () => {
-        tables.group_proposal = [open({ id: 4 })]
-        tables.group_vote = [{ proposal_id: 4, voter: 'verana1voter', option: 'YES' }]
-        tables.corporation_member = [{ corporation_id: 1, address: 'verana1voter', weight: '1' }]
+      it('excludes proposals the account already voted on via NOT EXISTS on group_vote', async () => {
+        tables.group_proposal = []
+        await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
 
-        const res: any = await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
-        expect(res.proposals).toEqual([])
+        const sub = runSubquery('whereNotExists')
+        expect(sub.from).toHaveBeenCalledWith('group_vote as gv')
+        expect(sub.where).toHaveBeenCalledWith('gv.voter', 'verana1voter')
+        // correlated to the outer row, else it degenerates into "has this account voted on anything"
+        expect(sub.whereRaw).toHaveBeenCalledWith('gv.proposal_id = group_proposal.id')
       })
 
-      it('drops proposals of groups the account is not a member of', async () => {
-        tables.group_proposal = [open({ id: 4 })]
-        tables.group_vote = []
-        tables.corporation_member = [{ corporation_id: 1, address: 'verana1someone-else', weight: '1' }]
+      it('requires current membership via EXISTS on corporation_member', async () => {
+        tables.group_proposal = []
+        await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
 
-        const res: any = await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
-        expect(res.proposals).toEqual([])
+        const sub = runSubquery('whereExists')
+        expect(sub.from).toHaveBeenCalledWith('corporation_member as cm')
+        expect(sub.where).toHaveBeenCalledWith('cm.address', 'verana1voter')
+        expect(sub.whereRaw).toHaveBeenCalledWith('cm.corporation_id = group_proposal.corporation_id')
       })
 
-      it('drops proposals whose voting period already ended', async () => {
-        tables.group_proposal = [open({ id: 4, voting_period_end: '2020-01-01T00:00:00.000Z' })]
-        tables.group_vote = []
-        tables.corporation_member = [{ corporation_id: 1, address: 'verana1voter', weight: '1' }]
+      it('still applies cursors, sort and limit in SQL', async () => {
+        tables.group_proposal = []
+        await service.listProposals({
+          params: { pending_voter: 'verana1voter', min_id: '5', max_id: '9', limit: '3', sort: '+id' },
+          meta: {},
+        } as any)
 
-        const res: any = await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
-        expect(res.proposals).toEqual([])
+        expect(
+          called('group_proposal', 'where', (args) => args[0] === 'id' && args[1] === '>=' && args[2] === '5')
+        ).toBe(true)
+        expect(
+          called('group_proposal', 'where', (args) => args[0] === 'id' && args[1] === '<' && args[2] === '9')
+        ).toBe(true)
+        expect(called('group_proposal', 'orderBy', (args) => args[0] === 'id' && args[1] === 'asc')).toBe(true)
+        expect(called('group_proposal', 'limit', (args) => args[0] === 3)).toBe(true)
       })
 
-      it('drops closed proposals even inside the window', async () => {
-        tables.group_proposal = [open({ id: 4, status: 'WITHDRAWN' })]
-        tables.group_vote = []
-        tables.corporation_member = [{ corporation_id: 1, address: 'verana1voter', weight: '1' }]
+      it('at height, bounds votes by block height and reads membership from the history snapshot', async () => {
+        tables.__from = []
+        await service.listProposals({
+          params: { pending_voter: 'verana1voter' },
+          meta: { blockHeight: 50 },
+        } as any)
 
-        const res: any = await service.listProposals({ params: { pending_voter: 'verana1voter' }, meta: {} } as any)
-        expect(res.proposals).toEqual([])
-      })
-
-      it('uses chain time at the requested At-Block-Height', async () => {
-        tables.__from = [
-          {
-            proposal_id: 4,
-            snapshot: open({ id: 4 }),
-            members: [{ address: 'verana1voter', weight: '1' }],
-            corporation_id: 1,
-          },
-        ]
-        tables.group_vote = []
-        const ctx: any = { params: { pending_voter: 'verana1voter' }, meta: { blockHeight: 50 } }
-        await service.listProposals(ctx)
         expect(getBlockChainTimeAsOf).toHaveBeenCalledWith(50, expect.anything())
+        const votes = runSubquery('whereNotExists')
+        expect(votes.where).toHaveBeenCalledWith('gv.height', '<=', 50)
+        expect(votes.whereRaw).toHaveBeenCalledWith('gv.proposal_id = ph.proposal_id')
+        const members = runSubquery('whereExists')
+        expect(members.whereRaw).toHaveBeenCalledWith('gh.members @> ?::jsonb', [
+          JSON.stringify([{ address: 'verana1voter' }]),
+        ])
+        expect(called('__from', 'limit', (args) => typeof args[0] === 'number')).toBe(true)
+      })
+
+      it('does not query chain time when pending_voter is absent', async () => {
+        tables.__from = []
+        await service.listProposals({ params: {}, meta: { blockHeight: 50 } } as any)
+        expect(getBlockChainTimeAsOf).not.toHaveBeenCalled()
       })
     })
 

@@ -211,6 +211,10 @@ export default class GroupProcessorService extends BullableService {
           if (createdGroupIds.has(`g:${parseEventAttrValue(event.attrs.group_id)}`)) continue
           await this.handleGroupUpdated(event, height, blockTime)
         }
+        // A leave carries the same group_id and can never occur in the create tx.
+        if (event.type === GROUP_EVENT_TYPES.LeaveGroup) {
+          await this.handleGroupUpdated(event, height, blockTime)
+        }
         if (event.type === GROUP_EVENT_TYPES.UpdateGroupPolicy) {
           if (createdGroupIds.has(`p:${parseEventAttrValue(event.attrs.address)}`)) continue
           await this.handlePolicyUpdated(event, height, blockTime)
@@ -232,6 +236,7 @@ export default class GroupProcessorService extends BullableService {
         GROUP_EVENT_TYPES.ProposalPruned,
         GROUP_EVENT_TYPES.UpdateGroup,
         GROUP_EVENT_TYPES.UpdateGroupPolicy,
+        GROUP_EVENT_TYPES.LeaveGroup,
       ])
       .where(function () {
         this.whereNull('e.tx_id').orWhere('tx.code', 0)
@@ -283,12 +288,14 @@ export default class GroupProcessorService extends BullableService {
     return (await this.lcdGet(path, height)) ?? (await this.lcdGet(path))
   }
 
-  private async fetchGroupMembers(groupId: number, height?: number): Promise<Array<Record<string, unknown>>> {
+  // null means the lookup failed; an empty array means the group genuinely has no members left.
+  private async fetchGroupMembers(groupId: number, height?: number): Promise<Array<Record<string, unknown>> | null> {
     const data = await this.lcdGetAtHeightOrLatest(
       `/cosmos/group/v1/group_members/${groupId}?pagination.limit=500`,
       height
     )
-    const members = Array.isArray(data?.members) ? (data?.members as Array<Record<string, unknown>>) : []
+    if (!data || !Array.isArray(data.members)) return null
+    const members = data.members as Array<Record<string, unknown>>
     return members.map((entry) => {
       const member = (entry.member ?? {}) as Record<string, unknown>
       return {
@@ -375,7 +382,7 @@ export default class GroupProcessorService extends BullableService {
           metadata: String(member.metadata ?? ''),
           added_at: blockTime,
         }))
-      : await this.fetchGroupMembers(groupId, message.block_height)
+      : ((await this.fetchGroupMembers(groupId, message.block_height)) ?? [])
 
     const row = {
       corporation_id: Number(corporation.id),
@@ -567,9 +574,16 @@ export default class GroupProcessorService extends BullableService {
     const result = shortExecutorResult(parseEventAttrValue(event.attrs.result))
     if (!proposalId || !result) return
     const patch: Record<string, unknown> = { executor_result: result, modified: blockTime }
-    if (result === 'SUCCESS') patch.status = 'ACCEPTED'
+    // x/group only executes an ACCEPTED proposal, so SUCCESS and FAILURE both imply ACCEPTED.
+    if (result !== 'NOT_RUN') patch.status = 'ACCEPTED'
     const updated = await knex('group_proposal').where('id', proposalId).update(patch)
-    if (updated > 0) await this.snapshotProposal(proposalId, height)
+    if (updated === 0) return
+    // NOT_RUN is ambiguous and FAILURE leaves a frozen final tally; both stay queryable.
+    if (result !== 'SUCCESS') {
+      const row = await knex('group_proposal').where('id', proposalId).first()
+      if (row) await this.reconcileProposal(row, height, blockTime)
+    }
+    await this.snapshotProposal(proposalId, height)
   }
 
   private async handlePrunedEvent(event: GroupEventRow, height: number, blockTime: string) {
@@ -602,21 +616,24 @@ export default class GroupProcessorService extends BullableService {
         modified: blockTime,
         height,
       })
-    if (members.length > 0) {
+    // Only rewrite when the lookup succeeded; an empty result means the last member left.
+    if (members !== null) {
       await knex.transaction(async (trx) => {
         await trx('corporation_member').where('corporation_id', group.corporation_id).delete()
-        await trx('corporation_member').insert(
-          members.map((member) => ({
-            corporation_id: group.corporation_id,
-            address: member.address,
-            weight: member.weight,
-            metadata: member.metadata,
-            created: member.added_at ?? blockTime,
-          }))
-        )
+        if (members.length > 0) {
+          await trx('corporation_member').insert(
+            members.map((member) => ({
+              corporation_id: group.corporation_id,
+              address: member.address,
+              weight: member.weight,
+              metadata: member.metadata,
+              created: member.added_at ?? blockTime,
+            }))
+          )
+        }
       })
     }
-    await this.snapshotGroup(Number(group.corporation_id), height, members.length > 0 ? members : undefined)
+    await this.snapshotGroup(Number(group.corporation_id), height, members ?? undefined)
   }
 
   private async handlePolicyUpdated(event: GroupEventRow, height: number, blockTime: string) {
@@ -663,7 +680,8 @@ export default class GroupProcessorService extends BullableService {
 
   private async reconcileProposal(proposal: Record<string, unknown>, height: number, chainNow: string) {
     const proposalId = Number(proposal.id)
-    const data = await this.lcdGet(`/cosmos/group/v1/proposal/${proposalId}`)
+    // Pinned to this block, falling back to current state on a node that no longer retains it.
+    const data = await this.lcdGetAtHeightOrLatest(`/cosmos/group/v1/proposal/${proposalId}`, height)
     const chainProposal = (data?.proposal ?? null) as Record<string, unknown> | null
 
     const patch: Record<string, unknown> = {}
@@ -673,11 +691,27 @@ export default class GroupProcessorService extends BullableService {
       const tally = normalizeTallyResult(chainProposal.final_tally_result)
       if (status && status !== proposal.status) patch.status = status
       if (executorResult && executorResult !== proposal.executor_result) patch.executor_result = executorResult
+      // The chain's window wins over the value derived from the stored policy.
+      const chainVotingPeriodEnd = chainProposal.voting_period_end
+      if (typeof chainVotingPeriodEnd === 'string' && chainVotingPeriodEnd) {
+        const parsed = new Date(chainVotingPeriodEnd)
+        const current = proposal.voting_period_end ? new Date(String(proposal.voting_period_end)) : null
+        if (!Number.isNaN(parsed.getTime()) && parsed.getTime() !== current?.getTime()) {
+          patch.voting_period_end = parsed.toISOString()
+        }
+      }
       const hasFinalTally = tally && Object.values(tally).some((count) => count !== '0')
       if (hasFinalTally && (patch.status ?? proposal.status) !== 'SUBMITTED') {
         patch.final_tally_result = JSON.stringify(tally)
       }
     } else {
+      // A null read also means "LCD unreachable", so only settle a proposal that is still open here
+      // AND whose voting window has closed. Inventing a terminal status is not recoverable.
+      if (String(proposal.status) !== 'SUBMITTED') return
+      const votingPeriodEnd = proposal.voting_period_end ? new Date(String(proposal.voting_period_end)) : null
+      if (!votingPeriodEnd || Number.isNaN(votingPeriodEnd.getTime())) return
+      if (new Date(chainNow).getTime() <= votingPeriodEnd.getTime()) return
+
       // Pruned without an indexed prune event: settle from the indexed votes and threshold.
       const votes = await knex('group_vote').select('voter', 'option').where('proposal_id', proposalId)
       const members = await knex('corporation_member')

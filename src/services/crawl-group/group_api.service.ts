@@ -1,4 +1,5 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import type { Knex } from 'knex'
 import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
@@ -317,6 +318,12 @@ export default class GroupApiService extends BaseService {
       const blockHeight = getBlockHeight(ctx)
       const pendingVoter = p.pending_voter?.trim() || undefined
 
+      // All four pending_voter predicates run in SQL so the cursors and limit bound the scan.
+      const pendingVoterNowIso =
+        pendingVoter && blockHeight !== undefined
+          ? (await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })).toISOString()
+          : new Date().toISOString()
+
       let candidates: Array<Record<string, unknown>>
       if (blockHeight !== undefined) {
         let query = this.latestProposalHistoryQuery(blockHeight).select('ph.proposal_id', 'ph.snapshot')
@@ -328,11 +335,34 @@ export default class GroupApiService extends BaseService {
         if (modifiedAfterIso) {
           query = query.whereRaw("(ph.snapshot->>'modified')::timestamptz > ?::timestamptz", [modifiedAfterIso])
         }
-        if (!pendingVoter) {
-          if (minId !== undefined) query = query.where('ph.proposal_id', '>=', minId)
-          if (maxId !== undefined) query = query.where('ph.proposal_id', '<', maxId)
-          query = query.orderBy('ph.proposal_id', direction).limit(limit)
+        if (pendingVoter) {
+          query = query
+            .whereRaw("ph.snapshot->>'status' = ?", ['SUBMITTED'])
+            .whereRaw("(ph.snapshot->>'voting_period_end')::timestamptz > ?::timestamptz", [pendingVoterNowIso])
+            .whereNotExists((qb: Knex.QueryBuilder) =>
+              qb
+                .select(knex.raw('1'))
+                .from('group_vote as gv')
+                .whereRaw('gv.proposal_id = ph.proposal_id')
+                .where('gv.voter', pendingVoter)
+                .where('gv.height', '<=', blockHeight)
+            )
+            .whereExists((qb: Knex.QueryBuilder) =>
+              qb
+                .select(knex.raw('1'))
+                .from(
+                  knex.raw(
+                    '(select distinct on (corporation_id) corporation_id, members from corporation_group_history where height <= ? order by corporation_id asc, height desc) as gh',
+                    [blockHeight]
+                  )
+                )
+                .whereRaw("gh.corporation_id = (ph.snapshot->>'corporation_id')::bigint")
+                .whereRaw('gh.members @> ?::jsonb', [JSON.stringify([{ address: pendingVoter }])])
+            )
         }
+        if (minId !== undefined) query = query.where('ph.proposal_id', '>=', minId)
+        if (maxId !== undefined) query = query.where('ph.proposal_id', '<', maxId)
+        query = query.orderBy('ph.proposal_id', direction).limit(limit)
         const rows = await query
         candidates = rows.map((row: Record<string, unknown>) => ({
           ...(row.snapshot as Record<string, unknown>),
@@ -344,57 +374,30 @@ export default class GroupApiService extends BaseService {
         if (p.status) query = query.where('status', p.status)
         if (p.proposer) query = query.whereRaw('proposers @> ?::jsonb', [JSON.stringify([p.proposer])])
         if (modifiedAfterIso) query = query.where('modified', '>', modifiedAfterIso)
-        if (!pendingVoter) {
-          if (minId !== undefined) query = query.where('id', '>=', minId)
-          if (maxId !== undefined) query = query.where('id', '<', maxId)
-          query = query.orderBy('id', direction).limit(limit)
+        if (pendingVoter) {
+          query = query
+            .where('status', 'SUBMITTED')
+            .whereNotNull('voting_period_end')
+            .where('voting_period_end', '>', pendingVoterNowIso)
+            .whereNotExists((qb: Knex.QueryBuilder) =>
+              qb
+                .select(knex.raw('1'))
+                .from('group_vote as gv')
+                .whereRaw('gv.proposal_id = group_proposal.id')
+                .where('gv.voter', pendingVoter)
+            )
+            .whereExists((qb: Knex.QueryBuilder) =>
+              qb
+                .select(knex.raw('1'))
+                .from('corporation_member as cm')
+                .whereRaw('cm.corporation_id = group_proposal.corporation_id')
+                .where('cm.address', pendingVoter)
+            )
         }
+        if (minId !== undefined) query = query.where('id', '>=', minId)
+        if (maxId !== undefined) query = query.where('id', '<', maxId)
+        query = query.orderBy('id', direction).limit(limit)
         candidates = await query
-      }
-
-      if (pendingVoter) {
-        const now =
-          blockHeight !== undefined ? await getBlockChainTimeAsOf(blockHeight, { logger: this.logger }) : new Date()
-        candidates = candidates.filter(
-          (proposal) =>
-            String(proposal.status) === 'SUBMITTED' &&
-            proposal.voting_period_end != null &&
-            new Date(String(proposal.voting_period_end)).getTime() > now.getTime()
-        )
-        const proposalIds = candidates.map((proposal) => Number(proposal.id))
-        let votesQuery = knex('group_vote')
-          .select('proposal_id')
-          .where('voter', pendingVoter)
-          .whereIn('proposal_id', proposalIds.length > 0 ? proposalIds : [0])
-        if (blockHeight !== undefined) votesQuery = votesQuery.where('height', '<=', blockHeight)
-        const voted = new Set((await votesQuery).map((vote) => Number(vote.proposal_id)))
-
-        const corporationIds = [...new Set(candidates.map((proposal) => Number(proposal.corporation_id)))]
-        const memberCorporations = new Set<number>()
-        if (blockHeight !== undefined) {
-          const historyRows = await this.latestGroupHistoryQuery(blockHeight)
-            .whereIn('gh.corporation_id', corporationIds.length > 0 ? corporationIds : [0])
-            .whereRaw('gh.members @> ?::jsonb', [JSON.stringify([{ address: pendingVoter }])])
-          for (const row of historyRows) memberCorporations.add(Number(row.corporation_id))
-        } else {
-          const memberRows = await knex('corporation_member')
-            .select('corporation_id')
-            .where('address', pendingVoter)
-            .whereIn('corporation_id', corporationIds.length > 0 ? corporationIds : [0])
-          for (const row of memberRows) memberCorporations.add(Number(row.corporation_id))
-        }
-
-        candidates = candidates
-          .filter(
-            (proposal) => !voted.has(Number(proposal.id)) && memberCorporations.has(Number(proposal.corporation_id))
-          )
-          .filter(
-            (proposal) =>
-              (minId === undefined || Number(proposal.id) >= Number(minId)) &&
-              (maxId === undefined || Number(proposal.id) < Number(maxId))
-          )
-          .sort((a, b) => compareById(a.id, b.id, direction))
-          .slice(0, limit)
       }
 
       const tallies = await this.computeTallies(candidates, blockHeight)

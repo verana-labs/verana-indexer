@@ -23,6 +23,8 @@ export const GROUP_EVENT_TYPES = {
   ProposalPruned: 'cosmos.group.v1.EventProposalPruned',
   UpdateGroup: 'cosmos.group.v1.EventUpdateGroup',
   UpdateGroupPolicy: 'cosmos.group.v1.EventUpdateGroupPolicy',
+  // A leave emits only this event, never EventUpdateGroup.
+  LeaveGroup: 'cosmos.group.v1.EventLeaveGroup',
 } as const
 
 export const PROPOSAL_STATUSES = ['SUBMITTED', 'ACCEPTED', 'REJECTED', 'ABORTED', 'WITHDRAWN'] as const
@@ -143,7 +145,9 @@ export function decideProposalOutcome(
   if (type.endsWith('ThresholdDecisionPolicy') || policy.threshold !== undefined) {
     const threshold = Number(policy.threshold)
     if (!Number.isFinite(threshold)) return null
-    return yesWeight >= threshold ? 'ACCEPTED' : 'REJECTED'
+    // x/group caps the threshold at total weight, so a shrunken group can still accept.
+    const realThreshold = totalWeight > 0 ? Math.min(threshold, totalWeight) : threshold
+    return yesWeight >= realThreshold ? 'ACCEPTED' : 'REJECTED'
   }
 
   if (type.endsWith('PercentageDecisionPolicy') || policy.percentage !== undefined) {

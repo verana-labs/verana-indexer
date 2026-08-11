@@ -143,6 +143,27 @@ describe('buildGroupEvents (IDX-INDEXER-SUB-1 x/group routing)', () => {
     expect(event.corporationId).toBeUndefined()
   })
 
+  it('resolves a group_id through the create events when corporation_group is not yet written', async () => {
+    tables.corporation_group = []
+    tables.transaction_message = [messageRow({ message_type: UPDATE_MEMBERS, content: { group_id: 9 } })]
+    // EventCreateGroup(group_id 9) and EventCreateGroupPolicy(address) from the same create tx
+    tables.event = [
+      { id: 10, tx_id: 4, tx_msg_index: 0, type: 'cosmos.group.v1.EventCreateGroup', key: 'group_id', value: '"9"' },
+      {
+        id: 11,
+        tx_id: 4,
+        tx_msg_index: 0,
+        type: 'cosmos.group.v1.EventCreateGroupPolicy',
+        key: 'address',
+        value: '"verana1policy"',
+      },
+    ]
+    const [event] = await buildGroupEventsForTest(40)
+
+    expect(event.corporationId).toBe(3)
+    expect(event.did).toBe('did:example:corp')
+  })
+
   it('returns nothing when the block has no group messages', async () => {
     tables.transaction_message = []
     expect(await buildGroupEventsForTest(40)).toEqual([])
