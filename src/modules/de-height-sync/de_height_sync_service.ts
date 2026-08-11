@@ -4,7 +4,9 @@ import { SERVICE } from '../../common'
 import { Corporation } from '../../models/corporation'
 import type { FeeAllowanceSnapshot } from './de_height_sync_helpers'
 import {
+  fetchCorporationPolicyAddress,
   fetchFeeAllowance,
+  fetchFeeGrantAllowance,
   fetchOperatorAuthorization,
   fetchVSOperatorAuthorization,
   serializeLedgerOperatorAuthorization,
@@ -17,6 +19,10 @@ export const DE_EVENT_TYPES = {
   GRANT_VS_OPERATOR_AUTHORIZATION: 'grant_vs_operator_authorization',
   REVOKE_VS_OPERATOR_AUTHORIZATION: 'revoke_vs_operator_authorization',
   UPDATE_VS_OPERATOR_AUTHORIZATION: 'update_vs_operator_authorization',
+  GRANT_FEE_ALLOWANCE: 'grant_fee_allowance',
+  REVOKE_FEE_ALLOWANCE: 'revoke_fee_allowance',
+  // SDK x/feegrant event: the only on-chain signal for fee draws (x/de emits none).
+  USE_FEEGRANT: 'use_feegrant',
 } as const
 
 const DE_EVENT_TYPE_SET = new Set<string>(Object.values(DE_EVENT_TYPES))
@@ -31,6 +37,8 @@ const VS_OPERATOR_AUTHORIZATION_EVENTS = new Set<string>([
   DE_EVENT_TYPES.REVOKE_VS_OPERATOR_AUTHORIZATION,
   DE_EVENT_TYPES.UPDATE_VS_OPERATOR_AUTHORIZATION,
 ])
+
+const FEE_GRANT_EVENTS = new Set<string>([DE_EVENT_TYPES.GRANT_FEE_ALLOWANCE, DE_EVENT_TYPES.REVOKE_FEE_ALLOWANCE])
 
 interface BlockEventAttribute {
   key?: string
@@ -100,6 +108,45 @@ export function extractVSOperatorAuthorizationIds(events: BlockEvent[]): number[
   return [...ids]
 }
 
+interface FeeGrantTouch {
+  grantorCorporationId: number
+  grantee: string
+  revoked: boolean
+}
+
+export function extractFeeGrantTouches(events: BlockEvent[]): FeeGrantTouch[] {
+  const touches = new Map<string, FeeGrantTouch>()
+  for (const event of events) {
+    if (!event.type || !FEE_GRANT_EVENTS.has(event.type)) continue
+    const grantorCorporationId = parseId(getAttr(event, 'corporation_id'))
+    const grantee = getAttr(event, 'grantee')
+    if (grantorCorporationId === undefined || !grantee) continue
+    touches.set(`${grantorCorporationId}:${grantee}`, {
+      grantorCorporationId,
+      grantee,
+      revoked: event.type === DE_EVENT_TYPES.REVOKE_FEE_ALLOWANCE,
+    })
+  }
+  return [...touches.values()]
+}
+
+interface FeeGrantUse {
+  granter: string
+  grantee: string
+}
+
+export function extractFeeGrantUses(events: BlockEvent[]): FeeGrantUse[] {
+  const uses = new Map<string, FeeGrantUse>()
+  for (const event of events) {
+    if (event.type !== DE_EVENT_TYPES.USE_FEEGRANT) continue
+    const granter = getAttr(event, 'granter')
+    const grantee = getAttr(event, 'grantee')
+    if (!granter || !grantee) continue
+    uses.set(`${granter}:${grantee}`, { granter, grantee })
+  }
+  return [...uses.values()]
+}
+
 async function resolveCorporationPolicyAddress(corporationId: number): Promise<string | undefined> {
   const corporation = await Corporation.query().findById(corporationId)
   return corporation?.policy_address ?? undefined
@@ -140,6 +187,72 @@ async function syncOperatorAuthorization(
   await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
     authorization,
     feeAllowance: feeAllowance ?? null,
+    blockHeight,
+  })
+}
+
+async function syncFeeGrant(broker: ServiceBroker, touch: FeeGrantTouch, blockHeight: number): Promise<void> {
+  if (touch.revoked) {
+    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.revokeFeeGrant`, {
+      grantorCorporationId: touch.grantorCorporationId,
+      grantee: touch.grantee,
+      blockHeight,
+    })
+    return
+  }
+
+  // Chain fallback covers reindex ordering, where the corporation pipeline may lag this one.
+  const policyAddress =
+    (await resolveCorporationPolicyAddress(touch.grantorCorporationId)) ??
+    (await fetchCorporationPolicyAddress(touch.grantorCorporationId, blockHeight))
+  if (!policyAddress) {
+    broker.logger.warn(
+      `[DE Height Sync] No policy address for corporation=${touch.grantorCorporationId}; skipping fee grant sync at block=${blockHeight}`
+    )
+    return
+  }
+
+  const snapshot = await fetchFeeGrantAllowance(policyAddress, touch.grantee, blockHeight)
+  if (!snapshot) {
+    // Allowance already pruned at end of block (re-grant fully drawn): zero an existing row.
+    broker.logger.warn(
+      `[DE Height Sync] No fee allowance found granter=${policyAddress} grantee=${touch.grantee} at block=${blockHeight}`
+    )
+    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.refreshFeeGrantSpend`, {
+      grantorCorporationId: touch.grantorCorporationId,
+      grantee: touch.grantee,
+      snapshot: null,
+      blockHeight,
+    })
+    return
+  }
+
+  await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncFeeGrant`, {
+    grantorCorporationId: touch.grantorCorporationId,
+    grantee: touch.grantee,
+    snapshot,
+    blockHeight,
+  })
+}
+
+async function refreshFeeGrantUse(
+  broker: ServiceBroker,
+  use: FeeGrantUse,
+  blockHeight: number,
+  touchedPairs: Set<string>
+): Promise<void> {
+  const corporation = await Corporation.query().where('policy_address', use.granter).first()
+  if (!corporation?.id) return
+  // A grant/revoke in this block already synced the pair's end-of-block state.
+  if (touchedPairs.has(`${Number(corporation.id)}:${use.grantee}`)) return
+
+  // Transport errors propagate to the caller's catch, so a failed fetch writes nothing.
+  const snapshot = (await fetchFeeGrantAllowance(use.granter, use.grantee, blockHeight)) ?? null
+
+  await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.refreshFeeGrantSpend`, {
+    grantorCorporationId: Number(corporation.id),
+    grantee: use.grantee,
+    snapshot,
     blockHeight,
   })
 }
@@ -187,6 +300,28 @@ export async function runHeightSyncDE(
     } catch (err: any) {
       broker.logger.warn(
         `[DE Height Sync] Sync failed vs_operator_authorization=${vsoaId} at block=${blockHeight}: ${err?.message || String(err)}`
+      )
+    }
+  }
+
+  const feeGrantTouches = extractFeeGrantTouches(events)
+  const touchedPairs = new Set(feeGrantTouches.map((touch) => `${touch.grantorCorporationId}:${touch.grantee}`))
+  for (const touch of feeGrantTouches) {
+    try {
+      await syncFeeGrant(broker, touch, blockHeight)
+    } catch (err: any) {
+      broker.logger.warn(
+        `[DE Height Sync] Sync failed fee_grant corporation=${touch.grantorCorporationId} grantee=${touch.grantee} at block=${blockHeight}: ${err?.message || String(err)}`
+      )
+    }
+  }
+
+  for (const use of extractFeeGrantUses(events)) {
+    try {
+      await refreshFeeGrantUse(broker, use, blockHeight, touchedPairs)
+    } catch (err: any) {
+      broker.logger.warn(
+        `[DE Height Sync] Refresh failed fee_grant granter=${use.granter} grantee=${use.grantee} at block=${blockHeight}: ${err?.message || String(err)}`
       )
     }
   }
