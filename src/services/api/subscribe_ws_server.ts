@@ -139,10 +139,18 @@ export abstract class BaseSubscribeServer<TControl, TState> {
   }
 
   private async sendReady(ws: WebSocket): Promise<void> {
-    const status = await indexerStatusManager.getDetailedStatus()
-    const lastProcessedBlock = status.lastProcessedBlock ?? 0
-    const lastBlockTime = status.lastBlockTime ?? toIsoSeconds()
-    this.noteBlockProcessed(await this.resolveSeedHeight(lastProcessedBlock))
+    let lastProcessedBlock = 0
+    let lastBlockTime = toIsoSeconds()
+
+    try {
+      const status = await indexerStatusManager.getDetailedStatus()
+      lastProcessedBlock = status.lastProcessedBlock ?? 0
+      lastBlockTime = status.lastBlockTime ?? lastBlockTime
+      this.noteBlockProcessed(await this.resolveSeedHeight(lastProcessedBlock))
+    } catch (error) {
+      this.logger.warn(`[${this.constructor.name}] Could not resolve the indexer status for ready:`, error)
+    }
+
     const ready = buildReadyMessage(lastProcessedBlock, lastBlockTime)
     this.sendJson(ws, ready as unknown as Record<string, unknown>)
   }

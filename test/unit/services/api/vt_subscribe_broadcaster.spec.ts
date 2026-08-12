@@ -1,16 +1,21 @@
 // The VT channel seeds its acknowledgement counter from the resolver checkpoint, so the DB access is stubbed to a
 // known height instead of reaching for a real connection.
 jest.mock('../../../../src/common/utils/db_connection', () => {
-  const builder = {
-    select: () => builder,
-    where: () => builder,
-    first: async () => ({ height: 10 }),
-  }
+  const builder: any = new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (prop === 'then') return undefined
+        if (prop === 'first') return async () => ({ height: 10 })
+        return () => builder
+      },
+    }
+  )
   return {
     __esModule: true,
     default: Object.assign(
       jest.fn(() => builder),
-      { raw: jest.fn() }
+      { raw: jest.fn(async () => ({ rows: [] })) }
     ),
   }
 })
