@@ -137,6 +137,21 @@ export function applyActiveEffectiveFromFilter(
   )
 }
 
+export function applyActiveParticipantFilter(
+  query: any,
+  nowIso: string,
+  col: (name: string) => string = (name) => name
+): void {
+  query.where((qb: any) => {
+    qb.whereNull(col('repaid')).whereNull(col('slashed'))
+    qb.where((notRevoked: any) => notRevoked.whereNull(col('revoked')).orWhere(col('revoked'), '>=', nowIso))
+    qb.where((notEnded: any) =>
+      notEnded.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso)
+    )
+    applyActiveEffectiveFromFilter(qb, nowIso, col)
+  })
+}
+
 function normalizeSchemaMode(mode?: string): SchemaMode {
   if (!mode) return 'OPEN'
   const upper = mode.toUpperCase()
