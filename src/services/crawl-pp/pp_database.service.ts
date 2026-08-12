@@ -1770,7 +1770,6 @@ export default class ParticipantIngestService extends Service {
       // Calculate expire_soon for the new participant
       const newParticipantData = {
         role: participantType,
-        op_state: 'VALIDATION_STATE_UNSPECIFIED',
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         revoked: null,
@@ -1791,7 +1790,6 @@ export default class ParticipantIngestService extends Service {
       const insertData: any = {
         schema_id: schemaId,
         role: participantType,
-        op_state: 'VALIDATION_STATE_UNSPECIFIED',
         did: msg.did,
         corporation_id: corporationId,
         effective_from: effectiveFrom,
@@ -1931,7 +1929,6 @@ export default class ParticipantIngestService extends Service {
       // Calculate expire_soon for the new participant
       const newParticipantData = {
         role,
-        op_state: 'VALIDATION_STATE_UNSPECIFIED',
         effective_from: effectiveFrom,
         effective_until: effectiveUntil,
         revoked: null,
@@ -1951,7 +1948,6 @@ export default class ParticipantIngestService extends Service {
       const insertData: any = {
         schema_id: schemaId,
         role,
-        op_state: 'VALIDATION_STATE_UNSPECIFIED',
         did: msg.did,
         corporation_id: corporationId,
         effective_from: effectiveFrom,

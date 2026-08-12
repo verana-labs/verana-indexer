@@ -203,4 +203,56 @@ describe('🧪 ParticipantProcessorService', () => {
     ;(fetchParticipantSession as jest.Mock).mockReset()
     process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'false'
   })
+
+  it('✅ skips the legacy handler when height-sync covered the target participant', async () => {
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'true'
+    spyCreateParticipant.mockClear()
+    ;(fetchParticipant as jest.Mock).mockResolvedValue({ participant: { id: 101, schema_id: 7, role: 'ISSUER' } })
+    ;(fetchParticipantSession as jest.Mock).mockResolvedValue(null)
+
+    await broker.call(`v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`, {
+      participantMessages: [
+        {
+          type: ParticipantMessageTypes.SelfCreateParticipant,
+          content: { id: 101 },
+          height: 123,
+          timestamp: '2026-03-01T00:00:00Z',
+          txHash: '0xabc',
+          txEvents: [],
+        },
+      ],
+    })
+
+    expect(syncParticipantFromLedgerSpy).toHaveBeenCalled()
+    expect(spyCreateParticipant).not.toHaveBeenCalled()
+    ;(fetchParticipant as jest.Mock).mockReset()
+    ;(fetchParticipantSession as jest.Mock).mockReset()
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'false'
+  })
+
+  it('✅ falls back to the legacy handler when height-sync only covered the validator', async () => {
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'true'
+    spyCreateParticipant.mockClear()
+    ;(fetchParticipant as jest.Mock).mockResolvedValue({ participant: { id: 5, schema_id: 7, role: 'ECOSYSTEM' } })
+    ;(fetchParticipantSession as jest.Mock).mockResolvedValue(null)
+
+    await broker.call(`v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`, {
+      participantMessages: [
+        {
+          type: ParticipantMessageTypes.SelfCreateParticipant,
+          content: { validator_participant_id: 5, did: 'did:example:no-id' },
+          height: 123,
+          timestamp: '2026-03-01T00:00:00Z',
+          txHash: '0xabc',
+          txEvents: [],
+        },
+      ],
+    })
+
+    expect(syncParticipantFromLedgerSpy).toHaveBeenCalled()
+    expect(spyCreateParticipant).toHaveBeenCalled()
+    ;(fetchParticipant as jest.Mock).mockReset()
+    ;(fetchParticipantSession as jest.Mock).mockReset()
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'false'
+  })
 })

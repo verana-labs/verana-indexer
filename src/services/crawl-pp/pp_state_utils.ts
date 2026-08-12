@@ -107,7 +107,34 @@ export function calculateParticipantState(participant: ParticipantData, now: Dat
     }
   }
 
-  return 'INACTIVE'
+  return isOnboardingPending(participant.op_state) ? 'INACTIVE' : 'ACTIVE'
+}
+
+export const ONBOARDING_PENDING_OP_STATES: readonly string[] = ['PENDING', 'TERMINATED']
+
+export function isOnboardingPending(opState?: ValidationState | string | number | null): boolean {
+  const normalized = normalizeOpState(opState)
+  return normalized !== null && ONBOARDING_PENDING_OP_STATES.includes(normalized)
+}
+
+export function applyActiveEffectiveFromFilter(
+  query: any,
+  nowIso: string,
+  col: (name: string) => string = (name) => name
+): void {
+  query.where((qb: any) =>
+    qb
+      .where((started: any) =>
+        started.whereNotNull(col('effective_from')).andWhere(col('effective_from'), '<=', nowIso)
+      )
+      .orWhere((neverScheduled: any) =>
+        neverScheduled
+          .whereNull(col('effective_from'))
+          .andWhere((onboarded: any) =>
+            onboarded.whereNull(col('op_state')).orWhereNotIn(col('op_state'), ONBOARDING_PENDING_OP_STATES)
+          )
+      )
+  )
 }
 
 function normalizeSchemaMode(mode?: string): SchemaMode {
