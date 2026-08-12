@@ -4,6 +4,7 @@ import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
@@ -2414,9 +2415,23 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     }
 
     const participantHistPart = await resolveParticipantHistoryParticipantColumn(knex)
-    const corpParticipantRows = await knex('participant_history')
+    const asOf = await getBlockChainTimeAsOf(blockHeight, {
+      atOrBefore: true,
+      logContext: '[cs_database:participant_corporation_id]',
+    })
+    const rankedParticipantHistory = knex('participant_history')
+      .select('schema_id', participantHistPart, 'revoked', 'slashed', 'repaid', 'effective_from', 'effective_until')
+      .select(
+        knex.raw('ROW_NUMBER() OVER (PARTITION BY participant_id ORDER BY height DESC, created_at DESC, id DESC) as rn')
+      )
       .where('height', '<=', blockHeight)
+      .as('ranked_participants')
+
+    const corpParticipantRows = await knex
+      .from(rankedParticipantHistory)
+      .where('rn', 1)
       .where(participantHistPart, corporationId)
+      .modify((qb) => applyActiveParticipantFilter(qb, asOf.toISOString()))
       .distinct('schema_id')
     const schemaIdsFromCorp = corpParticipantRows
       .map((r: { schema_id: number }) => r.schema_id)
