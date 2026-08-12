@@ -5,6 +5,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
@@ -1021,12 +1022,6 @@ export default class ParticipantAPIService extends BullableService {
             'ph.issued',
             'ph.verified',
             'ph.participants',
-            'ph.participants_ecosystem',
-            'ph.participants_issuer_grantor',
-            'ph.participants_issuer',
-            'ph.participants_verifier_grantor',
-            'ph.participants_verifier',
-            'ph.participants_holder',
             'ph.ecosystem_slash_events',
             'ph.ecosystem_slashed_amount',
             'ph.ecosystem_slashed_amount_repaid',
@@ -1082,12 +1077,6 @@ export default class ParticipantAPIService extends BullableService {
             'ph.issued',
             'ph.verified',
             'ph.participants',
-            'ph.participants_ecosystem',
-            'ph.participants_issuer_grantor',
-            'ph.participants_issuer',
-            'ph.participants_verifier_grantor',
-            'ph.participants_verifier',
-            'ph.participants_holder',
             'ph.ecosystem_slash_events',
             'ph.ecosystem_slashed_amount',
             'ph.ecosystem_slashed_amount_repaid',
@@ -2328,28 +2317,63 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET beneficiaries',
     params: {
-      issuer_participant_id: { type: 'number', integer: true },
-      verifier_participant_id: { type: 'number', integer: true },
+      issuer_participant_id: { type: 'number', integer: true, positive: true, optional: true },
+      verifier_participant_id: { type: 'number', integer: true, positive: true, optional: true },
     },
   })
-  async findBeneficiaries(ctx: Context<{ issuer_participant_id: number; verifier_participant_id: number }>) {
+  async findBeneficiaries(ctx: Context<{ issuer_participant_id?: number; verifier_participant_id?: number }>) {
     const { issuer_participant_id: issuerParticipantId, verifier_participant_id: verifierParticipantId } = ctx.params
     const blockHeight = getBlockHeight(ctx)
     const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
 
     if (!issuerParticipantId && !verifierParticipantId) {
-      return ApiResponder.error(ctx, 'issuer_participant_id and verifier_participant_id must be set', 400)
+      return ApiResponder.error(
+        ctx,
+        'At least one of issuer_participant_id and verifier_participant_id must be set',
+        400
+      )
     }
 
     try {
-      const rootIds = [issuerParticipantId, verifierParticipantId]
-        .filter((id): id is number => id !== undefined && id !== null)
-        .map((id) => Number(id))
+      const rootIds = [
+        ...new Set(
+          [issuerParticipantId, verifierParticipantId]
+            .filter((id): id is number => id !== undefined && id !== null)
+            .map((id) => Number(id))
+        ),
+      ]
 
       const initialMap = await this.getParticipantsByIdsMap(rootIds, useHistoryQuery ? blockHeight : undefined)
       const missingRootIds = rootIds.filter((rootId) => !initialMap.has(rootId))
       if (missingRootIds.length > 0) {
         return ApiResponder.error(ctx, `Participant not found for id(s): ${missingRootIds.join(', ')}`, 404)
+      }
+
+      const evaluatedAt =
+        useHistoryQuery && blockHeight !== undefined
+          ? await getBlockChainTimeAsOf(blockHeight, { atOrBefore: true, logContext: '[pp_apis:beneficiaries]' })
+          : new Date()
+      const inactiveRootIds = rootIds.filter((rootId) => {
+        const participant = initialMap.get(rootId)
+        return (
+          calculateParticipantState(
+            {
+              repaid: participant.repaid,
+              slashed: participant.slashed,
+              revoked: participant.revoked,
+              effective_from: participant.effective_from,
+              effective_until: participant.effective_until,
+              role: participant.role,
+              op_state: participant.op_state,
+              op_exp: participant.op_exp,
+              validator_participant_id: participant.validator_participant_id,
+            },
+            evaluatedAt
+          ) !== 'ACTIVE'
+        )
+      })
+      if (inactiveRootIds.length > 0) {
+        return ApiResponder.error(ctx, `Participant must be active for id(s): ${inactiveRootIds.join(', ')}`, 400)
       }
 
       const foundParticipantMap = new Map<number, any>()
