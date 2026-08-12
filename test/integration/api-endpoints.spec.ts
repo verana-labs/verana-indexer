@@ -1000,16 +1000,16 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get pending flat - with account (required)', async () => {
+      itIf('should get pending flat - with corporation_id (required)', async () => {
         const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
-          account: SAMPLE_ACCOUNT,
+          corporation_id: SAMPLE_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
       itIf('should get pending flat - with limit', async () => {
         const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
-          account: SAMPLE_ACCOUNT,
+          corporation_id: SAMPLE_ID,
           limit: 100,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1017,7 +1017,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get pending flat - with sort parameter', async () => {
         const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
-          account: SAMPLE_ACCOUNT,
+          corporation_id: SAMPLE_ID,
           sort: 'modified',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
@@ -1025,7 +1025,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
 
       itIf('should get pending flat - with participant-role sort parameter', async () => {
         const response = await testEndpoint('GET', '/v4/participant/pending/flat', {
-          account: SAMPLE_ACCOUNT,
+          corporation_id: SAMPLE_ID,
           sort: '-participants_ecosystem',
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)

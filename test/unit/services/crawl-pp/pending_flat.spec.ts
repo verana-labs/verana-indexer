@@ -66,8 +66,16 @@ describe('Pending Flat API', () => {
   it('returns empty when no participants found', async () => {
     ;(knex as any).mockImplementation(() => createKnexChain())
 
-    const ctx: any = { params: { account: 'acc1', limit: 10 }, meta: {} }
+    const ctx: any = { params: { corporation_id: 1, limit: 10 }, meta: {} }
     const res = await service.pendingFlat(ctx)
     expect(res).toEqual({ ecosystems: [] })
+  })
+
+  it('rejects a non-positive corporation_id with 400', async () => {
+    ;(knex as any).mockImplementation(() => createKnexChain())
+
+    const ctx: any = { params: { corporation_id: 0 }, meta: {} }
+    const res: any = await service.pendingFlat(ctx)
+    expect(res).toMatchObject({ code: 400 })
   })
 })
