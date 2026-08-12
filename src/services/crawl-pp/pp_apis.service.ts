@@ -5,6 +5,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
@@ -21,10 +22,12 @@ import { compareById, paginateActivityItems, parseCorporationListPagination } fr
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
+  applyActiveEffectiveFromFilter,
   calculateCorporationAvailableActions,
   calculateParticipantState,
   calculateValidatorAvailableActions,
   mapParticipantActionsToVprMessages,
+  ONBOARDING_PENDING_OP_STATES,
   type ParticipantState,
   PENDING_FLAT_VALIDATOR_PARENT_TYPES,
   pendingFlatMatchesOpPendingWithEligibleParticipantState,
@@ -521,6 +524,9 @@ export default class ParticipantAPIService extends BullableService {
     const notRevokedAsOfNow = (qb: any) => {
       qb.whereNull(col('revoked')).orWhere(col('revoked'), '>=', nowIso)
     }
+    const onboardingPending = (qb: any) => {
+      qb.whereIn(col('op_state'), ONBOARDING_PENDING_OP_STATES)
+    }
 
     if (participantState === 'REPAID') {
       query.whereNotNull(col('repaid'))
@@ -554,7 +560,7 @@ export default class ParticipantAPIService extends BullableService {
         baseNotRepaidSlashed(qb)
         qb.where(notRevokedAsOfNow)
         qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNotNull(col('effective_from')).andWhere(col('effective_from'), '<=', nowIso)
+        applyActiveEffectiveFromFilter(qb, nowIso, col)
       })
       return { pushedDown: true }
     }
@@ -574,7 +580,7 @@ export default class ParticipantAPIService extends BullableService {
         baseNotRepaidSlashed(qb)
         qb.where(notRevokedAsOfNow)
         qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNull(col('effective_from'))
+        qb.whereNull(col('effective_from')).andWhere(onboardingPending)
       })
       return { pushedDown: true }
     }
@@ -1016,12 +1022,6 @@ export default class ParticipantAPIService extends BullableService {
             'ph.issued',
             'ph.verified',
             'ph.participants',
-            'ph.participants_ecosystem',
-            'ph.participants_issuer_grantor',
-            'ph.participants_issuer',
-            'ph.participants_verifier_grantor',
-            'ph.participants_verifier',
-            'ph.participants_holder',
             'ph.ecosystem_slash_events',
             'ph.ecosystem_slashed_amount',
             'ph.ecosystem_slashed_amount_repaid',
@@ -1077,12 +1077,6 @@ export default class ParticipantAPIService extends BullableService {
             'ph.issued',
             'ph.verified',
             'ph.participants',
-            'ph.participants_ecosystem',
-            'ph.participants_issuer_grantor',
-            'ph.participants_issuer',
-            'ph.participants_verifier_grantor',
-            'ph.participants_verifier',
-            'ph.participants_holder',
             'ph.ecosystem_slash_events',
             'ph.ecosystem_slashed_amount',
             'ph.ecosystem_slashed_amount_repaid',
@@ -2323,28 +2317,63 @@ export default class ParticipantAPIService extends BullableService {
   @Action({
     rest: 'GET beneficiaries',
     params: {
-      issuer_participant_id: { type: 'number', integer: true },
-      verifier_participant_id: { type: 'number', integer: true },
+      issuer_participant_id: { type: 'number', integer: true, positive: true, optional: true },
+      verifier_participant_id: { type: 'number', integer: true, positive: true, optional: true },
     },
   })
-  async findBeneficiaries(ctx: Context<{ issuer_participant_id: number; verifier_participant_id: number }>) {
+  async findBeneficiaries(ctx: Context<{ issuer_participant_id?: number; verifier_participant_id?: number }>) {
     const { issuer_participant_id: issuerParticipantId, verifier_participant_id: verifierParticipantId } = ctx.params
     const blockHeight = getBlockHeight(ctx)
     const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
 
     if (!issuerParticipantId && !verifierParticipantId) {
-      return ApiResponder.error(ctx, 'issuer_participant_id and verifier_participant_id must be set', 400)
+      return ApiResponder.error(
+        ctx,
+        'At least one of issuer_participant_id and verifier_participant_id must be set',
+        400
+      )
     }
 
     try {
-      const rootIds = [issuerParticipantId, verifierParticipantId]
-        .filter((id): id is number => id !== undefined && id !== null)
-        .map((id) => Number(id))
+      const rootIds = [
+        ...new Set(
+          [issuerParticipantId, verifierParticipantId]
+            .filter((id): id is number => id !== undefined && id !== null)
+            .map((id) => Number(id))
+        ),
+      ]
 
       const initialMap = await this.getParticipantsByIdsMap(rootIds, useHistoryQuery ? blockHeight : undefined)
       const missingRootIds = rootIds.filter((rootId) => !initialMap.has(rootId))
       if (missingRootIds.length > 0) {
         return ApiResponder.error(ctx, `Participant not found for id(s): ${missingRootIds.join(', ')}`, 404)
+      }
+
+      const evaluatedAt =
+        useHistoryQuery && blockHeight !== undefined
+          ? await getBlockChainTimeAsOf(blockHeight, { atOrBefore: true, logContext: '[pp_apis:beneficiaries]' })
+          : new Date()
+      const inactiveRootIds = rootIds.filter((rootId) => {
+        const participant = initialMap.get(rootId)
+        return (
+          calculateParticipantState(
+            {
+              repaid: participant.repaid,
+              slashed: participant.slashed,
+              revoked: participant.revoked,
+              effective_from: participant.effective_from,
+              effective_until: participant.effective_until,
+              role: participant.role,
+              op_state: participant.op_state,
+              op_exp: participant.op_exp,
+              validator_participant_id: participant.validator_participant_id,
+            },
+            evaluatedAt
+          ) !== 'ACTIVE'
+        )
+      })
+      if (inactiveRootIds.length > 0) {
+        return ApiResponder.error(ctx, `Participant must be active for id(s): ${inactiveRootIds.join(', ')}`, 400)
       }
 
       const foundParticipantMap = new Map<number, any>()
