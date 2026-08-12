@@ -219,8 +219,6 @@ describe('buildPresentations', () => {
 })
 
 describe('buildEcsCredentials', () => {
-  // verre >= 0.4.0-dev.2 resolves the ECS classification, the anchored digest and the VPR ids,
-  // so the builder only reshapes what the resolution already carries.
   const service = {
     ecs: 'ecs-service',
     id: 'urn:uuid:service-vc-1',
