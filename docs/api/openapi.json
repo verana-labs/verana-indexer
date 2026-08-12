@@ -1396,13 +1396,14 @@
             "description": "Maximum number of active schemas (exclusive)."
           },
           {
-            "name": "participant",
+            "name": "participant_corporation_id",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Participant account. TRs where this account is EC corporation or holds an active participant on a schema in the EC."
+            "description": "Id of a Corporation. Returns Ecosystems where this Corporation is the controlling Corporation (Ecosystem.corporation_id) or owns an active Participant entry on any Credential Schema of the Ecosystem."
           },
           {
             "name": "min_participants",
@@ -2242,13 +2243,14 @@
             "description": "Sort by id ascending or descending"
           },
           {
-            "name": "participant",
+            "name": "participant_corporation_id",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Participant account. Schemas whose EC corporation matches or where the account holds an active participant."
+            "description": "Id of a Corporation. Returns schemas where this Corporation controls the owning Ecosystem (Ecosystem.corporation_id) or owns an active Participant entry on the schema."
           },
           {
             "name": "min_participants",

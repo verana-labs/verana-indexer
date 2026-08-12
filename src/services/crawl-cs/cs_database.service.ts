@@ -2,9 +2,9 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
-import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
@@ -29,6 +29,7 @@ import {
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
 import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
+import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { calculateCredentialSchemaStats } from './cs_stats'
 
 let heightColumnExistsCache: boolean | null = null
@@ -1473,7 +1474,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     rest: 'GET list',
     params: {
       ecosystem_id: { type: 'number', optional: true },
-      participant: { type: 'any', optional: true },
+      participant_corporation_id: { type: 'number', integer: true, optional: true },
       modified_after: { type: 'string', optional: true },
       archived: { type: 'any', optional: true },
       only_active: {
@@ -1517,7 +1518,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
   async list(
     ctx: Context<{
       ecosystem_id?: number
-      participant?: string
+      participant_corporation_id?: number
       modified_after?: string
       archived?: any
       only_active?: any
@@ -1557,7 +1558,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const {
         ecosystem_id: ecosystemId,
-        participant,
+        participant_corporation_id: participantCorporationIdRaw,
         modified_after: modifiedAfter,
         archived: archivedParam,
         only_active: onlyActive,
@@ -1600,11 +1601,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const holderOmTrimmed = holderOnboardingModeParam !== undefined ? String(holderOnboardingModeParam).trim() : ''
       const effectiveHolderOnboarding: string | undefined = holderOmTrimmed !== '' ? holderOmTrimmed : undefined
 
-      const participantValidation = validateParticipantParam(participant, 'participant')
-      if (!participantValidation.valid) {
-        return ApiResponder.error(ctx, participantValidation.error, 400)
+      let participantCorporationId: number | undefined
+      if (participantCorporationIdRaw !== undefined && participantCorporationIdRaw !== null) {
+        if (!Number.isInteger(participantCorporationIdRaw) || participantCorporationIdRaw <= 0) {
+          return ApiResponder.error(ctx, 'Invalid "participant_corporation_id". Must be a positive integer.', 400)
+        }
+        participantCorporationId = participantCorporationIdRaw
       }
-      const participantAccount = participantValidation.value
 
       const pageParsed = parseCorporationListPagination(ctx.params)
       if (!pageParsed.ok) {
@@ -1646,8 +1649,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         const hasHeightColumn = await checkHeightColumnExists()
         const hasHistoryMetricColumns = await checkHistoryMetricColumnsExist()
         let schemaIdsAtHeight: number[]
-        if (participantAccount) {
-          schemaIdsAtHeight = await this.getCredentialSchemaIdsForParticipantAtHeight(participantAccount, blockHeight)
+        if (participantCorporationId) {
+          schemaIdsAtHeight = await this.getCredentialSchemaIdsForParticipantCorporationAtHeight(
+            participantCorporationId,
+            blockHeight
+          )
           if (schemaIdsAtHeight.length === 0) {
             return ApiResponder.success(ctx, { schemas: [] }, 200)
           }
@@ -2088,8 +2094,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
 
       const query = knex('credential_schemas')
-      if (participantAccount) {
-        const participantSchemaIds = await this.getCredentialSchemaIdsForParticipant(participantAccount)
+      if (participantCorporationId) {
+        const participantSchemaIds =
+          await this.getCredentialSchemaIdsForParticipantCorporation(participantCorporationId)
         if (participantSchemaIds.length === 0) {
           return ApiResponder.success(ctx, { schemas: [] }, 200)
         }
@@ -2354,9 +2361,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     }
   }
 
-  private async getCredentialSchemaIdsForParticipant(account: string): Promise<number[]> {
+  private async getCredentialSchemaIdsForParticipantCorporation(corporationId: number): Promise<number[]> {
     const trPart = await resolveEcosystemParticipantColumn(knex)
-    const controllerTrRows = await knex('ecosystem').where(trPart, account).select('id')
+    const controllerTrRows = await knex('ecosystem').where(trPart, corporationId).select('id')
     const controllerEcosystemIds = controllerTrRows.map((r: { id: number }) => r.id)
     const schemaIdsFromController =
       controllerEcosystemIds.length === 0
@@ -2366,7 +2373,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           )
 
     const participantPart = await resolveParticipantsParticipantColumn(knex)
-    const corpRows = await knex('participants').where(participantPart, account).distinct('schema_id')
+    const corpRows = await knex('participants')
+      .where(participantPart, corporationId)
+      .modify((qb) => applyActiveParticipantFilter(qb, new Date().toISOString()))
+      .distinct('schema_id')
     const schemaIdsFromCorp = corpRows
       .map((r: { schema_id: string }) => (r.schema_id != null ? parseFloat(r.schema_id) : null))
       .filter((id): id is number => id != null && !Number.isNaN(id))
@@ -2374,11 +2384,14 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     return [...new Set([...schemaIdsFromController, ...schemaIdsFromCorp])]
   }
 
-  private async getCredentialSchemaIdsForParticipantAtHeight(account: string, blockHeight: number): Promise<number[]> {
+  private async getCredentialSchemaIdsForParticipantCorporationAtHeight(
+    corporationId: number,
+    blockHeight: number
+  ): Promise<number[]> {
     const trHistPart = await resolveEcosystemHistoryParticipantColumn(knex)
     const ecosystemHistoryRows = await knex('ecosystem_history')
       .where('height', '<=', blockHeight)
-      .where(trHistPart, account)
+      .where(trHistPart, corporationId)
       .select('ecosystem_id')
     const controllerEcosystemIds = [
       ...new Set(ecosystemHistoryRows.map((r: { ecosystem_id: number }) => r.ecosystem_id)),
@@ -2402,9 +2415,32 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     }
 
     const participantHistPart = await resolveParticipantHistoryParticipantColumn(knex)
-    const corpParticipantRows = await knex('participant_history')
+    const asOf = await getBlockChainTimeAsOf(blockHeight, {
+      atOrBefore: true,
+      logContext: '[cs_database:participant_corporation_id]',
+    })
+    const rankedParticipantHistory = knex('participant_history')
+      .select(
+        'schema_id',
+        participantHistPart,
+        'revoked',
+        'slashed',
+        'repaid',
+        'effective_from',
+        'effective_until',
+        'op_state'
+      )
+      .select(
+        knex.raw('ROW_NUMBER() OVER (PARTITION BY participant_id ORDER BY height DESC, created_at DESC, id DESC) as rn')
+      )
       .where('height', '<=', blockHeight)
-      .where(participantHistPart, account)
+      .as('ranked_participants')
+
+    const corpParticipantRows = await knex
+      .from(rankedParticipantHistory)
+      .where('rn', 1)
+      .where(participantHistPart, corporationId)
+      .modify((qb) => applyActiveParticipantFilter(qb, asOf.toISOString()))
       .distinct('schema_id')
     const schemaIdsFromCorp = corpParticipantRows
       .map((r: { schema_id: number }) => r.schema_id)
