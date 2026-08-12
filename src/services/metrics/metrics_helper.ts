@@ -3,7 +3,7 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { resolveParticipantsParticipantColumn } from '../../common/utils/installed_table_columns'
 import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from '../crawl-cs/cs_stats'
-import { calculateParticipantState } from '../crawl-pp/pp_state_utils'
+import { applyActiveEffectiveFromFilter, calculateParticipantState } from '../crawl-pp/pp_state_utils'
 
 function isMetricsPgClient(db: Knex): boolean {
   return String((db as any)?.client?.config?.client || '').includes('pg')
@@ -367,9 +367,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
         .andWhere(function () {
           this.whereNull('revoked').orWhere('revoked', '>=', nowIso)
         })
-        .andWhere(function () {
-          this.whereNotNull('effective_from').andWhere('effective_from', '<=', nowIso)
-        })
+        .modify((qb) => applyActiveEffectiveFromFilter(qb, nowIso))
         .andWhere(function () {
           this.whereNull('effective_until').orWhere('effective_until', '>=', nowIso)
         })
