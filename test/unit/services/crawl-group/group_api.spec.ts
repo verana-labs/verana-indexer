@@ -229,6 +229,19 @@ describe('GroupApiService', () => {
       ])
     })
 
+    it('at height, applies cursors, sort and limit in SQL', async () => {
+      tables.__from = []
+      await service.listCorporationsByMember({
+        params: { account: 'verana1member', min_id: '2', max_id: '9', limit: '3', sort: '+id' },
+        meta: { blockHeight: 30 },
+      } as any)
+
+      expect(called('__from', 'where', (args) => args[0] === 'gh.corporation_id' && args[1] === '>=')).toBe(true)
+      expect(called('__from', 'where', (args) => args[0] === 'gh.corporation_id' && args[1] === '<')).toBe(true)
+      expect(called('__from', 'orderBy', (args) => args[0] === 'gh.corporation_id' && args[1] === 'asc')).toBe(true)
+      expect(called('__from', 'limit', (args) => args[0] === 3)).toBe(true)
+    })
+
     it('rejects invalid pagination', async () => {
       const ctx: any = { params: { account: 'verana1member', limit: '0' }, meta: {} }
       expect(await service.listCorporationsByMember(ctx)).toMatchObject({ code: 400 })
@@ -390,7 +403,7 @@ describe('GroupApiService', () => {
           meta: { blockHeight: 50 },
         } as any)
 
-        expect(getBlockChainTimeAsOf).toHaveBeenCalledWith(50, expect.anything())
+        expect(getBlockChainTimeAsOf).toHaveBeenCalledWith(50, expect.objectContaining({ atOrBefore: true }))
         const votes = runSubquery('whereNotExists')
         expect(votes.where).toHaveBeenCalledWith('gv.height', '<=', 50)
         expect(votes.whereRaw).toHaveBeenCalledWith('gv.proposal_id = ph.proposal_id')

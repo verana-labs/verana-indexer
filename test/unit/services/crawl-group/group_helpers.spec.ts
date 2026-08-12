@@ -2,6 +2,8 @@ import {
   anyTypeUrl,
   decideProposalOutcome,
   durationToSeconds,
+  GROUP_MSG_TYPES,
+  GROUP_ROUTED_MESSAGE_TYPES,
   isUndecodedAny,
   normalizeTallyResult,
   parseEventAttrJson,
@@ -13,6 +15,15 @@ import {
   tallyFromVotes,
   votingPeriodSecondsFromDecisionPolicy,
 } from '../../../../src/services/crawl-group/group_helpers'
+
+describe('group_helpers.GROUP_ROUTED_MESSAGE_TYPES', () => {
+  it('routes every x/group message and excludes the verana create message', () => {
+    expect(GROUP_ROUTED_MESSAGE_TYPES).toHaveLength(Object.keys(GROUP_MSG_TYPES).length - 1)
+    expect(GROUP_ROUTED_MESSAGE_TYPES).not.toContain(GROUP_MSG_TYPES.CreateCorporation)
+    expect(GROUP_ROUTED_MESSAGE_TYPES).toContain(GROUP_MSG_TYPES.LeaveGroup)
+    expect(GROUP_ROUTED_MESSAGE_TYPES.every((type) => type.startsWith('/cosmos.group.v1.'))).toBe(true)
+  })
+})
 
 describe('group_helpers enum mapping', () => {
   it('maps proposal statuses from names and numbers to spec short forms', () => {

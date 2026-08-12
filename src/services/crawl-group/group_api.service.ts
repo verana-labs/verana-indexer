@@ -8,7 +8,7 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { compareById, parseCorporationListPagination } from '../crawl-co/co_stats'
+import { parseCorporationListPagination } from '../crawl-co/co_stats'
 import { normalizeTallyResult, PROPOSAL_STATUSES } from './group_helpers'
 
 type GroupMember = { address: string; weight: string; metadata: string; added_at: string | null }
@@ -223,30 +223,22 @@ export default class GroupApiService extends BaseService {
       const blockHeight = getBlockHeight(ctx)
 
       if (blockHeight !== undefined) {
-        const rows = await this.latestGroupHistoryQuery(blockHeight).whereRaw('gh.members @> ?::jsonb', [
+        let query = this.latestGroupHistoryQuery(blockHeight).whereRaw('gh.members @> ?::jsonb', [
           JSON.stringify([{ address: account }]),
         ])
+        if (minId !== undefined) query = query.where('gh.corporation_id', '>=', minId)
+        if (maxId !== undefined) query = query.where('gh.corporation_id', '<', maxId)
+        const rows = await query.orderBy('gh.corporation_id', direction).limit(limit)
         const memberships = rows
-          .map((row) => {
+          .map((row: Record<string, unknown>) => {
             const members = Array.isArray(row.members) ? (row.members as Array<Record<string, unknown>>) : []
             const member = members.find((entry) => String(entry.address) === account)
             if (!member) return null
-            return {
-              id: Number(row.corporation_id),
-              corporation_id: Number(row.corporation_id),
-              ...serializeMember(member),
-            }
+            const { address: _address, ...rest } = serializeMember(member)
+            return { corporation_id: Number(row.corporation_id), ...rest }
           })
-          .filter(Boolean) as Array<{ id: number; corporation_id: number } & GroupMember>
-        const paged = memberships
-          .filter(
-            (entry) =>
-              (minId === undefined || entry.id >= Number(minId)) && (maxId === undefined || entry.id < Number(maxId))
-          )
-          .sort((a, b) => compareById(a.id, b.id, direction))
-          .slice(0, limit)
-          .map(({ id: _id, address: _address, ...rest }) => rest)
-        return ApiResponder.success(ctx, { memberships: paged })
+          .filter(Boolean)
+        return ApiResponder.success(ctx, { memberships })
       }
 
       let query = knex('corporation_member as cm')
@@ -321,7 +313,7 @@ export default class GroupApiService extends BaseService {
       // All four pending_voter predicates run in SQL so the cursors and limit bound the scan.
       const pendingVoterNowIso =
         pendingVoter && blockHeight !== undefined
-          ? (await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })).toISOString()
+          ? (await getBlockChainTimeAsOf(blockHeight, { logger: this.logger, atOrBefore: true })).toISOString()
           : new Date().toISOString()
 
       let candidates: Array<Record<string, unknown>>

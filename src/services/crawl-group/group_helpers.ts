@@ -13,6 +13,11 @@ export const GROUP_MSG_TYPES = {
   LeaveGroup: '/cosmos.group.v1.MsgLeaveGroup',
 } as const
 
+// Every x/group message routed as an event of its Corporation; the create message is a verana Msg.
+export const GROUP_ROUTED_MESSAGE_TYPES: string[] = Object.entries(GROUP_MSG_TYPES)
+  .filter(([key]) => key !== 'CreateCorporation')
+  .map(([, type]) => type)
+
 export const GROUP_EVENT_TYPES = {
   CreateGroup: 'cosmos.group.v1.EventCreateGroup',
   CreateGroupPolicy: 'cosmos.group.v1.EventCreateGroupPolicy',

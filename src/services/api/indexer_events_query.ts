@@ -9,6 +9,7 @@ import {
   VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../../common/verana-message-types'
+import { GROUP_ROUTED_MESSAGE_TYPES } from '../crawl-group/group_helpers'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
 import { fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
@@ -828,20 +829,6 @@ async function buildDelegationEvents(blockHeight: number): Promise<IndexerTxEven
   }
   return events
 }
-
-const GROUP_ROUTED_MESSAGE_TYPES = [
-  '/cosmos.group.v1.MsgSubmitProposal',
-  '/cosmos.group.v1.MsgVote',
-  '/cosmos.group.v1.MsgExec',
-  '/cosmos.group.v1.MsgWithdrawProposal',
-  '/cosmos.group.v1.MsgUpdateGroupMembers',
-  '/cosmos.group.v1.MsgUpdateGroupMetadata',
-  '/cosmos.group.v1.MsgUpdateGroupAdmin',
-  '/cosmos.group.v1.MsgUpdateGroupPolicyDecisionPolicy',
-  '/cosmos.group.v1.MsgUpdateGroupPolicyMetadata',
-  '/cosmos.group.v1.MsgUpdateGroupPolicyAdmin',
-  '/cosmos.group.v1.MsgLeaveGroup',
-]
 
 // Anchors on the corporation table itself, so routing does not wait for the (separately checkpointed)
 // group processor to fill corporation_group.
