@@ -4645,7 +4645,7 @@
           "Digest"
         ],
         "summary": "Get Digest",
-        "description": "Look up a previously stored Digest entry by its digest string (typically an SRI digest such as sha384-...).",
+        "description": "Look up a previously stored Digest entry by its digest string, byte-for-byte as anchored (for a credential, its digestJCS).",
         "operationId": "getDigest",
         "parameters": [
           {
@@ -4655,7 +4655,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The digest to look up (typically an SRI digest such as sha384-...)"
+            "description": "The digest to look up, byte-for-byte as anchored (for a credential, its digestJCS)"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
