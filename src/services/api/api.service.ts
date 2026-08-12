@@ -372,6 +372,13 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET vs-operator-authorization/:id': `${SERVICE.V1.DelegationApiService.path}.getVSOperatorAuthorization`,
         'GET fee-grants': `${SERVICE.V1.DelegationApiService.path}.listFeeGrants`,
       }),
+      createRoute('/v4/group', {
+        'GET get/:corporation_id': `${SERVICE.V1.GroupApiService.path}.getCorporationGroup`,
+        'GET corporations-by-member': `${SERVICE.V1.GroupApiService.path}.listCorporationsByMember`,
+        'GET proposals': `${SERVICE.V1.GroupApiService.path}.listProposals`,
+        'GET proposal/:id': `${SERVICE.V1.GroupApiService.path}.getProposal`,
+        'GET votes': `${SERVICE.V1.GroupApiService.path}.listVotes`,
+      }),
       createRoute('/v4/trust-deposit', {
         'GET get/:corporation_id': `${SERVICE.V1.TrustDepositApiService.path}.getTrustDeposit`,
         'GET params': `${SERVICE.V1.TrustDepositApiService.path}.getModuleParams`,

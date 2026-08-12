@@ -1033,7 +1033,7 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
     })
 
     describe('GET /v4/participant/beneficiaries - ALL PARAMETERS', () => {
-      itIf('should get beneficiaries - with both required participant ids', async () => {
+      itIf('should get beneficiaries - with both participant ids', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
           verifier_participant_id: SAMPLE_PARTICIPANT_ID,
@@ -1041,18 +1041,37 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
         expect(response.status).not.toBeGreaterThanOrEqual(500)
       })
 
-      itIf('should get beneficiaries - validation: missing verifier_participant_id (should fail)', async () => {
+      itIf('should get beneficiaries - issuance only (issuer_participant_id alone)', async () => {
         const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
           issuer_participant_id: SAMPLE_PARTICIPANT_ID,
         })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
-        expect(response.status).toBeGreaterThanOrEqual(400)
+        expect(String(response.data?.error ?? '')).not.toContain('At least one of')
       })
 
-      itIf('should get beneficiaries - validation: missing both required parameters (should fail)', async () => {
-        const response = await testEndpoint('GET', '/v4/participant/beneficiaries')
+      itIf('should get beneficiaries - verification only (verifier_participant_id alone)', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
+          verifier_participant_id: SAMPLE_PARTICIPANT_ID,
+        })
         expect(response.status).not.toBeGreaterThanOrEqual(500)
-        expect(response.status).toBeGreaterThanOrEqual(400)
+        expect(String(response.data?.error ?? '')).not.toContain('At least one of')
+      })
+
+      itIf('should get beneficiaries - empty set is 200, never 404', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries', {
+          issuer_participant_id: SAMPLE_PARTICIPANT_ID,
+        })
+        expect(response.status).not.toBeGreaterThanOrEqual(500)
+        if (response.status === 200) {
+          expect(Array.isArray(response.data?.participants)).toBe(true)
+        }
+        expect(String(response.data?.error ?? '')).not.toContain('No beneficiaries found')
+      })
+
+      itIf('should get beneficiaries - validation: neither participant id (should fail)', async () => {
+        const response = await testEndpoint('GET', '/v4/participant/beneficiaries')
+        expect(response.status).toBe(400)
+        expect(String(response.data?.error ?? '')).toContain('At least one of')
       })
     })
 

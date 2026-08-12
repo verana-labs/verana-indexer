@@ -3531,6 +3531,125 @@
         }
       }
     },
+    "/v4/group/get/{corporation_id}": {
+      "get": {
+        "tags": ["Group"],
+        "summary": "Get Corporation Group (v4)",
+        "description": "The x/group state backing a Corporation: group, group policy, and the full member list (IDX-GR-QRY-1). Indexer-specific; mirrors Cosmos SDK x/group queries joined with Corporation entries.",
+        "operationId": "getCorporationGroup",
+        "parameters": [
+          { "name": "corporation_id", "in": "path", "required": true, "schema": { "type": "integer", "format": "uint64" } },
+          { "$ref": "#/components/parameters/At-Block-Height" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Corporation group state",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" } } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/v4/group/corporations-by-member": {
+      "get": {
+        "tags": ["Group"],
+        "summary": "List Corporations By Member (v4)",
+        "description": "Corporations whose backing group has the supplied account as a current member (IDX-GR-QRY-2). Single-call group-membership discovery; cursor key is corporation_id.",
+        "operationId": "listCorporationsByMember",
+        "parameters": [
+          { "name": "account", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Member account address" },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 64 } },
+          { "name": "min_id", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[0-9]+$" }, "description": "Cursor: corporation_id lower bound (inclusive)" },
+          { "name": "max_id", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[0-9]+$" }, "description": "Cursor: corporation_id upper bound (exclusive)" },
+          { "name": "sort", "in": "query", "required": false, "schema": { "type": "string", "enum": ["id", "+id", "-id"], "default": "-id" } },
+          { "$ref": "#/components/parameters/At-Block-Height" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memberships",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "memberships": { "type": "array", "items": { "$ref": "#/components/schemas/CorporationMembership" } } } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/v4/group/proposals": {
+      "get": {
+        "tags": ["Group"],
+        "summary": "List Proposals (v4)",
+        "description": "Paginated, filtered list of x/group proposals targeting Corporation-anchored group policies (IDX-GR-QRY-3). Cursor key is the globally unique x/group proposal id.",
+        "operationId": "listGroupProposals",
+        "parameters": [
+          { "name": "corporation_id", "in": "query", "required": false, "schema": { "type": "integer", "format": "uint64" }, "description": "Filter by the Corporation whose group policy the proposal targets" },
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["SUBMITTED", "ACCEPTED", "REJECTED", "ABORTED", "WITHDRAWN"] } },
+          { "name": "proposer", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Proposals whose proposers[] includes this account" },
+          { "name": "pending_voter", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Only SUBMITTED proposals within their voting period where this account is a current group member that has not voted yet" },
+          { "name": "modified_after", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 64 } },
+          { "name": "min_id", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[0-9]+$" } },
+          { "name": "max_id", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[0-9]+$" } },
+          { "name": "sort", "in": "query", "required": false, "schema": { "type": "string", "enum": ["id", "+id", "-id"], "default": "-id" } },
+          { "$ref": "#/components/parameters/At-Block-Height" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proposals",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposals": { "type": "array", "items": { "$ref": "#/components/schemas/GroupProposal" } } } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/v4/group/proposal/{id}": {
+      "get": {
+        "tags": ["Group"],
+        "summary": "Get Proposal (v4)",
+        "description": "A single proposal by its x/group proposal id (IDX-GR-QRY-4). 404 for proposals that target no Corporation-anchored group policy.",
+        "operationId": "getGroupProposal",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "uint64" } },
+          { "$ref": "#/components/parameters/At-Block-Height" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proposal",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" } } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/v4/group/votes": {
+      "get": {
+        "tags": ["Group"],
+        "summary": "List Votes (v4)",
+        "description": "Votes cast on Corporation-anchored proposals (IDX-GR-QRY-5). At least one of proposal_id and voter MUST be provided. Cursor key is the indexer-assigned per-row id.",
+        "operationId": "listGroupVotes",
+        "parameters": [
+          { "name": "proposal_id", "in": "query", "required": false, "schema": { "type": "integer", "format": "uint64" } },
+          { "name": "voter", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 64 } },
+          { "name": "min_id", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[0-9]+$" } },
+          { "name": "max_id", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^[0-9]+$" } },
+          { "name": "sort", "in": "query", "required": false, "schema": { "type": "string", "enum": ["id", "+id", "-id"], "default": "-id" } },
+          { "$ref": "#/components/parameters/At-Block-Height" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Votes",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "votes": { "type": "array", "items": { "$ref": "#/components/schemas/GroupVote" } } } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
     "/v4/exchange-rate/get": {
       "get": {
         "tags": [
@@ -3889,26 +4008,28 @@
           "Participant"
         ],
         "summary": "Find Beneficiaries",
-        "description": "Find participant beneficiaries based on issuer and verifier participants",
+        "description": "Compute the beneficiary Participants for a credential transaction. Given an issuer Participant and/or a verifier Participant, returns every ancestor Participant in the involved tree branch(es) that participates in the fee-distribution flow. At least one of the two ids must be provided.",
         "operationId": "findBeneficiaries",
         "parameters": [
           {
             "name": "issuer_participant_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Issuer Participant ID"
+            "description": "Issuer Participant ID. MUST reference an active Participant; HTTP 400 otherwise. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400. Alone it computes an issuance (credential offer) fee preview"
           },
           {
             "name": "verifier_participant_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": "Verifier Participant ID"
+            "description": "Verifier Participant ID. MUST reference an active Participant; HTTP 400 otherwise. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3916,7 +4037,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with beneficiary participants",
+            "description": "Successful response with beneficiary participants. The set is empty when the referenced Participant has no ancestors, or when every ancestor is revoked or slashed",
             "content": {
               "application/json": {
                 "schema": {
@@ -3926,17 +4047,28 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "404": {
-            "description": "Beneficiaries not found",
+            "description": "Neither id was provided, or a referenced Participant is not active",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "No beneficiaries found for issuer_participant_id: 1 and verifier_participant_id: 2",
+                  "error": "Participant must be active for id(s): 1",
+                  "code": 400
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A referenced Participant does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Participant not found for id(s): 1",
                   "code": 404
                 }
               }
@@ -8366,6 +8498,92 @@
           "records": { "type": "array", "items": { "$ref": "#/components/schemas/ParticipantAuthorizationRecord" } }
         }
       },
+      "GroupMember": {
+        "type": "object",
+        "required": ["address", "weight"],
+        "properties": {
+          "address": { "type": "string" },
+          "weight": { "type": "string", "description": "Decimal string" },
+          "metadata": { "type": "string" },
+          "added_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CorporationGroup": {
+        "type": "object",
+        "description": "The x/group state backing a Corporation (IDX-GR-QRY-1). The admin of both group and policy is the policy address itself (group_policy_as_admin is always true).",
+        "required": ["corporation_id", "group_id", "version", "total_weight", "policy", "members"],
+        "properties": {
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "group_id": { "type": "integer", "format": "uint64" },
+          "version": { "type": "integer", "description": "Bumped on membership changes" },
+          "total_weight": { "type": "string", "description": "Decimal string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "policy": {
+            "type": "object",
+            "required": ["address", "version"],
+            "properties": {
+              "address": { "type": "string", "description": "Equals the Corporation's policy_address" },
+              "version": { "type": "integer" },
+              "decision_policy": { "type": "object", "description": "x/group decision policy surfaced verbatim (ThresholdDecisionPolicy or PercentageDecisionPolicy)" }
+            }
+          },
+          "members": { "type": "array", "items": { "$ref": "#/components/schemas/GroupMember" }, "description": "Full list inline; corporation groups are small by construction" }
+        }
+      },
+      "CorporationMembership": {
+        "type": "object",
+        "required": ["corporation_id", "weight"],
+        "properties": {
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "weight": { "type": "string", "description": "The member's weight in that group, decimal string" },
+          "metadata": { "type": "string" },
+          "added_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "GroupTally": {
+        "type": "object",
+        "required": ["yes_count", "no_count", "abstain_count", "no_with_veto_count"],
+        "properties": {
+          "yes_count": { "type": "string" },
+          "no_count": { "type": "string" },
+          "abstain_count": { "type": "string" },
+          "no_with_veto_count": { "type": "string" }
+        }
+      },
+      "GroupProposal": {
+        "type": "object",
+        "description": "An x/group proposal targeting a Corporation-anchored group policy (IDX-GR-QRY-3/4). corporation_id and tally are indexer-derived; tally is the running tally over indexed votes and equals final_tally_result once the proposal closes.",
+        "required": ["id", "corporation_id", "group_policy_address", "proposers", "submit_time", "status", "executor_result", "messages", "tally"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64" },
+          "corporation_id": { "type": "integer", "format": "uint64" },
+          "group_policy_address": { "type": "string" },
+          "metadata": { "type": "string" },
+          "proposers": { "type": "array", "items": { "type": "string" } },
+          "submit_time": { "type": "string", "format": "date-time" },
+          "group_version": { "type": "integer", "format": "uint64" },
+          "group_policy_version": { "type": "integer", "format": "uint64" },
+          "status": { "type": "string", "enum": ["SUBMITTED", "ACCEPTED", "REJECTED", "ABORTED", "WITHDRAWN"] },
+          "voting_period_end": { "type": "string", "format": "date-time" },
+          "executor_result": { "type": "string", "enum": ["NOT_RUN", "SUCCESS", "FAILURE"] },
+          "messages": { "type": "array", "items": { "type": "object" }, "description": "The wrapped Msgs JSON-decoded with their @type" },
+          "final_tally_result": { "oneOf": [{ "$ref": "#/components/schemas/GroupTally" }, { "type": "null" }], "description": "null until the proposal closes" },
+          "tally": { "$ref": "#/components/schemas/GroupTally" }
+        }
+      },
+      "GroupVote": {
+        "type": "object",
+        "description": "A vote on a Corporation-anchored proposal (IDX-GR-QRY-5). id is indexer-assigned and serves as the pagination cursor.",
+        "required": ["id", "proposal_id", "voter", "option", "submit_time"],
+        "properties": {
+          "id": { "type": "integer", "format": "uint64" },
+          "proposal_id": { "type": "integer", "format": "uint64" },
+          "voter": { "type": "string" },
+          "option": { "type": "string", "enum": ["YES", "NO", "ABSTAIN", "NO_WITH_VETO"] },
+          "metadata": { "type": "string" },
+          "submit_time": { "type": "string", "format": "date-time" }
+        }
+      },
       "FeeGrant": {
         "type": "object",
         "description": "A grant through which a Corporation pays network transaction fees on behalf of a grantee account (IDX-DE-QRY-5).",
@@ -8748,6 +8966,10 @@
     {
       "name": "Delegation",
       "description": "Operator and VS-operator authorization queries, and corporation fee grants"
+    },
+    {
+      "name": "Group",
+      "description": "Corporation-anchored x/group state: groups, members, policies, proposals, votes"
     },
     {
       "name": "Statistics",
