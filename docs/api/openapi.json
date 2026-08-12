@@ -3898,7 +3898,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Issuer Participant ID. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400. Alone it computes an issuance (credential offer) fee preview"
+            "description": "Issuer Participant ID. MUST reference an active Participant; HTTP 400 otherwise. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400. Alone it computes an issuance (credential offer) fee preview"
           },
           {
             "name": "verifier_participant_id",
@@ -3908,7 +3908,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Verifier Participant ID. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400"
+            "description": "Verifier Participant ID. MUST reference an active Participant; HTTP 400 otherwise. At least one of issuer_participant_id and verifier_participant_id must be provided; supplying neither is HTTP 400"
           },
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -3916,7 +3916,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response with beneficiary participants",
+            "description": "Successful response with beneficiary participants. The set is empty when the referenced Participant has no ancestors, or when every ancestor is revoked or slashed",
             "content": {
               "application/json": {
                 "schema": {
@@ -3926,17 +3926,28 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "404": {
-            "description": "Beneficiaries not found",
+            "description": "Neither id was provided, or a referenced Participant is not active",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "error": "No beneficiaries found for issuer_participant_id: 1 and verifier_participant_id: 2",
+                  "error": "Participant must be active for id(s): 1",
+                  "code": 400
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A referenced Participant does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Participant not found for id(s): 1",
                   "code": 404
                 }
               }
