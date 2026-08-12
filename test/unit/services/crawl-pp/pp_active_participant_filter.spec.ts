@@ -31,6 +31,13 @@ describe('🧪 applyActiveParticipantFilter', () => {
     expect(sql).toContain(`"effective_from" is not null and "effective_from" <= '${NOW_ISO}'`)
   })
 
+  it('keeps onboarded entries that never got an effective_from', () => {
+    const sql = sqlFor()
+    expect(sql).toContain(
+      `"effective_from" is null and ("op_state" is null or "op_state" not in ('PENDING', 'TERMINATED'))`
+    )
+  })
+
   it('honours the table prefix used by joined queries', () => {
     expect(sqlFor((name) => `p.${name}`)).toContain('"p"."effective_from"')
   })

@@ -2260,7 +2260,16 @@ export default class EcosystemDatabaseService extends BaseService {
       logContext: '[ec_database:participant_corporation_id]',
     })
     const rankedParticipantHistory = knex('participant_history')
-      .select('schema_id', participantHistPart, 'revoked', 'slashed', 'repaid', 'effective_from', 'effective_until')
+      .select(
+        'schema_id',
+        participantHistPart,
+        'revoked',
+        'slashed',
+        'repaid',
+        'effective_from',
+        'effective_until',
+        'op_state'
+      )
       .select(
         knex.raw('ROW_NUMBER() OVER (PARTITION BY participant_id ORDER BY height DESC, created_at DESC, id DESC) as rn')
       )

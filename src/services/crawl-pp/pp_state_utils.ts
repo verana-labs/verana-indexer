@@ -148,7 +148,7 @@ export function applyActiveParticipantFilter(
     qb.where((notEnded: any) =>
       notEnded.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso)
     )
-    qb.whereNotNull(col('effective_from')).andWhere(col('effective_from'), '<=', nowIso)
+    applyActiveEffectiveFromFilter(qb, nowIso, col)
   })
 }
 
