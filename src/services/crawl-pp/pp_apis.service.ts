@@ -21,6 +21,7 @@ import { compareById, paginateActivityItems, parseCorporationListPagination } fr
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
+  applyActiveParticipantFilter,
   calculateCorporationAvailableActions,
   calculateParticipantState,
   calculateValidatorAvailableActions,
@@ -550,12 +551,7 @@ export default class ParticipantAPIService extends BullableService {
     }
 
     if (participantState === 'ACTIVE') {
-      query.where((qb: any) => {
-        baseNotRepaidSlashed(qb)
-        qb.where(notRevokedAsOfNow)
-        qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNotNull(col('effective_from')).andWhere(col('effective_from'), '<=', nowIso)
-      })
+      applyActiveParticipantFilter(query, nowIso, col)
       return { pushedDown: true }
     }
 

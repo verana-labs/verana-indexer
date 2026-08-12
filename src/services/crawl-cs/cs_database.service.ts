@@ -28,6 +28,7 @@ import {
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
 import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
+import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { calculateCredentialSchemaStats } from './cs_stats'
 
 let heightColumnExistsCache: boolean | null = null
@@ -2371,7 +2372,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           )
 
     const participantPart = await resolveParticipantsParticipantColumn(knex)
-    const corpRows = await knex('participants').where(participantPart, corporationId).distinct('schema_id')
+    const corpRows = await knex('participants')
+      .where(participantPart, corporationId)
+      .modify((qb) => applyActiveParticipantFilter(qb, new Date().toISOString()))
+      .distinct('schema_id')
     const schemaIdsFromCorp = corpRows
       .map((r: { schema_id: string }) => (r.schema_id != null ? parseFloat(r.schema_id) : null))
       .filter((id): id is number => id != null && !Number.isNaN(id))

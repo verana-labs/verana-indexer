@@ -25,6 +25,7 @@ import { mapEcosystemApiFields } from '../../common/vpr-v4-mapping'
 import { Ecosystem } from '../../models/ecosystem'
 import { compareById, type GfDataMode, parseCorporationListPagination, parseGfDataMode } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
+import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
 import { calculateEcosystemStats, TR_STATS_FIELDS } from './ec_stats'
 
@@ -2220,7 +2221,10 @@ export default class EcosystemDatabaseService extends BaseService {
     const controllerIds = controllerRows.map((r: { id: number }) => r.id)
 
     const participantPart = await resolveParticipantsParticipantColumn(knex)
-    const corpSchemaIds = await knex('participants').where(participantPart, corporationId).distinct('schema_id')
+    const corpSchemaIds = await knex('participants')
+      .where(participantPart, corporationId)
+      .modify((qb) => applyActiveParticipantFilter(qb, new Date().toISOString()))
+      .distinct('schema_id')
     const schemaIds = corpSchemaIds
       .map((r: { schema_id: string }) => {
         const id = r.schema_id ? parseFloat(r.schema_id) : null
