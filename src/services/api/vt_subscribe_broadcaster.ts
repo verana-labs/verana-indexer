@@ -1,3 +1,5 @@
+import { BULL_JOB_NAME } from '../../common'
+import knex from '../../common/utils/db_connection'
 import { BaseSubscribeServer, type ControlParseResult } from './subscribe_ws_server'
 import {
   buildVtChangesEnvelope,
@@ -25,6 +27,24 @@ export class VtSubscribeBroadcaster extends BaseSubscribeServer<VtControlMessage
     return parseVtControlMessage(raw)
   }
 
+  protected isSubscribeControl(message: VtControlMessage): boolean {
+    return message.action === 'subscribe'
+  }
+
+  protected async resolveSeedHeight(_lastProcessedBlock: number): Promise<number> {
+    try {
+      const row = (await knex('block_checkpoint')
+        .select('height')
+        .where('job_name', BULL_JOB_NAME.HANDLE_TRUST_RESOLVE)
+        .first()) as { height?: number | string } | undefined
+      const height = Number(row?.height ?? 0)
+      return Number.isFinite(height) ? height : 0
+    } catch (error) {
+      this.logger.warn(`[${this.constructor.name}] Could not read the resolver checkpoint to seed acks:`, error)
+      return 0
+    }
+  }
+
   protected applyControl(_state: VtClientState, message: VtControlMessage): VtClientState {
     if (message.action === 'unsubscribe') {
       return { established: false, dids: null, corporationId: null, channels: null }
@@ -39,6 +59,7 @@ export class VtSubscribeBroadcaster extends BaseSubscribeServer<VtControlMessage
   }
 
   broadcastChangesEnvelope(args: { block: number; blockTime: string; changes: VtRawChange[] }): void {
+    this.noteBlockProcessed(args.block)
     if (this.clients.size === 0) return
 
     let sent = 0

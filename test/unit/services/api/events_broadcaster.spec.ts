@@ -373,6 +373,109 @@ describe('SubscribeBroadcaster', () => {
     closeSocket(ws)
   })
 
+  describe('Subscribed acknowledgement', () => {
+    const HEIGHT = 1500006
+
+    function recordTypes(ws: WebSocket): string[] {
+      const types: string[] = []
+      ws.on('message', (data) => types.push(JSON.parse(data.toString()).type))
+      return types
+    }
+
+    it('acknowledges a subscribe with the next deliverable block', async () => {
+      broadcaster.noteBlockProcessed(HEIGHT)
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      ws.send(JSON.stringify({ action: 'subscribe', dids: null }))
+      const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1 })
+      closeSocket(ws)
+    })
+
+    it('does not acknowledge an unsubscribe', async () => {
+      const ws = await openSubscribed(WS_URL, null)
+      const types = recordTypes(ws)
+
+      ws.send(JSON.stringify({ action: 'unsubscribe' }))
+      await new Promise((resolve) => setTimeout(resolve, 150))
+
+      expect(types).toEqual([])
+      closeSocket(ws)
+    })
+
+    it('sends the acknowledgement before any block message', async () => {
+      broadcaster.noteBlockProcessed(HEIGHT)
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      const types = recordTypes(ws)
+      ws.send(JSON.stringify({ action: 'subscribe', dids: null }))
+      // Blocks are pushed while the control message is in flight: an async handler would establish the client and
+      // let one through before the acknowledgement.
+      for (let i = 1; i <= 40; i++) {
+        broadcastBlockIndexed(broadcaster, HEIGHT + i, '2026-05-11T13:00:05Z')
+        await new Promise((resolve) => setTimeout(resolve, 2))
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(types.length).toBeGreaterThan(1)
+      expect(types[0]).toBe('subscribed')
+      expect(types.slice(1).every((type) => type === 'block')).toBe(true)
+      closeSocket(ws)
+    })
+
+    it('acknowledges a re-subscribe with the height current at that moment', async () => {
+      broadcaster.noteBlockProcessed(HEIGHT)
+      const ws = await openSubscribed(WS_URL, null)
+
+      broadcastBlockIndexed(broadcaster, HEIGHT + 5, '2026-05-11T13:00:05Z')
+      ws.send(JSON.stringify({ action: 'subscribe', dids: ['did:web:agent.example'] }))
+      const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      expect(ack.block).toBe(HEIGHT + 6)
+      closeSocket(ws)
+    })
+
+    it('sends ready before acknowledging a subscribe that arrives on open', async () => {
+      const ws = new WebSocket(WS_URL)
+      const types = recordTypes(ws)
+      await waitForOpen(ws)
+
+      ws.send(JSON.stringify({ action: 'subscribe', dids: null }))
+      await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      expect(types.slice(0, 2)).toEqual(['ready', 'subscribed'])
+      closeSocket(ws)
+    })
+
+    it('seeds one block behind the indexer checkpoint', async () => {
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      const ready = await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      ws.send(JSON.stringify({ action: 'subscribe', dids: null }))
+      const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      // `ready.block` is lastProcessedBlock + 1, whose events may not be persisted yet, so coverage starts one
+      // block earlier rather than claiming a block the REST catch-up cannot see.
+      expect(ack.block).toBe(Math.max(ready.block - 1, 1))
+      closeSocket(ws)
+    })
+
+    it('keeps tracking heights while no client is connected', () => {
+      const idle = new SubscribeBroadcaster()
+      idle.setLogger({ info: () => {}, warn: () => {}, error: () => {} })
+      broadcastBlockIndexed(idle, 900, '2026-05-11T13:00:05Z')
+
+      expect(idle.getClientCount()).toBe(0)
+      expect(idle.getNextDeliverableBlock()).toBe(901)
+    })
+  })
+
   it('cleans up clients on close and error/terminate', async () => {
     const wsClose = await openSubscribed(WS_URL, ['did:web:close.example'])
     expect(broadcaster.getClientCount()).toBe(1)

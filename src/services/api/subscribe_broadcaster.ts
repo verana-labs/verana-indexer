@@ -19,6 +19,10 @@ export class SubscribeBroadcaster extends BaseSubscribeServer<ControlMessage, Cl
     return parseControlMessage(raw)
   }
 
+  protected isSubscribeControl(message: ControlMessage): boolean {
+    return message.action === 'subscribe'
+  }
+
   protected applyControl(_state: ClientState, message: ControlMessage): ClientState {
     if (message.action === 'unsubscribe') {
       return { established: false, dids: null, corporationId: null }
@@ -32,6 +36,7 @@ export class SubscribeBroadcaster extends BaseSubscribeServer<ControlMessage, Cl
   }
 
   broadcastBlockEnvelope(args: { block: number; blockTime: string; events: IndexerEventRecord[] }): void {
+    this.noteBlockProcessed(args.block)
     if (this.clients.size === 0) return
 
     let sent = 0

@@ -64,7 +64,10 @@ export default class IndexerEventsService extends BaseService {
   public async broadcastEmptyBlocks(ctx: Context<{ fromHeight: number; toHeight: number }>) {
     const { fromHeight, toHeight } = ctx.params
     if (toHeight < fromHeight) return { success: true, blocksNotified: 0 }
-    if (subscribeBroadcaster.getClientCount() === 0) return { success: true, blocksNotified: 0 }
+    if (subscribeBroadcaster.getClientCount() === 0) {
+      subscribeBroadcaster.noteBlockProcessed(toHeight)
+      return { success: true, blocksNotified: 0 }
+    }
 
     let blockTimeByHeight = new Map<number, string>()
     try {

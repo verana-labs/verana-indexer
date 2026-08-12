@@ -4,7 +4,7 @@ import type { Duplex } from 'stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import { indexerStatusManager } from '../manager/indexer_status.manager'
 import { createLogger, type LoggerLike, toIsoSeconds } from './api_shared'
-import { buildReadyMessage } from './subscribe_protocol'
+import { buildReadyMessage, buildSubscribedMessage } from './subscribe_protocol'
 
 export type ControlParseResult<TMessage> = { ok: true; message: TMessage } | { ok: false; error: string }
 
@@ -14,11 +14,13 @@ export abstract class BaseSubscribeServer<TControl, TState> {
   private upgradeHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null = null
   protected clients: Map<WebSocket, TState> = new Map()
   private clientAlive: Map<WebSocket, boolean> = new Map()
+  private controlBacklog: Map<WebSocket, string[]> = new Map()
   private pingInterval: NodeJS.Timeout | null = null
   private readonly MAX_CLIENTS = 10000 // TODO: Review this values
   private readonly PING_INTERVAL = 30000
   private readonly MAX_CONTROL_MESSAGE_BYTES = 64 * 1024
   private readonly MAX_BUFFERED_BYTES = Number(process.env.WS_MAX_BUFFERED_BYTES || 8 * 1024 * 1024)
+  private lastBroadcastHeight = 0
   protected logger = createLogger(console)
 
   protected abstract readonly path: string
@@ -28,6 +30,21 @@ export abstract class BaseSubscribeServer<TControl, TState> {
   protected abstract parseControl(raw: string): ControlParseResult<TControl>
 
   protected abstract applyControl(state: TState, message: TControl): TState
+
+  protected abstract isSubscribeControl(message: TControl): boolean
+
+  protected async resolveSeedHeight(lastProcessedBlock: number): Promise<number> {
+    return lastProcessedBlock - 1
+  }
+
+  noteBlockProcessed(height: number): void {
+    if (!Number.isFinite(height)) return
+    if (height > this.lastBroadcastHeight) this.lastBroadcastHeight = height
+  }
+
+  getNextDeliverableBlock(): number {
+    return this.lastBroadcastHeight + 1
+  }
 
   setLogger(logger: LoggerLike): void {
     this.logger = createLogger(logger)
@@ -80,6 +97,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
 
       this.clients.set(ws, this.createInitialState())
       this.clientAlive.set(ws, true)
+      this.controlBacklog.set(ws, [])
 
       this.logger.info(`[${this.constructor.name}] New client connected. Total clients: ${this.clients.size}`)
 
@@ -91,10 +109,18 @@ export abstract class BaseSubscribeServer<TControl, TState> {
       ws.on('pong', () => {
         this.clientAlive.set(ws, true)
       })
-      ws.on('message', (raw) => this.handleControlMessage(ws, raw.toString()))
+      ws.on('message', (raw) => {
+        const backlog = this.controlBacklog.get(ws)
+        if (backlog) {
+          backlog.push(raw.toString())
+          return
+        }
+        this.handleControlMessage(ws, raw.toString())
+      })
 
       try {
         await this.sendReady(ws)
+        this.flushControlBacklog(ws)
       } catch (error) {
         this.logger.error(`[${this.constructor.name}] Error sending ready message:`, error)
         this.cleanupClient(ws)
@@ -116,8 +142,18 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     const status = await indexerStatusManager.getDetailedStatus()
     const lastProcessedBlock = status.lastProcessedBlock ?? 0
     const lastBlockTime = status.lastBlockTime ?? toIsoSeconds()
+    this.noteBlockProcessed(await this.resolveSeedHeight(lastProcessedBlock))
     const ready = buildReadyMessage(lastProcessedBlock, lastBlockTime)
     this.sendJson(ws, ready as unknown as Record<string, unknown>)
+  }
+
+  private flushControlBacklog(ws: WebSocket): void {
+    const backlog = this.controlBacklog.get(ws) ?? []
+    this.controlBacklog.delete(ws)
+    for (const raw of backlog) {
+      if (!this.clients.has(ws)) return
+      this.handleControlMessage(ws, raw)
+    }
   }
 
   private handleControlMessage(ws: WebSocket, raw: string): void {
@@ -134,7 +170,11 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     const state = this.clients.get(ws)
     if (!state) return
 
+    const nextBlock = this.getNextDeliverableBlock()
     this.clients.set(ws, this.applyControl(state, result.message))
+    if (!this.isSubscribeControl(result.message)) return
+
+    this.sendJson(ws, buildSubscribedMessage(nextBlock) as unknown as Record<string, unknown>)
   }
 
   protected sendJson(ws: WebSocket, payload: Record<string, unknown>, closeCodeOnFailure = 0): boolean {
@@ -169,6 +209,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
   private cleanupClient(ws: WebSocket): void {
     const had = this.clients.delete(ws)
     this.clientAlive.delete(ws)
+    this.controlBacklog.delete(ws)
     if (had) {
       this.logger.info(`[${this.constructor.name}] Client disconnected. Total clients: ${this.clients.size}`)
     }
@@ -217,6 +258,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     })
     this.clients.clear()
     this.clientAlive.clear()
+    this.controlBacklog.clear()
 
     if (this.server && this.upgradeHandler) {
       this.server.off('upgrade', this.upgradeHandler)

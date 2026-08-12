@@ -24,6 +24,9 @@ class TestServer extends BaseSubscribeServer<{ action: string }, { established: 
   protected applyControl(state: { established: boolean }) {
     return state
   }
+  protected isSubscribeControl(message: { action: string }) {
+    return message.action === 'subscribe'
+  }
   // expose protected members for the test
   public send(ws: WebSocket) {
     return this.sendJson(ws, { type: 'block', block: 1 })

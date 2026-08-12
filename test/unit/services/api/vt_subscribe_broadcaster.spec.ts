@@ -1,3 +1,20 @@
+// The VT channel seeds its acknowledgement counter from the resolver checkpoint, so the DB access is stubbed to a
+// known height instead of reaching for a real connection.
+jest.mock('../../../../src/common/utils/db_connection', () => {
+  const builder = {
+    select: () => builder,
+    where: () => builder,
+    first: async () => ({ height: 10 }),
+  }
+  return {
+    __esModule: true,
+    default: Object.assign(
+      jest.fn(() => builder),
+      { raw: jest.fn() }
+    ),
+  }
+})
+
 import { createServer, Server } from 'http'
 import { type RawData, WebSocket } from 'ws'
 import { VtSubscribeBroadcaster } from '../../../../src/services/api/vt_subscribe_broadcaster'
@@ -206,6 +223,94 @@ describe('VtSubscribeBroadcaster', () => {
     const msg = await promise
     expect(msg).toMatchObject({ type: 'block', block: 777, changes: [] })
     closeSocket(ws)
+  })
+
+  describe('Subscribed acknowledgement', () => {
+    const HEIGHT = 1500006
+
+    function recordTypes(ws: WebSocket): string[] {
+      const types: string[] = []
+      ws.on('message', (data) => types.push(JSON.parse(data.toString()).type))
+      return types
+    }
+
+    it('acknowledges a subscribe with the next deliverable block', async () => {
+      broadcaster.noteBlockProcessed(HEIGHT)
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
+      const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1 })
+      closeSocket(ws)
+    })
+
+    it('does not acknowledge an unsubscribe', async () => {
+      const ws = await openSubscribed(WS_URL, { channels: { trust: true } })
+      const types = recordTypes(ws)
+
+      ws.send(JSON.stringify({ action: 'unsubscribe' }))
+      await new Promise((resolve) => setTimeout(resolve, 150))
+
+      expect(types).toEqual([])
+      closeSocket(ws)
+    })
+
+    it('sends the acknowledgement before any block message', async () => {
+      broadcaster.noteBlockProcessed(HEIGHT)
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      const types = recordTypes(ws)
+      ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
+      for (let i = 1; i <= 40; i++) {
+        broadcaster.broadcastChangesEnvelope({ block: HEIGHT + i, blockTime: 't', changes: [] })
+        await new Promise((resolve) => setTimeout(resolve, 2))
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(types.length).toBeGreaterThan(1)
+      expect(types[0]).toBe('subscribed')
+      expect(types.slice(1).every((type) => type === 'block')).toBe(true)
+      closeSocket(ws)
+    })
+
+    it('sends ready before acknowledging a subscribe that arrives on open', async () => {
+      const ws = new WebSocket(WS_URL)
+      const types = recordTypes(ws)
+      await waitForOpen(ws)
+
+      ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
+      await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      expect(types.slice(0, 2)).toEqual(['ready', 'subscribed'])
+      closeSocket(ws)
+    })
+
+    it('seeds from the resolver checkpoint, not the indexer checkpoint', async () => {
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
+      const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      // This stream trails the indexer, so its coverage starts at the block after the resolver checkpoint.
+      expect(ack.block).toBe(11)
+      closeSocket(ws)
+    })
+
+    it('keeps tracking heights while no client is connected', () => {
+      const idle = new VtSubscribeBroadcaster()
+      idle.setLogger({ info: () => {}, warn: () => {}, error: () => {} })
+      idle.broadcastChangesEnvelope({ block: 900, blockTime: 't', changes: [] })
+
+      expect(idle.getClientCount()).toBe(0)
+      expect(idle.getNextDeliverableBlock()).toBe(901)
+    })
   })
 
   it('does not deliver to clients that have not subscribed', async () => {
