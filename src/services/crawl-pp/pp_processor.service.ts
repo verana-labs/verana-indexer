@@ -85,15 +85,14 @@ export default class ParticipantProcessorService extends BullableService {
         )
         const useHeightSyncParticipant = process.env.USE_HEIGHT_SYNC_PARTICIPANT !== 'false'
         if (useHeightSyncParticipant) {
-          const res = await runHeightSyncParticipant(this.broker, [msg])
-          const synced = (res as any)?.synced
-          const attempted = (res as any)?.attempted
+          const { synced, attempted, syncedIds } = await runHeightSyncParticipant(this.broker, [msg])
+          const targetParticipantId = extractStartParticipantOpNewParticipantId(msg as ParticipantMessagePayload)
 
-          if (typeof synced === 'number' && synced > 0) {
+          if (targetParticipantId != null && syncedIds.includes(targetParticipantId)) {
             continue
           }
           this.logger.warn(
-            `[participant] Height-sync enabled but synced 0/${typeof attempted === 'number' ? attempted : '?'}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? 'unknown'}`
+            `[participant] Height-sync synced ${synced}/${attempted} but did not cover target participant ${targetParticipantId ?? 'unknown'}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? 'unknown'}`
           )
         }
 
