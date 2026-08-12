@@ -219,121 +219,80 @@ describe('buildPresentations', () => {
 })
 
 describe('buildEcsCredentials', () => {
-  const rawVc = {
+  const service = {
+    ecs: 'ecs-service',
     id: 'urn:uuid:service-vc-1',
+    issuer: 'did:example:org',
+    subject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
     validFrom: '2026-05-28T13:35:24.887Z',
     validUntil: '2036-05-25T13:35:24.887Z',
-    credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
-  }
-  const service = {
-    schemaType: 'ecs-service',
-    id: 'did:example:sub',
-    issuer: 'did:example:org',
-    raw: rawVc,
-    validFrom: rawVc.validFrom,
-    validUntil: rawVc.validUntil,
+    digestJCS: 'q2VwbGFjZWRkaWdlc3Q=',
+    issuedAtTime: '2026-02-10T09:15:00Z',
+    credentialSchemaId: 1,
+    ecosystemId: 9,
+    ecsSchemaVersion: 'v4',
+    issuerParticipant: { id: 601, role: 'ISSUER' },
+    subjectParticipants: [{ id: 501, role: 'HOLDER' }],
+    raw: {},
   }
 
-  beforeEach(() => {
-    for (const k of Object.keys(tableRows)) delete tableRows[k]
-    tableRows.participants = [
-      { id: 501, schema_id: 1, did: 'did:example:sub', role: 'HOLDER' },
-      { id: 502, schema_id: 2, did: 'did:example:org', role: 'HOLDER' },
-    ]
-    tableRows.credential_schemas = [
-      {
-        id: 1,
-        ecosystem_id: 9,
-        json_schema: { title: 'ServiceCredential', $id: 'vpr:verana:net/cs/v1/js/1' },
-        digest_algorithm: 'sha384',
-      },
-      {
-        id: 2,
-        ecosystem_id: 9,
-        json_schema: { title: 'OrganizationCredential', $id: 'vpr:verana:net/cs/v1/js/2' },
-        digest_algorithm: 'sha384',
-      },
-    ]
-    tableRows.digests = [{ created: '2026-02-10T09:15:00Z' }]
-  })
-
-  it('emits id/digestJCS/issuedAtTime and resolves stable ids from participants/schemas', async () => {
+  it('reshapes the resolved credential into an ecsCredentials entry', async () => {
     const out = await buildEcsCredentials({ service })
     expect(out).toHaveLength(1)
     expect(out[0]).toMatchObject({
       ecsSchema: 'ServiceCredential',
-      ecsSchemaVersion: 'v1',
+      ecsSchemaVersion: 'v4',
       credentialSchemaId: 1,
       ecosystemId: 9,
+      issuerParticipantId: 601,
       participantId: 501,
       id: 'urn:uuid:service-vc-1',
+      digestJCS: 'q2VwbGFjZWRkaWdlc3Q=',
       issuedAtTime: '2026-02-10T09:15:00.000Z',
       validFrom: '2026-05-28T13:35:24.887Z',
       validUntil: '2036-05-25T13:35:24.887Z',
       credentialSubject: { id: 'did:example:sub', name: 'Gov ID issuer', type: 'VerifiableService' },
     })
-    expect(out[0].digestJCS).toBe('q2VwbGFjZWRkaWdlc3Q=')
-    expect(out[0].credentialSubject).not.toHaveProperty('schemaType')
-    expect(out[0].credentialSubject).not.toHaveProperty('raw')
   })
 
-  it('excludes a credential whose recomputed digest has no ledger entry', async () => {
-    tableRows.digests = []
-    expect(await buildEcsCredentials({ service })).toEqual([])
+  it('excludes a credential with no anchored digest', async () => {
+    expect(await buildEcsCredentials({ service: { ...service, digestJCS: undefined } })).toEqual([])
+    expect(await buildEcsCredentials({ service: { ...service, issuedAtTime: undefined } })).toEqual([])
   })
 
   it('excludes a credential with no VC id', async () => {
-    const { raw, ...noRaw } = service
-    expect(await buildEcsCredentials({ service: noRaw })).toEqual([])
+    expect(await buildEcsCredentials({ service: { ...service, id: '' } })).toEqual([])
   })
 
-  it('excludes same-response duplicates by id', async () => {
-    const serviceProvider = {
-      schemaType: 'ecs-org',
-      id: 'did:example:org',
-      issuer: 'did:example:org',
-      raw: { ...rawVc },
-      validFrom: rawVc.validFrom,
-      validUntil: rawVc.validUntil,
-    }
-    const out = await buildEcsCredentials({ service, serviceProvider })
-    expect(out).toHaveLength(1)
-    expect(out[0].id).toBe('urn:uuid:service-vc-1')
-  })
+  it('excludes same-response duplicates by id and by digestJCS', async () => {
+    const byId = await buildEcsCredentials({ service, serviceProvider: { ...service, ecs: 'ecs-org' } })
+    expect(byId).toHaveLength(1)
 
-  it('mirrors the VC body validity window from the flattened credential', async () => {
-    const out = await buildEcsCredentials({
-      service: { ...service, validFrom: '2010-01-01T19:23:24Z', validUntil: '2030-01-01T19:23:24Z' },
+    const byDigest = await buildEcsCredentials({
+      service,
+      serviceProvider: { ...service, ecs: 'ecs-org', id: 'urn:uuid:other-vc' },
     })
-    expect(out[0]).toMatchObject({ validFrom: '2010-01-01T19:23:24.000Z', validUntil: '2030-01-01T19:23:24.000Z' })
+    expect(byDigest).toHaveLength(1)
   })
 
-  it('falls back to the raw VC body for the validity window', async () => {
+  it('emits both entries when they are distinct credentials', async () => {
     const out = await buildEcsCredentials({
-      service: {
-        ...service,
-        validFrom: undefined,
-        validUntil: undefined,
-        raw: {
-          id: 'urn:uuid:service-vc-2',
-          issuanceDate: '2011-02-03T00:00:00Z',
-          expirationDate: '2031-02-03T00:00:00Z',
-        },
-      },
+      service,
+      serviceProvider: { ...service, ecs: 'ecs-org', id: 'urn:uuid:org-vc-1', digestJCS: 'b3RoZXJkaWdlc3Q=' },
     })
-    expect(out[0]).toMatchObject({ validFrom: '2011-02-03T00:00:00.000Z', validUntil: '2031-02-03T00:00:00.000Z' })
+    expect(out.map((entry) => entry.ecsSchema)).toEqual(['ServiceCredential', 'OrganizationCredential'])
   })
 
-  it('emits null validFrom/validUntil when the VC body declares no validity window', async () => {
+  it('emits null validFrom/validUntil when the credential declares no validity window', async () => {
     const out = await buildEcsCredentials({
-      service: { ...service, validFrom: undefined, validUntil: undefined, raw: { id: 'urn:uuid:service-vc-3' } },
+      service: { ...service, validFrom: undefined, validUntil: undefined },
     })
     expect(out[0].validFrom).toBeNull()
     expect(out[0].validUntil).toBeNull()
   })
 
-  it('ignores non-ECS resolutions', async () => {
-    expect(await buildEcsCredentials({ service: { schemaType: 'unknown', id: 'did:x' } })).toEqual([])
+  it('ignores resolutions with no ECS classification', async () => {
+    expect(await buildEcsCredentials({ service: { ...service, ecs: null } })).toEqual([])
     expect(await buildEcsCredentials({ error: true })).toEqual([])
   })
 })

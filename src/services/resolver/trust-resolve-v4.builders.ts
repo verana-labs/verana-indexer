@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { computeCredentialDigestJCS, fetchJson } from '@verana-labs/verre'
+import { fetchJson, type TrustResolution } from '@verana-labs/verre'
 import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toDate, toIso } from '../../common/utils/date_utils'
@@ -654,76 +654,6 @@ function parseSchemaJson(value: unknown): Record<string, unknown> | null {
   return null
 }
 
-function ecsSchemaVersionFromId(schemaJson: unknown): string {
-  const sid = parseSchemaJson(schemaJson)?.$id
-  const m = typeof sid === 'string' ? sid.match(/\/cs\/(v\d+)\//) : null
-  return m ? m[1] : 'v4'
-}
-
-type VerifiableCredential = {
-  id?: string
-  issuer?: string
-  credentialSubject?: Record<string, unknown>
-  validFrom?: string
-  validUntil?: string
-  issuanceDate?: string
-  expirationDate?: string
-  proof?: unknown
-}
-
-function toCredentialSubject(cred: Record<string, unknown>): Record<string, unknown> {
-  const rawSubject = (cred.raw as { credentialSubject?: unknown } | undefined)?.credentialSubject
-  if (rawSubject && typeof rawSubject === 'object' && !Array.isArray(rawSubject)) {
-    return rawSubject as Record<string, unknown>
-  }
-  const { schemaType, issuer, raw, validFrom, validUntil, ...subject } = cred
-  return subject
-}
-
-type EcsSchemaLink = {
-  participantId: number
-  credentialSchemaId: number
-  ecosystemId: number
-  ecsSchemaVersion: string
-  digestAlgorithm: string | null
-}
-
-async function resolveEcsSchemaLink(subjectDid: string, ecsSchemaTitle: string): Promise<EcsSchemaLink | null> {
-  const participants = (await knex('participants')
-    .where({ did: subjectDid, role: 'HOLDER' })
-    .select('id', 'schema_id')) as Array<{ id: number; schema_id: number }>
-  if (participants.length === 0) return null
-
-  const schemaIds = [...new Set(participants.map((p) => Number(p.schema_id)).filter((n) => Number.isFinite(n)))]
-  if (schemaIds.length === 0) return null
-  const schemas = (await knex('credential_schemas')
-    .whereIn('id', schemaIds)
-    .select('id', 'ecosystem_id', 'json_schema', 'digest_algorithm')) as Array<{
-    id: number
-    ecosystem_id: number
-    json_schema: unknown
-    digest_algorithm: string | null
-  }>
-
-  for (const p of participants) {
-    const cs = schemas.find((s) => Number(s.id) === Number(p.schema_id))
-    if (
-      cs &&
-      parseSchemaJson(cs.json_schema)?.title === ecsSchemaTitle &&
-      (await isEcosystemEcsAllowlisted(Number(cs.ecosystem_id) || 0))
-    ) {
-      return {
-        participantId: Number(p.id) || 0,
-        credentialSchemaId: Number(cs.id) || 0,
-        ecosystemId: Number(cs.ecosystem_id) || 0,
-        ecsSchemaVersion: ecsSchemaVersionFromId(cs.json_schema),
-        digestAlgorithm: cs.digest_algorithm,
-      }
-    }
-  }
-  return null
-}
-
 async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId: number): Promise<number> {
   if (!issuerDid || credentialSchemaId <= 0) return 0
   const row = (await knex('participants')
@@ -733,80 +663,38 @@ async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId:
   return row?.id != null ? Number(row.id) || 0 : 0
 }
 
-async function fetchDigestIssuedAt(digestJCS: string): Promise<string | null> {
-  if (!digestJCS) return null
-  const row = (await knex('digests').select('created').where({ digest: digestJCS }).first()) as
-    | { created?: Date | string | null }
-    | undefined
-  return row?.created != null ? (toIso(row.created) ?? null) : null
-}
-
-function readCredentialValidityWindow(cred: Record<string, unknown>): {
-  validFrom: string | null
-  validUntil: string | null
-} {
-  const raw = (cred.raw && typeof cred.raw === 'object' ? (cred.raw as Record<string, unknown>) : {}) as Record<
-    string,
-    unknown
-  >
-  const pick = (...candidates: unknown[]): string | null => {
-    for (const value of candidates) if (typeof value === 'string' && value.length > 0) return toIso(value) ?? null
-    return null
-  }
-  return {
-    validFrom: pick(cred.validFrom, raw.validFrom, raw.issuanceDate),
-    validUntil: pick(cred.validUntil, raw.validUntil, raw.expirationDate),
-  }
-}
-
 export async function buildEcsCredentials(resolveResult: unknown): Promise<Array<Record<string, unknown>>> {
-  if (!resolveResult || typeof resolveResult !== 'object') return []
-  const r = resolveResult as Record<string, unknown>
+  const resolution = resolveResult as TrustResolution | null
+  if (!resolution || typeof resolution !== 'object') return []
 
   const out: Array<Record<string, unknown>> = []
   const seenIds = new Set<string>()
-  for (const key of ['service', 'serviceProvider']) {
-    const cred = r[key]
-    if (!cred || typeof cred !== 'object') continue
-    const c = cred as Record<string, unknown>
-    const ecsSchema = ECS_SCHEMA_TITLE_BY_TYPE[String(c.schemaType ?? '').toLowerCase()]
+  const seenDigests = new Set<string>()
+  for (const credential of [resolution.service, resolution.serviceProvider]) {
+    if (!credential) continue
+    const ecsSchema = ECS_SCHEMA_TITLE_BY_TYPE[String(credential.ecs ?? '').toLowerCase()]
     if (!ecsSchema) continue
 
-    const subjectDid = typeof c.id === 'string' ? c.id : null
-    const issuerDid = typeof c.issuer === 'string' ? c.issuer : null
-    const link = subjectDid ? await resolveEcsSchemaLink(subjectDid, ecsSchema) : null
-    if (!link) continue
-
-    const raw = c.raw && typeof c.raw === 'object' ? (c.raw as VerifiableCredential) : null
-    const id = typeof raw?.id === 'string' ? raw.id : ''
-    if (!id || seenIds.has(id)) continue
-
-    const digestAlgorithm = link.digestAlgorithm
-    const digestJCS =
-      raw && (digestAlgorithm === 'sha384' || digestAlgorithm === 'sha512')
-        ? computeCredentialDigestJCS(raw, digestAlgorithm)
-        : null
-    const issuedAtTime = digestJCS ? await fetchDigestIssuedAt(digestJCS) : null
-    if (!digestJCS || !issuedAtTime) continue
-
-    const credentialSchemaId = link.credentialSchemaId
-    const issuerParticipantId = issuerDid ? await resolveIssuerParticipantId(issuerDid, credentialSchemaId) : 0
-    const { validFrom, validUntil } = readCredentialValidityWindow(c)
-
+    const { id, digestJCS, issuedAtTime } = credential
+    if (!id || !digestJCS || !issuedAtTime) continue
+    if (seenIds.has(id) || seenDigests.has(digestJCS)) continue
     seenIds.add(id)
+    seenDigests.add(digestJCS)
+
+    const holder = credential.subjectParticipants?.find((participant) => String(participant.role) === 'HOLDER')
     out.push({
       ecsSchema,
-      ecsSchemaVersion: link.ecsSchemaVersion,
-      credentialSchemaId,
-      issuerParticipantId,
-      ecosystemId: link.ecosystemId,
-      participantId: link.participantId,
+      ecsSchemaVersion: credential.ecsSchemaVersion ?? 'v4',
+      credentialSchemaId: credential.credentialSchemaId ?? 0,
+      issuerParticipantId: credential.issuerParticipant?.id ?? 0,
+      ecosystemId: credential.ecosystemId ?? 0,
+      participantId: holder?.id ?? 0,
       id,
       digestJCS,
-      issuedAtTime,
-      validFrom,
-      validUntil,
-      credentialSubject: toCredentialSubject(c),
+      issuedAtTime: toIso(issuedAtTime) ?? issuedAtTime,
+      validFrom: toIso(credential.validFrom) ?? null,
+      validUntil: toIso(credential.validUntil) ?? null,
+      credentialSubject: credential.subject ?? {},
     })
   }
   return out

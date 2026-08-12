@@ -1,4 +1,5 @@
 import {
+  type EcsEcosystem,
   resolveDID,
   type TrustResolution,
   TrustResolutionOutcome,
@@ -14,7 +15,7 @@ import knex from '../../common/utils/db_connection'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
 import { VeranaParticipantMessageTypes } from '../../common/verana-message-types'
 import config from '../../config.json' with { type: 'json' }
-import { isEcsAllowlistEnforced } from './ecs-allowlist'
+import { getEcsEcosystems, isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
 import { hasAllowlistedEcsServiceCredential, resolveCorporationId } from './trust-resolve-v4.builders'
 import { attachRegistryAdapters } from './verre-registry-adapter'
@@ -77,15 +78,20 @@ export function getDeclaredPollObjectCachingRetryDays(): number | null {
 export function getVerreTrustEvaluationCallOptions(): {
   verifiablePublicRegistries: VerifiablePublicRegistry[]
   skipDigestSRICheck: boolean
+  ecsEcosystems?: EcsEcosystem[]
 } {
   const cfg = getResolverRuntimeConfig()
   const registries = attachRegistryAdapters(defaultVprRegistriesFromEnv(), {
     enabled: cfg?.useEmbeddedRegistryAdapter !== false,
   })
 
+  const allowlistedDids = getEcsEcosystems()
+  const ecsEcosystems = registries.flatMap((registry) => allowlistedDids.map((did) => ({ did, vpr: registry.scheme })))
+
   return {
     verifiablePublicRegistries: registries,
     skipDigestSRICheck: cfg?.disableDigestSriVerification === true,
+    ...(ecsEcosystems.length > 0 ? { ecsEcosystems } : {}),
   }
 }
 
@@ -498,7 +504,7 @@ export async function resolveTrustForDidAtHeight(
   blockHeight: number,
   landingHeight?: number
 ): Promise<boolean> {
-  const { verifiablePublicRegistries, skipDigestSRICheck } = getVerreTrustEvaluationCallOptions()
+  const { verifiablePublicRegistries, skipDigestSRICheck, ecsEcosystems } = getVerreTrustEvaluationCallOptions()
   const cfg = getResolverRuntimeConfig()
   const retryDays = Number(cfg?.pollObjectCachingRetryDays ?? 0) || 0
   const resourceId = `${did}@${blockHeight}`
@@ -511,9 +517,11 @@ export async function resolveTrustForDidAtHeight(
     const result = (await resolveDID(did, {
       verifiablePublicRegistries,
       skipDigestSRICheck,
+      ecsEcosystems,
     })) as TrustResolution
 
-    // WL-ECS is not enforced by verre; drop the verdict until it is (see verre ResolverConfig.ecsEcosystems).
+    // verre enforces WL-ECS through ecsEcosystems, but only when a registry adapter resolves the
+    // schema's Ecosystem; this keeps the verdict correct when it cannot.
     if (isEcsAllowlistEnforced() && result.verified && !(await hasAllowlistedEcsServiceCredential(result))) {
       result.verified = false
       result.outcome = TrustResolutionOutcome.NOT_TRUSTED
