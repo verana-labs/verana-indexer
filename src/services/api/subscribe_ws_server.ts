@@ -8,7 +8,7 @@ import { buildReadyMessage, buildSubscribedMessage } from './subscribe_protocol'
 
 export type ControlParseResult<TMessage> = { ok: true; message: TMessage } | { ok: false; error: string }
 
-export abstract class BaseSubscribeServer<TControl, TState> {
+export abstract class BaseSubscribeServer<TControl extends { action: string }, TState> {
   private wss: WebSocketServer | null = null
   private server: Server | null = null
   private upgradeHandler: ((req: IncomingMessage, socket: Duplex, head: Buffer) => void) | null = null
@@ -31,11 +31,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
 
   protected abstract applyControl(state: TState, message: TControl): TState
 
-  protected abstract isSubscribeControl(message: TControl): boolean
-
-  protected async resolveSeedHeight(lastProcessedBlock: number): Promise<number> {
-    return lastProcessedBlock - 1
-  }
+  protected readonly followsIndexerCheckpoint: boolean = true
 
   noteBlockProcessed(height: number): void {
     if (!Number.isFinite(height)) return
@@ -146,7 +142,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
       const status = await indexerStatusManager.getDetailedStatus()
       lastProcessedBlock = status.lastProcessedBlock ?? 0
       lastBlockTime = status.lastBlockTime ?? lastBlockTime
-      this.noteBlockProcessed(await this.resolveSeedHeight(lastProcessedBlock))
+      if (this.followsIndexerCheckpoint) this.noteBlockProcessed(lastProcessedBlock - 1)
     } catch (error) {
       this.logger.warn(`[${this.constructor.name}] Could not resolve the indexer status for ready:`, error)
     }
@@ -180,7 +176,7 @@ export abstract class BaseSubscribeServer<TControl, TState> {
 
     const nextBlock = this.getNextDeliverableBlock()
     this.clients.set(ws, this.applyControl(state, result.message))
-    if (!this.isSubscribeControl(result.message)) return
+    if (result.message.action !== 'subscribe') return
 
     this.sendJson(ws, buildSubscribedMessage(nextBlock) as unknown as Record<string, unknown>)
   }

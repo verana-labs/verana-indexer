@@ -19,10 +19,6 @@ export class SubscribeBroadcaster extends BaseSubscribeServer<ControlMessage, Cl
     return parseControlMessage(raw)
   }
 
-  protected isSubscribeControl(message: ControlMessage): boolean {
-    return message.action === 'subscribe'
-  }
-
   protected applyControl(_state: ClientState, message: ControlMessage): ClientState {
     if (message.action === 'unsubscribe') {
       return { established: false, dids: null, corporationId: null }

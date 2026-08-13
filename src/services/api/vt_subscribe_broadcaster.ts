@@ -17,20 +17,14 @@ type VtClientState = {
 export class VtSubscribeBroadcaster extends BaseSubscribeServer<VtControlMessage, VtClientState> {
   protected readonly path = '/v4/verifiable-trust/subscribe'
 
+  protected readonly followsIndexerCheckpoint = false
+
   protected createInitialState(): VtClientState {
     return { established: false, dids: null, corporationId: null, channels: null }
   }
 
   protected parseControl(raw: string): ControlParseResult<VtControlMessage> {
     return parseVtControlMessage(raw)
-  }
-
-  protected isSubscribeControl(message: VtControlMessage): boolean {
-    return message.action === 'subscribe'
-  }
-
-  protected async resolveSeedHeight(_lastProcessedBlock: number): Promise<number> {
-    return 0
   }
 
   protected applyControl(_state: VtClientState, message: VtControlMessage): VtClientState {
