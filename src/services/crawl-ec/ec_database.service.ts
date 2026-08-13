@@ -6,7 +6,7 @@ import BaseService from '../../base/base.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import { validateParticipantParam } from '../../common/utils/accountValidation'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import {
   applyExactRangeToQuery,
@@ -2222,9 +2222,10 @@ export default class EcosystemDatabaseService extends BaseService {
     const controllerIds = controllerRows.map((r: { id: number }) => r.id)
 
     const participantPart = await resolveParticipantsParticipantColumn(knex)
+    const asOf = await getLatestIndexedBlockTime({ logContext: '[ec_database:participant_corporation_id]' })
     const corpSchemaIds = await knex('participants')
       .where(participantPart, corporationId)
-      .modify((qb) => applyActiveParticipantFilter(qb, new Date().toISOString()))
+      .modify((qb) => applyActiveParticipantFilter(qb, asOf.toISOString()))
       .distinct('schema_id')
     const schemaIds = corpSchemaIds
       .map((r: { schema_id: string }) => {

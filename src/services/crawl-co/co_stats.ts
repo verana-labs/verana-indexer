@@ -1,5 +1,5 @@
 import { BULL_JOB_NAME } from '../../common'
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { resolveEvaluationTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
 import TrustDeposit from '../../models/trust_deposit'
@@ -111,10 +111,9 @@ export async function calculateCorporationParticipantStats(
 ): Promise<CorporationParticipantStats> {
   const stats = emptyParticipantStats()
 
-  let now = new Date()
-  if (typeof blockHeight === 'number') {
-    now = await getBlockChainTimeAsOf(blockHeight, { logContext: '[co_stats]' })
-  }
+  const now = await resolveEvaluationTime(typeof blockHeight === 'number' ? blockHeight : undefined, {
+    logContext: '[co_stats]',
+  })
 
   const rows = await knex('participants').where('corporation_id', corporationId)
   for (const row of rows) {
@@ -134,10 +133,9 @@ export async function calculateCorporationParticipantStatsBatch(
   }
   if (corporationIds.length === 0) return result
 
-  let now = new Date()
-  if (typeof blockHeight === 'number') {
-    now = await getBlockChainTimeAsOf(blockHeight, { logContext: '[co_stats]' })
-  }
+  const now = await resolveEvaluationTime(typeof blockHeight === 'number' ? blockHeight : undefined, {
+    logContext: '[co_stats]',
+  })
 
   const rows = await knex('participants').whereIn('corporation_id', corporationIds)
   for (const row of rows) {

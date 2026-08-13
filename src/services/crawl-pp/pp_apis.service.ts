@@ -5,7 +5,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { resolveEvaluationTime } from '../../common/utils/block_time'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
@@ -1494,7 +1494,12 @@ export default class ParticipantAPIService extends BullableService {
 
       const blockHeight = getBlockHeight(ctx)
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
-      const now = new Date().toISOString()
+      const now = (
+        await resolveEvaluationTime(useHistoryQuery ? blockHeight : undefined, {
+          logContext: '[pp_apis:listParticipants]',
+          logger: this.logger,
+        })
+      ).toISOString()
 
       const pageParsed = parseCorporationListPagination(normalizedParams)
       if (!pageParsed.ok) {
@@ -2045,6 +2050,10 @@ export default class ParticipantAPIService extends BullableService {
       }
       const trustDataMode = trustDataModeParsed.mode
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
+      const evaluatedAt = await resolveEvaluationTime(useHistoryQuery ? blockHeight : undefined, {
+        logContext: '[pp_apis:getParticipant]',
+        logger: this.logger,
+      })
 
       // If AtBlockHeight is provided, query historical state
       if (useHistoryQuery && blockHeight !== undefined) {
@@ -2205,7 +2214,7 @@ export default class ParticipantAPIService extends BullableService {
         const enrichedParticipant = await this.enrichParticipantWithStateAndActions(
           historicalParticipant,
           blockHeight,
-          new Date(),
+          evaluatedAt,
           { lightweightDerivedStats: historyHasAllDerivedColumns }
         )
         const [participantWithTrustData] = await this.enrichDidItemsWithTrustData(
@@ -2231,7 +2240,7 @@ export default class ParticipantAPIService extends BullableService {
       const enrichedParticipant = await this.enrichParticipantWithStateAndActions(
         normalizedParticipant,
         blockHeight,
-        new Date(),
+        evaluatedAt,
         { lightweightDerivedStats: liveHasAllDerivedColumns }
       )
 
@@ -2344,10 +2353,10 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, `Participant not found for id(s): ${missingRootIds.join(', ')}`, 404)
       }
 
-      const evaluatedAt =
-        useHistoryQuery && blockHeight !== undefined
-          ? await getBlockChainTimeAsOf(blockHeight, { atOrBefore: true, logContext: '[pp_apis:beneficiaries]' })
-          : new Date()
+      const evaluatedAt = await resolveEvaluationTime(useHistoryQuery ? blockHeight : undefined, {
+        logContext: '[pp_apis:beneficiaries]',
+        logger: this.logger,
+      })
       const inactiveRootIds = rootIds.filter((rootId) => {
         const participant = initialMap.get(rootId)
         return (
@@ -2423,7 +2432,7 @@ export default class ParticipantAPIService extends BullableService {
       const enrichedParticipants = await this.batchEnrichParticipants(
         Array.from(foundParticipantMap.values()),
         useHistoryQuery ? blockHeight : undefined,
-        new Date(),
+        evaluatedAt,
         100
       )
 
@@ -2574,10 +2583,13 @@ export default class ParticipantAPIService extends BullableService {
       }
 
       const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
-      const now = new Date()
 
       const blockHeight = getBlockHeight(ctx)
       const useHistory = this.shouldUseHistoryQuery(ctx, blockHeight)
+      const now = await resolveEvaluationTime(useHistory ? blockHeight : undefined, {
+        logContext: '[pp_apis:pendingFlat]',
+        logger: this.logger,
+      })
 
       const parentIdSet = new Set<number>()
 
