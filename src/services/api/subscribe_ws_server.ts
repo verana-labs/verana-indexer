@@ -142,7 +142,7 @@ export abstract class BaseSubscribeServer<TControl extends { action: string }, T
       const status = await indexerStatusManager.getDetailedStatus()
       lastProcessedBlock = status.lastProcessedBlock ?? 0
       lastBlockTime = status.lastBlockTime ?? lastBlockTime
-      if (this.followsIndexerCheckpoint) this.noteBlockProcessed(lastProcessedBlock - 1)
+      if (this.followsIndexerCheckpoint) this.noteBlockProcessed(lastProcessedBlock)
     } catch (error) {
       this.logger.warn(`[${this.constructor.name}] Could not resolve the indexer status for ready:`, error)
     }

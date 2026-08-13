@@ -452,7 +452,7 @@ describe('SubscribeBroadcaster', () => {
       closeSocket(ws)
     })
 
-    it('seeds one block behind the indexer checkpoint', async () => {
+    it('acknowledges the first subscribe with the block ready announced', async () => {
       const ws = new WebSocket(WS_URL)
       await waitForOpen(ws)
       const ready = await waitForMessage(ws, (msg) => msg.type === 'ready')
@@ -460,9 +460,7 @@ describe('SubscribeBroadcaster', () => {
       ws.send(JSON.stringify({ action: 'subscribe', dids: null }))
       const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
 
-      // `ready.block` is lastProcessedBlock + 1, whose events may not be persisted yet, so coverage starts one
-      // block earlier rather than claiming a block the REST catch-up cannot see.
-      expect(ack.block).toBe(Math.max(ready.block - 1, 1))
+      expect(ack.block).toBe(ready.block)
       closeSocket(ws)
     })
 
