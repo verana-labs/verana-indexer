@@ -1,5 +1,5 @@
 import type { Knex } from 'knex'
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { resolveParticipantsParticipantColumn } from '../../common/utils/installed_table_columns'
 import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from '../crawl-cs/cs_stats'
@@ -357,7 +357,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
       networkSlashedAmountRepaidSum += Number(s.network_slashed_amount_repaid || 0)
     }
 
-    const nowIso = new Date().toISOString()
+    const nowIso = (await getLatestIndexedBlockTime({ logContext: '[metrics_helper]' })).toISOString()
     const participantParticipantCol = await resolveParticipantsParticipantColumn(knex)
     const activeParticipantsBase = () =>
       knex('participants')

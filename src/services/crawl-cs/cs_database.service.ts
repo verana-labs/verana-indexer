@@ -4,7 +4,7 @@ import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
@@ -2373,9 +2373,10 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           )
 
     const participantPart = await resolveParticipantsParticipantColumn(knex)
+    const asOf = await getLatestIndexedBlockTime({ logContext: '[cs_database:participant_corporation_id]' })
     const corpRows = await knex('participants')
       .where(participantPart, corporationId)
-      .modify((qb) => applyActiveParticipantFilter(qb, new Date().toISOString()))
+      .modify((qb) => applyActiveParticipantFilter(qb, asOf.toISOString()))
       .distinct('schema_id')
     const schemaIdsFromCorp = corpRows
       .map((r: { schema_id: string }) => (r.schema_id != null ? parseFloat(r.schema_id) : null))

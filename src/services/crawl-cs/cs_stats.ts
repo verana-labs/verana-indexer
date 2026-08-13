@@ -1,4 +1,4 @@
-import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
+import { resolveEvaluationTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { parseExactInteger } from '../../common/utils/exact_numeric_range'
 import { calculateParticipantState } from '../crawl-pp/pp_state_utils'
@@ -331,10 +331,10 @@ export async function calculateCredentialSchemaStatsBatch(
   const result = new Map<number, CredentialSchemaStats>()
   if (schemaIds.length === 0) return result
 
-  let now = new Date()
-  if (typeof blockHeight === 'number' && Number.isFinite(blockHeight) && blockHeight >= 0) {
-    now = await getBlockChainTimeAsOf(blockHeight, { logContext: '[cs_stats]' })
-  }
+  const now = await resolveEvaluationTime(
+    typeof blockHeight === 'number' && Number.isFinite(blockHeight) && blockHeight >= 0 ? blockHeight : undefined,
+    { logContext: '[cs_stats]' }
+  )
 
   let participants: any[] = []
   if (typeof blockHeight === 'number') {
