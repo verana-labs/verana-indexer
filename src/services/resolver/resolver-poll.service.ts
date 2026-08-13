@@ -155,6 +155,7 @@ const ResolverPollService = {
       await this.initialSyncIfNeeded()
 
       const currentHeight = await this.getOrCreateResolverCheckpointHeight()
+      vtSubscribeBroadcaster.noteBlockProcessed(currentHeight)
       const indexedHeight = await this.getIndexedHeight()
       if (indexedHeight <= currentHeight) return
 

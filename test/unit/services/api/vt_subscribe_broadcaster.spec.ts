@@ -1,25 +1,3 @@
-// The VT channel seeds its acknowledgement counter from the resolver checkpoint, so the DB access is stubbed to a
-// known height instead of reaching for a real connection.
-jest.mock('../../../../src/common/utils/db_connection', () => {
-  const builder: any = new Proxy(
-    {},
-    {
-      get: (_target, prop) => {
-        if (prop === 'then') return undefined
-        if (prop === 'first') return async () => ({ height: 10 })
-        return () => builder
-      },
-    }
-  )
-  return {
-    __esModule: true,
-    default: Object.assign(
-      jest.fn(() => builder),
-      { raw: jest.fn(async () => ({ rows: [] })) }
-    ),
-  }
-})
-
 import { createServer, Server } from 'http'
 import { type RawData, WebSocket } from 'ws'
 import { VtSubscribeBroadcaster } from '../../../../src/services/api/vt_subscribe_broadcaster'
@@ -295,16 +273,18 @@ describe('VtSubscribeBroadcaster', () => {
       closeSocket(ws)
     })
 
-    it('seeds from the resolver checkpoint, not the indexer checkpoint', async () => {
+    it('does not inherit the indexer height reported by ready', async () => {
       const ws = new WebSocket(WS_URL)
       await waitForOpen(ws)
-      await waitForMessage(ws, (msg) => msg.type === 'ready')
+      const ready = await waitForMessage(ws, (msg) => msg.type === 'ready')
 
       ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
       const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
 
-      // This stream trails the indexer, so its coverage starts at the block after the resolver checkpoint.
-      expect(ack.block).toBe(11)
+      // The resolver poller seeds this counter from its own checkpoint; until it does, coverage cannot claim any
+      // block the indexer reached but this stream never broadcast.
+      expect(ack.block).toBe(1)
+      expect(ack.block).toBeLessThanOrEqual(Math.max(ready.block, 1))
       closeSocket(ws)
     })
 
