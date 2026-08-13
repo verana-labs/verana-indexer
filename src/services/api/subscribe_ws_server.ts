@@ -4,7 +4,7 @@ import type { Duplex } from 'stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import { indexerStatusManager } from '../manager/indexer_status.manager'
 import { createLogger, type LoggerLike, toIsoSeconds } from './api_shared'
-import { buildReadyMessage } from './subscribe_protocol'
+import { buildReadyMessage, buildSubscribedMessage } from './subscribe_protocol'
 
 export type ControlParseResult<TMessage> = { ok: true; message: TMessage } | { ok: false; error: string }
 
@@ -120,6 +120,12 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     this.sendJson(ws, ready as unknown as Record<string, unknown>)
   }
 
+  private async sendSubscribed(ws: WebSocket): Promise<void> {
+    const status = await indexerStatusManager.getDetailedStatus()
+    const message = buildSubscribedMessage(status.lastProcessedBlock ?? 0)
+    this.sendJson(ws, message as unknown as Record<string, unknown>)
+  }
+
   private handleControlMessage(ws: WebSocket, raw: string): void {
     const result = this.parseControl(raw)
     if (!result.ok) {
@@ -135,6 +141,12 @@ export abstract class BaseSubscribeServer<TControl, TState> {
     if (!state) return
 
     this.clients.set(ws, this.applyControl(state, result.message))
+
+    // an unsubscribe is not acknowledged
+    if ((result.message as { action?: string }).action === 'unsubscribe') return
+    this.sendSubscribed(ws).catch((error) => {
+      this.logger.error(`[${this.constructor.name}] Error sending subscribed message:`, error)
+    })
   }
 
   protected sendJson(ws: WebSocket, payload: Record<string, unknown>, closeCodeOnFailure = 0): boolean {

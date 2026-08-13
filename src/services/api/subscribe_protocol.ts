@@ -72,6 +72,15 @@ export function buildReadyMessage(lastProcessedBlock: number, lastBlockTime: str
   }
 }
 
+export interface SubscribedMessage {
+  type: 'subscribed'
+  block: number
+}
+
+export function buildSubscribedMessage(lastProcessedBlock: number): SubscribedMessage {
+  return { type: 'subscribed', block: lastProcessedBlock + 1 }
+}
+
 export function buildBlockEnvelope(
   block: number,
   blockTime: string,
