@@ -22,6 +22,11 @@ export type ReadyMessage = {
   blockIntervalMs: number
 }
 
+export type SubscribedMessage = {
+  type: 'subscribed'
+  block: number
+}
+
 export type BlockEnvelope = {
   type: 'block'
   block: number
@@ -70,6 +75,10 @@ export function buildReadyMessage(lastProcessedBlock: number, lastBlockTime: str
     blockTime: lastBlockTime,
     blockIntervalMs: CHAIN_BLOCK_INTERVAL_MS,
   }
+}
+
+export function buildSubscribedMessage(nextBlock: number): SubscribedMessage {
+  return { type: 'subscribed', block: nextBlock }
 }
 
 export function buildBlockEnvelope(

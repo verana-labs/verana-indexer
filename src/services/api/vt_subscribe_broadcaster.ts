@@ -17,6 +17,8 @@ type VtClientState = {
 export class VtSubscribeBroadcaster extends BaseSubscribeServer<VtControlMessage, VtClientState> {
   protected readonly path = '/v4/verifiable-trust/subscribe'
 
+  protected readonly followsIndexerCheckpoint = false
+
   protected createInitialState(): VtClientState {
     return { established: false, dids: null, corporationId: null, channels: null }
   }
@@ -39,6 +41,7 @@ export class VtSubscribeBroadcaster extends BaseSubscribeServer<VtControlMessage
   }
 
   broadcastChangesEnvelope(args: { block: number; blockTime: string; changes: VtRawChange[] }): void {
+    this.noteBlockProcessed(args.block)
     if (this.clients.size === 0) return
 
     let sent = 0

@@ -109,7 +109,10 @@ const ResolverPollService = {
     },
 
     async broadcastResolvedBlock(this: any, blockHeight: number): Promise<void> {
-      if (vtSubscribeBroadcaster.getClientCount() === 0) return
+      if (vtSubscribeBroadcaster.getClientCount() === 0) {
+        vtSubscribeBroadcaster.noteBlockProcessed(blockHeight)
+        return
+      }
       try {
         const changes = await buildVtChangesForBlock(blockHeight)
         await this.broadcastBlockEnvelope(blockHeight, changes)
@@ -119,7 +122,10 @@ const ResolverPollService = {
     },
 
     async broadcastHeartbeat(this: any, blockHeight: number): Promise<void> {
-      if (vtSubscribeBroadcaster.getClientCount() === 0) return
+      if (vtSubscribeBroadcaster.getClientCount() === 0) {
+        vtSubscribeBroadcaster.noteBlockProcessed(blockHeight)
+        return
+      }
       try {
         await this.broadcastBlockEnvelope(blockHeight, [])
       } catch (err) {
@@ -149,6 +155,7 @@ const ResolverPollService = {
       await this.initialSyncIfNeeded()
 
       const currentHeight = await this.getOrCreateResolverCheckpointHeight()
+      vtSubscribeBroadcaster.noteBlockProcessed(currentHeight)
       const indexedHeight = await this.getIndexedHeight()
       if (indexedHeight <= currentHeight) return
 
