@@ -26,6 +26,7 @@
     "stop": "docker-compose -f ./docker/docker-compose.yml stop",
     "down": "docker-compose -f ./docker/docker-compose.yml down",
     "jest": "jest",
+    "test:db:reset": "docker exec psql_erascope psql -U phamphong -d test -c \"DROP SCHEMA public CASCADE; CREATE SCHEMA public\"",
     "test": "jest --verbose --runInBand --forceExit",
     "test-ci": "jest --verbose --runInBand --forceExit --passWithNoTests",
     "test-watch": "pnpm run jest --watch",
