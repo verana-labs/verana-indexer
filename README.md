@@ -527,26 +527,22 @@ credential counts as an ECS whenever its schema matches one of the five ECS v4 r
 Filled in, a credential whose schema belongs to an Ecosystem outside the list stops counting as an
 ECS and degrades to a regular Verifiable Trust Credential.
 
-Configure it in either place — the first one wins when it is non-empty:
-
-| Where | Key | Format |
-| --- | --- | --- |
-| `src/config.json` | `resolver.ecsEcosystems` | array of Ecosystem **DIDs** |
-| environment | `ECS_ECOSYSTEM_DIDS` | comma-separated Ecosystem **DIDs** |
-
-```jsonc
-// src/config.json
-"resolver": {
-  "ecsEcosystems": ["did:webvh:Qm...:ecs-ecosystem.example.network"]
-}
-```
+Set it through the environment variable `ECS_ECOSYSTEM_DIDS` — in `.env` for a local run, or in
+`docker/docker.env` for the container, which is the only env file the compose stack loads:
 
 ```bash
 ECS_ECOSYSTEM_DIDS=did:webvh:Qm...:ecs-ecosystem.example.network
+# several Ecosystems, comma-separated:
+ECS_ECOSYSTEM_DIDS=did:webvh:Qm...:a.example.network,did:webvh:Qm...:b.example.network
 ```
 
 The values are the DIDs of the Ecosystems themselves, not their numeric ids. Each one is paired with
 every configured Verifiable Public Registry, which is derived from `CHAIN_ID`.
+
+`src/config.json` carries the same setting under `resolver.ecsEcosystems`, but that file is compiled
+into the build and is not exposed as a deployment surface — treat it as the source default. It ships
+empty, so the environment variable is what takes effect. Note the precedence if you ever change it:
+**a non-empty `resolver.ecsEcosystems` silently overrides `ECS_ECOSYSTEM_DIDS`.**
 
 Two consequences worth knowing before enabling it:
 
