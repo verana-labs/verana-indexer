@@ -517,6 +517,48 @@ curl -X POST http://localhost:3001/v4/verifiable-trust/resolve \
 
 The full request/response contract is published in [`docs/api/openapi.json`](./docs/api/openapi.json) (`ResolutionResponse`) and the normative JSON Schemas under [`docs/api/schemas/v4/vt/`](./docs/api/schemas/v4/vt/).
 
+### ECS ecosystem allowlist (optional)
+
+**The resolver works without configuring this.** The allowlist implements [WL-ECS]: it *restricts*
+which Ecosystems may define an Essential Credential Schema, it does not enable the trust evaluation.
+
+Left empty — the default — the allowlist is not enforced and **any** Ecosystem qualifies, so a
+credential counts as an ECS whenever its schema matches one of the five ECS v4 reference digests.
+Filled in, a credential whose schema belongs to an Ecosystem outside the list stops counting as an
+ECS and degrades to a regular Verifiable Trust Credential.
+
+Configure it in either place — the first one wins when it is non-empty:
+
+| Where | Key | Format |
+| --- | --- | --- |
+| `src/config.json` | `resolver.ecsEcosystems` | array of Ecosystem **DIDs** |
+| environment | `ECS_ECOSYSTEM_DIDS` | comma-separated Ecosystem **DIDs** |
+
+```jsonc
+// src/config.json
+"resolver": {
+  "ecsEcosystems": ["did:webvh:Qm...:ecs-ecosystem.example.network"]
+}
+```
+
+```bash
+ECS_ECOSYSTEM_DIDS=did:webvh:Qm...:ecs-ecosystem.example.network
+```
+
+The values are the DIDs of the Ecosystems themselves, not their numeric ids. Each one is paired with
+every configured Verifiable Public Registry, which is derived from `CHAIN_ID`.
+
+Two consequences worth knowing before enabling it:
+
+- **It requires the embedded registry adapter.** Resolving which Ecosystem created a schema is a
+  registry lookup, so combining a non-empty allowlist with `resolver.useEmbeddedRegistryAdapter: false`
+  fails every evaluation with `ecsEcosystems requires a registry adapter to resolve the Ecosystem that
+  created a schema`.
+- **It changes the shape of `presentations`, not just the verdict.** ECS credentials are reported under
+  `ecsCredentials` and excluded from `presentations[].vtcCredentials`. Once the allowlist is enforced,
+  ECS-shaped credentials from unlisted Ecosystems are no longer treated as ECS and therefore start
+  appearing in `vtcCredentials`.
+
 ## Real-Time Event API (WebSocket)
 
 The Verana Indexer streams persisted indexer events over a **WebSocket** following the `IDX-INDEXER-SUB-1` spec.
