@@ -548,8 +548,8 @@ Two consequences worth knowing before enabling it:
 
 - **It requires the embedded registry adapter.** Resolving which Ecosystem created a schema is a
   registry lookup, so combining a non-empty allowlist with `resolver.useEmbeddedRegistryAdapter: false`
-  fails every evaluation with `ecsEcosystems requires a registry adapter to resolve the Ecosystem that
-  created a schema`.
+  leaves every DID untrusted: each credential is reported under `failedCredentials` with
+  `ecsEcosystems requires a registry adapter to resolve the Ecosystem that created a schema`.
 - **It changes the shape of `presentations`, not just the verdict.** ECS credentials are reported under
   `ecsCredentials` and excluded from `presentations[].vtcCredentials`. Once the allowlist is enforced,
   ECS-shaped credentials from unlisted Ecosystems are no longer treated as ECS and therefore start
