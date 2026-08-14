@@ -519,13 +519,23 @@ The full request/response contract is published in [`docs/api/openapi.json`](./d
 
 ### ECS ecosystem allowlist (optional)
 
-**The resolver works without configuring this.** The allowlist implements [WL-ECS]: it *restricts*
-which Ecosystems may define an Essential Credential Schema, it does not enable the trust evaluation.
+The allowlist implements [WL-ECS]: it *restricts* which Ecosystems may define an Essential Credential
+Schema. It is not a switch that turns the trust evaluation on — the resolver answers every request
+without it — but leaving it empty weakens what the answer means.
 
 Left empty — the default — the allowlist is not enforced and **any** Ecosystem qualifies, so a
 credential counts as an ECS whenever its schema matches one of the five ECS v4 reference digests.
 Filled in, a credential whose schema belongs to an Ecosystem outside the list stops counting as an
 ECS and degrades to a regular Verifiable Trust Credential.
+
+> **Set it on any deployment whose `trusted` verdict is consumed by third parties.** Those five
+> reference digests are public and fixed, so an unlisted Ecosystem can publish a byte-identical
+> Credential Schema, authorise itself as its issuer, anchor the `digestJCS`, and issue itself the
+> ECS-SERVICE and ECS-ORG credentials the evaluation looks for. With no allowlist the resolver has
+> nothing to reject that with, and answers `trusted: true`. The barrier is the on-chain deposit, not
+> cryptography. [WL-ECS] places this obligation on Verifiable Services and User Agents rather than on
+> indexers, so it is not a conformance requirement here — but this indexer publishes the verdict they
+> would otherwise compute themselves.
 
 Set it through the environment variable `ECS_ECOSYSTEM_DIDS` — in `.env` for a local run, or in
 `docker/docker.env` for the container, which is the only env file the compose stack loads:
