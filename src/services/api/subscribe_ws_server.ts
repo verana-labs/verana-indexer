@@ -21,6 +21,7 @@ export abstract class BaseSubscribeServer<TControl extends { action: string }, T
   private readonly MAX_CONTROL_MESSAGE_BYTES = 64 * 1024
   private readonly MAX_BUFFERED_BYTES = Number(process.env.WS_MAX_BUFFERED_BYTES || 8 * 1024 * 1024)
   private lastBroadcastHeight = 0
+  private lastBroadcastTime = toIsoSeconds()
   protected logger = createLogger(console)
 
   protected abstract readonly path: string
@@ -33,9 +34,12 @@ export abstract class BaseSubscribeServer<TControl extends { action: string }, T
 
   protected readonly followsIndexerCheckpoint: boolean = true
 
-  noteBlockProcessed(height: number): void {
+  noteBlockProcessed(height: number, blockTime?: string): void {
     if (!Number.isFinite(height)) return
-    if (height > this.lastBroadcastHeight) this.lastBroadcastHeight = height
+    if (height > this.lastBroadcastHeight) {
+      this.lastBroadcastHeight = height
+      if (blockTime) this.lastBroadcastTime = blockTime
+    }
   }
 
   getNextDeliverableBlock(): number {
@@ -142,7 +146,7 @@ export abstract class BaseSubscribeServer<TControl extends { action: string }, T
       const status = await indexerStatusManager.getDetailedStatus()
       lastProcessedBlock = status.lastProcessedBlock ?? 0
       lastBlockTime = status.lastBlockTime ?? lastBlockTime
-      if (this.followsIndexerCheckpoint) this.noteBlockProcessed(lastProcessedBlock)
+      if (this.followsIndexerCheckpoint) this.noteBlockProcessed(lastProcessedBlock, lastBlockTime)
     } catch (error) {
       this.logger.warn(`[${this.constructor.name}] Could not resolve the indexer status for ready:`, error)
     }
@@ -178,7 +182,7 @@ export abstract class BaseSubscribeServer<TControl extends { action: string }, T
     this.clients.set(ws, this.applyControl(state, result.message))
     if (result.message.action !== 'subscribe') return
 
-    this.sendJson(ws, buildSubscribedMessage(nextBlock) as unknown as Record<string, unknown>)
+    this.sendJson(ws, buildSubscribedMessage(nextBlock, this.lastBroadcastTime) as unknown as Record<string, unknown>)
   }
 
   protected sendJson(ws: WebSocket, payload: Record<string, unknown>, closeCodeOnFailure = 0): boolean {

@@ -32,7 +32,7 @@ export class SubscribeBroadcaster extends BaseSubscribeServer<ControlMessage, Cl
   }
 
   broadcastBlockEnvelope(args: { block: number; blockTime: string; events: IndexerEventRecord[] }): void {
-    this.noteBlockProcessed(args.block)
+    this.noteBlockProcessed(args.block, args.blockTime)
     if (this.clients.size === 0) return
 
     let sent = 0
