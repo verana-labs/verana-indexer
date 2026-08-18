@@ -391,7 +391,7 @@ describe('SubscribeBroadcaster', () => {
       ws.send(JSON.stringify({ action: 'subscribe', dids: null }))
       const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
 
-      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1 })
+      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1, blockTime: expect.any(String) })
       closeSocket(ws)
     })
 
