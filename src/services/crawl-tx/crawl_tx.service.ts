@@ -406,9 +406,10 @@ export default class CrawlTxService extends BullableService {
                 toHeight: blockHeight - 1,
               })
             }
+            const blockTime = blockTxs[0]?.timestamp
             await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.broadcastBlockIndexed`, {
               height: blockHeight,
-              timestamp: new Date().toISOString(),
+              timestamp: blockTime ? new Date(blockTime).toISOString() : new Date().toISOString(),
             })
             this.logger.debug(` [HANDLE_TRANSACTION] Emitted block-indexed event for height ${blockHeight}`)
           } catch (error) {
