@@ -35,11 +35,9 @@ export abstract class BaseSubscribeServer<TControl extends { action: string }, T
   protected readonly followsIndexerCheckpoint: boolean = true
 
   noteBlockProcessed(height: number, blockTime?: string): void {
-    if (!Number.isFinite(height)) return
-    if (height > this.lastBroadcastHeight) {
-      this.lastBroadcastHeight = height
-      if (blockTime) this.lastBroadcastTime = blockTime
-    }
+    if (!Number.isFinite(height) || height < this.lastBroadcastHeight) return
+    if (height > this.lastBroadcastHeight) this.lastBroadcastHeight = height
+    if (blockTime) this.lastBroadcastTime = blockTime
   }
 
   getNextDeliverableBlock(): number {

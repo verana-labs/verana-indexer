@@ -108,9 +108,16 @@ const ResolverPollService = {
       await this.broadcastResolvedBlock(blockHeight)
     },
 
+    async noteBlockWithTime(this: any, blockHeight: number): Promise<void> {
+      if (blockHeight < vtSubscribeBroadcaster.getNextDeliverableBlock()) return
+      const blockRow = await knex('block').select('time').where('height', blockHeight).first()
+      const time = (blockRow as { time?: Date | string } | undefined)?.time
+      vtSubscribeBroadcaster.noteBlockProcessed(blockHeight, time ? toIsoSeconds(time) : undefined)
+    },
+
     async broadcastResolvedBlock(this: any, blockHeight: number): Promise<void> {
       if (vtSubscribeBroadcaster.getClientCount() === 0) {
-        vtSubscribeBroadcaster.noteBlockProcessed(blockHeight)
+        await this.noteBlockWithTime(blockHeight)
         return
       }
       try {
@@ -123,7 +130,7 @@ const ResolverPollService = {
 
     async broadcastHeartbeat(this: any, blockHeight: number): Promise<void> {
       if (vtSubscribeBroadcaster.getClientCount() === 0) {
-        vtSubscribeBroadcaster.noteBlockProcessed(blockHeight)
+        await this.noteBlockWithTime(blockHeight)
         return
       }
       try {
@@ -155,7 +162,7 @@ const ResolverPollService = {
       await this.initialSyncIfNeeded()
 
       const currentHeight = await this.getOrCreateResolverCheckpointHeight()
-      vtSubscribeBroadcaster.noteBlockProcessed(currentHeight)
+      await this.noteBlockWithTime(currentHeight)
       const indexedHeight = await this.getIndexedHeight()
       if (indexedHeight <= currentHeight) return
 
