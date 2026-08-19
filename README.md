@@ -517,6 +517,54 @@ curl -X POST http://localhost:3001/v4/verifiable-trust/resolve \
 
 The full request/response contract is published in [`docs/api/openapi.json`](./docs/api/openapi.json) (`ResolutionResponse`) and the normative JSON Schemas under [`docs/api/schemas/v4/vt/`](./docs/api/schemas/v4/vt/).
 
+### ECS ecosystem allowlist (optional)
+
+The allowlist implements [WL-ECS]: it *restricts* which Ecosystems may define an Essential Credential
+Schema. It is not a switch that turns the trust evaluation on — the resolver answers every request
+without it — but leaving it empty weakens what the answer means.
+
+Left empty — the default — the allowlist is not enforced and **any** Ecosystem qualifies, so a
+credential counts as an ECS whenever its schema matches one of the five ECS v4 reference digests.
+Filled in, a credential whose schema belongs to an Ecosystem outside the list stops counting as an
+ECS and degrades to a regular Verifiable Trust Credential.
+
+> **Set it on any deployment whose `trusted` verdict is consumed by third parties.** Those five
+> reference digests are public and fixed, so an unlisted Ecosystem can publish a byte-identical
+> Credential Schema, authorise itself as its issuer, anchor the `digestJCS`, and issue itself the
+> ECS-SERVICE and ECS-ORG credentials the evaluation looks for. With no allowlist the resolver has
+> nothing to reject that with, and answers `trusted: true`. The barrier is the on-chain deposit, not
+> cryptography. [WL-ECS] places this obligation on Verifiable Services and User Agents rather than on
+> indexers, so it is not a conformance requirement here — but this indexer publishes the verdict they
+> would otherwise compute themselves.
+
+Set it through the environment variable `ECS_ECOSYSTEM_DIDS` — in `.env` for a local run, or in
+`docker/docker.env` for the container, which is the only env file the compose stack loads:
+
+```bash
+ECS_ECOSYSTEM_DIDS=did:webvh:Qm...:ecs-ecosystem.example.network
+# several Ecosystems, comma-separated:
+ECS_ECOSYSTEM_DIDS=did:webvh:Qm...:a.example.network,did:webvh:Qm...:b.example.network
+```
+
+The values are the DIDs of the Ecosystems themselves, not their numeric ids. Each one is paired with
+every configured Verifiable Public Registry, which is derived from `CHAIN_ID`.
+
+`src/config.json` carries the same setting under `resolver.ecsEcosystems`, but that file is compiled
+into the build and is not exposed as a deployment surface — treat it as the source default. It ships
+empty, so the environment variable is what takes effect. Note the precedence if you ever change it:
+**a non-empty `resolver.ecsEcosystems` silently overrides `ECS_ECOSYSTEM_DIDS`.**
+
+Two consequences worth knowing before enabling it:
+
+- **It requires the embedded registry adapter.** Resolving which Ecosystem created a schema is a
+  registry lookup, so combining a non-empty allowlist with `resolver.useEmbeddedRegistryAdapter: false`
+  leaves every DID untrusted: each credential is reported under `failedCredentials` with
+  `ecsEcosystems requires a registry adapter to resolve the Ecosystem that created a schema`.
+- **It changes the shape of `presentations`, not just the verdict.** ECS credentials are reported under
+  `ecsCredentials` and excluded from `presentations[].vtcCredentials`. Once the allowlist is enforced,
+  ECS-shaped credentials from unlisted Ecosystems are no longer treated as ECS and therefore start
+  appearing in `vtcCredentials`.
+
 ## Real-Time Event API (WebSocket)
 
 The Verana Indexer streams persisted indexer events over a **WebSocket** following the `IDX-INDEXER-SUB-1` spec.
