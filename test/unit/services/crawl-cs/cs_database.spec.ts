@@ -2,7 +2,9 @@ import { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../../../src/common'
 import knex from '../../../../src/common/utils/db_connection'
 import { Network } from '../../../../src/network'
-import CredentialSchemaDatabaseService from '../../../../src/services/crawl-cs/cs_database.service'
+import CredentialSchemaDatabaseService, {
+  insertCredentialSchemaHistoryStatsRow,
+} from '../../../../src/services/crawl-cs/cs_database.service'
 
 function normalizeSchemaId(id: unknown): number {
   if (id == null) return NaN
@@ -333,5 +335,80 @@ describe('CredentialSchemaDatabaseService API Integration Tests', () => {
     expect(body.activity[0].entity_type).toBe('CredentialSchema')
     expect(normalizeSchemaId(body.activity[0].entity_id)).toBe(schemaId)
     expect(body.activity[0].msg).toBeDefined()
+  })
+
+  describe('stats history rows', () => {
+    const statsSchemaId = 940_000_000 + Math.floor(Math.random() * 1_000_000)
+    const statsCreatedAt = new Date('2026-02-01T00:00:00Z')
+    const baseStats = {
+      participants: 3,
+      participants_ecosystem: 1,
+      participants_issuer_grantor: 0,
+      participants_issuer: 2,
+      participants_verifier_grantor: 0,
+      participants_verifier: 0,
+      participants_holder: 0,
+      weight: '0',
+      issued: 0,
+      verified: 0,
+      ecosystem_slash_events: 0,
+      ecosystem_slashed_amount: '0',
+      ecosystem_slashed_amount_repaid: '0',
+      network_slash_events: 0,
+      network_slashed_amount: '0',
+      network_slashed_amount_repaid: '0',
+    }
+
+    beforeAll(async () => {
+      await knex('credential_schemas').insert({
+        id: statsSchemaId,
+        ecosystem_id: statsSchemaId + 1,
+        json_schema: JSON.stringify({ $id: `schema-${statsSchemaId}`, title: 'StatsDedup' }),
+        issuer_grantor_validation_validity_period: 365,
+        verifier_grantor_validation_validity_period: 365,
+        issuer_validation_validity_period: 365,
+        verifier_validation_validity_period: 365,
+        holder_validation_validity_period: 365,
+        issuer_onboarding_mode: 'OPEN',
+        verifier_onboarding_mode: 'OPEN',
+        is_active: true,
+        created: statsCreatedAt,
+        modified: statsCreatedAt,
+      })
+    })
+
+    afterAll(async () => {
+      await knex('credential_schema_history').where({ credential_schema_id: statsSchemaId }).del()
+      await knex('credential_schemas').where({ id: statsSchemaId }).del()
+    })
+
+    async function statsHistoryHeights(): Promise<number[]> {
+      const rows = await knex('credential_schema_history')
+        .select('height')
+        .where({ credential_schema_id: statsSchemaId })
+        .orderBy('id', 'asc')
+      return rows.map((row) => Number(row.height))
+    }
+
+    it('should write the first stats row', async () => {
+      await insertCredentialSchemaHistoryStatsRow(knex, statsSchemaId, 100, baseStats)
+      expect(await statsHistoryHeights()).toEqual([100])
+    })
+
+    it('should skip a recalculation that yields the counters already on record', async () => {
+      await insertCredentialSchemaHistoryStatsRow(knex, statsSchemaId, 101, baseStats)
+      await insertCredentialSchemaHistoryStatsRow(knex, statsSchemaId, 102, baseStats)
+      expect(await statsHistoryHeights()).toEqual([100])
+    })
+
+    it('should write a row when a counter actually moves', async () => {
+      await insertCredentialSchemaHistoryStatsRow(knex, statsSchemaId, 103, { ...baseStats, participants: 4 })
+      expect(await statsHistoryHeights()).toEqual([100, 103])
+    })
+
+    it('should compare against the row a query at that height resolves to, not the newest one', async () => {
+      await insertCredentialSchemaHistoryStatsRow(knex, statsSchemaId, 102, baseStats)
+      expect(await statsHistoryHeights()).toEqual([100, 103])
+    })
   })
 })
