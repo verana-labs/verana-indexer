@@ -41,7 +41,7 @@ export class VtSubscribeBroadcaster extends BaseSubscribeServer<VtControlMessage
   }
 
   broadcastChangesEnvelope(args: { block: number; blockTime: string; changes: VtRawChange[] }): void {
-    this.noteBlockProcessed(args.block)
+    this.noteBlockProcessed(args.block, args.blockTime)
     if (this.clients.size === 0) return
 
     let sent = 0

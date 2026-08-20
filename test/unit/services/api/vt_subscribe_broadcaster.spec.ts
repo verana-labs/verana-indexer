@@ -226,7 +226,20 @@ describe('VtSubscribeBroadcaster', () => {
       ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
       const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
 
-      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1 })
+      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1, blockTime: expect.any(String) })
+      closeSocket(ws)
+    })
+
+    it('acknowledges with the blockTime of the last broadcast block', async () => {
+      broadcaster.broadcastChangesEnvelope({ block: HEIGHT, blockTime: '2026-05-11T13:00:05Z', changes: [] })
+      const ws = new WebSocket(WS_URL)
+      await waitForOpen(ws)
+      await waitForMessage(ws, (msg) => msg.type === 'ready')
+
+      ws.send(JSON.stringify({ action: 'subscribe', channels: { trust: true } }))
+      const ack = await waitForMessage(ws, (msg) => msg.type === 'subscribed')
+
+      expect(ack).toEqual({ type: 'subscribed', block: HEIGHT + 1, blockTime: '2026-05-11T13:00:05Z' })
       closeSocket(ws)
     })
 
