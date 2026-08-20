@@ -1,6 +1,15 @@
 import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
+  const hasSchemaJsonTable = await knex.schema.hasTable('credential_schema_json')
+  if (!hasSchemaJsonTable) {
+    await knex.schema.createTable('credential_schema_json', (table) => {
+      table.increments('id').primary()
+      table.string('digest', 64).notNullable().unique()
+      table.text('json_schema').notNullable()
+    })
+  }
+
   await knex.schema.createTable('credential_schema_history', (table) => {
     table.increments('id').primary()
     table
@@ -11,7 +20,7 @@ export async function up(knex: Knex): Promise<void> {
       .onDelete('CASCADE')
 
     table.integer('tr_id').notNullable()
-    table.text('json_schema').notNullable()
+    table.integer('json_schema_id').nullable().references('id').inTable('credential_schema_json')
 
     table.integer('issuer_grantor_validation_validity_period').notNullable()
     table.integer('verifier_grantor_validation_validity_period').notNullable()
@@ -61,6 +70,7 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['credential_schema_id'])
     table.index(['height'])
+    table.index(['json_schema_id'])
   })
 
   await knex.raw(`
@@ -74,4 +84,5 @@ export async function up(knex: Knex): Promise<void> {
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('credential_schema_history')
+  await knex.schema.dropTableIfExists('credential_schema_json')
 }

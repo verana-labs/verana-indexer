@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
@@ -137,6 +138,46 @@ async function filterRowToExistingColumns(
   return filtered
 }
 
+/**
+ * History rows are full-row snapshots written on every change, including counter-only ones, so a
+ * copy of `json_schema` per row dominated the table. The schema is mutable, so a row cannot simply
+ * join `credential_schemas`; instead each distinct schema text is stored once, keyed by its digest,
+ * and history rows reference it.
+ */
+async function resolveJsonSchemaId(db: KnexSchemaLike, jsonSchema: unknown): Promise<number | null> {
+  const text = ensureSchemaString(jsonSchema)
+  if (!text) return null
+
+  const digest = createHash('sha256').update(text, 'utf8').digest('hex')
+  const kdb = db as unknown as (t: string) => any
+
+  const existing = await kdb('credential_schema_json').select('id').where({ digest }).first()
+  if (existing?.id != null) return Number(existing.id)
+
+  const inserted = await kdb('credential_schema_json')
+    .insert({ digest, json_schema: text })
+    .onConflict('digest')
+    .merge({ digest })
+    .returning('id')
+  const id = Array.isArray(inserted) ? (inserted[0]?.id ?? inserted[0]) : inserted
+  return Number(id) || null
+}
+
+async function attachHistoryJsonSchema<T extends Record<string, any>>(rows: T[]): Promise<T[]> {
+  const ids = [
+    ...new Set(rows.map((row) => Number(row?.json_schema_id)).filter((id) => Number.isFinite(id) && id > 0)),
+  ]
+  if (ids.length === 0) return rows
+
+  const schemas = await knex('credential_schema_json').select('id', 'json_schema').whereIn('id', ids)
+  const byId = new Map(schemas.map((schema: any) => [Number(schema.id), schema.json_schema]))
+  for (const row of rows) {
+    const id = Number(row?.json_schema_id)
+    if (id > 0) (row as any).json_schema = byId.get(id) ?? null
+  }
+  return rows
+}
+
 async function prepareCredentialSchemaHistoryRowForInsert(
   db: KnexSchemaLike,
   historyRow: Record<string, unknown>
@@ -148,6 +189,11 @@ async function prepareCredentialSchemaHistoryRowForInsert(
   const columns = new Set(Object.keys(info || {}))
   if (columns.has('deposit') && (row.deposit === undefined || row.deposit === null)) {
     row = { ...row, deposit: 0 }
+  }
+  if (columns.has('json_schema_id') && !columns.has('json_schema')) {
+    const jsonSchemaId = await resolveJsonSchemaId(db, row.json_schema)
+    row = { ...row, json_schema_id: jsonSchemaId }
+    delete (row as Record<string, unknown>).json_schema
   }
   const filtered: Record<string, unknown> = {}
   for (const k of Object.keys(row)) {
@@ -1336,6 +1382,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404)
         }
 
+        await attachHistoryJsonSchema([historyRecord])
+
         const storedSchemaString = getStoredSchemaString(historyRecord.json_schema)
         const historicalSchema = {
           id: historyRecord.credential_schema_id,
@@ -1772,6 +1820,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             .orderBy('credential_schema_id', sortDirection)
           items = await orderedLatest.limit(limit)
         }
+
+        await attachHistoryJsonSchema(items)
 
         let filteredItems = items
           .filter((item): item is NonNullable<(typeof items)[0]> => item !== null)
@@ -2246,7 +2296,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       if (typeof blockHeight === 'number') {
         const hasHeightColumn = await checkHeightColumnExists()
-        let query = knex('credential_schema_history').select('json_schema').where({ credential_schema_id: id })
+        let query = knex('credential_schema_history').select('json_schema_id').where({ credential_schema_id: id })
 
         if (hasHeightColumn) {
           query = query.where('height', '<=', blockHeight).orderBy('height', 'desc')
@@ -2258,6 +2308,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         if (!historyRecord) {
           return ApiResponder.error(ctx, `Credential schema with id=${id} not found`, 404)
         }
+
+        await attachHistoryJsonSchema([historyRecord])
 
         const stored = getStoredSchemaString(historyRecord.json_schema)
         if (!stored) {
