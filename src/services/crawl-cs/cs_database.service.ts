@@ -442,6 +442,39 @@ export async function syncEcosystemStatsAndHistoryFromSchemaChange(
   await db('ecosystem_history').insert(ecosystemHistoryPayload)
 }
 
+const STATS_HISTORY_BOOKKEEPING_COLUMNS = new Set(['id', 'height', 'action', 'changes', 'created_at'])
+
+function normalizeHistoryValue(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (value instanceof Date) return value.toISOString()
+  return String(value)
+}
+
+/**
+ * Participant events recalculate schema counters and append a full-row snapshot even when the
+ * recalculation yields the numbers already on record, which is common because a participant does not
+ * count until its `effective_from` elapses. `ecosystem_history` already skips those; this is the same
+ * guard, comparing against the row a query at `blockHeight` would resolve to.
+ */
+async function statsRowMatchesLatestHistory(
+  db: any,
+  schemaId: number,
+  blockHeight: number,
+  row: Record<string, unknown>,
+  hasHeightColumn: boolean
+): Promise<boolean> {
+  let query = db('credential_schema_history').where({ credential_schema_id: schemaId })
+  if (hasHeightColumn) query = query.where('height', '<=', blockHeight).orderBy('height', 'desc')
+  const previous = await query.orderBy('id', 'desc').first()
+  if (!previous) return false
+
+  return Object.keys(row).every(
+    (column) =>
+      STATS_HISTORY_BOOKKEEPING_COLUMNS.has(column) ||
+      normalizeHistoryValue(row[column]) === normalizeHistoryValue(previous[column])
+  )
+}
+
 export async function insertCredentialSchemaHistoryStatsRow(
   db: any,
   schemaId: number,
@@ -463,6 +496,7 @@ export async function insertCredentialSchemaHistoryStatsRow(
   )
   if (stats) addStatsToHistoryRow(historyRow, stats)
   const historyRowForDb = await prepareCredentialSchemaHistoryRowForInsert(db, historyRow as Record<string, unknown>)
+  if (await statsRowMatchesLatestHistory(db, schemaId, blockHeight, historyRowForDb, hasHeightColumn)) return
   await db('credential_schema_history').insert(historyRowForDb)
 }
 
