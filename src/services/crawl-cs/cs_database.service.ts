@@ -164,9 +164,7 @@ async function resolveJsonSchemaId(db: KnexSchemaLike, jsonSchema: unknown): Pro
 }
 
 async function attachHistoryJsonSchema<T extends Record<string, any>>(rows: T[]): Promise<T[]> {
-  const ids = [
-    ...new Set(rows.map((row) => Number(row?.json_schema_id)).filter((id) => Number.isFinite(id) && id > 0)),
-  ]
+  const ids = [...new Set(rows.map((row) => Number(row?.json_schema_id)).filter((id) => Number.isFinite(id) && id > 0))]
   if (ids.length === 0) return rows
 
   const schemas = await knex('credential_schema_json').select('id', 'json_schema').whereIn('id', ids)
