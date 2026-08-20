@@ -96,7 +96,29 @@ async function fetchEntitiesAtHeight(args: {
   applyFilter(query)
 
   const rows: SnapshotRow[] = await query.orderBy(source.entityIdColumn, 'asc')
-  return rows.map((row) => toEntityRow(row, source.entityIdColumn))
+  return (await resolveJsonSchemas(rows)).map((row) => toEntityRow(row, source.entityIdColumn))
+}
+
+/**
+ * `credential_schema_history` references its schema text instead of copying it per row, so the
+ * snapshot rehydrates `json_schema` here to keep the response shape unchanged.
+ */
+async function resolveJsonSchemas(rows: SnapshotRow[]): Promise<SnapshotRow[]> {
+  const ids = uniquePositiveIds(rows.map((row) => row.json_schema_id))
+  if (ids.length === 0) return rows
+
+  const schemas = (await knex('credential_schema_json').select('id', 'json_schema').whereIn('id', ids)) as Array<{
+    id: number
+    json_schema: string
+  }>
+  const byId = new Map(schemas.map((schema) => [Number(schema.id), schema.json_schema]))
+
+  return rows.map((row) => {
+    const schemaId = Number(row.json_schema_id ?? 0)
+    if (!schemaId) return row
+    const { json_schema_id: _dropped, ...rest } = row
+    return { ...rest, json_schema: byId.get(schemaId) ?? null }
+  })
 }
 
 async function fetchEcosystemsByDidOrIds(did: string, ids: number[], blockHeight: number): Promise<SnapshotRow[]> {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { ServiceBroker } from 'moleculer'
 import knex from '../../../../src/common/utils/db_connection'
 import IndexerSnapshotService, { getDidSnapshotAtHeight } from '../../../../src/services/api/snapshot.service'
@@ -73,12 +74,21 @@ describe('IndexerSnapshotService snapshot endpoint', () => {
       createdTables.push('ecosystem_history')
     }
 
+    if (!(await knex.schema.hasTable('credential_schema_json'))) {
+      await knex.schema.createTable('credential_schema_json', (table) => {
+        table.increments('id').primary()
+        table.string('digest', 64).notNullable().unique()
+        table.text('json_schema').notNullable()
+      })
+      createdTables.push('credential_schema_json')
+    }
+
     if (!(await knex.schema.hasTable('credential_schema_history'))) {
       await knex.schema.createTable('credential_schema_history', (table) => {
         table.increments('id').primary()
         table.integer('credential_schema_id').notNullable()
         table.integer('ecosystem_id').notNullable()
-        table.text('json_schema').notNullable()
+        table.integer('json_schema_id').nullable()
         table.timestamp('archived').nullable()
         table.boolean('is_active').notNullable().defaultTo(false)
         table.timestamp('created').notNullable()
@@ -166,6 +176,15 @@ describe('IndexerSnapshotService snapshot endpoint', () => {
     })
   }
 
+  async function resolveJsonSchemaId(jsonSchema: string): Promise<number | null> {
+    if (!(await knex.schema.hasTable('credential_schema_json'))) return null
+    const digest = createHash('sha256').update(jsonSchema, 'utf8').digest('hex')
+    const existing = await knex('credential_schema_json').select('id').where({ digest }).first()
+    if (existing) return Number(existing.id)
+    const [row] = await knex('credential_schema_json').insert({ digest, json_schema: jsonSchema }).returning('id')
+    return Number((row as any)?.id ?? row)
+  }
+
   async function insertCredentialSchemaHistory(args: {
     credentialSchemaId: number
     ecosystemId: number
@@ -177,10 +196,12 @@ describe('IndexerSnapshotService snapshot endpoint', () => {
       credentialSchemaId: args.credentialSchemaId,
       ecosystemId: args.ecosystemId,
     })
+    const historyJsonSchema = JSON.stringify({ $id: `schema-${args.credentialSchemaId}` })
     await insertRow('credential_schema_history', {
       credential_schema_id: args.credentialSchemaId,
       ecosystem_id: args.ecosystemId,
-      json_schema: JSON.stringify({ $id: `schema-${args.credentialSchemaId}` }),
+      json_schema: historyJsonSchema,
+      json_schema_id: await resolveJsonSchemaId(historyJsonSchema),
       issuer_grantor_validation_validity_period: 365,
       verifier_grantor_validation_validity_period: 365,
       issuer_validation_validity_period: 365,
@@ -329,6 +350,8 @@ describe('IndexerSnapshotService snapshot endpoint', () => {
     expect(Number(snap.ecosystems[0]?.id)).toBe(ecosystemId)
     expect(snap.ecosystems[0]?.did).toBe(didA)
     expect(snap.participants[0]?.did).toBe(didA)
+    expect(snap.schemas[0]?.json_schema).toBe(JSON.stringify({ $id: `schema-${schemaId}` }))
+    expect(snap.schemas[0]).not.toHaveProperty('json_schema_id')
   })
 
   it('projects the entity id onto id and drops history bookkeeping columns', async () => {
