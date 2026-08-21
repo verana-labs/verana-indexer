@@ -54,8 +54,11 @@ database:
     limits:
       cpu: 500m
       memory: 512Mi
+  # PostgreSQL data PVC. The indexer keeps full chain history (no pruning): ~1.4 GiB/month
+  # at 5-6s block times, plus ~3.1 GiB per million blocks already produced at deploy time.
+  # PVCs can be expanded but never shrunk. See "Storage sizing" in charts/README.md.
   storage:
-    size: 10Gi
+    size: 20Gi
     storageClassName: csi-cinder-classic
 
 redis: 
@@ -122,8 +125,3 @@ reindex:
 #           name: my-configmap
 #           key: my-key
 extraEnv: []
-
-# Persistent volume configuration for app
-storage:
-  size: 1Gi
-  storageClassName: csi-cinder-high-speed
