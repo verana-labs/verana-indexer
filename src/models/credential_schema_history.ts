@@ -7,7 +7,7 @@ export default class CredentialSchemaHistory extends BaseModel {
   credential_schema_id!: number
 
   ecosystem_id!: number
-  json_schema!: object
+  json_schema_id!: number | null
   issuer_grantor_validation_validity_period!: number
   verifier_grantor_validation_validity_period!: number
   issuer_validation_validity_period!: number
@@ -45,7 +45,7 @@ export default class CredentialSchemaHistory extends BaseModel {
 
         ecosystem_id: { type: 'integer' },
         deposit: { type: 'integer' },
-        json_schema: { type: 'object' },
+        json_schema_id: { type: ['integer', 'null'] },
 
         issuer_grantor_validation_validity_period: { type: 'integer' },
         verifier_grantor_validation_validity_period: { type: 'integer' },

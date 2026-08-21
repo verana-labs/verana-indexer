@@ -29,6 +29,7 @@ const TABLES_TO_DROP = [
   'transaction',
   'global_metrics',
   'credential_schema_history',
+  'credential_schema_json',
   'credential_schemas',
   'governance_framework_document_history',
   'governance_framework_version_history',
@@ -551,7 +552,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
   '20250905_create_ecosystem_tables': ['ecosystem', 'governance_framework_version', 'governance_framework_document'],
   '20240924_create_participants_table': ['participants'],
   '0123_create_trust_deposit_tables': ['trust_deposits'],
-  '20250919_create_credential_schema_history': ['credential_schema_history'],
+  '20250919_create_credential_schema_history': ['credential_schema_history', 'credential_schema_json'],
   '20250922_create_ecosystem_history': [
     'ecosystem_history',
     'governance_framework_version_history',
