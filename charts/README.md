@@ -16,7 +16,7 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 * **Service:** Exposes a public API TCP port as well as the ones for redis and db (if enabled)
 * **Ingress:**
   * Public ingress for external access with TLS
-* **PersistentVolumeClaim:** Provides persistent storage for indexer data (Note: not currently used).
+* **PersistentVolumeClaim:** One for PostgreSQL data (`database.storage.size`, created when `database.enabled`) and one 1Gi volume for Redis (created when `redis.enabled`).
 * **StatefulSet:** Runs Verana Indexer container(s) with configurable replicas.
 
 ## Configuration
@@ -73,10 +73,13 @@ database:
 
 ### Persistent Storage
 
-| Parameter                  | Description                                      | Default                          |
-| -------------------------- | ------------------------------------------------ | -------------------------------- |
-| `storage.size`             | Size of the persistent volume for Indexer      | `1Gi`                           |
-| `storage.storageClassName` | Storage class for the persistent volume          | `csi-cinder-high-speed`         |
+| Parameter                           | Description                                          | Default              |
+| ----------------------------------- | ---------------------------------------------------- | -------------------- |
+| `database.storage.size`             | Size of the PostgreSQL data volume                   | `20Gi`               |
+| `database.storage.storageClassName` | Storage class for the PostgreSQL data volume         | `csi-cinder-classic` |
+
+The Redis PVC is fixed at 1Gi; the indexer container needs no persistent volume.
+See [Storage sizing](#storage-sizing) for how to pick `database.storage.size`.
 
 ### Ingress
 
@@ -151,6 +154,31 @@ helm upgrade --install idx ./verana-indexer-chart \
   --set resources.limits.cpu=500m \
   --set resources.limits.memory=512Mi
 ```
+
+## Storage sizing
+
+The indexer keeps the full chain history and never prunes. Growth comes almost entirely
+from block production; transactions and business objects are marginal at current volumes.
+
+Measured with this indexer on verana-node v0.10.2 (3 validators, 5-6s block time):
+
+| What | Cost |
+| ---- | ---- |
+| Block, even empty | ~3.1 KiB |
+| Transaction | ~20-25 KiB |
+| Business object (ecosystem, credential schema, participant, corporation, DID) | ~1-3 KiB |
+
+That is **~1.4 GiB/month** of steady growth, plus **~3.1 GiB per million blocks** the
+chain has already produced when the indexer first syncs (it always indexes from block 1;
+testnet at ~4.9M blocks needs ~15 GiB up front).
+
+The `20Gi` default fits roughly the first year of a fresh chain. For longer lifetimes or
+older chains, expand the PVC over time: Kubernetes can grow a PVC in place but never
+shrink it.
+
+`DB_STORAGE_MAX_MB` (via `extraEnv`) makes the indexer stop crawling when the database
+exceeds that size; set it below the PVC size (e.g. `17408` for 20Gi), since the image
+default of `20480` equals the full volume.
 
 ## Reindexing
 
