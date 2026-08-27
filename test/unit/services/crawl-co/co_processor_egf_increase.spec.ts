@@ -96,6 +96,40 @@ describe('CorporationMessageProcessorService EGF increase active version', () =>
     expect(corp.active_version).toBeNull()
   })
 
+  it('matches the increase event by corporation, not just ecosystem_id', async () => {
+    await knex('co_governance_framework_version').insert([
+      { corporation_id: 12, ecosystem_id: 0, version: 1, created: timestamp, active_since: timestamp },
+      { corporation_id: 12, ecosystem_id: 0, version: 2, created: timestamp },
+    ])
+
+    const foreignThenOwn = [
+      {
+        type: 'increase_active_gf_version',
+        attributes: [
+          { key: 'corporation', value: 'verana1other' },
+          { key: 'ecosystem_id', value: '0' },
+          { key: 'gfv_id', value: '99' },
+          { key: 'version', value: '5' },
+        ],
+      },
+      ...increaseGfActiveEvent(2, 7, 0),
+    ]
+
+    await expect(
+      service.handleCorporationMessages({
+        params: { corporationList: [increaseMessage(0, foreignThenOwn)] },
+      } as any)
+    ).resolves.toBeUndefined()
+
+    const rows = await knex('co_governance_framework_version')
+      .where({ corporation_id: 12, ecosystem_id: 0 })
+      .orderBy('version')
+    expect(rows.map((r: any) => Number(r.version))).toEqual([1, 2])
+    expect(rows[1].active_since).not.toBeNull()
+    const corp = await knex('corporation').where({ id: 12 }).first()
+    expect(Number(corp.active_version)).toBe(2)
+  })
+
   it('creates the version row from the event when no EGF mirror rows exist at all', async () => {
     await expect(
       service.handleCorporationMessages({

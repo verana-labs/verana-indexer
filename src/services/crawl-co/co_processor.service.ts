@@ -466,7 +466,7 @@ export default class CorporationMessageProcessorService extends BullableService 
       const ecosystemId = Number(message.ecosystem_id ?? message.ecosystemId ?? 0)
 
       // Prefer the chain event: local rows can miss the EGF v1 seeded at ecosystem creation.
-      const event = extractIncreaseGfActiveEvent(message.txEvents, ecosystemId)
+      const event = extractIncreaseGfActiveEvent(message.txEvents, ecosystemId, message.corporation)
       let nextVersion: number
       let gfv: GfvRow | undefined
       if (event?.version) {

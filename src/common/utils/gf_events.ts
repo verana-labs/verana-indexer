@@ -40,7 +40,8 @@ export interface IncreaseGfActiveEvent {
 
 export function extractIncreaseGfActiveEvent(
   txEvents: TxEvent[] | undefined,
-  ecosystemId: number
+  ecosystemId: number,
+  corporation?: string | null
 ): IncreaseGfActiveEvent | undefined {
   if (!Array.isArray(txEvents)) return undefined
   for (const ev of txEvents) {
@@ -48,6 +49,8 @@ export function extractIncreaseGfActiveEvent(
     const attrs = new Map<string, string>()
     for (const a of ev.attributes ?? []) attrs.set(a.key ?? '', (a.value ?? '').replace(/^"|"$/g, ''))
     if (Number(attrs.get('ecosystem_id')) !== ecosystemId) continue
+    const evCorporation = attrs.get('corporation')
+    if (corporation && evCorporation && evCorporation !== corporation) continue
     return {
       gfvId: toId(attrs.get('gfv_id')),
       version: toId(attrs.get('version')),
