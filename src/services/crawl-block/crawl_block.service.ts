@@ -584,7 +584,16 @@ export default class CrawlBlockService extends BullableService {
           }
 
           await throwIfHeapCriticalDuringCrawl('crawl-block:before-handleListBlock', this.logger)
-          await this.handleListBlock(mergeBlockResponses)
+          const blocksPersisted = await this.handleListBlock(mergeBlockResponses)
+
+          if (!blocksPersisted) {
+            this.logger.warn(
+              `Blocks ${startBlock}-${endBlock} were not persisted. Holding checkpoint at ${this._currentBlock} to retry them next cycle.`
+            )
+            mergeBlockResponses.length = 0
+            await this.adjustPollingInterval(latestBlockNetwork)
+            return
+          }
 
           // Calculate highest block BEFORE clearing arrays
           let highestSavedBlock = this._currentBlock
@@ -1106,7 +1115,7 @@ export default class CrawlBlockService extends BullableService {
     }
   }
 
-  async handleListBlock(listBlock: any[]) {
+  async handleListBlock(listBlock: any[]): Promise<boolean> {
     try {
       const listBlockHeight: number[] = []
       const mapExistedBlock = new Map<number, boolean>()
@@ -1200,14 +1209,23 @@ export default class CrawlBlockService extends BullableService {
         const { throttleDbPoolIfNeeded } = await import('../../common/utils/db_pool_guard')
         if (!(await throttleDbPoolIfNeeded(this.logger))) {
           this.logger.warn('[CRAWL_BLOCK] Skipping block insert this cycle due to pool pressure; will retry next run.')
-          return
+          return false
         }
 
         await this.ensurePartitionsExist(listBlockModel)
         await knex.transaction(async (trx) => {
           await Block.query().insertGraph(listBlockModel).timeout(getDbQueryTimeoutMs(60000)).transacting(trx)
-          await this.broker.call(SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path)
         })
+
+        try {
+          await this.broker.call(SERVICE.V1.CrawlTransaction.TriggerHandleTxJob.path)
+        } catch (error) {
+          this.logger.warn(
+            `[CRAWL_BLOCK] Blocks committed, but triggering the tx handler failed: ${
+              (error as Error)?.message ?? error
+            }. The tx crawler will pick them up on its own schedule.`
+          )
+        }
 
         // Clear the model array to help garbage collection
         listBlockModel.length = 0
@@ -1223,8 +1241,10 @@ export default class CrawlBlockService extends BullableService {
         listBlockHeight.length = 0
         mapExistedBlock.clear()
       }
+      return true
     } catch (error) {
       await handleErrorGracefully(error, SERVICE.V1.CrawlBlock.key, 'Error in handleListBlock')
+      return false
     }
   }
 
