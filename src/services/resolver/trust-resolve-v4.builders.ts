@@ -346,20 +346,10 @@ async function fetchCorporationByDid(did: string, atHeight?: number): Promise<Co
   return (await q.first()) as CorporationRow | undefined
 }
 
-async function fetchCorporationById(id: number, atHeight?: number): Promise<CorporationRow | undefined> {
-  const q = knex('corporation').where({ id })
-  await applyHeightFilter(q, 'corporation', atHeight)
-  return (await q.first()) as CorporationRow | undefined
-}
-
 export async function buildCorporation(did: string, atHeight?: number): Promise<Record<string, unknown> | null> {
   if (!did) return null
 
-  let corp = await fetchCorporationByDid(did, atHeight)
-  if (!corp) {
-    const corporationId = await resolveCorporationId(did, atHeight)
-    if (corporationId > 0) corp = await fetchCorporationById(corporationId, atHeight)
-  }
+  const corp = await fetchCorporationByDid(did, atHeight)
   if (!corp) return null
 
   const policyAddress =

@@ -2,6 +2,8 @@
  * Per-table knex mock. `__rows` maps a table name to the rows its query builder
  * resolves to. Every builder method returns the same chainable object, which is
  * thenable (resolves to the configured rows for the table it was created with).
+ * `where({ col: value })` narrows the rows, but only on columns a row declares,
+ * so fixtures that omit a filtered column still match every query.
  */
 const tableRows: Record<string, any[]> = {}
 
@@ -9,11 +11,22 @@ jest.mock('../../../../src/common/utils/db_connection', () => {
   function makeChain(table: string) {
     const chain: any = {}
     const passthrough = () => chain
+    const criteria: Array<Record<string, unknown>> = []
     for (const m of ['select', 'where', 'whereIn', 'whereNull', 'andWhere', 'orderBy', 'first']) {
       chain[m] = jest.fn(passthrough)
     }
-    chain.first = jest.fn(() => Promise.resolve((tableRows[table] ?? [])[0]))
-    chain.then = (resolve: any, reject: any) => Promise.resolve(tableRows[table] ?? []).then(resolve, reject)
+    for (const m of ['where', 'andWhere']) {
+      chain[m] = jest.fn((arg: unknown) => {
+        if (arg && typeof arg === 'object') criteria.push(arg as Record<string, unknown>)
+        return chain
+      })
+    }
+    const rows = () =>
+      (tableRows[table] ?? []).filter((row) =>
+        criteria.every((c) => Object.entries(c).every(([col, val]) => row[col] === undefined || row[col] === val))
+      )
+    chain.first = jest.fn(() => Promise.resolve(rows()[0]))
+    chain.then = (resolve: any, reject: any) => Promise.resolve(rows()).then(resolve, reject)
     return chain
   }
   const knexMock: any = jest.fn((table: string) => makeChain(table))
@@ -304,6 +317,14 @@ describe('buildCorporation', () => {
 
   it('returns null when no Corporation owns the DID', async () => {
     expect(await buildCorporation('did:example:none')).toBeNull()
+  })
+
+  it('returns null when the DID is merely owned by a Corporation and is not its declared did', async () => {
+    tableRows.corporation = [{ id: 8, did: 'did:example:corp-declared', policy_address: 'verana1ys0' }]
+    tableRows.ecosystem = [{ did: 'did:webvh:owned-ecosystem', corporation_id: 8 }]
+
+    expect(await buildCorporation('did:webvh:owned-ecosystem')).toBeNull()
+    expect(await resolveCorporationId('did:webvh:owned-ecosystem')).toBe(8)
   })
 
   it('joins the Corporation with its trust deposit and active CGF', async () => {
