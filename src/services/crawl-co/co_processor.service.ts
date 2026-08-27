@@ -5,7 +5,11 @@ import BullableService from '../../base/bullable.service'
 import { SERVICE } from '../../common'
 import { formatTimestamp } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { extractAddGfDocumentEvents, matchAddGfDocumentEvent } from '../../common/utils/gf_events'
+import {
+  extractAddGfDocumentEvents,
+  extractIncreaseGfActiveEvent,
+  matchAddGfDocumentEvent,
+} from '../../common/utils/gf_events'
 import { MessageProcessorBase } from '../../common/utils/message_processor_base'
 import { VeranaCorporationMessageTypes, VeranaGovernanceFrameworkMessageTypes } from '../../common/verana-message-types'
 
@@ -461,22 +465,48 @@ export default class CorporationMessageProcessorService extends BullableService 
       const timestamp = formatTimestamp(message.timestamp)
       const ecosystemId = Number(message.ecosystem_id ?? message.ecosystemId ?? 0)
 
-      const activeRow = (await trx('co_governance_framework_version')
-        .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId })
-        .whereNotNull('active_since')
-        .orderBy('version', 'desc')
-        .first()) as { version: number | string } | undefined
-      const currentVersion = activeRow ? Number(activeRow.version) : 0
-      const nextVersion = currentVersion + 1
+      // Prefer the chain event: local rows can miss the EGF v1 seeded at ecosystem creation.
+      const event = extractIncreaseGfActiveEvent(message.txEvents, ecosystemId, message.corporation)
+      let nextVersion: number
+      let gfv: GfvRow | undefined
+      if (event?.version) {
+        nextVersion = event.version
+        gfv = (await trx('co_governance_framework_version')
+          .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId, version: nextVersion })
+          .first()) as GfvRow | undefined
+        if (!gfv) {
+          ;[gfv] = (await trx('co_governance_framework_version')
+            .insert({
+              corporation_id: corporation.id,
+              ecosystem_id: ecosystemId,
+              version: nextVersion,
+              created: timestamp,
+              gfv_id: event.gfvId ?? null,
+            })
+            .returning('*')) as GfvRow[]
+        } else if (event.gfvId) {
+          await trx('co_governance_framework_version').where({ id: gfv.id }).whereNull('gfv_id').update({
+            gfv_id: event.gfvId,
+          })
+        }
+      } else {
+        const activeRow = (await trx('co_governance_framework_version')
+          .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId })
+          .whereNotNull('active_since')
+          .orderBy('version', 'desc')
+          .first()) as { version: number | string } | undefined
+        const currentVersion = activeRow ? Number(activeRow.version) : 0
+        nextVersion = currentVersion + 1
 
-      const gfv = (await trx('co_governance_framework_version')
-        .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId, version: nextVersion })
-        .first()) as GfvRow | undefined
-      if (!gfv) {
-        this.logger.warn(
-          `IncreaseActiveGovernanceFrameworkVersion: version ${nextVersion} not found for corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}. Retry needed.`
-        )
-        throw new Error(`GFV version ${nextVersion} not found for corporation_id=${corporation.id}, retry needed`)
+        gfv = (await trx('co_governance_framework_version')
+          .where({ corporation_id: corporation.id, ecosystem_id: ecosystemId, version: nextVersion })
+          .first()) as GfvRow | undefined
+        if (!gfv) {
+          this.logger.warn(
+            `IncreaseActiveGovernanceFrameworkVersion: version ${nextVersion} not found for corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}. Retry needed.`
+          )
+          throw new Error(`GFV version ${nextVersion} not found for corporation_id=${corporation.id}, retry needed`)
+        }
       }
 
       await trx('co_governance_framework_version').where({ id: gfv.id }).update({ active_since: timestamp })
