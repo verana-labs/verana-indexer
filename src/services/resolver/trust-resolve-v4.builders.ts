@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { fetchJson, type TrustResolution } from '@verana-labs/verre'
+import { fetchJson, type ResolvedCredential, type TrustResolution } from '@verana-labs/verre'
 import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toDate, toIso } from '../../common/utils/date_utils'
@@ -663,22 +663,27 @@ async function resolveIssuerParticipantId(issuerDid: string, credentialSchemaId:
   return row?.id != null ? Number(row.id) || 0 : 0
 }
 
+function linkedVpCredentials(resolution: TrustResolution): ResolvedCredential[] {
+  if (!Array.isArray(resolution.presentations)) return []
+  return resolution.presentations.flatMap((presentation) =>
+    Array.isArray(presentation?.credentials) ? presentation.credentials : []
+  )
+}
+
 export async function buildEcsCredentials(resolveResult: unknown): Promise<Array<Record<string, unknown>>> {
   const resolution = resolveResult as TrustResolution | null
   if (!resolution || typeof resolution !== 'object') return []
 
   const out: Array<Record<string, unknown>> = []
-  const seenIds = new Set<string>()
   const seenDigests = new Set<string>()
-  for (const credential of [resolution.service, resolution.serviceProvider]) {
+  for (const credential of [resolution.service, resolution.serviceProvider, ...linkedVpCredentials(resolution)]) {
     if (!credential) continue
     const ecsSchema = ECS_SCHEMA_TITLE_BY_TYPE[String(credential.ecs ?? '').toLowerCase()]
     if (!ecsSchema) continue
 
     const { id, digestJCS, issuedAtTime } = credential
     if (!id || !digestJCS || !issuedAtTime) continue
-    if (seenIds.has(id) || seenDigests.has(digestJCS)) continue
-    seenIds.add(id)
+    if (seenDigests.has(digestJCS)) continue
     seenDigests.add(digestJCS)
 
     const holder = credential.subjectParticipants?.find((participant) => String(participant.role) === 'HOLDER')

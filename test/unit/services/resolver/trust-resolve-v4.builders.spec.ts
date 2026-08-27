@@ -264,15 +264,52 @@ describe('buildEcsCredentials', () => {
     expect(await buildEcsCredentials({ service: { ...service, id: '' } })).toEqual([])
   })
 
-  it('excludes same-response duplicates by id and by digestJCS', async () => {
-    const byId = await buildEcsCredentials({ service, serviceProvider: { ...service, ecs: 'ecs-org' } })
-    expect(byId).toHaveLength(1)
-
-    const byDigest = await buildEcsCredentials({
+  it('excludes same-response duplicates by digestJCS', async () => {
+    const out = await buildEcsCredentials({
       service,
       serviceProvider: { ...service, ecs: 'ecs-org', id: 'urn:uuid:other-vc' },
     })
-    expect(byDigest).toHaveLength(1)
+    expect(out).toHaveLength(1)
+  })
+
+  it('keeps distinct credentials that share the same VC id', async () => {
+    const out = await buildEcsCredentials({
+      service,
+      serviceProvider: { ...service, ecs: 'ecs-org', digestJCS: 'b3RoZXJkaWdlc3Q=' },
+    })
+    expect(out.map((entry) => entry.ecsSchema)).toEqual(['ServiceCredential', 'OrganizationCredential'])
+    expect(new Set(out.map((entry) => entry.id))).toEqual(new Set(['urn:uuid:service-vc-1']))
+  })
+
+  it('surfaces ECS credentials carried by the linked VPs beyond the trust anchors', async () => {
+    const out = await buildEcsCredentials({
+      service,
+      presentations: [
+        {
+          serviceId: 'did:example:sub#org-vp',
+          credentials: [{ ...service, ecs: 'ecs-org', digestJCS: 'b3JnZGlnZXN0' }],
+        },
+        { serviceId: 'did:example:sub#service-vp', credentials: [service] },
+        {
+          serviceId: 'did:example:sub#badge-vp',
+          credentials: [{ ...service, ecs: 'ecs-badge', digestJCS: 'YmFkZ2VkaWdlc3Q=' }],
+        },
+      ],
+    })
+    expect(out.map((entry) => entry.ecsSchema)).toEqual([
+      'ServiceCredential',
+      'OrganizationCredential',
+      'BadgeCredential',
+    ])
+  })
+
+  it('ignores non-ECS credentials carried by the linked VPs', async () => {
+    const out = await buildEcsCredentials({
+      presentations: [
+        { serviceId: 'did:example:sub#vtc-vp', credentials: [{ ...service, ecs: null, digestJCS: 'dnRjZGlnZXN0' }] },
+      ],
+    })
+    expect(out).toEqual([])
   })
 
   it('emits both entries when they are distinct credentials', async () => {
