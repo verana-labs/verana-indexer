@@ -2,7 +2,7 @@ import { Service } from '@ourparentcenter/moleculer-decorators-extended'
 import _ from 'lodash'
 import { ServiceBroker } from 'moleculer'
 import BullableService, { QueueHandler } from '../../base/bullable.service'
-import { BULL_JOB_NAME, Config, SERVICE } from '../../common'
+import { BULL_JOB_NAME, Config, MSG_TYPE, SERVICE } from '../../common'
 import knex from '../../common/utils/db_connection'
 import { getAttributeFrom } from '../../common/utils/smart_contract'
 import config from '../../config.json' with { type: 'json' }
@@ -112,6 +112,11 @@ export default class HandleFeegrantHistoryService extends BullableService {
           const message = feegrantEvent.message.content
           // eslint-disable-next-line @typescript-eslint/naming-convention
           const { type, spend_limit, denom, expiration } = this.getCreateFeegrantInfo(message)
+          if (!type) {
+            this.logger.warn(
+              `set_feegrant from non-grant message ${message?.['@type']} (tx ${feegrantEvent.transaction.id}): recording grant without allowance details`
+            )
+          }
           newFeegrants.push(
             Feegrant.fromJson({
               init_tx_id: feegrantEvent.transaction.id,
@@ -164,18 +169,18 @@ export default class HandleFeegrantHistoryService extends BullableService {
   }
 
   getCreateFeegrantInfo(message: any): {
-    type: string
+    type: string | null
     spend_limit: string | undefined
     denom: string | undefined
     expiration: Date | undefined
   } {
     let spendLimit: any
     let denom: any
-    let basicAllowance = message.allowance
-    let type = basicAllowance['@type']
-    while (type !== ALLOWANCE_TYPE.BASIC_ALLOWANCE && type !== ALLOWANCE_TYPE.PERIODIC_ALLOWANCE) {
+    let basicAllowance = message?.allowance
+    let type = basicAllowance?.['@type'] ?? null
+    while (basicAllowance && type !== ALLOWANCE_TYPE.BASIC_ALLOWANCE && type !== ALLOWANCE_TYPE.PERIODIC_ALLOWANCE) {
       basicAllowance = basicAllowance.allowance
-      type = basicAllowance['@type']
+      type = basicAllowance?.['@type'] ?? null
     }
     if (type === ALLOWANCE_TYPE.PERIODIC_ALLOWANCE) {
       basicAllowance = basicAllowance.basic
@@ -184,7 +189,8 @@ export default class HandleFeegrantHistoryService extends BullableService {
       spendLimit = basicAllowance.spend_limit[0].amount // need upgrade
       denom = basicAllowance.spend_limit[0].denom
     }
-    if (!type) throw new Error('Cannot detect feegrant type')
+    // A grant message with an unresolvable allowance is a decode gap; anything else carries no allowance by design.
+    if (!type && message?.['@type'] === MSG_TYPE.MSG_GRANT_ALLOWANCE) throw new Error('Cannot detect feegrant type')
     return {
       type,
       spend_limit: spendLimit,
