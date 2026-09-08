@@ -1,7 +1,7 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
-import { SERVICE } from '../../common'
+import { BULL_JOB_NAME, SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight } from '../../common/utils/blockHeight'
@@ -183,6 +183,8 @@ export default class DelegationApiService extends BaseService {
 
       const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
       const blockHeight = getBlockHeight(ctx)
+      // read before the rows: the checkpoint then never claims a height the rows do not cover
+      const atBlock = blockHeight ?? (await this.delegationAtBlock())
 
       const query =
         blockHeight !== undefined
@@ -199,12 +201,21 @@ export default class DelegationApiService extends BaseService {
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
       return ApiResponder.success(ctx, {
+        atBlock,
         authorizations: rows.map(serializeOperatorAuthorizationRow),
       })
     } catch (err: any) {
       this.logger.error('Error in Delegation.listOperatorAuthorizations:', err)
       return ApiResponder.error(ctx, `Failed to list operator authorizations: ${err?.message || String(err)}`, 500)
     }
+  }
+
+  private async delegationAtBlock(): Promise<number> {
+    const row = await knex('block_checkpoint')
+      .select('height')
+      .where('job_name', BULL_JOB_NAME.HANDLE_DELEGATION)
+      .first()
+    return Number(row?.height ?? 0)
   }
 
   private buildAtHeightListQuery(blockHeight: number) {
@@ -267,6 +278,8 @@ export default class DelegationApiService extends BaseService {
 
       const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
       const blockHeight = getBlockHeight(ctx)
+      // read before the rows: the checkpoint then never claims a height the rows do not cover
+      const atBlock = blockHeight ?? (await this.delegationAtBlock())
 
       const query =
         blockHeight !== undefined
@@ -283,6 +296,7 @@ export default class DelegationApiService extends BaseService {
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
       return ApiResponder.success(ctx, {
+        atBlock,
         authorizations: rows.map(serializeVSOperatorAuthorizationRow),
       })
     } catch (err: any) {

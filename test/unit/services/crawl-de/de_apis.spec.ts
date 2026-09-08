@@ -67,6 +67,7 @@ function listQueryResolvesTo(rows: unknown[]) {
   qb.distinctOn = jest.fn(() => qb)
   qb.as = jest.fn(() => qb)
   qb.limit = jest.fn(() => Promise.resolve(rows))
+  qb.first = jest.fn(() => Promise.resolve({ height: 1234 }))
   mockKnexTable.mockReturnValue(qb)
   mockKnexFrom.mockReturnValue(qb)
   return qb
@@ -99,6 +100,7 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
     const ctx: any = { params: {}, meta: {} }
     const res: any = await service.listOperatorAuthorizations(ctx)
 
+    expect(res.atBlock).toBe(1234)
     expect(res.authorizations).toHaveLength(1)
     const entry = res.authorizations[0]
     expect(entry).toEqual({
@@ -113,6 +115,16 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
     })
     expect(entry).not.toHaveProperty('fee_spend_limit')
     expect(entry).not.toHaveProperty('remaining_fee_spend')
+  })
+
+  it('echoes At-Block-Height as atBlock and leaves the checkpoint unread', async () => {
+    const qb = listQueryResolvesTo([operatorAuthorizationRow()])
+
+    const ctx: any = { params: {}, meta: { blockHeight: 900 } }
+    const res: any = await service.listOperatorAuthorizations(ctx)
+
+    expect(res.atBlock).toBe(900)
+    expect(qb.first).not.toHaveBeenCalled()
   })
 
   it('getOperatorAuthorization omits fee fields on the latest-state path', async () => {
