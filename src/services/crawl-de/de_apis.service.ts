@@ -183,6 +183,8 @@ export default class DelegationApiService extends BaseService {
 
       const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
       const blockHeight = getBlockHeight(ctx)
+      // read before the rows: the checkpoint then never claims a height the rows do not cover
+      const atBlock = blockHeight ?? (await this.delegationAtBlock())
 
       const query =
         blockHeight !== undefined
@@ -199,7 +201,7 @@ export default class DelegationApiService extends BaseService {
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
       return ApiResponder.success(ctx, {
-        atBlock: await this.delegationAtBlock(),
+        atBlock,
         authorizations: rows.map(serializeOperatorAuthorizationRow),
       })
     } catch (err: any) {
@@ -276,6 +278,8 @@ export default class DelegationApiService extends BaseService {
 
       const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
       const blockHeight = getBlockHeight(ctx)
+      // read before the rows: the checkpoint then never claims a height the rows do not cover
+      const atBlock = blockHeight ?? (await this.delegationAtBlock())
 
       const query =
         blockHeight !== undefined
@@ -292,7 +296,7 @@ export default class DelegationApiService extends BaseService {
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
       return ApiResponder.success(ctx, {
-        atBlock: await this.delegationAtBlock(),
+        atBlock,
         authorizations: rows.map(serializeVSOperatorAuthorizationRow),
       })
     } catch (err: any) {

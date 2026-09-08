@@ -117,6 +117,16 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
     expect(entry).not.toHaveProperty('remaining_fee_spend')
   })
 
+  it('echoes At-Block-Height as atBlock and leaves the checkpoint unread', async () => {
+    const qb = listQueryResolvesTo([operatorAuthorizationRow()])
+
+    const ctx: any = { params: {}, meta: { blockHeight: 900 } }
+    const res: any = await service.listOperatorAuthorizations(ctx)
+
+    expect(res.atBlock).toBe(900)
+    expect(qb.first).not.toHaveBeenCalled()
+  })
+
   it('getOperatorAuthorization omits fee fields on the latest-state path', async () => {
     findByIdResolvesTo(OperatorAuthorization as unknown as { query: jest.Mock }, operatorAuthorizationRow())
 
