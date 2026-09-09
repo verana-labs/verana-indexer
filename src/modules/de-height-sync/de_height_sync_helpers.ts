@@ -127,41 +127,41 @@ export function serializeLedgerVSOperatorAuthorization(
   }
 }
 
-// The chain reports a deleted record as a NotFound error, so the callers' delete branch needs undefined
-function isNotFoundError(error: unknown): boolean {
-  return /not found|NotFound|key not found/i.test((error as Error)?.message ?? '')
+// Match the ABCI status only: a transport error like ENOTFOUND must never read as a deleted record
+function isAbciNotFound(error: unknown): boolean {
+  return /code = NotFound/.test((error as Error)?.message ?? '')
 }
 
 export async function fetchOperatorAuthorization(
   id: number,
   blockHeight: number | undefined
 ): Promise<LedgerOperatorAuthorization | undefined> {
-  try {
-    return await withAbciQueryClient(blockHeight, async (rpc) => {
-      const query = new DeQueryClientImpl(rpc)
+  return withAbciQueryClient(blockHeight, async (rpc) => {
+    const query = new DeQueryClientImpl(rpc)
+    try {
       const res = await query.GetOperatorAuthorization(QueryGetOperatorAuthorizationRequest.fromPartial({ id }))
       return res?.operatorAuthorization ?? undefined
-    })
-  } catch (error) {
-    if (isNotFoundError(error)) return undefined
-    throw error
-  }
+    } catch (error) {
+      if (isAbciNotFound(error)) return undefined
+      throw error
+    }
+  })
 }
 
 export async function fetchVSOperatorAuthorization(
   id: number,
   blockHeight: number | undefined
 ): Promise<LedgerVSOperatorAuthorization | undefined> {
-  try {
-    return await withAbciQueryClient(blockHeight, async (rpc) => {
-      const query = new DeQueryClientImpl(rpc)
+  return withAbciQueryClient(blockHeight, async (rpc) => {
+    const query = new DeQueryClientImpl(rpc)
+    try {
       const res = await query.GetVSOperatorAuthorization(QueryGetVSOperatorAuthorizationRequest.fromPartial({ id }))
       return res?.vsOperatorAuthorization ?? undefined
-    })
-  } catch (error) {
-    if (isNotFoundError(error)) return undefined
-    throw error
-  }
+    } catch (error) {
+      if (isAbciNotFound(error)) return undefined
+      throw error
+    }
+  })
 }
 
 function unwrapFeeAllowance(typeUrl: string, value: Uint8Array): FeeAllowanceSnapshot | undefined {
