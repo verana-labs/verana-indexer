@@ -127,14 +127,24 @@ export function serializeLedgerVSOperatorAuthorization(
   }
 }
 
+// Match the ABCI status only: a transport error like ENOTFOUND must never read as a deleted record
+function isAbciNotFound(error: unknown): boolean {
+  return /code = NotFound/.test((error as Error)?.message ?? '')
+}
+
 export async function fetchOperatorAuthorization(
   id: number,
   blockHeight: number | undefined
 ): Promise<LedgerOperatorAuthorization | undefined> {
   return withAbciQueryClient(blockHeight, async (rpc) => {
     const query = new DeQueryClientImpl(rpc)
-    const res = await query.GetOperatorAuthorization(QueryGetOperatorAuthorizationRequest.fromPartial({ id }))
-    return res?.operatorAuthorization ?? undefined
+    try {
+      const res = await query.GetOperatorAuthorization(QueryGetOperatorAuthorizationRequest.fromPartial({ id }))
+      return res?.operatorAuthorization ?? undefined
+    } catch (error) {
+      if (isAbciNotFound(error)) return undefined
+      throw error
+    }
   })
 }
 
@@ -144,8 +154,13 @@ export async function fetchVSOperatorAuthorization(
 ): Promise<LedgerVSOperatorAuthorization | undefined> {
   return withAbciQueryClient(blockHeight, async (rpc) => {
     const query = new DeQueryClientImpl(rpc)
-    const res = await query.GetVSOperatorAuthorization(QueryGetVSOperatorAuthorizationRequest.fromPartial({ id }))
-    return res?.vsOperatorAuthorization ?? undefined
+    try {
+      const res = await query.GetVSOperatorAuthorization(QueryGetVSOperatorAuthorizationRequest.fromPartial({ id }))
+      return res?.vsOperatorAuthorization ?? undefined
+    } catch (error) {
+      if (isAbciNotFound(error)) return undefined
+      throw error
+    }
   })
 }
 
