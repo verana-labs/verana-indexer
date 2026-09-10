@@ -20,6 +20,8 @@ export default class Stats extends BaseModel {
   cumulative_participants_verifier_grantor!: number
   cumulative_participants_verifier!: number
   cumulative_participants_holder!: number
+  cumulative_active_ecosystems!: number
+  cumulative_archived_ecosystems!: number
   cumulative_active_schemas!: number
   cumulative_archived_schemas!: number
   cumulative_weight!: number
@@ -40,6 +42,8 @@ export default class Stats extends BaseModel {
   delta_participants_verifier_grantor!: number
   delta_participants_verifier!: number
   delta_participants_holder!: number
+  delta_active_ecosystems!: number
+  delta_archived_ecosystems!: number
   delta_active_schemas!: number
   delta_archived_schemas!: number
   delta_weight!: number
@@ -69,6 +73,8 @@ export default class Stats extends BaseModel {
         'cumulative_participants_verifier_grantor',
         'cumulative_participants_verifier',
         'cumulative_participants_holder',
+        'cumulative_active_ecosystems',
+        'cumulative_archived_ecosystems',
         'cumulative_active_schemas',
         'cumulative_archived_schemas',
         'cumulative_weight',
@@ -81,6 +87,8 @@ export default class Stats extends BaseModel {
         'cumulative_network_slashed_amount',
         'cumulative_network_slashed_amount_repaid',
         'delta_participants',
+        'delta_active_ecosystems',
+        'delta_archived_ecosystems',
         'delta_active_schemas',
         'delta_archived_schemas',
         'delta_weight',

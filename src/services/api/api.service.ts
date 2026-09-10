@@ -406,6 +406,7 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET get': `${SERVICE.V1.StatsAPIService.path}.get`,
         'GET stats': `${SERVICE.V1.StatsAPIService.path}.stats`,
         'GET count-participants': `${SERVICE.V1.StatsAPIService.path}.getParticipantsAtHeight`,
+        'GET snapshot': `${SERVICE.V1.StatsAPIService.path}.getSnapshot`,
       }),
       {
         path: '/',

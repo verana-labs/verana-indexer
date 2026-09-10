@@ -3,11 +3,17 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import Stats, { EntityType, Granularity } from '../../models/stats'
 import { getResolvedBlockHeight } from '../crawl-co/co_stats'
+import {
+  computeSnapshotMetrics,
+  getBlockTimeAtHeight,
+  SNAPSHOT_ENTITY_KIND,
+  SNAPSHOT_PARTICIPANT_FIELDS,
+} from './stats_snapshot'
 
 const NON_STATS_ENTRY_FIELDS = [
   'created_at',
@@ -45,6 +51,8 @@ export default class StatsAPIService extends BaseService {
       'id',
       'entity_id',
       'cumulative_participants',
+      'cumulative_active_ecosystems',
+      'cumulative_archived_ecosystems',
       'cumulative_active_schemas',
       'cumulative_archived_schemas',
       'cumulative_weight',
@@ -57,6 +65,8 @@ export default class StatsAPIService extends BaseService {
       'cumulative_network_slashed_amount',
       'cumulative_network_slashed_amount_repaid',
       'delta_participants',
+      'delta_active_ecosystems',
+      'delta_archived_ecosystems',
       'delta_active_schemas',
       'delta_archived_schemas',
       'delta_weight',
@@ -455,6 +465,8 @@ export default class StatsAPIService extends BaseService {
         const totalResult = await totalQuery
           .select(
             knex.raw('COALESCE(SUM(delta_participants), 0) as delta_participants'),
+            knex.raw('COALESCE(SUM(delta_active_ecosystems), 0) as delta_active_ecosystems'),
+            knex.raw('COALESCE(SUM(delta_archived_ecosystems), 0) as delta_archived_ecosystems'),
             knex.raw('COALESCE(SUM(delta_active_schemas), 0) as delta_active_schemas'),
             knex.raw('COALESCE(SUM(delta_archived_schemas), 0) as delta_archived_schemas'),
             knex.raw('COALESCE(SUM(CAST(delta_weight AS NUMERIC)), 0) as delta_weight'),
@@ -493,6 +505,8 @@ export default class StatsAPIService extends BaseService {
           return this.normalizeStatsRecord({
             timestamp: timestamp.toISOString().replace(/\.\d{3}Z$/, 'Z'),
             cumulative_participants: bucket.cumulative_participants,
+            cumulative_active_ecosystems: bucket.cumulative_active_ecosystems,
+            cumulative_archived_ecosystems: bucket.cumulative_archived_ecosystems,
             cumulative_active_schemas: bucket.cumulative_active_schemas,
             cumulative_archived_schemas: bucket.cumulative_archived_schemas,
             cumulative_weight: bucket.cumulative_weight,
@@ -505,6 +519,8 @@ export default class StatsAPIService extends BaseService {
             cumulative_network_slashed_amount: bucket.cumulative_network_slashed_amount,
             cumulative_network_slashed_amount_repaid: bucket.cumulative_network_slashed_amount_repaid,
             delta_participants: bucket.delta_participants,
+            delta_active_ecosystems: bucket.delta_active_ecosystems,
+            delta_archived_ecosystems: bucket.delta_archived_ecosystems,
             delta_active_schemas: bucket.delta_active_schemas,
             delta_archived_schemas: bucket.delta_archived_schemas,
             delta_weight: bucket.delta_weight,
@@ -523,6 +539,8 @@ export default class StatsAPIService extends BaseService {
       if (resultType === 'TOTAL' || resultType === 'BUCKETS_AND_TOTAL') {
         response.total = {
           delta_participants: Number(total?.delta_participants || 0),
+          delta_active_ecosystems: Number(total?.delta_active_ecosystems || 0),
+          delta_archived_ecosystems: Number(total?.delta_archived_ecosystems || 0),
           delta_active_schemas: Number(total?.delta_active_schemas || 0),
           delta_archived_schemas: Number(total?.delta_archived_schemas || 0),
           delta_weight: Number(total?.delta_weight || 0),
@@ -600,6 +618,66 @@ export default class StatsAPIService extends BaseService {
       )
     } catch (err: unknown) {
       this.logger.error('Error in getParticipantsAtHeight:', err)
+      return ApiResponder.error(ctx, 'Internal Server Error', 500)
+    }
+  }
+
+  @Action({
+    name: 'getSnapshot',
+    params: {
+      entity_type: {
+        type: 'enum',
+        values: ['GLOBAL', 'ECOSYSTEM', 'CREDENTIAL_SCHEMA', 'PARTICIPANT'],
+        optional: true,
+        default: 'GLOBAL',
+      },
+      entity_id: { type: 'string', optional: true },
+    },
+  })
+  public async getSnapshot(ctx: Context<{ entity_type?: EntityType; entity_id?: string }>): Promise<unknown> {
+    try {
+      const entityType = ctx.params.entity_type ?? 'GLOBAL'
+      const rawEntityId = ctx.params.entity_id
+      let entityId: number | null = null
+
+      if (entityType === 'GLOBAL') {
+        if (rawEntityId) return ApiResponder.error(ctx, 'entity_id must be omitted for GLOBAL entity_type', 400)
+      } else {
+        if (!rawEntityId) return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400)
+        const parsedId = /^\d+$/.test(rawEntityId) ? Number(rawEntityId) : Number.NaN
+        if (!Number.isSafeInteger(parsedId) || parsedId <= 0) {
+          return ApiResponder.error(ctx, 'entity_id must be a positive, safe integer identifier', 400)
+        }
+        entityId = parsedId
+      }
+
+      const atHeight = hasBlockHeight(ctx)
+      const height = await getResolvedBlockHeight(getBlockHeight(ctx))
+      const metrics = await computeSnapshotMetrics(entityType, entityId, height, atHeight)
+      if (!metrics) return ApiResponder.error(ctx, `${entityType} ${entityId} not found`, 404)
+
+      const entityKind = SNAPSHOT_ENTITY_KIND[entityType]
+      const [timestamp, ...counts] = await Promise.all([
+        getBlockTimeAtHeight(height),
+        ...SNAPSHOT_PARTICIPANT_FIELDS.map((_, roleType) =>
+          this.getParticipantsAtHeightInternal({ entityKind, entityId, roleType, height })
+        ),
+      ])
+
+      return ApiResponder.success(
+        ctx,
+        {
+          entity_type: entityType,
+          entity_id: entityId,
+          block_height: height,
+          timestamp,
+          ...Object.fromEntries(SNAPSHOT_PARTICIPANT_FIELDS.map((field, i) => [field, counts[i]])),
+          ...metrics,
+        },
+        200
+      )
+    } catch (err: unknown) {
+      this.logger.error('Error in getSnapshot:', err)
       return ApiResponder.error(ctx, 'Internal Server Error', 500)
     }
   }

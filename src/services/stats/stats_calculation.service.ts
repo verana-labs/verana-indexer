@@ -112,16 +112,19 @@ export default class StatsCalculationService extends BullableService {
       const schemaCount = await knex('credential_schemas').where('created', '<=', timestamp).count('* as count').first()
       this.logger.info(`GLOBAL [${granularity}] Schemas query result:`, schemaCount)
 
+      const ecosystemCount = await knex('ecosystem').where('created', '<=', timestamp).count('* as count').first()
+
       const participantCountNum = Number(participantCount?.count || 0)
       const schemaCountNum = Number(schemaCount?.count || 0)
+      const ecosystemCountNum = Number(ecosystemCount?.count || 0)
       this.logger.info(
-        `GLOBAL [${granularity}] Found ${participantCountNum} participants and ${schemaCountNum} schemas`
+        `GLOBAL [${granularity}] Found ${participantCountNum} participants, ${schemaCountNum} schemas and ${ecosystemCountNum} ecosystems`
       )
 
-      const hasEntities = participantCountNum > 0 || schemaCountNum > 0
+      const hasEntities = participantCountNum > 0 || schemaCountNum > 0 || ecosystemCountNum > 0
 
       if (!hasEntities) {
-        const skipMsg = `GLOBAL [${granularity}] SKIPPING - no entities exist (participants: ${participantCountNum}, schemas: ${schemaCountNum})`
+        const skipMsg = `GLOBAL [${granularity}] SKIPPING - no entities exist (participants: ${participantCountNum}, schemas: ${schemaCountNum}, ecosystems: ${ecosystemCountNum})`
         this.logger.warn(skipMsg)
         return
       }
@@ -254,7 +257,7 @@ export default class StatsCalculationService extends BullableService {
           const stats = await this.computeEcosystemStats(String(ec.id), timestamp)
 
           if (!stats) {
-            this.logger.debug(`[ECOSYSTEM] No stats computed for EC ${ec.id} (no schemas) - skipping`)
+            this.logger.debug(`[ECOSYSTEM] No stats computed for EC ${ec.id} (created after bucket) - skipping`)
             continue
           }
 
@@ -646,6 +649,8 @@ export default class StatsCalculationService extends BullableService {
       participants_verifier_grantor: 0,
       participants_verifier: 0,
       participants_holder: 0,
+      active_ecosystems: 0,
+      archived_ecosystems: 0,
       active_schemas: 0,
       archived_schemas: 0,
       weight: BigInt(0),
@@ -677,6 +682,16 @@ export default class StatsCalculationService extends BullableService {
       cumulative.network_slashed_amount += BigInt(participant.network_slashed_amount || '0')
       cumulative.network_slashed_amount_repaid += BigInt(participant.network_slashed_amount_repaid || '0')
     }
+
+    const ecosystemCounts = await knex('ecosystem')
+      .where('created', '<=', timestamp)
+      .select(
+        knex.raw('COUNT(*) FILTER (WHERE archived IS NULL) as active_ecosystems'),
+        knex.raw('COUNT(*) FILTER (WHERE archived IS NOT NULL) as archived_ecosystems')
+      )
+      .first()
+    cumulative.active_ecosystems = Number(ecosystemCounts?.active_ecosystems || 0)
+    cumulative.archived_ecosystems = Number(ecosystemCounts?.archived_ecosystems || 0)
 
     const activeSchemas = await knex('credential_schemas')
       .whereNull('archived')
@@ -710,6 +725,8 @@ export default class StatsCalculationService extends BullableService {
         cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
       participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
       participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
+      active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
+      archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || '0'),
@@ -736,6 +753,8 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
       cumulative_participants_verifier: cumulative.participants_verifier,
       cumulative_participants_holder: cumulative.participants_holder,
+      cumulative_active_ecosystems: cumulative.active_ecosystems,
+      cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -754,6 +773,8 @@ export default class StatsCalculationService extends BullableService {
       delta_participants_verifier_grantor: delta.participants_verifier_grantor,
       delta_participants_verifier: delta.participants_verifier,
       delta_participants_holder: delta.participants_holder,
+      delta_active_ecosystems: delta.active_ecosystems,
+      delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -774,11 +795,14 @@ export default class StatsCalculationService extends BullableService {
       .where('created', '<=', timestamp)
       .select('id')
 
-    const schemaIds = schemas.map((s) => String(s.id))
+    const ecosystem = await knex('ecosystem')
+      .where('id', ecosystemId)
+      .where('created', '<=', timestamp)
+      .select('archived')
+      .first()
+    if (!ecosystem) return null
 
-    if (schemaIds.length === 0) {
-      return null
-    }
+    const schemaIds = schemas.map((s) => String(s.id))
 
     const participants = await knex('participants')
       .whereIn('schema_id', schemaIds)
@@ -810,6 +834,8 @@ export default class StatsCalculationService extends BullableService {
       participants_verifier_grantor: 0,
       participants_verifier: 0,
       participants_holder: 0,
+      active_ecosystems: 0,
+      archived_ecosystems: 0,
       active_schemas: 0,
       archived_schemas: 0,
       weight: BigInt(0),
@@ -859,6 +885,9 @@ export default class StatsCalculationService extends BullableService {
     cumulative.active_schemas = Number(activeSchemas?.count || 0)
     cumulative.archived_schemas = Number(archivedSchemas?.count || 0)
 
+    cumulative.active_ecosystems = ecosystem.archived === null ? 1 : 0
+    cumulative.archived_ecosystems = ecosystem.archived === null ? 0 : 1
+
     const prevStats = await Stats.query()
       .where('entity_type', 'ECOSYSTEM')
       .where('entity_id', ecosystemId)
@@ -876,6 +905,8 @@ export default class StatsCalculationService extends BullableService {
         cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
       participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
       participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
+      active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
+      archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || '0'),
@@ -902,6 +933,8 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
       cumulative_participants_verifier: cumulative.participants_verifier,
       cumulative_participants_holder: cumulative.participants_holder,
+      cumulative_active_ecosystems: cumulative.active_ecosystems,
+      cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -920,6 +953,8 @@ export default class StatsCalculationService extends BullableService {
       delta_participants_verifier_grantor: delta.participants_verifier_grantor,
       delta_participants_verifier: delta.participants_verifier,
       delta_participants_holder: delta.participants_holder,
+      delta_active_ecosystems: delta.active_ecosystems,
+      delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -965,6 +1000,8 @@ export default class StatsCalculationService extends BullableService {
       participants_verifier_grantor: 0,
       participants_verifier: 0,
       participants_holder: 0,
+      active_ecosystems: 0,
+      archived_ecosystems: 0,
       active_schemas: 0,
       archived_schemas: 0,
       weight: BigInt(0),
@@ -1025,6 +1062,8 @@ export default class StatsCalculationService extends BullableService {
         cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
       participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
       participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
+      active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
+      archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || '0'),
@@ -1051,6 +1090,8 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
       cumulative_participants_verifier: cumulative.participants_verifier,
       cumulative_participants_holder: cumulative.participants_holder,
+      cumulative_active_ecosystems: cumulative.active_ecosystems,
+      cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -1069,6 +1110,8 @@ export default class StatsCalculationService extends BullableService {
       delta_participants_verifier_grantor: delta.participants_verifier_grantor,
       delta_participants_verifier: delta.participants_verifier,
       delta_participants_holder: delta.participants_holder,
+      delta_active_ecosystems: delta.active_ecosystems,
+      delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -1125,6 +1168,8 @@ export default class StatsCalculationService extends BullableService {
       participants_verifier_grantor: Number(participant.participants_verifier_grantor || 0),
       participants_verifier: Number(participant.participants_verifier || 0),
       participants_holder: Number(participant.participants_holder || 0),
+      active_ecosystems: 0,
+      archived_ecosystems: 0,
       active_schemas: schema && schema.archived === null ? 1 : 0,
       archived_schemas: schema && schema.archived !== null ? 1 : 0,
       weight: BigInt(participant.weight || '0'),
@@ -1155,6 +1200,8 @@ export default class StatsCalculationService extends BullableService {
         cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
       participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
       participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
+      active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
+      archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
       archived_schemas: cumulative.archived_schemas - (prevStats?.cumulative_archived_schemas || 0),
       weight: cumulative.weight - BigInt(prevStats?.cumulative_weight || '0'),
@@ -1181,6 +1228,8 @@ export default class StatsCalculationService extends BullableService {
       cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
       cumulative_participants_verifier: cumulative.participants_verifier,
       cumulative_participants_holder: cumulative.participants_holder,
+      cumulative_active_ecosystems: cumulative.active_ecosystems,
+      cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
       cumulative_archived_schemas: cumulative.archived_schemas,
       cumulative_weight: Number(cumulative.weight),
@@ -1199,6 +1248,8 @@ export default class StatsCalculationService extends BullableService {
       delta_participants_verifier_grantor: delta.participants_verifier_grantor,
       delta_participants_verifier: delta.participants_verifier,
       delta_participants_holder: delta.participants_holder,
+      delta_active_ecosystems: delta.active_ecosystems,
+      delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
       delta_archived_schemas: delta.archived_schemas,
       delta_weight: Number(delta.weight),
@@ -1232,6 +1283,8 @@ export default class StatsCalculationService extends BullableService {
       'delta_participants_verifier_grantor',
       'delta_participants_verifier',
       'delta_participants_holder',
+      'delta_active_ecosystems',
+      'delta_archived_ecosystems',
       'delta_active_schemas',
       'delta_archived_schemas',
       'delta_weight',
@@ -1280,6 +1333,8 @@ export default class StatsCalculationService extends BullableService {
       'cumulative_participants_verifier_grantor',
       'cumulative_participants_verifier',
       'cumulative_participants_holder',
+      'cumulative_active_ecosystems',
+      'cumulative_archived_ecosystems',
       'cumulative_active_schemas',
       'cumulative_archived_schemas',
       'cumulative_weight',
@@ -1298,6 +1353,8 @@ export default class StatsCalculationService extends BullableService {
       'delta_participants_verifier_grantor',
       'delta_participants_verifier',
       'delta_participants_holder',
+      'delta_active_ecosystems',
+      'delta_archived_ecosystems',
       'delta_active_schemas',
       'delta_archived_schemas',
       'delta_weight',
