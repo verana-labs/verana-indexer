@@ -150,6 +150,18 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
         modified: T3,
         height: 120,
       }),
+      seedRow({
+        id: 4,
+        corporation_id: 2,
+        operator: 'verana1opC',
+        msg_types: [EC_CREATE],
+        spend_limit: JSON.stringify([{ denom: 'uvna', amount: '500' }]),
+        remaining_spend: JSON.stringify([{ denom: 'uvna', amount: '500' }]),
+        expiration: PAST,
+        period: '604800s',
+        modified: T3,
+        height: 130,
+      }),
     ])
   })
 
@@ -161,11 +173,11 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
     broker.call(`${serviceKey}.listOperatorAuthorizations`, params) as Promise<any>
 
   it('returns all rows newest-first by default (-id)', async () => {
-    expect(listedIds(await list())).toEqual([3, 2, 1])
+    expect(listedIds(await list())).toEqual([4, 3, 2, 1])
   })
 
   it('sorts ascending with sort=+id', async () => {
-    expect(listedIds(await list({ sort: '+id' }))).toEqual([1, 2, 3])
+    expect(listedIds(await list({ sort: '+id' }))).toEqual([1, 2, 3, 4])
   })
 
   it('rejects an unsupported sort column', async () => {
@@ -185,18 +197,18 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
     expect(listedIds(await list({ msg_type: EC_UPDATE }))).toEqual([1])
   })
 
-  it('only_active excludes expired authorizations (keeps null/future expiration)', async () => {
-    expect(listedIds(await list({ only_active: true }))).toEqual([2, 1])
+  it('only_active excludes expired authorizations but keeps periodic ones past their cycle boundary', async () => {
+    expect(listedIds(await list({ only_active: true }))).toEqual([4, 2, 1])
   })
 
   it('modified_after filters strictly after the given datetime', async () => {
-    expect(listedIds(await list({ modified_after: T1 }))).toEqual([3, 2])
+    expect(listedIds(await list({ modified_after: T1 }))).toEqual([4, 3, 2])
   })
 
   it('paginates with the half-open id cursor and limit', async () => {
     expect(listedIds(await list({ max_id: 3 }))).toEqual([2, 1])
-    expect(listedIds(await list({ min_id: 2 }))).toEqual([3, 2])
-    expect(listedIds(await list({ limit: 1 }))).toEqual([3])
+    expect(listedIds(await list({ min_id: 2 }))).toEqual([4, 3, 2])
+    expect(listedIds(await list({ limit: 1 }))).toEqual([4])
   })
 
   it('serializes spend_limit/remaining_spend only when set', async () => {
@@ -276,6 +288,14 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
         modified: T3,
         height: 120,
       }),
+      seedVsoaRow({
+        id: 4,
+        corporation_id: 2,
+        vs_operator: 'verana1vsC',
+        records: [record(10, PAST), record(30, PAST, { period: '604800s' })],
+        modified: T3,
+        height: 130,
+      }),
     ])
   })
 
@@ -287,7 +307,7 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
     broker.call(`${serviceKey}.listVSOperatorAuthorizations`, params) as Promise<any>
 
   it('returns all rows newest-first by default (-id)', async () => {
-    expect(listedIds(await list())).toEqual([3, 2, 1])
+    expect(listedIds(await list())).toEqual([4, 3, 2, 1])
   })
 
   it('filters by corporation_id', async () => {
@@ -300,21 +320,21 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
 
   it('filters by participant_id membership in records[]', async () => {
     expect(listedIds(await list({ participant_id: 20 }))).toEqual([2])
-    expect(listedIds(await list({ participant_id: 10 }))).toEqual([3, 1])
+    expect(listedIds(await list({ participant_id: 10 }))).toEqual([4, 3, 1])
   })
 
-  it('only_active keeps entries with at least one non-expired record', async () => {
-    expect(listedIds(await list({ only_active: true }))).toEqual([2, 1])
+  it('only_active keeps entries with at least one non-expired or periodic record', async () => {
+    expect(listedIds(await list({ only_active: true }))).toEqual([4, 2, 1])
   })
 
   it('modified_after filters strictly after the given datetime', async () => {
-    expect(listedIds(await list({ modified_after: T1 }))).toEqual([3, 2])
+    expect(listedIds(await list({ modified_after: T1 }))).toEqual([4, 3, 2])
   })
 
   it('paginates with the half-open id cursor and limit', async () => {
     expect(listedIds(await list({ max_id: 3 }))).toEqual([2, 1])
-    expect(listedIds(await list({ min_id: 2 }))).toEqual([3, 2])
-    expect(listedIds(await list({ limit: 1 }))).toEqual([3])
+    expect(listedIds(await list({ min_id: 2 }))).toEqual([4, 3, 2])
+    expect(listedIds(await list({ limit: 1 }))).toEqual([4])
   })
 
   it('serializes nested records with with_feegrant and conditional spend_limit', async () => {

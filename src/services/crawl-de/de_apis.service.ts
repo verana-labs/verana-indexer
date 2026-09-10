@@ -13,6 +13,16 @@ import VSOperatorAuthorization from '../../models/vs_operator_authorization'
 import VSOperatorAuthorizationHistory from '../../models/vs_operator_authorization_history'
 import { parseIdSortDirection } from '../crawl-co/co_stats'
 
+// Periodic entries auto-renew (VPR AUTHZ-CHECK-1/2/3): a past cycle boundary never makes them inactive.
+function whereActiveAt(query: any, now: Date) {
+  query.where((builder: any) =>
+    builder.whereNull('expiration').orWhere('expiration', '>', now).orWhereNotNull('period')
+  )
+}
+
+const ACTIVE_RECORD_EXISTS_SQL =
+  "EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec WHERE rec->>'expiration' IS NULL OR (rec->>'expiration')::timestamptz > ? OR rec->>'period' IS NOT NULL)"
+
 // Per IDX-DE-QRY-1/3 (spec #48) OperatorAuthorization carries no fee fields — fee-payment capability is a FeeGrant, served by listFeeGrants.
 function serializeOperatorAuthorizationRow(row: any) {
   const spendLimit = row.spend_limit ?? null
@@ -236,12 +246,7 @@ export default class DelegationApiService extends BaseService {
     if (p.corporation_id !== undefined) query.where('corporation_id', p.corporation_id)
     if (p.operator) query.where('operator', p.operator)
     if (p.msg_type) query.whereRaw('msg_types @> ?::jsonb', [JSON.stringify([p.msg_type])])
-    if (ctx.now) {
-      // Periodic authorizations auto-renew: a past cycle boundary never makes them inactive.
-      query.where((builder: any) =>
-        builder.whereNull('expiration').orWhere('expiration', '>', ctx.now).orWhereNotNull('period')
-      )
-    }
+    if (ctx.now) whereActiveAt(query, ctx.now)
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
     if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
     if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)
@@ -328,12 +333,7 @@ export default class DelegationApiService extends BaseService {
     if (p.participant_id !== undefined) {
       query.whereRaw('records @> ?::jsonb', [JSON.stringify([{ participant_id: p.participant_id }])])
     }
-    if (ctx.now) {
-      query.whereRaw(
-        "EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec WHERE rec->>'expiration' IS NULL OR (rec->>'expiration')::timestamptz > ? OR rec->>'period' IS NOT NULL)",
-        [ctx.now]
-      )
-    }
+    if (ctx.now) query.whereRaw(ACTIVE_RECORD_EXISTS_SQL, [ctx.now])
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
     if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
     if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)
@@ -418,12 +418,7 @@ export default class DelegationApiService extends BaseService {
     if (p.msg_type) {
       query.whereRaw("(msg_types @> ?::jsonb OR msg_types = '[]'::jsonb)", [JSON.stringify([p.msg_type])])
     }
-    if (ctx.now) {
-      // Periodic grants auto-renew: a past cycle boundary never makes them inactive.
-      query.where((builder: any) =>
-        builder.whereNull('expiration').orWhere('expiration', '>', ctx.now).orWhereNotNull('period')
-      )
-    }
+    if (ctx.now) whereActiveAt(query, ctx.now)
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
     if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
     if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)
