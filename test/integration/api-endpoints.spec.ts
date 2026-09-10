@@ -1249,6 +1249,70 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
   describe('Stats Endpoints - All Parameters Tested', () => {
     const timestamps = getTimestamps()
 
+    describe('GET /v4/stats/snapshot - ALL PARAMETERS', () => {
+      itIf('should get the GLOBAL snapshot - default entity_type', async () => {
+        const response = await testEndpoint('GET', '/v4/stats/snapshot')
+        expect(response.status).toBe(200)
+        expect(response.data.entity_type).toBe('GLOBAL')
+        expect(response.data.entity_id).toBeNull()
+        expect(response.data).toHaveProperty('block_height')
+        expect(response.data).toHaveProperty('timestamp')
+        expect(response.data).toHaveProperty('participants_holder')
+        expect(response.data).toHaveProperty('active_ecosystems')
+        expect(response.data).toHaveProperty('network_slashed_amount_repaid')
+      })
+
+      itIf('should get the GLOBAL snapshot - with At-Block-Height header', async () => {
+        const heightResponse = await testEndpoint('GET', '/v4/indexer/block-height')
+        const currentHeight = Number(heightResponse?.data?.height || SAMPLE_BLOCK_HEIGHT)
+        const response = await testEndpoint('GET', '/v4/stats/snapshot', {}, { 'At-Block-Height': currentHeight })
+        expect(response.status).toBe(200)
+        expect(response.data.block_height).toBe(currentHeight)
+      })
+
+      itIf('should agree with count-participants for the same block', async () => {
+        const snapshot = await testEndpoint('GET', '/v4/stats/snapshot')
+        const count = await testEndpoint(
+          'GET',
+          '/v4/stats/count-participants',
+          { entity_kind: 0, role_type: 0 },
+          { 'At-Block-Height': snapshot.data.block_height }
+        )
+        expect(count.status).toBe(200)
+        expect(count.data.participants).toBe(snapshot.data.participants)
+      })
+
+      itIf('should get an ECOSYSTEM snapshot', async () => {
+        const response = await testEndpoint('GET', '/v4/stats/snapshot', {
+          entity_type: 'ECOSYSTEM',
+          entity_id: SAMPLE_TR_ID,
+        })
+        expect([200, 404]).toContain(response.status)
+        if (response.status === 200) {
+          expect(response.data.entity_id).toBe(SAMPLE_TR_ID)
+          expect(response.data.active_ecosystems + response.data.archived_ecosystems).toBe(1)
+        }
+      })
+
+      itIf('should reject entity_id for GLOBAL', async () => {
+        const response = await testEndpoint('GET', '/v4/stats/snapshot', { entity_type: 'GLOBAL', entity_id: 1 })
+        expect(response.status).toBe(400)
+      })
+
+      itIf('should require entity_id for non-GLOBAL entity types', async () => {
+        const response = await testEndpoint('GET', '/v4/stats/snapshot', { entity_type: 'CREDENTIAL_SCHEMA' })
+        expect(response.status).toBe(400)
+      })
+
+      itIf('should return 404 for an unknown entity_id', async () => {
+        const response = await testEndpoint('GET', '/v4/stats/snapshot', {
+          entity_type: 'PARTICIPANT',
+          entity_id: 999999999,
+        })
+        expect(response.status).toBe(404)
+      })
+    })
+
     describe('GET /v4/stats/get - ALL PARAMETERS', () => {
       itIf('should get stats by id - basic', async () => {
         const response = await testEndpoint('GET', '/v4/stats/get', {

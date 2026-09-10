@@ -3484,9 +3484,10 @@
         "tags": [
           "Metrics"
         ],
-        "summary": "Get Global Current Metrics",
-        "description": "Return global current metrics across all Ecosystems and Credential Schemas. Supports At-Block-Height header for historical state.",
+        "summary": "Get Global Current Metrics (deprecated)",
+        "description": "Deprecated: use GET /v4/stats/snapshot. Return global current metrics across all Ecosystems and Credential Schemas. Supports At-Block-Height header for historical state.",
         "operationId": "getGlobalMetrics",
+        "deprecated": true,
         "parameters": [
           {
             "$ref": "#/components/parameters/At-Block-Height"
@@ -4634,6 +4635,105 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v4/stats/snapshot": {
+      "get": {
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Get Stats Snapshot",
+        "description": "Return the current value of every tracked metric for one entity (the whole network, an Ecosystem, a Credential Schema, or a Participant sub-tree) at the block selected by the At-Block-Height header, or the latest indexed block when omitted. Participant counts read from the entity_participant_changes log; the other metrics read from the height-versioned entity tables. Replaces GET /v4/metrics/all.",
+        "operationId": "getStatsSnapshot",
+        "parameters": [
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GLOBAL",
+                "ECOSYSTEM",
+                "CREDENTIAL_SCHEMA",
+                "PARTICIPANT"
+              ],
+              "default": "GLOBAL"
+            },
+            "description": "Entity scope. Default: GLOBAL."
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Entity ID (required for non-GLOBAL entity types; must be omitted for GLOBAL)"
+          },
+          {
+            "$ref": "#/components/parameters/At-Block-Height"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metric values at the resolved block height",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsSnapshot"
+                },
+                "example": {
+                  "entity_type": "GLOBAL",
+                  "entity_id": null,
+                  "block_height": 123456,
+                  "timestamp": "2026-09-08T12:00:00.000Z",
+                  "participants": 12345,
+                  "participants_ecosystem": 12,
+                  "participants_issuer_grantor": 30,
+                  "participants_issuer": 800,
+                  "participants_verifier_grantor": 20,
+                  "participants_verifier": 400,
+                  "participants_holder": 11083,
+                  "active_ecosystems": 12,
+                  "archived_ecosystems": 3,
+                  "active_schemas": 256,
+                  "archived_schemas": 42,
+                  "weight": 1234567890000000000,
+                  "issued": 987654,
+                  "verified": 543210,
+                  "ecosystem_slash_events": 5,
+                  "ecosystem_slashed_amount": 100000000000000,
+                  "ecosystem_slashed_amount_repaid": 50000000000000,
+                  "network_slash_events": 1,
+                  "network_slashed_amount": 250000000000000,
+                  "network_slashed_amount_repaid": 100000000000000
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "Unknown entity_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "ECOSYSTEM 42 not found",
+                  "code": 404
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
@@ -7873,6 +7973,14 @@
             "type": "integer",
             "description": "Cumulative participants (subtree for PARTICIPANT)"
           },
+          "cumulative_active_ecosystems": {
+            "type": "integer",
+            "description": "Cumulative non-archived ecosystems (1/0 for an ECOSYSTEM row, 0 for CREDENTIAL_SCHEMA and PARTICIPANT rows)"
+          },
+          "cumulative_archived_ecosystems": {
+            "type": "integer",
+            "description": "Cumulative archived ecosystems (1/0 for an ECOSYSTEM row, 0 for CREDENTIAL_SCHEMA and PARTICIPANT rows)"
+          },
           "cumulative_active_schemas": {
             "type": "integer",
             "description": "Cumulative active schemas"
@@ -7920,6 +8028,14 @@
           "delta_participants": {
             "type": "integer",
             "description": "Delta participants (change since previous measurement)"
+          },
+          "delta_active_ecosystems": {
+            "type": "integer",
+            "description": "Delta non-archived ecosystems"
+          },
+          "delta_archived_ecosystems": {
+            "type": "integer",
+            "description": "Delta archived ecosystems"
           },
           "delta_active_schemas": {
             "type": "integer",
@@ -7978,6 +8094,12 @@
           "cumulative_participants": {
             "type": "integer"
           },
+          "cumulative_active_ecosystems": {
+            "type": "integer"
+          },
+          "cumulative_archived_ecosystems": {
+            "type": "integer"
+          },
           "cumulative_active_schemas": {
             "type": "integer"
           },
@@ -8012,6 +8134,12 @@
             "type": "integer"
           },
           "delta_participants": {
+            "type": "integer"
+          },
+          "delta_active_ecosystems": {
+            "type": "integer"
+          },
+          "delta_archived_ecosystems": {
             "type": "integer"
           },
           "delta_active_schemas": {
@@ -8053,6 +8181,12 @@
         "type": "object",
         "properties": {
           "delta_participants": {
+            "type": "integer"
+          },
+          "delta_active_ecosystems": {
+            "type": "integer"
+          },
+          "delta_archived_ecosystems": {
             "type": "integer"
           },
           "delta_active_schemas": {
@@ -8143,6 +8277,106 @@
           "total": {
             "$ref": "#/components/schemas/StatsTotal",
             "description": "Aggregated totals (present if result_type is TOTAL or BUCKETS_AND_TOTAL)"
+          }
+        }
+      },
+      "StatsSnapshot": {
+        "type": "object",
+        "required": [
+          "entity_type",
+          "entity_id",
+          "block_height",
+          "timestamp"
+        ],
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "GLOBAL",
+              "ECOSYSTEM",
+              "CREDENTIAL_SCHEMA",
+              "PARTICIPANT"
+            ]
+          },
+          "entity_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "null for GLOBAL"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "The resolved evaluation block height"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Time of the resolved evaluation block"
+          },
+          "participants": {
+            "type": "integer"
+          },
+          "participants_ecosystem": {
+            "type": "integer"
+          },
+          "participants_issuer_grantor": {
+            "type": "integer"
+          },
+          "participants_issuer": {
+            "type": "integer"
+          },
+          "participants_verifier_grantor": {
+            "type": "integer"
+          },
+          "participants_verifier": {
+            "type": "integer"
+          },
+          "participants_holder": {
+            "type": "integer"
+          },
+          "active_ecosystems": {
+            "type": "integer"
+          },
+          "archived_ecosystems": {
+            "type": "integer"
+          },
+          "active_schemas": {
+            "type": "integer"
+          },
+          "archived_schemas": {
+            "type": "integer"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "issued": {
+            "type": "integer"
+          },
+          "verified": {
+            "type": "integer"
+          },
+          "ecosystem_slash_events": {
+            "type": "integer"
+          },
+          "ecosystem_slashed_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ecosystem_slashed_amount_repaid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "network_slash_events": {
+            "type": "integer"
+          },
+          "network_slashed_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "network_slashed_amount_repaid": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
