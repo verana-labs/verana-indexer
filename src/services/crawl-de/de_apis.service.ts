@@ -237,7 +237,10 @@ export default class DelegationApiService extends BaseService {
     if (p.operator) query.where('operator', p.operator)
     if (p.msg_type) query.whereRaw('msg_types @> ?::jsonb', [JSON.stringify([p.msg_type])])
     if (ctx.now) {
-      query.where((builder: any) => builder.whereNull('expiration').orWhere('expiration', '>', ctx.now))
+      // Periodic authorizations auto-renew: a past cycle boundary never makes them inactive.
+      query.where((builder: any) =>
+        builder.whereNull('expiration').orWhere('expiration', '>', ctx.now).orWhereNotNull('period')
+      )
     }
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
     if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
@@ -327,7 +330,7 @@ export default class DelegationApiService extends BaseService {
     }
     if (ctx.now) {
       query.whereRaw(
-        "EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec WHERE rec->>'expiration' IS NULL OR (rec->>'expiration')::timestamptz > ?)",
+        "EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec WHERE rec->>'expiration' IS NULL OR (rec->>'expiration')::timestamptz > ? OR rec->>'period' IS NOT NULL)",
         [ctx.now]
       )
     }
