@@ -65,6 +65,7 @@
     "@horoscope/evmos-proto": "0.0.8",
     "@horoscope/sei-js-proto": "3.1.9",
     "@jest/types": "30.0.5",
+    "@noble/curves": "2.0.1",
     "@osmonauts/lcd": "^0.10.0",
     "@ourparentcenter/moleculer-decorators-extended": "^1.1.1",
     "@shazow/whatsabi": "^0.11.0",
@@ -82,6 +83,8 @@
     "canonicalize": "3.0.0",
     "cosmjs-types": "^0.6.1",
     "dayjs": "^1.11.18",
+    "did-resolver": "4.1.0",
+    "didwebvh-ts": "2.7.5",
     "dotenv": "^16.6.1",
     "ethers": "^6.15.0",
     "file-type": "^18.7.0",
@@ -117,6 +120,7 @@
     "underscore": "^1.13.7",
     "util": "^0.12.5",
     "viem": "^2.38.2",
+    "web-did-resolver": "2.0.32",
     "ws": "^8.18.3"
   },
   "devDependencies": {
