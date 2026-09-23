@@ -2328,7 +2328,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       if (typeof blockHeight === 'number') {
         const hasHeightColumn = await checkHeightColumnExists()
-        let query = knex('credential_schema_history').select('json_schema_id').where({ credential_schema_id: id })
+        let query = knex('credential_schema_history').where({ credential_schema_id: id })
 
         if (hasHeightColumn) {
           query = query.where('height', '<=', blockHeight).orderBy('height', 'desc')

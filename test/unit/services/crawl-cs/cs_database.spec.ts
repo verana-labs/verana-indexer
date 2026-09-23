@@ -310,6 +310,18 @@ describe('CredentialSchemaDatabaseService API Integration Tests', () => {
     expect(parsed.properties).toHaveProperty('foo')
   })
 
+  it('should fetch JsonSchema of the credential schema at a block height', async () => {
+    const res = await broker.call(
+      `${serviceKey}.JsonSchema`,
+      { id: normalizeSchemaId(schemaId) },
+      { meta: { blockHeight: 777779 } }
+    )
+    expect(typeof res).toBe('string')
+    const parsed = JSON.parse(res as string)
+    expect(parsed.$id).toBe(`vpr:verana:${chainId}:cs:` + schemaId)
+    expect(parsed.properties).toHaveProperty('foo')
+  })
+
   it('should fetch module params for credentialschema', async () => {
     try {
       const res = await broker.call(`${serviceKey}.getParams`)
