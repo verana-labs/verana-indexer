@@ -5,6 +5,7 @@ import {
   TrustResolutionOutcome,
   type VerifiablePublicRegistry,
 } from '@verana-labs/verre'
+import type { Resolver } from 'did-resolver'
 import { BULL_JOB_NAME } from '../../common'
 import {
   applySpeedToBatchSize,
@@ -15,6 +16,7 @@ import knex from '../../common/utils/db_connection'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
 import { VeranaParticipantMessageTypes } from '../../common/verana-message-types'
 import config from '../../config.json' with { type: 'json' }
+import { createDidDocumentResolver } from './did-document-resolver'
 import { getEcsEcosystems, isEcsAllowlistEnforced } from './ecs-allowlist'
 import { defaultVprRegistriesFromEnv, readBoolFromEnv } from './trust-resolve.helpers'
 import { hasAllowlistedEcsServiceCredential, resolveCorporationId } from './trust-resolve-v4.builders'
@@ -348,8 +350,7 @@ const SERVICES_ANCHORED_ON_ISSUERS_SQL = `
 // -> theirs, ...). Termination does not depend on this: `evaluated` resolves each DID at most once
 // even on a cyclic issuer graph, and maxDidsPerBlock caps the total work. It only bounds how many
 // extra fan-out queries one block can trigger, so a pathological chain cannot stall block
-// processing. Anything deeper is picked up by the TTL refresh in resolver-poll, so truncating a
-// cascade delays a re-evaluation rather than losing it.
+// processing. Anything deeper waits for the next re-evaluation event that reaches it.
 const MAX_CASCADE_DEPTH = 4
 
 export type TrustResultsRow = {
@@ -502,7 +503,8 @@ function trustResultMeaningfullyChanged(nextResolve: unknown, prevRow: TrustResu
 export async function resolveTrustForDidAtHeight(
   did: string,
   blockHeight: number,
-  landingHeight?: number
+  landingHeight?: number,
+  didResolver: Resolver = createDidDocumentResolver()
 ): Promise<boolean> {
   const { verifiablePublicRegistries, skipDigestSRICheck, ecsEcosystems } = getVerreTrustEvaluationCallOptions()
   const cfg = getResolverRuntimeConfig()
@@ -518,6 +520,7 @@ export async function resolveTrustForDidAtHeight(
       verifiablePublicRegistries,
       skipDigestSRICheck,
       ecsEcosystems,
+      didResolver,
     })) as TrustResolution
 
     // verre enforces WL-ECS through ecsEcosystems, but only when a registry adapter resolves the
@@ -600,6 +603,7 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
   ])
 
   const evaluated = new Set<string>()
+  const didResolver = createDidDocumentResolver()
   let frontier = [...new Set([...impactedDids, ...triggeredDids])]
 
   for (let depth = 0; depth <= MAX_CASCADE_DEPTH && frontier.length > 0; depth++) {
@@ -611,7 +615,7 @@ export async function resolveTrustForBlock(blockHeight: number): Promise<void> {
     for (const did of batch) evaluated.add(did)
 
     await runPool(batch, tuning.didConcurrency, async (did) => {
-      await resolveTrustForDidAtHeight(did, blockHeight)
+      await resolveTrustForDidAtHeight(did, blockHeight, undefined, didResolver)
     })
 
     const remaining = tuning.maxDidsPerBlock - evaluated.size

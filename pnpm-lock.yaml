@@ -53,6 +53,9 @@ importers:
       '@jest/types':
         specifier: 30.0.5
         version: 30.0.5
+      '@noble/curves':
+        specifier: 2.0.1
+        version: 2.0.1
       '@osmonauts/lcd':
         specifier: ^0.10.0
         version: 0.10.0(debug@4.4.3)
@@ -104,6 +107,12 @@ importers:
       dayjs:
         specifier: ^1.11.18
         version: 1.11.18
+      did-resolver:
+        specifier: 4.1.0
+        version: 4.1.0
+      didwebvh-ts:
+        specifier: 2.7.5
+        version: 2.7.5
       dotenv:
         specifier: ^16.6.1
         version: 16.6.1
@@ -209,6 +218,9 @@ importers:
       viem:
         specifier: ^2.38.2
         version: 2.38.2(typescript@5.4.5)
+      web-did-resolver:
+        specifier: 2.0.32
+        version: 2.0.32
       ws:
         specifier: ^8.18.3
         version: 8.18.3

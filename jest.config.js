@@ -18,6 +18,7 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^@verana-labs/verre$': '<rootDir>/test/config/mocks/verre.ts',
+    '^@noble/curves/ed25519\\.js$': '<rootDir>/test/config/mocks/noble-ed25519.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   globals: {
