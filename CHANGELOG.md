@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/verana-labs/verana-indexer/compare/v2.0.0...v2.0.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **cs:** honour At-Block-Height on GET /v4/credential-schema/js/{id} ([#437](https://github.com/verana-labs/verana-indexer/issues/437)) ([cde3083](https://github.com/verana-labs/verana-indexer/commit/cde308348bf1bdddde02c35e63059171277bbad2))
+* **resolver:** fetch a fresh DID document on every evaluation block ([#438](https://github.com/verana-labs/verana-indexer/issues/438)) ([d1c364d](https://github.com/verana-labs/verana-indexer/commit/d1c364dd74516240cba631fe9609010520b6d0cb))
+
 ## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-09-10)
 
 
