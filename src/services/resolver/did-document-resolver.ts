@@ -27,7 +27,7 @@ const webvh: DIDResolver = async (did) => {
 
 const registry: ResolverRegistry = { ...getWebResolver(), webvh }
 
-// One fetch per DID for the lifetime of the resolver; no TTL, so nothing outlives its owner.
+// Successful fetches are shared for the lifetime of the resolver, failures are retried on next use; no TTL.
 function scopedCache(): DIDCache {
   const inflight = new Map<string, Promise<DIDResolutionResult>>()
   return (parsed, resolve) => {
@@ -35,6 +35,12 @@ function scopedCache(): DIDCache {
     if (!hit) {
       hit = resolve()
       inflight.set(parsed.did, hit)
+      hit.then(
+        (result) => {
+          if (result.didResolutionMetadata?.error) inflight.delete(parsed.did)
+        },
+        () => inflight.delete(parsed.did)
+      )
     }
     return hit
   }
