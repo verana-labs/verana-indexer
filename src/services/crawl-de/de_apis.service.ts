@@ -38,7 +38,13 @@ function serializeOperatorAuthorizationRow(row: any) {
   }
 }
 
-function serializeParticipantRecord(record: any) {
+// Each record's fee_spend_limit is a contribution to one aggregate x/feegrant allowance per vs_operator,
+// so the running balance is the FeeGrant's remaining_spend for (corporation, vs_operator), not a per-record value.
+function feeGrantKey(corporationId: number, grantee: string): string {
+  return `${corporationId}:${grantee}`
+}
+
+function serializeParticipantRecord(record: any, remainingFeeSpend: unknown) {
   const spendLimit = record.spend_limit ?? null
   const feeSpendLimit = record.fee_spend_limit ?? null
 
@@ -46,19 +52,19 @@ function serializeParticipantRecord(record: any) {
     participant_id: Number(record.participant_id),
     msg_types: record.msg_types ?? [],
     ...(spendLimit ? { spend_limit: spendLimit, remaining_spend: record.remaining_spend ?? [] } : {}),
-    ...(feeSpendLimit ? { fee_spend_limit: feeSpendLimit, remaining_fee_spend: record.remaining_fee_spend ?? [] } : {}),
+    ...(feeSpendLimit ? { fee_spend_limit: feeSpendLimit, remaining_fee_spend: remainingFeeSpend ?? [] } : {}),
     with_feegrant: Boolean(record.with_feegrant),
     ...(record.expiration ? { expiration: dateToIsoOrNull(record.expiration) } : {}),
     ...(record.period ? { period: String(record.period) } : {}),
   }
 }
 
-function serializeVSOperatorAuthorizationRow(row: any) {
+function serializeVSOperatorAuthorizationRow(row: any, remainingFeeSpend: unknown) {
   return {
     id: Number(row.vs_operator_authorization_id ?? row.id),
     corporation_id: Number(row.corporation_id),
     vs_operator: String(row.vs_operator),
-    records: (row.records ?? []).map(serializeParticipantRecord),
+    records: (row.records ?? []).map((record: any) => serializeParticipantRecord(record, remainingFeeSpend)),
   }
 }
 
@@ -303,9 +309,22 @@ export default class DelegationApiService extends BaseService {
       this.applyVSOAListFilters(query, p, { modifiedAfter, now, idColumn })
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
+      const remainingFeeSpendByPair = await this.resolveRemainingFeeSpendByPair(
+        rows.map((row: any) => ({
+          corporationId: Number(row.corporation_id),
+          vsOperator: String(row.vs_operator),
+        })),
+        blockHeight
+      )
+
       return ApiResponder.success(ctx, {
         atBlock,
-        authorizations: rows.map(serializeVSOperatorAuthorizationRow),
+        authorizations: rows.map((row: any) =>
+          serializeVSOperatorAuthorizationRow(
+            row,
+            remainingFeeSpendByPair.get(feeGrantKey(Number(row.corporation_id), String(row.vs_operator)))
+          )
+        ),
       })
     } catch (err: any) {
       this.logger.error('Error in Delegation.listVSOperatorAuthorizations:', err)
@@ -407,6 +426,30 @@ export default class DelegationApiService extends BaseService {
     return knex.from(latestPerId.as('fg')).select('*').where('revoked', false)
   }
 
+  private async resolveRemainingFeeSpendByPair(
+    pairs: Array<{ corporationId: number; vsOperator: string }>,
+    blockHeight: number | undefined
+  ): Promise<Map<string, unknown>> {
+    const resolved = new Map<string, unknown>()
+    if (pairs.length === 0) return resolved
+
+    const query =
+      blockHeight !== undefined ? this.buildAtHeightFeeGrantListQuery(blockHeight) : knex<any>('fee_grants').select('*')
+
+    const rows = await query.where((builder: any) => {
+      for (const pair of pairs) {
+        builder.orWhere((match: any) =>
+          match.where('grantor_corporation_id', pair.corporationId).where('grantee', pair.vsOperator)
+        )
+      }
+    })
+
+    for (const row of rows) {
+      resolved.set(feeGrantKey(Number(row.grantor_corporation_id), String(row.grantee)), row.remaining_spend ?? null)
+    }
+    return resolved
+  }
+
   private applyFeeGrantListFilters(
     query: any,
     p: ListFeeGrantsParams,
@@ -453,8 +496,16 @@ export default class DelegationApiService extends BaseService {
         return ApiResponder.error(ctx, 'VS operator authorization not found', 404)
       }
 
+      const remainingFeeSpendByPair = await this.resolveRemainingFeeSpendByPair(
+        [{ corporationId: Number(row.corporation_id), vsOperator: String(row.vs_operator) }],
+        blockHeight
+      )
+
       return ApiResponder.success(ctx, {
-        authorization: serializeVSOperatorAuthorizationRow(row),
+        authorization: serializeVSOperatorAuthorizationRow(
+          row,
+          remainingFeeSpendByPair.get(feeGrantKey(Number(row.corporation_id), String(row.vs_operator)))
+        ),
       })
     } catch (err: any) {
       this.logger.error('Error in Delegation.getVSOperatorAuthorization:', err)

@@ -54,7 +54,6 @@ export interface ParticipantAuthorizationRecordRow {
   spend_limit: DenomAmount[] | null
   remaining_spend: DenomAmount[] | null
   fee_spend_limit: DenomAmount[] | null
-  remaining_fee_spend: DenomAmount[] | null
   with_feegrant: boolean
   expiration: string | null
   period: string | null
@@ -109,7 +108,6 @@ function serializeLedgerParticipantRecord(
     spend_limit: serializeCoins(record.spendLimit),
     remaining_spend: serializeCoins(record.remainingSpend),
     fee_spend_limit: serializeCoins(record.feeSpendLimit),
-    remaining_fee_spend: null,
     with_feegrant: Boolean(record.withFeegrant),
     expiration: dateToIsoOrNull(record.expiration),
     period: serializeDuration(record.period),
