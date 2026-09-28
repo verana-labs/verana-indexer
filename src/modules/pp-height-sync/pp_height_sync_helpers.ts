@@ -215,9 +215,9 @@ export async function fetchParticipantSession(
     return await withAbciQueryClient(blockHeight, async (rpc) => {
       const query = new PpQueryClientImpl(rpc)
       const res = await query.GetParticipantSession(QueryGetParticipantSessionRequest.fromPartial({ id: sessionId }))
-      if (!res?.session) return null
+      if (!res?.participantSession) return null
       return {
-        session: ParticipantSession.toJSON(res.session) as Record<string, unknown>,
+        session: ParticipantSession.toJSON(res.participantSession) as Record<string, unknown>,
       }
     })
   } catch {

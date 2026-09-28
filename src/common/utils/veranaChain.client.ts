@@ -7,9 +7,6 @@ import {
 import {
   MsgArchiveCredentialSchema,
   MsgCreateCredentialSchema,
-  MsgCreateSchemaAuthorizationPolicy,
-  MsgIncreaseActiveSchemaAuthorizationPolicyVersion,
-  MsgRevokeSchemaAuthorizationPolicy,
   MsgUpdateCredentialSchema,
   MsgUpdateParams as MsgUpdateParamsCS,
 } from '@verana-labs/verana-types/codec/verana/cs/v1/tx'
@@ -84,12 +81,6 @@ export const veranaRegistry: readonly [string, TsProtoGeneratedType][] = [
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema, MsgCreateCredentialSchema],
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema, MsgUpdateCredentialSchema],
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema, MsgArchiveCredentialSchema],
-  [VeranaCredentialSchemaMessageTypes.CreateSchemaAuthorizationPolicy, MsgCreateSchemaAuthorizationPolicy],
-  [
-    VeranaCredentialSchemaMessageTypes.IncreaseActiveSchemaAuthorizationPolicyVersion,
-    MsgIncreaseActiveSchemaAuthorizationPolicyVersion,
-  ],
-  [VeranaCredentialSchemaMessageTypes.RevokeSchemaAuthorizationPolicy, MsgRevokeSchemaAuthorizationPolicy],
   [VeranaCredentialSchemaMessageTypes.UpdateParams, MsgUpdateParamsCS],
   [VeranaDiMessageTypes.StoreDigest, MsgStoreDigest],
   [VeranaDiMessageTypes.UpdateParams, MsgUpdateParamsDI],

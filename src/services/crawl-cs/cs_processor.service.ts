@@ -118,14 +118,6 @@ export default class ProcessCredentialSchemaService extends BullableService {
         await this.updateSchema(ctx, schemaMessage)
       } else if (schemaMessage.type === VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema) {
         await this.archiveSchema(ctx, schemaMessage)
-      } else if (
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.CreateSchemaAuthorizationPolicy ||
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.IncreaseActiveSchemaAuthorizationPolicyVersion ||
-        schemaMessage.type === VeranaCredentialSchemaMessageTypes.RevokeSchemaAuthorizationPolicy
-      ) {
-        this.logger.info(
-          `[CredentialSchema] Schema authorization policy message observed (${schemaMessage.type}); no local projection table is defined yet.`
-        )
       }
     }
 

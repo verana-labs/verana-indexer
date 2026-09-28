@@ -109,7 +109,7 @@ function serializeLedgerParticipantRecord(
     spend_limit: serializeCoins(record.spendLimit),
     remaining_spend: serializeCoins(record.remainingSpend),
     fee_spend_limit: serializeCoins(record.feeSpendLimit),
-    remaining_fee_spend: serializeCoins(record.remainingFeeSpend),
+    remaining_fee_spend: null,
     with_feegrant: Boolean(record.withFeegrant),
     expiration: dateToIsoOrNull(record.expiration),
     period: serializeDuration(record.period),
