@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.0](https://github.com/verana-labs/verana-indexer/compare/v2.0.0...v2.1.0) (2026-09-29)
+
+
+### Features
+
+* **deps:** upgrade @verana-labs/verana-types to 0.10.5 ([#440](https://github.com/verana-labs/verana-indexer/issues/440)) ([870b53f](https://github.com/verana-labs/verana-indexer/commit/870b53f12cc59392037bab7e47e6b278a5081662))
+
+
+### Bug Fixes
+
+* **cs:** honour At-Block-Height on GET /v4/credential-schema/js/{id} ([#437](https://github.com/verana-labs/verana-indexer/issues/437)) ([cde3083](https://github.com/verana-labs/verana-indexer/commit/cde308348bf1bdddde02c35e63059171277bbad2))
+* **de:** gate only_active on the Participant entry and drop remaining_fee_spend from VSOA records ([#441](https://github.com/verana-labs/verana-indexer/issues/441)) ([7c6ce71](https://github.com/verana-labs/verana-indexer/commit/7c6ce71a9d42c15f94f51ffad0066b83b5320313))
+* **de:** re-read authorizations on operator_authorization_updated and vs_operator_authorization_updated ([#443](https://github.com/verana-labs/verana-indexer/issues/443)) ([1053083](https://github.com/verana-labs/verana-indexer/commit/105308343a62c9c26fd530abd862153713c9a192))
+* **resolver:** fetch a fresh DID document on every evaluation block ([#438](https://github.com/verana-labs/verana-indexer/issues/438)) ([d1c364d](https://github.com/verana-labs/verana-indexer/commit/d1c364dd74516240cba631fe9609010520b6d0cb))
+
 ## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-09-10)
 
 
