@@ -234,7 +234,6 @@ function record(participantId: number, expiration: string | null, extra: Record<
     spend_limit: null,
     remaining_spend: null,
     fee_spend_limit: null,
-    remaining_fee_spend: null,
     with_feegrant: false,
     expiration,
     period: null,
@@ -246,6 +245,14 @@ function seedVsoaRow(row: Record<string, unknown>) {
   return { ...row, records: JSON.stringify(row.records) }
 }
 
+function participantRow(id: number, over: Record<string, unknown> = {}) {
+  return { id, schema_id: 1, role: 'ISSUER', corporation_id: 1, created: T1, modified: T1, ...over }
+}
+
+const PAST2 = '2021-01-01T00:00:00.000Z'
+const PARTICIPANT_IDS = [10, 20, 30, 40, 50, 60]
+
+// only_active follows the Participant entry (VPR AUTHZ-CHECK-3 step 1), never the record's expiration or period.
 describe('DelegationApiService.listVSOperatorAuthorizations', () => {
   const broker = new ServiceBroker({ logger: false })
   const serviceKey = SERVICE.V1.DelegationApiService.path
@@ -256,6 +263,16 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
 
     await knex('vs_operator_authorization_history').del()
     await knex('vs_operator_authorizations').del()
+    await knex('participants').whereIn('id', PARTICIPANT_IDS).del()
+
+    await knex('participants').insert([
+      participantRow(10, { effective_from: PAST }),
+      participantRow(20),
+      participantRow(30, { effective_from: PAST, effective_until: PAST2 }),
+      participantRow(40, { effective_from: PAST, revoked: PAST2 }),
+      participantRow(50, { effective_from: PAST, slashed: PAST2, repaid: T1 }),
+      participantRow(60, { effective_from: FUTURE }),
+    ])
 
     await knex('vs_operator_authorizations').insert([
       seedVsoaRow({
@@ -267,7 +284,9 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
             with_feegrant: true,
             spend_limit: [{ denom: 'uvna', amount: '500' }],
             remaining_spend: [{ denom: 'uvna', amount: '400' }],
+            fee_spend_limit: [{ denom: 'uvna', amount: '50' }],
           }),
+          record(20, FUTURE),
         ],
         modified: T1,
         height: 100,
@@ -284,7 +303,7 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
         id: 3,
         corporation_id: 2,
         vs_operator: 'verana1vsA',
-        records: [record(10, PAST)],
+        records: [record(10, PAST, { period: '604800s' })],
         modified: T3,
         height: 120,
       }),
@@ -292,7 +311,7 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
         id: 4,
         corporation_id: 2,
         vs_operator: 'verana1vsC',
-        records: [record(10, PAST), record(30, PAST, { period: '604800s' })],
+        records: [record(30, FUTURE), record(40, FUTURE), record(50, FUTURE), record(60, FUTURE), record(70, null)],
         modified: T3,
         height: 130,
       }),
@@ -300,6 +319,7 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
   })
 
   afterAll(async () => {
+    await knex('participants').whereIn('id', PARTICIPANT_IDS).del()
     await broker.stop()
   })
 
@@ -319,12 +339,17 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
   })
 
   it('filters by participant_id membership in records[]', async () => {
-    expect(listedIds(await list({ participant_id: 20 }))).toEqual([2])
-    expect(listedIds(await list({ participant_id: 10 }))).toEqual([4, 3, 1])
+    expect(listedIds(await list({ participant_id: 20 }))).toEqual([2, 1])
+    expect(listedIds(await list({ participant_id: 10 }))).toEqual([3, 1])
   })
 
-  it('only_active keeps entries with at least one non-expired or periodic record', async () => {
-    expect(listedIds(await list({ only_active: true }))).toEqual([4, 2, 1])
+  it('only_active keeps entries with an active Participant, whatever the record expiration or period', async () => {
+    expect(listedIds(await list({ only_active: true }))).toEqual([3, 1])
+  })
+
+  it('only_active drops never-validated, expired, revoked, repaid, future and unknown participants', async () => {
+    expect(listedIds(await list({ only_active: true, vs_operator: 'verana1vsB' }))).toEqual([])
+    expect(listedIds(await list({ only_active: true, vs_operator: 'verana1vsC' }))).toEqual([])
   })
 
   it('modified_after filters strictly after the given datetime', async () => {
@@ -337,14 +362,92 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
     expect(listedIds(await list({ limit: 1 }))).toEqual([4])
   })
 
-  it('serializes nested records with with_feegrant and conditional spend_limit', async () => {
+  it('serializes nested records: fee_spend_limit iff with_feegrant, no remaining_fee_spend', async () => {
     const [row] = (await list({ corporation_id: 1, sort: '+id' })).authorizations
     expect(row.id).toBe(1)
-    const [rec] = row.records
-    expect(rec.participant_id).toBe(10)
-    expect(rec.with_feegrant).toBe(true)
-    expect(rec.spend_limit).toEqual([{ denom: 'uvna', amount: '500' }])
-    expect(row.records[0]).not.toHaveProperty('fee_spend_limit')
+    const [withGrant, withoutGrant] = row.records
+    expect(withGrant).toEqual({
+      participant_id: 10,
+      msg_types: [EC_CREATE],
+      spend_limit: [{ denom: 'uvna', amount: '500' }],
+      remaining_spend: [{ denom: 'uvna', amount: '400' }],
+      fee_spend_limit: [{ denom: 'uvna', amount: '50' }],
+      with_feegrant: true,
+    })
+    expect(withoutGrant).toEqual({
+      participant_id: 20,
+      msg_types: [EC_CREATE],
+      with_feegrant: false,
+      expiration: FUTURE,
+    })
+  })
+})
+
+const H_PENDING = 910100
+const H_ACTIVE = 910110
+const H_REVOKED = 910120
+const AT_HEIGHTS = [H_PENDING, H_ACTIVE, H_REVOKED]
+
+function participantHistoryRow(height: number, over: Record<string, unknown> = {}) {
+  return { participant_id: 80, schema_id: 1, role: 'ISSUER', corporation_id: 1, event_type: 'test', height, ...over }
+}
+
+// At-Block-Height resolves the Participant entry from participant_history at that height, at that block's time.
+describe('DelegationApiService.listVSOperatorAuthorizations only_active at height', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const serviceKey = SERVICE.V1.DelegationApiService.path
+
+  beforeAll(async () => {
+    broker.createService(DelegationApiService)
+    await broker.start()
+
+    await knex('vs_operator_authorization_history').del()
+    await knex('participant_history').where('participant_id', 80).del()
+    await knex('block').whereIn('height', AT_HEIGHTS).del()
+
+    await knex('block').insert(
+      AT_HEIGHTS.map((height) => ({ height, hash: `vsoa-at-${height}`, time: T2, proposer_address: 'p', data: '{}' }))
+    )
+    await knex('vs_operator_authorization_history').insert(
+      seedVsoaRow({
+        vs_operator_authorization_id: 9,
+        corporation_id: 1,
+        vs_operator: 'verana1vsD',
+        records: [record(80, null)],
+        modified: T1,
+        revoked: false,
+        height: H_PENDING,
+      })
+    )
+    await knex('participant_history').insert([
+      participantHistoryRow(H_PENDING),
+      participantHistoryRow(H_ACTIVE, { effective_from: T1 }),
+      participantHistoryRow(H_REVOKED, { effective_from: T1, revoked: T2 }),
+    ])
+  })
+
+  afterAll(async () => {
+    await knex('participant_history').where('participant_id', 80).del()
+    await knex('block').whereIn('height', AT_HEIGHTS).del()
+    await broker.stop()
+  })
+
+  const list = (blockHeight: number, params: Record<string, unknown> = {}) =>
+    broker.call(`${serviceKey}.listVSOperatorAuthorizations`, params, { meta: { blockHeight } }) as Promise<{
+      authorizations: { id: number }[]
+    }>
+
+  it('excludes the entry while its participant is still pending validation', async () => {
+    expect(listedIds(await list(H_PENDING))).toEqual([9])
+    expect(listedIds(await list(H_PENDING, { only_active: true }))).toEqual([])
+  })
+
+  it('includes the entry once the participant is validated at that height', async () => {
+    expect(listedIds(await list(H_ACTIVE, { only_active: true }))).toEqual([9])
+  })
+
+  it('excludes the entry again once the participant is revoked', async () => {
+    expect(listedIds(await list(H_REVOKED, { only_active: true }))).toEqual([])
   })
 })
 
@@ -364,7 +467,13 @@ describe('DelegationApiService.getVSOperatorAuthorization', () => {
         id: 7,
         corporation_id: 1,
         vs_operator: 'verana1vsA',
-        records: [record(10, FUTURE, { with_feegrant: true, spend_limit: [{ denom: 'uvna', amount: '500' }] })],
+        records: [
+          record(10, FUTURE, {
+            with_feegrant: true,
+            spend_limit: [{ denom: 'uvna', amount: '500' }],
+            fee_spend_limit: [{ denom: 'uvna', amount: '50' }],
+          }),
+        ],
         modified: T2,
         height: 110,
       }),
@@ -418,8 +527,9 @@ describe('DelegationApiService.getVSOperatorAuthorization', () => {
       participant_id: 10,
       with_feegrant: true,
       spend_limit: [{ denom: 'uvna', amount: '500' }],
+      fee_spend_limit: [{ denom: 'uvna', amount: '50' }],
     })
-    expect(authorization.records[0]).not.toHaveProperty('fee_spend_limit')
+    expect(authorization.records[0]).not.toHaveProperty('remaining_fee_spend')
   })
 
   it('returns 404 for an unknown id', async () => {
