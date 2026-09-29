@@ -3,9 +3,6 @@ export enum VeranaCredentialSchemaMessageTypes {
   CreateCredentialSchema = '/verana.cs.v1.MsgCreateCredentialSchema',
   UpdateCredentialSchema = '/verana.cs.v1.MsgUpdateCredentialSchema',
   ArchiveCredentialSchema = '/verana.cs.v1.MsgArchiveCredentialSchema',
-  CreateSchemaAuthorizationPolicy = '/verana.cs.v1.MsgCreateSchemaAuthorizationPolicy',
-  IncreaseActiveSchemaAuthorizationPolicyVersion = '/verana.cs.v1.MsgIncreaseActiveSchemaAuthorizationPolicyVersion',
-  RevokeSchemaAuthorizationPolicy = '/verana.cs.v1.MsgRevokeSchemaAuthorizationPolicy',
 }
 
 export enum VeranaParticipantMessageTypes {

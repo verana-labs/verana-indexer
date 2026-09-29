@@ -33,8 +33,8 @@ describe('verana-message-types', () => {
     it('should have correct VeranaCredentialSchemaMessageTypes values', () => {
       expect(VeranaCredentialSchemaMessageTypes.CreateCredentialSchema).toBe('/verana.cs.v1.MsgCreateCredentialSchema')
       expect(VeranaCredentialSchemaMessageTypes.UpdateParams).toBe('/verana.cs.v1.MsgUpdateParams')
-      expect(VeranaCredentialSchemaMessageTypes.CreateSchemaAuthorizationPolicy).toBe(
-        '/verana.cs.v1.MsgCreateSchemaAuthorizationPolicy'
+      expect(VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema).toBe(
+        '/verana.cs.v1.MsgArchiveCredentialSchema'
       )
     })
 

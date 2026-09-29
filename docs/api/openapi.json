@@ -5373,7 +5373,8 @@
                     "user_agent_reward_rate": 0.2,
                     "trust_deposit_share_value": 1,
                     "wallet_user_agent_reward_rate": 0.2,
-                    "trust_deposit_reclaim_burn_rate": 0.6
+                    "trust_deposit_max_yield_rate": 0.5,
+                    "trust_deposit_block_reward_share": 0.2
                   }
                 }
               }
@@ -6492,16 +6493,8 @@
         "properties": {
           "params": {
             "type": "object",
-            "properties": {
-              "trust_unit_price": {
-                "type": "number",
-                "format": "decimal"
-              },
-              "ecosystem_trust_deposit": {
-                "type": "number",
-                "format": "decimal"
-              }
-            }
+            "additionalProperties": true,
+            "description": "The Ecosystem module parameter set as defined by VPR governance. VPR v4 defines no Ecosystem-specific global variable, so the set may be empty. Exact keys are determined by the on-chain parameter set."
           }
         }
       },
@@ -7633,11 +7626,17 @@
                 "description": "Wallet user agent reward rate",
                 "example": 0.2
               },
-              "trust_deposit_reclaim_burn_rate": {
+              "trust_deposit_max_yield_rate": {
                 "type": "number",
                 "format": "decimal",
-                "description": "Burn rate for reclaimed trust deposits",
-                "example": 0.6
+                "description": "Cap on the trust deposit yield rate",
+                "example": 0.5
+              },
+              "trust_deposit_block_reward_share": {
+                "type": "number",
+                "format": "decimal",
+                "description": "Share of block rewards routed to trust deposits",
+                "example": 0.2
               }
             }
           }
