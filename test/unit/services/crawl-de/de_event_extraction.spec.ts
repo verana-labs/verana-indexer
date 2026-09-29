@@ -2,12 +2,23 @@ import { Buffer } from 'node:buffer'
 import { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../../../src/common'
 import knex from '../../../../src/common/utils/db_connection'
+import * as helpers from '../../../../src/modules/de-height-sync/de_height_sync_helpers'
 import {
   extractOperatorAuthorizationTouches,
   extractVSOperatorAuthorizationIds,
   hasDelegationEvents,
+  runHeightSyncDE,
 } from '../../../../src/modules/de-height-sync/de_height_sync_service'
 import DelegationApiService from '../../../../src/services/crawl-de/de_apis.service'
+import DelegationDatabaseService from '../../../../src/services/crawl-de/de_database.service'
+
+jest.mock('../../../../src/modules/de-height-sync/de_height_sync_helpers', () => ({
+  ...jest.requireActual('../../../../src/modules/de-height-sync/de_height_sync_helpers'),
+  fetchOperatorAuthorization: jest.fn(),
+  fetchVSOperatorAuthorization: jest.fn(),
+}))
+
+const abci = helpers as jest.Mocked<typeof helpers>
 
 const b64 = (value: string) => Buffer.from(value, 'utf8').toString('base64')
 
@@ -80,6 +91,32 @@ describe('de height-sync event extraction', () => {
 
     expect(extractVSOperatorAuthorizationIds(events).sort()).toEqual([1, 2])
   })
+
+  // AUTHZ-CHECK debits and cycle resets emit *_updated with ids only (#442).
+  it('re-reads a VS-operator authorization on vs_operator_authorization_updated', () => {
+    const events = [event('vs_operator_authorization_updated', { vsoa_id: '3', participant_id: '10' }, true)]
+
+    expect(hasDelegationEvents(events)).toBe(true)
+    expect(extractVSOperatorAuthorizationIds(events)).toEqual([3])
+  })
+
+  it('re-reads an operator authorization on operator_authorization_updated with only its id', () => {
+    const events = [event('operator_authorization_updated', { authz_id: '9' }, true)]
+
+    expect(hasDelegationEvents(events)).toBe(true)
+    expect(extractOperatorAuthorizationTouches(events)).toEqual([{ authzId: 9, revoked: false }])
+  })
+
+  it('lets a revoke in the same block win over an earlier updated event', () => {
+    const events = [
+      event('operator_authorization_updated', { authz_id: '9' }),
+      event('revoke_operator_authorization', { authz_id: '9', corporation_id: '3', grantee: 'verana1abc' }),
+    ]
+
+    expect(extractOperatorAuthorizationTouches(events)).toEqual([
+      { authzId: 9, corporationId: 3, grantee: 'verana1abc', revoked: true },
+    ])
+  })
 })
 
 const EC_CREATE = '/verana.ec.v1.MsgCreateEcosystem'
@@ -96,8 +133,6 @@ function seedRow(row: Record<string, unknown>) {
   return {
     spend_limit: null,
     remaining_spend: null,
-    fee_spend_limit: null,
-    remaining_fee_spend: null,
     expiration: null,
     period: null,
     ...row,
@@ -556,4 +591,123 @@ describe('DelegationApiService.getVSOperatorAuthorization', () => {
 
 afterAll(async () => {
   await knex.destroy()
+})
+
+// *_authorization_updated carries ids only: the ledger state at that height is re-read and written like a grant.
+describe('runHeightSyncDE on *_authorization_updated events (#442)', () => {
+  const broker = new ServiceBroker({ logger: false })
+
+  beforeAll(async () => {
+    broker.createService(DelegationDatabaseService)
+    await broker.start()
+
+    await knex('operator_authorization_history').del()
+    await knex('operator_authorizations').del()
+    await knex('vs_operator_authorization_history').del()
+    await knex('vs_operator_authorizations').del()
+
+    await knex('operator_authorizations').insert(
+      seedRow({
+        id: 9,
+        corporation_id: 3,
+        operator: 'verana1opA',
+        msg_types: [EC_CREATE],
+        spend_limit: JSON.stringify([{ denom: 'uvna', amount: '1000' }]),
+        remaining_spend: JSON.stringify([{ denom: 'uvna', amount: '1000' }]),
+        expiration: FUTURE,
+        period: '3600s',
+        modified: T1,
+        height: 100,
+      })
+    )
+    await knex('vs_operator_authorizations').insert(
+      seedVsoaRow({
+        id: 4,
+        corporation_id: 3,
+        vs_operator: 'verana1vsA',
+        records: [
+          record(10, FUTURE, {
+            spend_limit: [{ denom: 'uvna', amount: '500' }],
+            remaining_spend: [{ denom: 'uvna', amount: '500' }],
+            period: '3600s',
+          }),
+        ],
+        modified: T1,
+        height: 100,
+      })
+    )
+  })
+
+  afterAll(async () => {
+    await broker.stop()
+  })
+
+  beforeEach(() => jest.clearAllMocks())
+
+  it('writes the debited remaining_spend of an operator authorization', async () => {
+    abci.fetchOperatorAuthorization.mockResolvedValue({
+      id: 9,
+      corporationId: 3,
+      operator: 'verana1opA',
+      msgTypes: [EC_CREATE],
+      spendLimit: [{ denom: 'uvna', amount: '1000' }],
+      remainingSpend: [{ denom: 'uvna', amount: '400' }],
+      expiration: new Date(FUTURE),
+      period: { seconds: 3600, nanos: 0 },
+    } as never)
+
+    await runHeightSyncDE(broker, { events: [event('operator_authorization_updated', { authz_id: '9' })] }, 120)
+
+    expect(abci.fetchOperatorAuthorization).toHaveBeenCalledWith(9, 120)
+    const row = await knex('operator_authorizations').where('id', 9).first()
+    expect(row.remaining_spend).toEqual([{ denom: 'uvna', amount: '400' }])
+    expect(row.height).toBe(120)
+    const history = await knex('operator_authorization_history').where('operator_authorization_id', 9)
+    expect(history).toHaveLength(1)
+    expect(history[0]).toMatchObject({
+      height: 120,
+      revoked: false,
+      remaining_spend: [{ denom: 'uvna', amount: '400' }],
+    })
+  })
+
+  it('writes the reset cycle of a VS-operator record', async () => {
+    const reset = '2030-06-01T00:00:00.000Z'
+    abci.fetchVSOperatorAuthorization.mockResolvedValue({
+      id: 4,
+      corporationId: 3,
+      vsOperator: 'verana1vsA',
+      records: [
+        {
+          participantId: 10,
+          msgTypes: [EC_CREATE],
+          spendLimit: [{ denom: 'uvna', amount: '500' }],
+          remainingSpend: [{ denom: 'uvna', amount: '350' }],
+          feeSpendLimit: [],
+          withFeegrant: false,
+          expiration: new Date(reset),
+          period: { seconds: 3600, nanos: 0 },
+        },
+      ],
+    } as never)
+
+    await runHeightSyncDE(
+      broker,
+      { events: [event('vs_operator_authorization_updated', { vsoa_id: '4', participant_id: '10' })] },
+      121
+    )
+
+    expect(abci.fetchVSOperatorAuthorization).toHaveBeenCalledWith(4, 121)
+    const row = await knex('vs_operator_authorizations').where('id', 4).first()
+    expect(row.height).toBe(121)
+    expect(row.records[0]).toMatchObject({
+      participant_id: 10,
+      remaining_spend: [{ denom: 'uvna', amount: '350' }],
+      expiration: reset,
+      period: '3600s',
+    })
+    const history = await knex('vs_operator_authorization_history').where('vs_operator_authorization_id', 4)
+    expect(history).toHaveLength(1)
+    expect(history[0].height).toBe(121)
+  })
 })

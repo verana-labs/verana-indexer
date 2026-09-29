@@ -11,8 +11,6 @@ export default class OperatorAuthorizationHistory extends BaseModel {
   msg_types!: string[] | null
   spend_limit!: DenomAmount[] | null
   remaining_spend!: DenomAmount[] | null
-  fee_spend_limit!: DenomAmount[] | null
-  remaining_fee_spend!: DenomAmount[] | null
   expiration!: string | null
   period!: string | null
   modified!: string | null
@@ -30,8 +28,6 @@ export default class OperatorAuthorizationHistory extends BaseModel {
         msg_types: { type: ['array', 'null'], items: { type: 'string' } },
         spend_limit: { type: ['array', 'null'] },
         remaining_spend: { type: ['array', 'null'] },
-        fee_spend_limit: { type: ['array', 'null'] },
-        remaining_fee_spend: { type: ['array', 'null'] },
         expiration: { type: ['string', 'null'] },
         period: { type: ['string', 'null'] },
         modified: { type: ['string', 'null'] },

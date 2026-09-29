@@ -66,11 +66,6 @@ export interface VSOperatorAuthorizationRow {
   records: ParticipantAuthorizationRecordRow[]
 }
 
-export interface FeeAllowanceSnapshot {
-  fee_spend_limit: DenomAmount[] | null
-  remaining_fee_spend: DenomAmount[] | null
-}
-
 function serializeCoins(coins: Coin[] | undefined): DenomAmount[] | null {
   if (!coins || coins.length === 0) return null
   return coins.map((coin) => ({ denom: coin.denom, amount: String(coin.amount) }))
@@ -162,45 +157,6 @@ export async function fetchVSOperatorAuthorization(
       throw error
     }
   })
-}
-
-function unwrapFeeAllowance(typeUrl: string, value: Uint8Array): FeeAllowanceSnapshot | undefined {
-  if (typeUrl === PERIODIC_ALLOWANCE_TYPE_URL) {
-    const periodic = PeriodicAllowance.decode(value)
-    return {
-      fee_spend_limit: serializeCoins(periodic.periodSpendLimit as Coin[]),
-      remaining_fee_spend: serializeCoins(periodic.periodCanSpend as Coin[]),
-    }
-  }
-  if (typeUrl === BASIC_ALLOWANCE_TYPE_URL) {
-    const basic = BasicAllowance.decode(value)
-    const limit = serializeCoins(basic.spendLimit as Coin[])
-    return { fee_spend_limit: limit, remaining_fee_spend: limit }
-  }
-  return undefined
-}
-
-export async function fetchFeeAllowance(
-  granter: string,
-  grantee: string,
-  blockHeight: number | undefined
-): Promise<FeeAllowanceSnapshot | undefined> {
-  const grant = await withAbciQueryClient(blockHeight, async (rpc) => {
-    const query = new FeegrantQueryClientImpl(rpc)
-    const res = await query.Allowance(QueryAllowanceRequest.fromPartial({ granter, grantee }))
-    return res?.allowance ?? undefined
-  })
-
-  const allowance = grant?.allowance
-  if (!allowance) return undefined
-
-  if (allowance.typeUrl !== ALLOWED_MSG_ALLOWANCE_TYPE_URL) {
-    return unwrapFeeAllowance(allowance.typeUrl, allowance.value)
-  }
-
-  const allowed = AllowedMsgAllowance.decode(allowance.value)
-  if (!allowed.allowance) return undefined
-  return unwrapFeeAllowance(allowed.allowance.typeUrl, allowed.allowance.value)
 }
 
 export interface FeeGrantAllowanceSnapshot {

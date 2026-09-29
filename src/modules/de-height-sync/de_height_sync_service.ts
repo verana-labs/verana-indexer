@@ -2,10 +2,8 @@ import { Buffer } from 'node:buffer'
 import type { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../common'
 import { Corporation } from '../../models/corporation'
-import type { FeeAllowanceSnapshot } from './de_height_sync_helpers'
 import {
   fetchCorporationPolicyAddress,
-  fetchFeeAllowance,
   fetchFeeGrantAllowance,
   fetchOperatorAuthorization,
   fetchVSOperatorAuthorization,
@@ -19,6 +17,9 @@ export const DE_EVENT_TYPES = {
   GRANT_VS_OPERATOR_AUTHORIZATION: 'grant_vs_operator_authorization',
   REVOKE_VS_OPERATOR_AUTHORIZATION: 'revoke_vs_operator_authorization',
   UPDATE_VS_OPERATOR_AUTHORIZATION: 'update_vs_operator_authorization',
+  // Emitted by AUTHZ-CHECK paths on a spend debit or cycle reset; ids only, state is re-read via ABCI.
+  OPERATOR_AUTHORIZATION_UPDATED: 'operator_authorization_updated',
+  VS_OPERATOR_AUTHORIZATION_UPDATED: 'vs_operator_authorization_updated',
   GRANT_FEE_ALLOWANCE: 'grant_fee_allowance',
   REVOKE_FEE_ALLOWANCE: 'revoke_fee_allowance',
   // SDK x/feegrant event: the only on-chain signal for fee draws (x/de emits none).
@@ -30,12 +31,14 @@ const DE_EVENT_TYPE_SET = new Set<string>(Object.values(DE_EVENT_TYPES))
 const OPERATOR_AUTHORIZATION_EVENTS = new Set<string>([
   DE_EVENT_TYPES.GRANT_OPERATOR_AUTHORIZATION,
   DE_EVENT_TYPES.REVOKE_OPERATOR_AUTHORIZATION,
+  DE_EVENT_TYPES.OPERATOR_AUTHORIZATION_UPDATED,
 ])
 
 const VS_OPERATOR_AUTHORIZATION_EVENTS = new Set<string>([
   DE_EVENT_TYPES.GRANT_VS_OPERATOR_AUTHORIZATION,
   DE_EVENT_TYPES.REVOKE_VS_OPERATOR_AUTHORIZATION,
   DE_EVENT_TYPES.UPDATE_VS_OPERATOR_AUTHORIZATION,
+  DE_EVENT_TYPES.VS_OPERATOR_AUTHORIZATION_UPDATED,
 ])
 
 const FEE_GRANT_EVENTS = new Set<string>([DE_EVENT_TYPES.GRANT_FEE_ALLOWANCE, DE_EVENT_TYPES.REVOKE_FEE_ALLOWANCE])
@@ -73,27 +76,30 @@ export function hasDelegationEvents(events: BlockEvent[]): boolean {
   return events.some((event) => event.type !== undefined && DE_EVENT_TYPE_SET.has(event.type))
 }
 
-interface OperatorAuthorizationTouch {
-  authzId: number
-  corporationId: number
-  grantee: string
-  revoked: boolean
-}
+// The updated event carries only authz_id; a revoke must name the pair for the history row.
+type OperatorAuthorizationTouch =
+  | { authzId: number; revoked: false; corporationId?: number; grantee?: string }
+  | { authzId: number; revoked: true; corporationId: number; grantee: string }
 
 export function extractOperatorAuthorizationTouches(events: BlockEvent[]): OperatorAuthorizationTouch[] {
   const touches = new Map<number, OperatorAuthorizationTouch>()
   for (const event of events) {
     if (!event.type || !OPERATOR_AUTHORIZATION_EVENTS.has(event.type)) continue
     const authzId = parseId(getAttr(event, 'authz_id'))
+    if (authzId === undefined) continue
+    if (event.type === DE_EVENT_TYPES.OPERATOR_AUTHORIZATION_UPDATED) {
+      touches.set(authzId, { authzId, revoked: false })
+      continue
+    }
     const corporationId = parseId(getAttr(event, 'corporation_id'))
     const grantee = getAttr(event, 'grantee')
-    if (authzId === undefined || corporationId === undefined || !grantee) continue
-    touches.set(authzId, {
+    if (corporationId === undefined || !grantee) continue
+    touches.set(
       authzId,
-      corporationId,
-      grantee,
-      revoked: event.type === DE_EVENT_TYPES.REVOKE_OPERATOR_AUTHORIZATION,
-    })
+      event.type === DE_EVENT_TYPES.REVOKE_OPERATOR_AUTHORIZATION
+        ? { authzId, revoked: true, corporationId, grantee }
+        : { authzId, revoked: false, corporationId, grantee }
+    )
   }
   return [...touches.values()]
 }
@@ -170,23 +176,8 @@ async function syncOperatorAuthorization(
   const ledgerAuthorization = await fetchOperatorAuthorization(touch.authzId, blockHeight)
   if (!ledgerAuthorization) return
 
-  const authorization = serializeLedgerOperatorAuthorization(ledgerAuthorization)
-
-  let feeAllowance: FeeAllowanceSnapshot | undefined
-  const policyAddress = await resolveCorporationPolicyAddress(authorization.corporation_id)
-  if (policyAddress) {
-    try {
-      feeAllowance = await fetchFeeAllowance(policyAddress, authorization.operator, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DE Height Sync] Failed to fetch fee allowance granter=${policyAddress} grantee=${authorization.operator} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
-  }
-
   await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
-    authorization,
-    feeAllowance: feeAllowance ?? null,
+    authorization: serializeLedgerOperatorAuthorization(ledgerAuthorization),
     blockHeight,
   })
 }

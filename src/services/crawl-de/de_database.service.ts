@@ -7,7 +7,6 @@ import knex from '../../common/utils/db_connection'
 import { toJsonbColumn } from '../../common/utils/helper'
 import type {
   DenomAmount,
-  FeeAllowanceSnapshot,
   FeeGrantAllowanceSnapshot,
   OperatorAuthorizationRow,
   VSOperatorAuthorizationRow,
@@ -30,13 +29,9 @@ export default class DelegationDatabaseService extends BaseService {
 
   @Action({ name: 'syncOperatorAuthorization' })
   async syncOperatorAuthorization(ctx: {
-    params: {
-      authorization: OperatorAuthorizationRow
-      feeAllowance: FeeAllowanceSnapshot | null
-      blockHeight: number
-    }
+    params: { authorization: OperatorAuthorizationRow; blockHeight: number }
   }): Promise<{ success: boolean }> {
-    const { authorization, feeAllowance, blockHeight } = ctx.params
+    const { authorization, blockHeight } = ctx.params
 
     const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
 
@@ -47,8 +42,6 @@ export default class DelegationDatabaseService extends BaseService {
       msg_types: toJsonbColumn(authorization.msg_types),
       spend_limit: toJsonbColumn(authorization.spend_limit),
       remaining_spend: toJsonbColumn(authorization.remaining_spend),
-      fee_spend_limit: toJsonbColumn(feeAllowance?.fee_spend_limit ?? null),
-      remaining_fee_spend: toJsonbColumn(feeAllowance?.remaining_fee_spend ?? null),
       expiration: authorization.expiration,
       period: authorization.period,
       modified,
@@ -65,8 +58,6 @@ export default class DelegationDatabaseService extends BaseService {
           'msg_types',
           'spend_limit',
           'remaining_spend',
-          'fee_spend_limit',
-          'remaining_fee_spend',
           'expiration',
           'period',
           'modified',
@@ -80,8 +71,6 @@ export default class DelegationDatabaseService extends BaseService {
         msg_types: row.msg_types,
         spend_limit: row.spend_limit,
         remaining_spend: row.remaining_spend,
-        fee_spend_limit: row.fee_spend_limit,
-        remaining_fee_spend: row.remaining_fee_spend,
         expiration: row.expiration,
         period: row.period,
         modified,
