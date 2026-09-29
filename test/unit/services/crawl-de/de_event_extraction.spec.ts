@@ -80,6 +80,32 @@ describe('de height-sync event extraction', () => {
 
     expect(extractVSOperatorAuthorizationIds(events).sort()).toEqual([1, 2])
   })
+
+  // AUTHZ-CHECK debits and cycle resets emit *_updated with ids only (#442).
+  it('re-reads a VS-operator authorization on vs_operator_authorization_updated', () => {
+    const events = [event('vs_operator_authorization_updated', { vsoa_id: '3', participant_id: '10' }, true)]
+
+    expect(hasDelegationEvents(events)).toBe(true)
+    expect(extractVSOperatorAuthorizationIds(events)).toEqual([3])
+  })
+
+  it('re-reads an operator authorization on operator_authorization_updated with only its id', () => {
+    const events = [event('operator_authorization_updated', { authz_id: '9' }, true)]
+
+    expect(hasDelegationEvents(events)).toBe(true)
+    expect(extractOperatorAuthorizationTouches(events)).toEqual([{ authzId: 9, revoked: false }])
+  })
+
+  it('lets a revoke in the same block win over an earlier updated event', () => {
+    const events = [
+      event('operator_authorization_updated', { authz_id: '9' }),
+      event('revoke_operator_authorization', { authz_id: '9', corporation_id: '3', grantee: 'verana1abc' }),
+    ]
+
+    expect(extractOperatorAuthorizationTouches(events)).toEqual([
+      { authzId: 9, corporationId: 3, grantee: 'verana1abc', revoked: true },
+    ])
+  })
 })
 
 const EC_CREATE = '/verana.ec.v1.MsgCreateEcosystem'
