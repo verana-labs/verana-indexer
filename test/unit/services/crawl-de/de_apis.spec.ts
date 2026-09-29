@@ -180,7 +180,7 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
     expect(res.authorizations[0]).not.toHaveProperty('remaining_spend')
   })
 
-  it('ParticipantAuthorizationRecord entries keep their fee fields (IDX-DE-QRY-4 untouched)', async () => {
+  it('ParticipantAuthorizationRecord carries fee_spend_limit iff with_feegrant and never remaining_fee_spend (spec #95)', async () => {
     findByIdResolvesTo(VSOperatorAuthorization as unknown as { query: jest.Mock }, {
       id: 5,
       corporation_id: 3,
@@ -198,15 +198,38 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
           expiration: '2030-01-01T00:00:00.000Z',
           period: '86400s',
         },
+        {
+          participant_id: 12,
+          msg_types: ['/verana.pp.v1.MsgRenewParticipant'],
+          spend_limit: null,
+          remaining_spend: null,
+          fee_spend_limit: [{ denom: 'uvna', amount: '50' }],
+          remaining_fee_spend: null,
+          with_feegrant: false,
+          expiration: null,
+          period: null,
+        },
       ],
     })
 
     const ctx: any = { params: { id: 5 }, meta: {} }
     const res: any = await service.getVSOperatorAuthorization(ctx)
 
-    const record = res.authorization.records[0]
-    expect(record.fee_spend_limit).toEqual([{ denom: 'uvna', amount: '50' }])
-    expect(record.remaining_fee_spend).toEqual([{ denom: 'uvna', amount: '25' }])
-    expect(record.with_feegrant).toBe(true)
+    const [withGrant, withoutGrant] = res.authorization.records
+    expect(withGrant).toEqual({
+      participant_id: 11,
+      msg_types: ['/verana.pp.v1.MsgRenewParticipant'],
+      spend_limit: [{ denom: 'uvna', amount: '100' }],
+      remaining_spend: [{ denom: 'uvna', amount: '90' }],
+      fee_spend_limit: [{ denom: 'uvna', amount: '50' }],
+      with_feegrant: true,
+      expiration: '2030-01-01T00:00:00.000Z',
+      period: '86400s',
+    })
+    expect(withoutGrant).toEqual({
+      participant_id: 12,
+      msg_types: ['/verana.pp.v1.MsgRenewParticipant'],
+      with_feegrant: false,
+    })
   })
 })
