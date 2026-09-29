@@ -7,7 +7,6 @@ import knex from '../../common/utils/db_connection'
 import { toJsonbColumn } from '../../common/utils/helper'
 import type {
   DenomAmount,
-  FeeAllowanceSnapshot,
   FeeGrantAllowanceSnapshot,
   OperatorAuthorizationRow,
   VSOperatorAuthorizationRow,
@@ -28,16 +27,11 @@ export default class DelegationDatabaseService extends BaseService {
     super(broker)
   }
 
-  // feeAllowance undefined means the allowance was not re-read: the stored fee columns are kept.
   @Action({ name: 'syncOperatorAuthorization' })
   async syncOperatorAuthorization(ctx: {
-    params: {
-      authorization: OperatorAuthorizationRow
-      feeAllowance?: FeeAllowanceSnapshot | null
-      blockHeight: number
-    }
+    params: { authorization: OperatorAuthorizationRow; blockHeight: number }
   }): Promise<{ success: boolean }> {
-    const { authorization, feeAllowance, blockHeight } = ctx.params
+    const { authorization, blockHeight } = ctx.params
 
     const modified = await getBlockChainTimeAsOf(blockHeight, { logger: this.logger })
 
@@ -53,17 +47,10 @@ export default class DelegationDatabaseService extends BaseService {
       modified,
       height: blockHeight,
     }
-    const feeColumns =
-      feeAllowance === undefined
-        ? undefined
-        : {
-            fee_spend_limit: toJsonbColumn(feeAllowance?.fee_spend_limit ?? null),
-            remaining_fee_spend: toJsonbColumn(feeAllowance?.remaining_fee_spend ?? null),
-          }
 
     await knex.transaction(async (trx) => {
-      const [stored] = await trx('operator_authorizations')
-        .insert({ ...row, ...feeColumns })
+      await trx('operator_authorizations')
+        .insert(row)
         .onConflict('id')
         .merge([
           'corporation_id',
@@ -71,13 +58,11 @@ export default class DelegationDatabaseService extends BaseService {
           'msg_types',
           'spend_limit',
           'remaining_spend',
-          ...(feeColumns ? ['fee_spend_limit', 'remaining_fee_spend'] : []),
           'expiration',
           'period',
           'modified',
           'height',
         ])
-        .returning(['fee_spend_limit', 'remaining_fee_spend'])
 
       await trx('operator_authorization_history').insert({
         operator_authorization_id: row.id,
@@ -86,8 +71,6 @@ export default class DelegationDatabaseService extends BaseService {
         msg_types: row.msg_types,
         spend_limit: row.spend_limit,
         remaining_spend: row.remaining_spend,
-        fee_spend_limit: toJsonbColumn(stored.fee_spend_limit ?? null),
-        remaining_fee_spend: toJsonbColumn(stored.remaining_fee_spend ?? null),
         expiration: row.expiration,
         period: row.period,
         modified,

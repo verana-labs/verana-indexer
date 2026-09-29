@@ -2,10 +2,8 @@ import { Buffer } from 'node:buffer'
 import type { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../common'
 import { Corporation } from '../../models/corporation'
-import type { FeeAllowanceSnapshot } from './de_height_sync_helpers'
 import {
   fetchCorporationPolicyAddress,
-  fetchFeeAllowance,
   fetchFeeGrantAllowance,
   fetchOperatorAuthorization,
   fetchVSOperatorAuthorization,
@@ -80,7 +78,7 @@ export function hasDelegationEvents(events: BlockEvent[]): boolean {
 
 // The updated event carries only authz_id; a revoke must name the pair for the history row.
 type OperatorAuthorizationTouch =
-  | { authzId: number; revoked: false; updated?: true; corporationId?: number; grantee?: string }
+  | { authzId: number; revoked: false; corporationId?: number; grantee?: string }
   | { authzId: number; revoked: true; corporationId: number; grantee: string }
 
 export function extractOperatorAuthorizationTouches(events: BlockEvent[]): OperatorAuthorizationTouch[] {
@@ -90,7 +88,7 @@ export function extractOperatorAuthorizationTouches(events: BlockEvent[]): Opera
     const authzId = parseId(getAttr(event, 'authz_id'))
     if (authzId === undefined) continue
     if (event.type === DE_EVENT_TYPES.OPERATOR_AUTHORIZATION_UPDATED) {
-      touches.set(authzId, { authzId, revoked: false, updated: true })
+      touches.set(authzId, { authzId, revoked: false })
       continue
     }
     const corporationId = parseId(getAttr(event, 'corporation_id'))
@@ -178,32 +176,8 @@ async function syncOperatorAuthorization(
   const ledgerAuthorization = await fetchOperatorAuthorization(touch.authzId, blockHeight)
   if (!ledgerAuthorization) return
 
-  const authorization = serializeLedgerOperatorAuthorization(ledgerAuthorization)
-
-  // A debit or cycle reset changes only the authorization: skip the fee allowance read, keep the stored fee columns.
-  if (touch.updated) {
-    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
-      authorization,
-      blockHeight,
-    })
-    return
-  }
-
-  let feeAllowance: FeeAllowanceSnapshot | undefined
-  const policyAddress = await resolveCorporationPolicyAddress(authorization.corporation_id)
-  if (policyAddress) {
-    try {
-      feeAllowance = await fetchFeeAllowance(policyAddress, authorization.operator, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DE Height Sync] Failed to fetch fee allowance granter=${policyAddress} grantee=${authorization.operator} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
-  }
-
   await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
-    authorization,
-    feeAllowance: feeAllowance ?? null,
+    authorization: serializeLedgerOperatorAuthorization(ledgerAuthorization),
     blockHeight,
   })
 }

@@ -40,7 +40,6 @@ import OperatorAuthorizationHistory from '../../../../src/models/operator_author
 import VSOperatorAuthorization from '../../../../src/models/vs_operator_authorization'
 import DelegationApiService from '../../../../src/services/crawl-de/de_apis.service'
 
-// A stored row still carrying the v3 fee columns — the serializer must not surface them (spec #48).
 function operatorAuthorizationRow(over: Record<string, unknown> = {}) {
   return {
     id: 7,
@@ -49,8 +48,6 @@ function operatorAuthorizationRow(over: Record<string, unknown> = {}) {
     msg_types: ['/verana.ec.v1.MsgCreateEcosystem'],
     spend_limit: [{ denom: 'uvna', amount: '1000' }],
     remaining_spend: [{ denom: 'uvna', amount: '400' }],
-    fee_spend_limit: [{ denom: 'uvna', amount: '500' }],
-    remaining_fee_spend: [{ denom: 'uvna', amount: '250' }],
     expiration: '2030-01-01T00:00:00.000Z',
     period: '86400s',
     revoked: false,

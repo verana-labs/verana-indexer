@@ -511,8 +511,6 @@ Latest on-chain state of each `OperatorAuthorization` from the `verana.de.v1` (d
 | `msg_types`           | jsonb array of module message types this authorization applies to                                       |
 | `spend_limit`         | jsonb array of `{denom, amount}` — max spendable amount (nullable)                                       |
 | `remaining_spend`     | jsonb array of `{denom, amount}` — runtime balance for `spend_limit` (present when `spend_limit` is set) |
-| `fee_spend_limit`     | jsonb array of `{denom, amount}` — fee allowance ceiling, hydrated from the mirrored `x/feegrant` grant (nullable) |
-| `remaining_fee_spend` | jsonb array of `{denom, amount}` — runtime fee balance from the `x/feegrant` grant (present when a fee allowance exists) |
 | `expiration`          | Timestamp after which the authorization is no longer valid (nullable)                                   |
 | `period`              | Reset period for `spend_limit`, stored as a duration string (nullable)                                  |
 | `modified`            | Block time of the last change to this authorization (drives the `modified_after` list filter)           |
@@ -532,8 +530,6 @@ Append-only history of `OperatorAuthorization` changes, used to serve `At-Block-
 | `msg_types`                 | jsonb array of module message types (nullable for revoke records)                    |
 | `spend_limit`               | jsonb array of `{denom, amount}` (nullable)                                           |
 | `remaining_spend`           | jsonb array of `{denom, amount}` (nullable)                                           |
-| `fee_spend_limit`           | jsonb array of `{denom, amount}` (nullable)                                           |
-| `remaining_fee_spend`       | jsonb array of `{denom, amount}` (nullable)                                           |
 | `expiration`                | Timestamp after which the authorization expires (nullable)                           |
 | `period`                    | Reset period as a duration string (nullable)                                         |
 | `modified`                  | Block time of this change (nullable)                                                 |

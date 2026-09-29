@@ -16,7 +16,6 @@ jest.mock('../../../../src/modules/de-height-sync/de_height_sync_helpers', () =>
   ...jest.requireActual('../../../../src/modules/de-height-sync/de_height_sync_helpers'),
   fetchOperatorAuthorization: jest.fn(),
   fetchVSOperatorAuthorization: jest.fn(),
-  fetchFeeAllowance: jest.fn(),
 }))
 
 const abci = helpers as jest.Mocked<typeof helpers>
@@ -105,7 +104,7 @@ describe('de height-sync event extraction', () => {
     const events = [event('operator_authorization_updated', { authz_id: '9' }, true)]
 
     expect(hasDelegationEvents(events)).toBe(true)
-    expect(extractOperatorAuthorizationTouches(events)).toEqual([{ authzId: 9, revoked: false, updated: true }])
+    expect(extractOperatorAuthorizationTouches(events)).toEqual([{ authzId: 9, revoked: false }])
   })
 
   it('lets a revoke in the same block win over an earlier updated event', () => {
@@ -134,8 +133,6 @@ function seedRow(row: Record<string, unknown>) {
   return {
     spend_limit: null,
     remaining_spend: null,
-    fee_spend_limit: null,
-    remaining_fee_spend: null,
     expiration: null,
     period: null,
     ...row,
@@ -617,8 +614,6 @@ describe('runHeightSyncDE on *_authorization_updated events (#442)', () => {
         msg_types: [EC_CREATE],
         spend_limit: JSON.stringify([{ denom: 'uvna', amount: '1000' }]),
         remaining_spend: JSON.stringify([{ denom: 'uvna', amount: '1000' }]),
-        fee_spend_limit: JSON.stringify([{ denom: 'uvna', amount: '77' }]),
-        remaining_fee_spend: JSON.stringify([{ denom: 'uvna', amount: '70' }]),
         expiration: FUTURE,
         period: '3600s',
         modified: T1,
@@ -649,7 +644,7 @@ describe('runHeightSyncDE on *_authorization_updated events (#442)', () => {
 
   beforeEach(() => jest.clearAllMocks())
 
-  it('writes the debited remaining_spend of an operator authorization and keeps its fee columns', async () => {
+  it('writes the debited remaining_spend of an operator authorization', async () => {
     abci.fetchOperatorAuthorization.mockResolvedValue({
       id: 9,
       corporationId: 3,
@@ -664,11 +659,8 @@ describe('runHeightSyncDE on *_authorization_updated events (#442)', () => {
     await runHeightSyncDE(broker, { events: [event('operator_authorization_updated', { authz_id: '9' })] }, 120)
 
     expect(abci.fetchOperatorAuthorization).toHaveBeenCalledWith(9, 120)
-    expect(abci.fetchFeeAllowance).not.toHaveBeenCalled()
     const row = await knex('operator_authorizations').where('id', 9).first()
     expect(row.remaining_spend).toEqual([{ denom: 'uvna', amount: '400' }])
-    expect(row.fee_spend_limit).toEqual([{ denom: 'uvna', amount: '77' }])
-    expect(row.remaining_fee_spend).toEqual([{ denom: 'uvna', amount: '70' }])
     expect(row.height).toBe(120)
     const history = await knex('operator_authorization_history').where('operator_authorization_id', 9)
     expect(history).toHaveLength(1)
@@ -676,7 +668,6 @@ describe('runHeightSyncDE on *_authorization_updated events (#442)', () => {
       height: 120,
       revoked: false,
       remaining_spend: [{ denom: 'uvna', amount: '400' }],
-      fee_spend_limit: [{ denom: 'uvna', amount: '77' }],
     })
   })
 
