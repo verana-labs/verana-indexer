@@ -80,7 +80,7 @@ export function hasDelegationEvents(events: BlockEvent[]): boolean {
 
 // The updated event carries only authz_id; a revoke must name the pair for the history row.
 type OperatorAuthorizationTouch =
-  | { authzId: number; revoked: false; corporationId?: number; grantee?: string }
+  | { authzId: number; revoked: false; updated?: true; corporationId?: number; grantee?: string }
   | { authzId: number; revoked: true; corporationId: number; grantee: string }
 
 export function extractOperatorAuthorizationTouches(events: BlockEvent[]): OperatorAuthorizationTouch[] {
@@ -90,7 +90,7 @@ export function extractOperatorAuthorizationTouches(events: BlockEvent[]): Opera
     const authzId = parseId(getAttr(event, 'authz_id'))
     if (authzId === undefined) continue
     if (event.type === DE_EVENT_TYPES.OPERATOR_AUTHORIZATION_UPDATED) {
-      touches.set(authzId, { authzId, revoked: false })
+      touches.set(authzId, { authzId, revoked: false, updated: true })
       continue
     }
     const corporationId = parseId(getAttr(event, 'corporation_id'))
@@ -179,6 +179,15 @@ async function syncOperatorAuthorization(
   if (!ledgerAuthorization) return
 
   const authorization = serializeLedgerOperatorAuthorization(ledgerAuthorization)
+
+  // A debit or cycle reset changes only the authorization: skip the fee allowance read, keep the stored fee columns.
+  if (touch.updated) {
+    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
+      authorization,
+      blockHeight,
+    })
+    return
+  }
 
   let feeAllowance: FeeAllowanceSnapshot | undefined
   const policyAddress = await resolveCorporationPolicyAddress(authorization.corporation_id)
