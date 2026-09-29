@@ -20,8 +20,13 @@ function whereActiveAt(query: any, now: Date) {
   )
 }
 
-const ACTIVE_RECORD_EXISTS_SQL =
-  "EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec WHERE rec->>'expiration' IS NULL OR (rec->>'expiration')::timestamptz > ? OR rec->>'period' IS NOT NULL)"
+// A VSOA record is usable only while its Participant entry is an active participant (VPR AUTHZ-CHECK-3 step 1); its own expiration and period are the budget cycle, not a window.
+const ACTIVE_PARTICIPANT_SQL =
+  'p.effective_from IS NOT NULL AND p.effective_from <= ? AND (p.effective_until IS NULL OR p.effective_until > ?) AND p.revoked IS NULL AND p.slashed IS NULL'
+
+const ACTIVE_RECORD_EXISTS_SQL = `EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec JOIN participants p ON p.id = (rec->>'participant_id')::bigint WHERE ${ACTIVE_PARTICIPANT_SQL})`
+
+const ACTIVE_RECORD_EXISTS_AT_HEIGHT_SQL = `EXISTS (SELECT 1 FROM jsonb_array_elements(records) rec JOIN LATERAL (SELECT ph.effective_from, ph.effective_until, ph.revoked, ph.slashed FROM participant_history ph WHERE ph.participant_id = (rec->>'participant_id')::bigint AND ph.height <= ? ORDER BY ph.height DESC, ph.created_at DESC, ph.id DESC LIMIT 1) p ON true WHERE ${ACTIVE_PARTICIPANT_SQL})`
 
 // Per IDX-DE-QRY-1/3 (spec #48) OperatorAuthorization carries no fee fields — fee-payment capability is a FeeGrant, served by listFeeGrants.
 function serializeOperatorAuthorizationRow(row: any) {
@@ -45,8 +50,10 @@ function feeGrantKey(corporationId: number, grantee: string): string {
 }
 
 function serializeParticipantRecord(record: any, remainingFeeSpend: unknown) {
+// fee_spend_limit is a per-period contribution to the aggregate vs_operator FeeGrant, so no per-record remaining_fee_spend exists (spec #95).
+function serializeParticipantRecord(record: any) {
   const spendLimit = record.spend_limit ?? null
-  const feeSpendLimit = record.fee_spend_limit ?? null
+  const withFeegrant = Boolean(record.with_feegrant)
 
   return {
     participant_id: Number(record.participant_id),
@@ -54,6 +61,8 @@ function serializeParticipantRecord(record: any, remainingFeeSpend: unknown) {
     ...(spendLimit ? { spend_limit: spendLimit, remaining_spend: record.remaining_spend ?? [] } : {}),
     ...(feeSpendLimit ? { fee_spend_limit: feeSpendLimit, remaining_fee_spend: remainingFeeSpend ?? [] } : {}),
     with_feegrant: Boolean(record.with_feegrant),
+    ...(withFeegrant ? { fee_spend_limit: record.fee_spend_limit ?? [] } : {}),
+    with_feegrant: withFeegrant,
     ...(record.expiration ? { expiration: dateToIsoOrNull(record.expiration) } : {}),
     ...(record.period ? { period: String(record.period) } : {}),
   }
@@ -306,7 +315,7 @@ export default class DelegationApiService extends BaseService {
         now = blockHeight !== undefined ? await getBlockChainTimeAsOf(blockHeight, { logger: this.logger }) : new Date()
       }
 
-      this.applyVSOAListFilters(query, p, { modifiedAfter, now, idColumn })
+      this.applyVSOAListFilters(query, p, { modifiedAfter, now, idColumn, blockHeight })
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
       const remainingFeeSpendByPair = await this.resolveRemainingFeeSpendByPair(
@@ -345,14 +354,20 @@ export default class DelegationApiService extends BaseService {
   private applyVSOAListFilters(
     query: any,
     p: ListVSOperatorAuthorizationsParams,
-    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string }
+    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string; blockHeight?: number }
   ) {
     if (p.corporation_id !== undefined) query.where('corporation_id', p.corporation_id)
     if (p.vs_operator) query.where('vs_operator', p.vs_operator)
     if (p.participant_id !== undefined) {
       query.whereRaw('records @> ?::jsonb', [JSON.stringify([{ participant_id: p.participant_id }])])
     }
-    if (ctx.now) query.whereRaw(ACTIVE_RECORD_EXISTS_SQL, [ctx.now])
+    if (ctx.now) {
+      if (ctx.blockHeight !== undefined) {
+        query.whereRaw(ACTIVE_RECORD_EXISTS_AT_HEIGHT_SQL, [ctx.blockHeight, ctx.now, ctx.now])
+      } else {
+        query.whereRaw(ACTIVE_RECORD_EXISTS_SQL, [ctx.now, ctx.now])
+      }
+    }
     if (ctx.modifiedAfter) query.where('modified', '>', ctx.modifiedAfter)
     if (p.min_id !== undefined) query.where(ctx.idColumn, '>=', p.min_id)
     if (p.max_id !== undefined) query.where(ctx.idColumn, '<', p.max_id)

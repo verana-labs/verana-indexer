@@ -76,12 +76,14 @@ function serializeCoins(coins: Coin[] | undefined): DenomAmount[] | null {
   return coins.map((coin) => ({ denom: coin.denom, amount: String(coin.amount) }))
 }
 
+// Protobuf JSON duration: integer seconds, at most nine fractional digits, no float rounding.
 function serializeDuration(duration: Duration | undefined): string | null {
   if (!duration) return null
   const seconds = Number(duration.seconds ?? 0)
   const nanos = Number(duration.nanos ?? 0)
   if (seconds === 0 && nanos === 0) return null
-  return `${seconds + nanos / 1e9}s`
+  const fraction = nanos ? `.${String(nanos).padStart(9, '0').replace(/0+$/, '')}` : ''
+  return `${seconds}${fraction}s`
 }
 
 export function serializeLedgerOperatorAuthorization(
