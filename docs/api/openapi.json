@@ -5012,7 +5012,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "If true, only return entries with at least one non-expired record"
+            "description": "If true, only return entries with at least one record whose Participant entry is an active participant at now: effective_from set and <= now, effective_until null or > now, revoked null, slashed null (VPR AUTHZ-CHECK-3 step 1). The record's own expiration and period play no part."
           },
           {
             "name": "modified_after",
@@ -8714,11 +8714,10 @@
           "msg_types": { "type": "array", "items": { "type": "string" } },
           "spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
           "remaining_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when spend_limit is set." },
-          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" } },
-          "remaining_fee_spend": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present when fee_spend_limit is set." },
+          "fee_spend_limit": { "type": "array", "items": { "$ref": "#/components/schemas/DenomAmount" }, "description": "Present iff with_feegrant is true: this record's contribution, per vs_operator_fee_period, to the aggregate vs_operator FeeGrant (see listFeeGrants). Not a balance of its own." },
           "with_feegrant": { "type": "boolean" },
-          "expiration": { "type": "string", "format": "date-time" },
-          "period": { "type": "string", "description": "Reset period, as a duration (e.g. \"86400s\")." }
+          "expiration": { "type": "string", "format": "date-time", "description": "End of the current operation-budget cycle; present iff period is set and the cycle has started. Not a validity window end." },
+          "period": { "type": "string", "description": "Length of the operation-budget cycle for spend_limit, as a duration (e.g. \"86400s\"). Never applies to fees." }
         }
       },
       "VSOperatorAuthorization": {

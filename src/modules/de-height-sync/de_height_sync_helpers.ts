@@ -54,7 +54,6 @@ export interface ParticipantAuthorizationRecordRow {
   spend_limit: DenomAmount[] | null
   remaining_spend: DenomAmount[] | null
   fee_spend_limit: DenomAmount[] | null
-  remaining_fee_spend: DenomAmount[] | null
   with_feegrant: boolean
   expiration: string | null
   period: string | null
@@ -77,12 +76,14 @@ function serializeCoins(coins: Coin[] | undefined): DenomAmount[] | null {
   return coins.map((coin) => ({ denom: coin.denom, amount: String(coin.amount) }))
 }
 
+// Protobuf JSON duration: integer seconds, at most nine fractional digits, no float rounding.
 function serializeDuration(duration: Duration | undefined): string | null {
   if (!duration) return null
   const seconds = Number(duration.seconds ?? 0)
   const nanos = Number(duration.nanos ?? 0)
   if (seconds === 0 && nanos === 0) return null
-  return `${seconds + nanos / 1e9}s`
+  const fraction = nanos ? `.${String(nanos).padStart(9, '0').replace(/0+$/, '')}` : ''
+  return `${seconds}${fraction}s`
 }
 
 export function serializeLedgerOperatorAuthorization(
@@ -109,7 +110,6 @@ function serializeLedgerParticipantRecord(
     spend_limit: serializeCoins(record.spendLimit),
     remaining_spend: serializeCoins(record.remainingSpend),
     fee_spend_limit: serializeCoins(record.feeSpendLimit),
-    remaining_fee_spend: serializeCoins(record.remainingFeeSpend),
     with_feegrant: Boolean(record.withFeegrant),
     expiration: dateToIsoOrNull(record.expiration),
     period: serializeDuration(record.period),

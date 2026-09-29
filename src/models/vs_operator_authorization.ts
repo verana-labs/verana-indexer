@@ -7,7 +7,6 @@ export interface ParticipantAuthorizationRecord {
   spend_limit: DenomAmount[] | null
   remaining_spend: DenomAmount[] | null
   fee_spend_limit: DenomAmount[] | null
-  remaining_fee_spend: DenomAmount[] | null
   with_feegrant: boolean
   expiration: string | null
   period: string | null

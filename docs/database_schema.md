@@ -550,7 +550,7 @@ Latest on-chain state of each `VSOperatorAuthorization` from the `verana.de.v1` 
 | `id`             | Primary key — the on-chain uint64 id of the VSOperatorAuthorization                                            |
 | `corporation_id` | Id of the corporation granting the authorization                                                              |
 | `vs_operator`    | Grantee VS-operator account receiving the authorization                                                       |
-| `records`        | jsonb array of `ParticipantAuthorizationRecord` — one per controlled participant, each carrying `participant_id`, `msg_types`, `spend_limit`, `remaining_spend`, `fee_spend_limit`, `remaining_fee_spend`, `with_feegrant`, `expiration`, `period` |
+| `records`        | jsonb array of `ParticipantAuthorizationRecord` — one per controlled participant, each carrying `participant_id`, `msg_types`, `spend_limit`, `remaining_spend`, `fee_spend_limit` (per-period contribution to the aggregate `vs_operator` FeeGrant), `with_feegrant`, `expiration` (end of the current operation-budget cycle), `period` |
 | `modified`       | Block time of the last change to this authorization (drives the `modified_after` list filter)                |
 | `height`         | Block height at which this state was captured                                                                 |
 | `created_at`     | Timestamp when this row was first inserted                                                                    |
