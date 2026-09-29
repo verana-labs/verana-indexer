@@ -5,7 +5,6 @@ import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { formatTimestamp } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { extractController, requireController } from '../../common/utils/extract_controller'
-import getGlobalVariables from '../../common/utils/global_variables'
 import { getModuleParams } from '../../common/utils/params_service'
 import { CS_STATS_FIELDS, statsToUpdateObject } from '../../common/utils/stats_fields'
 import { mapParticipantType } from '../../common/utils/utils'
@@ -2178,24 +2177,6 @@ export default class ParticipantIngestService extends Service {
         return
       }
 
-      const globalVariables = await getGlobalVariables()
-      if (!globalVariables) {
-        this.logger.info(`Global variables: ${JSON.stringify(globalVariables)}`)
-      }
-
-      let validationFeesDenom = 0
-      let validationTDDenom = 0
-
-      if (typeStr !== 'HOLDER') {
-        const trustUnitPrice = Number(globalVariables?.ec?.trust_unit_price ?? 0)
-        const trustDepositRate = Number(globalVariables?.td?.trust_deposit_rate ?? 0)
-
-        validationFeesDenom =
-          participant?.validation_fees && trustUnitPrice ? Number(participant.validation_fees) * trustUnitPrice : 0
-
-        validationTDDenom = validationFeesDenom && trustDepositRate ? validationFeesDenom * trustDepositRate : 0
-      }
-
       const corporationId = await resolveCorporationIdForMessage(msg)
       const effectiveFromRaw = pickMessageValue(msg as any, 'effective_from', 'effectiveFrom')
       const effectiveUntilRaw = pickMessageValue(msg as any, 'effective_until', 'effectiveUntil')
@@ -2229,9 +2210,9 @@ export default class ParticipantIngestService extends Service {
         verification_fees: Number(pickMessageValue(msg as any, 'verification_fees', 'verificationFees') ?? 0),
         validation_fees: Number(pickMessageValue(msg as any, 'validation_fees', 'validationFees') ?? 0),
         issuance_fees: Number(pickMessageValue(msg as any, 'issuance_fees', 'issuanceFees') ?? 0),
-        deposit: Number(validationTDDenom),
-        op_current_deposit: Number(validationTDDenom),
-        op_current_fees: Number(validationFeesDenom),
+        deposit: 0,
+        op_current_deposit: 0,
+        op_current_fees: 0,
         validator_participant_id: validatorParticipantId,
         op_state: 'PENDING',
         op_last_state_change: now,
@@ -2634,25 +2615,6 @@ export default class ParticipantIngestService extends Service {
         return { success: false, reason: 'Validator participant not found' }
       }
 
-      const globalVariables = await getGlobalVariables()
-      if (!globalVariables) {
-        this.logger.info(`Global variables: ${JSON.stringify(globalVariables)}`)
-      }
-
-      const trustUnitPrice = globalVariables?.ec?.trust_unit_price
-      const trustDepositRate = globalVariables?.td?.trust_deposit_rate
-
-      if (trustUnitPrice === undefined || trustDepositRate === undefined) {
-        this.logger.warn('Global variables not set for fee calculation')
-        return { success: false, reason: 'Invalid global variables' }
-      }
-
-      const validationFeesInDenom = Number(validatorParticipant.validation_fees) * trustUnitPrice
-      const validationTrustDepositInDenom = validationFeesInDenom * trustDepositRate
-      if (Number.isNaN(validationFeesInDenom) || Number.isNaN(validationTrustDepositInDenom)) {
-        this.logger.warn('Error calculating fees/deposit')
-        return { success: false, reason: 'Error calculating fees/deposit' }
-      }
       const height = Number((msg as any)?.height) || 0
       await knex.transaction(async (trx) => {
         // Calculate expire_soon for renewed participant (PENDING state means not active)
@@ -2666,9 +2628,6 @@ export default class ParticipantIngestService extends Service {
         const updateData: any = {
           op_state: 'PENDING',
           op_last_state_change: now,
-          op_current_fees: Number(validationFeesInDenom),
-          op_current_deposit: Number(validationTrustDepositInDenom),
-          deposit: Number(applicantParticipant.deposit || 0) + Number(validationTrustDepositInDenom),
           modified: now,
         }
 
