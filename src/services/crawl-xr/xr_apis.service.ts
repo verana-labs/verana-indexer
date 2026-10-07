@@ -2,7 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import ExchangeRate from '../../models/exchange_rate'
@@ -193,6 +193,7 @@ export default class ExchangeRateApiService extends BaseService {
 
       return ApiResponder.success(ctx, {
         exchange_rate: serializeExchangeRateRow(row),
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err: any) {
       this.logger.error('Error in ExchangeRate.getExchangeRate:', err)

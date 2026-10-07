@@ -20,6 +20,10 @@ jest.mock('../../../../src/common/utils/params_service', () => {
     getModuleParamsAction: jest.fn(),
   }
 })
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
 
 describe('🧪 TrustDepositDatabaseService', () => {
   const broker = new ServiceBroker({ logger: false })
@@ -53,6 +57,20 @@ describe('🧪 TrustDepositDatabaseService', () => {
       expect(res.trust_deposit).toBeDefined()
       expect(res.trust_deposit.corporation_id).toBe(2)
       expect(res.trust_deposit.slashed_deposit).toBe(1000)
+    })
+
+    it('echoes the latest indexed height as block_height', async () => {
+      ;(resolveAddressByCorporationId as jest.Mock).mockResolvedValue('verana1testaccountxyz')
+      ;(TrustDeposit.query as any).mockReturnValue({
+        findOne: jest.fn().mockResolvedValue({ corporation: 'verana1testaccountxyz', share: 1, deposit: 1 }),
+      })
+
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDeposit', {
+        corporation_id: 2,
+      })
+
+      expect(res.trust_deposit.corporation_id).toBe(2)
+      expect(res.block_height).toBe(777)
     })
 
     it('❌ should return 400 for invalid corporation_id', async () => {

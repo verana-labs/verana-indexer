@@ -6,6 +6,10 @@ import EcosystemDatabaseService from '../../../../src/services/crawl-ec/ec_datab
 
 jest.mock('../../../../src/models/ecosystem')
 jest.mock('../../../../src/common/utils/apiResponse')
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
 jest.mock('../../../../src/services/crawl-pp/pp_state_utils', () => ({
   calculateParticipantState: jest.fn().mockReturnValue('ACTIVE'),
 }))

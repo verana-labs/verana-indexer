@@ -3,11 +3,10 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import Stats, { EntityType, Granularity } from '../../models/stats'
-import { getResolvedBlockHeight } from '../crawl-co/co_stats'
 import {
   computeSnapshotMetrics,
   getBlockTimeAtHeight,

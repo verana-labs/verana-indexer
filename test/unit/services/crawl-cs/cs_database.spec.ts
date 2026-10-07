@@ -1,3 +1,8 @@
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
+
 import { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../../../src/common'
 import knex from '../../../../src/common/utils/db_connection'
@@ -347,6 +352,26 @@ describe('CredentialSchemaDatabaseService API Integration Tests', () => {
     expect(body.activity[0].entity_type).toBe('CredentialSchema')
     expect(normalizeSchemaId(body.activity[0].entity_id)).toBe(schemaId)
     expect(body.activity[0].msg).toBeDefined()
+  })
+
+  it('echoes the latest indexed height as block_height on get', async () => {
+    const res = await broker.call(`${serviceKey}.get`, { id: normalizeSchemaId(schemaId) })
+    const body = deepUnwrapMoleculer(res)
+
+    expect(normalizeSchemaId(body.schema.id)).toBe(schemaId)
+    expect(body.block_height).toBe(777)
+  })
+
+  it('echoes At-Block-Height as block_height on the point-in-time get', async () => {
+    const res = await broker.call(
+      `${serviceKey}.get`,
+      { id: normalizeSchemaId(schemaId) },
+      { meta: { blockHeight: 10_000_000 } }
+    )
+    const body = deepUnwrapMoleculer(res)
+
+    expect(normalizeSchemaId(body.schema.id)).toBe(schemaId)
+    expect(body.block_height).toBe(10_000_000)
   })
 
   describe('stats history rows', () => {

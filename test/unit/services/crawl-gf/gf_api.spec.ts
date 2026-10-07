@@ -17,6 +17,11 @@ jest.mock('../../../../src/common/utils/block_time', () => ({
   getBlockChainTimeAsOf: jest.fn(async () => new Date('2024-03-01T00:00:00.000Z')),
 }))
 
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
+
 import { ServiceBroker } from 'moleculer'
 import { CoGovernanceFrameworkVersion } from '../../../../src/models/co_governance_framework_version'
 import { GovernanceFrameworkVersion } from '../../../../src/models/governance_framework_version'
@@ -72,6 +77,26 @@ describe('GovernanceFrameworkApiService.getGovernanceFrameworkVersionV4', () => 
     jest.clearAllMocks()
     tableResolvesTo(CoGovernanceFrameworkVersion as any, undefined)
     tableResolvesTo(GovernanceFrameworkVersion as any, undefined)
+  })
+
+  it('echoes At-Block-Height as block_height', async () => {
+    tableResolvesTo(CoGovernanceFrameworkVersion as any, gfvRow())
+
+    const res: any = await service.getGovernanceFrameworkVersionV4({
+      params: { id: '7' },
+      meta: { blockHeight: 1500 },
+    } as any)
+
+    expect(res.version.id).toBe(7)
+    expect(res.block_height).toBe(1500)
+  })
+
+  it('echoes the latest indexed height as block_height when the header is absent', async () => {
+    tableResolvesTo(CoGovernanceFrameworkVersion as any, gfvRow())
+
+    const res: any = await service.getGovernanceFrameworkVersionV4({ params: { id: '7' }, meta: {} } as any)
+
+    expect(res.block_height).toBe(777)
   })
 
   it('returns a CGF version (ecosystem_id 0) with corporation_id set and chain ids', async () => {

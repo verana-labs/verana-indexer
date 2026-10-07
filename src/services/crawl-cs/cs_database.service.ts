@@ -6,6 +6,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
+import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
@@ -1397,6 +1398,9 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const { id } = ctx.params
       const blockHeight = (ctx.meta as any)?.blockHeight
+      const resolvedBlockHeight = await getResolvedBlockHeight(
+        typeof blockHeight === 'number' ? blockHeight : undefined
+      )
 
       if (typeof blockHeight === 'number') {
         const hasHeightColumn = await checkHeightColumnExists()
@@ -1466,6 +1470,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.success(
           ctx,
           {
+            block_height: resolvedBlockHeight,
             schema: mapCredentialSchemaApiFields({
               ...historicalSchema,
               participants: stats.participants,
@@ -1519,6 +1524,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(
         ctx,
         {
+          block_height: resolvedBlockHeight,
           schema: mapCredentialSchemaApiFields({
             ...schemaRecord,
             json_schema: storedSchemaString,

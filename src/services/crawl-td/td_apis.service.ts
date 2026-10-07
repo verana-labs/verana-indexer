@@ -4,6 +4,7 @@ import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import knex from '../../common/utils/db_connection'
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapTrustDepositApiFields } from '../../common/vpr-v4-mapping'
@@ -39,6 +40,9 @@ export default class TrustDepositApiService extends BullableService {
 
       const blockHeight = (ctx.meta as any)?.blockHeight
       const shareValue = await this.getTrustDepositShareValue(typeof blockHeight === 'number' ? blockHeight : undefined)
+      const resolvedBlockHeight = await getResolvedBlockHeight(
+        typeof blockHeight === 'number' ? blockHeight : undefined
+      )
 
       // If AtBlockHeight is provided, query historical state
       if (typeof blockHeight === 'number') {
@@ -56,6 +60,7 @@ export default class TrustDepositApiService extends BullableService {
 
         const result = {
           trust_deposit: this.buildTrustDepositResponse(historyRecord, corporationId, shareValue),
+          block_height: resolvedBlockHeight,
         }
 
         return ApiResponder.success(ctx, result, 200)
@@ -70,6 +75,7 @@ export default class TrustDepositApiService extends BullableService {
       }
       const result = {
         trust_deposit: this.buildTrustDepositResponse(trustDeposit, corporationId, shareValue),
+        block_height: resolvedBlockHeight,
       }
       return ApiResponder.success(ctx, result, 200)
     } catch (err: any) {

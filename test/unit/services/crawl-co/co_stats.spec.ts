@@ -26,7 +26,6 @@ import {
   countControlledEcosystems,
   deriveActiveVersion,
   getCorporationTrustDeposit,
-  getResolvedBlockHeight,
   parseGfDataMode,
 } from '../../../../src/services/crawl-co/co_stats'
 
@@ -258,33 +257,6 @@ describe('co_stats.applyGfData', () => {
     expect(result).toHaveLength(1)
     expect(result[0].version).toBe(1)
     expect(result[0].documents).toEqual([{ language: 'en', created: '2020-01-01T00:00:00Z' }])
-  })
-})
-
-describe('co_stats.getResolvedBlockHeight', () => {
-  beforeEach(() => jest.clearAllMocks())
-
-  it('returns the provided block height without a DB lookup', async () => {
-    const h = await getResolvedBlockHeight(42)
-    expect(h).toBe(42)
-    expect(mockCheckpointFirst).not.toHaveBeenCalled()
-  })
-
-  it('falls back to the latest indexed height from block_checkpoint', async () => {
-    mockCheckpointFirst.mockResolvedValueOnce({ height: 175 })
-    expect(await getResolvedBlockHeight()).toBe(175)
-  })
-
-  it('falls back to the latest block-table height when no checkpoint row exists', async () => {
-    mockCheckpointFirst.mockResolvedValueOnce(undefined)
-    mockBlockMaxFirst.mockResolvedValueOnce({ max: 1234 })
-    expect(await getResolvedBlockHeight()).toBe(1234)
-  })
-
-  it('returns 0 when neither a checkpoint row nor an indexed block exists', async () => {
-    mockCheckpointFirst.mockResolvedValueOnce(undefined)
-    mockBlockMaxFirst.mockResolvedValueOnce(undefined)
-    expect(await getResolvedBlockHeight()).toBe(0)
   })
 })
 

@@ -3545,7 +3545,7 @@
         "responses": {
           "200": {
             "description": "Corporation group state",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" } } } } }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } } } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
@@ -3618,7 +3618,7 @@
         "responses": {
           "200": {
             "description": "Proposal",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" } } } } }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } } } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
@@ -3730,6 +3730,10 @@
                   "properties": {
                     "exchange_rate": {
                       "$ref": "#/components/schemas/ExchangeRate"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
                   }
                 }
@@ -4773,6 +4777,10 @@
                   "properties": {
                     "digest": {
                       "$ref": "#/components/schemas/Digest"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
                   }
                 }
@@ -4952,6 +4960,10 @@
                   "properties": {
                     "authorization": {
                       "$ref": "#/components/schemas/OperatorAuthorization"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
                   }
                 }
@@ -5130,6 +5142,10 @@
                   "properties": {
                     "authorization": {
                       "$ref": "#/components/schemas/VSOperatorAuthorization"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
                   }
                 }
@@ -6679,6 +6695,10 @@
         "properties": {
           "ecosystem": {
             "$ref": "#/components/schemas/Ecosystem"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -6926,6 +6946,10 @@
         "properties": {
           "schema": {
             "$ref": "#/components/schemas/CredentialSchema"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -7217,6 +7241,10 @@
         "properties": {
           "participant": {
             "$ref": "#/components/schemas/Participant"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -7390,6 +7418,10 @@
         "properties": {
           "session": {
             "$ref": "#/components/schemas/ParticipantSession"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -7593,6 +7625,10 @@
         "properties": {
           "trust_deposit": {
             "$ref": "#/components/schemas/TrustDeposit"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -9085,10 +9121,15 @@
         "properties": {
           "version": {
             "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         },
         "required": [
-          "version"
+          "version",
+          "block_height"
         ]
       },
       "GovernanceFrameworkVersionV4ListResponse": {

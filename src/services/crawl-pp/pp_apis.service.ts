@@ -6,7 +6,7 @@ import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
 import { resolveEvaluationTime } from '../../common/utils/block_time'
-import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
@@ -2050,6 +2050,7 @@ export default class ParticipantAPIService extends BullableService {
       }
       const trustDataMode = trustDataModeParsed.mode
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
+      const resolvedBlockHeight = await getResolvedBlockHeight(blockHeight)
       const evaluatedAt = await resolveEvaluationTime(useHistoryQuery ? blockHeight : undefined, {
         logContext: '[pp_apis:getParticipant]',
         logger: this.logger,
@@ -2222,7 +2223,11 @@ export default class ParticipantAPIService extends BullableService {
           trustDataMode,
           blockHeight
         )
-        return ApiResponder.success(ctx, { participant: participantWithTrustData }, 200)
+        return ApiResponder.success(
+          ctx,
+          { participant: participantWithTrustData, block_height: resolvedBlockHeight },
+          200
+        )
       }
 
       const participant = await knex('participants').where('id', Number(id)).first()
@@ -2249,7 +2254,11 @@ export default class ParticipantAPIService extends BullableService {
         trustDataMode,
         blockHeight
       )
-      return ApiResponder.success(ctx, { participant: participantWithTrustData }, 200)
+      return ApiResponder.success(
+        ctx,
+        { participant: participantWithTrustData, block_height: resolvedBlockHeight },
+        200
+      )
     } catch (err: any) {
       this.logger.error('Error in getParticipant:', err)
       return ApiResponder.error(ctx, 'Failed to get participant', 500)
@@ -2454,6 +2463,7 @@ export default class ParticipantAPIService extends BullableService {
       const { id } = ctx.params
       const blockHeight = getBlockHeight(ctx)
       const useHistoryQuery = this.shouldUseHistoryQuery(ctx, blockHeight)
+      const resolvedBlockHeight = await getResolvedBlockHeight(blockHeight)
 
       // If AtBlockHeight is provided, query historical state
       if (useHistoryQuery && blockHeight !== undefined) {
@@ -2469,7 +2479,7 @@ export default class ParticipantAPIService extends BullableService {
         }
 
         const historicalSession = this.normalizeParticipantSessionRow(historyRecord)
-        return ApiResponder.success(ctx, { session: historicalSession }, 200)
+        return ApiResponder.success(ctx, { session: historicalSession, block_height: resolvedBlockHeight }, 200)
       }
 
       // Otherwise, return latest state
@@ -2478,7 +2488,7 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, 'ParticipantSession not found', 404)
       }
       const normalized = this.normalizeParticipantSessionRow(session)
-      return ApiResponder.success(ctx, { session: normalized }, 200)
+      return ApiResponder.success(ctx, { session: normalized, block_height: resolvedBlockHeight }, 200)
     } catch (err: any) {
       this.logger.error('Error in getParticipantSession:', err)
       return ApiResponder.error(ctx, 'Failed to get ParticipantSession', 500)

@@ -94,6 +94,11 @@ function proposalRow(over: Record<string, unknown> = {}) {
   }
 }
 
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
+
 describe('GroupApiService', () => {
   const broker = new ServiceBroker({ logger: false })
   const service = new GroupApiService(broker)
@@ -143,6 +148,33 @@ describe('GroupApiService', () => {
       expect(res.group.members).toEqual([
         { address: 'verana1admin', weight: '1', metadata: 'member_1', added_at: '2026-08-10T15:44:00.000Z' },
       ])
+    })
+
+    it('echoes the latest indexed height as block_height', async () => {
+      const res: any = await service.getCorporationGroup({ params: { corporation_id: 1 }, meta: {} } as any)
+      expect(res.group.corporation_id).toBe(1)
+      expect(res.block_height).toBe(777)
+    })
+
+    it('echoes At-Block-Height as block_height on the history path', async () => {
+      tables.__from = [
+        {
+          corporation_id: 1,
+          group_id: 9,
+          group_version: 2,
+          policy_version: 1,
+          total_weight: '2',
+          decision_policy: { threshold: '2' },
+          members: [],
+          height: 30,
+        },
+      ]
+      const res: any = await service.getCorporationGroup({
+        params: { corporation_id: 1 },
+        meta: { blockHeight: 35 },
+      } as any)
+      expect(res.group.version).toBe(2)
+      expect(res.block_height).toBe(35)
     })
 
     it('404s when no group is anchored', async () => {
@@ -436,6 +468,20 @@ describe('GroupApiService', () => {
     it('404s for unknown proposals', async () => {
       tables.group_proposal = []
       expect(await service.getProposal({ params: { id: 999 }, meta: {} } as any)).toMatchObject({ code: 404 })
+    })
+
+    it('echoes the latest indexed height as block_height', async () => {
+      tables.group_proposal = [proposalRow()]
+      const res: any = await service.getProposal({ params: { id: 4 }, meta: {} } as any)
+      expect(res.proposal.id).toBe(4)
+      expect(res.block_height).toBe(777)
+    })
+
+    it('echoes At-Block-Height as block_height on the history path', async () => {
+      tables.__from = [{ proposal_id: 4, snapshot: proposalRow(), height: 40 }]
+      const res: any = await service.getProposal({ params: { id: 4 }, meta: { blockHeight: 50 } } as any)
+      expect(res.proposal.id).toBe(4)
+      expect(res.block_height).toBe(50)
     })
 
     it('returns the proposal with its tally', async () => {
