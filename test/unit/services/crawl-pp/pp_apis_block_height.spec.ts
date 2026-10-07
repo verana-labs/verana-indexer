@@ -115,7 +115,7 @@ describe('ParticipantAPIService block_height echo', () => {
   it('getParticipantSession echoes At-Block-Height as block_height on the history path', async () => {
     const res: any = await service.getParticipantSession({ params: { id: SESSION_ID }, meta: { blockHeight: 150 } })
 
-    expect(res.session).toBeDefined()
+    expect(res.session.id).toBe(SESSION_ID)
     expect(res.block_height).toBe(150)
   })
 })

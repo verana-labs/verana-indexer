@@ -63,7 +63,7 @@ describe('ExchangeRateApiService.getExchangeRate', () => {
 
     const res: any = await service.getExchangeRate({ params: { id: '3' }, meta: { blockHeight: 200 } } as any)
 
-    expect(res.exchange_rate.quote_asset).toBe('uvna')
+    expect(res.exchange_rate.id).toBe(3)
     expect(res.block_height).toBe(200)
   })
 

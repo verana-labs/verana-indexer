@@ -21,7 +21,7 @@ function computePrice(amount: string, rate: string, rateScale: number): string {
 
 function serializeExchangeRateRow(row: any) {
   return {
-    id: Number(row.id ?? row.exchange_rate_id),
+    id: Number(row.exchange_rate_id ?? row.id),
     base_asset_type: row.base_asset_type,
     base_asset: row.base_asset,
     quote_asset_type: row.quote_asset_type,

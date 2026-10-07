@@ -179,7 +179,7 @@ export default class ParticipantAPIService extends BullableService {
     }
 
     return {
-      id: row.id ?? row.session_id,
+      id: row.session_id ?? row.id,
       corporation_id: Number(row.corporation_id ?? 0) || 0,
       vs_operator: row.vs_operator ?? null,
       session_records: sessionRecords,
