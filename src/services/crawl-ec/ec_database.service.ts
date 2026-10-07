@@ -264,7 +264,7 @@ export default class EcosystemDatabaseService extends BaseService {
                   ecosystem_id: ecosystemId,
                   created: gfvRow.created ?? null,
                   version: gfvRow.version,
-                  active_since: gfvRow.active_since ?? gfvRow.created ?? null,
+                  active_since: gfvRow.active_since ?? null,
                 })
                 .onConflict('id')
                 .merge(['ecosystem_id', 'created', 'version', 'active_since'])

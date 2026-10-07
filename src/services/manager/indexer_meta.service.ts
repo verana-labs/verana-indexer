@@ -10,6 +10,7 @@ import { getIndexerVersion } from '../../common/utils/version'
 import {
   VeranaCredentialSchemaMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../../common/verana-message-types'
 import { Network } from '../../network'
@@ -26,6 +27,9 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaEcosystemMessageTypes.ArchiveEcosystem]: 'ArchiveEcosystem',
   [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: 'AddGovernanceFrameworkDocument',
   [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: 'IncreaseGovernanceFrameworkVersion',
+  [VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument]: 'AddGovernanceFrameworkDocument',
+  [VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion]:
+    'IncreaseActiveGovernanceFrameworkVersion',
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: 'CreateCredentialSchema',
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: 'UpdateCredentialSchema',
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: 'ArchiveCredentialSchema',

@@ -4,11 +4,15 @@ import BullableService from '../../base/bullable.service'
 import { SERVICE } from '../../common'
 import { formatTimestamp } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { extractAddGfDocumentEvents, matchAddGfDocumentEvent } from '../../common/utils/gf_events'
+import {
+  extractAddGfDocumentEvents,
+  extractIncreaseGfActiveEvent,
+  matchAddGfDocumentEvent,
+} from '../../common/utils/gf_events'
 import { finalizeEcosystemHistoryInsert } from '../../common/utils/installed_table_columns'
 import { MessageProcessorBase } from '../../common/utils/message_processor_base'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
-import { VeranaEcosystemMessageTypes } from '../../common/verana-message-types'
+import { VeranaEcosystemMessageTypes, VeranaGovernanceFrameworkMessageTypes } from '../../common/verana-message-types'
 import { getEcosystem } from '../../modules/ec-height-sync/ec_height_sync_helpers'
 import { resolveCorporationIdForMessage } from '../crawl-co/corporation_resolve'
 import { calculateEcosystemStats, TR_STATS_FIELDS } from './ec_stats'
@@ -76,6 +80,12 @@ export default class EcosystemMessageProcessorService extends BullableService {
   }
 
   private resolveEcosystemIdForMessage(message: any): number | null {
+    // A message that names its ecosystem wins over tx events, which are shared by every message in the tx.
+    const explicitId = Number(
+      message?.ecosystem_id ?? message?.ecosystemId ?? message?.content?.ecosystem_id ?? message?.content?.ecosystemId
+    )
+    if (Number.isInteger(explicitId) && explicitId > 0) return explicitId
+
     const eventEcosystemIds = Array.isArray(message?.eventEcosystemIds) ? message.eventEcosystemIds : []
     for (const rawEventId of eventEcosystemIds) {
       const eventId = Number(rawEventId)
@@ -166,7 +176,10 @@ export default class EcosystemMessageProcessorService extends BullableService {
           processed = true
         }
 
-        if (processedTR.type === VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc) {
+        if (
+          processedTR.type === VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc ||
+          processedTR.type === VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument
+        ) {
           await this.processAddGovFrameworkDoc(processedTR)
           processed = true
         }
@@ -176,7 +189,10 @@ export default class EcosystemMessageProcessorService extends BullableService {
           processed = true
         }
 
-        if (processedTR.type === VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion) {
+        if (
+          processedTR.type === VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion ||
+          processedTR.type === VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion
+        ) {
           await this.processIncreaseActiveGFV(processedTR)
           processed = true
         }
@@ -866,13 +882,16 @@ export default class EcosystemMessageProcessorService extends BullableService {
 
       const timestamp = formatTimestamp(message.timestamp)
       const blockHeight = message.height || 0
+      const version = Number(message.version)
+      const language = message.doc_language || message.language
+      const digestSri = message.doc_digest_sri || message.digest_sri
+      const docEvent = matchAddGfDocumentEvent(
+        extractAddGfDocumentEvents(message.txEvents).filter((e) => e.ecosystemId === Number(ec.id)),
+        version,
+        language
+      )
 
-      let gfv = await trx('governance_framework_version')
-        .where({
-          ecosystem_id: ec.id,
-          version: message.version,
-        })
-        .first()
+      let gfv = await trx('governance_framework_version').where({ ecosystem_id: ec.id, version }).first()
 
       if (!gfv) {
         const maxVersionResult = await trx('governance_framework_version')
@@ -881,9 +900,9 @@ export default class EcosystemMessageProcessorService extends BullableService {
           .first()
         const maxVersion = maxVersionResult?.max_version || 0
 
-        if (message.version !== maxVersion + 1 || message.version <= ec.active_version) {
+        if (version !== maxVersion + 1 || version <= ec.active_version) {
           await trx.rollback()
-          const errMsg = `AddGovFrameworkDoc: Invalid version=${message.version} for ecosystem_id=${ec.id}, maxVersion=${maxVersion}, active_version=${ec.active_version}`
+          const errMsg = `AddGovFrameworkDoc: Invalid version=${version} for ecosystem_id=${ec.id}, maxVersion=${maxVersion}, active_version=${ec.active_version}`
           this.logger.error(errMsg)
           this.logger.error('AddGovFrameworkDoc message payload:', JSON.stringify(message))
           console.error('FATAL: Invalid AddGovFrameworkDoc version. Exiting for debug.')
@@ -894,39 +913,28 @@ export default class EcosystemMessageProcessorService extends BullableService {
           .insert({
             ecosystem_id: ec.id,
             created: timestamp,
-            version: message.version,
-            // active_since: null, // Omit to allow default null
+            version,
+            gfv_id: docEvent?.gfvId ?? null,
           })
           .returning('*')
 
         await this.recordGFVHistory(trx, gfv.id, ec.id, 'AddGFV', blockHeight, null, gfv)
+      } else if (docEvent?.gfvId && gfv.gfv_id == null) {
+        await trx('governance_framework_version').where({ id: gfv.id }).update({ gfv_id: docEvent.gfvId })
       }
 
-      const language = message.doc_language || message.language
-      const digestSri = message.doc_digest_sri || message.digest_sri
-
-      let gfd = await trx('governance_framework_document')
-        .where({
-          gfv_id: gfv.id,
-          digest_sri: digestSri,
-        })
-        .first()
-
-      if (gfd) {
-      }
-
-      const oldGfd = null
-      ;[gfd] = await trx('governance_framework_document')
+      const [gfd] = await trx('governance_framework_document')
         .insert({
           gfv_id: gfv.id,
           created: timestamp,
           language,
           url: message.doc_url,
           digest_sri: digestSri,
+          gfd_id: docEvent?.gfdId ?? null,
         })
         .returning('*')
 
-      await this.recordGFDHistory(trx, gfd.id, gfv.id, ec.id, oldGfd ? 'UpdateGFD' : 'AddGFD', blockHeight, oldGfd, gfd)
+      await this.recordGFDHistory(trx, gfd.id, gfv.id, ec.id, 'AddGFD', blockHeight, null, gfd)
 
       await trx.commit()
       this.logger.info(
@@ -949,8 +957,22 @@ export default class EcosystemMessageProcessorService extends BullableService {
         return
       }
 
-      const nextVersion = ec.active_version + 1
-      const gfv = await trx('governance_framework_version').where({ ecosystem_id: ec.id, version: nextVersion }).first()
+      const timestamp = formatTimestamp(message.timestamp)
+      const blockHeight = message.height || 0
+
+      // The chain event is authoritative: local rows can lag when the add was never indexed.
+      const event = extractIncreaseGfActiveEvent(message.txEvents, Number(ec.id), message.corporation)
+      const nextVersion = event?.version ?? (Number(ec.active_version) || 0) + 1
+      let gfv = await trx('governance_framework_version').where({ ecosystem_id: ec.id, version: nextVersion }).first()
+      if (!gfv && event?.version) {
+        ;[gfv] = await trx('governance_framework_version')
+          .insert({ ecosystem_id: ec.id, created: timestamp, version: nextVersion, gfv_id: event.gfvId ?? null })
+          .returning('*')
+        await this.recordGFVHistory(trx, gfv.id, ec.id, 'AddGFV', blockHeight, null, gfv)
+      } else if (gfv && event?.gfvId && gfv.gfv_id == null) {
+        await trx('governance_framework_version').where({ id: gfv.id }).update({ gfv_id: event.gfvId })
+        gfv = await trx('governance_framework_version').where({ id: gfv.id }).first()
+      }
       if (!gfv) {
         await trx.rollback()
         this.logger.warn(
@@ -959,10 +981,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         throw new Error(`GFV version ${nextVersion} not found for ecosystem_id=${ec.id}, retry needed`)
       }
 
-      const timestamp = formatTimestamp(message.timestamp)
-
       await trx('ecosystem').where({ id: ec.id }).update({ active_version: nextVersion, modified: timestamp })
-      const blockHeight = message.height || 0
       await this.recordTRHistory(trx, ec.id, 'IncreaseGFV', blockHeight, ec, {
         ...ec,
         active_version: nextVersion,

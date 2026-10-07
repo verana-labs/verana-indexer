@@ -1,6 +1,7 @@
 import {
   VeranaCredentialSchemaMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../verana-message-types'
 import knex from './db_connection'
@@ -12,6 +13,9 @@ const MSG_TYPE_TO_ACTION: Record<string, string> = {
   [VeranaEcosystemMessageTypes.ArchiveEcosystem]: 'ArchiveEcosystem',
   [VeranaEcosystemMessageTypes.AddGovernanceFrameworkDoc]: 'AddGovernanceFrameworkDocument',
   [VeranaEcosystemMessageTypes.IncreaseGovernanceFrameworkVersion]: 'IncreaseGovernanceFrameworkVersion',
+  [VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument]: 'AddGovernanceFrameworkDocument',
+  [VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion]:
+    'IncreaseActiveGovernanceFrameworkVersion',
   [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: 'CreateCredentialSchema',
   [VeranaCredentialSchemaMessageTypes.UpdateCredentialSchema]: 'UpdateCredentialSchema',
   [VeranaCredentialSchemaMessageTypes.ArchiveCredentialSchema]: 'ArchiveCredentialSchema',
