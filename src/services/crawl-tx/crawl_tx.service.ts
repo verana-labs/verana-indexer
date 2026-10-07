@@ -29,6 +29,7 @@ import Utils from '../../common/utils/utils'
 import {
   isCorporationMessageType,
   isCredentialSchemaMessageType,
+  isEcosystemGovernanceFrameworkMessage,
   isEcosystemMessageType,
   isGovernanceFrameworkMessageType,
   isKnownVeranaMessageType,
@@ -1174,7 +1175,9 @@ export default class CrawlTxService extends BullableService {
     )
 
     const ecosystemList = successfulMsgs
-      .filter((msg: any) => isEcosystemMessageType(msg.type))
+      .filter(
+        (msg: any) => isEcosystemMessageType(msg.type) || isEcosystemGovernanceFrameworkMessage(msg.type, msg.content)
+      )
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         const txEvents = this._decodeEventAttributes(parentTx?.data?.tx_response?.events)

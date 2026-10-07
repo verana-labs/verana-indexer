@@ -174,7 +174,7 @@ const TR_EVENT_TYPES = new Set<string>([
   'create_ecosystem',
   'create_governance_framework_version',
   'create_governance_framework_document',
-  'add_governance_framework_document',
+  'add_gf_document',
   'increase_active_gf_version',
   'update_ecosystem',
   'archive_ecosystem',

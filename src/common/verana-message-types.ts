@@ -166,6 +166,21 @@ export function isGovernanceFrameworkMessageType(messageType: string): boolean {
   )
 }
 
+// gf messages target an Ecosystem (EGF) when ecosystem_id is set, otherwise the signing Corporation (CGF).
+export function isEcosystemGovernanceFrameworkMessage(
+  messageType: string,
+  content?: Record<string, unknown> | null
+): boolean {
+  if (
+    messageType !== VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument &&
+    messageType !== VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion
+  ) {
+    return false
+  }
+  const ecosystemId = Number(content?.ecosystem_id ?? content?.ecosystemId ?? 0)
+  return Number.isInteger(ecosystemId) && ecosystemId > 0
+}
+
 export function isUpdateParamsMessageType(messageType: string): boolean {
   return (
     messageType === VeranaCredentialSchemaMessageTypes.UpdateParams ||

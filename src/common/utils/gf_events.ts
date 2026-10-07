@@ -1,4 +1,5 @@
 export interface AddGfDocumentEvent {
+  ecosystemId: number
   gfvId: number | null
   gfdId: number | null
   version: number | null
@@ -24,6 +25,7 @@ export function extractAddGfDocumentEvents(txEvents: TxEvent[] | undefined): Add
     const attrs = new Map<string, string>()
     for (const a of ev.attributes ?? []) attrs.set(a.key ?? '', (a.value ?? '').replace(/^"|"$/g, ''))
     out.push({
+      ecosystemId: toId(attrs.get('ecosystem_id')) ?? 0,
       gfvId: toId(attrs.get('gfv_id')),
       gfdId: toId(attrs.get('gfd_id')),
       version: toId(attrs.get('version')),
