@@ -134,7 +134,7 @@ export async function up(knex: Knex): Promise<void> {
       table.bigInteger('tr_id').notNullable()
       table.timestamp('created').notNullable()
       table.integer('version').notNullable()
-      table.timestamp('active_since').nullable()
+      table.timestamp('active_since').notNullable()
       table.foreign('tr_id').references('id').inTable('trust_registry').onDelete('CASCADE')
       table.unique(['tr_id', 'version'], 'tr_version_trid_version_unique')
     })
