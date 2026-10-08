@@ -5,7 +5,10 @@ import { BULL_JOB_NAME, SERVICE } from '../../common'
 import knex from '../../common/utils/db_connection'
 import { Block } from '../../models/block'
 import { BlockCheckpoint } from '../../models/block_checkpoint'
-import Stats, { Granularity } from '../../models/stats'
+import Stats, { EntityType, Granularity } from '../../models/stats'
+import { getParticipantCountAtHeight, SNAPSHOT_ENTITY_KIND, SNAPSHOT_PARTICIPANT_FIELDS } from './stats_snapshot'
+
+type ParticipantCounts = Record<(typeof SNAPSHOT_PARTICIPANT_FIELDS)[number], number>
 
 @Service({
   name: SERVICE.V1.StatsCalculationService.key,
@@ -20,22 +23,20 @@ export default class StatsCalculationService extends BullableService {
     super(broker)
   }
 
-  private sumParticipantsByRole(source: {
-    participants_ecosystem?: number | string | null
-    participants_issuer_grantor?: number | string | null
-    participants_issuer?: number | string | null
-    participants_verifier_grantor?: number | string | null
-    participants_verifier?: number | string | null
-    participants_holder?: number | string | null
-  }): number {
-    return (
-      Number(source.participants_ecosystem || 0) +
-      Number(source.participants_issuer_grantor || 0) +
-      Number(source.participants_issuer || 0) +
-      Number(source.participants_verifier_grantor || 0) +
-      Number(source.participants_verifier || 0) +
-      Number(source.participants_holder || 0)
+  private async participantCountsAtHeight(
+    entityType: EntityType,
+    entityId: number | null,
+    height: number
+  ): Promise<ParticipantCounts> {
+    const entityKind = SNAPSHOT_ENTITY_KIND[entityType]
+    const counts = await Promise.all(
+      SNAPSHOT_PARTICIPANT_FIELDS.map((_, roleType) =>
+        getParticipantCountAtHeight({ entityKind, entityId, roleType, height })
+      )
     )
+    return Object.fromEntries(
+      SNAPSHOT_PARTICIPANT_FIELDS.map((field, index) => [field, Number(counts[index])])
+    ) as ParticipantCounts
   }
 
   @Action({
@@ -49,22 +50,22 @@ export default class StatsCalculationService extends BullableService {
     await this.processStatsFromCheckpoint()
   }
 
-  private async calculateForGranularity(granularity: Granularity, now: Date): Promise<void> {
+  private async calculateForGranularity(granularity: Granularity, now: Date, height: number): Promise<void> {
     try {
       const timestamp = this.getGranularityTimestamp(granularity, now)
       this.logger.info(`[${granularity}] Timestamp: ${timestamp.toISOString()}`)
 
       this.logger.info(`[${granularity}] Calculating GLOBAL stats...`)
-      await this.calculateGlobalStats(granularity, timestamp)
+      await this.calculateGlobalStats(granularity, timestamp, height)
 
       this.logger.info(`[${granularity}] Calculating ECOSYSTEM stats...`)
-      await this.calculateEcosystemStats(granularity, timestamp)
+      await this.calculateEcosystemStats(granularity, timestamp, height)
 
       this.logger.info(`[${granularity}] Calculating CREDENTIAL_SCHEMA stats...`)
-      await this.calculateCredentialSchemaStats(granularity, timestamp)
+      await this.calculateCredentialSchemaStats(granularity, timestamp, height)
 
       this.logger.info(`[${granularity}] Calculating PARTICIPANT stats...`)
-      await this.calculateParticipantStats(granularity, timestamp)
+      await this.calculateParticipantStats(granularity, timestamp, height)
     } catch (error: any) {
       this.logger.error(`[${granularity}] Error in calculateForGranularity:`, error?.message || error, error?.stack)
       throw error
@@ -89,7 +90,7 @@ export default class StatsCalculationService extends BullableService {
     return d
   }
 
-  private async calculateGlobalStats(granularity: Granularity, timestamp: Date): Promise<void> {
+  private async calculateGlobalStats(granularity: Granularity, timestamp: Date, height: number): Promise<void> {
     try {
       this.logger.info(`GLOBAL [${granularity}] Starting calculation for timestamp: ${timestamp.toISOString()}`)
 
@@ -130,7 +131,7 @@ export default class StatsCalculationService extends BullableService {
       }
 
       this.logger.info(`GLOBAL [${granularity}] Computing stats from database...`)
-      const stats = await this.computeGlobalStats(timestamp)
+      const stats = await this.computeGlobalStats(timestamp, height)
       this.logger.info(`GLOBAL [${granularity}] Stats computed successfully:`, {
         cumulative_participants: stats.cumulative_participants,
         cumulative_active_schemas: stats.cumulative_active_schemas,
@@ -240,7 +241,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateEcosystemStats(granularity: Granularity, timestamp: Date): Promise<void> {
+  private async calculateEcosystemStats(granularity: Granularity, timestamp: Date, height: number): Promise<void> {
     try {
       const ecosystems = await knex('ecosystem').select('id')
       this.logger.info(`[ECOSYSTEM] Found ${ecosystems.length} trust registries`)
@@ -254,7 +255,7 @@ export default class StatsCalculationService extends BullableService {
             .where('entity_id', String(ec.id))
             .first()
 
-          const stats = await this.computeEcosystemStats(String(ec.id), timestamp)
+          const stats = await this.computeEcosystemStats(String(ec.id), timestamp, height)
 
           if (!stats) {
             this.logger.debug(`[ECOSYSTEM] No stats computed for EC ${ec.id} (created after bucket) - skipping`)
@@ -349,7 +350,11 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateCredentialSchemaStats(granularity: Granularity, timestamp: Date): Promise<void> {
+  private async calculateCredentialSchemaStats(
+    granularity: Granularity,
+    timestamp: Date,
+    height: number
+  ): Promise<void> {
     try {
       const schemas = await knex('credential_schemas').select('id')
       this.logger.info(`CREDENTIAL_SCHEMA Found ${schemas.length} schemas`)
@@ -367,7 +372,7 @@ export default class StatsCalculationService extends BullableService {
             .where('entity_id', String(schema.id))
             .first()
 
-          const stats = await this.computeCredentialSchemaStats(String(schema.id), timestamp)
+          const stats = await this.computeCredentialSchemaStats(String(schema.id), timestamp, height)
 
           if (!stats) {
             skipped++
@@ -481,7 +486,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateParticipantStats(granularity: Granularity, timestamp: Date): Promise<void> {
+  private async calculateParticipantStats(granularity: Granularity, timestamp: Date, height: number): Promise<void> {
     try {
       const participants = await knex('participants').select('id', 'schema_id')
       this.logger.info(`PARTICIPANT Found ${participants.length} participants`)
@@ -502,7 +507,8 @@ export default class StatsCalculationService extends BullableService {
           const stats = await this.computeParticipantStats(
             String(participant.id),
             String(participant.schema_id),
-            timestamp
+            timestamp,
+            height
           )
 
           if (!stats) {
@@ -617,18 +623,11 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeGlobalStats(timestamp: Date): Promise<any> {
+  private async computeGlobalStats(timestamp: Date, height: number): Promise<any> {
     this.logger.info(`GLOBAL  Computing stats: Querying participants table...`)
     const allParticipants = await knex('participants')
       .where('created', '<=', timestamp)
       .select(
-        'participants',
-        'participants_ecosystem',
-        'participants_issuer_grantor',
-        'participants_issuer',
-        'participants_verifier_grantor',
-        'participants_verifier',
-        'participants_holder',
         'weight',
         'issued',
         'verified',
@@ -641,14 +640,10 @@ export default class StatsCalculationService extends BullableService {
       )
     this.logger.info(`GLOBAL  Found ${allParticipants.length} participants to process`)
 
+    const participantCounts = await this.participantCountsAtHeight('GLOBAL', null, height)
+
     const cumulative = {
-      participants: 0,
-      participants_ecosystem: 0,
-      participants_issuer_grantor: 0,
-      participants_issuer: 0,
-      participants_verifier_grantor: 0,
-      participants_verifier: 0,
-      participants_holder: 0,
+      ...participantCounts,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: 0,
@@ -665,13 +660,6 @@ export default class StatsCalculationService extends BullableService {
     }
 
     for (const participant of allParticipants) {
-      cumulative.participants += this.sumParticipantsByRole(participant)
-      cumulative.participants_ecosystem += Number(participant.participants_ecosystem || 0)
-      cumulative.participants_issuer_grantor += Number(participant.participants_issuer_grantor || 0)
-      cumulative.participants_issuer += Number(participant.participants_issuer || 0)
-      cumulative.participants_verifier_grantor += Number(participant.participants_verifier_grantor || 0)
-      cumulative.participants_verifier += Number(participant.participants_verifier || 0)
-      cumulative.participants_holder += Number(participant.participants_holder || 0)
       cumulative.weight += BigInt(participant.weight || '0')
       cumulative.issued += BigInt(participant.issued || '0')
       cumulative.verified += BigInt(participant.verified || '0')
@@ -789,7 +777,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeEcosystemStats(ecosystemId: string, timestamp: Date): Promise<any> {
+  private async computeEcosystemStats(ecosystemId: string, timestamp: Date, height: number): Promise<any> {
     const schemas = await knex('credential_schemas')
       .where('ecosystem_id', ecosystemId)
       .where('created', '<=', timestamp)
@@ -808,13 +796,6 @@ export default class StatsCalculationService extends BullableService {
       .whereIn('schema_id', schemaIds)
       .where('created', '<=', timestamp)
       .select(
-        'participants',
-        'participants_ecosystem',
-        'participants_issuer_grantor',
-        'participants_issuer',
-        'participants_verifier_grantor',
-        'participants_verifier',
-        'participants_holder',
         'weight',
         'issued',
         'verified',
@@ -826,14 +807,10 @@ export default class StatsCalculationService extends BullableService {
         'network_slashed_amount_repaid'
       )
 
+    const participantCounts = await this.participantCountsAtHeight('ECOSYSTEM', Number(ecosystemId), height)
+
     const cumulative = {
-      participants: 0,
-      participants_ecosystem: 0,
-      participants_issuer_grantor: 0,
-      participants_issuer: 0,
-      participants_verifier_grantor: 0,
-      participants_verifier: 0,
-      participants_holder: 0,
+      ...participantCounts,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: 0,
@@ -850,13 +827,6 @@ export default class StatsCalculationService extends BullableService {
     }
 
     for (const participant of participants) {
-      cumulative.participants += this.sumParticipantsByRole(participant)
-      cumulative.participants_ecosystem += Number(participant.participants_ecosystem || 0)
-      cumulative.participants_issuer_grantor += Number(participant.participants_issuer_grantor || 0)
-      cumulative.participants_issuer += Number(participant.participants_issuer || 0)
-      cumulative.participants_verifier_grantor += Number(participant.participants_verifier_grantor || 0)
-      cumulative.participants_verifier += Number(participant.participants_verifier || 0)
-      cumulative.participants_holder += Number(participant.participants_holder || 0)
       cumulative.weight += BigInt(participant.weight || '0')
       cumulative.issued += BigInt(participant.issued || '0')
       cumulative.verified += BigInt(participant.verified || '0')
@@ -969,18 +939,11 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeCredentialSchemaStats(schemaId: string, timestamp: Date): Promise<any> {
+  private async computeCredentialSchemaStats(schemaId: string, timestamp: Date, height: number): Promise<any> {
     const participants = await knex('participants')
       .where('schema_id', schemaId)
       .where('created', '<=', timestamp)
       .select(
-        'participants',
-        'participants_ecosystem',
-        'participants_issuer_grantor',
-        'participants_issuer',
-        'participants_verifier_grantor',
-        'participants_verifier',
-        'participants_holder',
         'weight',
         'issued',
         'verified',
@@ -992,14 +955,10 @@ export default class StatsCalculationService extends BullableService {
         'network_slashed_amount_repaid'
       )
 
+    const participantCounts = await this.participantCountsAtHeight('CREDENTIAL_SCHEMA', Number(schemaId), height)
+
     const cumulative = {
-      participants: 0,
-      participants_ecosystem: 0,
-      participants_issuer_grantor: 0,
-      participants_issuer: 0,
-      participants_verifier_grantor: 0,
-      participants_verifier: 0,
-      participants_holder: 0,
+      ...participantCounts,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: 0,
@@ -1016,13 +975,6 @@ export default class StatsCalculationService extends BullableService {
     }
 
     for (const participant of participants) {
-      cumulative.participants += this.sumParticipantsByRole(participant)
-      cumulative.participants_ecosystem += Number(participant.participants_ecosystem || 0)
-      cumulative.participants_issuer_grantor += Number(participant.participants_issuer_grantor || 0)
-      cumulative.participants_issuer += Number(participant.participants_issuer || 0)
-      cumulative.participants_verifier_grantor += Number(participant.participants_verifier_grantor || 0)
-      cumulative.participants_verifier += Number(participant.participants_verifier || 0)
-      cumulative.participants_holder += Number(participant.participants_holder || 0)
       cumulative.weight += BigInt(participant.weight || '0')
       cumulative.issued += BigInt(participant.issued || '0')
       cumulative.verified += BigInt(participant.verified || '0')
@@ -1126,18 +1078,16 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeParticipantStats(participantId: string, schemaId: string, timestamp: Date): Promise<any> {
+  private async computeParticipantStats(
+    participantId: string,
+    schemaId: string,
+    timestamp: Date,
+    height: number
+  ): Promise<any> {
     const participant = await knex('participants')
       .where('id', participantId)
       .where('created', '<=', timestamp)
       .select(
-        'participants',
-        'participants_ecosystem',
-        'participants_issuer_grantor',
-        'participants_issuer',
-        'participants_verifier_grantor',
-        'participants_verifier',
-        'participants_holder',
         'weight',
         'issued',
         'verified',
@@ -1160,14 +1110,10 @@ export default class StatsCalculationService extends BullableService {
       .select('archived')
       .first()
 
+    const participantCounts = await this.participantCountsAtHeight('PARTICIPANT', Number(participantId), height)
+
     const cumulative = {
-      participants: this.sumParticipantsByRole(participant),
-      participants_ecosystem: Number(participant.participants_ecosystem || 0),
-      participants_issuer_grantor: Number(participant.participants_issuer_grantor || 0),
-      participants_issuer: Number(participant.participants_issuer || 0),
-      participants_verifier_grantor: Number(participant.participants_verifier_grantor || 0),
-      participants_verifier: Number(participant.participants_verifier || 0),
-      participants_holder: Number(participant.participants_holder || 0),
+      ...participantCounts,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: schema && schema.archived === null ? 1 : 0,
@@ -1507,7 +1453,7 @@ export default class StatsCalculationService extends BullableService {
       )
 
       try {
-        await this.calculateStatsForTimestamp(blockTimestamp)
+        await this.calculateStatsForTimestamp(blockTimestamp, handleTxHeight)
 
         if (statsCheckpoint) {
           statsCheckpoint.height = handleTxHeight
@@ -1545,7 +1491,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateStatsForTimestamp(timestamp: Date): Promise<void> {
+  private async calculateStatsForTimestamp(timestamp: Date, height: number): Promise<void> {
     try {
       this.logger.debug(' Testing database connection...')
       await knex.raw('SELECT 1 as connection_test')
@@ -1558,7 +1504,7 @@ export default class StatsCalculationService extends BullableService {
       for (const granularity of granularities) {
         this.logger.debug(` [${granularity}] Starting calculation...`)
         try {
-          await this.calculateForGranularity(granularity, timestamp)
+          await this.calculateForGranularity(granularity, timestamp, height)
           this.logger.debug(` [${granularity}] Calculation completed successfully`)
         } catch (error: any) {
           const errorDetails = {

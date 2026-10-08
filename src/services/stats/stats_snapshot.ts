@@ -19,6 +19,48 @@ export const SNAPSHOT_PARTICIPANT_FIELDS = [
   'participants_holder',
 ] as const
 
+export async function getParticipantCountAtHeight(params: {
+  entityKind: number
+  entityId: number | null
+  roleType: number
+  height: number
+}): Promise<number | string> {
+  const { entityKind, entityId, roleType, height } = params
+
+  if (entityKind !== 0 && entityId === null) return 0
+
+  const row = await knex('entity_participant_changes')
+    .where('entity_kind', entityKind)
+    .andWhere('entity_id', entityKind === 0 ? 0 : (entityId as number))
+    .andWhere('type', roleType)
+    .andWhere('height', '<=', height)
+    .orderBy('height', 'desc')
+    .first()
+
+  if (!row) return 0
+  const rawValue = (row as Row).value
+  if (rawValue === null || rawValue === undefined) return 0
+
+  const minSafe = BigInt(Number.MIN_SAFE_INTEGER)
+  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER)
+
+  if (typeof rawValue === 'bigint') {
+    return rawValue >= minSafe && rawValue <= maxSafe ? Number(rawValue) : rawValue.toString()
+  }
+
+  if (typeof rawValue === 'string') {
+    if (!/^-?\d+$/.test(rawValue)) return 0
+    const asBigInt = BigInt(rawValue)
+    return asBigInt >= minSafe && asBigInt <= maxSafe ? Number(asBigInt) : rawValue
+  }
+
+  if (typeof rawValue === 'number') {
+    return Number.isSafeInteger(rawValue) ? rawValue : String(rawValue)
+  }
+
+  return 0
+}
+
 const METRIC_COLUMNS = [
   'weight',
   'issued',
