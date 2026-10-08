@@ -2334,6 +2334,7 @@ export default class EcosystemDatabaseService extends BaseService {
       delete normalizedParams.trust_registry_trust_deposit
     }
 
-    return ApiResponder.success(ctx, { params: normalizedParams }, 200)
+    const resolvedBlockHeight = await getResolvedBlockHeight(typeof blockHeight === 'number' ? blockHeight : undefined)
+    return ApiResponder.success(ctx, { params: normalizedParams, block_height: resolvedBlockHeight }, 200)
   }
 }

@@ -6511,6 +6511,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "The Ecosystem module parameter set as defined by VPR governance. VPR v4 defines no Ecosystem-specific global variable, so the set may be empty. Exact keys are determined by the on-chain parameter set."
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -6994,6 +6998,10 @@
                 "format": "decimal"
               }
             }
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -7266,6 +7274,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "The Participant module parameter set as defined by VPR governance. Exact keys are determined by the on-chain parameter set."
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -7675,6 +7687,10 @@
                 "example": 0.2
               }
             }
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -8504,7 +8520,8 @@
           "base_asset_type",
           "base_asset",
           "quote_asset_type",
-          "quote_asset"
+          "quote_asset",
+          "block_height"
         ],
         "properties": {
           "price": {
@@ -8546,6 +8563,10 @@
             "type": "string",
             "format": "date-time",
             "description": "Expiry timestamp of the ExchangeRate entry. Omitted when base and quote asset are identical."
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -9039,10 +9060,15 @@
             "type": "object",
             "description": "Corporation module parameter set. The x/co module currently defines no parameters (reserved for forward compatibility); an empty object is returned.",
             "additionalProperties": true
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         },
         "required": [
-          "params"
+          "params",
+          "block_height"
         ]
       },
       "GovernanceFrameworkDocumentV4": {

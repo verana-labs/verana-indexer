@@ -294,6 +294,7 @@ export default class ExchangeRateApiService extends BaseService {
         amount,
       } = ctx.params
 
+      const blockHeight = getBlockHeight(ctx)
       if (baseAssetType === quoteAssetType && baseAsset === quoteAsset) {
         return ApiResponder.success(ctx, {
           price: amount,
@@ -301,6 +302,7 @@ export default class ExchangeRateApiService extends BaseService {
           base_asset: baseAsset,
           quote_asset_type: quoteAssetType,
           quote_asset: quoteAsset,
+          block_height: await getResolvedBlockHeight(blockHeight),
         })
       }
 
@@ -310,7 +312,6 @@ export default class ExchangeRateApiService extends BaseService {
         quote_asset_type: quoteAssetType,
         quote_asset: quoteAsset,
       }
-      const blockHeight = getBlockHeight(ctx)
       const row =
         blockHeight !== undefined
           ? await this.resolveAtHeight({ pair }, blockHeight)
@@ -337,6 +338,7 @@ export default class ExchangeRateApiService extends BaseService {
         rate: serialized.rate,
         rate_scale: serialized.rate_scale,
         expires: serialized.expires,
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err: any) {
       this.logger.error('Error in ExchangeRate.getPrice:', err)

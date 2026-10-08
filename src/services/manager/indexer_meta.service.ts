@@ -4,6 +4,7 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { BULL_JOB_NAME, SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import knex from '../../common/utils/db_connection'
 import { getLcdClient } from '../../common/utils/verana_client'
 import { getIndexerVersion } from '../../common/utils/version'
@@ -116,7 +117,7 @@ export default class IndexerMetaService extends BaseService {
   }
 
   private async getNextChangeAt(blockHeight: number): Promise<number | null> {
-    const maxHeight = await this.getLatestIndexedHeight()
+    const maxHeight = await getResolvedBlockHeight()
     if (maxHeight <= 0) return null
     if (!Number.isFinite(blockHeight) || blockHeight >= maxHeight) return null
 
@@ -233,22 +234,13 @@ export default class IndexerMetaService extends BaseService {
     )
   }
 
-  private async getLatestIndexedHeight(): Promise<number> {
-    const checkpoint = await knex('block_checkpoint')
-      .select('height')
-      .where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION)
-      .first()
-    const height = Number(checkpoint?.height ?? 0)
-    return Number.isInteger(height) && height >= 0 ? height : 0
-  }
-
   @Action()
   public async listChanges(ctx: Context<unknown>) {
     const headerHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight
     const blockHeight =
       typeof headerHeight === 'number' && Number.isInteger(headerHeight) && headerHeight >= 0
         ? headerHeight
-        : await this.getLatestIndexedHeight()
+        : await getResolvedBlockHeight()
 
     const heightTimestampPromise = knex('transaction')
       .select('timestamp')
@@ -538,7 +530,7 @@ export default class IndexerMetaService extends BaseService {
     if (!parsed.ok) return ApiResponder.error(ctx, parsed.error, 400)
 
     const { fromBlock, dids, corporationId, channels, limit } = parsed.value
-    const currentBlock = await this.getLatestIndexedHeight()
+    const currentBlock = await getResolvedBlockHeight()
     const didFilter = dids === null ? null : new Set(dids)
 
     const blocks: Array<{ block: number; blockTime: string; changes: VtChange[] }> = []
@@ -606,7 +598,7 @@ export default class IndexerMetaService extends BaseService {
     if (!cursor.ok) return ApiResponder.error(ctx, cursor.error, 400)
 
     const metaBlockHeight = (ctx.meta as { blockHeight?: number } | undefined)?.blockHeight
-    const atBlock = typeof metaBlockHeight === 'number' ? metaBlockHeight : await this.getLatestIndexedHeight()
+    const atBlock = typeof metaBlockHeight === 'number' ? metaBlockHeight : await getResolvedBlockHeight()
 
     const { dids, nextCursor } = await listIndexedDidsPage({
       atBlock,

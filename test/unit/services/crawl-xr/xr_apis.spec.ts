@@ -75,3 +75,42 @@ describe('ExchangeRateApiService.getExchangeRate', () => {
     expect(res).toEqual({ error: 'Exchange rate not found', code: 404 })
   })
 })
+
+describe('ExchangeRateApiService.getPrice', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const service = new ExchangeRateApiService(broker)
+  const pair = { base_asset_type: 'TU', base_asset: 'tu', quote_asset_type: 'COIN', quote_asset: 'uvna' }
+
+  beforeEach(() => jest.clearAllMocks())
+
+  it('echoes the latest indexed height as block_height on the identity pair', async () => {
+    const res: any = await service.getPrice({
+      params: { ...pair, quote_asset_type: 'TU', quote_asset: 'tu', amount: '5' },
+      meta: {},
+    } as any)
+
+    expect(res.price).toBe('5')
+    expect(res.block_height).toBe(777)
+  })
+
+  it('echoes the latest indexed height as block_height on the rate path', async () => {
+    chainResolvesTo(ExchangeRate, rateRow)
+
+    const res: any = await service.getPrice({ params: { ...pair, amount: '5000000' }, meta: {} } as any)
+
+    expect(res.price).toBe('5000')
+    expect(res.block_height).toBe(777)
+  })
+
+  it('echoes At-Block-Height as block_height on the history path', async () => {
+    chainResolvesTo(ExchangeRateHistory, { ...rateRow, id: 55, exchange_rate_id: 3 })
+
+    const res: any = await service.getPrice({
+      params: { ...pair, amount: '5000000' },
+      meta: { blockHeight: 200 },
+    } as any)
+
+    expect(res.price).toBe('5000')
+    expect(res.block_height).toBe(200)
+  })
+})
