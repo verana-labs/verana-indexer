@@ -97,9 +97,9 @@ export async function applyScheduledParticipantFlipsForBlock(ctx: BlockContext):
 
       const delta: number = flip.flip_kind === (1 as FlipKind) ? 1 : -1
 
-      const participantChain: Array<{ id: number; schema_id: number }> = []
-      let currentId: number | null = participant.id
-      const visited = new Set<number>()
+      const validatorAncestorIds: number[] = []
+      let currentId: number | null = participant.validator_participant_id ?? null
+      const visited = new Set<number>([participant.id])
       const MAX_VALIDATOR_CHAIN_DEPTH = 1000
       let traversalAborted = false
 
@@ -114,12 +114,9 @@ export async function applyScheduledParticipantFlipsForBlock(ctx: BlockContext):
           break
         }
         visited.add(currentId)
-        const p = await trx('participants')
-          .select('id', 'schema_id', 'validator_participant_id')
-          .where({ id: currentId })
-          .first()
+        const p = await trx('participants').select('id', 'validator_participant_id').where({ id: currentId }).first()
         if (!p) break
-        participantChain.push({ id: p.id, schema_id: p.schema_id })
+        validatorAncestorIds.push(p.id)
         currentId = p.validator_participant_id ?? null
       }
 
@@ -132,12 +129,12 @@ export async function applyScheduledParticipantFlipsForBlock(ctx: BlockContext):
       const schema = await trx('credential_schemas').select('id', 'ecosystem_id').where({ id: schemaId }).first()
       const ecosystemId = schema?.ecosystem_id ?? null
 
-      for (const p of participantChain) {
+      for (const ancestorId of validatorAncestorIds) {
         await bumpEntity(trx, {
           height,
           blockTime,
           entityKind: ENTITY_KIND.PARTICIPANT,
-          entityId: p.id,
+          entityId: ancestorId,
           roleType,
           delta,
         })
@@ -145,7 +142,7 @@ export async function applyScheduledParticipantFlipsForBlock(ctx: BlockContext):
           height,
           blockTime,
           entityKind: ENTITY_KIND.PARTICIPANT,
-          entityId: p.id,
+          entityId: ancestorId,
           roleType: ROLE_TYPE_ANY,
           delta,
         })
