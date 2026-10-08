@@ -28,9 +28,23 @@ import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
-import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
+import {
+  compareById,
+  getResolvedBlockHeight,
+  paginateActivityItems,
+  parseCorporationListPagination,
+} from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
 import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
+import {
+  joinParticipantCounts,
+  PARTICIPANT_COUNT_ENTITY_KIND,
+  parseParticipantCountRanges,
+  participantCountColumn,
+  readParticipantCounts,
+  readParticipantCountsByEntity,
+  zeroParticipantCounts,
+} from '../stats/stats_snapshot'
 import { calculateCredentialSchemaStats } from './cs_stats'
 
 let heightColumnExistsCache: boolean | null = null
@@ -1387,6 +1401,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     }
   }
 
+  private async withParticipantCounts<T extends { id: unknown }>(schemas: T[], height: number): Promise<T[]> {
+    const countsBySchemaId = await readParticipantCountsByEntity(
+      PARTICIPANT_COUNT_ENTITY_KIND.CREDENTIAL_SCHEMA,
+      schemas.map((schema) => Number(schema.id)),
+      height
+    )
+    return schemas.map((schema) => ({
+      ...schema,
+      ...(countsBySchemaId.get(Number(schema.id)) ?? zeroParticipantCounts()),
+    }))
+  }
+
   @Action({
     name: 'get',
     params: {
@@ -1397,6 +1423,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const { id } = ctx.params
       const blockHeight = (ctx.meta as any)?.blockHeight
+      const participantCounts = await readParticipantCounts(
+        PARTICIPANT_COUNT_ENTITY_KIND.CREDENTIAL_SCHEMA,
+        id,
+        await getResolvedBlockHeight(blockHeight)
+      )
 
       if (typeof blockHeight === 'number') {
         const hasHeightColumn = await checkHeightColumnExists()
@@ -1468,13 +1499,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           {
             schema: mapCredentialSchemaApiFields({
               ...historicalSchema,
-              participants: stats.participants,
-              participants_ecosystem: stats.participants_ecosystem,
-              participants_issuer_grantor: stats.participants_issuer_grantor,
-              participants_issuer: stats.participants_issuer,
-              participants_verifier_grantor: stats.participants_verifier_grantor,
-              participants_verifier: stats.participants_verifier,
-              participants_holder: stats.participants_holder,
+              ...participantCounts,
               weight: stats.weight,
               issued: stats.issued,
               verified: stats.verified,
@@ -1524,13 +1549,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             json_schema: storedSchemaString,
             title: schemaRecord.title ?? undefined,
             description: schemaRecord.description ?? undefined,
-            participants: stats.participants,
-            participants_ecosystem: stats.participants_ecosystem,
-            participants_issuer_grantor: stats.participants_issuer_grantor,
-            participants_issuer: stats.participants_issuer,
-            participants_verifier_grantor: stats.participants_verifier_grantor,
-            participants_verifier: stats.participants_verifier,
-            participants_holder: stats.participants_holder,
+            ...participantCounts,
             weight: stats.weight,
             issued: stats.issued,
             verified: stats.verified,
@@ -1642,20 +1661,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         modified_after: modifiedAfter,
         archived: archivedParam,
         only_active: onlyActive,
-        min_participants: minParticipants,
-        max_participants: maxParticipants,
-        min_participants_ecosystem: minParticipantsEcosystem,
-        max_participants_ecosystem: maxParticipantsEcosystem,
-        min_participants_issuer_grantor: minParticipantsIssuerGrantor,
-        max_participants_issuer_grantor: maxParticipantsIssuerGrantor,
-        min_participants_issuer: minParticipantsIssuer,
-        max_participants_issuer: maxParticipantsIssuer,
-        min_participants_verifier_grantor: minParticipantsVerifierGrantor,
-        max_participants_verifier_grantor: maxParticipantsVerifierGrantor,
-        min_participants_verifier: minParticipantsVerifier,
-        max_participants_verifier: maxParticipantsVerifier,
-        min_participants_holder: minParticipantsHolder,
-        max_participants_holder: maxParticipantsHolder,
         min_weight: minWeight,
         max_weight: maxWeight,
         min_issued: minIssued,
@@ -1696,6 +1701,8 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const { limit, minId: idMin, maxId: idMax, direction: sortDirection } = pageParsed.value
 
       const blockHeight = (ctx.meta as any)?.blockHeight
+      const evaluationHeight = await getResolvedBlockHeight(blockHeight)
+      const participantCountRanges = parseParticipantCountRanges(ctx.params as Record<string, unknown>)
       let modifiedAfterIso: string | undefined
       if (modifiedAfter) {
         if (!isValidISO8601UTC(modifiedAfter)) {
@@ -1766,25 +1773,16 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           return ApiResponder.success(ctx, { schemas: [] }, 200)
         }
 
+        const applyParticipantCountFilters = (qb: any, idColumn: string) => {
+          if (participantCountRanges.length === 0) return
+          joinParticipantCounts(qb, idColumn, PARTICIPANT_COUNT_ENTITY_KIND.CREDENTIAL_SCHEMA, evaluationHeight)
+          for (const range of participantCountRanges) {
+            applyHalfOpenRangeToQuery(qb, participantCountColumn(range.field), range.min, range.max)
+          }
+        }
+
         const applyMetricRangeFilters = (qb: any) => {
           if (!hasHistoryMetricColumns) return
-          applyHalfOpenRangeToQuery(qb, 'participants', minParticipants, maxParticipants)
-          applyHalfOpenRangeToQuery(qb, 'participants_ecosystem', minParticipantsEcosystem, maxParticipantsEcosystem)
-          applyHalfOpenRangeToQuery(
-            qb,
-            'participants_issuer_grantor',
-            minParticipantsIssuerGrantor,
-            maxParticipantsIssuerGrantor
-          )
-          applyHalfOpenRangeToQuery(qb, 'participants_issuer', minParticipantsIssuer, maxParticipantsIssuer)
-          applyHalfOpenRangeToQuery(
-            qb,
-            'participants_verifier_grantor',
-            minParticipantsVerifierGrantor,
-            maxParticipantsVerifierGrantor
-          )
-          applyHalfOpenRangeToQuery(qb, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
-          applyHalfOpenRangeToQuery(qb, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
           applyExactRangeToQuery(qb, 'weight', minWeight, maxWeight)
           applyExactRangeToQuery(qb, 'issued', minIssued, maxIssued)
           applyExactRangeToQuery(qb, 'verified', minVerified, maxVerified)
@@ -1811,6 +1809,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               if (effectiveHolderOnboarding !== undefined)
                 qb.where('csh.holder_onboarding_mode', effectiveHolderOnboarding)
               applyMetricRangeFilters(qb)
+              applyParticipantCountFilters(qb, 'csh.credential_schema_id')
             })
             .orderBy('csh.credential_schema_id', 'asc')
             .modify((qb) => {
@@ -1843,6 +1842,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               if (effectiveHolderOnboarding !== undefined)
                 qb.where('csh.holder_onboarding_mode', effectiveHolderOnboarding)
               applyMetricRangeFilters(qb)
+              applyParticipantCountFilters(qb, 'csh.credential_schema_id')
             })
             .as('ranked')
           const orderedLatest = knex
@@ -1992,13 +1992,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
               const stats = statsMap.get(Number(item.id)) || {}
               return {
                 ...item,
-                participants: Number(stats.participants ?? 0),
-                participants_ecosystem: Number(stats.participants_ecosystem ?? 0),
-                participants_issuer_grantor: Number(stats.participants_issuer_grantor ?? 0),
-                participants_issuer: Number(stats.participants_issuer ?? 0),
-                participants_verifier_grantor: Number(stats.participants_verifier_grantor ?? 0),
-                participants_verifier: Number(stats.participants_verifier ?? 0),
-                participants_holder: Number(stats.participants_holder ?? 0),
                 weight: String(stats.weight ?? '0'),
                 issued: Number(stats.issued ?? 0),
                 verified: Number(stats.verified ?? 0),
@@ -2066,13 +2059,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
             const num = (v: any) => (typeof v === 'number' ? v : Number(v || 0))
             return {
               ...item,
-              participants: num(stats.participants),
-              participants_ecosystem: num((stats as any).participants_ecosystem),
-              participants_issuer_grantor: num((stats as any).participants_issuer_grantor),
-              participants_issuer: num((stats as any).participants_issuer),
-              participants_verifier_grantor: num((stats as any).participants_verifier_grantor),
-              participants_verifier: num((stats as any).participants_verifier),
-              participants_holder: num((stats as any).participants_holder),
               weight: String(stats.weight ?? '0'),
               issued: Number(stats.issued ?? 0),
               verified: Number(stats.verified ?? 0),
@@ -2087,45 +2073,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         }
 
         let filteredWithStats = schemasWithStats
-        filteredWithStats = applyHalfOpenRangeToRows(filteredWithStats, minParticipants, maxParticipants, (s) =>
-          toFiniteNumber(s.participants)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(
-          filteredWithStats,
-          minParticipantsEcosystem,
-          maxParticipantsEcosystem,
-          (s) => toFiniteNumber((s as any).participants_ecosystem)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(
-          filteredWithStats,
-          minParticipantsIssuerGrantor,
-          maxParticipantsIssuerGrantor,
-          (s) => toFiniteNumber((s as any).participants_issuer_grantor)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(
-          filteredWithStats,
-          minParticipantsIssuer,
-          maxParticipantsIssuer,
-          (s) => toFiniteNumber((s as any).participants_issuer)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(
-          filteredWithStats,
-          minParticipantsVerifierGrantor,
-          maxParticipantsVerifierGrantor,
-          (s) => toFiniteNumber((s as any).participants_verifier_grantor)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(
-          filteredWithStats,
-          minParticipantsVerifier,
-          maxParticipantsVerifier,
-          (s) => toFiniteNumber((s as any).participants_verifier)
-        )
-        filteredWithStats = applyHalfOpenRangeToRows(
-          filteredWithStats,
-          minParticipantsHolder,
-          maxParticipantsHolder,
-          (s) => toFiniteNumber((s as any).participants_holder)
-        )
         filteredWithStats = filterRowsByExactRange(filteredWithStats, minWeight, maxWeight, (s) => s.weight)
         filteredWithStats = filterRowsByExactRange(filteredWithStats, minIssued, maxIssued, (s) => s.issued)
         filteredWithStats = filterRowsByExactRange(filteredWithStats, minVerified, maxVerified, (s) => s.verified)
@@ -2166,10 +2113,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
           .sort((a, b) => compareById(a.id, b.id, sortDirection))
           .slice(0, limit)
 
+        const withCounts = await this.withParticipantCounts(sortedItems, evaluationHeight)
         return ApiResponder.success(
           ctx,
           {
-            schemas: sortedItems.map((s) => mapCredentialSchemaApiFields(s as Record<string, unknown>)),
+            schemas: withCounts.map((s) => mapCredentialSchemaApiFields(s as Record<string, unknown>)),
           },
           200
         )
@@ -2187,23 +2135,18 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (ecosystemId) query.where('ecosystem_id', ecosystemId)
       if (idMin !== undefined) query.where('id', '>=', idMin)
       if (idMax !== undefined) query.where('id', '<', idMax)
-      applyHalfOpenRangeToQuery(query, 'participants', minParticipants, maxParticipants)
-      applyHalfOpenRangeToQuery(query, 'participants_ecosystem', minParticipantsEcosystem, maxParticipantsEcosystem)
-      applyHalfOpenRangeToQuery(
-        query,
-        'participants_issuer_grantor',
-        minParticipantsIssuerGrantor,
-        maxParticipantsIssuerGrantor
-      )
-      applyHalfOpenRangeToQuery(query, 'participants_issuer', minParticipantsIssuer, maxParticipantsIssuer)
-      applyHalfOpenRangeToQuery(
-        query,
-        'participants_verifier_grantor',
-        minParticipantsVerifierGrantor,
-        maxParticipantsVerifierGrantor
-      )
-      applyHalfOpenRangeToQuery(query, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
-      applyHalfOpenRangeToQuery(query, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
+      if (participantCountRanges.length > 0) {
+        query.select('credential_schemas.*')
+        joinParticipantCounts(
+          query,
+          'credential_schemas.id',
+          PARTICIPANT_COUNT_ENTITY_KIND.CREDENTIAL_SCHEMA,
+          evaluationHeight
+        )
+        for (const range of participantCountRanges) {
+          applyHalfOpenRangeToQuery(query, participantCountColumn(range.field), range.min, range.max)
+        }
+      }
       applyExactRangeToQuery(query, 'weight', minWeight, maxWeight)
       applyExactRangeToQuery(query, 'issued', minIssued, maxIssued)
       applyExactRangeToQuery(query, 'verified', minVerified, maxVerified)
@@ -2301,11 +2244,12 @@ export default class CredentialSchemaDatabaseService extends BullableService {
 
       type SchemaWithStats = (typeof filteredItems)[0]
       const sortedItems = (filteredItems as SchemaWithStats[]).slice(0, limit)
+      const withCounts = await this.withParticipantCounts(sortedItems, evaluationHeight)
 
       return ApiResponder.success(
         ctx,
         {
-          schemas: sortedItems.map((s) => mapCredentialSchemaApiFields(s as Record<string, unknown>)),
+          schemas: withCounts.map((s) => mapCredentialSchemaApiFields(s as Record<string, unknown>)),
         },
         200
       )

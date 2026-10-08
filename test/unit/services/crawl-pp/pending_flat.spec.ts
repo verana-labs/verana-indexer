@@ -25,6 +25,7 @@ function createKnexChain() {
   c.distinctOn = jest.fn(() => c)
   c.whereNotIn = jest.fn(() => c)
   c.clone = jest.fn(() => c)
+  c.max = jest.fn(() => ({ first: () => Promise.resolve({ max: 500 }) }))
   c.then = jest.fn((onFulfilled?: (rows: unknown) => unknown) => {
     const p = Promise.resolve([])
     return typeof onFulfilled === 'function' ? p.then(onFulfilled) : p

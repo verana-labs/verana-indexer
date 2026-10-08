@@ -2,13 +2,12 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { ServiceBroker } from 'moleculer'
 import BullableService, { QueueHandler } from '../../base/bullable.service'
 import { BULL_JOB_NAME, SERVICE } from '../../common'
+import { getBlockHeightAsOf } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Block } from '../../models/block'
 import { BlockCheckpoint } from '../../models/block_checkpoint'
-import Stats, { EntityType, Granularity } from '../../models/stats'
-import { getParticipantCountAtHeight, SNAPSHOT_ENTITY_KIND, SNAPSHOT_PARTICIPANT_FIELDS } from './stats_snapshot'
-
-type ParticipantCounts = Record<(typeof SNAPSHOT_PARTICIPANT_FIELDS)[number], number>
+import Stats, { type EntityType, Granularity } from '../../models/stats'
+import { PARTICIPANT_COUNT_ENTITY_KIND, readParticipantCount } from './stats_snapshot'
 
 @Service({
   name: SERVICE.V1.StatsCalculationService.key,
@@ -23,22 +22,6 @@ export default class StatsCalculationService extends BullableService {
     super(broker)
   }
 
-  private async participantCountsAtHeight(
-    entityType: EntityType,
-    entityId: number | null,
-    height: number
-  ): Promise<ParticipantCounts> {
-    const entityKind = SNAPSHOT_ENTITY_KIND[entityType]
-    const counts = await Promise.all(
-      SNAPSHOT_PARTICIPANT_FIELDS.map((_, roleType) =>
-        getParticipantCountAtHeight({ entityKind, entityId, roleType, height })
-      )
-    )
-    return Object.fromEntries(
-      SNAPSHOT_PARTICIPANT_FIELDS.map((field, index) => [field, Number(counts[index])])
-    ) as ParticipantCounts
-  }
-
   @Action({
     name: 'calculateStats',
   })
@@ -50,22 +33,22 @@ export default class StatsCalculationService extends BullableService {
     await this.processStatsFromCheckpoint()
   }
 
-  private async calculateForGranularity(granularity: Granularity, now: Date, height: number): Promise<void> {
+  private async calculateForGranularity(granularity: Granularity, now: Date): Promise<void> {
     try {
       const timestamp = this.getGranularityTimestamp(granularity, now)
       this.logger.info(`[${granularity}] Timestamp: ${timestamp.toISOString()}`)
 
       this.logger.info(`[${granularity}] Calculating GLOBAL stats...`)
-      await this.calculateGlobalStats(granularity, timestamp, height)
+      await this.calculateGlobalStats(granularity, timestamp)
 
       this.logger.info(`[${granularity}] Calculating ECOSYSTEM stats...`)
-      await this.calculateEcosystemStats(granularity, timestamp, height)
+      await this.calculateEcosystemStats(granularity, timestamp)
 
       this.logger.info(`[${granularity}] Calculating CREDENTIAL_SCHEMA stats...`)
-      await this.calculateCredentialSchemaStats(granularity, timestamp, height)
+      await this.calculateCredentialSchemaStats(granularity, timestamp)
 
       this.logger.info(`[${granularity}] Calculating PARTICIPANT stats...`)
-      await this.calculateParticipantStats(granularity, timestamp, height)
+      await this.calculateParticipantStats(granularity, timestamp)
     } catch (error: any) {
       this.logger.error(`[${granularity}] Error in calculateForGranularity:`, error?.message || error, error?.stack)
       throw error
@@ -90,7 +73,32 @@ export default class StatsCalculationService extends BullableService {
     return d
   }
 
-  private async calculateGlobalStats(granularity: Granularity, timestamp: Date, height: number): Promise<void> {
+  private bucketEnd(granularity: Granularity, timestamp: Date): Date {
+    const end = new Date(timestamp)
+    if (granularity === 'HOUR') end.setUTCHours(end.getUTCHours() + 1)
+    else if (granularity === 'DAY') end.setUTCDate(end.getUTCDate() + 1)
+    else end.setUTCMonth(end.getUTCMonth() + 1)
+    return end
+  }
+
+  private async readParticipantsAtBucketClose(
+    granularity: Granularity,
+    timestamp: Date,
+    entityType: EntityType,
+    entityId: number | null
+  ): Promise<number> {
+    const lastInstantOfBucket = new Date(this.bucketEnd(granularity, timestamp).getTime() - 1)
+    const height = await getBlockHeightAsOf(lastInstantOfBucket)
+    const value = await readParticipantCount({
+      entityKind: PARTICIPANT_COUNT_ENTITY_KIND[entityType],
+      entityId,
+      roleType: 0,
+      height,
+    })
+    return Number(value) || 0
+  }
+
+  private async calculateGlobalStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
       this.logger.info(`GLOBAL [${granularity}] Starting calculation for timestamp: ${timestamp.toISOString()}`)
 
@@ -131,7 +139,7 @@ export default class StatsCalculationService extends BullableService {
       }
 
       this.logger.info(`GLOBAL [${granularity}] Computing stats from database...`)
-      const stats = await this.computeGlobalStats(timestamp, height)
+      const stats = await this.computeGlobalStats(granularity, timestamp)
       this.logger.info(`GLOBAL [${granularity}] Stats computed successfully:`, {
         cumulative_participants: stats.cumulative_participants,
         cumulative_active_schemas: stats.cumulative_active_schemas,
@@ -241,7 +249,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateEcosystemStats(granularity: Granularity, timestamp: Date, height: number): Promise<void> {
+  private async calculateEcosystemStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
       const ecosystems = await knex('ecosystem').select('id')
       this.logger.info(`[ECOSYSTEM] Found ${ecosystems.length} trust registries`)
@@ -255,7 +263,7 @@ export default class StatsCalculationService extends BullableService {
             .where('entity_id', String(ec.id))
             .first()
 
-          const stats = await this.computeEcosystemStats(String(ec.id), timestamp, height)
+          const stats = await this.computeEcosystemStats(granularity, String(ec.id), timestamp)
 
           if (!stats) {
             this.logger.debug(`[ECOSYSTEM] No stats computed for EC ${ec.id} (created after bucket) - skipping`)
@@ -350,11 +358,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateCredentialSchemaStats(
-    granularity: Granularity,
-    timestamp: Date,
-    height: number
-  ): Promise<void> {
+  private async calculateCredentialSchemaStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
       const schemas = await knex('credential_schemas').select('id')
       this.logger.info(`CREDENTIAL_SCHEMA Found ${schemas.length} schemas`)
@@ -372,7 +376,7 @@ export default class StatsCalculationService extends BullableService {
             .where('entity_id', String(schema.id))
             .first()
 
-          const stats = await this.computeCredentialSchemaStats(String(schema.id), timestamp, height)
+          const stats = await this.computeCredentialSchemaStats(granularity, String(schema.id), timestamp)
 
           if (!stats) {
             skipped++
@@ -486,7 +490,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateParticipantStats(granularity: Granularity, timestamp: Date, height: number): Promise<void> {
+  private async calculateParticipantStats(granularity: Granularity, timestamp: Date): Promise<void> {
     try {
       const participants = await knex('participants').select('id', 'schema_id')
       this.logger.info(`PARTICIPANT Found ${participants.length} participants`)
@@ -505,10 +509,10 @@ export default class StatsCalculationService extends BullableService {
             .first()
 
           const stats = await this.computeParticipantStats(
+            granularity,
             String(participant.id),
             String(participant.schema_id),
-            timestamp,
-            height
+            timestamp
           )
 
           if (!stats) {
@@ -623,7 +627,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeGlobalStats(timestamp: Date, height: number): Promise<any> {
+  private async computeGlobalStats(granularity: Granularity, timestamp: Date): Promise<any> {
     this.logger.info(`GLOBAL  Computing stats: Querying participants table...`)
     const allParticipants = await knex('participants')
       .where('created', '<=', timestamp)
@@ -640,10 +644,8 @@ export default class StatsCalculationService extends BullableService {
       )
     this.logger.info(`GLOBAL  Found ${allParticipants.length} participants to process`)
 
-    const participantCounts = await this.participantCountsAtHeight('GLOBAL', null, height)
-
     const cumulative = {
-      ...participantCounts,
+      participants: 0,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: 0,
@@ -696,7 +698,10 @@ export default class StatsCalculationService extends BullableService {
     cumulative.active_schemas = Number(activeSchemas?.count || 0)
     cumulative.archived_schemas = Number(archivedSchemas?.count || 0)
 
+    cumulative.participants = await this.readParticipantsAtBucketClose(granularity, timestamp, 'GLOBAL', null)
+
     const prevStats = await Stats.query()
+      .where('granularity', granularity)
       .where('entity_type', 'GLOBAL')
       .whereNull('entity_id')
       .where('timestamp', '<', timestamp)
@@ -705,14 +710,6 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
-      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
-      participants_issuer_grantor:
-        cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
-      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
-      participants_verifier_grantor:
-        cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
-      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
-      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
       archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
@@ -735,12 +732,6 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
-      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
-      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
-      cumulative_participants_issuer: cumulative.participants_issuer,
-      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
-      cumulative_participants_verifier: cumulative.participants_verifier,
-      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_ecosystems: cumulative.active_ecosystems,
       cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
@@ -755,12 +746,6 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
-      delta_participants_ecosystem: delta.participants_ecosystem,
-      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
-      delta_participants_issuer: delta.participants_issuer,
-      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
-      delta_participants_verifier: delta.participants_verifier,
-      delta_participants_holder: delta.participants_holder,
       delta_active_ecosystems: delta.active_ecosystems,
       delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
@@ -777,7 +762,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeEcosystemStats(ecosystemId: string, timestamp: Date, height: number): Promise<any> {
+  private async computeEcosystemStats(granularity: Granularity, ecosystemId: string, timestamp: Date): Promise<any> {
     const schemas = await knex('credential_schemas')
       .where('ecosystem_id', ecosystemId)
       .where('created', '<=', timestamp)
@@ -807,10 +792,8 @@ export default class StatsCalculationService extends BullableService {
         'network_slashed_amount_repaid'
       )
 
-    const participantCounts = await this.participantCountsAtHeight('ECOSYSTEM', Number(ecosystemId), height)
-
     const cumulative = {
-      ...participantCounts,
+      participants: 0,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: 0,
@@ -858,7 +841,15 @@ export default class StatsCalculationService extends BullableService {
     cumulative.active_ecosystems = ecosystem.archived === null ? 1 : 0
     cumulative.archived_ecosystems = ecosystem.archived === null ? 0 : 1
 
+    cumulative.participants = await this.readParticipantsAtBucketClose(
+      granularity,
+      timestamp,
+      'ECOSYSTEM',
+      Number(ecosystemId)
+    )
+
     const prevStats = await Stats.query()
+      .where('granularity', granularity)
       .where('entity_type', 'ECOSYSTEM')
       .where('entity_id', ecosystemId)
       .where('timestamp', '<', timestamp)
@@ -867,14 +858,6 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
-      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
-      participants_issuer_grantor:
-        cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
-      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
-      participants_verifier_grantor:
-        cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
-      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
-      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
       archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
@@ -897,12 +880,6 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
-      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
-      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
-      cumulative_participants_issuer: cumulative.participants_issuer,
-      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
-      cumulative_participants_verifier: cumulative.participants_verifier,
-      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_ecosystems: cumulative.active_ecosystems,
       cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
@@ -917,12 +894,6 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
-      delta_participants_ecosystem: delta.participants_ecosystem,
-      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
-      delta_participants_issuer: delta.participants_issuer,
-      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
-      delta_participants_verifier: delta.participants_verifier,
-      delta_participants_holder: delta.participants_holder,
       delta_active_ecosystems: delta.active_ecosystems,
       delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
@@ -939,7 +910,11 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async computeCredentialSchemaStats(schemaId: string, timestamp: Date, height: number): Promise<any> {
+  private async computeCredentialSchemaStats(
+    granularity: Granularity,
+    schemaId: string,
+    timestamp: Date
+  ): Promise<any> {
     const participants = await knex('participants')
       .where('schema_id', schemaId)
       .where('created', '<=', timestamp)
@@ -955,10 +930,8 @@ export default class StatsCalculationService extends BullableService {
         'network_slashed_amount_repaid'
       )
 
-    const participantCounts = await this.participantCountsAtHeight('CREDENTIAL_SCHEMA', Number(schemaId), height)
-
     const cumulative = {
-      ...participantCounts,
+      participants: 0,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: 0,
@@ -997,7 +970,15 @@ export default class StatsCalculationService extends BullableService {
       cumulative.archived_schemas = schema.archived !== null ? 1 : 0
     }
 
+    cumulative.participants = await this.readParticipantsAtBucketClose(
+      granularity,
+      timestamp,
+      'CREDENTIAL_SCHEMA',
+      Number(schemaId)
+    )
+
     const prevStats = await Stats.query()
+      .where('granularity', granularity)
       .where('entity_type', 'CREDENTIAL_SCHEMA')
       .where('entity_id', schemaId)
       .where('timestamp', '<', timestamp)
@@ -1006,14 +987,6 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
-      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
-      participants_issuer_grantor:
-        cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
-      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
-      participants_verifier_grantor:
-        cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
-      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
-      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
       archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
@@ -1036,12 +1009,6 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
-      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
-      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
-      cumulative_participants_issuer: cumulative.participants_issuer,
-      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
-      cumulative_participants_verifier: cumulative.participants_verifier,
-      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_ecosystems: cumulative.active_ecosystems,
       cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
@@ -1056,12 +1023,6 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
-      delta_participants_ecosystem: delta.participants_ecosystem,
-      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
-      delta_participants_issuer: delta.participants_issuer,
-      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
-      delta_participants_verifier: delta.participants_verifier,
-      delta_participants_holder: delta.participants_holder,
       delta_active_ecosystems: delta.active_ecosystems,
       delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
@@ -1079,10 +1040,10 @@ export default class StatsCalculationService extends BullableService {
   }
 
   private async computeParticipantStats(
+    granularity: Granularity,
     participantId: string,
     schemaId: string,
-    timestamp: Date,
-    height: number
+    timestamp: Date
   ): Promise<any> {
     const participant = await knex('participants')
       .where('id', participantId)
@@ -1110,10 +1071,8 @@ export default class StatsCalculationService extends BullableService {
       .select('archived')
       .first()
 
-    const participantCounts = await this.participantCountsAtHeight('PARTICIPANT', Number(participantId), height)
-
     const cumulative = {
-      ...participantCounts,
+      participants: 0,
       active_ecosystems: 0,
       archived_ecosystems: 0,
       active_schemas: schema && schema.archived === null ? 1 : 0,
@@ -1129,7 +1088,15 @@ export default class StatsCalculationService extends BullableService {
       network_slashed_amount_repaid: BigInt(participant.network_slashed_amount_repaid || '0'),
     }
 
+    cumulative.participants = await this.readParticipantsAtBucketClose(
+      granularity,
+      timestamp,
+      'PARTICIPANT',
+      Number(participantId)
+    )
+
     const prevStats = await Stats.query()
+      .where('granularity', granularity)
       .where('entity_type', 'PARTICIPANT')
       .where('entity_id', participantId)
       .where('timestamp', '<', timestamp)
@@ -1138,14 +1105,6 @@ export default class StatsCalculationService extends BullableService {
 
     const delta = {
       participants: cumulative.participants - (prevStats?.cumulative_participants || 0),
-      participants_ecosystem: cumulative.participants_ecosystem - (prevStats?.cumulative_participants_ecosystem || 0),
-      participants_issuer_grantor:
-        cumulative.participants_issuer_grantor - (prevStats?.cumulative_participants_issuer_grantor || 0),
-      participants_issuer: cumulative.participants_issuer - (prevStats?.cumulative_participants_issuer || 0),
-      participants_verifier_grantor:
-        cumulative.participants_verifier_grantor - (prevStats?.cumulative_participants_verifier_grantor || 0),
-      participants_verifier: cumulative.participants_verifier - (prevStats?.cumulative_participants_verifier || 0),
-      participants_holder: cumulative.participants_holder - (prevStats?.cumulative_participants_holder || 0),
       active_ecosystems: cumulative.active_ecosystems - (prevStats?.cumulative_active_ecosystems || 0),
       archived_ecosystems: cumulative.archived_ecosystems - (prevStats?.cumulative_archived_ecosystems || 0),
       active_schemas: cumulative.active_schemas - (prevStats?.cumulative_active_schemas || 0),
@@ -1168,12 +1127,6 @@ export default class StatsCalculationService extends BullableService {
 
     return {
       cumulative_participants: cumulative.participants,
-      cumulative_participants_ecosystem: cumulative.participants_ecosystem,
-      cumulative_participants_issuer_grantor: cumulative.participants_issuer_grantor,
-      cumulative_participants_issuer: cumulative.participants_issuer,
-      cumulative_participants_verifier_grantor: cumulative.participants_verifier_grantor,
-      cumulative_participants_verifier: cumulative.participants_verifier,
-      cumulative_participants_holder: cumulative.participants_holder,
       cumulative_active_ecosystems: cumulative.active_ecosystems,
       cumulative_archived_ecosystems: cumulative.archived_ecosystems,
       cumulative_active_schemas: cumulative.active_schemas,
@@ -1188,12 +1141,6 @@ export default class StatsCalculationService extends BullableService {
       cumulative_network_slashed_amount: Number(cumulative.network_slashed_amount),
       cumulative_network_slashed_amount_repaid: Number(cumulative.network_slashed_amount_repaid),
       delta_participants: delta.participants,
-      delta_participants_ecosystem: delta.participants_ecosystem,
-      delta_participants_issuer_grantor: delta.participants_issuer_grantor,
-      delta_participants_issuer: delta.participants_issuer,
-      delta_participants_verifier_grantor: delta.participants_verifier_grantor,
-      delta_participants_verifier: delta.participants_verifier,
-      delta_participants_holder: delta.participants_holder,
       delta_active_ecosystems: delta.active_ecosystems,
       delta_archived_ecosystems: delta.archived_ecosystems,
       delta_active_schemas: delta.active_schemas,
@@ -1223,12 +1170,6 @@ export default class StatsCalculationService extends BullableService {
 
     const deltaFields = [
       'delta_participants',
-      'delta_participants_ecosystem',
-      'delta_participants_issuer_grantor',
-      'delta_participants_issuer',
-      'delta_participants_verifier_grantor',
-      'delta_participants_verifier',
-      'delta_participants_holder',
       'delta_active_ecosystems',
       'delta_archived_ecosystems',
       'delta_active_schemas',
@@ -1273,12 +1214,6 @@ export default class StatsCalculationService extends BullableService {
     if (!existing || !stats) return false
     const fields = [
       'cumulative_participants',
-      'cumulative_participants_ecosystem',
-      'cumulative_participants_issuer_grantor',
-      'cumulative_participants_issuer',
-      'cumulative_participants_verifier_grantor',
-      'cumulative_participants_verifier',
-      'cumulative_participants_holder',
       'cumulative_active_ecosystems',
       'cumulative_archived_ecosystems',
       'cumulative_active_schemas',
@@ -1293,12 +1228,6 @@ export default class StatsCalculationService extends BullableService {
       'cumulative_network_slashed_amount',
       'cumulative_network_slashed_amount_repaid',
       'delta_participants',
-      'delta_participants_ecosystem',
-      'delta_participants_issuer_grantor',
-      'delta_participants_issuer',
-      'delta_participants_verifier_grantor',
-      'delta_participants_verifier',
-      'delta_participants_holder',
       'delta_active_ecosystems',
       'delta_archived_ecosystems',
       'delta_active_schemas',
@@ -1453,7 +1382,7 @@ export default class StatsCalculationService extends BullableService {
       )
 
       try {
-        await this.calculateStatsForTimestamp(blockTimestamp, handleTxHeight)
+        await this.calculateStatsForTimestamp(blockTimestamp)
 
         if (statsCheckpoint) {
           statsCheckpoint.height = handleTxHeight
@@ -1491,7 +1420,7 @@ export default class StatsCalculationService extends BullableService {
     }
   }
 
-  private async calculateStatsForTimestamp(timestamp: Date, height: number): Promise<void> {
+  private async calculateStatsForTimestamp(timestamp: Date): Promise<void> {
     try {
       this.logger.debug(' Testing database connection...')
       await knex.raw('SELECT 1 as connection_test')
@@ -1504,7 +1433,7 @@ export default class StatsCalculationService extends BullableService {
       for (const granularity of granularities) {
         this.logger.debug(` [${granularity}] Starting calculation...`)
         try {
-          await this.calculateForGranularity(granularity, timestamp, height)
+          await this.calculateForGranularity(granularity, timestamp)
           this.logger.debug(` [${granularity}] Calculation completed successfully`)
         } catch (error: any) {
           const errorDetails = {
