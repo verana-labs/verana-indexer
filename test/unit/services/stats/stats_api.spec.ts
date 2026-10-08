@@ -1,14 +1,21 @@
 const mockEpcFirst = jest.fn()
+let mockEpcRows: Array<{ entity_id: number; type: number; value: number }> = []
 const mockEpcChain: any = {
+  select: jest.fn(() => mockEpcChain),
+  distinctOn: jest.fn(() => mockEpcChain),
   where: jest.fn(() => mockEpcChain),
+  whereIn: jest.fn(() => mockEpcChain),
   andWhere: jest.fn(() => mockEpcChain),
   orderBy: jest.fn(() => mockEpcChain),
   first: mockEpcFirst,
+  then: (resolve: (rows: unknown) => unknown, reject: (error: unknown) => unknown) =>
+    Promise.resolve(mockEpcRows).then(resolve, reject),
 }
 
+const mockKnex = jest.fn(() => mockEpcChain)
 jest.mock('../../../../src/common/utils/db_connection', () => ({
   __esModule: true,
-  default: jest.fn(() => mockEpcChain),
+  default: mockKnex,
 }))
 
 jest.mock('../../../../src/services/crawl-co/co_stats', () => ({
@@ -40,21 +47,6 @@ import { ServiceBroker } from 'moleculer'
 import Stats from '../../../../src/models/stats'
 import StatsAPIService from '../../../../src/services/stats/stats_api.service'
 
-const PER_ROLE_FIELDS = [
-  'cumulative_participants_ecosystem',
-  'cumulative_participants_issuer_grantor',
-  'cumulative_participants_issuer',
-  'cumulative_participants_verifier_grantor',
-  'cumulative_participants_verifier',
-  'cumulative_participants_holder',
-  'delta_participants_ecosystem',
-  'delta_participants_issuer_grantor',
-  'delta_participants_issuer',
-  'delta_participants_verifier_grantor',
-  'delta_participants_verifier',
-  'delta_participants_holder',
-]
-
 function statsRow(over: Record<string, unknown> = {}) {
   const row: Record<string, unknown> = {
     id: 3,
@@ -85,7 +77,6 @@ function statsRow(over: Record<string, unknown> = {}) {
     row[`cumulative_${m}`] = 1
     row[`delta_${m}`] = 1
   }
-  for (const f of PER_ROLE_FIELDS) row[f] = 9
   return { ...row, ...over }
 }
 
@@ -97,12 +88,11 @@ describe('StatsAPIService.get', () => {
     jest.clearAllMocks()
   })
 
-  it('drops per-role and audit fields, keeping only the StatsEntry shape', async () => {
+  it('drops the audit fields, keeping only the StatsEntry shape', async () => {
     ;(Stats.query as jest.Mock).mockReturnValue({ findById: jest.fn(async () => statsRow()) })
 
     const res: any = await service.get({ params: { id: 3 } } as any)
 
-    for (const f of PER_ROLE_FIELDS) expect(res).not.toHaveProperty(f)
     expect(res).not.toHaveProperty('created_at')
     expect(res).not.toHaveProperty('updated_at')
     expect(Object.keys(res).length).toBe(33)
@@ -188,7 +178,7 @@ describe('StatsAPIService.getSnapshot', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
-    mockEpcFirst.mockResolvedValue({ value: 7 })
+    mockEpcRows = [0, 1, 2, 3, 4, 5, 6].map((type) => ({ entity_id: 0, type, value: 7 }))
     mockComputeSnapshotMetrics.mockResolvedValue(metrics)
     mockGetBlockTimeAtHeight.mockResolvedValue('2026-09-08T12:00:00.000Z')
   })
@@ -197,7 +187,7 @@ describe('StatsAPIService.getSnapshot', () => {
     const res: any = await service.getSnapshot({ params: {}, meta: { blockHeight: 42 } } as any)
 
     expect(mockComputeSnapshotMetrics).toHaveBeenCalledWith('GLOBAL', null, 42, true)
-    expect(mockEpcFirst).toHaveBeenCalledTimes(7)
+    expect(mockEpcChain.distinctOn).toHaveBeenCalledTimes(1)
     expect(res).toEqual({
       entity_type: 'GLOBAL',
       entity_id: null,
@@ -251,6 +241,6 @@ describe('StatsAPIService.getSnapshot', () => {
       meta: {},
     } as any)
     expect(res.code).toBe(404)
-    expect(mockEpcFirst).not.toHaveBeenCalled()
+    expect(mockKnex).not.toHaveBeenCalled()
   })
 })
