@@ -869,7 +869,7 @@ export default class ParticipantAPIService extends BullableService {
   }
 
   private normalizeParticipantRow(participant: any): any {
-    let normalized: any = {
+    const normalized: any = {
       ...participant,
       id: Number(participant.id),
       schema_id: Number(participant.schema_id),
@@ -919,9 +919,7 @@ export default class ParticipantAPIService extends BullableService {
         participant.verification_fee_discount != null ? Number(participant.verification_fee_discount) : 0,
     }
 
-    normalized = normalizeParticipantEmptyStringsToNull(normalized)
-
-    return mapParticipantApiFields(normalized as Record<string, unknown>) as any
+    return normalizeParticipantEmptyStringsToNull(normalized)
   }
 
   private async getParticipantsByIdsMap(participantIds: number[], blockHeight?: number): Promise<Map<number, any>> {

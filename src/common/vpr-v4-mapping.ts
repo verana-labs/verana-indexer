@@ -10,11 +10,12 @@ export function mapEcosystemApiFields(row: Record<string, unknown>): Record<stri
   return result
 }
 
+const VPR_FEE_DISCOUNT_CHAIN_SCALE = 10000
+
 export function normalizeVprFeeDiscountRatio(v: unknown): number {
   const n = Number(v)
   if (!Number.isFinite(n)) return 0
-  if (n > 1) return Math.min(1, n / 10000)
-  return Math.min(1, Math.max(0, n))
+  return Math.min(1, Math.max(0, n / VPR_FEE_DISCOUNT_CHAIN_SCALE))
 }
 
 const PARTICIPANT_HIDDEN_COLUMNS = [
