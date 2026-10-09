@@ -1,7 +1,7 @@
 import knex from '../../common/utils/db_connection'
 import type { EntityType } from '../../models/stats'
 
-export const SNAPSHOT_ENTITY_KIND: Record<EntityType, number> = {
+export const PARTICIPANT_COUNT_ENTITY_KIND: Record<EntityType, number> = {
   GLOBAL: 0,
   ECOSYSTEM: 1,
   CREDENTIAL_SCHEMA: 2,
@@ -9,7 +9,7 @@ export const SNAPSHOT_ENTITY_KIND: Record<EntityType, number> = {
 }
 
 // index = entity_participant_changes role type (0 = ANY)
-export const SNAPSHOT_PARTICIPANT_FIELDS = [
+export const PARTICIPANT_COUNT_FIELDS = [
   'participants',
   'participants_ecosystem',
   'participants_issuer_grantor',
@@ -18,6 +18,11 @@ export const SNAPSHOT_PARTICIPANT_FIELDS = [
   'participants_verifier',
   'participants_holder',
 ] as const
+
+export type ParticipantCountField = (typeof PARTICIPANT_COUNT_FIELDS)[number]
+export type ParticipantCounts = Record<ParticipantCountField, number | string>
+
+const GLOBAL_ENTITY_ID = 0
 
 const METRIC_COLUMNS = [
   'weight',
@@ -48,6 +53,133 @@ export function toMetricNumber(value: unknown): number | string {
   if (!/^-?\d+$/.test(asString)) return Number(asString) || 0
   const asNumber = Number(asString)
   return Number.isSafeInteger(asNumber) ? asNumber : asString
+}
+
+export function zeroParticipantCounts(): ParticipantCounts {
+  const counts = {} as ParticipantCounts
+  for (const field of PARTICIPANT_COUNT_FIELDS) counts[field] = 0
+  return counts
+}
+
+function logEntityId(entityKind: number, entityId: number | null): number | null {
+  if (entityKind === PARTICIPANT_COUNT_ENTITY_KIND.GLOBAL) return GLOBAL_ENTITY_ID
+  return entityId
+}
+
+export async function readParticipantCount(params: {
+  entityKind: number
+  entityId: number | null
+  roleType: number
+  height: number
+}): Promise<number | string> {
+  const entityId = logEntityId(params.entityKind, params.entityId)
+  if (entityId === null) return 0
+
+  const row = await knex('entity_participant_changes')
+    .select('value')
+    .where('entity_kind', params.entityKind)
+    .andWhere('entity_id', entityId)
+    .andWhere('type', params.roleType)
+    .andWhere('height', '<=', params.height)
+    .orderBy('height', 'desc')
+    .first()
+
+  return toMetricNumber(row?.value)
+}
+
+export async function readParticipantCountsByEntity(
+  entityKind: number,
+  entityIds: Array<number | null | undefined>,
+  height: number
+): Promise<Map<number, ParticipantCounts>> {
+  const byEntity = new Map<number, ParticipantCounts>()
+
+  if (entityKind === PARTICIPANT_COUNT_ENTITY_KIND.GLOBAL) {
+    byEntity.set(GLOBAL_ENTITY_ID, zeroParticipantCounts())
+  } else {
+    for (const entityId of entityIds) {
+      const id = Number(entityId)
+      if (!Number.isSafeInteger(id) || id <= 0) continue
+      byEntity.set(id, zeroParticipantCounts())
+    }
+  }
+  if (byEntity.size === 0) return byEntity
+
+  const rows = await knex('entity_participant_changes')
+    .distinctOn('entity_id', 'type')
+    .select('entity_id', 'type', 'value')
+    .where('entity_kind', entityKind)
+    .whereIn('entity_id', Array.from(byEntity.keys()))
+    .andWhere('height', '<=', height)
+    .orderBy('entity_id', 'asc')
+    .orderBy('type', 'asc')
+    .orderBy('height', 'desc')
+
+  for (const row of rows as Row[]) {
+    const counts = byEntity.get(Number(row.entity_id))
+    const field = PARTICIPANT_COUNT_FIELDS[Number(row.type)]
+    if (!counts || !field) continue
+    counts[field] = toMetricNumber(row.value)
+  }
+
+  return byEntity
+}
+
+export async function readParticipantCounts(
+  entityKind: number,
+  entityId: number | null,
+  height: number
+): Promise<ParticipantCounts> {
+  const byEntity = await readParticipantCountsByEntity(entityKind, [entityId], height)
+  return byEntity.get(Number(logEntityId(entityKind, entityId))) ?? zeroParticipantCounts()
+}
+
+export type ParticipantCountRange = { field: ParticipantCountField; min?: number; max?: number }
+
+export function parseParticipantCountRanges(params: Record<string, unknown>): ParticipantCountRange[] {
+  const ranges: ParticipantCountRange[] = []
+  for (const field of PARTICIPANT_COUNT_FIELDS) {
+    const min = params[`min_${field}`]
+    const max = params[`max_${field}`]
+    if (min === undefined && max === undefined) continue
+    ranges.push({
+      field,
+      min: min === undefined ? undefined : Number(min),
+      max: max === undefined ? undefined : Number(max),
+    })
+  }
+  return ranges
+}
+
+const PARTICIPANT_COUNTS_ALIAS = 'participant_counts'
+
+export function joinParticipantCounts(query: any, idColumn: string, entityKind: number, height: number): any {
+  const latest = knex('entity_participant_changes')
+    .distinctOn('entity_id', 'type')
+    .select('entity_id', 'type', 'value')
+    .where('entity_kind', entityKind)
+    .andWhere('height', '<=', height)
+    .orderBy('entity_id', 'asc')
+    .orderBy('type', 'asc')
+    .orderBy('height', 'desc')
+    .as('latest')
+
+  const pivot = knex
+    .from(latest)
+    .groupBy('entity_id')
+    .select(
+      'entity_id',
+      ...PARTICIPANT_COUNT_FIELDS.map((field, roleType) =>
+        knex.raw('COALESCE(SUM(value) FILTER (WHERE type = ?), 0) as ??', [roleType, field])
+      )
+    )
+    .as(PARTICIPANT_COUNTS_ALIAS)
+
+  return query.leftJoin(pivot, idColumn, `${PARTICIPANT_COUNTS_ALIAS}.entity_id`)
+}
+
+export function participantCountColumn(field: ParticipantCountField): any {
+  return knex.raw('COALESCE(??, 0)', [`${PARTICIPANT_COUNTS_ALIAS}.${field}`])
 }
 
 function metricsFromRow(row: Row | undefined): Record<MetricColumn, number | string> {

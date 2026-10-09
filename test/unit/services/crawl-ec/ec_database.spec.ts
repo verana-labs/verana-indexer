@@ -22,7 +22,22 @@ jest.mock('../../../../src/common/utils/params_service', () => ({
 }))
 
 jest.mock('../../../../src/common/utils/db_connection', () => {
-  const mockQuery: any = jest.fn(() => mockQuery)
+  const checkpointChain: any = {
+    where: jest.fn(() => checkpointChain),
+    first: jest.fn().mockResolvedValue({ height: 500 }),
+  }
+  const counterLogChain: any = {
+    then: (resolve: (rows: unknown) => unknown, reject: (error: unknown) => unknown) =>
+      Promise.resolve([]).then(resolve, reject),
+  }
+  for (const method of ['distinctOn', 'select', 'where', 'whereIn', 'andWhere', 'orderBy']) {
+    counterLogChain[method] = jest.fn(() => counterLogChain)
+  }
+  const mockQuery: any = jest.fn((table?: string) => {
+    if (table === 'block_checkpoint') return checkpointChain
+    if (table === 'entity_participant_changes') return counterLogChain
+    return mockQuery
+  })
   mockQuery.whereIn = jest.fn(() => mockQuery)
   mockQuery.select = jest.fn(() => mockQuery)
   mockQuery.where = jest.fn(() => mockQuery)

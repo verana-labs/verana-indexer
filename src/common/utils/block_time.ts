@@ -40,6 +40,16 @@ export async function getBlockChainTimeAsOf(height: number, options?: GetBlockCh
   return fallback
 }
 
+export async function getBlockHeightAsOf(time: Date, options?: { db?: Knex | Knex.Transaction }): Promise<number> {
+  const db = (options?.db ?? knexDefault) as Knex
+  const row = await db('block')
+    .select('height')
+    .where('time', '<=', time.toISOString())
+    .orderBy('height', 'desc')
+    .first()
+  return row?.height != null ? Number(row.height) : 0
+}
+
 export type GetLatestIndexedBlockTimeOptions = Omit<GetBlockChainTimeAsOfOptions, 'atOrBefore'>
 
 export async function getLatestIndexedBlockTime(options?: GetLatestIndexedBlockTimeOptions): Promise<Date> {

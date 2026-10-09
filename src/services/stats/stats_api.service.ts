@@ -10,26 +10,12 @@ import Stats, { EntityType, Granularity } from '../../models/stats'
 import {
   computeSnapshotMetrics,
   getBlockTimeAtHeight,
-  SNAPSHOT_ENTITY_KIND,
-  SNAPSHOT_PARTICIPANT_FIELDS,
+  PARTICIPANT_COUNT_ENTITY_KIND,
+  readParticipantCount,
+  readParticipantCounts,
 } from './stats_snapshot'
 
-const NON_STATS_ENTRY_FIELDS = [
-  'created_at',
-  'updated_at',
-  'cumulative_participants_ecosystem',
-  'cumulative_participants_issuer_grantor',
-  'cumulative_participants_issuer',
-  'cumulative_participants_verifier_grantor',
-  'cumulative_participants_verifier',
-  'cumulative_participants_holder',
-  'delta_participants_ecosystem',
-  'delta_participants_issuer_grantor',
-  'delta_participants_issuer',
-  'delta_participants_verifier_grantor',
-  'delta_participants_verifier',
-  'delta_participants_holder',
-]
+const NON_STATS_ENTRY_FIELDS = ['created_at', 'updated_at']
 
 @Service({
   name: SERVICE.V1.StatsAPIService.key,
@@ -88,48 +74,6 @@ export default class StatsAPIService extends BaseService {
     }
 
     return normalized
-  }
-
-  private async getParticipantsAtHeightInternal(params: {
-    entityKind: number
-    entityId: number | null
-    roleType: number
-    height: number
-  }): Promise<number | string> {
-    const { entityKind, entityId, roleType, height } = params
-
-    if (entityKind !== 0 && entityId === null) return 0
-
-    const row = await knex('entity_participant_changes')
-      .where('entity_kind', entityKind)
-      .andWhere('entity_id', entityKind === 0 ? 0 : (entityId as number))
-      .andWhere('type', roleType)
-      .andWhere('height', '<=', height)
-      .orderBy('height', 'desc')
-      .first()
-
-    if (!row) return 0
-    const rawValue = (row as any).value
-    if (rawValue === null || rawValue === undefined) return 0
-
-    const minSafe = BigInt(Number.MIN_SAFE_INTEGER)
-    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER)
-
-    if (typeof rawValue === 'bigint') {
-      return rawValue >= minSafe && rawValue <= maxSafe ? Number(rawValue) : rawValue.toString()
-    }
-
-    if (typeof rawValue === 'string') {
-      if (!/^-?\d+$/.test(rawValue)) return 0
-      const asBigInt = BigInt(rawValue)
-      return asBigInt >= minSafe && asBigInt <= maxSafe ? Number(asBigInt) : rawValue
-    }
-
-    if (typeof rawValue === 'number') {
-      return Number.isSafeInteger(rawValue) ? rawValue : String(rawValue)
-    }
-
-    return 0
   }
 
   @Action({
@@ -597,7 +541,7 @@ export default class StatsAPIService extends BaseService {
         entityId = parsedId
       }
 
-      const value = await this.getParticipantsAtHeightInternal({
+      const value = await readParticipantCount({
         entityKind,
         entityId,
         roleType,
@@ -655,12 +599,9 @@ export default class StatsAPIService extends BaseService {
       const metrics = await computeSnapshotMetrics(entityType, entityId, height, atHeight)
       if (!metrics) return ApiResponder.error(ctx, `${entityType} ${entityId} not found`, 404)
 
-      const entityKind = SNAPSHOT_ENTITY_KIND[entityType]
-      const [timestamp, ...counts] = await Promise.all([
+      const [timestamp, participantCounts] = await Promise.all([
         getBlockTimeAtHeight(height),
-        ...SNAPSHOT_PARTICIPANT_FIELDS.map((_, roleType) =>
-          this.getParticipantsAtHeightInternal({ entityKind, entityId, roleType, height })
-        ),
+        readParticipantCounts(PARTICIPANT_COUNT_ENTITY_KIND[entityType], entityId, height),
       ])
 
       return ApiResponder.success(
@@ -670,7 +611,7 @@ export default class StatsAPIService extends BaseService {
           entity_id: entityId,
           block_height: height,
           timestamp,
-          ...Object.fromEntries(SNAPSHOT_PARTICIPANT_FIELDS.map((field, i) => [field, counts[i]])),
+          ...participantCounts,
           ...metrics,
         },
         200

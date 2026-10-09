@@ -29,6 +29,12 @@ import { compareById, type GfDataMode, parseCorporationListPagination, parseGfDa
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
+import {
+  PARTICIPANT_COUNT_ENTITY_KIND,
+  readParticipantCounts,
+  readParticipantCountsByEntity,
+  zeroParticipantCounts,
+} from '../stats/stats_snapshot'
 import { calculateEcosystemStats, TR_STATS_FIELDS } from './ec_stats'
 
 function ledgerHasKey(obj: unknown, key: string): boolean {
@@ -885,6 +891,18 @@ export default class EcosystemDatabaseService extends BaseService {
     return filtered
   }
 
+  private async withParticipantCounts<T extends Record<string, unknown>>(rows: T[], height: number): Promise<T[]> {
+    const countsByEcosystemId = await readParticipantCountsByEntity(
+      PARTICIPANT_COUNT_ENTITY_KIND.ECOSYSTEM,
+      rows.map((row) => Number(row.id)),
+      height
+    )
+    return rows.map((row) => ({
+      ...row,
+      ...(countsByEcosystemId.get(Number(row.id)) ?? zeroParticipantCounts()),
+    }))
+  }
+
   private sortRegistries(rows: any[], direction: 'asc' | 'desc', limit: number): any[] {
     return [...rows].sort((a, b) => compareById(a.id, b.id, direction)).slice(0, limit)
   }
@@ -1115,6 +1133,11 @@ export default class EcosystemDatabaseService extends BaseService {
       const resolvedBlockHeight = await getResolvedBlockHeight(
         typeof blockHeight === 'number' ? blockHeight : undefined
       )
+      const participantCounts = await readParticipantCounts(
+        PARTICIPANT_COUNT_ENTITY_KIND.ECOSYSTEM,
+        Number(ecosystemId),
+        resolvedBlockHeight
+      )
       const useHeightSync = process.env.NODE_ENV !== 'test' && process.env.USE_HEIGHT_SYNC_TR === 'true'
 
       if (useHeightSync) {
@@ -1156,13 +1179,7 @@ export default class EcosystemDatabaseService extends BaseService {
             language: snapshot.language,
             active_version: snapshot.active_version,
             versions,
-            participants: Number(snapshot.participants ?? 0),
-            participants_ecosystem: Number(snapshot.participants_ecosystem ?? 0),
-            participants_issuer_grantor: Number(snapshot.participants_issuer_grantor ?? 0),
-            participants_issuer: Number(snapshot.participants_issuer ?? 0),
-            participants_verifier_grantor: Number(snapshot.participants_verifier_grantor ?? 0),
-            participants_verifier: Number(snapshot.participants_verifier ?? 0),
-            participants_holder: Number(snapshot.participants_holder ?? 0),
+            ...participantCounts,
             active_schemas: Number(snapshot.active_schemas ?? 0),
             archived_schemas: Number(snapshot.archived_schemas ?? 0),
             weight: Number(snapshot.weight ?? 0),
@@ -1254,13 +1271,7 @@ export default class EcosystemDatabaseService extends BaseService {
               language: ec.language,
               active_version: ec.active_version,
               versions,
-              participants: Number(t.participants ?? 0),
-              participants_ecosystem: Number(t.participants_ecosystem ?? 0),
-              participants_issuer_grantor: Number(t.participants_issuer_grantor ?? 0),
-              participants_issuer: Number(t.participants_issuer ?? 0),
-              participants_verifier_grantor: Number(t.participants_verifier_grantor ?? 0),
-              participants_verifier: Number(t.participants_verifier ?? 0),
-              participants_holder: Number(t.participants_holder ?? 0),
+              ...participantCounts,
               active_schemas: Number(t.active_schemas ?? 0),
               archived_schemas: Number(t.archived_schemas ?? 0),
               weight: Number(t.weight ?? 0),
@@ -1325,13 +1336,7 @@ export default class EcosystemDatabaseService extends BaseService {
                   language: s.language,
                   active_version: s.active_version,
                   versions,
-                  participants: Number(s.participants ?? 0),
-                  participants_ecosystem: Number(s.participants_ecosystem ?? 0),
-                  participants_issuer_grantor: Number(s.participants_issuer_grantor ?? 0),
-                  participants_issuer: Number(s.participants_issuer ?? 0),
-                  participants_verifier_grantor: Number(s.participants_verifier_grantor ?? 0),
-                  participants_verifier: Number(s.participants_verifier ?? 0),
-                  participants_holder: Number(s.participants_holder ?? 0),
+                  ...participantCounts,
                   active_schemas: Number(s.active_schemas ?? 0),
                   archived_schemas: Number(s.archived_schemas ?? 0),
                   weight: Number(s.weight ?? 0),
@@ -1386,13 +1391,7 @@ export default class EcosystemDatabaseService extends BaseService {
           language: ecosystemHistory.language,
           active_version: ecosystemHistory.active_version,
           versions: filteredVersions,
-          participants: Number(ecosystemHistory.participants ?? 0),
-          participants_ecosystem: Number((ecosystemHistory as any).participants_ecosystem ?? 0),
-          participants_issuer_grantor: Number((ecosystemHistory as any).participants_issuer_grantor ?? 0),
-          participants_issuer: Number((ecosystemHistory as any).participants_issuer ?? 0),
-          participants_verifier_grantor: Number((ecosystemHistory as any).participants_verifier_grantor ?? 0),
-          participants_verifier: Number((ecosystemHistory as any).participants_verifier ?? 0),
-          participants_holder: Number((ecosystemHistory as any).participants_holder ?? 0),
+          ...participantCounts,
           active_schemas: Number((ecosystemHistory as any).active_schemas ?? 0),
           archived_schemas: Number((ecosystemHistory as any).archived_schemas ?? 0),
           weight: Number((ecosystemHistory as any).weight ?? 0),
@@ -1454,13 +1453,7 @@ export default class EcosystemDatabaseService extends BaseService {
             ...plain,
             id: plain.id,
             versions,
-            participants: Number(p.participants ?? 0),
-            participants_ecosystem: Number(p.participants_ecosystem ?? 0),
-            participants_issuer_grantor: Number(p.participants_issuer_grantor ?? 0),
-            participants_issuer: Number(p.participants_issuer ?? 0),
-            participants_verifier_grantor: Number(p.participants_verifier_grantor ?? 0),
-            participants_verifier: Number(p.participants_verifier ?? 0),
-            participants_holder: Number(p.participants_holder ?? 0),
+            ...participantCounts,
             active_schemas: Number(p.active_schemas ?? 0),
             archived_schemas: Number(p.archived_schemas ?? 0),
             weight: Number(p.weight ?? 0),
@@ -1670,6 +1663,7 @@ export default class EcosystemDatabaseService extends BaseService {
       }
       const activeGfOnly = gfDataMode === 'only_active'
       const blockHeight = (ctx.meta as any)?.blockHeight
+      const evaluationHeight = await getResolvedBlockHeight(blockHeight)
 
       const metricFilters = {
         minActiveSchemas,
@@ -1769,13 +1763,6 @@ export default class EcosystemDatabaseService extends BaseService {
               language: row.language,
               active_version: row.active_version,
               versions,
-              participants: Number(row.participants ?? 0),
-              participants_ecosystem: Number(row.participants_ecosystem ?? 0),
-              participants_issuer_grantor: Number(row.participants_issuer_grantor ?? 0),
-              participants_issuer: Number(row.participants_issuer ?? 0),
-              participants_verifier_grantor: Number(row.participants_verifier_grantor ?? 0),
-              participants_verifier: Number(row.participants_verifier ?? 0),
-              participants_holder: Number(row.participants_holder ?? 0),
               active_schemas: Number(row.active_schemas ?? 0),
               archived_schemas: Number(row.archived_schemas ?? 0),
               weight: String(row.weight ?? '0'),
@@ -1789,7 +1776,10 @@ export default class EcosystemDatabaseService extends BaseService {
               network_slashed_amount_repaid: Number(row.network_slashed_amount_repaid ?? 0),
             }
           })
-          const filteredRegistries = this.applyMetricFiltersToRegistries(registriesWithStats, metricFilters)
+          const filteredRegistries = this.applyMetricFiltersToRegistries(
+            await this.withParticipantCounts(registriesWithStats, evaluationHeight),
+            metricFilters
+          )
           const sortedRegistries = this.sortRegistries(filteredRegistries, sortDirection, limit)
           const responsePayload = this.applyGfDataModeToResponsePayload(
             {
@@ -1877,13 +1867,6 @@ export default class EcosystemDatabaseService extends BaseService {
               language: ecosystemHistory.language,
               active_version: ecosystemHistory.active_version,
               versions: filteredVersions,
-              participants: Number(ecosystemHistory.participants ?? 0),
-              participants_ecosystem: Number((ecosystemHistory as any).participants_ecosystem ?? 0),
-              participants_issuer_grantor: Number((ecosystemHistory as any).participants_issuer_grantor ?? 0),
-              participants_issuer: Number((ecosystemHistory as any).participants_issuer ?? 0),
-              participants_verifier_grantor: Number((ecosystemHistory as any).participants_verifier_grantor ?? 0),
-              participants_verifier: Number((ecosystemHistory as any).participants_verifier ?? 0),
-              participants_holder: Number((ecosystemHistory as any).participants_holder ?? 0),
               active_schemas: Number((ecosystemHistory as any).active_schemas ?? 0),
               archived_schemas: Number((ecosystemHistory as any).archived_schemas ?? 0),
               weight: String((ecosystemHistory as any).weight ?? '0'),
@@ -1900,7 +1883,10 @@ export default class EcosystemDatabaseService extends BaseService {
         )
 
         const filteredRegistries = this.applyMetricFiltersToRegistries(
-          registriesWithStats.filter((r): r is NonNullable<(typeof registriesWithStats)[0]> => r !== null),
+          await this.withParticipantCounts(
+            registriesWithStats.filter((r): r is NonNullable<(typeof registriesWithStats)[0]> => r !== null),
+            evaluationHeight
+          ),
           metricFilters
         )
 
@@ -1933,43 +1919,6 @@ export default class EcosystemDatabaseService extends BaseService {
           batchQuery = batchQuery.whereIn('id', participantEcosystemIds)
         }
         if (corporationId !== null) batchQuery = batchQuery.where('corporation_id', corporationId)
-        batchQuery = this.applyRangeToQuery(batchQuery, 'participants', minParticipants, maxParticipants)
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'participants_ecosystem',
-          minParticipantsEcosystem,
-          maxParticipantsEcosystem
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'participants_issuer_grantor',
-          minParticipantsIssuerGrantor,
-          maxParticipantsIssuerGrantor
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'participants_issuer',
-          minParticipantsIssuer,
-          maxParticipantsIssuer
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'participants_verifier_grantor',
-          minParticipantsVerifierGrantor,
-          maxParticipantsVerifierGrantor
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'participants_verifier',
-          minParticipantsVerifier,
-          maxParticipantsVerifier
-        )
-        batchQuery = this.applyRangeToQuery(
-          batchQuery,
-          'participants_holder',
-          minParticipantsHolder,
-          maxParticipantsHolder
-        )
         batchQuery = this.applyRangeToQuery(batchQuery, 'active_schemas', minActiveSchemas, maxActiveSchemas)
         batchQuery = applyExactRangeToQuery(batchQuery, 'weight', minWeight, maxWeight)
         batchQuery = applyExactRangeToQuery(batchQuery, 'issued', minIssued, maxIssued)
@@ -2069,13 +2018,6 @@ export default class EcosystemDatabaseService extends BaseService {
             language: ec.language,
             active_version: ec.active_version,
             versions,
-            participants: Number(ec.participants ?? 0),
-            participants_ecosystem: Number(ec.participants_ecosystem ?? 0),
-            participants_issuer_grantor: Number(ec.participants_issuer_grantor ?? 0),
-            participants_issuer: Number(ec.participants_issuer ?? 0),
-            participants_verifier_grantor: Number(ec.participants_verifier_grantor ?? 0),
-            participants_verifier: Number(ec.participants_verifier ?? 0),
-            participants_holder: Number(ec.participants_holder ?? 0),
             active_schemas: Number(ec.active_schemas ?? 0),
             archived_schemas: Number(ec.archived_schemas ?? 0),
             weight: String(ec.weight ?? '0'),
@@ -2089,7 +2031,10 @@ export default class EcosystemDatabaseService extends BaseService {
             network_slashed_amount_repaid: Number(ec.network_slashed_amount_repaid ?? 0),
           }
         })
-        const filteredBatch = this.applyMetricFiltersToRegistries(batchRegistries, metricFilters)
+        const filteredBatch = this.applyMetricFiltersToRegistries(
+          await this.withParticipantCounts(batchRegistries, evaluationHeight),
+          metricFilters
+        )
         const sortedBatch = this.sortRegistries(filteredBatch, sortDirection, limit)
         const responsePayload = this.applyGfDataModeToResponsePayload(
           {
@@ -2118,28 +2063,6 @@ export default class EcosystemDatabaseService extends BaseService {
       }
 
       query = query.withGraphFetched('governanceFrameworkVersions.documents') as any
-      query = this.applyRangeToQuery(query, 'participants', minParticipants, maxParticipants)
-      query = this.applyRangeToQuery(
-        query,
-        'participants_ecosystem',
-        minParticipantsEcosystem,
-        maxParticipantsEcosystem
-      )
-      query = this.applyRangeToQuery(
-        query,
-        'participants_issuer_grantor',
-        minParticipantsIssuerGrantor,
-        maxParticipantsIssuerGrantor
-      )
-      query = this.applyRangeToQuery(query, 'participants_issuer', minParticipantsIssuer, maxParticipantsIssuer)
-      query = this.applyRangeToQuery(
-        query,
-        'participants_verifier_grantor',
-        minParticipantsVerifierGrantor,
-        maxParticipantsVerifierGrantor
-      )
-      query = this.applyRangeToQuery(query, 'participants_verifier', minParticipantsVerifier, maxParticipantsVerifier)
-      query = this.applyRangeToQuery(query, 'participants_holder', minParticipantsHolder, maxParticipantsHolder)
       query = this.applyRangeToQuery(query, 'active_schemas', minActiveSchemas, maxActiveSchemas)
       query = applyExactRangeToQuery(query, 'weight', minWeight, maxWeight)
       query = applyExactRangeToQuery(query, 'issued', minIssued, maxIssued)
@@ -2191,13 +2114,6 @@ export default class EcosystemDatabaseService extends BaseService {
         return {
           ...plain,
           versions,
-          participants: Number(plain.participants || 0),
-          participants_ecosystem: Number((plain as any).participants_ecosystem || 0),
-          participants_issuer_grantor: Number((plain as any).participants_issuer_grantor || 0),
-          participants_issuer: Number((plain as any).participants_issuer || 0),
-          participants_verifier_grantor: Number((plain as any).participants_verifier_grantor || 0),
-          participants_verifier: Number((plain as any).participants_verifier || 0),
-          participants_holder: Number((plain as any).participants_holder || 0),
           active_schemas: Number(plain.active_schemas || 0),
           archived_schemas: Number(plain.archived_schemas || 0),
           weight: String(plain.weight ?? '0'),
@@ -2212,7 +2128,14 @@ export default class EcosystemDatabaseService extends BaseService {
         }
       })
 
-      const sortedRegistries = this.sortRegistries(registriesWithStats, sortDirection, limit)
+      const sortedRegistries = this.sortRegistries(
+        this.applyMetricFiltersToRegistries(
+          await this.withParticipantCounts(registriesWithStats, evaluationHeight),
+          metricFilters
+        ),
+        sortDirection,
+        limit
+      )
 
       const responsePayload = this.applyGfDataModeToResponsePayload(
         {

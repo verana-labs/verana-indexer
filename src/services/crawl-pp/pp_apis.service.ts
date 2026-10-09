@@ -22,6 +22,14 @@ import { compareById, paginateActivityItems, parseCorporationListPagination } fr
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
+  PARTICIPANT_COUNT_ENTITY_KIND,
+  PARTICIPANT_COUNT_FIELDS,
+  type ParticipantCounts,
+  readParticipantCounts,
+  readParticipantCountsByEntity,
+  zeroParticipantCounts,
+} from '../stats/stats_snapshot'
+import {
   applyActiveParticipantFilter,
   calculateCorporationAvailableActions,
   calculateParticipantState,
@@ -62,7 +70,6 @@ export default class ParticipantAPIService extends BullableService {
       hasIssuedColumn: boolean
       hasVerifiedColumn: boolean
       hasParticipantsColumn: boolean
-      hasParticipantRoleColumns: boolean
       hasWeightColumn: boolean
       hasEcosystemSlashEventsColumn: boolean
       hasExpireSoonColumn: boolean
@@ -81,7 +88,6 @@ export default class ParticipantAPIService extends BullableService {
     hasIssuedColumn: boolean
     hasVerifiedColumn: boolean
     hasParticipantsColumn: boolean
-    hasParticipantRoleColumns: boolean
     hasWeightColumn: boolean
     hasEcosystemSlashEventsColumn: boolean
     hasExpireSoonColumn: boolean
@@ -96,13 +102,6 @@ export default class ParticipantAPIService extends BullableService {
         hasIssuedColumn: !!columnInfo.issued,
         hasVerifiedColumn: !!columnInfo.verified,
         hasParticipantsColumn: !!columnInfo.participants,
-        hasParticipantRoleColumns:
-          !!columnInfo.participants_ecosystem &&
-          !!columnInfo.participants_issuer_grantor &&
-          !!columnInfo.participants_issuer &&
-          !!columnInfo.participants_verifier_grantor &&
-          !!columnInfo.participants_verifier &&
-          !!columnInfo.participants_holder,
         hasWeightColumn: !!columnInfo.weight,
         hasEcosystemSlashEventsColumn: !!columnInfo.ecosystem_slash_events,
         hasExpireSoonColumn: !!columnInfo.expire_soon,
@@ -355,8 +354,6 @@ export default class ParticipantAPIService extends BullableService {
     query: any,
     params: any,
     options: {
-      participants: boolean
-      participantRoles: boolean
       weight: boolean
       issued: boolean
       verified: boolean
@@ -366,43 +363,6 @@ export default class ParticipantAPIService extends BullableService {
   ): { requiresPostFilter: boolean; impossibleRange: boolean } {
     const col = (name: string) => (options.tablePrefix ? `${options.tablePrefix}.${name}` : name)
     const metricSpecs = [
-      { min: 'min_participants', max: 'max_participants', db: 'participants', enabled: options.participants },
-      {
-        min: 'min_participants_ecosystem',
-        max: 'max_participants_ecosystem',
-        db: 'participants_ecosystem',
-        enabled: options.participantRoles,
-      },
-      {
-        min: 'min_participants_issuer_grantor',
-        max: 'max_participants_issuer_grantor',
-        db: 'participants_issuer_grantor',
-        enabled: options.participantRoles,
-      },
-      {
-        min: 'min_participants_issuer',
-        max: 'max_participants_issuer',
-        db: 'participants_issuer',
-        enabled: options.participantRoles,
-      },
-      {
-        min: 'min_participants_verifier_grantor',
-        max: 'max_participants_verifier_grantor',
-        db: 'participants_verifier_grantor',
-        enabled: options.participantRoles,
-      },
-      {
-        min: 'min_participants_verifier',
-        max: 'max_participants_verifier',
-        db: 'participants_verifier',
-        enabled: options.participantRoles,
-      },
-      {
-        min: 'min_participants_holder',
-        max: 'max_participants_holder',
-        db: 'participants_holder',
-        enabled: options.participantRoles,
-      },
       { min: 'min_weight', max: 'max_weight', db: 'weight', enabled: options.weight, exact: true },
       { min: 'min_issued', max: 'max_issued', db: 'issued', enabled: options.issued, exact: true },
       { min: 'min_verified', max: 'max_verified', db: 'verified', enabled: options.verified, exact: true },
@@ -420,7 +380,9 @@ export default class ParticipantAPIService extends BullableService {
       },
     ]
 
-    let requiresPostFilter = false
+    let requiresPostFilter = PARTICIPANT_COUNT_FIELDS.some(
+      (field) => params[`min_${field}`] !== undefined || params[`max_${field}`] !== undefined
+    )
     let impossibleRange = false
 
     for (const spec of metricSpecs) {
@@ -458,22 +420,8 @@ export default class ParticipantAPIService extends BullableService {
   }
 
   private applyMetricFiltersInMemory(participants: any[], params: any): any[] {
-    const specs = [
-      { min: 'min_participants', max: 'max_participants', field: 'participants' },
-      { min: 'min_participants_ecosystem', max: 'max_participants_ecosystem', field: 'participants_ecosystem' },
-      {
-        min: 'min_participants_issuer_grantor',
-        max: 'max_participants_issuer_grantor',
-        field: 'participants_issuer_grantor',
-      },
-      { min: 'min_participants_issuer', max: 'max_participants_issuer', field: 'participants_issuer' },
-      {
-        min: 'min_participants_verifier_grantor',
-        max: 'max_participants_verifier_grantor',
-        field: 'participants_verifier_grantor',
-      },
-      { min: 'min_participants_verifier', max: 'max_participants_verifier', field: 'participants_verifier' },
-      { min: 'min_participants_holder', max: 'max_participants_holder', field: 'participants_holder' },
+    const specs: Array<{ min: string; max: string; field: string; exact?: boolean }> = [
+      ...PARTICIPANT_COUNT_FIELDS.map((field) => ({ min: `min_${field}`, max: `max_${field}`, field })),
       { min: 'min_weight', max: 'max_weight', field: 'weight', exact: true },
       { min: 'min_issued', max: 'max_issued', field: 'issued', exact: true },
       { min: 'min_verified', max: 'max_verified', field: 'verified', exact: true },
@@ -593,6 +541,7 @@ export default class ParticipantAPIService extends BullableService {
       schemaModesById?: Map<number, SchemaData>
       ecosystemIdBySchemaId?: Map<number, number | null>
       validatorParticipantStateById?: Map<number, ParticipantState | null>
+      participantCountsById?: Map<number, ParticipantCounts>
       moduleParams?: any
     }
   ): Promise<any[]> {
@@ -682,11 +631,20 @@ export default class ParticipantAPIService extends BullableService {
       mergedValidatorParticipantStateById.set(participantId, state)
     }
 
+    const participantCountsById =
+      options?.participantCountsById ??
+      (await readParticipantCountsByEntity(
+        PARTICIPANT_COUNT_ENTITY_KIND.PARTICIPANT,
+        participants.map((participant) => Number(participant.id)),
+        await getResolvedBlockHeight(blockHeight)
+      ))
+
     const mergedOptions = {
       ...options,
       schemaModesById,
       ecosystemIdBySchemaId,
       validatorParticipantStateById: mergedValidatorParticipantStateById,
+      participantCountsById,
       moduleParams,
     }
 
@@ -1211,6 +1169,7 @@ export default class ParticipantAPIService extends BullableService {
       schemaModesById?: Map<number, SchemaData>
       ecosystemIdBySchemaId?: Map<number, number | null>
       validatorParticipantStateById?: Map<number, ParticipantState | null>
+      participantCountsById?: Map<number, ParticipantCounts>
       moduleParams?: any
     }
   ): Promise<any> {
@@ -1286,43 +1245,14 @@ export default class ParticipantAPIService extends BullableService {
       issued: typeof participant.issued === 'number' ? participant.issued : Number(participant.issued || 0),
       verified: typeof participant.verified === 'number' ? participant.verified : Number(participant.verified || 0),
     }
-    const participantsByRole = {
-      participants_ecosystem:
-        typeof participant.participants_ecosystem === 'number'
-          ? participant.participants_ecosystem
-          : Number(participant.participants_ecosystem || 0),
-      participants_issuer_grantor:
-        typeof participant.participants_issuer_grantor === 'number'
-          ? participant.participants_issuer_grantor
-          : Number(participant.participants_issuer_grantor || 0),
-      participants_issuer:
-        typeof participant.participants_issuer === 'number'
-          ? participant.participants_issuer
-          : Number(participant.participants_issuer || 0),
-      participants_verifier_grantor:
-        typeof participant.participants_verifier_grantor === 'number'
-          ? participant.participants_verifier_grantor
-          : Number(participant.participants_verifier_grantor || 0),
-      participants_verifier:
-        typeof participant.participants_verifier === 'number'
-          ? participant.participants_verifier
-          : Number(participant.participants_verifier || 0),
-      participants_holder:
-        typeof participant.participants_holder === 'number'
-          ? participant.participants_holder
-          : Number(participant.participants_holder || 0),
-    }
-    const participantsSum =
-      participantsByRole.participants_ecosystem +
-      participantsByRole.participants_issuer_grantor +
-      participantsByRole.participants_issuer +
-      participantsByRole.participants_verifier_grantor +
-      participantsByRole.participants_verifier +
-      participantsByRole.participants_holder
-    const participants =
-      participant.participants != null && participant.participants !== ''
-        ? Number(participant.participants)
-        : participantsSum
+    const participantCounts =
+      options?.participantCountsById?.get(Number(participant.id)) ??
+      (await readParticipantCounts(
+        PARTICIPANT_COUNT_ENTITY_KIND.PARTICIPANT,
+        Number(participant.id),
+        await getResolvedBlockHeight(blockHeight)
+      ).catch(() => zeroParticipantCounts()))
+
     const slashStats = {
       ecosystem_slash_events:
         typeof participant.ecosystem_slash_events === 'number'
@@ -1380,13 +1310,7 @@ export default class ParticipantAPIService extends BullableService {
       weight: weight,
       issued: statistics.issued,
       verified: statistics.verified,
-      participants: participants,
-      participants_ecosystem: participantsByRole.participants_ecosystem,
-      participants_issuer_grantor: participantsByRole.participants_issuer_grantor,
-      participants_issuer: participantsByRole.participants_issuer,
-      participants_verifier_grantor: participantsByRole.participants_verifier_grantor,
-      participants_verifier: participantsByRole.participants_verifier,
-      participants_holder: participantsByRole.participants_holder,
+      ...participantCounts,
       ecosystem_slash_events: slashStats.ecosystem_slash_events,
       ecosystem_slashed_amount: slashStats.ecosystem_slashed_amount,
       ecosystem_slashed_amount_repaid: slashStats.ecosystem_slashed_amount_repaid,
@@ -1557,7 +1481,6 @@ export default class ParticipantAPIService extends BullableService {
           hasIssuedColumn,
           hasVerifiedColumn,
           hasParticipantsColumn,
-          hasParticipantRoleColumns,
           hasWeightColumn,
           hasEcosystemSlashEventsColumn,
         } = await this.getMetricColumnAvailability('participant_history')
@@ -1606,17 +1529,6 @@ export default class ParticipantAPIService extends BullableService {
         ]
         if (hasIssuedColumn) historyColumns.push(knex.raw('COALESCE(ph.issued, 0) as issued'))
         if (hasVerifiedColumn) historyColumns.push(knex.raw('COALESCE(ph.verified, 0) as verified'))
-        if (hasParticipantsColumn) historyColumns.push(knex.raw('COALESCE(ph.participants, 0) as participants'))
-        if (hasParticipantRoleColumns) {
-          historyColumns.push(
-            knex.raw('COALESCE(ph.participants_ecosystem, 0) as participants_ecosystem'),
-            knex.raw('COALESCE(ph.participants_issuer_grantor, 0) as participants_issuer_grantor'),
-            knex.raw('COALESCE(ph.participants_issuer, 0) as participants_issuer'),
-            knex.raw('COALESCE(ph.participants_verifier_grantor, 0) as participants_verifier_grantor'),
-            knex.raw('COALESCE(ph.participants_verifier, 0) as participants_verifier'),
-            knex.raw('COALESCE(ph.participants_holder, 0) as participants_holder')
-          )
-        }
         if (hasWeightColumn) historyColumns.push(knex.raw('COALESCE(ph.weight, 0) as weight'))
         if (hasEcosystemSlashEventsColumn) {
           historyColumns.push(
@@ -1651,8 +1563,6 @@ export default class ParticipantAPIService extends BullableService {
                 'participant_id'
               )
               const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
-                participants: hasParticipantsColumn,
-                participantRoles: hasParticipantRoleColumns,
                 weight: hasWeightColumn,
                 issued: hasIssuedColumn,
                 verified: hasVerifiedColumn,
@@ -1698,8 +1608,6 @@ export default class ParticipantAPIService extends BullableService {
                 'participant_id'
               )
               const metricPushdown = this.applyMetricFiltersToSql(qb, normalizedParams, {
-                participants: hasParticipantsColumn,
-                participantRoles: hasParticipantRoleColumns,
                 weight: hasWeightColumn,
                 issued: hasIssuedColumn,
                 verified: hasVerifiedColumn,
@@ -1788,17 +1696,6 @@ export default class ParticipantAPIService extends BullableService {
           if (hasVerifiedColumn && historyRecord.verified !== undefined) {
             participant.verified = Number(historyRecord.verified || 0)
           }
-          if (hasParticipantsColumn && historyRecord.participants !== undefined) {
-            participant.participants = Number(historyRecord.participants || 0)
-          }
-          if (hasParticipantRoleColumns) {
-            participant.participants_ecosystem = Number(historyRecord.participants_ecosystem || 0)
-            participant.participants_issuer_grantor = Number(historyRecord.participants_issuer_grantor || 0)
-            participant.participants_issuer = Number(historyRecord.participants_issuer || 0)
-            participant.participants_verifier_grantor = Number(historyRecord.participants_verifier_grantor || 0)
-            participant.participants_verifier = Number(historyRecord.participants_verifier || 0)
-            participant.participants_holder = Number(historyRecord.participants_holder || 0)
-          }
           if (hasWeightColumn && historyRecord.weight !== undefined) {
             participant.weight = Number(historyRecord.weight || 0)
           }
@@ -1886,7 +1783,6 @@ export default class ParticipantAPIService extends BullableService {
         hasIssuedColumn,
         hasVerifiedColumn,
         hasParticipantsColumn,
-        hasParticipantRoleColumns,
         hasWeightColumn,
         hasEcosystemSlashEventsColumn,
       } = await this.getMetricColumnAvailability('participants')
@@ -1904,19 +1800,6 @@ export default class ParticipantAPIService extends BullableService {
       }
       if (hasVerifiedColumn) {
         selectColumns.push(knex.raw('COALESCE(verified, 0) as verified'))
-      }
-      if (hasParticipantsColumn) {
-        selectColumns.push(knex.raw('COALESCE(participants, 0) as participants'))
-      }
-      if (hasParticipantRoleColumns) {
-        selectColumns.push(
-          knex.raw('COALESCE(participants_ecosystem, 0) as participants_ecosystem'),
-          knex.raw('COALESCE(participants_issuer_grantor, 0) as participants_issuer_grantor'),
-          knex.raw('COALESCE(participants_issuer, 0) as participants_issuer'),
-          knex.raw('COALESCE(participants_verifier_grantor, 0) as participants_verifier_grantor'),
-          knex.raw('COALESCE(participants_verifier, 0) as participants_verifier'),
-          knex.raw('COALESCE(participants_holder, 0) as participants_holder')
-        )
       }
       if (hasWeightColumn) {
         selectColumns.push(knex.raw('COALESCE(weight, 0) as weight'))
@@ -1947,8 +1830,6 @@ export default class ParticipantAPIService extends BullableService {
         'id'
       )
       const liveMetricPushdown = this.applyMetricFiltersToSql(query, normalizedParams, {
-        participants: hasParticipantsColumn,
-        participantRoles: hasParticipantRoleColumns,
         weight: hasWeightColumn,
         issued: hasIssuedColumn,
         verified: hasVerifiedColumn,
@@ -2113,7 +1994,6 @@ export default class ParticipantAPIService extends BullableService {
         if (hasExpireSoonColumn) selectColumns.push('expire_soon')
         if (hasIssuedColumn) selectColumns.push(knex.raw('COALESCE(issued, 0) as issued'))
         if (hasVerifiedColumn) selectColumns.push(knex.raw('COALESCE(verified, 0) as verified'))
-        if (hasParticipantsColumn) selectColumns.push(knex.raw('COALESCE(participants, 0) as participants'))
         if (hasWeightColumn) selectColumns.push(knex.raw('COALESCE(weight, 0) as weight'))
         if (hasEcosystemSlashEventsColumn) {
           selectColumns.push(
@@ -2191,9 +2071,6 @@ export default class ParticipantAPIService extends BullableService {
         }
         if (hasVerifiedColumn) {
           historicalParticipant.verified = Number(historyRecord.verified ?? 0)
-        }
-        if (hasParticipantsColumn) {
-          historicalParticipant.participants = Number(historyRecord.participants ?? 0)
         }
         if (hasWeightColumn) {
           historicalParticipant.weight = Number(historyRecord.weight ?? 0)
@@ -2596,6 +2473,7 @@ export default class ParticipantAPIService extends BullableService {
 
       const blockHeight = getBlockHeight(ctx)
       const useHistory = this.shouldUseHistoryQuery(ctx, blockHeight)
+      const evaluationHeight = await getResolvedBlockHeight(blockHeight)
       const now = await resolveEvaluationTime(useHistory ? blockHeight : undefined, {
         logContext: '[pp_apis:pendingFlat]',
         logger: this.logger,
@@ -2801,8 +2679,13 @@ export default class ParticipantAPIService extends BullableService {
         schemaIds.length > 0
           ? await knex('credential_schemas')
               .whereIn('id', schemaIds)
-              .select('id', 'ecosystem_id', 'json_schema', 'title', 'description', 'participants')
+              .select('id', 'ecosystem_id', 'json_schema', 'title', 'description')
           : []
+      const schemaCounts = await readParticipantCountsByEntity(
+        PARTICIPANT_COUNT_ENTITY_KIND.CREDENTIAL_SCHEMA,
+        schemaIds,
+        evaluationHeight
+      )
       const schemaMap = new Map<number, any>()
       for (const s of schemas) {
         const js = s.json_schema
@@ -2835,49 +2718,8 @@ export default class ParticipantAPIService extends BullableService {
           ecosystem_id: s.ecosystem_id || null,
           title,
           description,
-          participants: s.participants ?? 0,
+          participants: schemaCounts.get(Number(s.id))?.participants ?? 0,
         })
-      }
-
-      if (useHistory && schemaMap.size > 0) {
-        const schemaIdList = Array.from(schemaMap.keys())
-        try {
-          let latestSchemaRows: any[] = []
-          if (IS_PG_CLIENT) {
-            latestSchemaRows = await knex('credential_schema_history as csh')
-              .distinctOn('csh.credential_schema_id')
-              .select('csh.credential_schema_id', knex.raw('COALESCE(csh.participants, 0) as participants'))
-              .whereIn('csh.credential_schema_id', schemaIdList)
-              .where('csh.height', '<=', Number(blockHeight))
-              .orderBy('csh.credential_schema_id', 'asc')
-              .orderBy('csh.height', 'desc')
-              .orderBy('csh.created_at', 'desc')
-              .orderBy('csh.id', 'desc')
-          } else {
-            const rankedSchemas = knex('credential_schema_history as csh')
-              .select(
-                'csh.credential_schema_id',
-                knex.raw('COALESCE(csh.participants, 0) as participants'),
-                knex.raw(
-                  'ROW_NUMBER() OVER (PARTITION BY csh.credential_schema_id ORDER BY csh.height DESC, csh.created_at DESC, csh.id DESC) as rn'
-                )
-              )
-              .whereIn('csh.credential_schema_id', schemaIdList)
-              .where('csh.height', '<=', Number(blockHeight))
-              .as('ranked')
-            latestSchemaRows = await knex
-              .from(rankedSchemas)
-              .select('credential_schema_id', 'participants')
-              .where('rn', 1)
-          }
-          for (const row of latestSchemaRows) {
-            const schemaId = Number(row.credential_schema_id)
-            const cs = schemaMap.get(schemaId)
-            if (cs) cs.participants = Number(row.participants || 0)
-          }
-        } catch {
-          // Old deployments may not have stats columns in history tables.
-        }
       }
 
       const ecosystemIds = Array.from(
@@ -2888,9 +2730,12 @@ export default class ParticipantAPIService extends BullableService {
         )
       )
       const trs =
-        ecosystemIds.length > 0
-          ? await knex('ecosystem').whereIn('id', ecosystemIds).select('id', 'did', 'aka', 'participants')
-          : []
+        ecosystemIds.length > 0 ? await knex('ecosystem').whereIn('id', ecosystemIds).select('id', 'did', 'aka') : []
+      const ecosystemCounts = await readParticipantCountsByEntity(
+        PARTICIPANT_COUNT_ENTITY_KIND.ECOSYSTEM,
+        ecosystemIds as number[],
+        evaluationHeight
+      )
       const trMap = new Map<number | string, any>()
       for (const ec of trs) {
         trMap.set(Number(ec.id), {
@@ -2899,7 +2744,7 @@ export default class ParticipantAPIService extends BullableService {
           aka: ec.aka,
           credential_schemas: [],
           pending_tasks: 0,
-          participants: ec.participants ?? 0,
+          participants: ecosystemCounts.get(Number(ec.id))?.participants ?? 0,
         })
       }
       const csMap = new Map<number, any>()
@@ -2945,49 +2790,6 @@ export default class ParticipantAPIService extends BullableService {
           trEntry.pending_tasks += csEntry.pending_tasks
         }
       }
-      if (useHistory && trMap.size > 0) {
-        const ecosystemIdList = Array.from(trMap.keys())
-          .filter((ecosystemId) => ecosystemId !== 'null')
-          .map((ecosystemId) => Number(ecosystemId))
-          .filter((ecosystemId) => Number.isFinite(ecosystemId) && ecosystemId > 0)
-        if (ecosystemIdList.length > 0) {
-          try {
-            let latestTrRows: any[] = []
-            if (IS_PG_CLIENT) {
-              latestTrRows = await knex('ecosystem_history as trh')
-                .distinctOn('trh.ecosystem_id')
-                .select('trh.ecosystem_id', knex.raw('COALESCE(trh.participants, 0) as participants'))
-                .whereIn('trh.ecosystem_id', ecosystemIdList)
-                .where('trh.height', '<=', Number(blockHeight))
-                .orderBy('trh.ecosystem_id', 'asc')
-                .orderBy('trh.height', 'desc')
-                .orderBy('trh.created_at', 'desc')
-                .orderBy('trh.id', 'desc')
-            } else {
-              const rankedTrs = knex('ecosystem_history as trh')
-                .select(
-                  'trh.ecosystem_id',
-                  knex.raw('COALESCE(trh.participants, 0) as participants'),
-                  knex.raw(
-                    'ROW_NUMBER() OVER (PARTITION BY trh.ecosystem_id ORDER BY trh.height DESC, trh.created_at DESC, trh.id DESC) as rn'
-                  )
-                )
-                .whereIn('trh.ecosystem_id', ecosystemIdList)
-                .where('trh.height', '<=', Number(blockHeight))
-                .as('ranked')
-              latestTrRows = await knex.from(rankedTrs).select('ecosystem_id', 'participants').where('rn', 1)
-            }
-            for (const row of latestTrRows) {
-              const ecosystemId = Number(row.ecosystem_id)
-              const trEntry = trMap.get(ecosystemId)
-              if (trEntry) trEntry.participants = Number(row.participants || 0)
-            }
-          } catch {
-            // Fallback to live participants if historical stats are unavailable.
-          }
-        }
-      }
-
       for (const trEntry of trMap.values()) {
         trEntry.credential_schemas.sort((a: any, b: any) => (b.participants || 0) - (a.participants || 0))
       }

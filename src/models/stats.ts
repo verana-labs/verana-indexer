@@ -10,16 +10,10 @@ export default class Stats extends BaseModel {
   granularity!: Granularity
   timestamp!: Date
   entity_type!: EntityType
-  entity_id!: number
+  entity_id!: number | null
 
   // Cumulative fields
   cumulative_participants!: number
-  cumulative_participants_ecosystem!: number
-  cumulative_participants_issuer_grantor!: number
-  cumulative_participants_issuer!: number
-  cumulative_participants_verifier_grantor!: number
-  cumulative_participants_verifier!: number
-  cumulative_participants_holder!: number
   cumulative_active_ecosystems!: number
   cumulative_archived_ecosystems!: number
   cumulative_active_schemas!: number
@@ -36,12 +30,6 @@ export default class Stats extends BaseModel {
 
   // Delta fields
   delta_participants!: number
-  delta_participants_ecosystem!: number
-  delta_participants_issuer_grantor!: number
-  delta_participants_issuer!: number
-  delta_participants_verifier_grantor!: number
-  delta_participants_verifier!: number
-  delta_participants_holder!: number
   delta_active_ecosystems!: number
   delta_archived_ecosystems!: number
   delta_active_schemas!: number
@@ -67,12 +55,6 @@ export default class Stats extends BaseModel {
         'timestamp',
         'entity_type',
         'cumulative_participants',
-        'cumulative_participants_ecosystem',
-        'cumulative_participants_issuer_grantor',
-        'cumulative_participants_issuer',
-        'cumulative_participants_verifier_grantor',
-        'cumulative_participants_verifier',
-        'cumulative_participants_holder',
         'cumulative_active_ecosystems',
         'cumulative_archived_ecosystems',
         'cumulative_active_schemas',
@@ -100,18 +82,12 @@ export default class Stats extends BaseModel {
         'delta_network_slash_events',
         'delta_network_slashed_amount',
         'delta_network_slashed_amount_repaid',
-        'delta_participants_ecosystem',
-        'delta_participants_issuer_grantor',
-        'delta_participants_issuer',
-        'delta_participants_verifier_grantor',
-        'delta_participants_verifier',
-        'delta_participants_holder',
       ],
       properties: {
         granularity: { type: 'string', enum: ['HOUR', 'DAY', 'MONTH'] },
         timestamp: { type: 'string', format: 'date-time' },
         entity_type: { type: 'string', enum: ['GLOBAL', 'ECOSYSTEM', 'CREDENTIAL_SCHEMA', 'PARTICIPANT'] },
-        entity_id: { type: 'number' },
+        entity_id: { type: ['number', 'null'] },
       },
     }
   }
