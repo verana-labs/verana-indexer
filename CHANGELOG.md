@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.0](https://github.com/verana-labs/verana-indexer/compare/v2.0.0...v2.1.0) (2026-10-09)
+
+
+### Features
+
+* **deps:** upgrade @verana-labs/verana-types to 0.10.5 ([#440](https://github.com/verana-labs/verana-indexer/issues/440)) ([870b53f](https://github.com/verana-labs/verana-indexer/commit/870b53f12cc59392037bab7e47e6b278a5081662))
+
+
+### Bug Fixes
+
+* **api:** echo the resolved block as block_height on every non-list method ([#453](https://github.com/verana-labs/verana-indexer/issues/453)) ([1aa38d6](https://github.com/verana-labs/verana-indexer/commit/1aa38d6d915eaa3cfa265109c855db91be8203ea))
+* **cs:** honour At-Block-Height on GET /v4/credential-schema/js/{id} ([#437](https://github.com/verana-labs/verana-indexer/issues/437)) ([cde3083](https://github.com/verana-labs/verana-indexer/commit/cde308348bf1bdddde02c35e63059171277bbad2))
+* **de:** gate only_active on the Participant entry and drop remaining_fee_spend from VSOA records ([#441](https://github.com/verana-labs/verana-indexer/issues/441)) ([7c6ce71](https://github.com/verana-labs/verana-indexer/commit/7c6ce71a9d42c15f94f51ffad0066b83b5320313))
+* **de:** re-read authorizations on operator_authorization_updated and vs_operator_authorization_updated ([#443](https://github.com/verana-labs/verana-indexer/issues/443)) ([1053083](https://github.com/verana-labs/verana-indexer/commit/105308343a62c9c26fd530abd862153713c9a192))
+* **ec:** index EGF versions added through the gf module ([#452](https://github.com/verana-labs/verana-indexer/issues/452)) ([aafbca8](https://github.com/verana-labs/verana-indexer/commit/aafbca850ffa049fdf8011a0e20e840273074943))
+* **pp:** resolve participant count aggregates from the counter log ([#456](https://github.com/verana-labs/verana-indexer/issues/456)) ([b8e2e08](https://github.com/verana-labs/verana-indexer/commit/b8e2e084ff8a121c563d04c34434a8e343651800))
+* resolve cumulative_participants from the counter log ([#446](https://github.com/verana-labs/verana-indexer/issues/446)) ([#454](https://github.com/verana-labs/verana-indexer/issues/454)) ([64875d2](https://github.com/verana-labs/verana-indexer/commit/64875d25b5766af8c0a64f14a106ce565ec592d9))
+* **resolver:** fetch a fresh DID document on every evaluation block ([#438](https://github.com/verana-labs/verana-indexer/issues/438)) ([d1c364d](https://github.com/verana-labs/verana-indexer/commit/d1c364dd74516240cba631fe9609010520b6d0cb))
+* upgrade verana types ([#457](https://github.com/verana-labs/verana-indexer/issues/457)) ([5e2dffa](https://github.com/verana-labs/verana-indexer/commit/5e2dffa40e1167f47bd7a690688a2edb3dcde363))
+* verre upgrade ([#455](https://github.com/verana-labs/verana-indexer/issues/455)) ([5f52e5e](https://github.com/verana-labs/verana-indexer/commit/5f52e5e1f154fc8be1da3b1a1a0d63a6bd15ba4f))
+
 ## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-09-10)
 
 
