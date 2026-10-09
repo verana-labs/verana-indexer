@@ -3545,7 +3545,7 @@
         "responses": {
           "200": {
             "description": "Corporation group state",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } } } } }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } }, "required": ["group", "block_height"] } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
@@ -3618,7 +3618,7 @@
         "responses": {
           "200": {
             "description": "Proposal",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } } } } }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } }, "required": ["proposal", "block_height"] } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
@@ -3735,7 +3735,11 @@
                       "type": "integer",
                       "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "exchange_rate",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -4782,7 +4786,11 @@
                       "type": "integer",
                       "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "digest",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -4965,7 +4973,11 @@
                       "type": "integer",
                       "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "authorization",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -5147,7 +5159,11 @@
                       "type": "integer",
                       "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "authorization",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -6516,7 +6532,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "Ecosystem": {
         "type": "object",
@@ -6704,7 +6724,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "ecosystem",
+          "block_height"
+        ]
       },
       "EcosystemHistoryResponse": {
         "type": "object",
@@ -6955,7 +6979,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "schema",
+          "block_height"
+        ]
       },
       "CredentialSchemaListResponse": {
         "type": "object",
@@ -7003,7 +7031,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "Participant": {
         "type": "object",
@@ -7254,7 +7286,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "participant",
+          "block_height"
+        ]
       },
       "ParticipantListResponse": {
         "type": "object",
@@ -7279,7 +7315,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "EcosystemPending": {
         "type": "object",
@@ -7435,7 +7475,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "session",
+          "block_height"
+        ]
       },
       "ParticipantSessionHistoryItem": {
         "type": "object",
@@ -7642,7 +7686,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "trust_deposit",
+          "block_height"
+        ]
       },
       "TrustDepositParamsResponse": {
         "type": "object",
@@ -7692,7 +7740,11 @@
             "type": "integer",
             "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "TrustDepositHistoryItem": {
         "type": "object",
