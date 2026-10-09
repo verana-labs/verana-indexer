@@ -114,3 +114,22 @@ describe('ExchangeRateApiService.getPrice', () => {
     expect(res.block_height).toBe(200)
   })
 })
+
+describe('ExchangeRateApiService.listExchangeRates limit bound', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const service = new ExchangeRateApiService(broker)
+
+  beforeEach(() => jest.clearAllMocks())
+
+  it('rejects a limit above 1024 instead of clamping it', async () => {
+    const res: any = await service.listExchangeRates({ params: { limit: 2000 }, meta: {} } as any)
+
+    expect(res).toEqual({ error: '"limit" must be an integer between 1 and 1024', code: 400 })
+  })
+
+  it('rejects a limit of 0 instead of defaulting it to 64', async () => {
+    const res: any = await service.listExchangeRates({ params: { limit: 0 }, meta: {} } as any)
+
+    expect(res.code).toBe(400)
+  })
+})

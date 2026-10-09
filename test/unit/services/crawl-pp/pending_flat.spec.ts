@@ -79,4 +79,20 @@ describe('Pending Flat API', () => {
     const res: any = await service.pendingFlat(ctx)
     expect(res).toMatchObject({ code: 400 })
   })
+
+  it('rejects a limit above 1024 instead of clamping it', async () => {
+    ;(knex as any).mockImplementation(() => createKnexChain())
+
+    const ctx: any = { params: { corporation_id: 1, limit: 2000 }, meta: {} }
+    const res: any = await service.pendingFlat(ctx)
+    expect(res).toEqual({ error: '"limit" must be an integer between 1 and 1024', code: 400 })
+  })
+
+  it('rejects a limit of 0 instead of defaulting it to 64', async () => {
+    ;(knex as any).mockImplementation(() => createKnexChain())
+
+    const ctx: any = { params: { corporation_id: 1, limit: 0 }, meta: {} }
+    const res: any = await service.pendingFlat(ctx)
+    expect(res.code).toBe(400)
+  })
 })

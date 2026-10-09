@@ -1,5 +1,15 @@
 import knex from '../../../../src/common/utils/db_connection'
-import { VeranaParticipantMessageTypes } from '../../../../src/common/verana-message-types'
+import {
+  VeranaCorporationMessageTypes,
+  VeranaCredentialSchemaMessageTypes,
+  VeranaDelegationMessageTypes,
+  VeranaDiMessageTypes,
+  VeranaEcosystemMessageTypes,
+  VeranaExchangeRateMessageTypes,
+  VeranaGovernanceFrameworkMessageTypes,
+  VeranaParticipantMessageTypes,
+  VeranaTrustDepositMessageTypes,
+} from '../../../../src/common/verana-message-types'
 import { up as createIndexerEventsTable } from '../../../../src/migrations/20260420000000_create_indexer_events'
 import { up as hardenIndexerEventsTable } from '../../../../src/migrations/20260421000000_harden_indexer_events_replay'
 import { listIndexerEvents, persistIndexerEventsForBlock } from '../../../../src/services/api/indexer_events_query'
@@ -1026,6 +1036,217 @@ describe('indexer_events_query', () => {
         'RenewParticipantOP',
         'StartParticipantOP',
       ])
+    })
+  })
+
+  describe('events without a DID or Corporation affiliation', () => {
+    it('persists an exchange-rate event with a null did instead of dropping it', async () => {
+      const height = baseHeight + 300
+      await insertBlock(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-xr-update`,
+        sender: 'verana1oracle',
+        type: VeranaExchangeRateMessageTypes.UpdateExchangeRate,
+        content: { id: 7, rate: '1200', operator: 'verana1oracle' },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.did).toBeNull()
+      expect(record.event_type).toBe('UpdateExchangeRate')
+      expect(record.payload.module).toBe('xr')
+      expect(record.payload.entity_type).toBe('ExchangeRate')
+      expect(record.payload.entity_id).toBe('7')
+      expect(record.payload.related_dids).toEqual([])
+    })
+
+    it('keeps a did-less event on the unfiltered query and out of every filtered one', async () => {
+      const height = baseHeight + 310
+      await insertBlock(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-xr-wildcard`,
+        sender: 'verana1oracle',
+        type: VeranaExchangeRateMessageTypes.SetExchangeRateState,
+        content: { id: 9, state: false, authority: 'verana1gov' },
+      })
+
+      await persistIndexerEventsForBlock(height)
+
+      const unfiltered = await listIndexerEvents({ afterBlockHeight: height - 1, limit: 10 })
+      expect(unfiltered.map((event) => event.tx_hash)).toEqual([`tx-${runId}-xr-wildcard`])
+
+      const byDid = await listIndexerEvents({ dids: [did], afterBlockHeight: height - 1, limit: 10 })
+      expect(byDid).toEqual([])
+
+      const byCorporation = await listIndexerEvents({ corporationId: 4242, afterBlockHeight: height - 1, limit: 10 })
+      expect(byCorporation).toEqual([])
+    })
+
+    it('surfaces the exchange-rate authorization messages with their own entity type', async () => {
+      const height = baseHeight + 320
+      await insertBlock(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-xr-grant`,
+        sender: 'verana1gov',
+        type: VeranaExchangeRateMessageTypes.GrantExchangeRateAuthorization,
+        content: { authority: 'verana1gov', xr_id: 11, operator: 'verana1oracle', max_deviation_bps: 500 },
+      })
+      await insertTxMessage({
+        height,
+        txIndex: 1,
+        messageIndex: 0,
+        hash: `tx-${runId}-xr-revoke`,
+        sender: 'verana1gov',
+        type: VeranaExchangeRateMessageTypes.RevokeExchangeRateAuthorization,
+        content: { authority: 'verana1gov', xr_id: 11, operator: 'verana1oracle' },
+      })
+
+      const records = await persistIndexerEventsForBlock(height)
+
+      expect(records.map((event) => event.event_type)).toEqual([
+        'GrantExchangeRateAuthorization',
+        'RevokeExchangeRateAuthorization',
+      ])
+      for (const record of records) {
+        expect(record.did).toBeNull()
+        expect(record.payload.module).toBe('xr')
+        expect(record.payload.entity_type).toBe('ExchangeRateAuthorization')
+        expect(record.payload.entity_id).toBe('11')
+      }
+    })
+
+    it('persists a module-parameter event without attributing it to an entity', async () => {
+      const height = baseHeight + 330
+      await insertBlock(height)
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-pp-params`,
+        sender: 'verana1gov',
+        type: VeranaParticipantMessageTypes.UpdateParams,
+        content: { authority: 'verana1gov', params: { participant_trust_deposit: '10' } },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.event_type).toBe('UpdateParams')
+      expect(record.payload.module).toBe('pp')
+      expect(record.payload.entity_type).toBe('ModuleParams')
+      expect(record.payload.entity_id).toBeUndefined()
+      expect(record.did).toBeNull()
+    })
+  })
+
+  describe('trust-deposit events', () => {
+    it('anchors the event to the owning Corporation so scoped subscriptions receive it', async () => {
+      const height = baseHeight + 340
+      const corpId = 61_000 + Math.floor(Math.random() * 1000)
+      const corpDid = `did:web:td-corp-${runId}.example`
+      await insertBlock(height)
+      await insertCorporation({ id: corpId, did: corpDid, corporation: 'verana1tdaccount' })
+      await insertTxMessage({
+        height,
+        txIndex: 0,
+        messageIndex: 0,
+        hash: `tx-${runId}-td-adjust`,
+        sender: 'verana1tdaccount',
+        type: VeranaTrustDepositMessageTypes.AdjustTrustDeposit,
+        content: { creator: 'verana1tdaccount', augend: '1000' },
+      })
+
+      const [record] = await persistIndexerEventsForBlock(height)
+
+      expect(record.event_type).toBe('AdjustTrustDeposit')
+      expect(record.payload.module).toBe('td')
+      expect(record.payload.entity_type).toBe('TrustDeposit')
+      expect(record.payload.entity_id).toBe(String(corpId))
+      expect(record.payload.corporation_id).toBe(corpId)
+      expect(record.did).toBe(corpDid)
+
+      const byCorporation = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 })
+      expect(byCorporation.map((event) => event.tx_hash)).toEqual([`tx-${runId}-td-adjust`])
+    })
+  })
+
+  describe('indexed message vocabulary', () => {
+    const EXCHANGE_RATE_TYPES = [
+      VeranaExchangeRateMessageTypes.CreateExchangeRate,
+      VeranaExchangeRateMessageTypes.UpdateExchangeRate,
+      VeranaExchangeRateMessageTypes.SetExchangeRateState,
+      VeranaExchangeRateMessageTypes.GrantExchangeRateAuthorization,
+      VeranaExchangeRateMessageTypes.RevokeExchangeRateAuthorization,
+    ]
+    const TRUST_DEPOSIT_TYPES = [
+      VeranaTrustDepositMessageTypes.AdjustTrustDeposit,
+      VeranaTrustDepositMessageTypes.ReclaimYield,
+      VeranaTrustDepositMessageTypes.RepaySlashed,
+      VeranaTrustDepositMessageTypes.SlashTrustDeposit,
+      VeranaTrustDepositMessageTypes.BurnEcosystemSlashedTrustDeposit,
+    ]
+    const UPDATE_PARAMS_TYPES = [
+      VeranaEcosystemMessageTypes.UpdateParams,
+      VeranaCredentialSchemaMessageTypes.UpdateParams,
+      VeranaParticipantMessageTypes.UpdateParams,
+      VeranaCorporationMessageTypes.UpdateParams,
+      VeranaGovernanceFrameworkMessageTypes.UpdateParams,
+      VeranaDiMessageTypes.UpdateParams,
+      VeranaDelegationMessageTypes.UpdateParams,
+      VeranaTrustDepositMessageTypes.UpdateParams,
+      VeranaExchangeRateMessageTypes.UpdateParams,
+    ]
+
+    it('produces one event per exchange-rate, trust-deposit and module-parameter message type', async () => {
+      const height = baseHeight + 350
+      const types = [...EXCHANGE_RATE_TYPES, ...TRUST_DEPOSIT_TYPES, ...UPDATE_PARAMS_TYPES]
+      await insertBlock(height)
+      for (const [index, type] of types.entries()) {
+        await insertTxMessage({
+          height,
+          txIndex: index,
+          messageIndex: 0,
+          hash: `tx-${runId}-vocabulary-${index}`,
+          sender: 'verana1gov',
+          type,
+          content: { authority: 'verana1gov', creator: 'verana1gov' },
+        })
+      }
+
+      const records = await persistIndexerEventsForBlock(height)
+
+      expect(records).toHaveLength(types.length)
+      expect(new Set(records.map((event) => `${event.payload.module}:${event.event_type}`))).toEqual(
+        new Set([
+          'xr:CreateExchangeRate',
+          'xr:UpdateExchangeRate',
+          'xr:SetExchangeRateState',
+          'xr:GrantExchangeRateAuthorization',
+          'xr:RevokeExchangeRateAuthorization',
+          'td:AdjustTrustDeposit',
+          'td:ReclaimTrustDepositYield',
+          'td:RepaySlashedTrustDeposit',
+          'td:SlashTrustDeposit',
+          'td:BurnEcosystemSlashedTrustDeposit',
+          'ec:UpdateParams',
+          'cs:UpdateParams',
+          'pp:UpdateParams',
+          'co:UpdateParams',
+          'gf:UpdateParams',
+          'di:UpdateParams',
+          'de:UpdateParams',
+          'td:UpdateParams',
+          'xr:UpdateParams',
+        ])
+      )
     })
   })
 })
