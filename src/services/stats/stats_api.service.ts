@@ -524,10 +524,14 @@ export default class StatsAPIService extends BaseService {
       const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType } = ctx.params
       const height = await getResolvedBlockHeight(getBlockHeight(ctx))
 
+      const entityIdOmitted = rawEntityId === null || rawEntityId === undefined || rawEntityId === ''
       let entityId: number = 0
       if (entityKind === 0) {
+        if (!entityIdOmitted) {
+          return ApiResponder.error(ctx, 'entity_id must be omitted for GLOBAL entity_kind', 400)
+        }
         entityId = 0
-      } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === '') {
+      } else if (entityIdOmitted) {
         return ApiResponder.error(ctx, 'entity_id is required for non-GLOBAL entity_kind', 400)
       } else {
         const asString = String(rawEntityId)

@@ -1,5 +1,6 @@
+import { parseListLimit } from '../crawl-co/co_stats'
 import { isValidDid, matchesMembership, parseCorporationId, parseSubscribeMembership } from './api_shared'
-import { parseCsvList, readBooleanFlag, readPositiveInteger, uniqueNormalizedDids } from './indexer_event_utils'
+import { parseCsvList, readBooleanFlag, uniqueNormalizedDids } from './indexer_event_utils'
 
 export type VtTrustCore = {
   trusted: boolean
@@ -235,14 +236,11 @@ export function parseVtChangesQuery(params: Record<string, unknown>): VtChangesQ
     return { ok: false, error: "'fromBlock' is required and must be a non-negative integer" }
   }
 
-  let limit = VT_CHANGES_DEFAULT_LIMIT
-  if (params.limit !== undefined && params.limit !== null && params.limit !== '') {
-    const parsedLimit = readPositiveInteger(params.limit)
-    if (parsedLimit === null) {
-      return { ok: false, error: "'limit' must be a positive integer" }
-    }
-    limit = Math.min(parsedLimit, VT_CHANGES_MAX_LIMIT)
+  const limitParsed = parseListLimit(params.limit, { max: VT_CHANGES_MAX_LIMIT, fallback: VT_CHANGES_DEFAULT_LIMIT })
+  if (!limitParsed.ok) {
+    return { ok: false, error: limitParsed.message }
   }
+  const limit = limitParsed.limit
 
   const corp = parseCorporationId(params.corporation_id)
   if (!corp.ok) return { ok: false, error: corp.error }

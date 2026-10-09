@@ -35,6 +35,8 @@ describe('ParticipantAPIService block_height echo', () => {
       modified: created,
       effective_from: created,
       corporation_id: 1,
+      issuance_fee_discount: 2500,
+      verification_fee_discount: 1,
     })
     await knex('participant_history').insert({
       participant_id: PARTICIPANT_ID,
@@ -54,8 +56,8 @@ describe('ParticipantAPIService block_height echo', () => {
       network_slashed_amount_repaid: 0,
       issued: 0,
       verified: 0,
-      issuance_fee_discount: 0,
-      verification_fee_discount: 0,
+      issuance_fee_discount: 2500,
+      verification_fee_discount: 1,
       vs_operator_authz_enabled: false,
       vs_operator_authz_with_feegrant: false,
       event_type: 'Create',
@@ -117,5 +119,27 @@ describe('ParticipantAPIService block_height echo', () => {
 
     expect(res.session.id).toBe(SESSION_ID)
     expect(res.block_height).toBe(150)
+  })
+
+  it('getParticipant scales the stored fee discounts to decimals exactly once', async () => {
+    const res: any = await service.getParticipant({ params: { id: PARTICIPANT_ID }, meta: {} })
+
+    expect(res.participant.issuance_fee_discount).toBe(0.25)
+    expect(res.participant.verification_fee_discount).toBe(0.0001)
+  })
+
+  it('getParticipant scales the fee discounts once on the At-Block-Height history path', async () => {
+    const res: any = await service.getParticipant({ params: { id: PARTICIPANT_ID }, meta: { blockHeight: 150 } })
+
+    expect(res.participant.issuance_fee_discount).toBe(0.25)
+    expect(res.participant.verification_fee_discount).toBe(0.0001)
+  })
+
+  it('listParticipants scales the fee discounts once', async () => {
+    const res: any = await service.listParticipants({ params: { participant_id: PARTICIPANT_ID }, meta: {} })
+
+    const participant = res.participants.find((entry: any) => entry.id === PARTICIPANT_ID)
+    expect(participant.issuance_fee_discount).toBe(0.25)
+    expect(participant.verification_fee_discount).toBe(0.0001)
   })
 })

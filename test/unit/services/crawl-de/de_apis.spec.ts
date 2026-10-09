@@ -287,3 +287,30 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
     })
   })
 })
+
+describe('DelegationApiService list limit bound', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const service = new DelegationApiService(broker)
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('listOperatorAuthorizations rejects a limit above 1024 instead of clamping it', async () => {
+    const res: any = await service.listOperatorAuthorizations({ params: { limit: 2000 }, meta: {} } as any)
+
+    expect(res).toEqual({ error: '"limit" must be an integer between 1 and 1024', code: 400 })
+  })
+
+  it('listVSOperatorAuthorizations rejects a limit of 0 instead of defaulting it to 64', async () => {
+    const res: any = await service.listVSOperatorAuthorizations({ params: { limit: 0 }, meta: {} } as any)
+
+    expect(res.code).toBe(400)
+  })
+
+  it('listFeeGrants rejects a limit above 1024 instead of clamping it', async () => {
+    const res: any = await service.listFeeGrants({ params: { limit: 5000 }, meta: {} } as any)
+
+    expect(res.code).toBe(400)
+  })
+})

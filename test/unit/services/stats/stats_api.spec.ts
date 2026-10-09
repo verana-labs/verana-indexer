@@ -156,6 +156,33 @@ describe('StatsAPIService.getParticipantsAtHeight', () => {
 
     expect(res.code).toBe(400)
   })
+
+  it('rejects entity_id for GLOBAL instead of ignoring it', async () => {
+    const res: any = await service.getParticipantsAtHeight({
+      params: { entity_kind: 0, entity_id: '5', role_type: 0 },
+      meta: { blockHeight: 10 },
+    } as any)
+
+    expect(res).toEqual({ error: 'entity_id must be omitted for GLOBAL entity_kind', code: 400 })
+  })
+
+  it('rejects entity_id 0 for GLOBAL because sending it is not omitting it', async () => {
+    const res: any = await service.getParticipantsAtHeight({
+      params: { entity_kind: 0, entity_id: '0', role_type: 0 },
+      meta: { blockHeight: 10 },
+    } as any)
+
+    expect(res.code).toBe(400)
+  })
+
+  it('treats an empty entity_id as omitted for GLOBAL', async () => {
+    const res: any = await service.getParticipantsAtHeight({
+      params: { entity_kind: 0, entity_id: '', role_type: 0 },
+      meta: { blockHeight: 10 },
+    } as any)
+
+    expect(res).toEqual({ entity_kind: 0, entity_id: null, role_type: 0, block_height: 10, participants: 7 })
+  })
 })
 
 describe('StatsAPIService.getSnapshot', () => {

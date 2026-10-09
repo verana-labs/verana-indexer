@@ -6,9 +6,9 @@
   "description": "Verana profile of the ToIP Trust Registry Query Protocol v2.0. Encodes the constraints, action vocabulary, resource grammar, identifier-shape rules, context extensions, trigger semantics, scope rules, and response extensions that a Verana-conformant TRQP endpoint MUST honour. Companion to the prose in the Verana indexer specification, section 'Trust Registry Query Protocol v2'.",
   "spec_url": "https://verana.io/spec/v4/verana-indexer/#trust-registry-query-protocol-v2",
   "endpoints": {
-    "authorization": "/trqp/v2/authorization",
-    "recognition": "/trqp/v2/recognition",
-    "profile": "/trqp/v2/profile"
+    "authorization": "/v4/trqp/v2/authorization",
+    "recognition": "/v4/trqp/v2/recognition",
+    "profile": "/v4/trqp/v2/profile"
   },
   "upstream_schemas": {
     "authorization_request": "https://trustoverip.github.io/tswg-trust-registry-protocol/approved/schema/trqp_authorization_request.schema.json",
@@ -106,8 +106,8 @@
   },
   "discovery": {
     "did_document_service_type": "TRQPEndpoint",
-    "did_document_service_endpoint_base_path": "/trqp/v2/",
-    "profile_document_path": "/trqp/v2/profile",
+    "did_document_service_endpoint_base_path": "/v4/trqp/v2/",
+    "profile_document_path": "/v4/trqp/v2/profile",
     "governance_framework_discoverable_via": "authority_id (per TRQP v2.0, Identifiers / authority_id, and Conformance / TRQP Endpoint Conformance)"
   },
   "errors": {

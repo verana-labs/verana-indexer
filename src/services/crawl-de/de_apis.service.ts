@@ -11,7 +11,7 @@ import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
 import VSOperatorAuthorization from '../../models/vs_operator_authorization'
 import VSOperatorAuthorizationHistory from '../../models/vs_operator_authorization_history'
-import { parseIdSortDirection } from '../crawl-co/co_stats'
+import { parseIdSortDirection, parseListLimit } from '../crawl-co/co_stats'
 
 // Periodic entries auto-renew (VPR AUTHZ-CHECK-1/2/3): a past cycle boundary never makes them inactive.
 function whereActiveAt(query: any, now: Date) {
@@ -198,7 +198,11 @@ export default class DelegationApiService extends BaseService {
         }
       }
 
-      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
+      const limitParsed = parseListLimit(p.limit)
+      if (!limitParsed.ok) {
+        return ApiResponder.error(ctx, limitParsed.message, 400)
+      }
+      const limit = limitParsed.limit
       const blockHeight = getBlockHeight(ctx)
       // read before the rows: the checkpoint then never claims a height the rows do not cover
       const atBlock = blockHeight ?? (await this.delegationAtBlock())
@@ -291,7 +295,11 @@ export default class DelegationApiService extends BaseService {
         }
       }
 
-      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
+      const limitParsed = parseListLimit(p.limit)
+      if (!limitParsed.ok) {
+        return ApiResponder.error(ctx, limitParsed.message, 400)
+      }
+      const limit = limitParsed.limit
       const blockHeight = getBlockHeight(ctx)
       // read before the rows: the checkpoint then never claims a height the rows do not cover
       const atBlock = blockHeight ?? (await this.delegationAtBlock())
@@ -384,7 +392,11 @@ export default class DelegationApiService extends BaseService {
         }
       }
 
-      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
+      const limitParsed = parseListLimit(p.limit)
+      if (!limitParsed.ok) {
+        return ApiResponder.error(ctx, limitParsed.message, 400)
+      }
+      const limit = limitParsed.limit
       const blockHeight = getBlockHeight(ctx)
 
       const query =
