@@ -3479,59 +3479,6 @@
         }
       }
     },
-    "/v4/metrics/all": {
-      "get": {
-        "tags": [
-          "Metrics"
-        ],
-        "summary": "Get Global Current Metrics (deprecated)",
-        "description": "Deprecated: use GET /v4/stats/snapshot. Return global current metrics across all Ecosystems and Credential Schemas. Supports At-Block-Height header for historical state.",
-        "operationId": "getGlobalMetrics",
-        "deprecated": true,
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/At-Block-Height"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Global metrics",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GlobalMetricsResponse"
-                },
-                "example": {
-                  "participants": 12345,
-                  "active_ecosystems": 12,
-                  "archived_ecosystems": 3,
-                  "active_schemas": 256,
-                  "archived_schemas": 42,
-                  "weight": 1234567890000000000,
-                  "issued": 987654,
-                  "verified": 543210,
-                  "ecosystem_slash_events": 5,
-                  "ecosystem_slashed_amount": 100000000000000,
-                  "ecosystem_slashed_amount_repaid": 50000000000000,
-                  "network_slash_events": 1,
-                  "network_slashed_amount": 250000000000000,
-                  "network_slashed_amount_repaid": 100000000000000,
-                  "participants_ecosystem": 0,
-                  "participants_issuer_grantor": 0,
-                  "participants_issuer": 0,
-                  "participants_verifier_grantor": 0,
-                  "participants_verifier": 0,
-                  "participants_holder": 0
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
     "/v4/group/get/{corporation_id}": {
       "get": {
         "tags": ["Group"],
@@ -4656,7 +4603,7 @@
           "Statistics"
         ],
         "summary": "Get Stats Snapshot",
-        "description": "Return the current value of every tracked metric for one entity (the whole network, an Ecosystem, a Credential Schema, or a Participant sub-tree) at the block selected by the At-Block-Height header, or the latest indexed block when omitted. Participant counts read from the entity_participant_changes log; the other metrics read from the height-versioned entity tables. Replaces GET /v4/metrics/all.",
+        "description": "Return the current value of every tracked metric for one entity (the whole network, an Ecosystem, a Credential Schema, or a Participant sub-tree) at the block selected by the At-Block-Height header, or the latest indexed block when omitted. Participant counts read from the entity_participant_changes log; the other metrics read from the height-versioned entity tables.",
         "operationId": "getStatsSnapshot",
         "parameters": [
           {
@@ -6351,7 +6298,9 @@
             "description": "Transaction action name, such as CreateNewEcosystem, UpdateCredentialSchema, or StartParticipantOP."
           },
           "did": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Primary DID of the event resource. Null for events with no DID or Corporation affiliation (Exchange Rate and module-parameter messages), which only reach unfiltered queries and wildcard subscriptions."
           },
           "block_height": {
             "type": "integer"
@@ -6369,9 +6318,16 @@
               "module": {
                 "type": "string",
                 "enum": [
-                  "trust-registry",
+                  "ecosystem",
                   "credential-schema",
-                  "participant"
+                  "participant",
+                  "digital-identity",
+                  "delegation",
+                  "corporation",
+                  "group",
+                  "exchange-rate",
+                  "trust-deposit",
+                  "governance-framework"
                 ]
               },
               "action": {
@@ -8495,76 +8451,6 @@
           }
         }
       },
-      "GlobalMetricsResponse": {
-        "type": "object",
-        "properties": {
-          "participants": {
-            "type": "integer"
-          },
-          "active_ecosystems": {
-            "type": "integer"
-          },
-          "archived_ecosystems": {
-            "type": "integer"
-          },
-          "active_schemas": {
-            "type": "integer"
-          },
-          "archived_schemas": {
-            "type": "integer"
-          },
-          "weight": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "issued": {
-            "type": "integer"
-          },
-          "verified": {
-            "type": "integer"
-          },
-          "ecosystem_slash_events": {
-            "type": "integer"
-          },
-          "ecosystem_slashed_amount": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "ecosystem_slashed_amount_repaid": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "network_slash_events": {
-            "type": "integer"
-          },
-          "network_slashed_amount": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "network_slashed_amount_repaid": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "participants_ecosystem": {
-            "type": "integer"
-          },
-          "participants_issuer_grantor": {
-            "type": "integer"
-          },
-          "participants_issuer": {
-            "type": "integer"
-          },
-          "participants_verifier_grantor": {
-            "type": "integer"
-          },
-          "participants_verifier": {
-            "type": "integer"
-          },
-          "participants_holder": {
-            "type": "integer"
-          }
-        }
-      },
       "GetPriceResponse": {
         "type": "object",
         "required": [
@@ -9302,9 +9188,6 @@
     {
       "name": "Verifiable Trust",
       "description": "Verifiable Trust resolver (IDX-VT-QRY-1 resolve)."
-    },
-    {
-      "name": "Metrics"
     },
     {
       "name": "Exchange Rate",

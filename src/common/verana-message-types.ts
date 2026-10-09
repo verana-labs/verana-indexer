@@ -67,6 +67,8 @@ export enum VeranaExchangeRateMessageTypes {
   CreateExchangeRate = '/verana.xr.v1.MsgCreateExchangeRate',
   UpdateExchangeRate = '/verana.xr.v1.MsgUpdateExchangeRate',
   SetExchangeRateState = '/verana.xr.v1.MsgSetExchangeRateState',
+  GrantExchangeRateAuthorization = '/verana.xr.v1.MsgGrantExchangeRateAuthorization',
+  RevokeExchangeRateAuthorization = '/verana.xr.v1.MsgRevokeExchangeRateAuthorization',
 }
 
 export enum UpdateParamsMessageTypes {

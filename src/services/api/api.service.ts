@@ -352,9 +352,6 @@ function createRoute(path: string, aliases: Record<string, string>, requireBlock
         'GET participant-session/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSession`,
         'GET participant-session-history/:id': `${SERVICE.V1.ParticipantAPIService.path}.getParticipantSessionHistory`,
       }),
-      createRoute('/v4/metrics', {
-        'GET all': `${SERVICE.V1.MetricsApiService.path}.getAll`,
-      }),
       createRoute('/v4/exchange-rate', {
         'GET price': `${SERVICE.V1.ExchangeRateApiService.path}.getPrice`,
         'GET get': `${SERVICE.V1.ExchangeRateApiService.path}.getExchangeRate`,

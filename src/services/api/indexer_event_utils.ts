@@ -94,6 +94,9 @@ const MODULE_TO_PROTO: Record<string, string> = {
   'digital-identity': 'di',
   delegation: 'de',
   corporation: 'co',
+  'exchange-rate': 'xr',
+  'trust-deposit': 'td',
+  'governance-framework': 'gf',
 }
 
 export function toProtoModule(module: string): string {

@@ -4,10 +4,13 @@ import { extractController } from '../../common/utils/extract_controller'
 import {
   VeranaCorporationMessageTypes,
   VeranaCredentialSchemaMessageTypes,
+  VeranaDelegationMessageTypes,
   VeranaDiMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaExchangeRateMessageTypes,
   VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
+  VeranaTrustDepositMessageTypes,
 } from '../../common/verana-message-types'
 import { GROUP_ROUTED_MESSAGE_TYPES } from '../crawl-group/group_helpers'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
@@ -33,6 +36,9 @@ export type IndexerTxEvent = {
     | 'delegation'
     | 'corporation'
     | 'group'
+    | 'exchange-rate'
+    | 'trust-deposit'
+    | 'governance-framework'
   action: string
   messageType: string
   blockHeight: number
@@ -101,6 +107,8 @@ type EventMeta = {
   action: string
   entityType?: string
 }
+
+const MODULE_PARAMS_ENTITY_TYPE = 'ModuleParams'
 
 const EVENT_META: Record<string, EventMeta> = {
   [VeranaEcosystemMessageTypes.CreateEcosystem]: {
@@ -218,6 +226,101 @@ const EVENT_META: Record<string, EventMeta> = {
     action: 'UpdateCorporation',
     entityType: 'Corporation',
   },
+  [VeranaTrustDepositMessageTypes.AdjustTrustDeposit]: {
+    module: 'trust-deposit',
+    action: 'AdjustTrustDeposit',
+    entityType: 'TrustDeposit',
+  },
+  [VeranaTrustDepositMessageTypes.ReclaimYield]: {
+    module: 'trust-deposit',
+    action: 'ReclaimTrustDepositYield',
+    entityType: 'TrustDeposit',
+  },
+  [VeranaTrustDepositMessageTypes.SlashTrustDeposit]: {
+    module: 'trust-deposit',
+    action: 'SlashTrustDeposit',
+    entityType: 'TrustDeposit',
+  },
+  [VeranaTrustDepositMessageTypes.RepaySlashed]: {
+    module: 'trust-deposit',
+    action: 'RepaySlashedTrustDeposit',
+    entityType: 'TrustDeposit',
+  },
+  [VeranaTrustDepositMessageTypes.BurnEcosystemSlashedTrustDeposit]: {
+    module: 'trust-deposit',
+    action: 'BurnEcosystemSlashedTrustDeposit',
+    entityType: 'TrustDeposit',
+  },
+  [VeranaExchangeRateMessageTypes.CreateExchangeRate]: {
+    module: 'exchange-rate',
+    action: 'CreateExchangeRate',
+    entityType: 'ExchangeRate',
+  },
+  [VeranaExchangeRateMessageTypes.UpdateExchangeRate]: {
+    module: 'exchange-rate',
+    action: 'UpdateExchangeRate',
+    entityType: 'ExchangeRate',
+  },
+  [VeranaExchangeRateMessageTypes.SetExchangeRateState]: {
+    module: 'exchange-rate',
+    action: 'SetExchangeRateState',
+    entityType: 'ExchangeRate',
+  },
+  [VeranaExchangeRateMessageTypes.GrantExchangeRateAuthorization]: {
+    module: 'exchange-rate',
+    action: 'GrantExchangeRateAuthorization',
+    entityType: 'ExchangeRateAuthorization',
+  },
+  [VeranaExchangeRateMessageTypes.RevokeExchangeRateAuthorization]: {
+    module: 'exchange-rate',
+    action: 'RevokeExchangeRateAuthorization',
+    entityType: 'ExchangeRateAuthorization',
+  },
+  [VeranaEcosystemMessageTypes.UpdateParams]: {
+    module: 'ecosystem',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaCredentialSchemaMessageTypes.UpdateParams]: {
+    module: 'credential-schema',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaParticipantMessageTypes.UpdateParams]: {
+    module: 'participant',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaCorporationMessageTypes.UpdateParams]: {
+    module: 'corporation',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaGovernanceFrameworkMessageTypes.UpdateParams]: {
+    module: 'governance-framework',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaDiMessageTypes.UpdateParams]: {
+    module: 'digital-identity',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaDelegationMessageTypes.UpdateParams]: {
+    module: 'delegation',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaTrustDepositMessageTypes.UpdateParams]: {
+    module: 'trust-deposit',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
+  [VeranaExchangeRateMessageTypes.UpdateParams]: {
+    module: 'exchange-rate',
+    action: 'UpdateParams',
+    entityType: MODULE_PARAMS_ENTITY_TYPE,
+  },
 }
 
 const WATCHED_MESSAGE_TYPES = Object.keys(EVENT_META)
@@ -234,9 +337,17 @@ const ID_ALIASES = {
   issuerParticipant: ['issuer_participant_id', 'issuerParticipantId'],
   verifierParticipant: ['verifier_participant_id', 'verifierParticipantId'],
   governanceFramework: ['gfv_id', 'gfvId', 'gfd_id', 'gfdId'],
+  exchangeRate: ['xr_id', 'xrId'],
 } as const
 
 async function getEntityId(row: EventRow, meta: EventMeta): Promise<string | undefined> {
+  if (meta.entityType === MODULE_PARAMS_ENTITY_TYPE) return undefined
+
+  if (meta.module === 'exchange-rate') {
+    const exchangeRateId = readNumber(row.content, ['id', ...ID_ALIASES.exchangeRate])
+    return exchangeRateId ? String(exchangeRateId) : undefined
+  }
+
   if (meta.module === 'participant') {
     const participantId = readNumber(row.content, ['id', ...ID_ALIASES.participant])
     return participantId ? String(participantId) : resolveEntityIdFromDomain(row, meta)
@@ -414,7 +525,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   const meta = EVENT_META[row.message_type]
   if (!meta) return null
 
-  const entityId = await getEntityId(row, meta)
+  let entityId = await getEntityId(row, meta)
   const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
   const collected = collectDidsDeep([row.sender, row.content])
   let ecosystemId: string | undefined
@@ -506,6 +617,13 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     }
   }
 
+  if (meta.module === 'trust-deposit') {
+    const relation = await loadCorporation({ address: extractController(content, row.sender) })
+    corporationId = relation.corporationId
+    if (relation.did) collected.add(relation.did)
+    entityId = corporationId !== undefined ? String(corporationId) : entityId
+  }
+
   if (meta.module === 'corporation') {
     const relation = await loadCorporation({
       did: firstNormalizedDid([content.did]),
@@ -521,8 +639,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
     meta.module === 'participant'
       ? (firstNormalizedDid([content.did, content.participant_did, content.participantDid]) ?? participantResourceDid)
       : undefined
-  const primaryDid = participantPrimaryDid ?? explicitPrimaryDid ?? firstNormalizedDid(relatedDids)
-  if (!primaryDid) return null
+  const primaryDid = participantPrimaryDid ?? explicitPrimaryDid ?? firstNormalizedDid(relatedDids) ?? null
 
   return {
     type: 'transaction-executed',
