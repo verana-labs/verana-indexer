@@ -8,7 +8,7 @@ import BaseService from '../../base/base.service'
 import { BULL_JOB_NAME, SERVICE } from '../../common'
 import knex from '../../common/utils/db_connection'
 import { indexerStatusManager } from '../manager/indexer_status.manager'
-import { isUnknownMessageError } from './api_shared'
+import { isUnknownMessageError, parseAtBlockHeightHeader, validateAtBlockHeightCeiling } from './api_shared'
 import { subscribeBroadcaster } from './subscribe_broadcaster'
 import { swaggerUiComponent } from './swagger_ui'
 import { vtSubscribeBroadcaster } from './vt_subscribe_broadcaster'
@@ -89,9 +89,9 @@ async function parseAtBlockHeight(ctx: Context<any, any>, req: IncomingMessage, 
     return
   }
 
-  const parsedHeight = Number(headerValue)
-  if (!Number.isInteger(parsedHeight) || parsedHeight < 0) {
-    throw new Errors.MoleculerError('At-Block-Height must be a positive integer', 400, 'AT_BLOCK_HEIGHT_INVALID')
+  const parsed = parseAtBlockHeightHeader(headerValue)
+  if (!parsed.ok) {
+    throw new Errors.MoleculerError(parsed.message, 400, parsed.errorType)
   }
 
   let checkpoint = ctx.meta.latestCheckpoint
@@ -103,13 +103,11 @@ async function parseAtBlockHeight(ctx: Context<any, any>, req: IncomingMessage, 
     ctx.meta.latestCheckpoint = checkpoint
   }
 
-  if (checkpoint && checkpoint.height > 0 && parsedHeight > checkpoint.height) {
-    throw new Errors.MoleculerError(
-      `Requested height ${parsedHeight} exceeds indexed height ${checkpoint.height}`,
-      400,
-      'AT_BLOCK_HEIGHT_AHEAD'
-    )
+  const withinIndexedHeight = validateAtBlockHeightCeiling(parsed.height, Number(checkpoint.height))
+  if (!withinIndexedHeight.ok) {
+    throw new Errors.MoleculerError(withinIndexedHeight.message, 400, withinIndexedHeight.errorType)
   }
+  const parsedHeight = parsed.height
 
   ctx.meta.blockHeight = parsedHeight
   ctx.meta.$headers = ctx.meta.$headers || {}
