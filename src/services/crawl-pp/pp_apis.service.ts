@@ -18,7 +18,12 @@ import {
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
-import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
+import {
+  compareById,
+  paginateActivityItems,
+  parseCorporationListPagination,
+  parseListLimit,
+} from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {
@@ -2467,7 +2472,11 @@ export default class ParticipantAPIService extends BullableService {
         return ApiResponder.error(ctx, '"corporation_id" must be a positive integer', 400)
       }
 
-      const limit = Math.min(Math.max(p.limit || 64, 1), 1024)
+      const limitParsed = parseListLimit(p.limit)
+      if (!limitParsed.ok) {
+        return ApiResponder.error(ctx, limitParsed.message, 400)
+      }
+      const limit = limitParsed.limit
 
       const blockHeight = getBlockHeight(ctx)
       const useHistory = this.shouldUseHistoryQuery(ctx, blockHeight)

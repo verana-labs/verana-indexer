@@ -9,6 +9,7 @@ import knex from '../../common/utils/db_connection'
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapTrustDepositApiFields } from '../../common/vpr-v4-mapping'
 import TrustDeposit from '../../models/trust_deposit'
+import { parseListLimit } from '../crawl-co/co_stats'
 import { resolveAddressByCorporationId } from '../crawl-co/corporation_resolve'
 
 @Service({
@@ -116,7 +117,11 @@ export default class TrustDepositApiService extends BullableService {
       }
 
       const { min_id: minId, max_id: maxId } = ctx.params
-      const limit = Math.min(Math.max(Number(ctx.params.limit) || 64, 1), 1024)
+      const limitParsed = parseListLimit(ctx.params.limit)
+      if (!limitParsed.ok) {
+        return ApiResponder.error(ctx, limitParsed.message, 400)
+      }
+      const limit = limitParsed.limit
 
       const account = await resolveAddressByCorporationId(corporationId)
       if (!account) {

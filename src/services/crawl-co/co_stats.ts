@@ -386,20 +386,30 @@ function parseCursorParam(raw: unknown): { ok: true; value?: string } | { ok: fa
   return { ok: true, value }
 }
 
+const LIST_LIMIT_DEFAULT = 64
+const LIST_LIMIT_MAX = 1024
+
+export function parseListLimit(
+  raw: unknown,
+  bounds: { max: number; fallback: number } = { max: LIST_LIMIT_MAX, fallback: LIST_LIMIT_DEFAULT }
+): { ok: true; limit: number } | { ok: false; message: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, limit: bounds.fallback }
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > bounds.max) {
+    return { ok: false, message: `"limit" must be an integer between 1 and ${bounds.max}` }
+  }
+  return { ok: true, limit: parsed }
+}
+
 export function parseCorporationListPagination(params: {
   limit?: string | number
   min_id?: string | number
   max_id?: string | number
   sort?: string
 }): { ok: true; value: CorporationListPagination } | { ok: false; message: string } {
-  let limit = 64
-  if (params.limit !== undefined && params.limit !== '') {
-    const parsed = Number(params.limit)
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1024) {
-      return { ok: false, message: '"limit" must be an integer between 1 and 1024' }
-    }
-    limit = parsed
-  }
+  const limitParsed = parseListLimit(params.limit)
+  if (!limitParsed.ok) return { ok: false, message: limitParsed.message }
+  const limit = limitParsed.limit
 
   const minId = parseCursorParam(params.min_id)
   if (!minId.ok) return { ok: false, message: '"min_id" must be a non-negative integer' }

@@ -7,7 +7,7 @@ import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import ExchangeRate from '../../models/exchange_rate'
 import ExchangeRateHistory from '../../models/exchange_rate_history'
-import { parseIdSortDirection } from '../crawl-co/co_stats'
+import { parseIdSortDirection, parseListLimit } from '../crawl-co/co_stats'
 
 function computePrice(amount: string, rate: string, rateScale: number): string {
   const scaled = BigInt(amount) * BigInt(rate)
@@ -234,7 +234,11 @@ export default class ExchangeRateApiService extends BaseService {
         }
       }
 
-      const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
+      const limitParsed = parseListLimit(p.limit)
+      if (!limitParsed.ok) {
+        return ApiResponder.error(ctx, limitParsed.message, 400)
+      }
+      const limit = limitParsed.limit
       const blockHeight = getBlockHeight(ctx)
 
       const query =
