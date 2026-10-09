@@ -6,6 +6,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
+import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { isValidISO8601UTC } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
@@ -28,12 +29,7 @@ import {
   extractTitleDescriptionFromJsonSchema,
   normalizeCredentialSchemaV4LedgerFields,
 } from '../../modules/cs-height-sync/cs_height_sync_helpers'
-import {
-  compareById,
-  getResolvedBlockHeight,
-  paginateActivityItems,
-  parseCorporationListPagination,
-} from '../crawl-co/co_stats'
+import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 import { calculateEcosystemStats } from '../crawl-ec/ec_stats'
 import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import {
@@ -1423,10 +1419,13 @@ export default class CredentialSchemaDatabaseService extends BullableService {
     try {
       const { id } = ctx.params
       const blockHeight = (ctx.meta as any)?.blockHeight
+      const resolvedBlockHeight = await getResolvedBlockHeight(
+        typeof blockHeight === 'number' ? blockHeight : undefined
+      )
       const participantCounts = await readParticipantCounts(
         PARTICIPANT_COUNT_ENTITY_KIND.CREDENTIAL_SCHEMA,
         id,
-        await getResolvedBlockHeight(blockHeight)
+        resolvedBlockHeight
       )
 
       if (typeof blockHeight === 'number') {
@@ -1497,6 +1496,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
         return ApiResponder.success(
           ctx,
           {
+            block_height: resolvedBlockHeight,
             schema: mapCredentialSchemaApiFields({
               ...historicalSchema,
               ...participantCounts,
@@ -1544,6 +1544,7 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       return ApiResponder.success(
         ctx,
         {
+          block_height: resolvedBlockHeight,
           schema: mapCredentialSchemaApiFields({
             ...schemaRecord,
             json_schema: storedSchemaString,

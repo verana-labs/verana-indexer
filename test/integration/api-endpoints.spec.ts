@@ -361,6 +361,12 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
       itIf('should get trust registry - basic', async () => {
         const response = await testEndpoint('GET', `/v4/ecosystem/get/${SAMPLE_TR_ID}`)
         expect(response.status).not.toBeGreaterThanOrEqual(500)
+        if (response.status === 200) {
+          const head = await testEndpoint('GET', '/v4/indexer/block-height')
+          expect(Number.isInteger(response.data.block_height)).toBe(true)
+          expect(response.data.block_height).toBeGreaterThan(0)
+          expect(response.data.block_height).toBeLessThanOrEqual(head.data.height)
+        }
       })
 
       itIf('should get trust registry - with At-Block-Height header', async () => {
@@ -373,6 +379,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
           }
         )
         expect(response.status).not.toBeGreaterThanOrEqual(500)
+        if (response.status === 200) {
+          expect(response.data.block_height).toBe(SAMPLE_BLOCK_HEIGHT)
+        }
       })
 
       itIf('should handle invalid EC ID format', async () => {
@@ -587,6 +596,9 @@ describeIf('Comprehensive API Endpoints Integration Tests', () => {
           }
         )
         expect(response.status).not.toBeGreaterThanOrEqual(500)
+        if (response.status === 200) {
+          expect(response.data.block_height).toBe(SAMPLE_BLOCK_HEIGHT)
+        }
       })
     })
 

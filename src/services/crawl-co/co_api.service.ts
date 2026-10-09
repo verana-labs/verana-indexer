@@ -6,7 +6,7 @@ import BaseService from '../../base/base.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { Corporation } from '../../models/corporation'
 import { CorporationHistory } from '../../models/corporation_history'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
@@ -26,7 +26,6 @@ import {
   getCorporationTrustDeposit,
   getCorporationTrustDepositAtHeight,
   getCorporationTrustDepositBatch,
-  getResolvedBlockHeight,
   parseCorporationListPagination,
   parseGfDataMode,
   parsePolicyAddressFilter,

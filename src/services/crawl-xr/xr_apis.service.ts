@@ -2,7 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import ApiResponder from '../../common/utils/apiResponse'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import ExchangeRate from '../../models/exchange_rate'
@@ -21,7 +21,7 @@ function computePrice(amount: string, rate: string, rateScale: number): string {
 
 function serializeExchangeRateRow(row: any) {
   return {
-    id: Number(row.id ?? row.exchange_rate_id),
+    id: Number(row.exchange_rate_id ?? row.id),
     base_asset_type: row.base_asset_type,
     base_asset: row.base_asset,
     quote_asset_type: row.quote_asset_type,
@@ -193,6 +193,7 @@ export default class ExchangeRateApiService extends BaseService {
 
       return ApiResponder.success(ctx, {
         exchange_rate: serializeExchangeRateRow(row),
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err: any) {
       this.logger.error('Error in ExchangeRate.getExchangeRate:', err)
@@ -293,6 +294,7 @@ export default class ExchangeRateApiService extends BaseService {
         amount,
       } = ctx.params
 
+      const blockHeight = getBlockHeight(ctx)
       if (baseAssetType === quoteAssetType && baseAsset === quoteAsset) {
         return ApiResponder.success(ctx, {
           price: amount,
@@ -300,6 +302,7 @@ export default class ExchangeRateApiService extends BaseService {
           base_asset: baseAsset,
           quote_asset_type: quoteAssetType,
           quote_asset: quoteAsset,
+          block_height: await getResolvedBlockHeight(blockHeight),
         })
       }
 
@@ -309,7 +312,6 @@ export default class ExchangeRateApiService extends BaseService {
         quote_asset_type: quoteAssetType,
         quote_asset: quoteAsset,
       }
-      const blockHeight = getBlockHeight(ctx)
       const row =
         blockHeight !== undefined
           ? await this.resolveAtHeight({ pair }, blockHeight)
@@ -336,6 +338,7 @@ export default class ExchangeRateApiService extends BaseService {
         rate: serialized.rate,
         rate_scale: serialized.rate_scale,
         expires: serialized.expires,
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err: any) {
       this.logger.error('Error in ExchangeRate.getPrice:', err)

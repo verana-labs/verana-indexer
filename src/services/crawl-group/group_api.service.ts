@@ -5,7 +5,7 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { parseCorporationListPagination } from '../crawl-co/co_stats'
@@ -181,6 +181,7 @@ export default class GroupApiService extends BaseService {
             { ...row, created: live?.created ?? null, policy_address: live?.policy_address ?? null },
             members
           ),
+          block_height: await getResolvedBlockHeight(blockHeight),
         })
       }
 
@@ -192,6 +193,7 @@ export default class GroupApiService extends BaseService {
         .orderBy('id', 'asc')
       return ApiResponder.success(ctx, {
         group: serializeCorporationGroup(row, members.map(serializeMember)),
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err) {
       this.logger.error('Error in Group.getCorporationGroup:', err)
@@ -429,6 +431,7 @@ export default class GroupApiService extends BaseService {
       const tallies = await this.computeTallies([row], blockHeight)
       return ApiResponder.success(ctx, {
         proposal: serializeProposal(row, tallies.get(Number(row.id)) ?? tallyFromNothing()),
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err) {
       this.logger.error('Error in Group.getProposal:', err)

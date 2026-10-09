@@ -34,10 +34,16 @@ jest.mock('../../../../src/common/utils/block_time', () => ({
   getBlockChainTimeAsOf: jest.fn(async () => new Date('2024-03-01T00:00:00.000Z')),
 }))
 
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
+
 import { ServiceBroker } from 'moleculer'
 import OperatorAuthorization from '../../../../src/models/operator_authorization'
 import OperatorAuthorizationHistory from '../../../../src/models/operator_authorization_history'
 import VSOperatorAuthorization from '../../../../src/models/vs_operator_authorization'
+import VSOperatorAuthorizationHistory from '../../../../src/models/vs_operator_authorization_history'
 import DelegationApiService from '../../../../src/services/crawl-de/de_apis.service'
 
 function operatorAuthorizationRow(over: Record<string, unknown> = {}) {
@@ -135,6 +141,23 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
     expect(res.authorization).not.toHaveProperty('remaining_fee_spend')
   })
 
+  it('getOperatorAuthorization echoes the latest indexed height as block_height', async () => {
+    findByIdResolvesTo(OperatorAuthorization as unknown as { query: jest.Mock }, operatorAuthorizationRow())
+
+    const res: any = await service.getOperatorAuthorization({ params: { id: 7 }, meta: {} } as any)
+
+    expect(res.authorization.id).toBe(7)
+    expect(res.block_height).toBe(777)
+  })
+
+  it('getOperatorAuthorization echoes At-Block-Height as block_height', async () => {
+    historyChainResolvesTo(operatorAuthorizationRow({ operator_authorization_id: 7, id: 99 }))
+
+    const res: any = await service.getOperatorAuthorization({ params: { id: 7 }, meta: { blockHeight: 50 } } as any)
+
+    expect(res.block_height).toBe(50)
+  })
+
   it('getOperatorAuthorization omits fee fields on the At-Block-Height history path', async () => {
     historyChainResolvesTo(operatorAuthorizationRow({ operator_authorization_id: 7, id: 99 }))
 
@@ -175,6 +198,40 @@ describe('DelegationApiService OperatorAuthorization responses (spec #48)', () =
 
     expect(res.authorizations[0]).not.toHaveProperty('spend_limit')
     expect(res.authorizations[0]).not.toHaveProperty('remaining_spend')
+  })
+
+  it('getVSOperatorAuthorization echoes the latest indexed height as block_height', async () => {
+    findByIdResolvesTo(VSOperatorAuthorization as unknown as { query: jest.Mock }, {
+      id: 5,
+      corporation_id: 3,
+      vs_operator: 'verana1vsop',
+      revoked: false,
+      records: [],
+    })
+
+    const res: any = await service.getVSOperatorAuthorization({ params: { id: 5 }, meta: {} } as any)
+
+    expect(res.authorization.id).toBe(5)
+    expect(res.block_height).toBe(777)
+  })
+
+  it('getVSOperatorAuthorization echoes At-Block-Height as block_height', async () => {
+    const qb: any = {}
+    qb.where = jest.fn(() => qb)
+    qb.orderBy = jest.fn(() => qb)
+    qb.first = jest.fn(async () => ({
+      id: 42,
+      vs_operator_authorization_id: 5,
+      corporation_id: 3,
+      vs_operator: 'verana1vsop',
+      revoked: false,
+      records: [],
+    }))
+    ;(VSOperatorAuthorizationHistory as unknown as { query: jest.Mock }).query.mockReturnValue(qb)
+
+    const res: any = await service.getVSOperatorAuthorization({ params: { id: 5 }, meta: { blockHeight: 60 } } as any)
+
+    expect(res.block_height).toBe(60)
   })
 
   it('ParticipantAuthorizationRecord carries fee_spend_limit iff with_feegrant and never remaining_fee_spend (spec #95)', async () => {

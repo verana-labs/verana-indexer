@@ -2,18 +2,11 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Knex } from 'knex'
 import { Context, Errors, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
-import { BULL_JOB_NAME, SERVICE } from '../../common'
+import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import knex from '../../common/utils/db_connection'
 import { isValidDid } from './api_shared'
-
-const BLOCK_CHECKPOINT_JOB = BULL_JOB_NAME.HANDLE_TRANSACTION
-
-async function fetchLatestIndexedHeight(): Promise<number> {
-  const checkpoint = await knex('block_checkpoint').select('height').where('job_name', BLOCK_CHECKPOINT_JOB).first()
-  const height = Number(checkpoint?.height ?? 0)
-  return Number.isInteger(height) && height >= 0 ? height : 0
-}
 
 type SnapshotRow = Record<string, unknown>
 
@@ -252,7 +245,7 @@ export default class IndexerSnapshotService extends BaseService {
       const blockHeight =
         typeof headerHeight === 'number' && Number.isInteger(headerHeight) && headerHeight >= 0
           ? headerHeight
-          : await fetchLatestIndexedHeight()
+          : await getResolvedBlockHeight()
 
       const snapshot = await getDidSnapshotAtHeight({ did, blockHeight })
       return ApiResponder.success(ctx, snapshot, 200)

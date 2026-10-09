@@ -1,6 +1,7 @@
 import { Context } from 'moleculer'
 import ModuleParams from '../../models/modules_params'
 import ApiResponder from './apiResponse'
+import { getResolvedBlockHeight } from './blockHeight'
 import knex from './db_connection'
 
 const paramsCache = new Map<string, { data: { params: any }; timestamp: number }>()
@@ -91,7 +92,8 @@ export async function getModuleParamsAction(ctx: Context, module: string, module
       return ApiResponder.error(ctx, `Module parameters not found: ${moduleName}`, 404)
     }
 
-    return ApiResponder.success(ctx, result, 200)
+    const resolvedBlockHeight = await getResolvedBlockHeight(typeof blockHeight === 'number' ? blockHeight : undefined)
+    return ApiResponder.success(ctx, { ...result, block_height: resolvedBlockHeight }, 200)
   } catch (err: any) {
     console.error(`Error in getModuleParamsAction for ${moduleName}:`, err)
     return ApiResponder.error(ctx, 'Internal Server Error', 500)

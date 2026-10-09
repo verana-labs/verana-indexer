@@ -4,7 +4,7 @@ import BaseService from '../../base/base.service'
 import { BULL_JOB_NAME, SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import OperatorAuthorization from '../../models/operator_authorization'
@@ -158,6 +158,7 @@ export default class DelegationApiService extends BaseService {
 
       return ApiResponder.success(ctx, {
         authorization: serializeOperatorAuthorizationRow(row),
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err: any) {
       this.logger.error('Error in Delegation.getOperatorAuthorization:', err)
@@ -467,6 +468,7 @@ export default class DelegationApiService extends BaseService {
 
       return ApiResponder.success(ctx, {
         authorization: serializeVSOperatorAuthorizationRow(row),
+        block_height: await getResolvedBlockHeight(blockHeight),
       })
     } catch (err: any) {
       this.logger.error('Error in Delegation.getVSOperatorAuthorization:', err)

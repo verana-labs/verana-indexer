@@ -6,6 +6,10 @@ import EcosystemDatabaseService from '../../../../src/services/crawl-ec/ec_datab
 
 jest.mock('../../../../src/models/ecosystem')
 jest.mock('../../../../src/common/utils/apiResponse')
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
 jest.mock('../../../../src/services/crawl-pp/pp_state_utils', () => ({
   calculateParticipantState: jest.fn().mockReturnValue('ACTIVE'),
 }))
@@ -255,6 +259,18 @@ describe('EcosystemDatabaseService', () => {
       expect(data.params.ecosystem_trust_deposit).toBe(10)
       expect(data.params.trust_unit_price).toBe(1000000)
       expect(data.params).not.toHaveProperty('trust_registry_trust_deposit')
+      expect(data.block_height).toBe(777)
+    })
+
+    it('echoes At-Block-Height as block_height', async () => {
+      const { getModuleParams } = require('../../../../src/common/utils/params_service')
+      ;(getModuleParams as jest.Mock).mockResolvedValueOnce({ params: {} })
+
+      const ctx: any = { params: {}, meta: { blockHeight: 90 } }
+      await service.getParams(ctx)
+
+      const data = (ApiResponder.success as jest.Mock).mock.calls[0][1]
+      expect(data.block_height).toBe(90)
     })
   })
 })

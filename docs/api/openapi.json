@@ -3545,7 +3545,7 @@
         "responses": {
           "200": {
             "description": "Corporation group state",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" } } } } }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "group": { "$ref": "#/components/schemas/CorporationGroup" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } }, "required": ["group", "block_height"] } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
@@ -3618,7 +3618,7 @@
         "responses": {
           "200": {
             "description": "Proposal",
-            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" } } } } }
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "proposal": { "$ref": "#/components/schemas/GroupProposal" }, "block_height": { "type": "integer", "description": "Resolved indexed height (echoes At-Block-Height when supplied)" } }, "required": ["proposal", "block_height"] } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
@@ -3730,8 +3730,16 @@
                   "properties": {
                     "exchange_rate": {
                       "$ref": "#/components/schemas/ExchangeRate"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "exchange_rate",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -4773,8 +4781,16 @@
                   "properties": {
                     "digest": {
                       "$ref": "#/components/schemas/Digest"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "digest",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -4952,8 +4968,16 @@
                   "properties": {
                     "authorization": {
                       "$ref": "#/components/schemas/OperatorAuthorization"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "authorization",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -5130,8 +5154,16 @@
                   "properties": {
                     "authorization": {
                       "$ref": "#/components/schemas/VSOperatorAuthorization"
+                    },
+                    "block_height": {
+                      "type": "integer",
+                      "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
                     }
-                  }
+                  },
+                  "required": [
+                    "authorization",
+                    "block_height"
+                  ]
                 }
               }
             }
@@ -6495,8 +6527,16 @@
             "type": "object",
             "additionalProperties": true,
             "description": "The Ecosystem module parameter set as defined by VPR governance. VPR v4 defines no Ecosystem-specific global variable, so the set may be empty. Exact keys are determined by the on-chain parameter set."
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "Ecosystem": {
         "type": "object",
@@ -6679,8 +6719,16 @@
         "properties": {
           "ecosystem": {
             "$ref": "#/components/schemas/Ecosystem"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "ecosystem",
+          "block_height"
+        ]
       },
       "EcosystemHistoryResponse": {
         "type": "object",
@@ -6926,8 +6974,16 @@
         "properties": {
           "schema": {
             "$ref": "#/components/schemas/CredentialSchema"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "schema",
+          "block_height"
+        ]
       },
       "CredentialSchemaListResponse": {
         "type": "object",
@@ -6970,8 +7026,16 @@
                 "format": "decimal"
               }
             }
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "Participant": {
         "type": "object",
@@ -7217,8 +7281,16 @@
         "properties": {
           "participant": {
             "$ref": "#/components/schemas/Participant"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "participant",
+          "block_height"
+        ]
       },
       "ParticipantListResponse": {
         "type": "object",
@@ -7238,8 +7310,16 @@
             "type": "object",
             "additionalProperties": true,
             "description": "The Participant module parameter set as defined by VPR governance. Exact keys are determined by the on-chain parameter set."
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "EcosystemPending": {
         "type": "object",
@@ -7390,8 +7470,16 @@
         "properties": {
           "session": {
             "$ref": "#/components/schemas/ParticipantSession"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "session",
+          "block_height"
+        ]
       },
       "ParticipantSessionHistoryItem": {
         "type": "object",
@@ -7593,8 +7681,16 @@
         "properties": {
           "trust_deposit": {
             "$ref": "#/components/schemas/TrustDeposit"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "trust_deposit",
+          "block_height"
+        ]
       },
       "TrustDepositParamsResponse": {
         "type": "object",
@@ -7639,8 +7735,16 @@
                 "example": 0.2
               }
             }
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
-        }
+        },
+        "required": [
+          "params",
+          "block_height"
+        ]
       },
       "TrustDepositHistoryItem": {
         "type": "object",
@@ -8468,7 +8572,8 @@
           "base_asset_type",
           "base_asset",
           "quote_asset_type",
-          "quote_asset"
+          "quote_asset",
+          "block_height"
         ],
         "properties": {
           "price": {
@@ -8510,6 +8615,10 @@
             "type": "string",
             "format": "date-time",
             "description": "Expiry timestamp of the ExchangeRate entry. Omitted when base and quote asset are identical."
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         }
       },
@@ -9003,10 +9112,15 @@
             "type": "object",
             "description": "Corporation module parameter set. The x/co module currently defines no parameters (reserved for forward compatibility); an empty object is returned.",
             "additionalProperties": true
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         },
         "required": [
-          "params"
+          "params",
+          "block_height"
         ]
       },
       "GovernanceFrameworkDocumentV4": {
@@ -9085,10 +9199,15 @@
         "properties": {
           "version": {
             "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
+          },
+          "block_height": {
+            "type": "integer",
+            "description": "Resolved indexed height (echoes At-Block-Height when supplied)"
           }
         },
         "required": [
-          "version"
+          "version",
+          "block_height"
         ]
       },
       "GovernanceFrameworkVersionV4ListResponse": {

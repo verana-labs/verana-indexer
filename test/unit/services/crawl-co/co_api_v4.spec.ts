@@ -9,8 +9,11 @@ jest.mock('../../../../src/services/crawl-co/co_stats', () => ({
   getCorporationBaseAtHeight: jest.fn(),
   deriveActiveVersion: jest.fn(),
   applyGfData: jest.fn(),
-  getResolvedBlockHeight: jest.fn(async () => 0),
   parseGfDataMode: jest.fn((raw: string | undefined) => ({ ok: true, mode: raw ?? 'only_active' })),
+}))
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async () => 0),
 }))
 jest.mock('../../../../src/common/utils/block_time', () => ({
   getBlockChainTimeAsOf: jest.fn(async () => new Date('2024-06-01T00:00:00.000Z')),
@@ -29,6 +32,7 @@ jest.mock('../../../../src/common/utils/apiResponse', () => ({
 
 import { ServiceBroker } from 'moleculer'
 import ApiResponder from '../../../../src/common/utils/apiResponse'
+import { getResolvedBlockHeight } from '../../../../src/common/utils/blockHeight'
 import { Corporation } from '../../../../src/models/corporation'
 import CorporationApiService from '../../../../src/services/crawl-co/co_api.service'
 import {
@@ -40,7 +44,6 @@ import {
   getCorporationBaseAtHeight,
   getCorporationTrustDeposit,
   getCorporationTrustDepositAtHeight,
-  getResolvedBlockHeight,
   parseGfDataMode,
 } from '../../../../src/services/crawl-co/co_stats'
 

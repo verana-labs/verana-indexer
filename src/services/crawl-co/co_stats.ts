@@ -1,4 +1,3 @@
-import { BULL_JOB_NAME } from '../../common'
 import { resolveEvaluationTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
@@ -488,14 +487,4 @@ export function paginateActivityItems<T extends { id: unknown }>(
     })
   }
   return [...filtered].sort((a, b) => compareById(a.id, b.id, opts.direction)).slice(0, opts.limit)
-}
-
-export async function getResolvedBlockHeight(blockHeight?: number): Promise<number> {
-  if (typeof blockHeight === 'number') return blockHeight
-  const checkpoint = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION).first()
-  if (checkpoint?.height != null) return Number(checkpoint.height)
-  // fall back to latest block when the checkpoint row isn't written yet (fresh indexer)
-  const latest = await knex('block').max('height as max').first()
-  const maxValue = latest != null ? (latest as { max: string | number | null }).max : null
-  return maxValue != null ? Number(maxValue) : 0
 }

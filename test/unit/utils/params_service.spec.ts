@@ -12,6 +12,10 @@ import ModuleParams from '../../../src/models/modules_params'
 
 jest.mock('../../../src/common/utils/db_connection')
 jest.mock('../../../src/models/modules_params')
+jest.mock('../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../src/common/utils/blockHeight'),
+  getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
+}))
 
 describe('params_service', () => {
   beforeEach(() => {
@@ -126,7 +130,7 @@ describe('params_service', () => {
         MODULE_DISPLAY_NAMES.CREDENTIAL_SCHEMA
       )
       expect(ctx.meta.$statusCode).toBe(200)
-      expect(result).toEqual({ params: { key: 'value' } })
+      expect(result).toEqual({ params: { key: 'value' }, block_height: 777 })
     })
 
     it('should return error when params not found', async () => {
@@ -171,7 +175,7 @@ describe('params_service', () => {
         MODULE_DISPLAY_NAMES.CREDENTIAL_SCHEMA
       )
       expect(ctx.meta.$statusCode).toBe(200)
-      expect(result).toEqual({ params: { key: 'value' } })
+      expect(result).toEqual({ params: { key: 'value' }, block_height: 1000 })
     })
   })
 

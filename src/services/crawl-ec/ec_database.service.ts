@@ -7,6 +7,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import { validateParticipantParam } from '../../common/utils/accountValidation'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
+import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import knex from '../../common/utils/db_connection'
 import {
   applyExactRangeToQuery,
@@ -24,13 +25,7 @@ import {
 } from '../../common/utils/installed_table_columns'
 import { mapEcosystemApiFields } from '../../common/vpr-v4-mapping'
 import { Ecosystem } from '../../models/ecosystem'
-import {
-  compareById,
-  type GfDataMode,
-  getResolvedBlockHeight,
-  parseCorporationListPagination,
-  parseGfDataMode,
-} from '../crawl-co/co_stats'
+import { compareById, type GfDataMode, parseCorporationListPagination, parseGfDataMode } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
@@ -77,7 +72,11 @@ export default class EcosystemDatabaseService extends BaseService {
   }
 
   private applyGfDataModeToResponsePayload(
-    responsePayload: { ecosystem?: Record<string, unknown>; ecosystems?: Record<string, unknown>[] },
+    responsePayload: {
+      ecosystem?: Record<string, unknown>
+      ecosystems?: Record<string, unknown>[]
+      block_height?: number
+    },
     gfDataMode: GfDataMode
   ) {
     if (gfDataMode !== 'none') {
@@ -1131,10 +1130,13 @@ export default class EcosystemDatabaseService extends BaseService {
       const gfDataMode = gfDataModeParsed.mode
       const activeGfOnly = gfDataMode === 'only_active'
       const blockHeight = (ctx.meta as any)?.blockHeight
+      const resolvedBlockHeight = await getResolvedBlockHeight(
+        typeof blockHeight === 'number' ? blockHeight : undefined
+      )
       const participantCounts = await readParticipantCounts(
         PARTICIPANT_COUNT_ENTITY_KIND.ECOSYSTEM,
         Number(ecosystemId),
-        await getResolvedBlockHeight(blockHeight)
+        resolvedBlockHeight
       )
       const useHeightSync = process.env.NODE_ENV !== 'test' && process.env.USE_HEIGHT_SYNC_TR === 'true'
 
@@ -1191,7 +1193,10 @@ export default class EcosystemDatabaseService extends BaseService {
             network_slashed_amount_repaid: Number(snapshot.network_slashed_amount_repaid ?? 0),
           }
           const responsePayload = this.applyGfDataModeToResponsePayload(
-            { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) },
+            {
+              ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>),
+              block_height: resolvedBlockHeight,
+            },
             gfDataMode
           )
           const enrichedResponsePayload =
@@ -1279,6 +1284,7 @@ export default class EcosystemDatabaseService extends BaseService {
               network_slashed_amount: Number(t.network_slashed_amount ?? 0),
               network_slashed_amount_repaid: Number(t.network_slashed_amount_repaid ?? 0),
             } as Record<string, unknown>),
+            block_height: resolvedBlockHeight,
           },
           gfDataMode
         )
@@ -1343,6 +1349,7 @@ export default class EcosystemDatabaseService extends BaseService {
                   network_slashed_amount: Number(s.network_slashed_amount ?? 0),
                   network_slashed_amount_repaid: Number(s.network_slashed_amount_repaid ?? 0),
                 } as Record<string, unknown>),
+                block_height: resolvedBlockHeight,
               },
               gfDataMode
             )
@@ -1399,7 +1406,7 @@ export default class EcosystemDatabaseService extends BaseService {
         }
 
         const responsePayload = this.applyGfDataModeToResponsePayload(
-          { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>) },
+          { ecosystem: mapEcosystemApiFields(ecosystem as Record<string, unknown>), block_height: resolvedBlockHeight },
           gfDataMode
         )
         const enrichedResponsePayload =
@@ -1459,6 +1466,7 @@ export default class EcosystemDatabaseService extends BaseService {
             network_slashed_amount: Number(p.network_slashed_amount ?? 0),
             network_slashed_amount_repaid: Number(p.network_slashed_amount_repaid ?? 0),
           } as Record<string, unknown>),
+          block_height: resolvedBlockHeight,
         },
         gfDataMode
       )
@@ -2249,6 +2257,7 @@ export default class EcosystemDatabaseService extends BaseService {
       delete normalizedParams.trust_registry_trust_deposit
     }
 
-    return ApiResponder.success(ctx, { params: normalizedParams }, 200)
+    const resolvedBlockHeight = await getResolvedBlockHeight(typeof blockHeight === 'number' ? blockHeight : undefined)
+    return ApiResponder.success(ctx, { params: normalizedParams, block_height: resolvedBlockHeight }, 200)
   }
 }

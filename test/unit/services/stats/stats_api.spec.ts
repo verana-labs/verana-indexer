@@ -18,7 +18,8 @@ jest.mock('../../../../src/common/utils/db_connection', () => ({
   default: mockKnex,
 }))
 
-jest.mock('../../../../src/services/crawl-co/co_stats', () => ({
+jest.mock('../../../../src/common/utils/blockHeight', () => ({
+  ...jest.requireActual('../../../../src/common/utils/blockHeight'),
   getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 999),
 }))
 

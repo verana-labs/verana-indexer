@@ -6,7 +6,7 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
-import { getBlockHeight } from '../../common/utils/blockHeight'
+import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { CoGovernanceFrameworkVersion } from '../../models/co_governance_framework_version'
 import { Corporation } from '../../models/corporation'
 import { Ecosystem } from '../../models/ecosystem'
@@ -113,7 +113,7 @@ export default class GovernanceFrameworkApiService extends BaseService {
       }
 
       const version = buildGfvObject(plain, coRow ? 'corporation' : 'ecosystem', preferredLanguage, asOf)
-      return ApiResponder.success(ctx, { version })
+      return ApiResponder.success(ctx, { version, block_height: await getResolvedBlockHeight(blockHeight) })
     } catch (err: any) {
       this.logger.error('Error in getGovernanceFrameworkVersionV4:', err)
       return ApiResponder.error(ctx, 'Internal Server Error', 500)
