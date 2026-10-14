@@ -15,19 +15,19 @@ describe('🧪 applyActiveParticipantFilter', () => {
     return query.toQuery()
   }
 
-  it('excludes repaid and slashed entries', () => {
+  it('excludes slashed entries whether or not they were repaid', () => {
     const sql = sqlFor()
-    expect(sql).toContain('"repaid" is null')
     expect(sql).toContain('"slashed" is null')
+    expect(sql).not.toContain('"repaid"')
   })
 
   it('excludes entries revoked at or before the evaluation instant', () => {
-    expect(sqlFor()).toContain(`"revoked" is null or "revoked" >= '${NOW_ISO}'`)
+    expect(sqlFor()).toContain(`"revoked" is null or "revoked" > '${NOW_ISO}'`)
   })
 
   it('keeps only entries whose effective window covers the evaluation instant', () => {
     const sql = sqlFor()
-    expect(sql).toContain(`"effective_until" is null or "effective_until" >= '${NOW_ISO}'`)
+    expect(sql).toContain(`"effective_until" is null or "effective_until" > '${NOW_ISO}'`)
     expect(sql).toContain(`"effective_from" is not null and "effective_from" <= '${NOW_ISO}'`)
   })
 

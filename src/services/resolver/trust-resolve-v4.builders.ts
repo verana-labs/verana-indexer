@@ -2,44 +2,10 @@ import { createHash } from 'node:crypto'
 import { fetchJson, type ResolvedCredential, type TrustResolution } from '@verana-labs/verre'
 import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
-import { toDate, toIso } from '../../common/utils/date_utils'
+import { toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { calculateParticipantState, type ParticipantData } from '../crawl-pp/pp_state_utils'
 import { isEcosystemEcsAllowlisted } from './ecs-allowlist'
-
-/**
- * Derives the single `participant_state` enum from a permission row's
- * lifecycle timestamps, following the priority order defined in the indexer
- * spec (Participant state derivation table).
- */
-export function deriveParticipantState(
-  row: {
-    slashed?: Date | string | null
-    repaid?: Date | string | null
-    revoked?: Date | string | null
-    effective_from?: Date | string | null
-    effective_until?: Date | string | null
-  },
-  now: Date
-): ParticipantState {
-  const slashed = toDate(row.slashed)
-  const repaid = toDate(row.repaid)
-  const revoked = toDate(row.revoked)
-  const effectiveFrom = toDate(row.effective_from)
-  const effectiveUntil = toDate(row.effective_until)
-
-  if (slashed && repaid && repaid.getTime() >= slashed.getTime()) return 'REPAID'
-  if (slashed && (!repaid || repaid.getTime() < slashed.getTime())) return 'SLASHED'
-  if (revoked && revoked.getTime() <= now.getTime()) return 'REVOKED'
-  if (effectiveUntil && effectiveUntil.getTime() <= now.getTime()) return 'EXPIRED'
-  if (effectiveFrom && effectiveFrom.getTime() > now.getTime()) return 'FUTURE'
-  if (
-    (!effectiveFrom || effectiveFrom.getTime() <= now.getTime()) &&
-    (!effectiveUntil || effectiveUntil.getTime() > now.getTime())
-  ) {
-    return 'ACTIVE'
-  }
-  return 'INACTIVE'
-}
 
 function participantsByRole(row: Record<string, unknown>): Record<string, number> | undefined {
   const mapping: Array<[ParticipantRole, string]> = [
@@ -142,7 +108,7 @@ export async function buildParticipations(
   for (const row of rows) {
     const role = normalizeRole(row.role)
     if (!role) continue
-    const state = deriveParticipantState(row, now)
+    const state = calculateParticipantState(row as unknown as ParticipantData, now)
     if (!stateSet.has(state)) continue
 
     const schemaId = Number(row.schema_id)
