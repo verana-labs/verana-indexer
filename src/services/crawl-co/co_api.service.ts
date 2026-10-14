@@ -7,6 +7,7 @@ import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../co
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
+import { parseDatetimeParam } from '../../common/utils/date_utils'
 import { Corporation } from '../../models/corporation'
 import { CorporationHistory } from '../../models/corporation_history'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
@@ -227,11 +228,11 @@ export default class CorporationApiService extends BaseService {
 
       let modifiedAfterIso: string | undefined
       if (ctx.params.modified_after) {
-        const ts = new Date(ctx.params.modified_after)
-        if (Number.isNaN(ts.getTime())) {
-          return ApiResponder.error(ctx, '"modified_after" must be a valid ISO 8601 datetime', 400)
+        const modifiedAfterParsed = parseDatetimeParam(ctx.params.modified_after, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
-        modifiedAfterIso = ts.toISOString()
+        modifiedAfterIso = modifiedAfterParsed.value
       }
 
       const blockHeight = getBlockHeight(ctx)

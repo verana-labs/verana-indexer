@@ -3,7 +3,7 @@ import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
-import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import { dateToIsoOrNull, parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import ExchangeRate from '../../models/exchange_rate'
 import ExchangeRateHistory from '../../models/exchange_rate_history'
@@ -157,10 +157,11 @@ export default class ExchangeRateApiService extends BaseService {
 
       let expireDate: Date | undefined
       if (expireTs) {
-        expireDate = new Date(expireTs)
-        if (Number.isNaN(expireDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid expire_ts datetime format', 400)
+        const expireTsParsed = parseDatetimeParam(expireTs, 'expire_ts')
+        if (!expireTsParsed.ok) {
+          return ApiResponder.error(ctx, expireTsParsed.message, 400)
         }
+        expireDate = new Date(expireTsParsed.value)
       }
 
       const selector = hasId
@@ -226,12 +227,13 @@ export default class ExchangeRateApiService extends BaseService {
       }
       const sortDir = sortParsed.direction
 
-      let expireDate: Date | undefined
+      let expire: string | undefined
       if (p.expire) {
-        expireDate = new Date(p.expire)
-        if (Number.isNaN(expireDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid expire datetime format', 400)
+        const expireParsed = parseDatetimeParam(p.expire, 'expire')
+        if (!expireParsed.ok) {
+          return ApiResponder.error(ctx, expireParsed.message, 400)
         }
+        expire = expireParsed.value
       }
 
       const limit = Math.min(Math.max(Number(p.limit) || 64, 1), 1024)
@@ -241,7 +243,7 @@ export default class ExchangeRateApiService extends BaseService {
         blockHeight !== undefined ? this.buildAtHeightListQuery(blockHeight) : knex<any>('exchange_rates').select('*')
       const idColumn = blockHeight !== undefined ? 'exchange_rate_id' : 'id'
 
-      this.applyListFilters(query, p, expireDate, idColumn)
+      this.applyListFilters(query, p, expire, idColumn)
       const rows = await query.orderBy(idColumn, sortDir).limit(limit)
 
       return ApiResponder.success(ctx, {
@@ -263,13 +265,13 @@ export default class ExchangeRateApiService extends BaseService {
     return knex.from(latestPerId.as('er')).select('*')
   }
 
-  private applyListFilters(query: any, p: ListExchangeRatesParams, expireDate: Date | undefined, idColumn: string) {
+  private applyListFilters(query: any, p: ListExchangeRatesParams, expire: string | undefined, idColumn: string) {
     if (p.base_asset_type) query.where('base_asset_type', p.base_asset_type)
     if (p.base_asset) query.where('base_asset', p.base_asset)
     if (p.quote_asset_type) query.where('quote_asset_type', p.quote_asset_type)
     if (p.quote_asset) query.where('quote_asset', p.quote_asset)
     if (p.state !== undefined) query.where('state', p.state)
-    if (expireDate) query.where('expires', '>', expireDate)
+    if (expire) query.where('expires', '>', expire)
     if (p.min_id !== undefined) query.where(idColumn, '>=', p.min_id)
     if (p.max_id !== undefined) query.where(idColumn, '<', p.max_id)
   }

@@ -74,6 +74,25 @@ describe('ExchangeRateApiService.getExchangeRate', () => {
 
     expect(res).toEqual({ error: 'Exchange rate not found', code: 404 })
   })
+
+  it('rejects an expire_ts that is not UTC with a trailing Z', async () => {
+    for (const expire_ts of ['2027-10-01', '2027-10-01T00:00:00', '2027-10-01T00:00:00+02:00']) {
+      chainResolvesTo(ExchangeRate, rateRow)
+
+      const res: any = await service.getExchangeRate({ params: { id: '3', expire_ts }, meta: {} } as any)
+
+      expect(res.code).toBe(400)
+    }
+  })
+
+  it('rejects a list expire that is not UTC with a trailing Z', async () => {
+    const res: any = await service.listExchangeRates({
+      params: { expire: '2027-10-01T00:00:00+02:00' },
+      meta: {},
+    } as any)
+
+    expect(res.code).toBe(400)
+  })
 })
 
 describe('ExchangeRateApiService.getPrice', () => {

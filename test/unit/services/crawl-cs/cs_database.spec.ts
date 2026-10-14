@@ -297,6 +297,18 @@ describe('CredentialSchemaDatabaseService API Integration Tests', () => {
     expect(normalizeSchemaId(found.ecosystem_id)).toBe(123)
   })
 
+  it('should accept a modified_after carrying more than three fractional digits', async () => {
+    const res = await broker.call(`${serviceKey}.list`, {
+      only_active: false,
+      modified_after: '2000-01-01T00:00:00.123456Z',
+    })
+    const body = deepUnwrapMoleculer(res)
+
+    expect(body?.error).toBeUndefined()
+    const items = (body?.schemas ?? body) as any[]
+    expect(items.some((i: any) => normalizeSchemaId(i.id) === schemaId)).toBe(true)
+  })
+
   it('should fetch JsonSchema of the credential schema', async () => {
     const res = await broker.call(`${serviceKey}.JsonSchema`, { id: normalizeSchemaId(schemaId) })
     const storedRaw =

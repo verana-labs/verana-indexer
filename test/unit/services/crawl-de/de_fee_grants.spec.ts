@@ -202,6 +202,9 @@ describe('DelegationApiService.listFeeGrants', () => {
 
   it('rejects an invalid modified_after datetime', async () => {
     expect((await list({ modified_after: 'not-a-date' })).code).toBe(400)
+    expect((await list({ modified_after: '2026-07-05' })).code).toBe(400)
+    expect((await list({ modified_after: '2026-07-05T00:00:00' })).code).toBe(400)
+    expect((await list({ modified_after: '2026-07-05T00:00:00+02:00' })).code).toBe(400)
   })
 
   it('paginates with the half-open id cursor and limit', async () => {
