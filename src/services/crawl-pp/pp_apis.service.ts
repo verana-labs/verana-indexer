@@ -2241,9 +2241,7 @@ export default class ParticipantAPIService extends BullableService {
       }
 
       if (issuerParticipantId) {
-        if (!verifierParticipantId) {
-          await collectAncestors(Number(issuerParticipantId))
-        }
+        await collectAncestors(Number(issuerParticipantId))
       }
 
       if (verifierParticipantId) {
