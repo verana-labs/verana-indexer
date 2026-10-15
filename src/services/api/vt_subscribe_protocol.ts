@@ -1,5 +1,10 @@
-import { parseListLimit } from '../crawl-co/co_stats'
-import { isValidDid, matchesMembership, parseCorporationId, parseSubscribeMembership } from './api_shared'
+import {
+  isValidDid,
+  matchesMembership,
+  parseCorporationId,
+  parseListLimit,
+  parseSubscribeMembership,
+} from './api_shared'
 import { parseCsvList, readBooleanFlag, uniqueNormalizedDids } from './indexer_event_utils'
 
 export type VtTrustCore = {

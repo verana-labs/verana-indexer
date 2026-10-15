@@ -7,7 +7,8 @@ import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import ExchangeRate from '../../models/exchange_rate'
 import ExchangeRateHistory from '../../models/exchange_rate_history'
-import { parseIdSortDirection, parseListLimit } from '../crawl-co/co_stats'
+import { parseListLimit } from '../api/api_shared'
+import { parseIdSortDirection } from '../crawl-co/co_stats'
 
 function computePrice(amount: string, rate: string, rateScale: number): string {
   const scaled = BigInt(amount) * BigInt(rate)

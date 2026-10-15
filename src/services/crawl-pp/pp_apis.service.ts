@@ -18,12 +18,8 @@ import {
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapParticipantType, normalizeParticipantEmptyStringsToNull } from '../../common/utils/utils'
 import { mapParticipantApiFields } from '../../common/vpr-v4-mapping'
-import {
-  compareById,
-  paginateActivityItems,
-  parseCorporationListPagination,
-  parseListLimit,
-} from '../crawl-co/co_stats'
+import { parseListLimit } from '../api/api_shared'
+import { compareById, paginateActivityItems, parseCorporationListPagination } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
 import { enrichTrustDataDeep, parseTrustDataMode, type TrustDataMode } from '../resolver/trust-data-enrichment'
 import {

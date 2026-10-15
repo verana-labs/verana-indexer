@@ -1,4 +1,8 @@
-import { parseAtBlockHeightHeader, validateAtBlockHeightCeiling } from '../../../../src/services/api/api_shared'
+import {
+  parseAtBlockHeightHeader,
+  parseListLimit,
+  validateAtBlockHeightCeiling,
+} from '../../../../src/services/api/api_shared'
 
 describe('parseAtBlockHeightHeader', () => {
   it('rejects height 0 because the spec requires a positive integer', () => {
@@ -47,5 +51,39 @@ describe('validateAtBlockHeightCeiling', () => {
   it('rejects every height while the indexer reports height 0', () => {
     expect(validateAtBlockHeightCeiling(1, 0)).toMatchObject({ ok: false, errorType: 'AT_BLOCK_HEIGHT_AHEAD' })
     expect(validateAtBlockHeightCeiling(1500004, 0)).toMatchObject({ ok: false, errorType: 'AT_BLOCK_HEIGHT_AHEAD' })
+  })
+})
+
+describe('parseListLimit', () => {
+  it('falls back to 64 when the limit is absent, null or empty', () => {
+    expect(parseListLimit(undefined)).toEqual({ ok: true, limit: 64 })
+    expect(parseListLimit(null)).toEqual({ ok: true, limit: 64 })
+    expect(parseListLimit('')).toEqual({ ok: true, limit: 64 })
+  })
+
+  it('rejects a limit outside 1..1024 instead of clamping it', () => {
+    expect(parseListLimit('0')).toEqual({ ok: false, message: '"limit" must be an integer between 1 and 1024' })
+    expect(parseListLimit('1025')).toEqual({ ok: false, message: '"limit" must be an integer between 1 and 1024' })
+    expect(parseListLimit(-5)).toMatchObject({ ok: false })
+  })
+
+  it('rejects a non-integer limit', () => {
+    expect(parseListLimit('abc')).toMatchObject({ ok: false })
+    expect(parseListLimit(1.5)).toMatchObject({ ok: false })
+  })
+
+  it('accepts the boundary limits 1 and 1024', () => {
+    expect(parseListLimit('1')).toEqual({ ok: true, limit: 1 })
+    expect(parseListLimit(1024)).toEqual({ ok: true, limit: 1024 })
+  })
+
+  it('honours custom bounds, as the verifiable-trust changes method needs', () => {
+    const bounds = { max: 1000, fallback: 100 }
+    expect(parseListLimit(undefined, bounds)).toEqual({ ok: true, limit: 100 })
+    expect(parseListLimit('1000', bounds)).toEqual({ ok: true, limit: 1000 })
+    expect(parseListLimit('1001', bounds)).toEqual({
+      ok: false,
+      message: '"limit" must be an integer between 1 and 1000',
+    })
   })
 })

@@ -1,4 +1,8 @@
-import { mapParticipantApiFields, normalizeVprFeeDiscountRatio } from '../../../src/common/vpr-v4-mapping'
+import {
+  mapParticipantApiFields,
+  normalizeVprFeeDiscountFields,
+  normalizeVprFeeDiscountRatio,
+} from '../../../src/common/vpr-v4-mapping'
 
 describe('normalizeVprFeeDiscountRatio', () => {
   it('converts the smallest non-zero chain value to 0.0001 instead of a full discount', () => {
@@ -62,5 +66,25 @@ describe('mapParticipantApiFields', () => {
 
   it('leaves absent discount fields absent', () => {
     expect(mapParticipantApiFields({ corporation_id: 3 })).not.toHaveProperty('issuance_fee_discount')
+  })
+})
+
+describe('normalizeVprFeeDiscountFields', () => {
+  it('converts both discounts so history changes read like the participant response', () => {
+    expect(normalizeVprFeeDiscountFields({ issuance_fee_discount: 500, verification_fee_discount: 2500 })).toEqual({
+      issuance_fee_discount: 0.05,
+      verification_fee_discount: 0.25,
+    })
+  })
+
+  it('leaves unrelated change entries untouched', () => {
+    expect(normalizeVprFeeDiscountFields({ deposit: 81000000, issuance_fee_discount: 10000 })).toEqual({
+      deposit: 81000000,
+      issuance_fee_discount: 1,
+    })
+  })
+
+  it('leaves absent discount fields absent', () => {
+    expect(normalizeVprFeeDiscountFields({ deposit: 1 })).not.toHaveProperty('issuance_fee_discount')
   })
 })

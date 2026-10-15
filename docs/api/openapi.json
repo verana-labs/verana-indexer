@@ -759,8 +759,8 @@
                       "tx_hash": "A1B2C3",
                       "timestamp": "2025-12-17T04:43:12Z",
                       "payload": {
-                        "module": "participant",
-                        "action": "StartParticipantOP",
+                        "module": "pp",
+                        "action": "start_participant_op",
                         "message_type": "/verana.pp.v1.MsgStartParticipantOP",
                         "tx_index": 0,
                         "message_index": 0,
@@ -1943,6 +1943,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "404": {
             "description": "Ecosystem history not found",
             "content": {
@@ -2680,6 +2683,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "404": {
             "description": "Credential Schema history not found",
@@ -4152,6 +4158,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "404": {
             "description": "Participant history not found",
             "content": {
@@ -5492,6 +5501,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "404": {
             "description": "Trust Deposit history not found",
             "content": {
@@ -6091,7 +6103,7 @@
         "description": "Header to query historical state at a specific block height. When provided, returns the state as it was when the specified block finished processing. When omitted, returns the latest indexed state. Must be a positive integer not exceeding the current indexed block height.",
         "schema": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         }
       }
     },
@@ -6318,16 +6330,16 @@
               "module": {
                 "type": "string",
                 "enum": [
-                  "ecosystem",
-                  "credential-schema",
-                  "participant",
-                  "digital-identity",
-                  "delegation",
-                  "corporation",
+                  "ec",
+                  "cs",
+                  "pp",
+                  "di",
+                  "de",
+                  "co",
                   "group",
-                  "exchange-rate",
-                  "trust-deposit",
-                  "governance-framework"
+                  "xr",
+                  "td",
+                  "gf"
                 ]
               },
               "action": {

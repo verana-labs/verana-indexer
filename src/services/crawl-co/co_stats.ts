@@ -2,6 +2,7 @@ import { resolveEvaluationTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
 import TrustDeposit from '../../models/trust_deposit'
+import { parseListLimit } from '../api/api_shared'
 import {
   calculateParticipantState,
   normalizeParticipantType,
@@ -384,21 +385,6 @@ function parseCursorParam(raw: unknown): { ok: true; value?: string } | { ok: fa
   const value = String(raw).trim()
   if (!/^\d+$/.test(value)) return { ok: false }
   return { ok: true, value }
-}
-
-const LIST_LIMIT_DEFAULT = 64
-const LIST_LIMIT_MAX = 1024
-
-export function parseListLimit(
-  raw: unknown,
-  bounds: { max: number; fallback: number } = { max: LIST_LIMIT_MAX, fallback: LIST_LIMIT_DEFAULT }
-): { ok: true; limit: number } | { ok: false; message: string } {
-  if (raw === undefined || raw === null || raw === '') return { ok: true, limit: bounds.fallback }
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > bounds.max) {
-    return { ok: false, message: `"limit" must be an integer between 1 and ${bounds.max}` }
-  }
-  return { ok: true, limit: parsed }
 }
 
 export function parseCorporationListPagination(params: {

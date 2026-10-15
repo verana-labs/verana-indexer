@@ -4,6 +4,7 @@ import {
   VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
 } from '../verana-message-types'
+import { normalizeVprFeeDiscountFields } from '../vpr-v4-mapping'
 import knex from './db_connection'
 import { normalizeParticipantEmptyStringsToNull } from './utils'
 
@@ -630,7 +631,7 @@ export async function buildActivityTimeline(
       }
 
       if (changes && activityEntityType === 'Participant') {
-        changes = normalizeParticipantEmptyStringsToNull(changes)
+        changes = normalizeVprFeeDiscountFields(normalizeParticipantEmptyStringsToNull(changes))
       }
 
       const activityItem: any = {

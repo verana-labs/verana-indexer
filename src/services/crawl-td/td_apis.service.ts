@@ -9,7 +9,7 @@ import knex from '../../common/utils/db_connection'
 import { getModuleParams, getModuleParamsAction } from '../../common/utils/params_service'
 import { mapTrustDepositApiFields } from '../../common/vpr-v4-mapping'
 import TrustDeposit from '../../models/trust_deposit'
-import { parseListLimit } from '../crawl-co/co_stats'
+import { parseListLimit } from '../api/api_shared'
 import { resolveAddressByCorporationId } from '../crawl-co/corporation_resolve'
 
 @Service({

@@ -1,5 +1,20 @@
 import { uniqueNormalizedDids } from './indexer_event_utils'
 
+const LIST_LIMIT_DEFAULT = 64
+const LIST_LIMIT_MAX = 1024
+
+export function parseListLimit(
+  raw: unknown,
+  bounds: { max: number; fallback: number } = { max: LIST_LIMIT_MAX, fallback: LIST_LIMIT_DEFAULT }
+): { ok: true; limit: number } | { ok: false; message: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, limit: bounds.fallback }
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > bounds.max) {
+    return { ok: false, message: `"limit" must be an integer between 1 and ${bounds.max}` }
+  }
+  return { ok: true, limit: parsed }
+}
+
 export type LoggerLike = {
   info?: (...args: any[]) => void
   warn?: (...args: any[]) => void

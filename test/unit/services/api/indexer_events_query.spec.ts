@@ -1158,15 +1158,15 @@ describe('indexer_events_query', () => {
         height,
         txIndex: 0,
         messageIndex: 0,
-        hash: `tx-${runId}-td-adjust`,
+        hash: `tx-${runId}-td-reclaim`,
         sender: 'verana1tdaccount',
-        type: VeranaTrustDepositMessageTypes.AdjustTrustDeposit,
+        type: VeranaTrustDepositMessageTypes.ReclaimYield,
         content: { creator: 'verana1tdaccount', augend: '1000' },
       })
 
       const [record] = await persistIndexerEventsForBlock(height)
 
-      expect(record.event_type).toBe('AdjustTrustDeposit')
+      expect(record.event_type).toBe('ReclaimTrustDepositYield')
       expect(record.payload.module).toBe('td')
       expect(record.payload.entity_type).toBe('TrustDeposit')
       expect(record.payload.entity_id).toBe(String(corpId))
@@ -1174,7 +1174,7 @@ describe('indexer_events_query', () => {
       expect(record.did).toBe(corpDid)
 
       const byCorporation = await listIndexerEvents({ corporationId: corpId, afterBlockHeight: height - 1, limit: 10 })
-      expect(byCorporation.map((event) => event.tx_hash)).toEqual([`tx-${runId}-td-adjust`])
+      expect(byCorporation.map((event) => event.tx_hash)).toEqual([`tx-${runId}-td-reclaim`])
     })
   })
 
@@ -1187,11 +1187,9 @@ describe('indexer_events_query', () => {
       VeranaExchangeRateMessageTypes.RevokeExchangeRateAuthorization,
     ]
     const TRUST_DEPOSIT_TYPES = [
-      VeranaTrustDepositMessageTypes.AdjustTrustDeposit,
       VeranaTrustDepositMessageTypes.ReclaimYield,
       VeranaTrustDepositMessageTypes.RepaySlashed,
       VeranaTrustDepositMessageTypes.SlashTrustDeposit,
-      VeranaTrustDepositMessageTypes.BurnEcosystemSlashedTrustDeposit,
     ]
     const UPDATE_PARAMS_TYPES = [
       VeranaEcosystemMessageTypes.UpdateParams,
@@ -1231,11 +1229,9 @@ describe('indexer_events_query', () => {
           'xr:SetExchangeRateState',
           'xr:GrantExchangeRateAuthorization',
           'xr:RevokeExchangeRateAuthorization',
-          'td:AdjustTrustDeposit',
           'td:ReclaimTrustDepositYield',
           'td:RepaySlashedTrustDeposit',
           'td:SlashTrustDeposit',
-          'td:BurnEcosystemSlashedTrustDeposit',
           'ec:UpdateParams',
           'cs:UpdateParams',
           'pp:UpdateParams',

@@ -27,19 +27,24 @@ const PARTICIPANT_HIDDEN_COLUMNS = [
   'vs_operator_authz_spend_period',
 ] as const
 
+const PARTICIPANT_FEE_DISCOUNT_FIELDS = ['issuance_fee_discount', 'verification_fee_discount'] as const
+
+export function normalizeVprFeeDiscountFields<T extends Record<string, unknown>>(target: T): T {
+  for (const field of PARTICIPANT_FEE_DISCOUNT_FIELDS) {
+    if (field in target) {
+      ;(target as Record<string, unknown>)[field] = normalizeVprFeeDiscountRatio(target[field])
+    }
+  }
+  return target
+}
+
 export function mapParticipantApiFields(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...row }
   out.corporation_id = Number(out.corporation_id ?? 0) || 0
   for (const k of PARTICIPANT_HIDDEN_COLUMNS) {
     delete out[k]
   }
-  if ('issuance_fee_discount' in out) {
-    out.issuance_fee_discount = normalizeVprFeeDiscountRatio(out.issuance_fee_discount)
-  }
-  if ('verification_fee_discount' in out) {
-    out.verification_fee_discount = normalizeVprFeeDiscountRatio(out.verification_fee_discount)
-  }
-  return out
+  return normalizeVprFeeDiscountFields(out)
 }
 
 export function mapTrustDepositApiFields(row: Record<string, unknown>): Record<string, unknown> {

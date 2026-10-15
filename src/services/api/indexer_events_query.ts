@@ -226,11 +226,6 @@ const EVENT_META: Record<string, EventMeta> = {
     action: 'UpdateCorporation',
     entityType: 'Corporation',
   },
-  [VeranaTrustDepositMessageTypes.AdjustTrustDeposit]: {
-    module: 'trust-deposit',
-    action: 'AdjustTrustDeposit',
-    entityType: 'TrustDeposit',
-  },
   [VeranaTrustDepositMessageTypes.ReclaimYield]: {
     module: 'trust-deposit',
     action: 'ReclaimTrustDepositYield',
@@ -244,11 +239,6 @@ const EVENT_META: Record<string, EventMeta> = {
   [VeranaTrustDepositMessageTypes.RepaySlashed]: {
     module: 'trust-deposit',
     action: 'RepaySlashedTrustDeposit',
-    entityType: 'TrustDeposit',
-  },
-  [VeranaTrustDepositMessageTypes.BurnEcosystemSlashedTrustDeposit]: {
-    module: 'trust-deposit',
-    action: 'BurnEcosystemSlashedTrustDeposit',
     entityType: 'TrustDeposit',
   },
   [VeranaExchangeRateMessageTypes.CreateExchangeRate]: {
