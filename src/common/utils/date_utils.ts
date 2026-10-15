@@ -32,6 +32,12 @@ function withoutFractionalSeconds(timestamp: string): string {
   return timestamp.replace(/\.\d+Z$/, 'Z')
 }
 
+const MAX_FRACTIONAL_DIGITS = 6
+
+function clampFractionalSeconds(timestamp: string): string {
+  return timestamp.replace(/\.(\d+)Z$/, (_match, digits: string) => `.${digits.slice(0, MAX_FRACTIONAL_DIGITS)}Z`)
+}
+
 export function parseDatetimeParam(
   value: unknown,
   paramName: string
@@ -53,7 +59,7 @@ export function parseDatetimeParam(
     return rejection
   }
 
-  return { ok: true, value }
+  return { ok: true, value: clampFractionalSeconds(value) }
 }
 
 /**
