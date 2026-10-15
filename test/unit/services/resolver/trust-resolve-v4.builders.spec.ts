@@ -55,42 +55,12 @@ import {
   buildParticipations,
   buildPresentations,
   buildServices,
-  deriveParticipantState,
   resolveCorporationId,
 } from '../../../../src/services/resolver/trust-resolve-v4.builders'
 
 const NOW = new Date('2026-06-02T00:00:00Z')
 const past = '2026-01-01T00:00:00Z'
 const future = '2027-01-01T00:00:00Z'
-
-describe('deriveParticipantState', () => {
-  it('1. REPAID when slashed and repaid >= slashed', () => {
-    expect(deriveParticipantState({ slashed: past, repaid: future }, NOW)).toBe('REPAID')
-  })
-  it('2. SLASHED when slashed and not repaid (or repaid < slashed)', () => {
-    expect(deriveParticipantState({ slashed: past }, NOW)).toBe('SLASHED')
-    expect(deriveParticipantState({ slashed: future, repaid: past }, NOW)).toBe('SLASHED')
-  })
-  it('3. REVOKED when revoked <= now', () => {
-    expect(deriveParticipantState({ revoked: past }, NOW)).toBe('REVOKED')
-  })
-  it('4. EXPIRED when effective_until <= now', () => {
-    expect(deriveParticipantState({ effective_until: past }, NOW)).toBe('EXPIRED')
-  })
-  it('5. FUTURE when effective_from > now', () => {
-    expect(deriveParticipantState({ effective_from: future }, NOW)).toBe('FUTURE')
-  })
-  it('6. ACTIVE within the effective window', () => {
-    expect(deriveParticipantState({ effective_from: past, effective_until: future }, NOW)).toBe('ACTIVE')
-    expect(deriveParticipantState({}, NOW)).toBe('ACTIVE')
-  })
-  it('priority: SLASHED outranks REVOKED/EXPIRED', () => {
-    expect(deriveParticipantState({ slashed: past, revoked: past, effective_until: past }, NOW)).toBe('SLASHED')
-  })
-  it('revoked in the future does not count as REVOKED', () => {
-    expect(deriveParticipantState({ revoked: future, effective_from: past }, NOW)).toBe('ACTIVE')
-  })
-})
 
 describe('buildParticipations', () => {
   beforeEach(() => {

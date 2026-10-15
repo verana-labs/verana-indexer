@@ -3,7 +3,7 @@ import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/u
 import knex from '../../common/utils/db_connection'
 import { resolveParticipantsParticipantColumn } from '../../common/utils/installed_table_columns'
 import { calculateCredentialSchemaStats, calculateCredentialSchemaStatsBatch } from '../crawl-cs/cs_stats'
-import { applyActiveEffectiveFromFilter, calculateParticipantState } from '../crawl-pp/pp_state_utils'
+import { applyActiveParticipantFilter, calculateParticipantState } from '../crawl-pp/pp_state_utils'
 
 function isMetricsPgClient(db: Knex): boolean {
   return String((db as any)?.client?.config?.client || '').includes('pg')
@@ -362,15 +362,7 @@ export async function computeGlobalMetrics(blockHeight?: number) {
     const activeParticipantsBase = () =>
       knex('participants')
         .where(participantParticipantCol, '>', 0)
-        .whereNull('repaid')
-        .whereNull('slashed')
-        .andWhere(function () {
-          this.whereNull('revoked').orWhere('revoked', '>=', nowIso)
-        })
-        .modify((qb) => applyActiveEffectiveFromFilter(qb, nowIso))
-        .andWhere(function () {
-          this.whereNull('effective_until').orWhere('effective_until', '>=', nowIso)
-        })
+        .modify((qb) => applyActiveParticipantFilter(qb, nowIso))
 
     const participantsResult = await activeParticipantsBase().count(`* as count`).first()
     const participants = Number((participantsResult as any)?.count ?? 0)
