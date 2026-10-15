@@ -109,6 +109,43 @@ describe('StatsAPIService.get', () => {
   })
 })
 
+describe('StatsAPIService.stats datetime bounds', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const service = new StatsAPIService(broker)
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('accepts bounds carrying more than three fractional digits', async () => {
+    const res: any = await service.stats({
+      params: {
+        timestamp_from: '2026-01-02T00:00:00.123456Z',
+        timestamp_until: '2026-01-01T00:00:00.123456Z',
+        entity_type: 'GLOBAL',
+      },
+    } as any)
+
+    expect(res).toEqual({ error: 'timestamp_from must be before timestamp_until', code: 400 })
+  })
+
+  it('rejects year zero before it reaches the database', async () => {
+    const res: any = await service.stats({
+      params: {
+        timestamp_from: '0000-01-01T00:00:00Z',
+        timestamp_until: '2026-01-01T00:00:00Z',
+        entity_type: 'GLOBAL',
+      },
+    } as any)
+
+    expect(res).toEqual({
+      error: '"timestamp_from" must be an ISO 8601 UTC datetime with a trailing Z (e.g. 2026-01-18T10:00:00Z)',
+      code: 400,
+    })
+    expect(Stats.query).not.toHaveBeenCalled()
+  })
+})
+
 describe('StatsAPIService.getParticipantsAtHeight', () => {
   const broker = new ServiceBroker({ logger: false })
   const service = new StatsAPIService(broker)

@@ -8,7 +8,7 @@ import { buildActivityTimeline } from '../../common/utils/activity_timeline_help
 import ApiResponder from '../../common/utils/apiResponse'
 import { resolveEvaluationTime } from '../../common/utils/block_time'
 import { getBlockHeight, getResolvedBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
-import { isValidISO8601UTC } from '../../common/utils/date_utils'
+import { parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
   applyExactRangeToQuery,
@@ -1384,29 +1384,19 @@ export default class ParticipantAPIService extends BullableService {
       let modifiedAfterIso: string | undefined
       let whenIso: string | undefined
 
-      if (normalizedParams.modified_after || normalizedParams.when) {
-        if (normalizedParams.modified_after) {
-          if (!isValidISO8601UTC(normalizedParams.modified_after)) {
-            return ApiResponder.error(
-              ctx,
-              "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-              400
-            )
-          }
-          const ts = new Date(normalizedParams.modified_after)
-          if (!Number.isNaN(ts.getTime())) modifiedAfterIso = ts.toISOString()
+      if (normalizedParams.modified_after) {
+        const modifiedAfterParsed = parseDatetimeParam(normalizedParams.modified_after, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
-        if (normalizedParams.when) {
-          if (!isValidISO8601UTC(normalizedParams.when)) {
-            return ApiResponder.error(
-              ctx,
-              "Invalid when format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-              400
-            )
-          }
-          const whenTs = new Date(normalizedParams.when)
-          if (!Number.isNaN(whenTs.getTime())) whenIso = whenTs.toISOString()
+        modifiedAfterIso = modifiedAfterParsed.value
+      }
+      if (normalizedParams.when) {
+        const whenParsed = parseDatetimeParam(normalizedParams.when, 'when')
+        if (!whenParsed.ok) {
+          return ApiResponder.error(ctx, whenParsed.message, 400)
         }
+        whenIso = whenParsed.value
       }
       const lightweightDerivedStats =
         this.shouldUseStrictTrustResolutionLightweightMode(normalizedParams, limit) ||

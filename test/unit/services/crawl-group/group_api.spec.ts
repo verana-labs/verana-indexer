@@ -286,6 +286,11 @@ describe('GroupApiService', () => {
       expect(await service.listProposals({ params: { modified_after: 'nope' }, meta: {} } as any)).toMatchObject({
         code: 400,
       })
+      for (const modified_after of ['2026-08-01', '2026-08-01T00:00:00', '2026-08-01T00:00:00+02:00']) {
+        expect(await service.listProposals({ params: { modified_after }, meta: {} } as any)).toMatchObject({
+          code: 400,
+        })
+      }
     })
 
     it('pushes corporation_id, status, proposer and modified_after into the query', async () => {
@@ -314,7 +319,7 @@ describe('GroupApiService', () => {
         called(
           'group_proposal',
           'where',
-          (args) => args[0] === 'modified' && args[1] === '>' && args[2] === '2026-08-01T00:00:00.000Z'
+          (args) => args[0] === 'modified' && args[1] === '>' && args[2] === '2026-08-01T00:00:00Z'
         )
       ).toBe(true)
     })

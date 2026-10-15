@@ -7,7 +7,7 @@ import { buildActivityTimeline } from '../../common/utils/activity_timeline_help
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
 import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
-import { isValidISO8601UTC } from '../../common/utils/date_utils'
+import { parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
   applyExactRangeToQuery,
@@ -1706,18 +1706,11 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       const participantCountRanges = parseParticipantCountRanges(ctx.params as Record<string, unknown>)
       let modifiedAfterIso: string | undefined
       if (modifiedAfter) {
-        if (!isValidISO8601UTC(modifiedAfter)) {
-          return ApiResponder.error(
-            ctx,
-            "Invalid modified_after format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-            400
-          )
+        const modifiedAfterParsed = parseDatetimeParam(modifiedAfter, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
-        const ts = new Date(modifiedAfter)
-        if (Number.isNaN(ts.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid modified_after format', 400)
-        }
-        modifiedAfterIso = ts.toISOString()
+        modifiedAfterIso = modifiedAfterParsed.value
       }
       const parseTriStateBool = (value: unknown): boolean | undefined => {
         if (value === undefined || value === null || value === '') return undefined
