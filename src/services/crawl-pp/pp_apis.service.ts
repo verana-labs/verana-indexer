@@ -2,6 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BullableService from '../../base/bullable.service'
 import { MODULE_DISPLAY_NAMES, ModulesParamsNamesTypes, SERVICE } from '../../common'
+import { ALL_PARTICIPANT_STATES } from '../../common/types/types'
 import { validateParticipantParam } from '../../common/utils/accountValidation'
 import { buildActivityTimeline } from '../../common/utils/activity_timeline_helper'
 import ApiResponder from '../../common/utils/apiResponse'
@@ -31,12 +32,11 @@ import {
   zeroParticipantCounts,
 } from '../stats/stats_snapshot'
 import {
-  applyActiveParticipantFilter,
+  applyParticipantStateFilter,
   calculateCorporationAvailableActions,
   calculateParticipantState,
   calculateValidatorAvailableActions,
   mapParticipantActionsToVprMessages,
-  ONBOARDING_PENDING_OP_STATES,
   type ParticipantState,
   PENDING_FLAT_VALIDATOR_PARENT_TYPES,
   pendingFlatMatchesOpPendingWithEligibleParticipantState,
@@ -464,72 +464,11 @@ export default class ParticipantAPIService extends BullableService {
     tablePrefix?: string
   ): { pushedDown: boolean } {
     if (!participantStateRaw) return { pushedDown: false }
-
     const participantState = String(participantStateRaw).toUpperCase()
+    if (!(ALL_PARTICIPANT_STATES as string[]).includes(participantState)) return { pushedDown: false }
     const col = (name: string) => (tablePrefix ? `${tablePrefix}.${name}` : name)
-    const baseNotRepaidSlashed = (qb: any) => {
-      qb.whereNull(col('repaid')).whereNull(col('slashed'))
-    }
-    const notRevokedAsOfNow = (qb: any) => {
-      qb.whereNull(col('revoked')).orWhere(col('revoked'), '>=', nowIso)
-    }
-    const onboardingPending = (qb: any) => {
-      qb.whereIn(col('op_state'), ONBOARDING_PENDING_OP_STATES)
-    }
-
-    if (participantState === 'REPAID') {
-      query.whereNotNull(col('repaid'))
-      return { pushedDown: true }
-    }
-
-    if (participantState === 'SLASHED') {
-      query.whereNull(col('repaid')).whereNotNull(col('slashed'))
-      return { pushedDown: true }
-    }
-
-    if (participantState === 'REVOKED') {
-      query.where((qb: any) => {
-        baseNotRepaidSlashed(qb)
-        qb.whereNotNull(col('revoked')).andWhere(col('revoked'), '<', nowIso)
-      })
-      return { pushedDown: true }
-    }
-
-    if (participantState === 'EXPIRED') {
-      query.where((qb: any) => {
-        baseNotRepaidSlashed(qb)
-        qb.where(notRevokedAsOfNow)
-        qb.whereNotNull(col('effective_until')).andWhere(col('effective_until'), '<', nowIso)
-      })
-      return { pushedDown: true }
-    }
-
-    if (participantState === 'ACTIVE') {
-      applyActiveParticipantFilter(query, nowIso, col)
-      return { pushedDown: true }
-    }
-
-    if (participantState === 'FUTURE') {
-      query.where((qb: any) => {
-        baseNotRepaidSlashed(qb)
-        qb.where(notRevokedAsOfNow)
-        qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNotNull(col('effective_from')).andWhere(col('effective_from'), '>', nowIso)
-      })
-      return { pushedDown: true }
-    }
-
-    if (participantState === 'INACTIVE') {
-      query.where((qb: any) => {
-        baseNotRepaidSlashed(qb)
-        qb.where(notRevokedAsOfNow)
-        qb.where((q: any) => q.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso))
-        qb.whereNull(col('effective_from')).andWhere(onboardingPending)
-      })
-      return { pushedDown: true }
-    }
-
-    return { pushedDown: false }
+    applyParticipantStateFilter(query, participantState as ParticipantState, nowIso, col)
+    return { pushedDown: true }
   }
 
   private async batchEnrichParticipants(
@@ -2301,9 +2240,7 @@ export default class ParticipantAPIService extends BullableService {
       }
 
       if (issuerParticipantId) {
-        if (!verifierParticipantId) {
-          await collectAncestors(Number(issuerParticipantId))
-        }
+        await collectAncestors(Number(issuerParticipantId))
       }
 
       if (verifierParticipantId) {
