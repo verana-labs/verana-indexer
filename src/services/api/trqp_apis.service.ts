@@ -5,6 +5,7 @@ import path from 'path'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { Network } from '../../network'
 import { calculateParticipantState, type ParticipantData, type ParticipantType } from '../crawl-pp/pp_state_utils'
@@ -117,12 +118,12 @@ export default class TrqpApiService extends BaseService {
 
       let evaluatedAt = new Date()
       if (requestContext.time) {
-        evaluatedAt = new Date(requestContext.time)
-        if (Number.isNaN(evaluatedAt.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid "context.time" datetime format', 400)
+        const timeParsed = parseDatetimeParam(requestContext.time, 'context.time')
+        if (!timeParsed.ok) {
+          return ApiResponder.error(ctx, timeParsed.message, 400)
         }
+        evaluatedAt = new Date(timeParsed.value)
       }
-      const timeRequested = requestContext.time ? toIsoZ(requestContext.time) : toIsoZ(evaluatedAt)
       const timeEvaluated = toIsoZ(evaluatedAt)
 
       const baseResponse = {
@@ -130,7 +131,7 @@ export default class TrqpApiService extends BaseService {
         entity_id: entityId,
         action,
         resource,
-        time_requested: timeRequested,
+        time_requested: timeEvaluated,
         time_evaluated: timeEvaluated,
       }
 
@@ -224,12 +225,12 @@ export default class TrqpApiService extends BaseService {
 
       let evaluatedAt = new Date()
       if (requestContext.time) {
-        evaluatedAt = new Date(requestContext.time)
-        if (Number.isNaN(evaluatedAt.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid "context.time" datetime format', 400)
+        const timeParsed = parseDatetimeParam(requestContext.time, 'context.time')
+        if (!timeParsed.ok) {
+          return ApiResponder.error(ctx, timeParsed.message, 400)
         }
+        evaluatedAt = new Date(timeParsed.value)
       }
-      const timeRequested = requestContext.time ? toIsoZ(requestContext.time) : toIsoZ(evaluatedAt)
       const timeEvaluated = toIsoZ(evaluatedAt)
 
       const baseResponse = {
@@ -237,7 +238,7 @@ export default class TrqpApiService extends BaseService {
         entity_id: entityId,
         action,
         resource,
-        time_requested: timeRequested,
+        time_requested: timeEvaluated,
         time_evaluated: timeEvaluated,
       }
 

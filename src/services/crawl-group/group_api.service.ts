@@ -6,7 +6,7 @@ import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
-import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import { dateToIsoOrNull, parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { parseCorporationListPagination } from '../crawl-co/co_stats'
 import { normalizeTallyResult, PROPOSAL_STATUSES } from './group_helpers'
@@ -302,11 +302,11 @@ export default class GroupApiService extends BaseService {
       }
       let modifiedAfterIso: string | undefined
       if (p.modified_after) {
-        const ts = new Date(p.modified_after)
-        if (Number.isNaN(ts.getTime())) {
-          return ApiResponder.error(ctx, '"modified_after" must be a valid ISO 8601 datetime', 400)
+        const modifiedAfterParsed = parseDatetimeParam(p.modified_after, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
-        modifiedAfterIso = ts.toISOString()
+        modifiedAfterIso = modifiedAfterParsed.value
       }
 
       const blockHeight = getBlockHeight(ctx)

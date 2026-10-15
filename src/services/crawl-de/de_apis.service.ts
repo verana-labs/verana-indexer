@@ -5,7 +5,7 @@ import { BULL_JOB_NAME, SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
-import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import { dateToIsoOrNull, parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import OperatorAuthorization from '../../models/operator_authorization'
 import OperatorAuthorizationHistory from '../../models/operator_authorization_history'
@@ -191,12 +191,13 @@ export default class DelegationApiService extends BaseService {
       }
       const sortDir = sortParsed.direction
 
-      let modifiedAfter: Date | undefined
+      let modifiedAfter: string | undefined
       if (p.modified_after) {
-        modifiedAfter = new Date(p.modified_after)
-        if (Number.isNaN(modifiedAfter.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid modified_after datetime format', 400)
+        const modifiedAfterParsed = parseDatetimeParam(p.modified_after, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
+        modifiedAfter = modifiedAfterParsed.value
       }
 
       const limitParsed = parseListLimit(p.limit)
@@ -253,7 +254,7 @@ export default class DelegationApiService extends BaseService {
   private applyListFilters(
     query: any,
     p: ListOperatorAuthorizationsParams,
-    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string }
+    ctx: { modifiedAfter?: string; now?: Date; idColumn: string }
   ) {
     if (p.corporation_id !== undefined) query.where('corporation_id', p.corporation_id)
     if (p.operator) query.where('operator', p.operator)
@@ -288,12 +289,13 @@ export default class DelegationApiService extends BaseService {
       }
       const sortDir = sortParsed.direction
 
-      let modifiedAfter: Date | undefined
+      let modifiedAfter: string | undefined
       if (p.modified_after) {
-        modifiedAfter = new Date(p.modified_after)
-        if (Number.isNaN(modifiedAfter.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid modified_after datetime format', 400)
+        const modifiedAfterParsed = parseDatetimeParam(p.modified_after, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
+        modifiedAfter = modifiedAfterParsed.value
       }
 
       const limitParsed = parseListLimit(p.limit)
@@ -342,7 +344,7 @@ export default class DelegationApiService extends BaseService {
   private applyVSOAListFilters(
     query: any,
     p: ListVSOperatorAuthorizationsParams,
-    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string; blockHeight?: number }
+    ctx: { modifiedAfter?: string; now?: Date; idColumn: string; blockHeight?: number }
   ) {
     if (p.corporation_id !== undefined) query.where('corporation_id', p.corporation_id)
     if (p.vs_operator) query.where('vs_operator', p.vs_operator)
@@ -385,12 +387,13 @@ export default class DelegationApiService extends BaseService {
       }
       const sortDir = sortParsed.direction
 
-      let modifiedAfter: Date | undefined
+      let modifiedAfter: string | undefined
       if (p.modified_after) {
-        modifiedAfter = new Date(p.modified_after)
-        if (Number.isNaN(modifiedAfter.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid modified_after datetime format', 400)
+        const modifiedAfterParsed = parseDatetimeParam(p.modified_after, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
         }
+        modifiedAfter = modifiedAfterParsed.value
       }
 
       const limitParsed = parseListLimit(p.limit)
@@ -436,7 +439,7 @@ export default class DelegationApiService extends BaseService {
   private applyFeeGrantListFilters(
     query: any,
     p: ListFeeGrantsParams,
-    ctx: { modifiedAfter?: Date; now?: Date; idColumn: string }
+    ctx: { modifiedAfter?: string; now?: Date; idColumn: string }
   ) {
     if (p.grantor_corporation_id !== undefined) query.where('grantor_corporation_id', p.grantor_corporation_id)
     if (p.grantee) query.where('grantee', p.grantee)

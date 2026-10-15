@@ -141,5 +141,19 @@ describe('ParticipantAPIService block_height echo', () => {
     const participant = res.participants.find((entry: any) => entry.id === PARTICIPANT_ID)
     expect(participant.issuance_fee_discount).toBe(0.25)
     expect(participant.verification_fee_discount).toBe(0.0001)
+  it('listParticipants accepts modified_after and when with more than three fractional digits', async () => {
+    const res: any = await service.listParticipants({
+      params: { modified_after: '2026-09-01T00:00:00.123456Z', when: '2026-10-02T00:00:00.123456Z' },
+      meta: {},
+    })
+
+    expect(res.code).toBeUndefined()
+    expect(res.participants.map((p: any) => p.id)).toContain(PARTICIPANT_ID)
+  })
+
+  it('listParticipants rejects a when without the trailing Z', async () => {
+    const res: any = await service.listParticipants({ params: { when: '2026-10-02T00:00:00' }, meta: {} })
+
+    expect(res.code).toBe(400)
   })
 })
