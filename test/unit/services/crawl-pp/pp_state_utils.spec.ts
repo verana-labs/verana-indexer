@@ -52,13 +52,32 @@ describe('🧪 pp_state_utils', () => {
   const makeDate = (iso: string) => new Date(iso).toISOString()
 
   describe('calculateParticipantState', () => {
-    it('returns REPAID when repaid is set', () => {
+    it('returns REPAID when repaid is at or after slashed', () => {
+      const slashed = makeDate('2025-01-01T00:00:00.000Z')
+      expect(calculateParticipantState({ ...baseParticipant, slashed, repaid: slashed }, NOW)).toBe('REPAID')
+      expect(
+        calculateParticipantState({ ...baseParticipant, slashed, repaid: makeDate('2025-01-02T00:00:00.000Z') }, NOW)
+      ).toBe('REPAID')
+    })
+
+    it('returns SLASHED when slashed again after a repayment', () => {
+      const participant: ParticipantData = {
+        ...baseParticipant,
+        slashed: makeDate('2025-01-05T00:00:00.000Z'),
+        repaid: makeDate('2025-01-02T00:00:00.000Z'),
+      }
+
+      expect(calculateParticipantState(participant, NOW)).toBe('SLASHED')
+    })
+
+    it('ignores repaid when the entry was never slashed', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         repaid: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
       }
 
-      expect(calculateParticipantState(participant, NOW)).toBe('REPAID')
+      expect(calculateParticipantState(participant, NOW)).toBe('ACTIVE')
     })
 
     it('returns SLASHED when slashed is set and repaid is not', () => {
@@ -79,6 +98,20 @@ describe('🧪 pp_state_utils', () => {
       expect(calculateParticipantState(participant, NOW)).toBe('REVOKED')
     })
 
+    it('returns REVOKED when revoked equals the evaluation instant', () => {
+      expect(calculateParticipantState({ ...baseParticipant, revoked: NOW.toISOString() }, NOW)).toBe('REVOKED')
+    })
+
+    it('ignores a revoked timestamp that is still in the future', () => {
+      const participant: ParticipantData = {
+        ...baseParticipant,
+        revoked: makeDate('2025-01-11T00:00:00.000Z'),
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+      }
+
+      expect(calculateParticipantState(participant, NOW)).toBe('ACTIVE')
+    })
+
     it('returns EXPIRED when effective_until is in the past', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
@@ -87,6 +120,37 @@ describe('🧪 pp_state_utils', () => {
       }
 
       expect(calculateParticipantState(participant, NOW)).toBe('EXPIRED')
+    })
+
+    it('returns EXPIRED when effective_until equals the evaluation instant', () => {
+      const participant: ParticipantData = {
+        ...baseParticipant,
+        effective_from: makeDate('2024-12-01T00:00:00.000Z'),
+        effective_until: NOW.toISOString(),
+      }
+
+      expect(calculateParticipantState(participant, NOW)).toBe('EXPIRED')
+    })
+
+    it('returns ACTIVE when effective_from equals the evaluation instant', () => {
+      expect(calculateParticipantState({ ...baseParticipant, effective_from: NOW.toISOString() }, NOW)).toBe('ACTIVE')
+    })
+
+    it('ranks SLASHED above REVOKED and EXPIRED, and EXPIRED above FUTURE', () => {
+      const past = makeDate('2025-01-01T00:00:00.000Z')
+      const future = makeDate('2025-02-01T00:00:00.000Z')
+      expect(
+        calculateParticipantState({ ...baseParticipant, slashed: past, revoked: past, effective_until: past }, NOW)
+      ).toBe('SLASHED')
+      expect(
+        calculateParticipantState(
+          { ...baseParticipant, revoked: past, effective_until: past, effective_from: past },
+          NOW
+        )
+      ).toBe('REVOKED')
+      expect(
+        calculateParticipantState({ ...baseParticipant, effective_from: future, effective_until: past }, NOW)
+      ).toBe('EXPIRED')
     })
 
     it('returns ACTIVE when now is within [effective_from, effective_until]', () => {
@@ -152,6 +216,31 @@ describe('🧪 pp_state_utils', () => {
       const actions = calculateGranteeAvailableActions(participant, openSchema, null, NOW)
 
       expect(actions).toEqual(['PARTICIPANT_REPAY'])
+    })
+
+    it('offers PARTICIPANT_REPAY again when the entry is slashed after a repayment', () => {
+      const participant: ParticipantData = {
+        ...baseParticipant,
+        role: 'ISSUER',
+        slashed: makeDate('2025-01-05T00:00:00.000Z'),
+        repaid: makeDate('2025-01-02T00:00:00.000Z'),
+      }
+
+      expect(calculateGranteeAvailableActions(participant, openSchema, null, NOW)).toEqual(['PARTICIPANT_REPAY'])
+    })
+
+    it('keeps OP_RENEW and PARTICIPANT_REVOKE for a VALIDATED entry whose op_exp has passed', () => {
+      const participant: ParticipantData = {
+        role: 'HOLDER',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_until: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        op_exp: makeDate('2025-01-05T00:00:00.000Z'),
+      }
+
+      const actions = calculateGranteeAvailableActions(participant, openSchema, 'ACTIVE', NOW)
+
+      expect(actions).toEqual(['OP_RENEW', 'PARTICIPANT_REVOKE'])
     })
 
     it('for ISSUER in GRANTOR_VALIDATION with PENDING OP allows OP_CANCEL and PARTICIPANT_REVOKE', () => {
@@ -267,7 +356,7 @@ describe('🧪 pp_state_utils', () => {
       verifier_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
     }
 
-    it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and PENDING OP includes slash, revoke, extend and set validated', () => {
+    it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and PENDING OP includes slash, revoke and set validated', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         role: 'ISSUER',
@@ -278,10 +367,25 @@ describe('🧪 pp_state_utils', () => {
 
       const actions = calculateValidatorAvailableActions(participant, grantorSchema, NOW)
 
-      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
 
-    it('for HOLDER with ACTIVE state and PENDING OP includes slash, revoke, adjust and set validated', () => {
+    it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and VALIDATED OP includes slash, revoke and adjust', () => {
+      const participant: ParticipantData = {
+        ...baseParticipant,
+        role: 'ISSUER',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_until: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        op_exp: makeDate('2025-03-01T00:00:00.000Z'),
+      }
+
+      const actions = calculateValidatorAvailableActions(participant, grantorSchema, NOW)
+
+      expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+    })
+
+    it('for HOLDER with ACTIVE state and PENDING OP includes slash, revoke and set validated', () => {
       const participant: ParticipantData = {
         role: 'HOLDER',
         effective_from: makeDate('2025-01-01T00:00:00.000Z'),
@@ -296,7 +400,20 @@ describe('🧪 pp_state_utils', () => {
 
       const actions = calculateValidatorAvailableActions(participant, schema, NOW)
 
-      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+    })
+
+    it('for HOLDER with ACTIVE state and VALIDATED OP includes slash, revoke and adjust', () => {
+      const participant: ParticipantData = {
+        role: 'HOLDER',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_until: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+      }
+
+      const actions = calculateValidatorAvailableActions(participant, { issuer_onboarding_mode: 'OPEN' }, NOW)
+
+      expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
 
     it('for VERIFIER with OPEN schema, PENDING OP and INACTIVE participant_state includes OP_SET_VALIDATED (issue #63)', () => {

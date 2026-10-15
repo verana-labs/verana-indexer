@@ -1,3 +1,5 @@
+import { toDate } from '../../common/utils/date_utils'
+
 export type ParticipantState = 'REPAID' | 'SLASHED' | 'REVOKED' | 'EXPIRED' | 'ACTIVE' | 'FUTURE' | 'INACTIVE'
 
 export type CorporationAction =
@@ -75,38 +77,16 @@ export const PENDING_FLAT_VALIDATOR_PARENT_TYPES: ReadonlySet<string> = new Set(
 ])
 
 export function calculateParticipantState(participant: ParticipantData, now: Date = new Date()): ParticipantState {
-  if (participant.repaid !== null && participant.repaid !== undefined) {
-    return 'REPAID'
-  }
+  const slashed = toDate(participant.slashed)
+  const repaid = toDate(participant.repaid)
+  const revoked = toDate(participant.revoked)
+  const effectiveFrom = toDate(participant.effective_from)
+  const effectiveUntil = toDate(participant.effective_until)
 
-  if (participant.slashed !== null && participant.slashed !== undefined) {
-    return 'SLASHED'
-  }
-
-  if (participant.revoked !== null && participant.revoked !== undefined) {
-    const revokedDate = new Date(participant.revoked)
-    if (!Number.isNaN(revokedDate.getTime()) && revokedDate < now) {
-      return 'REVOKED'
-    }
-  }
-
-  if (participant.effective_until !== null && participant.effective_until !== undefined) {
-    const untilDate = new Date(participant.effective_until)
-    if (!Number.isNaN(untilDate.getTime()) && untilDate < now) {
-      return 'EXPIRED'
-    }
-  }
-
-  if (participant.effective_from !== null && participant.effective_from !== undefined) {
-    const fromDate = new Date(participant.effective_from)
-    if (!Number.isNaN(fromDate.getTime())) {
-      if (fromDate <= now) {
-        return 'ACTIVE'
-      }
-      return 'FUTURE'
-    }
-  }
-
+  if (slashed) return repaid && repaid >= slashed ? 'REPAID' : 'SLASHED'
+  if (revoked && revoked <= now) return 'REVOKED'
+  if (effectiveUntil && effectiveUntil <= now) return 'EXPIRED'
+  if (effectiveFrom) return effectiveFrom > now ? 'FUTURE' : 'ACTIVE'
   return isOnboardingPending(participant.op_state) ? 'INACTIVE' : 'ACTIVE'
 }
 
@@ -143,12 +123,52 @@ export function applyActiveParticipantFilter(
   col: (name: string) => string = (name) => name
 ): void {
   query.where((qb: any) => {
-    qb.whereNull(col('repaid')).whereNull(col('slashed'))
-    qb.where((notRevoked: any) => notRevoked.whereNull(col('revoked')).orWhere(col('revoked'), '>=', nowIso))
-    qb.where((notEnded: any) =>
-      notEnded.whereNull(col('effective_until')).orWhere(col('effective_until'), '>=', nowIso)
-    )
+    qb.whereNull(col('slashed'))
+    qb.where((notRevoked: any) => notRevoked.whereNull(col('revoked')).orWhere(col('revoked'), '>', nowIso))
+    qb.where((notEnded: any) => notEnded.whereNull(col('effective_until')).orWhere(col('effective_until'), '>', nowIso))
     applyActiveEffectiveFromFilter(qb, nowIso, col)
+  })
+}
+
+export function applyParticipantStateFilter(
+  query: any,
+  state: ParticipantState,
+  nowIso: string,
+  col: (name: string) => string = (name) => name
+): void {
+  if (state === 'ACTIVE') {
+    applyActiveParticipantFilter(query, nowIso, col)
+    return
+  }
+  const notRevoked = (qb: any) => qb.whereNull(col('revoked')).orWhere(col('revoked'), '>', nowIso)
+  const notEnded = (qb: any) => qb.whereNull(col('effective_until')).orWhere(col('effective_until'), '>', nowIso)
+  query.where((qb: any) => {
+    switch (state) {
+      case 'REPAID':
+        qb.whereNotNull(col('slashed')).whereRaw('?? >= ??', [col('repaid'), col('slashed')])
+        return
+      case 'SLASHED':
+        qb.whereNotNull(col('slashed')).where((repay: any) =>
+          repay.whereNull(col('repaid')).orWhereRaw('?? < ??', [col('repaid'), col('slashed')])
+        )
+        return
+      case 'REVOKED':
+        qb.whereNull(col('slashed')).where(col('revoked'), '<=', nowIso)
+        return
+      case 'EXPIRED':
+        qb.whereNull(col('slashed')).where(notRevoked).where(col('effective_until'), '<=', nowIso)
+        return
+      case 'FUTURE':
+        qb.whereNull(col('slashed')).where(notRevoked).where(notEnded).where(col('effective_from'), '>', nowIso)
+        return
+      case 'INACTIVE':
+        qb.whereNull(col('slashed'))
+          .where(notRevoked)
+          .where(notEnded)
+          .whereNull(col('effective_from'))
+          .whereIn(col('op_state'), ONBOARDING_PENDING_OP_STATES)
+        return
+    }
   })
 }
 
@@ -233,9 +253,6 @@ export function calculateCorporationAvailableActions(
   const participantState = calculateParticipantState(participant, now)
   const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode)
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode)
-  const opExp = participant.op_exp ? new Date(participant.op_exp) : null
-  const isOpExpired = opExp !== null && !Number.isNaN(opExp.getTime()) && opExp < now
-
   const isValidatorActive = validatorParticipantState === 'ACTIVE'
   if (isIssuerType(type)) {
     if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
@@ -243,7 +260,7 @@ export function calculateCorporationAvailableActions(
       } else if (participantState === 'SLASHED') {
         actions.add('PARTICIPANT_REPAY')
       } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        if (opState === 'VALIDATED' && !isOpExpired) {
+        if (opState === 'VALIDATED') {
           if (isValidatorActive) {
             actions.add('OP_RENEW')
           }
@@ -277,7 +294,7 @@ export function calculateCorporationAvailableActions(
       } else if (participantState === 'SLASHED') {
         actions.add('PARTICIPANT_REPAY')
       } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        if (opState === 'VALIDATED' && !isOpExpired) {
+        if (opState === 'VALIDATED') {
           if (isValidatorActive) {
             actions.add('OP_RENEW')
           }
@@ -307,7 +324,7 @@ export function calculateCorporationAvailableActions(
     } else if (participantState === 'SLASHED') {
       actions.add('PARTICIPANT_REPAY')
     } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-      if (opState === 'VALIDATED' && !isOpExpired) {
+      if (opState === 'VALIDATED') {
         if (isValidatorActive) {
           actions.add('OP_RENEW')
         }
@@ -349,19 +366,13 @@ export function calculateValidatorAvailableActions(
   const participantState = calculateParticipantState(participant, now)
   const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode)
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode)
-  const opExp = participant.op_exp ? new Date(participant.op_exp) : null
   if (isIssuerType(type)) {
     if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
       actions.add('PARTICIPANT_SLASH')
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
         actions.add('PARTICIPANT_REVOKE')
-        actions.add('PARTICIPANT_ADJUST')
-      }
-
-      if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-        if (opState === 'VALIDATED' && opExp && !Number.isNaN(opExp.getTime())) {
-        }
+        if (opState === 'VALIDATED') actions.add('PARTICIPANT_ADJUST')
       }
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
@@ -381,12 +392,7 @@ export function calculateValidatorAvailableActions(
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
         actions.add('PARTICIPANT_REVOKE')
-        actions.add('PARTICIPANT_ADJUST')
-      }
-
-      if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-        if (opState === 'VALIDATED' && opExp && !Number.isNaN(opExp.getTime())) {
-        }
+        if (opState === 'VALIDATED') actions.add('PARTICIPANT_ADJUST')
       }
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
@@ -402,12 +408,7 @@ export function calculateValidatorAvailableActions(
 
     if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
       actions.add('PARTICIPANT_REVOKE')
-      actions.add('PARTICIPANT_ADJUST')
-    }
-
-    if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-      if (opState === 'VALIDATED' && opExp && !Number.isNaN(opExp.getTime())) {
-      }
+      if (opState === 'VALIDATED') actions.add('PARTICIPANT_ADJUST')
     }
 
     if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {

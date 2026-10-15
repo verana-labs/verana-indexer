@@ -6,7 +6,7 @@ import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf } from '../../common/utils/block_time'
 import { getBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
 import knex from '../../common/utils/db_connection'
-import { applyActiveEffectiveFromFilter } from '../crawl-pp/pp_state_utils'
+import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { computeGlobalMetrics, computeTotalLockedTrustDepositWeight } from './metrics_helper'
 
 const IS_PG_CLIENT = String((knex as any)?.client?.config?.client || '').includes('pg')
@@ -457,11 +457,7 @@ export default class MetricsApiService extends BaseService {
           if (!IS_PG_CLIENT) qb.where('rn', 1)
         })
         .where('corporation_id', '>', 0)
-        .whereNull('repaid')
-        .whereNull('slashed')
-        .where((qb) => qb.whereNull('revoked').orWhere('revoked', '>=', nowIso))
-        .modify((qb) => applyActiveEffectiveFromFilter(qb, nowIso))
-        .where((qb) => qb.whereNull('effective_until').orWhere('effective_until', '>=', nowIso))
+        .modify((qb) => applyActiveParticipantFilter(qb, nowIso))
 
       let participantsAgg: any = null
       let participantsByTypeAgg: any[] = []
