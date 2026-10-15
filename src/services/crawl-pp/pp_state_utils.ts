@@ -370,9 +370,9 @@ export function calculateValidatorAvailableActions(
     if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
       actions.add('PARTICIPANT_SLASH')
 
-      if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
+      if (participantState === 'ACTIVE') {
         actions.add('PARTICIPANT_REVOKE')
-        if (opState === 'VALIDATED') actions.add('PARTICIPANT_ADJUST')
+        actions.add('PARTICIPANT_ADJUST')
       }
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
@@ -390,9 +390,9 @@ export function calculateValidatorAvailableActions(
     if (useOpFlowRules) {
       actions.add('PARTICIPANT_SLASH')
 
-      if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
+      if (participantState === 'ACTIVE') {
         actions.add('PARTICIPANT_REVOKE')
-        if (opState === 'VALIDATED') actions.add('PARTICIPANT_ADJUST')
+        actions.add('PARTICIPANT_ADJUST')
       }
 
       if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
@@ -406,9 +406,9 @@ export function calculateValidatorAvailableActions(
   if (type === 'HOLDER') {
     actions.add('PARTICIPANT_SLASH')
 
-    if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
+    if (participantState === 'ACTIVE') {
       actions.add('PARTICIPANT_REVOKE')
-      if (opState === 'VALIDATED') actions.add('PARTICIPANT_ADJUST')
+      actions.add('PARTICIPANT_ADJUST')
     }
 
     if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
