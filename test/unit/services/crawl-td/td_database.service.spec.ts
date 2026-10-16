@@ -122,4 +122,24 @@ describe('🧪 TrustDepositDatabaseService', () => {
       expect(res.error).toBe('Module parameters not found: trustdeposit')
     })
   })
+
+  describe('Action: getTrustDepositHistory', () => {
+    it('rejects a limit above 1024 instead of clamping it', async () => {
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDepositHistory', {
+        corporation_id: 2,
+        limit: 2000,
+      })
+
+      expect(res).toEqual({ error: '"limit" must be an integer between 1 and 1024', code: 400 })
+    })
+
+    it('rejects a limit of 0 instead of defaulting it to 64', async () => {
+      const res: any = await broker.call(SERVICE.V1.TrustDepositApiService.path + '.getTrustDepositHistory', {
+        corporation_id: 2,
+        limit: 0,
+      })
+
+      expect(res.code).toBe(400)
+    })
+  })
 })

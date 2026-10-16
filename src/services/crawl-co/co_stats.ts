@@ -2,6 +2,7 @@ import { resolveEvaluationTime } from '../../common/utils/block_time'
 import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
 import TrustDeposit from '../../models/trust_deposit'
+import { parseListLimit } from '../api/api_shared'
 import {
   calculateParticipantState,
   normalizeParticipantType,
@@ -392,14 +393,9 @@ export function parseCorporationListPagination(params: {
   max_id?: string | number
   sort?: string
 }): { ok: true; value: CorporationListPagination } | { ok: false; message: string } {
-  let limit = 64
-  if (params.limit !== undefined && params.limit !== '') {
-    const parsed = Number(params.limit)
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1024) {
-      return { ok: false, message: '"limit" must be an integer between 1 and 1024' }
-    }
-    limit = parsed
-  }
+  const limitParsed = parseListLimit(params.limit)
+  if (!limitParsed.ok) return { ok: false, message: limitParsed.message }
+  const limit = limitParsed.limit
 
   const minId = parseCursorParam(params.min_id)
   if (!minId.ok) return { ok: false, message: '"min_id" must be a non-negative integer' }
