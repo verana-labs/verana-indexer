@@ -356,7 +356,7 @@ describe('🧪 pp_state_utils', () => {
       verifier_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
     }
 
-    it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and PENDING OP includes slash, revoke and set validated', () => {
+    it('for ISSUER in GRANTOR_VALIDATION mid renewal (ACTIVE, PENDING OP) includes slash, revoke, adjust and set validated', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         role: 'ISSUER',
@@ -367,7 +367,7 @@ describe('🧪 pp_state_utils', () => {
 
       const actions = calculateValidatorAvailableActions(participant, grantorSchema, NOW)
 
-      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
 
     it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and VALIDATED OP includes slash, revoke and adjust', () => {
@@ -385,7 +385,7 @@ describe('🧪 pp_state_utils', () => {
       expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
 
-    it('for HOLDER with ACTIVE state and PENDING OP includes slash, revoke and set validated', () => {
+    it('for HOLDER mid renewal (ACTIVE, PENDING OP) includes slash, revoke, adjust and set validated', () => {
       const participant: ParticipantData = {
         role: 'HOLDER',
         effective_from: makeDate('2025-01-01T00:00:00.000Z'),
@@ -400,7 +400,7 @@ describe('🧪 pp_state_utils', () => {
 
       const actions = calculateValidatorAvailableActions(participant, schema, NOW)
 
-      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+      expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
 
     it('for HOLDER with ACTIVE state and VALIDATED OP includes slash, revoke and adjust', () => {
@@ -414,6 +414,19 @@ describe('🧪 pp_state_utils', () => {
       const actions = calculateValidatorAvailableActions(participant, { issuer_onboarding_mode: 'OPEN' }, NOW)
 
       expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
+    })
+
+    it('for a FUTURE entry offers only slash, since revoke and adjust need an active participant', () => {
+      const future: ParticipantData = {
+        role: 'HOLDER',
+        effective_from: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+      }
+
+      expect(calculateValidatorAvailableActions(future, {}, NOW)).toEqual(['PARTICIPANT_SLASH'])
+      expect(calculateValidatorAvailableActions({ ...future, role: 'ISSUER' }, grantorSchema, NOW)).toEqual([
+        'PARTICIPANT_SLASH',
+      ])
     })
 
     it('for VERIFIER with OPEN schema, PENDING OP and INACTIVE participant_state includes OP_SET_VALIDATED (issue #63)', () => {
