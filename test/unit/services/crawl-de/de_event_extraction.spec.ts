@@ -240,6 +240,11 @@ describe('DelegationApiService.listOperatorAuthorizations', () => {
     expect(listedIds(await list({ modified_after: T1 }))).toEqual([4, 3, 2])
   })
 
+  it('rejects a modified_after with a non-UTC offset or no timezone', async () => {
+    expect((await list({ modified_after: '2026-07-01T00:00:00+02:00' })).code).toBe(400)
+    expect((await list({ modified_after: '2026-07-01T00:00:00' })).code).toBe(400)
+  })
+
   it('paginates with the half-open id cursor and limit', async () => {
     expect(listedIds(await list({ max_id: 3 }))).toEqual([2, 1])
     expect(listedIds(await list({ min_id: 2 }))).toEqual([4, 3, 2])
@@ -389,6 +394,10 @@ describe('DelegationApiService.listVSOperatorAuthorizations', () => {
 
   it('modified_after filters strictly after the given datetime', async () => {
     expect(listedIds(await list({ modified_after: T1 }))).toEqual([4, 3, 2])
+  })
+
+  it('rejects a date-only modified_after', async () => {
+    expect((await list({ modified_after: '2026-07-01' })).code).toBe(400)
   })
 
   it('paginates with the half-open id cursor and limit', async () => {

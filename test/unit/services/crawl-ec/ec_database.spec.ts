@@ -237,6 +237,34 @@ describe('EcosystemDatabaseService', () => {
       expect(data[0].versions[0].documents).toEqual([{ language: 'fr', url: 'doc2' }])
     })
 
+    it('should reject a malformed modified_after instead of listing every ecosystem', async () => {
+      const ctx: any = { params: { modified_after: 'not-a-date' } }
+      await service.listEcosystems(ctx)
+
+      expect(ApiResponder.error).toHaveBeenCalledWith(
+        ctx,
+        '"modified_after" must be an ISO 8601 UTC datetime with a trailing Z (e.g. 2026-01-18T10:00:00Z)',
+        400
+      )
+      expect(ApiResponder.success).not.toHaveBeenCalled()
+    })
+
+    it('should reject a malformed modified_after even when the corporation filter resolves to nothing', async () => {
+      const ctx: any = { params: { corporation: 'verana1unresolvable00', modified_after: '2026-01-01' } }
+      await service.listEcosystems(ctx)
+
+      expect(ApiResponder.error).toHaveBeenCalledWith(ctx, expect.stringContaining('"modified_after"'), 400)
+      expect(ApiResponder.success).not.toHaveBeenCalled()
+    })
+
+    it('should reject year zero in modified_after before it reaches the database', async () => {
+      const ctx: any = { params: { modified_after: '0000-01-01T00:00:00Z' } }
+      await service.listEcosystems(ctx)
+
+      expect(ApiResponder.error).toHaveBeenCalledWith(ctx, expect.stringContaining('"modified_after"'), 400)
+      expect(ApiResponder.success).not.toHaveBeenCalled()
+    })
+
     it('should reject a non-positive-integer corporation_id filter', async () => {
       const ctx: any = { params: { corporation_id: 'abc' } }
       await service.listEcosystems(ctx)

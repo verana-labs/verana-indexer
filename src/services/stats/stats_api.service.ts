@@ -4,7 +4,7 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockHeight, getResolvedBlockHeight, hasBlockHeight } from '../../common/utils/blockHeight'
-import { isValidISO8601UTC } from '../../common/utils/date_utils'
+import { parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import Stats, { EntityType, Granularity } from '../../models/stats'
 import {
@@ -102,18 +102,10 @@ export default class StatsAPIService extends BaseService {
     try {
       const { id, granularity, timestamp, entity_type: entityType, entity_id: entityId } = ctx.params
 
-      if (timestamp && !isValidISO8601UTC(timestamp)) {
-        return ApiResponder.error(
-          ctx,
-          "Invalid timestamp format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-          400
-        )
-      }
-
       if (timestamp) {
-        const timestampDate = new Date(timestamp)
-        if (Number.isNaN(timestampDate.getTime())) {
-          return ApiResponder.error(ctx, 'Invalid timestamp format', 400)
+        const timestampParsed = parseDatetimeParam(timestamp, 'timestamp')
+        if (!timestampParsed.ok) {
+          return ApiResponder.error(ctx, timestampParsed.message, 400)
         }
       }
 
@@ -148,22 +140,9 @@ export default class StatsAPIService extends BaseService {
         return ApiResponder.error(ctx, `entity_id is required for entity_type ${entityType}`, 400)
       }
 
-      if (!isValidISO8601UTC(timestamp)) {
-        return ApiResponder.error(
-          ctx,
-          "Invalid timestamp format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-          400
-        )
-      }
-
-      const timestampDate = new Date(timestamp)
-      if (Number.isNaN(timestampDate.getTime())) {
-        return ApiResponder.error(ctx, 'Invalid timestamp format', 400)
-      }
-
       const stat = await Stats.query()
         .where('granularity', granularity)
-        .where('timestamp', timestampDate)
+        .where('timestamp', timestamp)
         .where('entity_type', entityType)
         .where((builder) => {
           if (entityType === 'GLOBAL') {
@@ -221,28 +200,18 @@ export default class StatsAPIService extends BaseService {
         result_type: resultType = 'BUCKETS_AND_TOTAL',
       } = ctx.params
 
-      if (!isValidISO8601UTC(timestampFrom)) {
-        return ApiResponder.error(
-          ctx,
-          "Invalid timestamp_from format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-          400
-        )
+      const fromParsed = parseDatetimeParam(timestampFrom, 'timestamp_from')
+      if (!fromParsed.ok) {
+        return ApiResponder.error(ctx, fromParsed.message, 400)
       }
 
-      if (!isValidISO8601UTC(timestampUntil)) {
-        return ApiResponder.error(
-          ctx,
-          "Invalid timestamp_until format. Must be ISO 8601 UTC format (e.g., '2026-01-18T10:00:00Z' or '2026-01-18T10:00:00.000Z')",
-          400
-        )
+      const untilParsed = parseDatetimeParam(timestampUntil, 'timestamp_until')
+      if (!untilParsed.ok) {
+        return ApiResponder.error(ctx, untilParsed.message, 400)
       }
 
-      const fromDate = new Date(timestampFrom)
-      const untilDate = new Date(timestampUntil)
-
-      if (Number.isNaN(fromDate.getTime()) || Number.isNaN(untilDate.getTime())) {
-        return ApiResponder.error(ctx, 'Invalid timestamp format', 400)
-      }
+      const fromDate = new Date(fromParsed.value)
+      const untilDate = new Date(untilParsed.value)
 
       if (fromDate >= untilDate) {
         return ApiResponder.error(ctx, 'timestamp_from must be before timestamp_until', 400)
@@ -524,10 +493,14 @@ export default class StatsAPIService extends BaseService {
       const { entity_kind: entityKind, entity_id: rawEntityId, role_type: roleType } = ctx.params
       const height = await getResolvedBlockHeight(getBlockHeight(ctx))
 
+      const entityIdOmitted = rawEntityId === null || rawEntityId === undefined || rawEntityId === ''
       let entityId: number = 0
       if (entityKind === 0) {
+        if (!entityIdOmitted) {
+          return ApiResponder.error(ctx, 'entity_id must be omitted for GLOBAL entity_kind', 400)
+        }
         entityId = 0
-      } else if (rawEntityId === null || rawEntityId === undefined || rawEntityId === '') {
+      } else if (entityIdOmitted) {
         return ApiResponder.error(ctx, 'entity_id is required for non-GLOBAL entity_kind', 400)
       } else {
         const asString = String(rawEntityId)

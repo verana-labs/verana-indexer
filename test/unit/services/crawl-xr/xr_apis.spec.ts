@@ -74,6 +74,25 @@ describe('ExchangeRateApiService.getExchangeRate', () => {
 
     expect(res).toEqual({ error: 'Exchange rate not found', code: 404 })
   })
+
+  it('rejects an expire_ts that is not UTC with a trailing Z', async () => {
+    for (const expire_ts of ['2027-10-01', '2027-10-01T00:00:00', '2027-10-01T00:00:00+02:00']) {
+      chainResolvesTo(ExchangeRate, rateRow)
+
+      const res: any = await service.getExchangeRate({ params: { id: '3', expire_ts }, meta: {} } as any)
+
+      expect(res.code).toBe(400)
+    }
+  })
+
+  it('rejects a list expire that is not UTC with a trailing Z', async () => {
+    const res: any = await service.listExchangeRates({
+      params: { expire: '2027-10-01T00:00:00+02:00' },
+      meta: {},
+    } as any)
+
+    expect(res.code).toBe(400)
+  })
 })
 
 describe('ExchangeRateApiService.getPrice', () => {
@@ -112,5 +131,24 @@ describe('ExchangeRateApiService.getPrice', () => {
 
     expect(res.price).toBe('5000')
     expect(res.block_height).toBe(200)
+  })
+})
+
+describe('ExchangeRateApiService.listExchangeRates limit bound', () => {
+  const broker = new ServiceBroker({ logger: false })
+  const service = new ExchangeRateApiService(broker)
+
+  beforeEach(() => jest.clearAllMocks())
+
+  it('rejects a limit above 1024 instead of clamping it', async () => {
+    const res: any = await service.listExchangeRates({ params: { limit: 2000 }, meta: {} } as any)
+
+    expect(res).toEqual({ error: '"limit" must be an integer between 1 and 1024', code: 400 })
+  })
+
+  it('rejects a limit of 0 instead of defaulting it to 64', async () => {
+    const res: any = await service.listExchangeRates({ params: { limit: 0 }, meta: {} } as any)
+
+    expect(res.code).toBe(400)
   })
 })

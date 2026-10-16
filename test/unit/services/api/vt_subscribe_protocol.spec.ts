@@ -272,10 +272,21 @@ describe('parseVtChangesQuery', () => {
     expect(res.value.channels.ecosystems.includeParticipantCounts).toBe(true)
   })
 
-  it('defaults limit to 100 and caps it at 1000', () => {
-    const capped = parseVtChangesQuery({ fromBlock: '0', channels: 'trust', limit: '5000' })
-    expect(capped.ok).toBe(true)
-    if (capped.ok) expect(capped.value.limit).toBe(1000)
+  it('defaults limit to 100 and rejects a limit above 1000 instead of clamping it', () => {
+    const omitted = parseVtChangesQuery({ fromBlock: '0', channels: 'trust' })
+    expect(omitted.ok).toBe(true)
+    if (omitted.ok) expect(omitted.value.limit).toBe(100)
+
+    const atBound = parseVtChangesQuery({ fromBlock: '0', channels: 'trust', limit: '1000' })
+    expect(atBound.ok).toBe(true)
+    if (atBound.ok) expect(atBound.value.limit).toBe(1000)
+
+    const aboveBound = parseVtChangesQuery({ fromBlock: '0', channels: 'trust', limit: '5000' })
+    expect(aboveBound).toEqual({ ok: false, error: '"limit" must be an integer between 1 and 1000' })
+  })
+
+  it('rejects a limit of 0 on the changes query', () => {
+    expect(parseVtChangesQuery({ fromBlock: '0', channels: 'trust', limit: '0' }).ok).toBe(false)
   })
 
   it('parses dids CSV and corporation_id', () => {

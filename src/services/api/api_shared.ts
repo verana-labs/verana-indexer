@@ -1,5 +1,20 @@
 import { uniqueNormalizedDids } from './indexer_event_utils'
 
+const LIST_LIMIT_DEFAULT = 64
+const LIST_LIMIT_MAX = 1024
+
+export function parseListLimit(
+  raw: unknown,
+  bounds: { max: number; fallback: number } = { max: LIST_LIMIT_MAX, fallback: LIST_LIMIT_DEFAULT }
+): { ok: true; limit: number } | { ok: false; message: string } {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, limit: bounds.fallback }
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > bounds.max) {
+    return { ok: false, message: `"limit" must be an integer between 1 and ${bounds.max}` }
+  }
+  return { ok: true, limit: parsed }
+}
+
 export type LoggerLike = {
   info?: (...args: any[]) => void
   warn?: (...args: any[]) => void
@@ -22,6 +37,33 @@ export function isUnknownMessageError(errorMessage: string): boolean {
 
 export function isValidDid(value: unknown): value is string {
   return typeof value === 'string' && /^did:[a-z0-9]+:.+/i.test(value.trim())
+}
+
+export type AtBlockHeightResult =
+  | { ok: true; height: number }
+  | { ok: false; message: string; errorType: 'AT_BLOCK_HEIGHT_INVALID' | 'AT_BLOCK_HEIGHT_AHEAD' }
+
+export function parseAtBlockHeightHeader(rawValue: string): AtBlockHeightResult {
+  const height = Number(rawValue)
+  if (!Number.isInteger(height) || height < 1) {
+    return {
+      ok: false,
+      message: 'At-Block-Height must be a positive integer',
+      errorType: 'AT_BLOCK_HEIGHT_INVALID',
+    }
+  }
+  return { ok: true, height }
+}
+
+export function validateAtBlockHeightCeiling(height: number, indexedHeight: number): AtBlockHeightResult {
+  if (height > indexedHeight) {
+    return {
+      ok: false,
+      message: `Requested height ${height} exceeds indexed height ${indexedHeight}`,
+      errorType: 'AT_BLOCK_HEIGHT_AHEAD',
+    }
+  }
+  return { ok: true, height }
 }
 
 export function applyBlockHeightFilter(

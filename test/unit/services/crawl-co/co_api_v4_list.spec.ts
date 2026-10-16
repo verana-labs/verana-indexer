@@ -167,7 +167,7 @@ describe('CorporationApiService.listCorporationsV4', () => {
     await service.listCorporationsV4(ctx)
 
     expect(qb.where).toHaveBeenCalledWith('did', 'did:example:co')
-    expect(qb.where).toHaveBeenCalledWith('modified', '>', '2024-05-01T00:00:00.000Z')
+    expect(qb.where).toHaveBeenCalledWith('modified', '>', '2024-05-01T00:00:00Z')
     expect(qb.where).toHaveBeenCalledWith('id', '>=', '5')
     expect(qb.where).toHaveBeenCalledWith('id', '<', '10')
     // the grouped policy_address clause is ANDed onto the same chain as the other filters
@@ -327,6 +327,13 @@ describe('CorporationApiService.listCorporationsV4', () => {
       { min_id: 'abc' },
       { sort: 'weight' },
       { modified_after: 'not-a-date' },
+      { modified_after: '2026-01-01' },
+      { modified_after: '2026-01-01T00:00:00' },
+      { modified_after: '2026-01-01T00:00:00+02:00' },
+      { modified_after: '2026-01-01T00:00:00z' },
+      { modified_after: '2026-02-30T00:00:00Z' },
+      { modified_after: '2026-01-01T24:00:00Z' },
+      { modified_after: '0000-01-01T00:00:00Z' },
       { policy_address: ',,,' },
       { policy_address: Array.from({ length: 65 }, (_, i) => `verana1addr${i}`).join(',') },
     ]) {
@@ -338,6 +345,16 @@ describe('CorporationApiService.listCorporationsV4', () => {
     }
     // gf_data/limit/min_id/sort fail before any DB access
     expect(ApiResponder.error).toBeDefined()
+  })
+
+  it('keeps the microseconds of a conformant modified_after in the query', async () => {
+    const qb = queryResolvesTo([])
+    ;(calculateCorporationParticipantStatsBatch as jest.Mock).mockResolvedValue(new Map())
+
+    const ctx: any = { params: { modified_after: '2026-01-01T00:00:00.123456Z' }, meta: {} }
+    await service.listCorporationsV4(ctx)
+
+    expect(qb.where).toHaveBeenCalledWith('modified', '>', '2026-01-01T00:00:00.123456Z')
   })
 
   it('propagates a trust_data validation failure as 400', async () => {

@@ -8,6 +8,7 @@ import { validateParticipantParam } from '../../common/utils/accountValidation'
 import ApiResponder from '../../common/utils/apiResponse'
 import { getBlockChainTimeAsOf, getLatestIndexedBlockTime } from '../../common/utils/block_time'
 import { getResolvedBlockHeight } from '../../common/utils/blockHeight'
+import { parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import {
   applyExactRangeToQuery,
@@ -1616,6 +1617,15 @@ export default class EcosystemDatabaseService extends BaseService {
       }
       const gfDataMode = gfDataModeParsed.mode
 
+      let modifiedAfterIso: string | undefined
+      if (modifiedAfter) {
+        const modifiedAfterParsed = parseDatetimeParam(modifiedAfter, 'modified_after')
+        if (!modifiedAfterParsed.ok) {
+          return ApiResponder.error(ctx, modifiedAfterParsed.message, 400)
+        }
+        modifiedAfterIso = modifiedAfterParsed.value
+      }
+
       let participantCorporationId: number | undefined
       if (participantCorporationIdRaw !== undefined && participantCorporationIdRaw !== null) {
         if (!Number.isInteger(participantCorporationIdRaw) || participantCorporationIdRaw <= 0) {
@@ -1717,10 +1727,7 @@ export default class EcosystemDatabaseService extends BaseService {
           if (corporationId !== null) snapshotBase = snapshotBase.where('corporation_id', corporationId)
           if (participantEcosystemIds !== undefined)
             snapshotBase = snapshotBase.whereIn('ecosystem_id', participantEcosystemIds)
-          if (modifiedAfter) {
-            const ts = new Date(modifiedAfter)
-            if (!Number.isNaN(ts.getTime())) snapshotBase = snapshotBase.where('modified', '>', ts.toISOString())
-          }
+          if (modifiedAfterIso) snapshotBase = snapshotBase.where('modified', '>', modifiedAfterIso)
           if (hasOnlyActive) {
             if (onlyActive) snapshotBase = snapshotBase.whereNull('archived')
             else snapshotBase = snapshotBase.whereNotNull('archived')
@@ -1813,11 +1820,8 @@ export default class EcosystemDatabaseService extends BaseService {
         if (participantEcosystemIds !== undefined) {
           filteredSubquery = filteredSubquery.whereIn('ecosystem_id', participantEcosystemIds)
         }
-        if (modifiedAfter) {
-          const ts = new Date(modifiedAfter)
-          if (!Number.isNaN(ts.getTime())) {
-            filteredSubquery = filteredSubquery.where('modified', '>', ts.toISOString())
-          }
+        if (modifiedAfterIso) {
+          filteredSubquery = filteredSubquery.where('modified', '>', modifiedAfterIso)
         }
         if (hasOnlyActive) {
           if (onlyActive) {
@@ -1935,7 +1939,7 @@ export default class EcosystemDatabaseService extends BaseService {
           minNetworkSlashEvents,
           maxNetworkSlashEvents
         )
-        if (modifiedAfter) batchQuery = batchQuery.where('modified', '>', modifiedAfter)
+        if (modifiedAfterIso) batchQuery = batchQuery.where('modified', '>', modifiedAfterIso)
         if (hasOnlyActive) {
           if (onlyActive) batchQuery = batchQuery.whereNull('archived')
           else batchQuery = batchQuery.whereNotNull('archived')
@@ -2070,8 +2074,8 @@ export default class EcosystemDatabaseService extends BaseService {
       query = this.applyRangeToQuery(query, 'ecosystem_slash_events', minEcosystemSlashEvents, maxEcosystemSlashEvents)
       query = this.applyRangeToQuery(query, 'network_slash_events', minNetworkSlashEvents, maxNetworkSlashEvents)
 
-      if (modifiedAfter) {
-        query = query.where('modified', '>', modifiedAfter)
+      if (modifiedAfterIso) {
+        query = query.where('modified', '>', modifiedAfterIso)
       }
 
       if (hasOnlyActive) {

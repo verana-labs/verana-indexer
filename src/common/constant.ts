@@ -286,10 +286,6 @@ export const SERVICE = {
       key: 'ParticipantProcessorService',
       path: 'v1.ParticipantProcessorService',
     },
-    MetricsApiService: {
-      key: 'MetricsApiService',
-      path: 'v1.MetricsApiService',
-    },
     ExchangeRateApiService: {
       key: 'ExchangeRateApiService',
       path: 'v1.ExchangeRateApiService',
