@@ -5,7 +5,7 @@ import path from 'path'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
-import { parseDatetimeParam } from '../../common/utils/date_utils'
+import { parseDatetimeParam, toDate } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { Network } from '../../network'
 import { calculateParticipantState, type ParticipantData, type ParticipantType } from '../crawl-pp/pp_state_utils'
@@ -75,6 +75,25 @@ function stateSince(row: MatchedParticipant, state: string): string | null {
   }
 }
 
+async function sessionDenial(
+  sessionId: string,
+  corporationDid: string,
+  requestedTime: Date | undefined
+): Promise<string | undefined> {
+  const corporation = await knex('corporation').select('id').where({ did: corporationDid }).first()
+  const session = corporation
+    ? await knex('participant_sessions')
+        .select('created')
+        .where({ id: sessionId, corporation_id: corporation.id })
+        .first()
+    : undefined
+  if (!session) return 'session not found'
+  // VPR sessions never close, so the window opens at creation and has no end.
+  const created = toDate(session.created)
+  if (requestedTime && created && requestedTime < created) return 'session out of window'
+  return undefined
+}
+
 @Service({
   name: SERVICE.V1.TrqpApiService.key,
   version: 1,
@@ -136,15 +155,13 @@ export default class TrqpApiService extends BaseService {
       }
 
       if (requestContext.session_id) {
-        const entityCorporation = await knex('corporation').select('id').where({ did: entityId }).first()
-        const session = entityCorporation
-          ? await knex('participant_sessions')
-              .select('id')
-              .where({ id: requestContext.session_id, corporation_id: entityCorporation.id })
-              .first()
-          : undefined
-        if (!session) {
-          return ApiResponder.success(ctx, { ...baseResponse, authorized: false, message: 'session not found' }, 200)
+        const denial = await sessionDenial(
+          requestContext.session_id,
+          entityId,
+          requestContext.time ? evaluatedAt : undefined
+        )
+        if (denial) {
+          return ApiResponder.success(ctx, { ...baseResponse, authorized: false, message: denial }, 200)
         }
       }
 
@@ -243,15 +260,13 @@ export default class TrqpApiService extends BaseService {
       }
 
       if (requestContext.session_id) {
-        const authorityCorporation = await knex('corporation').select('id').where({ did: authorityId }).first()
-        const session = authorityCorporation
-          ? await knex('participant_sessions')
-              .select('id')
-              .where({ id: requestContext.session_id, corporation_id: authorityCorporation.id })
-              .first()
-          : undefined
-        if (!session) {
-          return ApiResponder.success(ctx, { ...baseResponse, recognized: false, message: 'session not found' }, 200)
+        const denial = await sessionDenial(
+          requestContext.session_id,
+          authorityId,
+          requestContext.time ? evaluatedAt : undefined
+        )
+        if (denial) {
+          return ApiResponder.success(ctx, { ...baseResponse, recognized: false, message: denial }, 200)
         }
       }
 
