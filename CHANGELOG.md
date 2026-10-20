@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.1.0](https://github.com/verana-labs/verana-indexer/compare/v2.0.0...v2.1.0) (2026-10-20)
+
+
+### Features
+
+* **deps:** upgrade @verana-labs/verana-types to 0.10.5 ([#440](https://github.com/verana-labs/verana-indexer/issues/440)) ([870b53f](https://github.com/verana-labs/verana-indexer/commit/870b53f12cc59392037bab7e47e6b278a5081662))
+
+
+### Bug Fixes
+
+* **api:** echo the resolved block as block_height on every non-list method ([#453](https://github.com/verana-labs/verana-indexer/issues/453)) ([1aa38d6](https://github.com/verana-labs/verana-indexer/commit/1aa38d6d915eaa3cfa265109c855db91be8203ea))
+* close the grouped v4 API contract gaps against the spec ([#458](https://github.com/verana-labs/verana-indexer/issues/458)) ([c098ec9](https://github.com/verana-labs/verana-indexer/commit/c098ec97aa8e33edd01891e37df17d0af97d0b09))
+* **cs:** honour At-Block-Height on GET /v4/credential-schema/js/{id} ([#437](https://github.com/verana-labs/verana-indexer/issues/437)) ([cde3083](https://github.com/verana-labs/verana-indexer/commit/cde308348bf1bdddde02c35e63059171277bbad2))
+* **de:** gate only_active on the Participant entry and drop remaining_fee_spend from VSOA records ([#441](https://github.com/verana-labs/verana-indexer/issues/441)) ([7c6ce71](https://github.com/verana-labs/verana-indexer/commit/7c6ce71a9d42c15f94f51ffad0066b83b5320313))
+* **de:** re-read authorizations on operator_authorization_updated and vs_operator_authorization_updated ([#443](https://github.com/verana-labs/verana-indexer/issues/443)) ([1053083](https://github.com/verana-labs/verana-indexer/commit/105308343a62c9c26fd530abd862153713c9a192))
+* **ec:** index EGF versions added through the gf module ([#452](https://github.com/verana-labs/verana-indexer/issues/452)) ([aafbca8](https://github.com/verana-labs/verana-indexer/commit/aafbca850ffa049fdf8011a0e20e840273074943))
+* **pp:** derive participant_state by the spec priority table ([#462](https://github.com/verana-labs/verana-indexer/issues/462)) ([9fd9248](https://github.com/verana-labs/verana-indexer/commit/9fd9248968f4ce1f40abecead3442ee6369c5fb7))
+* **pp:** include issuer ancestors in find beneficiaries when a verifier is given ([#461](https://github.com/verana-labs/verana-indexer/issues/461)) ([2f9a6fc](https://github.com/verana-labs/verana-indexer/commit/2f9a6fcf926d8f6b1bd5dfa0310e6f4c9015e419))
+* **pp:** offer validator revoke and effective-until only on active entries, any op_state ([#464](https://github.com/verana-labs/verana-indexer/issues/464)) ([1d17b85](https://github.com/verana-labs/verana-indexer/commit/1d17b852465b544a3c3192e0c5020deaa117e57f))
+* **pp:** resolve participant count aggregates from the counter log ([#456](https://github.com/verana-labs/verana-indexer/issues/456)) ([b8e2e08](https://github.com/verana-labs/verana-indexer/commit/b8e2e084ff8a121c563d04c34434a8e343651800))
+* resolve cumulative_participants from the counter log ([#446](https://github.com/verana-labs/verana-indexer/issues/446)) ([#454](https://github.com/verana-labs/verana-indexer/issues/454)) ([64875d2](https://github.com/verana-labs/verana-indexer/commit/64875d25b5766af8c0a64f14a106ce565ec592d9))
+* **resolver:** fetch a fresh DID document on every evaluation block ([#438](https://github.com/verana-labs/verana-indexer/issues/438)) ([d1c364d](https://github.com/verana-labs/verana-indexer/commit/d1c364dd74516240cba631fe9609010520b6d0cb))
+* **trqp:** evaluate against the latest indexed block and scope recognition at the evaluation instant ([#467](https://github.com/verana-labs/verana-indexer/issues/467)) ([ec70f93](https://github.com/verana-labs/verana-indexer/commit/ec70f93f871ab4e2e8113581093150cb93deef4d))
+* **trqp:** validate the context.session_id window ([#466](https://github.com/verana-labs/verana-indexer/issues/466)) ([1174c4c](https://github.com/verana-labs/verana-indexer/commit/1174c4c3fd99ae74b36b7025c7a0074daea200a1))
+* upgrade verana types ([#457](https://github.com/verana-labs/verana-indexer/issues/457)) ([5e2dffa](https://github.com/verana-labs/verana-indexer/commit/5e2dffa40e1167f47bd7a690688a2edb3dcde363))
+* validate every datetime query parameter against the normative encoding ([#463](https://github.com/verana-labs/verana-indexer/issues/463)) ([a71c443](https://github.com/verana-labs/verana-indexer/commit/a71c443757d6b5b2031bce5b71e3733d4aa1395c))
+* verre upgrade ([#455](https://github.com/verana-labs/verana-indexer/issues/455)) ([5f52e5e](https://github.com/verana-labs/verana-indexer/commit/5f52e5e1f154fc8be1da3b1a1a0d63a6bd15ba4f))
+
 ## [2.0.0](https://github.com/verana-labs/verana-indexer/compare/v1.3.1...v2.0.0) (2026-09-10)
 
 
