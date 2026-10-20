@@ -66,11 +66,12 @@ describe('TRQP context.session_id', () => {
       join: jest.fn(),
       where: jest.fn(),
       whereNull: jest.fn(),
+      orderBy: jest.fn(),
       first: jest.fn(async () => result.first),
       then: (resolve: (rows: unknown[]) => unknown, reject: (err: unknown) => unknown) =>
         Promise.resolve(result.rows ?? []).then(resolve, reject),
     }
-    for (const chained of [builder.select, builder.join, builder.where, builder.whereNull]) {
+    for (const chained of [builder.select, builder.join, builder.where, builder.whereNull, builder.orderBy]) {
       chained.mockReturnValue(builder)
     }
     return builder
@@ -78,6 +79,7 @@ describe('TRQP context.session_id', () => {
 
   function mockTables(session: { created: Date } | undefined) {
     const tables: Record<string, ReturnType<typeof fakeTable>> = {
+      block: fakeTable({ first: { time: '2026-09-01T12:00:00Z' } }),
       corporation: fakeTable({ first: { id: 3 } }),
       participant_sessions: fakeTable({ first: session }),
       'participants as p': fakeTable({
@@ -94,8 +96,7 @@ describe('TRQP context.session_id', () => {
           },
         ],
       }),
-      ecosystem: fakeTable({ first: { id: 9 } }),
-      'ecosystem as e': fakeTable({ first: { id: 9, created: '2026-01-01T00:00:00Z', active_version: 1 } }),
+      ecosystem: fakeTable({ first: { id: 9, corporation_id: 3, created: '2026-01-01T00:00:00Z', active_version: 1 } }),
       credential_schemas: fakeTable({ first: { id: 7 } }),
     }
     ;(knex as unknown as jest.Mock).mockImplementation((table: string) => tables[table])
