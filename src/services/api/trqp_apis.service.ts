@@ -1,10 +1,12 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import fs from 'fs'
-import { Context, ServiceBroker } from 'moleculer'
+import type { Knex } from 'knex'
+import { Context, type LoggerInstance, ServiceBroker } from 'moleculer'
 import path from 'path'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import ApiResponder from '../../common/utils/apiResponse'
+import { getLatestIndexedBlockTime } from '../../common/utils/block_time'
 import { parseDatetimeParam, toDate } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 import { Network } from '../../network'
@@ -75,6 +77,25 @@ function stateSince(row: MatchedParticipant, state: string): string | null {
   }
 }
 
+type ResolvedInstant = { ok: true; value: Date } | { ok: false; message: string }
+
+// context.time omitted: the spec evaluates against the latest block, never the service clock.
+async function resolveEvaluatedAt(
+  time: string | undefined,
+  logContext: string,
+  logger: LoggerInstance
+): Promise<ResolvedInstant> {
+  if (!time) return { ok: true, value: await getLatestIndexedBlockTime({ logContext, logger }) }
+  const parsed = parseDatetimeParam(time, 'context.time')
+  return parsed.ok ? { ok: true, value: new Date(parsed.value) } : parsed
+}
+
+function activeAt<Q extends Knex.QueryBuilder>(query: Q, at: Date): Q {
+  return query
+    .where('created', '<=', at)
+    .where((builder) => builder.whereNull('archived').orWhere('archived', '>', at)) as Q
+}
+
 async function sessionDenial(
   sessionId: string,
   corporationDid: string,
@@ -135,14 +156,11 @@ export default class TrqpApiService extends BaseService {
       const resourceNetwork = resourceMatch[1]
       const schemaId = Number(resourceMatch[2])
 
-      let evaluatedAt = new Date()
-      if (requestContext.time) {
-        const timeParsed = parseDatetimeParam(requestContext.time, 'context.time')
-        if (!timeParsed.ok) {
-          return ApiResponder.error(ctx, timeParsed.message, 400)
-        }
-        evaluatedAt = new Date(timeParsed.value)
+      const instant = await resolveEvaluatedAt(requestContext.time, '[trqp:authorize]', this.logger)
+      if (!instant.ok) {
+        return ApiResponder.error(ctx, instant.message, 400)
       }
+      const evaluatedAt = instant.value
       const timeEvaluated = toIsoZ(evaluatedAt)
 
       const baseResponse = {
@@ -240,14 +258,11 @@ export default class TrqpApiService extends BaseService {
       const resourceNetwork = resourceMatch[1]
       const schemaId = Number(resourceMatch[2])
 
-      let evaluatedAt = new Date()
-      if (requestContext.time) {
-        const timeParsed = parseDatetimeParam(requestContext.time, 'context.time')
-        if (!timeParsed.ok) {
-          return ApiResponder.error(ctx, timeParsed.message, 400)
-        }
-        evaluatedAt = new Date(timeParsed.value)
+      const instant = await resolveEvaluatedAt(requestContext.time, '[trqp:recognize]', this.logger)
+      if (!instant.ok) {
+        return ApiResponder.error(ctx, instant.message, 400)
       }
+      const evaluatedAt = instant.value
       const timeEvaluated = toIsoZ(evaluatedAt)
 
       const baseResponse = {
@@ -270,13 +285,18 @@ export default class TrqpApiService extends BaseService {
         }
       }
 
-      const corporation = await knex('corporation').select('id').where({ did: authorityId }).first()
-      const activeEcosystem = await knex('ecosystem')
+      const corporation = (await knex('corporation')
         .select('id')
-        .where({ did: entityId })
-        .whereNull('archived')
-        .first()
-      if (!corporation || !activeEcosystem) {
+        .where({ did: authorityId })
+        .where('created', '<=', evaluatedAt)
+        .first()) as { id: number } | undefined
+      const ecosystem = (await activeAt(
+        knex('ecosystem').select('id', 'corporation_id', 'created', 'active_version').where({ did: entityId }),
+        evaluatedAt
+      ).first()) as
+        | { id: number; corporation_id: number; created: Date | string | null; active_version: number | null }
+        | undefined
+      if (!corporation || !ecosystem) {
         return ApiResponder.success(
           ctx,
           { ...baseResponse, recognized: false, message: 'out of v4 recognition scope (corporation → ecosystem only)' },
@@ -284,27 +304,16 @@ export default class TrqpApiService extends BaseService {
         )
       }
 
-      const ecosystem = (await knex('ecosystem as e')
-        .join('corporation as c', 'e.corporation_id', 'c.id')
-        .where('e.did', entityId)
-        .where('c.did', authorityId)
-        .where('e.created', '<=', evaluatedAt)
-        .where((builder) => builder.whereNull('e.archived').orWhere('e.archived', '>', evaluatedAt))
-        .select('e.id as id', 'e.created as created', 'e.active_version as active_version')
-        .first()) as { id: number; created: Date | string | null; active_version: number | null } | undefined
-
-      if (!ecosystem) {
+      if (ecosystem.corporation_id !== corporation.id) {
         return ApiResponder.success(ctx, { ...baseResponse, recognized: false }, 200)
       }
 
       const schema =
         resourceNetwork === Network.chainId
-          ? await knex('credential_schemas')
-              .select('id')
-              .where({ id: schemaId, ecosystem_id: ecosystem.id })
-              .where('created', '<=', evaluatedAt)
-              .where((builder) => builder.whereNull('archived').orWhere('archived', '>', evaluatedAt))
-              .first()
+          ? await activeAt(
+              knex('credential_schemas').select('id').where({ id: schemaId, ecosystem_id: ecosystem.id }),
+              evaluatedAt
+            ).first()
           : undefined
 
       return ApiResponder.success(
