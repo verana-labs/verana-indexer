@@ -241,6 +241,40 @@ function isVerifierType(type: ParticipantType): boolean {
   return type === 'VERIFIER_GRANTOR' || type === 'VERIFIER'
 }
 
+function isSelfManagedParticipant(participant: ParticipantData): boolean {
+  return !(Number(participant.validator_participant_id ?? 0) > 0)
+}
+
+function addOnboardingProcessCorporationActions(
+  actions: Set<CorporationAction>,
+  participantState: ParticipantState,
+  opState: ValidationState,
+  isValidatorActive: boolean
+): void {
+  if (participantState !== 'ACTIVE' && participantState !== 'FUTURE' && participantState !== 'INACTIVE') return
+  const canRevoke = participantState === 'ACTIVE' || participantState === 'FUTURE'
+  if (opState === 'VALIDATED') {
+    if (isValidatorActive) {
+      actions.add('OP_RENEW')
+    }
+    if (canRevoke) {
+      actions.add('PARTICIPANT_REVOKE')
+    }
+  } else if (opState === 'PENDING') {
+    actions.add('OP_CANCEL')
+    if (canRevoke) {
+      actions.add('PARTICIPANT_REVOKE')
+    }
+  }
+}
+
+function addSelfManagedCorporationActions(actions: Set<CorporationAction>, participantState: ParticipantState): void {
+  if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
+    actions.add('PARTICIPANT_REVOKE')
+    actions.add('PARTICIPANT_ADJUST')
+  }
+}
+
 export function calculateCorporationAvailableActions(
   participant: ParticipantData,
   schema: SchemaData,
@@ -254,100 +288,38 @@ export function calculateCorporationAvailableActions(
   const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode)
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode)
   const isValidatorActive = validatorParticipantState === 'ACTIVE'
+  const selfManaged = isSelfManagedParticipant(participant)
+
+  if (participantState === 'SLASHED' && type !== 'UNSPECIFIED') {
+    actions.add('PARTICIPANT_REPAY')
+  }
+
   if (isIssuerType(type)) {
-    if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
-      if (participantState === 'REPAID' || participantState === 'REVOKED') {
-      } else if (participantState === 'SLASHED') {
-        actions.add('PARTICIPANT_REPAY')
-      } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        if (opState === 'VALIDATED') {
-          if (isValidatorActive) {
-            actions.add('OP_RENEW')
-          }
-          if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-            actions.add('PARTICIPANT_REVOKE')
-          }
-        } else if (opState === 'PENDING') {
-          actions.add('OP_CANCEL')
-          if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-            actions.add('PARTICIPANT_REVOKE')
-          }
-        }
+    if (issuerMode === 'OPEN' && selfManaged) {
+      if (type === 'ISSUER') {
+        addSelfManagedCorporationActions(actions, participantState)
       }
-    } else if (issuerMode === 'OPEN') {
-      if (participantState === 'REPAID' || participantState === 'REVOKED') {
-      } else if (participantState === 'SLASHED') {
-        actions.add('PARTICIPANT_REPAY')
-      } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        actions.add('PARTICIPANT_REVOKE')
-        actions.add('PARTICIPANT_ADJUST')
-      }
+    } else {
+      addOnboardingProcessCorporationActions(actions, participantState, opState, isValidatorActive)
     }
   }
 
   if (isVerifierType(type)) {
-    const inOpFlow = opState !== null && opState !== 'VALIDATION_STATE_UNSPECIFIED'
-    const useOpFlowRules =
-      verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
-    if (useOpFlowRules) {
-      if (participantState === 'REPAID' || participantState === 'REVOKED') {
-      } else if (participantState === 'SLASHED') {
-        actions.add('PARTICIPANT_REPAY')
-      } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        if (opState === 'VALIDATED') {
-          if (isValidatorActive) {
-            actions.add('OP_RENEW')
-          }
-          if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-            actions.add('PARTICIPANT_REVOKE')
-          }
-        } else if (opState === 'PENDING') {
-          actions.add('OP_CANCEL')
-          if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-            actions.add('PARTICIPANT_REVOKE')
-          }
-        }
+    if (verifierMode === 'OPEN' && selfManaged) {
+      if (type === 'VERIFIER') {
+        addSelfManagedCorporationActions(actions, participantState)
       }
-    } else if (verifierMode === 'OPEN' && !inOpFlow) {
-      if (participantState === 'REPAID' || participantState === 'REVOKED') {
-      } else if (participantState === 'SLASHED') {
-        actions.add('PARTICIPANT_REPAY')
-      } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        actions.add('PARTICIPANT_REVOKE')
-        actions.add('PARTICIPANT_ADJUST')
-      }
+    } else {
+      addOnboardingProcessCorporationActions(actions, participantState, opState, isValidatorActive)
     }
   }
 
   if (type === 'HOLDER') {
-    if (participantState === 'REPAID' || participantState === 'REVOKED') {
-    } else if (participantState === 'SLASHED') {
-      actions.add('PARTICIPANT_REPAY')
-    } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-      if (opState === 'VALIDATED') {
-        if (isValidatorActive) {
-          actions.add('OP_RENEW')
-        }
-        if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-          actions.add('PARTICIPANT_REVOKE')
-        }
-      } else if (opState === 'PENDING') {
-        actions.add('OP_CANCEL')
-        if (participantState === 'ACTIVE' || participantState === 'FUTURE') {
-          actions.add('PARTICIPANT_REVOKE')
-        }
-      }
-    }
+    addOnboardingProcessCorporationActions(actions, participantState, opState, isValidatorActive)
   }
 
   if (type === 'ECOSYSTEM') {
-    if (participantState === 'REPAID' || participantState === 'REVOKED') {
-    } else if (participantState === 'SLASHED') {
-      actions.add('PARTICIPANT_REPAY')
-    } else if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-      actions.add('PARTICIPANT_REVOKE')
-      actions.add('PARTICIPANT_ADJUST')
-    }
+    addSelfManagedCorporationActions(actions, participantState)
   }
 
   return Array.from(actions).sort()
@@ -357,64 +329,24 @@ export const calculateGranteeAvailableActions = calculateCorporationAvailableAct
 
 export function calculateValidatorAvailableActions(
   participant: ParticipantData,
-  schema: SchemaData,
   now: Date = new Date()
 ): ValidatorAction[] {
-  const actions: Set<ValidatorAction> = new Set()
+  if (isSelfManagedParticipant(participant)) return []
   const type = normalizeParticipantType(participant.role)
+  if (!isIssuerType(type) && !isVerifierType(type) && type !== 'HOLDER') return []
+
+  const actions: Set<ValidatorAction> = new Set(['PARTICIPANT_SLASH'])
   const opState = normalizeOpState(participant.op_state)
   const participantState = calculateParticipantState(participant, now)
-  const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode)
-  const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode)
-  if (isIssuerType(type)) {
-    if (issuerMode === 'GRANTOR_ONBOARDING_PROCESS' || issuerMode === 'ECOSYSTEM_ONBOARDING_PROCESS') {
-      actions.add('PARTICIPANT_SLASH')
 
-      if (participantState === 'ACTIVE') {
-        actions.add('PARTICIPANT_REVOKE')
-        actions.add('PARTICIPANT_ADJUST')
-      }
-
-      if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        if (opState === 'PENDING') {
-          actions.add('OP_SET_VALIDATED')
-        }
-      }
-    }
+  if (participantState === 'ACTIVE') {
+    actions.add('PARTICIPANT_REVOKE')
+    actions.add('PARTICIPANT_ADJUST')
   }
 
-  if (isVerifierType(type)) {
-    const inOpFlow = opState !== null && opState !== 'VALIDATION_STATE_UNSPECIFIED'
-    const useOpFlowRules =
-      verifierMode === 'GRANTOR_ONBOARDING_PROCESS' || verifierMode === 'ECOSYSTEM_ONBOARDING_PROCESS' || inOpFlow
-    if (useOpFlowRules) {
-      actions.add('PARTICIPANT_SLASH')
-
-      if (participantState === 'ACTIVE') {
-        actions.add('PARTICIPANT_REVOKE')
-        actions.add('PARTICIPANT_ADJUST')
-      }
-
-      if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-        if (opState === 'PENDING') {
-          actions.add('OP_SET_VALIDATED')
-        }
-      }
-    }
-  }
-
-  if (type === 'HOLDER') {
-    actions.add('PARTICIPANT_SLASH')
-
-    if (participantState === 'ACTIVE') {
-      actions.add('PARTICIPANT_REVOKE')
-      actions.add('PARTICIPANT_ADJUST')
-    }
-
-    if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
-      if (opState === 'PENDING') {
-        actions.add('OP_SET_VALIDATED')
-      }
+  if (participantState === 'ACTIVE' || participantState === 'FUTURE' || participantState === 'INACTIVE') {
+    if (opState === 'PENDING') {
+      actions.add('OP_SET_VALIDATED')
     }
   }
 
