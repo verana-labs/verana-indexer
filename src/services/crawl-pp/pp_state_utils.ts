@@ -241,10 +241,6 @@ function isVerifierType(type: ParticipantType): boolean {
   return type === 'VERIFIER_GRANTOR' || type === 'VERIFIER'
 }
 
-function isSelfManagedParticipant(participant: ParticipantData): boolean {
-  return !(Number(participant.validator_participant_id ?? 0) > 0)
-}
-
 function addOnboardingProcessCorporationActions(
   actions: Set<CorporationAction>,
   participantState: ParticipantState,
@@ -288,14 +284,13 @@ export function calculateCorporationAvailableActions(
   const issuerMode = normalizeSchemaMode(schema.issuer_onboarding_mode)
   const verifierMode = normalizeSchemaMode(schema.verifier_onboarding_mode)
   const isValidatorActive = validatorParticipantState === 'ACTIVE'
-  const selfManaged = isSelfManagedParticipant(participant)
 
   if (participantState === 'SLASHED' && type !== 'UNSPECIFIED') {
     actions.add('PARTICIPANT_REPAY')
   }
 
   if (isIssuerType(type)) {
-    if (issuerMode === 'OPEN' && selfManaged) {
+    if (issuerMode === 'OPEN') {
       if (type === 'ISSUER') {
         addSelfManagedCorporationActions(actions, participantState)
       }
@@ -305,7 +300,7 @@ export function calculateCorporationAvailableActions(
   }
 
   if (isVerifierType(type)) {
-    if (verifierMode === 'OPEN' && selfManaged) {
+    if (verifierMode === 'OPEN') {
       if (type === 'VERIFIER') {
         addSelfManagedCorporationActions(actions, participantState)
       }
@@ -329,11 +324,13 @@ export const calculateGranteeAvailableActions = calculateCorporationAvailableAct
 
 export function calculateValidatorAvailableActions(
   participant: ParticipantData,
+  schema: SchemaData,
   now: Date = new Date()
 ): ValidatorAction[] {
-  if (isSelfManagedParticipant(participant)) return []
   const type = normalizeParticipantType(participant.role)
   if (!isIssuerType(type) && !isVerifierType(type) && type !== 'HOLDER') return []
+  if (isIssuerType(type) && normalizeSchemaMode(schema.issuer_onboarding_mode) === 'OPEN') return []
+  if (isVerifierType(type) && normalizeSchemaMode(schema.verifier_onboarding_mode) === 'OPEN') return []
 
   const actions: Set<ValidatorAction> = new Set(['PARTICIPANT_SLASH'])
   const opState = normalizeOpState(participant.op_state)

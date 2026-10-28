@@ -1174,6 +1174,7 @@ export default class ParticipantAPIService extends BullableService {
         op_exp: participant.op_exp,
         validator_participant_id: participant.validator_participant_id,
       },
+      schema,
       now
     )
 
