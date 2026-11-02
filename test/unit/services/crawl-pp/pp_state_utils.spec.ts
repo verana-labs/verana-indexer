@@ -193,6 +193,11 @@ describe('🧪 pp_state_utils', () => {
       verifier_onboarding_mode: 'OPEN',
     }
 
+    const onboardingSchema: SchemaData = {
+      issuer_onboarding_mode: 'ECOSYSTEM_ONBOARDING_PROCESS',
+      verifier_onboarding_mode: 'ECOSYSTEM_ONBOARDING_PROCESS',
+    }
+
     it('for ISSUER in OPEN mode and ACTIVE state allows PARTICIPANT_REVOKE and PARTICIPANT_ADJUST', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
@@ -206,16 +211,26 @@ describe('🧪 pp_state_utils', () => {
       expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE'])
     })
 
-    it('for ISSUER in OPEN mode and SLASHED state allows only PARTICIPANT_REPAY', () => {
-      const participant: ParticipantData = {
-        ...baseParticipant,
-        role: 'ISSUER',
-        slashed: makeDate('2025-01-01T00:00:00.000Z'),
-      }
+    it('allows only PARTICIPANT_REPAY in SLASHED state, for every role and whatever the validator', () => {
+      const slashed = { slashed: makeDate('2025-01-01T00:00:00.000Z') }
 
-      const actions = calculateGranteeAvailableActions(participant, openSchema, null, NOW)
-
-      expect(actions).toEqual(['PARTICIPANT_REPAY'])
+      expect(
+        calculateGranteeAvailableActions({ ...baseParticipant, role: 'ISSUER', ...slashed }, openSchema, null, NOW)
+      ).toEqual(['PARTICIPANT_REPAY'])
+      expect(calculateGranteeAvailableActions({ role: 'ISSUER_GRANTOR', ...slashed }, openSchema, null, NOW)).toEqual([
+        'PARTICIPANT_REPAY',
+      ])
+      expect(calculateGranteeAvailableActions({ role: 'VERIFIER_GRANTOR', ...slashed }, openSchema, null, NOW)).toEqual(
+        ['PARTICIPANT_REPAY']
+      )
+      expect(
+        calculateGranteeAvailableActions(
+          { role: 'ECOSYSTEM', validator_participant_id: '1', ...slashed },
+          openSchema,
+          null,
+          NOW
+        )
+      ).toEqual(['PARTICIPANT_REPAY'])
     })
 
     it('offers PARTICIPANT_REPAY again when the entry is slashed after a repayment', () => {
@@ -236,6 +251,7 @@ describe('🧪 pp_state_utils', () => {
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'VALIDATED',
         op_exp: makeDate('2025-01-05T00:00:00.000Z'),
+        validator_participant_id: '1',
       }
 
       const actions = calculateGranteeAvailableActions(participant, openSchema, 'ACTIVE', NOW)
@@ -250,6 +266,7 @@ describe('🧪 pp_state_utils', () => {
         effective_from: makeDate('2025-01-01T00:00:00.000Z'),
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'PENDING',
+        validator_participant_id: '1',
       }
 
       const schema: SchemaData = {
@@ -269,35 +286,74 @@ describe('🧪 pp_state_utils', () => {
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'VALIDATED',
         op_exp: makeDate('2025-02-01T00:00:00.000Z'),
+        validator_participant_id: '1',
       }
 
-      const schema: SchemaData = {
-        issuer_onboarding_mode: 'OPEN',
-        verifier_onboarding_mode: 'OPEN',
-      }
-
-      const actions = calculateGranteeAvailableActions(participant, schema, 'ACTIVE', NOW)
+      const actions = calculateGranteeAvailableActions(participant, openSchema, 'ACTIVE', NOW)
 
       expect(actions).toEqual(['OP_RENEW', 'PARTICIPANT_REVOKE'])
     })
 
-    it('for VERIFIER with OPEN schema, PENDING OP and INACTIVE participant_state allows only OP_CANCEL (issue #63)', () => {
+    it('for VERIFIER in ECOSYSTEM_ONBOARDING_PROCESS with PENDING OP and INACTIVE participant_state allows only OP_CANCEL (issue #63)', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         role: 'VERIFIER',
         effective_from: null,
         effective_until: null,
         op_state: 'PENDING',
+        validator_participant_id: '1',
       }
 
-      const schema: SchemaData = {
-        issuer_onboarding_mode: 'OPEN',
-        verifier_onboarding_mode: 'OPEN',
-      }
-
-      const actions = calculateGranteeAvailableActions(participant, schema, null, NOW)
+      const actions = calculateGranteeAvailableActions(participant, onboardingSchema, null, NOW)
 
       expect(actions).toEqual(['OP_CANCEL'])
+    })
+
+    it('for a self-created VERIFIER on an OPEN schema allows revoke and adjust, and no validator action (issue #468)', () => {
+      const participant: ParticipantData = {
+        role: 'VERIFIER',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_until: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        validator_participant_id: '13',
+      }
+
+      expect(calculateGranteeAvailableActions(participant, openSchema, null, NOW)).toEqual([
+        'PARTICIPANT_ADJUST',
+        'PARTICIPANT_REVOKE',
+      ])
+      expect(calculateValidatorAvailableActions(participant, openSchema, NOW)).toEqual([])
+    })
+
+    it('for a self-created ISSUER on an OPEN schema keeps the OPEN rows even though it carries the ecosystem as validator (issue #468)', () => {
+      const participant: ParticipantData = {
+        role: 'ISSUER',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_until: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        validator_participant_id: '3',
+      }
+
+      expect(calculateGranteeAvailableActions(participant, openSchema, 'ACTIVE', NOW)).toEqual([
+        'PARTICIPANT_ADJUST',
+        'PARTICIPANT_REVOKE',
+      ])
+      expect(calculateValidatorAvailableActions(participant, openSchema, NOW)).toEqual([])
+    })
+
+    it('for ECOSYSTEM keeps revoke and adjust even when the entry carries a validator', () => {
+      const participant: ParticipantData = {
+        role: 'ECOSYSTEM',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        effective_until: makeDate('2025-02-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        validator_participant_id: '1',
+      }
+
+      expect(calculateGranteeAvailableActions(participant, openSchema, null, NOW)).toEqual([
+        'PARTICIPANT_ADJUST',
+        'PARTICIPANT_REVOKE',
+      ])
     })
 
     it('for VERIFIER with numeric type (2) and numeric op_state (1) from DB still yields OP_CANCEL', () => {
@@ -307,23 +363,19 @@ describe('🧪 pp_state_utils', () => {
         effective_from: null,
         effective_until: null,
         op_state: 1 as unknown as ParticipantData['op_state'],
+        validator_participant_id: '1',
       }
 
-      const schema: SchemaData = {
-        issuer_onboarding_mode: 'OPEN',
-        verifier_onboarding_mode: 'OPEN',
-      }
-
-      const actions = calculateGranteeAvailableActions(participant, schema, null, NOW)
+      const actions = calculateGranteeAvailableActions(participant, onboardingSchema, null, NOW)
 
       expect(actions).toEqual(['OP_CANCEL'])
     })
   })
 
   describe('Issue #63 - client testnet Participant 69 exact payload', () => {
-    const openSchema: SchemaData = {
-      issuer_onboarding_mode: 'OPEN',
-      verifier_onboarding_mode: 'OPEN',
+    const onboardingSchema: SchemaData = {
+      issuer_onboarding_mode: 'ECOSYSTEM_ONBOARDING_PROCESS',
+      verifier_onboarding_mode: 'ECOSYSTEM_ONBOARDING_PROCESS',
     }
 
     it('corporation_available_actions = [OP_CANCEL], validator_available_actions includes OP_SET_VALIDATED', () => {
@@ -341,36 +393,42 @@ describe('🧪 pp_state_utils', () => {
 
       expect(calculateParticipantState(participant69, NOW)).toBe('INACTIVE')
 
-      const granteeActions = calculateGranteeAvailableActions(participant69, openSchema, null, NOW)
+      const granteeActions = calculateGranteeAvailableActions(participant69, onboardingSchema, null, NOW)
       expect(granteeActions).toEqual(['OP_CANCEL'])
 
-      const validatorActions = calculateValidatorAvailableActions(participant69, openSchema, NOW)
+      const validatorActions = calculateValidatorAvailableActions(participant69, onboardingSchema, NOW)
       expect(validatorActions).toContain('OP_SET_VALIDATED')
       expect(validatorActions.sort()).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_SLASH'])
     })
   })
 
   describe('calculateValidatorAvailableActions', () => {
-    const grantorSchema: SchemaData = {
-      issuer_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
-      verifier_onboarding_mode: 'GRANTOR_ONBOARDING_PROCESS',
+    const openSchema: SchemaData = {
+      issuer_onboarding_mode: 'OPEN',
+      verifier_onboarding_mode: 'OPEN',
     }
 
-    it('for ISSUER in GRANTOR_VALIDATION mid renewal (ACTIVE, PENDING OP) includes slash, revoke, adjust and set validated', () => {
+    const onboardingSchema: SchemaData = {
+      issuer_onboarding_mode: 'ECOSYSTEM_ONBOARDING_PROCESS',
+      verifier_onboarding_mode: 'ECOSYSTEM_ONBOARDING_PROCESS',
+    }
+
+    it('for ISSUER mid renewal (ACTIVE, PENDING OP) includes slash, revoke, adjust and set validated', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         role: 'ISSUER',
         effective_from: makeDate('2025-01-01T00:00:00.000Z'),
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'PENDING',
+        validator_participant_id: '1',
       }
 
-      const actions = calculateValidatorAvailableActions(participant, grantorSchema, NOW)
+      const actions = calculateValidatorAvailableActions(participant, onboardingSchema, NOW)
 
       expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
 
-    it('for ISSUER in GRANTOR_VALIDATION with ACTIVE state and VALIDATED OP includes slash, revoke and adjust', () => {
+    it('for ISSUER with ACTIVE state and VALIDATED OP includes slash, revoke and adjust', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         role: 'ISSUER',
@@ -378,9 +436,10 @@ describe('🧪 pp_state_utils', () => {
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'VALIDATED',
         op_exp: makeDate('2025-03-01T00:00:00.000Z'),
+        validator_participant_id: '1',
       }
 
-      const actions = calculateValidatorAvailableActions(participant, grantorSchema, NOW)
+      const actions = calculateValidatorAvailableActions(participant, onboardingSchema, NOW)
 
       expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
@@ -391,14 +450,10 @@ describe('🧪 pp_state_utils', () => {
         effective_from: makeDate('2025-01-01T00:00:00.000Z'),
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'PENDING',
+        validator_participant_id: '1',
       }
 
-      const schema: SchemaData = {
-        issuer_onboarding_mode: 'OPEN',
-        verifier_onboarding_mode: 'OPEN',
-      }
-
-      const actions = calculateValidatorAvailableActions(participant, schema, NOW)
+      const actions = calculateValidatorAvailableActions(participant, onboardingSchema, NOW)
 
       expect(actions).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
@@ -409,9 +464,10 @@ describe('🧪 pp_state_utils', () => {
         effective_from: makeDate('2025-01-01T00:00:00.000Z'),
         effective_until: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'VALIDATED',
+        validator_participant_id: '1',
       }
 
-      const actions = calculateValidatorAvailableActions(participant, { issuer_onboarding_mode: 'OPEN' }, NOW)
+      const actions = calculateValidatorAvailableActions(participant, onboardingSchema, NOW)
 
       expect(actions).toEqual(['PARTICIPANT_ADJUST', 'PARTICIPANT_REVOKE', 'PARTICIPANT_SLASH'])
     })
@@ -421,29 +477,50 @@ describe('🧪 pp_state_utils', () => {
         role: 'HOLDER',
         effective_from: makeDate('2025-02-01T00:00:00.000Z'),
         op_state: 'VALIDATED',
+        validator_participant_id: '1',
       }
 
-      expect(calculateValidatorAvailableActions(future, {}, NOW)).toEqual(['PARTICIPANT_SLASH'])
-      expect(calculateValidatorAvailableActions({ ...future, role: 'ISSUER' }, grantorSchema, NOW)).toEqual([
+      expect(calculateValidatorAvailableActions(future, onboardingSchema, NOW)).toEqual(['PARTICIPANT_SLASH'])
+      expect(calculateValidatorAvailableActions({ ...future, role: 'ISSUER' }, onboardingSchema, NOW)).toEqual([
         'PARTICIPANT_SLASH',
       ])
     })
 
-    it('for VERIFIER with OPEN schema, PENDING OP and INACTIVE participant_state includes OP_SET_VALIDATED (issue #63)', () => {
+    it('offers nothing for an ISSUER or VERIFIER on an OPEN schema, since the table has no row for them', () => {
+      const selfCreated: ParticipantData = {
+        role: 'ISSUER',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        validator_participant_id: '1',
+      }
+
+      expect(calculateValidatorAvailableActions(selfCreated, openSchema, NOW)).toEqual([])
+      expect(calculateValidatorAvailableActions({ ...selfCreated, role: 'VERIFIER' }, openSchema, NOW)).toEqual([])
+    })
+
+    it('offers nothing for a GRANTOR on a schema whose mode is OPEN for its role', () => {
+      const grantor: ParticipantData = {
+        role: 'ISSUER_GRANTOR',
+        effective_from: makeDate('2025-01-01T00:00:00.000Z'),
+        op_state: 'VALIDATED',
+        validator_participant_id: '1',
+      }
+
+      expect(calculateValidatorAvailableActions(grantor, openSchema, NOW)).toEqual([])
+      expect(calculateValidatorAvailableActions({ ...grantor, role: 'VERIFIER_GRANTOR' }, openSchema, NOW)).toEqual([])
+    })
+
+    it('for VERIFIER with PENDING OP and INACTIVE participant_state includes OP_SET_VALIDATED (issue #63)', () => {
       const participant: ParticipantData = {
         ...baseParticipant,
         role: 'VERIFIER',
         effective_from: null,
         effective_until: null,
         op_state: 'PENDING',
+        validator_participant_id: '1',
       }
 
-      const schema: SchemaData = {
-        issuer_onboarding_mode: 'OPEN',
-        verifier_onboarding_mode: 'OPEN',
-      }
-
-      const actions = calculateValidatorAvailableActions(participant, schema, NOW)
+      const actions = calculateValidatorAvailableActions(participant, onboardingSchema, NOW)
 
       expect(actions).toContain('OP_SET_VALIDATED')
       expect(actions.sort()).toEqual(['OP_SET_VALIDATED', 'PARTICIPANT_SLASH'])
