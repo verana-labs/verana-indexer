@@ -317,31 +317,36 @@ export default class CrawlTxService extends BullableService {
       await throwIfHeapCriticalDuringCrawl('handle-transaction:while-loop', this.logger)
       // Fetch transactions in batches by ID (much faster than by height)
       const batchSize = Math.min(50, maxTxsPerCall - txsProcessed)
-      const transactions = await Transaction.query()
-        .select(
-          'id',
-          'height',
-          'index',
-          'hash',
-          'code',
-          'codespace',
-          'gas_used',
-          'gas_wanted',
-          'gas_limit',
-          'fee',
-          'timestamp',
-          'memo',
-          knex.raw(`jsonb_build_object(
+      const selectTransactions = () =>
+        Transaction.query()
+          .select(
+            'id',
+            'height',
+            'index',
+            'hash',
+            'code',
+            'codespace',
+            'gas_used',
+            'gas_wanted',
+            'gas_limit',
+            'fee',
+            'timestamp',
+            'memo',
+            knex.raw(`jsonb_build_object(
               'tx', jsonb_build_object('body', data->'tx'->'body'),
               'tx_response', (data->'tx_response') - 'raw_log' - 'data'
             ) as data`)
-        )
-        .where('id', '>', currentTxId)
-        .orderBy('id', 'asc')
-        .limit(batchSize)
+          )
+          .orderBy('id', 'asc')
+      const transactions = await selectTransactions().where('id', '>', currentTxId).limit(batchSize)
 
       if (transactions.length === 0) {
         break
+      }
+
+      if (transactions.length === batchSize) {
+        const last = transactions[transactions.length - 1]
+        transactions.push(...(await selectTransactions().where('height', last.height).where('id', '>', last.id)))
       }
 
       // Group transactions by block height for batch processing
