@@ -16,6 +16,7 @@ import {
 import {
   anyTypeUrl,
   decodeProposalMessages,
+  GROUP_ADMIN_MESSAGE_TYPES,
   GROUP_EVENT_TYPES,
   GROUP_ROUTED_MESSAGE_TYPES,
   parseEventAttrValue,
@@ -1112,8 +1113,10 @@ async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEv
 
     for (const [index, message] of proposal.messages.entries()) {
       const messageType = anyTypeUrl(message)
-      if (!messageType || !EVENT_META[messageType]) continue
-      const event = await toIndexerEvent({
+      if (!messageType) continue
+      const isGroupAdmin = GROUP_ADMIN_MESSAGE_TYPES.includes(messageType)
+      if (!EVENT_META[messageType] && !isGroupAdmin) continue
+      const eventRow: EventRow = {
         message_id: row.event_id,
         tx_id: row.tx_id,
         message_index: Number(row.tx_msg_index ?? 0),
@@ -1124,7 +1127,8 @@ async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEv
         tx_hash: row.tx_hash,
         tx_index: row.tx_index,
         timestamp: row.timestamp,
-      })
+      }
+      const event = isGroupAdmin ? await toGroupEvent(eventRow) : await toIndexerEvent(eventRow)
       if (event) events.push({ ...event, proposalId: String(proposalId), proposalMessageIndex: index })
     }
   }
@@ -1165,57 +1169,57 @@ async function buildGroupEvents(blockHeight: number): Promise<IndexerTxEvent[]> 
     )
     .orderBy('tx.index', 'asc')
     .orderBy('tm.index', 'asc')) as EventRow[]
-  if (rows.length === 0) return []
-
   const events: IndexerTxEvent[] = []
-  for (const row of rows) {
-    const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
-    const action = toShortMessageType(row.message_type).replace(/^Msg/, '')
-
-    let anchor: { corporationId?: number; did?: string } = {}
-    let entityType = 'CorporationGroup'
-    let entityId: string | undefined
-    const policyAddress = readAddress(content.group_policy_address)
-    const groupId = readFirstPositiveInteger(content, ['group_id', 'groupId'])
-    const proposalId = readFirstPositiveInteger(content, ['proposal_id', 'proposalId'])
-    if (policyAddress) {
-      anchor = await loadCorporationByPolicyAddress(policyAddress)
-    } else if (groupId) {
-      anchor = await loadCorporationByGroupId(groupId)
-    } else if (proposalId) {
-      const resolvedAddress = await resolveProposalPolicyAddress(proposalId)
-      if (resolvedAddress) anchor = await loadCorporationByPolicyAddress(resolvedAddress)
-      entityType = 'GroupProposal'
-      entityId = String(proposalId)
-    }
-    if (row.message_type === '/cosmos.group.v1.MsgSubmitProposal') {
-      entityType = 'GroupProposal'
-      entityId = await resolveSubmittedProposalId(row.tx_hash, Number(row.message_index))
-    }
-    // CorporationGroup entities are keyed by corporation_id; group_id lives in a different id space.
-    if (entityType === 'CorporationGroup' && anchor.corporationId) entityId = String(anchor.corporationId)
-
-    // Group events anchoring no Corporation stay wildcard-only (did null, no corporation scope).
-    events.push({
-      type: 'transaction-executed',
-      module: 'group',
-      action,
-      messageType: row.message_type,
-      blockHeight: Number(row.block_height),
-      txHash: row.tx_hash,
-      txIndex: Number(row.tx_index),
-      messageIndex: Number(row.message_index),
-      sender: row.sender ?? '',
-      did: anchor.did ?? null,
-      relatedDids: anchor.did ? [anchor.did] : [],
-      entityType,
-      entityId,
-      corporationId: anchor.corporationId,
-      relatedCorporationIds: [],
-      timestamp: toIsoSeconds(row.timestamp),
-    })
-  }
+  for (const row of rows) events.push(await toGroupEvent(row))
   return events
+}
+
+async function toGroupEvent(row: EventRow): Promise<IndexerTxEvent> {
+  const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
+  const action = toShortMessageType(row.message_type).replace(/^Msg/, '')
+
+  let anchor: { corporationId?: number; did?: string } = {}
+  let entityType = 'CorporationGroup'
+  let entityId: string | undefined
+  const policyAddress = readAddress(content.group_policy_address)
+  const groupId = readFirstPositiveInteger(content, ['group_id', 'groupId'])
+  const proposalId = readFirstPositiveInteger(content, ['proposal_id', 'proposalId'])
+  if (policyAddress) {
+    anchor = await loadCorporationByPolicyAddress(policyAddress)
+  } else if (groupId) {
+    anchor = await loadCorporationByGroupId(groupId)
+  } else if (proposalId) {
+    const resolvedAddress = await resolveProposalPolicyAddress(proposalId)
+    if (resolvedAddress) anchor = await loadCorporationByPolicyAddress(resolvedAddress)
+    entityType = 'GroupProposal'
+    entityId = String(proposalId)
+  }
+  if (row.message_type === '/cosmos.group.v1.MsgSubmitProposal') {
+    entityType = 'GroupProposal'
+    entityId = await resolveSubmittedProposalId(row.tx_hash, Number(row.message_index))
+  }
+  // CorporationGroup entities are keyed by corporation_id; group_id lives in a different id space.
+  if (entityType === 'CorporationGroup' && anchor.corporationId) entityId = String(anchor.corporationId)
+
+  // Group events anchoring no Corporation stay wildcard-only (did null, no corporation scope).
+  return {
+    type: 'transaction-executed',
+    module: 'group',
+    action,
+    messageType: row.message_type,
+    blockHeight: Number(row.block_height),
+    txHash: row.tx_hash,
+    txIndex: Number(row.tx_index),
+    messageIndex: Number(row.message_index),
+    sender: row.sender ?? '',
+    did: anchor.did ?? null,
+    relatedDids: anchor.did ? [anchor.did] : [],
+    entityType,
+    entityId,
+    corporationId: anchor.corporationId,
+    relatedCorporationIds: [],
+    timestamp: toIsoSeconds(row.timestamp),
+  }
 }
 
 export const buildGroupEventsForTest = buildGroupEvents

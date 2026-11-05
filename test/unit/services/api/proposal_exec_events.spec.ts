@@ -1,6 +1,9 @@
 import { toBase64 } from '@cosmjs/encoding'
+import { Registry } from '@cosmjs/proto-signing'
+import { defaultRegistryTypes } from '@cosmjs/stargate'
 import { MsgUpdateCorporation } from '@verana-labs/verana-types/codec/verana/co/v1/tx'
 import { MsgSlashTrustDeposit } from '@verana-labs/verana-types/codec/verana/td/v1/tx'
+import Long from 'long'
 
 const tables: Record<string, unknown[]> = {}
 
@@ -58,6 +61,18 @@ function slashAny(corporationId: number) {
     reason: 'e2e',
   }).finish()
   return { type_url: '/verana.td.v1.MsgSlashTrustDeposit', value: toBase64(value) }
+}
+
+function updateGroupMembersAny(groupId: number) {
+  const value = new Registry(defaultRegistryTypes).encode({
+    typeUrl: '/cosmos.group.v1.MsgUpdateGroupMembers',
+    value: {
+      admin: POLICY,
+      groupId: Long.fromNumber(groupId),
+      memberUpdates: [{ address: 'verana1member', weight: '0', metadata: '' }],
+    },
+  })
+  return { type_url: '/cosmos.group.v1.MsgUpdateGroupMembers', value: toBase64(value) }
 }
 
 // Carries the join columns the query filters on (block_height/code/type) next to the aliased output names.
@@ -162,6 +177,64 @@ describe('buildProposalExecEvents (IDX-INDEXER-SUB-1 group-executed Msgs)', () =
     expect(event.entityId).toBe('9')
     expect(event.did).toBe('did:example:slashed')
     expect(event.relatedDids).not.toContain('did:example:corp')
+  })
+
+  it('emits group admin Msgs wrapped in the proposal as group events of the Corporation', async () => {
+    tables.corporation_group = [{ group_id: 5, corporation_id: 3, did: 'did:example:corp' }]
+    tables.event = [execEvent()]
+    tables.event_attribute = [...execAttributes('PROPOSAL_EXECUTOR_RESULT_SUCCESS'), submitAttribute()]
+    tables.transaction_message = [
+      {
+        tx_id: 4,
+        index: 0,
+        type: '/cosmos.group.v1.MsgSubmitProposal',
+        content: {
+          group_policy_address: POLICY,
+          messages: [{ type_url: '/cosmos.group.v1.MsgVote', value: '' }, updateGroupMembersAny(5)],
+        },
+      },
+    ]
+
+    const events = await buildProposalExecEventsForTest(60)
+
+    expect(events).toHaveLength(1)
+    const [event] = events
+    expect(event.module).toBe('group')
+    expect(event.action).toBe('UpdateGroupMembers')
+    expect(event.entityType).toBe('CorporationGroup')
+    expect(event.entityId).toBe('3')
+    expect(event.corporationId).toBe(3)
+    expect(event.did).toBe('did:example:corp')
+    expect(event.sender).toBe(POLICY)
+    expect(event.messageIndex).toBe(1)
+    expect(event.proposalId).toBe('12')
+    expect(event.proposalMessageIndex).toBe(1)
+  })
+
+  it('anchors a wrapped decision policy update by its policy address', async () => {
+    tables.event = [execEvent()]
+    tables.event_attribute = execAttributes('PROPOSAL_EXECUTOR_RESULT_SUCCESS')
+    tables.group_proposal = [
+      {
+        id: 12,
+        group_policy_address: POLICY,
+        messages: [
+          {
+            '@type': '/cosmos.group.v1.MsgUpdateGroupPolicyDecisionPolicy',
+            admin: POLICY,
+            groupPolicyAddress: POLICY,
+            decisionPolicy: { '@type': '/cosmos.group.v1.ThresholdDecisionPolicy', threshold: '2' },
+          },
+        ],
+      },
+    ]
+
+    const [event] = await buildProposalExecEventsForTest(60)
+
+    expect(event.action).toBe('UpdateGroupPolicyDecisionPolicy')
+    expect(event.entityType).toBe('CorporationGroup')
+    expect(event.corporationId).toBe(3)
+    expect(event.proposalMessageIndex).toBe(0)
   })
 
   it('emits nothing when the execution failed', async () => {

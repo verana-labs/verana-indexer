@@ -23,6 +23,16 @@ export const GROUP_ROUTED_MESSAGE_TYPES: string[] = Object.entries(GROUP_MSG_TYP
   .filter(([key]) => key !== 'CreateCorporation')
   .map(([, type]) => type)
 
+// Signed by the group or policy admin, which is the Corporation's policy account, so they only arrive inside a proposal.
+export const GROUP_ADMIN_MESSAGE_TYPES: string[] = [
+  GROUP_MSG_TYPES.UpdateGroupMembers,
+  GROUP_MSG_TYPES.UpdateGroupMetadata,
+  GROUP_MSG_TYPES.UpdateGroupAdmin,
+  GROUP_MSG_TYPES.UpdateGroupPolicyDecisionPolicy,
+  GROUP_MSG_TYPES.UpdateGroupPolicyMetadata,
+  GROUP_MSG_TYPES.UpdateGroupPolicyAdmin,
+]
+
 export const GROUP_EVENT_TYPES = {
   CreateGroup: 'cosmos.group.v1.EventCreateGroup',
   CreateGroupPolicy: 'cosmos.group.v1.EventCreateGroupPolicy',
