@@ -25,6 +25,7 @@ export async function down(knex: Knex): Promise<void> {
   if (!exists) return
 
   await knex.raw(`DROP INDEX IF EXISTS idx_events_tx_msg_entity_proposal_unique`)
+  await knex.raw(`DELETE FROM indexer_events WHERE payload ->> 'proposal_id' IS NOT NULL`)
   await knex.raw(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_events_tx_msg_entity_unique
     ON indexer_events (
