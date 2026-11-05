@@ -1,6 +1,7 @@
 import _ from 'lodash'
 import knex from '../../common/utils/db_connection'
 import { extractController } from '../../common/utils/extract_controller'
+import Utils from '../../common/utils/utils'
 import {
   VeranaCorporationMessageTypes,
   VeranaCredentialSchemaMessageTypes,
@@ -12,7 +13,14 @@ import {
   VeranaParticipantMessageTypes,
   VeranaTrustDepositMessageTypes,
 } from '../../common/verana-message-types'
-import { GROUP_ROUTED_MESSAGE_TYPES } from '../crawl-group/group_helpers'
+import {
+  anyTypeUrl,
+  decodeProposalMessages,
+  GROUP_EVENT_TYPES,
+  GROUP_ROUTED_MESSAGE_TYPES,
+  parseEventAttrValue,
+  shortExecutorResult,
+} from '../crawl-group/group_helpers'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
 import { fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
@@ -58,6 +66,8 @@ export type IndexerTxEvent = {
   grantee?: string
   vsOperator?: string
   withFeegrant?: boolean
+  proposalId?: string
+  proposalMessageIndex?: number
   timestamp: string
 }
 
@@ -86,6 +96,8 @@ export type IndexerEventRecord = {
     grantee?: string
     vs_operator?: string
     with_feegrant?: boolean
+    proposal_id?: string
+    proposal_message_index?: number
   }
 }
 
@@ -686,6 +698,8 @@ function toEventRow(event: IndexerTxEvent): Record<string, unknown> {
       grantee: event.grantee,
       vs_operator: event.vsOperator,
       with_feegrant: event.withFeegrant,
+      proposal_id: event.proposalId,
+      proposal_message_index: event.proposalMessageIndex,
     },
   }
 }
@@ -736,6 +750,9 @@ function fromStoredRow(row: Record<string, any>): IndexerEventRecord {
           : typeof row.payload?.withFeegrant === 'boolean'
             ? row.payload.withFeegrant
             : undefined,
+      proposal_id: row.payload?.proposal_id ?? undefined,
+      proposal_message_index:
+        typeof row.payload?.proposal_message_index === 'number' ? row.payload.proposal_message_index : undefined,
     },
   }
 }
@@ -987,10 +1004,7 @@ async function loadCorporationByGroupId(groupId: number): Promise<{ corporationI
   return address ? loadCorporationByPolicyAddress(address) : {}
 }
 
-// Falls back to the submit tx stored in the DB, so pruned proposals and not-yet-processed blocks still resolve.
-async function resolveProposalPolicyAddress(proposalId: number): Promise<string | undefined> {
-  const proposal = await knex('group_proposal').select('group_policy_address').where('id', proposalId).first()
-  if (proposal?.group_policy_address) return String(proposal.group_policy_address)
+async function loadSubmitProposalContent(proposalId: number): Promise<Record<string, unknown> | undefined> {
   const submitAttr = await knex('event_attribute as ea')
     .innerJoin('event as e', 'e.id', 'ea.event_id')
     .where('e.type', 'cosmos.group.v1.EventSubmitProposal')
@@ -1006,9 +1020,112 @@ async function resolveProposalPolicyAddress(proposalId: number): Promise<string 
     .where('index', Number(submitAttr.tx_msg_index ?? 0))
     .select('content')
     .first()
-  const content = submitMessage?.content as Record<string, unknown> | undefined
-  const address = content?.group_policy_address
-  return typeof address === 'string' && address ? address : undefined
+  return submitMessage?.content as Record<string, unknown> | undefined
+}
+
+// Falls back to the submit tx stored in the DB, so pruned proposals and not-yet-processed blocks still resolve.
+async function resolveProposalPolicyAddress(proposalId: number): Promise<string | undefined> {
+  const proposal = await knex('group_proposal').select('group_policy_address').where('id', proposalId).first()
+  if (proposal?.group_policy_address) return String(proposal.group_policy_address)
+  return readAddress((await loadSubmitProposalContent(proposalId))?.group_policy_address)
+}
+
+// Prefers the submit tx: group_proposal is filled by the group processor, which runs after this block's events.
+async function loadProposalMessages(
+  proposalId: number
+): Promise<{ policyAddress?: string; messages: Array<Record<string, unknown>> } | undefined> {
+  const content = await loadSubmitProposalContent(proposalId)
+  if (content) {
+    return {
+      policyAddress: readAddress(content.group_policy_address),
+      messages: decodeProposalMessages(content.messages),
+    }
+  }
+  const proposal = await knex('group_proposal')
+    .select('group_policy_address', 'messages')
+    .where('id', proposalId)
+    .first()
+  if (!proposal) return undefined
+  return {
+    policyAddress: readAddress(proposal.group_policy_address),
+    messages: Array.isArray(proposal.messages) ? proposal.messages : [],
+  }
+}
+
+type ExecEventRow = {
+  event_id: number
+  tx_id: number
+  tx_msg_index: number | null
+  tx_hash: string
+  tx_index: number
+  block_height: number
+  timestamp: Date | string
+}
+
+// Msgs a proposal executes (MsgExec, or MsgSubmitProposal/MsgVote with EXEC_TRY) never get a transaction_message row.
+async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+  const execRows = (await knex('event as e')
+    .innerJoin('transaction as tx', 'tx.id', 'e.tx_id')
+    .where('e.block_height', blockHeight)
+    .andWhere('tx.code', 0)
+    .where('e.type', GROUP_EVENT_TYPES.Exec)
+    .select(
+      'e.id as event_id',
+      'e.tx_id',
+      'e.tx_msg_index',
+      'tx.hash as tx_hash',
+      'tx.index as tx_index',
+      'tx.height as block_height',
+      'tx.timestamp'
+    )
+    .orderBy('tx.index', 'asc')
+    .orderBy('e.id', 'asc')) as ExecEventRow[]
+  if (execRows.length === 0) return []
+
+  const attributeRows = (await knex('event_attribute')
+    .where('block_height', blockHeight)
+    .whereIn(
+      'event_id',
+      execRows.map((row) => row.event_id)
+    )
+    .whereIn('key', ['proposal_id', 'result'])
+    .select('event_id', 'key', 'value')) as Array<{ event_id: number; key: string; value: string }>
+  const attributesByEvent = new Map<number, Record<string, string>>()
+  for (const attribute of attributeRows) {
+    const bucket = attributesByEvent.get(attribute.event_id) ?? {}
+    bucket[attribute.key] = attribute.value
+    attributesByEvent.set(attribute.event_id, bucket)
+  }
+
+  const events: IndexerTxEvent[] = []
+  for (const row of execRows) {
+    const attributes = attributesByEvent.get(row.event_id) ?? {}
+    // FAILURE rolls the wrapped Msgs back; the proposal stays executable and a later SUCCESS emits its own EventExec.
+    if (shortExecutorResult(parseEventAttrValue(attributes.result)) !== 'SUCCESS') continue
+    const proposalId = readPositiveInteger(parseEventAttrValue(attributes.proposal_id))
+    if (!proposalId) continue
+    const proposal = await loadProposalMessages(proposalId)
+    if (!proposal) continue
+
+    for (const [index, message] of proposal.messages.entries()) {
+      const messageType = anyTypeUrl(message)
+      if (!messageType || !EVENT_META[messageType]) continue
+      const event = await toIndexerEvent({
+        message_id: row.event_id,
+        tx_id: row.tx_id,
+        message_index: Number(row.tx_msg_index ?? 0),
+        message_type: messageType,
+        sender: proposal.policyAddress ?? '',
+        content: Utils.camelizeKeys(message),
+        block_height: row.block_height,
+        tx_hash: row.tx_hash,
+        tx_index: row.tx_index,
+        timestamp: row.timestamp,
+      })
+      if (event) events.push({ ...event, proposalId: String(proposalId), proposalMessageIndex: index })
+    }
+  }
+  return events
 }
 
 // MsgSubmitProposal carries no proposal id (assigned on-chain) — read it from the tx's own event.
@@ -1099,6 +1216,7 @@ async function buildGroupEvents(blockHeight: number): Promise<IndexerTxEvent[]> 
 }
 
 export const buildGroupEventsForTest = buildGroupEvents
+export const buildProposalExecEventsForTest = buildProposalExecEvents
 
 export async function persistIndexerEventsForBlock(blockHeight: number): Promise<IndexerEventRecord[]> {
   const rows: Array<Record<string, unknown>> = []
@@ -1114,12 +1232,18 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   rows.push(...delegationEvents.map(toEventRow))
   const groupEvents = await buildGroupEvents(blockHeight)
   rows.push(...groupEvents.map(toEventRow))
+  const proposalExecEvents = await buildProposalExecEvents(blockHeight)
+  rows.push(...proposalExecEvents.map(toEventRow))
   let insertedIds: number[] = []
 
   if (rows.length > 0) {
     const inserted = await knex('indexer_events')
       .insert(rows)
-      .onConflict(knex.raw("(tx_hash, tx_index, message_index, event_type, entity_type, COALESCE(entity_id, ''))"))
+      .onConflict(
+        knex.raw(
+          "(tx_hash, tx_index, message_index, event_type, entity_type, COALESCE(entity_id, ''), COALESCE(payload ->> 'proposal_id', ''), COALESCE(payload ->> 'proposal_message_index', ''))"
+        )
+      )
       .ignore()
       .returning('id')
     insertedIds = inserted

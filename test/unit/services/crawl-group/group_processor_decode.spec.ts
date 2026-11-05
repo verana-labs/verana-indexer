@@ -1,28 +1,12 @@
-jest.mock('../../../../src/common/utils/db_connection', () => ({ __esModule: true, default: () => ({}) }))
-jest.mock('../../../../src/common/utils/checkpoint_manager', () => ({
-  CheckpointManager: class {
-    async ensureCheckpoint() {}
-    async updateCheckpoint() {}
-  },
-}))
-jest.mock('../../../../src/common/utils/start_mode_detector', () => ({
-  detectStartMode: jest.fn(async () => 'normal'),
-}))
-jest.mock('../../../../src/services/manager/indexer_status.manager', () => ({
-  indexerStatusManager: { isCrawlingActive: () => false },
-}))
-
 import { toBase64 } from '@cosmjs/encoding'
 import { Registry } from '@cosmjs/proto-signing'
 import { defaultRegistryTypes } from '@cosmjs/stargate'
-import { ServiceBroker } from 'moleculer'
-import GroupProcessorService from '../../../../src/services/crawl-group/group_processor.service'
+import { decodeProposalMessages } from '../../../../src/services/crawl-group/group_helpers'
 
 // decodeProposalMessages is the whole implementation of the spec's "messages[] JSON-decoded with their @type"
 // contract; stored MsgSubmitProposal content carries Anys as { type_url, value: base64 }.
-describe('GroupProcessorService.decodeProposalMessages', () => {
-  const service = new GroupProcessorService(new ServiceBroker({ logger: false })) as any
-  const decode = (messages: unknown) => service.decodeProposalMessages(messages)
+describe('decodeProposalMessages', () => {
+  const decode = decodeProposalMessages
 
   it('returns an empty array for non-array input', () => {
     expect(decode(undefined)).toEqual([])

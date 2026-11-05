@@ -573,6 +573,7 @@ const MIGRATION_TO_TABLES: Record<string, string[]> = {
 const ALTER_MIGRATIONS = [
   '20260226000000_add_participants_lookup_index_for_participant_list',
   '20260402000000_create_trust_results',
+  '20261105000000_indexer_events_unique_proposal_message',
 ]
 
 async function runMigrations(db: Knex): Promise<void> {
