@@ -4,7 +4,7 @@ import {
   QueryGetParticipantSessionRequest,
 } from '@verana-labs/verana-types/codec/verana/pp/v1/query'
 import { Participant, ParticipantSession } from '@verana-labs/verana-types/codec/verana/pp/v1/types'
-import { withAbciQueryClient } from '../../common/utils/grpc_query'
+import { isAbciNotFound, withAbciQueryClient } from '../../common/utils/grpc_query'
 
 export type ParticipantMessagePayload = {
   type: string
@@ -189,8 +189,9 @@ export async function fetchParticipant(
         participant: Participant.toJSON(res.participant) as Record<string, unknown>,
       }
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }
 
@@ -207,7 +208,8 @@ export async function fetchParticipantSession(
         session: ParticipantSession.toJSON(res.participantSession) as Record<string, unknown>,
       }
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }
