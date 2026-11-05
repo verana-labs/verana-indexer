@@ -923,6 +923,20 @@ export default class EcosystemMessageProcessorService extends BullableService {
         await trx('governance_framework_version').where({ id: gfv.id }).update({ gfv_id: docEvent.gfvId })
       }
 
+      const replayed = await trx('governance_framework_document')
+        .where({
+          gfv_id: gfv.id,
+          language: language ?? null,
+          url: message.doc_url ?? null,
+          digest_sri: digestSri ?? null,
+          created: timestamp,
+        })
+        .first()
+      if (replayed) {
+        await trx.commit()
+        return
+      }
+
       const [gfd] = await trx('governance_framework_document')
         .insert({
           gfv_id: gfv.id,

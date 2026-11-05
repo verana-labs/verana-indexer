@@ -63,6 +63,8 @@ export default class CrawlTxService extends BullableService {
 
   private _hasUniqueConstraintCache: boolean | null = null
 
+  private readonly _completedPayloadStages = new Map<number, Set<string>>()
+
   public constructor(public broker: ServiceBroker) {
     super(broker)
     this._httpBatchClient = getHttpBatchClient()
@@ -370,8 +372,10 @@ export default class CrawlTxService extends BullableService {
             processingPayloads &&
             !(config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction)
           ) {
+            const completedStages = this._completedPayloadStages.get(blockHeight) ?? new Set<string>()
+            this._completedPayloadStages.set(blockHeight, completedStages)
             try {
-              await this.processPayloads(processingPayloads)
+              await this.processPayloads(processingPayloads, completedStages)
             } catch (err: any) {
               this.logger.error(` [HANDLE_TRANSACTION] Error processing message batches:`, err)
               throw err
@@ -398,6 +402,7 @@ export default class CrawlTxService extends BullableService {
                 .transacting(trx)
             })
           }
+          this._completedPayloadStages.clear()
 
           // Broadcast websocket event for processed block
           try {
@@ -634,9 +639,13 @@ export default class CrawlTxService extends BullableService {
         content: message,
       })) ?? []
 
+    const alreadyStored = Boolean(
+      await TransactionMessage.query().select('id').where('tx_id', tx.id).first().transacting(trx)
+    )
+
     // Insert events idempotently (chunked for performance)
     // Note: insertGraph doesn't support onConflict directly, so we use try-catch for idempotency
-    if (eventInsert.length > 0) {
+    if (eventInsert.length > 0 && !alreadyStored) {
       const effectiveConfig =
         this._isFreshStart && config.handleTransaction.freshStart
           ? config.handleTransaction.freshStart
@@ -679,7 +688,7 @@ export default class CrawlTxService extends BullableService {
 
       // Always use regular insert with duplicate handling to avoid transaction abort issues
       // ON CONFLICT can abort the transaction if constraint doesn't exist, so we avoid it
-      for (let i = 0; i < msgInsert.length; i += chunkSizeMsg) {
+      for (let i = 0; !alreadyStored && i < msgInsert.length; i += chunkSizeMsg) {
         await throwIfHeapCriticalDuringCrawl('handle-transaction:message-insert', this.logger)
         const chunk = msgInsert.slice(i, i + chunkSizeMsg)
 
@@ -1705,12 +1714,20 @@ export default class CrawlTxService extends BullableService {
     }))
   }
 
-  private async processPayloads(payload: any) {
+  private async processPayloads(payload: any, completedStages = new Set<string>()) {
     if (!payload) return
+    const runStage = async (stage: string, fn: () => Promise<unknown>) => {
+      if (completedStages.has(stage)) return
+      await fn()
+      completedStages.add(stage)
+    }
+
     if (payload.ecosystemList?.length) {
-      await this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
-        ecosystemList: payload.ecosystemList,
-      })
+      await runStage('ecosystems', () =>
+        this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
+          ecosystemList: payload.ecosystemList,
+        })
+      )
     }
 
     const useHeightSyncTR = process.env.USE_HEIGHT_SYNC_TR === 'true'
@@ -1741,59 +1758,67 @@ export default class CrawlTxService extends BullableService {
 
       const extraEcosystemIdsFromEvents = ecosystemIdsFromEvents.filter((id) => !handledEcosystemIds.has(id))
       if (extraEcosystemIdsFromEvents.length > 0) {
-        try {
-          await this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
-            ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
-              type: 'EVENT_SYNC_TR',
-              height: blockHeight,
-              content: { id },
-            })),
-          })
-        } catch (err: any) {
-          this.logger.warn(
-            `[processPayloads] Failed to run EC height-sync from events at block=${blockHeight}: ${
-              err?.message || String(err)
-            }`
-          )
-        }
+        await runStage('ecosystem-events', async () => {
+          try {
+            await this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
+              ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
+                type: 'EVENT_SYNC_TR',
+                height: blockHeight,
+                content: { id },
+              })),
+            })
+          } catch (err: any) {
+            this.logger.warn(
+              `[processPayloads] Failed to run EC height-sync from events at block=${blockHeight}: ${
+                err?.message || String(err)
+              }`
+            )
+          }
+        })
       }
     }
 
     if (payload.corporationList?.length) {
-      await this.broker.call(`${SERVICE.V1.CorporationMessageProcessorService.path}.handleCorporationMessages`, {
-        corporationList: payload.corporationList,
-      })
+      await runStage('corporations', () =>
+        this.broker.call(`${SERVICE.V1.CorporationMessageProcessorService.path}.handleCorporationMessages`, {
+          corporationList: payload.corporationList,
+        })
+      )
     }
 
     const useHeightSyncCS = process.env.USE_HEIGHT_SYNC_CS === 'true'
     const hasCsMessages = (payload.credentialSchemaMessages?.length ?? 0) > 0
-    if (useHeightSyncCS && typeof blockHeight === 'number' && hasCsMessages) {
-      const { runHeightSyncCS } = await import('../../modules/cs-height-sync/cs_height_sync_service')
-      await runHeightSyncCS(this.broker, payload, blockHeight)
-    } else if (payload.credentialSchemaMessages?.length) {
-      await this.broker.call(`${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`, {
-        credentialSchemaMessages: payload.credentialSchemaMessages,
-      })
-    } else {
-      const hasCsEvents = (payload.csEventsFromBlock ?? []).some(
-        (event: { type?: string; attributes?: Array<{ key?: string; value?: string }> }) =>
-          isPotentialCredentialSchemaEvent(event)
-      )
-      if (useHeightSyncCS && hasCsEvents && typeof blockHeight === 'number') {
+    await runStage('credential-schemas', async () => {
+      if (useHeightSyncCS && typeof blockHeight === 'number' && hasCsMessages) {
         const { runHeightSyncCS } = await import('../../modules/cs-height-sync/cs_height_sync_service')
         await runHeightSyncCS(this.broker, payload, blockHeight)
+      } else if (payload.credentialSchemaMessages?.length) {
+        await this.broker.call(`${SERVICE.V1.ProcessCredentialSchemaService.path}.handleCredentialSchemas`, {
+          credentialSchemaMessages: payload.credentialSchemaMessages,
+        })
+      } else {
+        const hasCsEvents = (payload.csEventsFromBlock ?? []).some(
+          (event: { type?: string; attributes?: Array<{ key?: string; value?: string }> }) =>
+            isPotentialCredentialSchemaEvent(event)
+        )
+        if (useHeightSyncCS && hasCsEvents && typeof blockHeight === 'number') {
+          const { runHeightSyncCS } = await import('../../modules/cs-height-sync/cs_height_sync_service')
+          await runHeightSyncCS(this.broker, payload, blockHeight)
+        }
       }
-    }
+    })
 
     if (payload.participantMessages?.length) {
       const participantMessages = payload.participantMessages
       const participantBatchSize = 50
       for (let i = 0; i < participantMessages.length; i += participantBatchSize) {
         const batch = participantMessages.slice(i, i + participantBatchSize)
-        await this.broker.call(
-          `${SERVICE.V1.ParticipantProcessorService.path}.handleParticipantMessages`,
-          { participantMessages: batch },
-          { timeout: getHeavyBrokerCallTimeoutMs() }
+        await runStage(`participants-${i}`, () =>
+          this.broker.call(
+            `${SERVICE.V1.ParticipantProcessorService.path}.handleParticipantMessages`,
+            { participantMessages: batch },
+            { timeout: getHeavyBrokerCallTimeoutMs() }
+          )
         )
         if (i + participantBatchSize < participantMessages.length) {
           const { delay } = await import('../../common/utils/db_query_helper')
@@ -1803,16 +1828,18 @@ export default class CrawlTxService extends BullableService {
     }
 
     if (payload.trustDepositList?.length) {
-      const useHeightSyncTD = process.env.USE_HEIGHT_SYNC_TD === 'true'
-      const tdBlockHeight = typeof payload.blockHeight === 'number' ? payload.blockHeight : undefined
-      if (useHeightSyncTD && typeof tdBlockHeight === 'number') {
-        const { runHeightSyncTD } = await import('../../modules/td-height-sync/td_height_sync_service')
-        await runHeightSyncTD(this.broker, { trustDepositList: payload.trustDepositList }, tdBlockHeight)
-      } else {
-        await this.broker.call(`${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`, {
-          trustDepositList: payload.trustDepositList,
-        })
-      }
+      await runStage('trust-deposits', async () => {
+        const useHeightSyncTD = process.env.USE_HEIGHT_SYNC_TD === 'true'
+        const tdBlockHeight = typeof payload.blockHeight === 'number' ? payload.blockHeight : undefined
+        if (useHeightSyncTD && typeof tdBlockHeight === 'number') {
+          const { runHeightSyncTD } = await import('../../modules/td-height-sync/td_height_sync_service')
+          await runHeightSyncTD(this.broker, { trustDepositList: payload.trustDepositList }, tdBlockHeight)
+        } else {
+          await this.broker.call(`${SERVICE.V1.TrustDepositMessageProcessorService.path}.handleTrustDepositMessages`, {
+            trustDepositList: payload.trustDepositList,
+          })
+        }
+      })
     }
 
     if (payload.updateParamsList?.length) {

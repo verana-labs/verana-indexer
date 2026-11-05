@@ -1,6 +1,9 @@
 import { ServiceBroker } from 'moleculer'
 import knex from '../../../../src/common/utils/db_connection'
-import { VeranaGovernanceFrameworkMessageTypes } from '../../../../src/common/verana-message-types'
+import {
+  VeranaCorporationMessageTypes,
+  VeranaGovernanceFrameworkMessageTypes,
+} from '../../../../src/common/verana-message-types'
 import CorporationMessageProcessorService from '../../../../src/services/crawl-co/co_processor.service'
 
 describe('CorporationMessageProcessorService CGF history', () => {
@@ -137,5 +140,115 @@ describe('CorporationMessageProcessorService CGF history', () => {
 
     const rows = await knex('corporation_history').where({ corporation_id: 1 })
     expect(rows).toHaveLength(0)
+  })
+
+  it('stores a CGF document and its history once when the block is replayed', async () => {
+    const addDocument = {
+      type: VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument,
+      height: 20,
+      content: {
+        corporation: 'verana1pol',
+        operator: 'verana1signer',
+        ecosystem_id: 0,
+        version: 2,
+        doc_language: 'en',
+        doc_url: 'http://example.com/cgf-v2.pdf',
+        doc_digest_sri: 'sha384-abc',
+        timestamp,
+      },
+    }
+
+    await service.handleCorporationMessages({ params: { corporationList: [addDocument] } } as any)
+    await service.handleCorporationMessages({ params: { corporationList: [addDocument] } } as any)
+
+    expect(await knex('co_governance_framework_document')).toHaveLength(1)
+    expect(await knex('corporation_history').where({ corporation_id: 1, event_type: 'AddCGFDocument' })).toHaveLength(1)
+  })
+
+  it('records an identical CGF document re-added in a later block', async () => {
+    const addDocument = (height: number, at: Date) => ({
+      type: VeranaGovernanceFrameworkMessageTypes.AddGovernanceFrameworkDocument,
+      height,
+      content: {
+        corporation: 'verana1pol',
+        operator: 'verana1signer',
+        ecosystem_id: 0,
+        version: 2,
+        doc_language: 'en',
+        doc_url: 'http://example.com/cgf-v2.pdf',
+        doc_digest_sri: 'sha384-abc',
+        timestamp: at,
+      },
+    })
+
+    await service.handleCorporationMessages({ params: { corporationList: [addDocument(20, timestamp)] } } as any)
+    await service.handleCorporationMessages({
+      params: { corporationList: [addDocument(21, new Date('2024-06-01T00:00:05.000Z'))] },
+    } as any)
+
+    expect(await knex('corporation_history').where({ corporation_id: 1, event_type: 'AddCGFDocument' })).toHaveLength(2)
+  })
+
+  it('records IncreaseCGFActiveVersion history once when the block is replayed', async () => {
+    await knex('co_governance_framework_version').insert({
+      corporation_id: 1,
+      ecosystem_id: 0,
+      version: 2,
+      created: timestamp,
+    })
+    const increase = {
+      type: VeranaGovernanceFrameworkMessageTypes.IncreaseActiveGovernanceFrameworkVersion,
+      height: 30,
+      content: { corporation: 'verana1pol', operator: 'verana1signer', ecosystem_id: 0, timestamp },
+      txEvents: [
+        {
+          type: 'increase_active_gf_version',
+          attributes: [
+            { key: 'corporation', value: 'verana1pol' },
+            { key: 'ecosystem_id', value: '0' },
+            { key: 'version', value: '2' },
+          ],
+        },
+      ],
+    }
+
+    await service.handleCorporationMessages({ params: { corporationList: [increase] } } as any)
+    await service.handleCorporationMessages({ params: { corporationList: [increase] } } as any)
+
+    const rows = await knex('corporation_history').where({ corporation_id: 1, event_type: 'IncreaseCGFActiveVersion' })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].changes).toMatchObject({ active_version: 2 })
+  })
+
+  it('records a corporation creation once when the block is replayed', async () => {
+    const create = {
+      type: VeranaCorporationMessageTypes.CreateCorporation,
+      height: 50,
+      content: {
+        signer: 'verana1signer',
+        did: 'did:example:new',
+        language: 'en',
+        doc_url: 'http://example.com/cgf-v1.pdf',
+        doc_digest_sri: 'sha384-v1',
+        decision_policy: { '@type': '/cosmos.group.v1.ThresholdDecisionPolicy', threshold: '1' },
+        members: [{ address: 'verana1member', weight: '1' }],
+        timestamp,
+      },
+      txEvents: [
+        {
+          type: 'create_corporation',
+          attributes: [
+            { key: 'corporation_id', value: '2' },
+            { key: 'policy_address', value: 'verana1newpol' },
+          ],
+        },
+      ],
+    }
+
+    await service.handleCorporationMessages({ params: { corporationList: [create] } } as any)
+    await service.handleCorporationMessages({ params: { corporationList: [create] } } as any)
+
+    expect(await knex('corporation_history').where({ corporation_id: 2 })).toHaveLength(1)
+    expect(await knex('co_governance_framework_document')).toHaveLength(1)
   })
 })
