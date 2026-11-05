@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import {
   QueryGetTrustDepositRequest,
   QueryClientImpl as TdQueryClientImpl,
@@ -59,43 +58,13 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>
 }
 
-function decodeAttributeValue(value: string | undefined): string {
-  if (value == null || value === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length % 4 === 0) {
-      return Buffer.from(value, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return value
-}
-
-function decodeAttributeKey(key: string | undefined): string {
-  if (key == null || key === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(key) && key.length % 4 === 0) {
-      return Buffer.from(key, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return key
-}
-
-function getDecodedEventAttributes(
-  event: TxEventLike,
-  decodeAttributes?: boolean
-): Array<{ key: string; value: string }> {
-  return (event.attributes ?? []).map((attr) => ({
-    key: decodeAttributes ? decodeAttributeKey(attr.key) : (attr.key ?? ''),
-    value: decodeAttributes ? decodeAttributeValue(attr.value) : (attr.value ?? ''),
-  }))
+function getEventAttributes(event: TxEventLike): Array<{ key: string; value: string }> {
+  return (event.attributes ?? []).map((attr) => ({ key: attr.key ?? '', value: attr.value ?? '' }))
 }
 
 const TD_EVENT_ATTR_KEYS = ['trust_deposit_id', 'account', 'owner', 'deposit_account']
 
-function isPotentialTrustDepositEvent(event: TxEventLike, decodeAttributes?: boolean): boolean {
+function isPotentialTrustDepositEvent(event: TxEventLike): boolean {
   const eventType = (event.type ?? '').trim()
   if (TD_BLOCKCHAIN_EVENT_TYPES.has(eventType)) return true
   const eventTypeLower = eventType.toLowerCase()
@@ -106,7 +75,7 @@ function isPotentialTrustDepositEvent(event: TxEventLike, decodeAttributes?: boo
   ) {
     return true
   }
-  const attrs = getDecodedEventAttributes(event, decodeAttributes)
+  const attrs = getEventAttributes(event)
   for (const attr of attrs) {
     const keyLower = attr.key.toLowerCase()
     if (TD_EVENT_ATTR_KEYS.some((k) => keyLower.includes(k.toLowerCase()))) {
@@ -213,12 +182,12 @@ export function extractTrustDepositIdsFromMessageContent(
   return [...new Set(ids)]
 }
 
-export function extractTrustDepositIdsFromEvents(events: TxEventLike[], decodeAttributes?: boolean): string[] {
+export function extractTrustDepositIdsFromEvents(events: TxEventLike[]): string[] {
   const ids: string[] = []
   for (const ev of events) {
-    const attrs = getDecodedEventAttributes(ev, decodeAttributes)
+    const attrs = getEventAttributes(ev)
     if (attrs.length === 0) continue
-    if (!isPotentialTrustDepositEvent(ev, decodeAttributes)) continue
+    if (!isPotentialTrustDepositEvent(ev)) continue
     for (const attr of attrs) {
       const keyLower = attr.key.toLowerCase()
       const value = attr.value?.trim() ?? ''
@@ -241,11 +210,7 @@ export function extractTrustDepositIdsFromEvents(events: TxEventLike[], decodeAt
   return [...new Set(ids)]
 }
 
-export function extractImpactedTrustDepositIds(
-  messages: TdMessageLike[],
-  events?: TxEventLike[],
-  decodeEventAttributes?: boolean
-): string[] {
+export function extractImpactedTrustDepositIds(messages: TdMessageLike[], events?: TxEventLike[]): string[] {
   const fromMessages: string[] = []
   for (const msg of messages) {
     if (!isTdMessageType(msg.type)) continue
@@ -253,10 +218,10 @@ export function extractImpactedTrustDepositIds(
     const fromContent = extractTrustDepositIdsFromMessageContent(msg.content ?? undefined)
     fromMessages.push(...fromContent)
     if (Array.isArray(msg.txEvents) && msg.txEvents.length > 0) {
-      fromMessages.push(...extractTrustDepositIdsFromEvents(msg.txEvents, decodeEventAttributes ?? true))
+      fromMessages.push(...extractTrustDepositIdsFromEvents(msg.txEvents))
     }
   }
-  const fromEvents = events?.length ? extractTrustDepositIdsFromEvents(events, decodeEventAttributes ?? true) : []
+  const fromEvents = events?.length ? extractTrustDepositIdsFromEvents(events) : []
   return [...new Set([...fromMessages, ...fromEvents])]
 }
 
@@ -265,10 +230,7 @@ export function extractImpactedTrustDepositIds(
  * Each ID is assigned the event type from the first message that references it.
  * IDs only present in events (not in any message) are not in the map; callers should use "SYNC_LEDGER" for those.
  */
-export function buildDepositIdToEventTypeMap(
-  messages: TdMessageLike[],
-  decodeEventAttributes: boolean = true
-): Map<string, string> {
+export function buildDepositIdToEventTypeMap(messages: TdMessageLike[]): Map<string, string> {
   const map = new Map<string, string>()
   for (const msg of messages) {
     if (!isTdMessageType(msg.type)) continue
@@ -276,7 +238,7 @@ export function buildDepositIdToEventTypeMap(
     const ids: string[] = []
     ids.push(...extractTrustDepositIdsFromMessageContent(msg.content ?? undefined))
     if (Array.isArray(msg.txEvents) && msg.txEvents.length > 0) {
-      ids.push(...extractTrustDepositIdsFromEvents(msg.txEvents, decodeEventAttributes))
+      ids.push(...extractTrustDepositIdsFromEvents(msg.txEvents))
     }
     const eventType = messageTypeToEventType(msg.type)
     for (const id of [...new Set(ids)]) {
@@ -286,15 +248,12 @@ export function buildDepositIdToEventTypeMap(
   return map
 }
 
-export function buildDepositIdToEventTypeMapFromEvents(
-  events: TxEventLike[],
-  decodeEventAttributes: boolean = true
-): Map<string, string> {
+export function buildDepositIdToEventTypeMapFromEvents(events: TxEventLike[]): Map<string, string> {
   const map = new Map<string, string>()
   for (const ev of events) {
-    if (!isPotentialTrustDepositEvent(ev, decodeEventAttributes)) continue
+    if (!isPotentialTrustDepositEvent(ev)) continue
     const historyEventType = blockchainEventTypeToHistoryEventType(ev.type ?? '')
-    const attrs = getDecodedEventAttributes(ev, decodeEventAttributes)
+    const attrs = getEventAttributes(ev)
     const ids: string[] = []
     for (const attr of attrs) {
       const keyLower = attr.key.toLowerCase()

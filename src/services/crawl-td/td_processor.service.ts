@@ -288,7 +288,7 @@ export default class CrawlTrustDepositService extends BullableService {
   }
 
   private async processTrustDepositHeightSync(height: number, events: any[]) {
-    const depositIds = extractTrustDepositIdsFromEvents(events, true)
+    const depositIds = extractTrustDepositIdsFromEvents(events)
     if (!depositIds.length) return
 
     const dedupeKey = (id: string) => `${height}::${id}`
@@ -302,11 +302,11 @@ export default class CrawlTrustDepositService extends BullableService {
     }
 
     const allAccounts = new Set<string>(toProcess)
-    extractAccountAddressesFromEvents(events, true).forEach((a) => {
+    extractAccountAddressesFromEvents(events).forEach((a) => {
       allAccounts.add(a)
     })
 
-    const depositIdToEventType = buildDepositIdToEventTypeMapFromEvents(events, true)
+    const depositIdToEventType = buildDepositIdToEventTypeMapFromEvents(events)
 
     try {
       await this.broker.call(`${SERVICE.V1.HANDLE_ACCOUNTS.path}.bulkEnsureAccounts`, {

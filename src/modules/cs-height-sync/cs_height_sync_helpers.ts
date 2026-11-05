@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import {
   QueryClientImpl as CsQueryClientImpl,
   QueryGetCredentialSchemaRequest,
@@ -154,47 +153,17 @@ export function extractImpactedCredentialSchemaIdsFromMessages(messages: CsMessa
   return [...new Set(ids)]
 }
 
-function decodeAttributeValue(value: string | undefined): string {
-  if (value == null || value === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length % 4 === 0) {
-      return Buffer.from(value, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return value
+function getEventAttributes(event: TxEventLike): Array<{ key: string; value: string }> {
+  return (event.attributes ?? []).map((attr) => ({ key: attr.key ?? '', value: attr.value ?? '' }))
 }
 
-function decodeAttributeKey(key: string | undefined): string {
-  if (key == null || key === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(key) && key.length % 4 === 0) {
-      return Buffer.from(key, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return key
-}
-
-function getDecodedEventAttributes(
-  event: TxEventLike,
-  decodeAttributes?: boolean
-): Array<{ key: string; value: string }> {
-  return (event.attributes ?? []).map((attr) => ({
-    key: decodeAttributes ? decodeAttributeKey(attr.key) : (attr.key ?? ''),
-    value: decodeAttributes ? decodeAttributeValue(attr.value) : (attr.value ?? ''),
-  }))
-}
-
-export function isPotentialCredentialSchemaEvent(event: TxEventLike, decodeAttributes?: boolean): boolean {
+export function isPotentialCredentialSchemaEvent(event: TxEventLike): boolean {
   const eventType = (event.type ?? '').toLowerCase()
   if (eventType.includes('credential_schema') || (CS_EVENT_TYPES as readonly string[]).includes(eventType)) {
     return true
   }
 
-  const attrs = getDecodedEventAttributes(event, decodeAttributes)
+  const attrs = getEventAttributes(event)
   if (attrs.length === 0) return false
 
   for (const attr of attrs) {
@@ -219,12 +188,12 @@ export function isPotentialCredentialSchemaEvent(event: TxEventLike, decodeAttri
   return false
 }
 
-export function extractCredentialSchemaIdsFromEvents(events: TxEventLike[], decodeAttributes?: boolean): number[] {
+export function extractCredentialSchemaIdsFromEvents(events: TxEventLike[]): number[] {
   const ids: number[] = []
   for (const ev of events) {
-    const attrs = getDecodedEventAttributes(ev, decodeAttributes)
+    const attrs = getEventAttributes(ev)
     if (attrs.length === 0) continue
-    if (!isPotentialCredentialSchemaEvent(ev, decodeAttributes)) continue
+    if (!isPotentialCredentialSchemaEvent(ev)) continue
     for (const attr of attrs) {
       const keyLower = attr.key.toLowerCase()
       if (keyLower.includes('credential_schema_id') || keyLower === 'id') {
@@ -236,13 +205,9 @@ export function extractCredentialSchemaIdsFromEvents(events: TxEventLike[], deco
   return [...new Set(ids)]
 }
 
-export function extractImpactedCredentialSchemaIds(
-  messages: CsMessageLike[],
-  events?: TxEventLike[],
-  decodeEventAttributes?: boolean
-): number[] {
+export function extractImpactedCredentialSchemaIds(messages: CsMessageLike[], events?: TxEventLike[]): number[] {
   const fromMessages = extractImpactedCredentialSchemaIdsFromMessages(messages)
-  const fromEvents = events?.length ? extractCredentialSchemaIdsFromEvents(events, decodeEventAttributes) : []
+  const fromEvents = events?.length ? extractCredentialSchemaIdsFromEvents(events) : []
   return [...new Set([...fromEvents, ...fromMessages])]
 }
 

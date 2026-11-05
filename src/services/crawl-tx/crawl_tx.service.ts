@@ -536,10 +536,7 @@ export default class CrawlTxService extends BullableService {
             ` [HANDLE_TRANSACTION] Processing transaction ${i + 1}/${blockTransactions.length} (id: ${tx.id}, hash: ${tx.hash}) for block ${blockHeight}`
           )
 
-          const rawEvents = tx.data?.tx_response?.events
-          if (Array.isArray(rawEvents)) {
-            allPayloads.csEventsFromBlock.push(...rawEvents)
-          }
+          allPayloads.csEventsFromBlock.push(...this._decodeEventAttributes(tx.data?.tx_response?.events))
 
           const txPayloads = await this.processSingleTransaction(tx, trx)
 
@@ -706,7 +703,7 @@ export default class CrawlTxService extends BullableService {
 
       const payload = await this.processMessageTypes(msgInsert, [tx])
       payload.blockHeight = tx.height
-      payload.csEventsFromBlock = rawLogTx.tx_response?.events ?? []
+      payload.csEventsFromBlock = this._decodeEventAttributes(rawLogTx.tx_response?.events)
 
       if (config.handleTransaction && (config.handleTransaction as any).processMessagesInsideTransaction) {
         try {
@@ -1181,7 +1178,7 @@ export default class CrawlTxService extends BullableService {
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         const txEvents = this._decodeEventAttributes(parentTx?.data?.tx_response?.events)
-        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents, true)
+        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents)
         return {
           type: msg.type,
           content: msg.content ?? null,
@@ -1235,7 +1232,7 @@ export default class CrawlTxService extends BullableService {
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
           txCode: Number(parentTx?.code ?? parentTx?.data?.tx_response?.code ?? 0),
           msgIndex: Number(msg?.index ?? 0),
-          txEvents: parentTx?.data?.tx_response?.events ?? [],
+          txEvents: this._decodeEventAttributes(parentTx?.data?.tx_response?.events),
         }
       })
 
@@ -1248,7 +1245,7 @@ export default class CrawlTxService extends BullableService {
           content: msg.content ?? null,
           timestamp: parentTx?.timestamp ?? null,
           height: parentTx?.height ?? null,
-          txEvents: parentTx?.data?.tx_response?.events ?? [],
+          txEvents: this._decodeEventAttributes(parentTx?.data?.tx_response?.events),
         }
       })
 
@@ -1720,7 +1717,7 @@ export default class CrawlTxService extends BullableService {
     const blockHeight = payload.blockHeight
     if (useHeightSyncTR && typeof blockHeight === 'number') {
       const events = payload.csEventsFromBlock ?? []
-      const ecosystemIdsFromEvents = extractEcosystemIdsFromEvents(events, true)
+      const ecosystemIdsFromEvents = extractEcosystemIdsFromEvents(events)
       const handledEcosystemIds = new Set<number>()
       for (const msg of payload.ecosystemList ?? []) {
         const eventIds = Array.isArray(msg?.eventEcosystemIds) ? msg.eventEcosystemIds : []
@@ -1780,7 +1777,7 @@ export default class CrawlTxService extends BullableService {
     } else {
       const hasCsEvents = (payload.csEventsFromBlock ?? []).some(
         (event: { type?: string; attributes?: Array<{ key?: string; value?: string }> }) =>
-          isPotentialCredentialSchemaEvent(event, true)
+          isPotentialCredentialSchemaEvent(event)
       )
       if (useHeightSyncCS && hasCsEvents && typeof blockHeight === 'number') {
         const { runHeightSyncCS } = await import('../../modules/cs-height-sync/cs_height_sync_service')

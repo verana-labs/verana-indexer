@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import {
   QueryClientImpl as EcQueryClientImpl,
   QueryGetEcosystemRequest,
@@ -136,38 +135,8 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>
 }
 
-function decodeAttributeValue(value: string | undefined): string {
-  if (value == null || value === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length % 4 === 0) {
-      return Buffer.from(value, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return value
-}
-
-function decodeAttributeKey(key: string | undefined): string {
-  if (key == null || key === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(key) && key.length % 4 === 0) {
-      return Buffer.from(key, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return key
-}
-
-function getDecodedEventAttributes(
-  event: TxEventLike,
-  decodeAttributes?: boolean
-): Array<{ key: string; value: string }> {
-  return (event.attributes ?? []).map((attr) => ({
-    key: decodeAttributes ? decodeAttributeKey(attr.key) : (attr.key ?? ''),
-    value: decodeAttributes ? decodeAttributeValue(attr.value) : (attr.value ?? ''),
-  }))
+function getEventAttributes(event: TxEventLike): Array<{ key: string; value: string }> {
+  return (event.attributes ?? []).map((attr) => ({ key: attr.key ?? '', value: attr.value ?? '' }))
 }
 
 const TR_EVENT_TYPES = new Set<string>([
@@ -180,13 +149,13 @@ const TR_EVENT_TYPES = new Set<string>([
   'archive_ecosystem',
 ])
 
-export function extractEcosystemIdsFromEvents(events: TxEventLike[], decodeAttributes?: boolean): number[] {
+export function extractEcosystemIdsFromEvents(events: TxEventLike[]): number[] {
   const ids: number[] = []
   for (const ev of events) {
     const eventType = (ev.type ?? '').toLowerCase()
     if (!TR_EVENT_TYPES.has(eventType)) continue
 
-    const attrs = getDecodedEventAttributes(ev, decodeAttributes)
+    const attrs = getEventAttributes(ev)
     if (attrs.length === 0) continue
 
     for (const attr of attrs) {

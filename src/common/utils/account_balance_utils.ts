@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import { Network } from '../../network'
 
 const ACCOUNT_REGEX = /^verana1[0-9a-z]{10,}$/
@@ -28,27 +27,15 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>
 }
 
-function decodeAttr(v: string | undefined): string {
-  if (v == null || v === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(v) && v.length % 4 === 0) {
-      return Buffer.from(v, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return v
-}
-
 const TD_EVENT_ACCOUNT_KEYS = ['account', 'owner', 'deposit_account', 'creator', 'sender', 'validator']
 
-export function extractAccountAddressesFromEvents(events: TxEventLike[], decodeAttributes?: boolean): string[] {
+export function extractAccountAddressesFromEvents(events: TxEventLike[]): string[] {
   const out: string[] = []
   for (const ev of events ?? []) {
     const attrs = ev.attributes ?? []
     for (const attr of attrs) {
-      const key = (decodeAttributes ? decodeAttr(attr.key) : (attr.key ?? '')).toLowerCase()
-      const value = (decodeAttributes ? decodeAttr(attr.value) : (attr.value ?? '')).trim()
+      const key = (attr.key ?? '').toLowerCase()
+      const value = (attr.value ?? '').trim()
       if (value.length === 0) continue
       const matches = TD_EVENT_ACCOUNT_KEYS.some((k) => key.includes(k.toLowerCase()))
       if (matches && isValidAccountAddress(value)) out.push(value)
@@ -61,15 +48,14 @@ export function extractAccountAddressesFromTdSources(options: {
   messageContent?: Record<string, unknown> | null
   events?: TxEventLike[]
   ledgerAccount?: string | null
-  decodeEventAttributes?: boolean
 }): string[] {
-  const { messageContent, events, ledgerAccount, decodeEventAttributes = true } = options
+  const { messageContent, events, ledgerAccount } = options
   const set = new Set<string>()
   extractAccountAddressesFromContent(messageContent ?? null).forEach((a) => {
     set.add(a)
   })
   if (events?.length) {
-    extractAccountAddressesFromEvents(events, decodeEventAttributes).forEach((a) => {
+    extractAccountAddressesFromEvents(events).forEach((a) => {
       set.add(a)
     })
   }

@@ -68,7 +68,7 @@ export async function runHeightSyncTD(
     return
   }
 
-  const ids = extractImpactedTrustDepositIds(messages, events, true)
+  const ids = extractImpactedTrustDepositIds(messages, events)
   if (ids.length === 0) {
     logger.debug?.(`[TD Height Sync] TD activity at block=${blockHeight} but no trust deposit IDs extracted`)
     return
@@ -88,7 +88,6 @@ export async function runHeightSyncTD(
     extractAccountAddressesFromTdSources({
       messageContent: msg.content ?? undefined,
       events: msg.txEvents ?? events,
-      decodeEventAttributes: true,
     }).forEach((a) => {
       allAccounts.add(a)
     })
@@ -96,7 +95,6 @@ export async function runHeightSyncTD(
   if (events.length > 0) {
     extractAccountAddressesFromTdSources({
       events,
-      decodeEventAttributes: true,
     }).forEach((a) => {
       allAccounts.add(a)
     })
@@ -115,7 +113,7 @@ export async function runHeightSyncTD(
 
   logger.info?.(`[TD Height Sync] Starting sync at block=${blockHeight} for ${toProcess.length} deposit(s)`)
 
-  const depositIdToEventType = buildDepositIdToEventTypeMap(messages, true)
+  const depositIdToEventType = buildDepositIdToEventTypeMap(messages)
 
   try {
     const outcomes = await runWithConcurrency(toProcess, TD_CONCURRENCY, async (depositId) => {

@@ -105,8 +105,7 @@ export async function runHeightSyncCS(
 
   const ids = extractImpactedCredentialSchemaIds(
     payload.credentialSchemaMessages ?? [],
-    payload.csEventsFromBlock ?? [],
-    true
+    payload.csEventsFromBlock ?? []
   )
 
   if (ids.length === 0) {
