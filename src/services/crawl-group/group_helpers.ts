@@ -23,8 +23,9 @@ export const GROUP_ROUTED_MESSAGE_TYPES: string[] = Object.entries(GROUP_MSG_TYP
   .filter(([key]) => key !== 'CreateCorporation')
   .map(([, type]) => type)
 
-// Signed by the group or policy admin, which is the Corporation's policy account, so they only arrive inside a proposal.
+// Signed by the group or policy admin, which defaults to the Corporation's policy account.
 export const GROUP_ADMIN_MESSAGE_TYPES: string[] = [
+  GROUP_MSG_TYPES.WithdrawProposal,
   GROUP_MSG_TYPES.UpdateGroupMembers,
   GROUP_MSG_TYPES.UpdateGroupMetadata,
   GROUP_MSG_TYPES.UpdateGroupAdmin,

@@ -237,6 +237,27 @@ describe('buildProposalExecEvents (IDX-INDEXER-SUB-1 group-executed Msgs)', () =
     expect(event.proposalMessageIndex).toBe(0)
   })
 
+  it('emits a wrapped WithdrawProposal as an event on the withdrawn proposal', async () => {
+    tables.event = [execEvent()]
+    tables.event_attribute = execAttributes('PROPOSAL_EXECUTOR_RESULT_SUCCESS', 50, '13')
+    tables.group_proposal = [
+      { id: 12, group_policy_address: POLICY, messages: [] },
+      {
+        id: 13,
+        group_policy_address: POLICY,
+        messages: [{ '@type': '/cosmos.group.v1.MsgWithdrawProposal', address: POLICY, proposalId: '12' }],
+      },
+    ]
+
+    const [event] = await buildProposalExecEventsForTest(60)
+
+    expect(event.action).toBe('WithdrawProposal')
+    expect(event.entityType).toBe('GroupProposal')
+    expect(event.entityId).toBe('12')
+    expect(event.corporationId).toBe(3)
+    expect(event.proposalId).toBe('13')
+  })
+
   it('emits nothing when the execution failed', async () => {
     tables.event = [execEvent()]
     tables.event_attribute = [...execAttributes('PROPOSAL_EXECUTOR_RESULT_FAILURE'), submitAttribute()]
