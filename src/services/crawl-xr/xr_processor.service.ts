@@ -33,7 +33,7 @@ export default class ExchangeRateProcessorService extends BullableService {
 
   public async started() {
     try {
-      await detectStartMode((BULL_JOB_NAME as any).HANDLE_EXCHANGE_RATE)
+      await detectStartMode(BULL_JOB_NAME.HANDLE_EXCHANGE_RATE)
       await this.ensureCheckpoint()
       const crawlInterval = config.crawlExchangeRate.millisecondCrawl
 
@@ -62,7 +62,7 @@ export default class ExchangeRateProcessorService extends BullableService {
   }
 
   private async ensureCheckpoint() {
-    const jobName = (BULL_JOB_NAME as any).HANDLE_EXCHANGE_RATE
+    const jobName = BULL_JOB_NAME.HANDLE_EXCHANGE_RATE
     const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, [])
     return await this.checkpointManager.ensureCheckpoint(jobName, startBlock || 0)
   }
@@ -74,7 +74,7 @@ export default class ExchangeRateProcessorService extends BullableService {
 
     this.isProcessing = true
     try {
-      const jobName = (BULL_JOB_NAME as any).HANDLE_EXCHANGE_RATE
+      const jobName = BULL_JOB_NAME.HANDLE_EXCHANGE_RATE
       const [startBlock] = await BlockCheckpoint.getCheckpoint(jobName, [])
       let lastHeight = startBlock || 0
       const maxBlockBatch = config.crawlExchangeRate.chunkSize || 500

@@ -15,7 +15,12 @@ jest.mock('../../../../src/common/utils/blockHeight', () => ({
   getResolvedBlockHeight: jest.fn(async (height?: number) => height ?? 777),
 }))
 
+jest.mock('../../../../src/common/utils/block_time', () => ({
+  resolveEvaluationTime: jest.fn(async () => new Date('2026-10-01T00:30:00.000Z')),
+}))
+
 import { ServiceBroker } from 'moleculer'
+import { resolveEvaluationTime } from '../../../../src/common/utils/block_time'
 import ExchangeRate from '../../../../src/models/exchange_rate'
 import ExchangeRateHistory from '../../../../src/models/exchange_rate_history'
 import ExchangeRateApiService from '../../../../src/services/crawl-xr/xr_apis.service'
@@ -37,9 +42,9 @@ const rateRow = {
   quote_asset: 'uvna',
   rate: '1000',
   rate_scale: 6,
-  validity_duration: 3600,
+  validity_duration: '3600s',
   updated: '2026-10-01T00:00:00.000Z',
-  expires: '2027-10-01T00:00:00.000Z',
+  expires: '2026-10-01T01:00:00.000Z',
   state: true,
 }
 
@@ -56,6 +61,22 @@ describe('ExchangeRateApiService.getExchangeRate', () => {
 
     expect(res.exchange_rate).toMatchObject({ id: 3, rate: '1000', rate_scale: 6, state: true })
     expect(res.block_height).toBe(777)
+  })
+
+  it('serialises validity_duration as a protobuf JSON duration string', async () => {
+    chainResolvesTo(ExchangeRate, { ...rateRow, validity_duration: '90.5s' })
+
+    const res: any = await service.getExchangeRate({ params: { id: '3' }, meta: {} } as any)
+
+    expect(res.exchange_rate.validity_duration).toBe('90.5s')
+  })
+
+  it('omits validity_duration when the row has none instead of emitting a zero', async () => {
+    chainResolvesTo(ExchangeRate, { ...rateRow, validity_duration: null })
+
+    const res: any = await service.getExchangeRate({ params: { id: '3' }, meta: {} } as any)
+
+    expect(res.exchange_rate).not.toHaveProperty('validity_duration')
   })
 
   it('echoes At-Block-Height as block_height on the history path', async () => {
@@ -131,6 +152,37 @@ describe('ExchangeRateApiService.getPrice', () => {
 
     expect(res.price).toBe('5000')
     expect(res.block_height).toBe(200)
+  })
+
+  it('evaluates expiry at the requested block, not the wall clock', async () => {
+    chainResolvesTo(ExchangeRateHistory, { ...rateRow, id: 55, exchange_rate_id: 3 })
+
+    const res: any = await service.getPrice({
+      params: { ...pair, amount: '5000000' },
+      meta: { blockHeight: 200 },
+    } as any)
+
+    expect(resolveEvaluationTime).toHaveBeenCalledWith(200, expect.anything())
+    expect(res.price).toBe('5000')
+  })
+
+  it('evaluates expiry at the latest indexed block when no height is given', async () => {
+    chainResolvesTo(ExchangeRate, rateRow)
+    ;(resolveEvaluationTime as jest.Mock).mockResolvedValueOnce(new Date('2026-10-01T02:00:00.000Z'))
+
+    const res: any = await service.getPrice({ params: { ...pair, amount: '5000000' }, meta: {} } as any)
+
+    expect(resolveEvaluationTime).toHaveBeenCalledWith(undefined, expect.anything())
+    expect(res).toEqual({ error: 'Exchange rate is disabled or expired', code: 410 })
+  })
+
+  it('treats a rate expiring exactly at the evaluated block time as expired', async () => {
+    chainResolvesTo(ExchangeRate, rateRow)
+    ;(resolveEvaluationTime as jest.Mock).mockResolvedValueOnce(new Date(rateRow.expires))
+
+    const res: any = await service.getPrice({ params: { ...pair, amount: '5000000' }, meta: {} } as any)
+
+    expect(res.code).toBe(410)
   })
 })
 

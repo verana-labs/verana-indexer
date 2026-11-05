@@ -3945,7 +3945,7 @@
             }
           },
           "410": {
-            "description": "The matching ExchangeRate entry is disabled or expired",
+            "description": "The matching ExchangeRate entry is disabled, or expired at the block time of the evaluated block (At-Block-Height, or the latest indexed block)",
             "content": {
               "application/json": {
                 "schema": {
@@ -8674,7 +8674,7 @@
           "quote_asset": { "type": "string" },
           "rate": { "type": "string" },
           "rate_scale": { "type": "integer" },
-          "validity_duration": { "type": "integer" },
+          "validity_duration": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,9})?s$", "description": "Validity window as a duration (e.g. \"3600s\"). Omitted when unset." },
           "updated": { "type": "string", "format": "date-time" },
           "expires": { "type": "string", "format": "date-time" },
           "state": { "type": "boolean" }

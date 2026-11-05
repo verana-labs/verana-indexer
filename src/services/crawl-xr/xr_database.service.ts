@@ -2,6 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
+import { toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
 
 export interface ExchangeRateRow {
@@ -12,13 +13,27 @@ export interface ExchangeRateRow {
   quote_asset: string
   rate: string
   rate_scale: number
-  validity_duration: number
+  validity_duration: string | null
   updated: string | null
   expires: string | null
   state: boolean
 }
 
-const HISTORY_FIELDS: (keyof ExchangeRateRow)[] = ['rate', 'rate_scale', 'validity_duration', 'expires', 'state']
+const HISTORY_FIELDS: (keyof ExchangeRateRow)[] = [
+  'rate',
+  'rate_scale',
+  'validity_duration',
+  'updated',
+  'expires',
+  'state',
+]
+
+// pg returns timestamps as Date and numerics as strings, the ledger serializer gives ISO strings.
+function normalizeField(field: keyof ExchangeRateRow, value: unknown): unknown {
+  if (field === 'updated' || field === 'expires') return toIso(value) ?? null
+  if (field === 'rate') return value == null ? null : String(value)
+  return value ?? null
+}
 
 function computeExchangeRateChanges(
   previous: ExchangeRateRow | undefined,
@@ -27,13 +42,15 @@ function computeExchangeRateChanges(
   const changes: Record<string, unknown> = {}
   if (!previous) {
     for (const field of HISTORY_FIELDS) {
-      changes[field] = next[field]
+      changes[field] = normalizeField(field, next[field])
     }
     return changes
   }
   for (const field of HISTORY_FIELDS) {
-    if (String(previous[field]) !== String(next[field])) {
-      changes[field] = { before: previous[field], after: next[field] }
+    const before = normalizeField(field, previous[field])
+    const after = normalizeField(field, next[field])
+    if (before !== after) {
+      changes[field] = { before, after }
     }
   }
   return Object.keys(changes).length ? changes : null
@@ -56,7 +73,14 @@ export default class ExchangeRateDatabaseService extends BaseService {
     const eventType = ctx.params.eventType ?? 'SYNC_LEDGER'
 
     await knex.transaction(async (trx) => {
-      const previous = await trx<ExchangeRateRow>('exchange_rates').where({ id: exchangeRate.id }).first()
+      // Diff against the state before this height, so a replay rewrites the same history row.
+      const previous = await trx<ExchangeRateRow & { exchange_rate_id: number; height: number }>(
+        'exchange_rate_history'
+      )
+        .where({ exchange_rate_id: exchangeRate.id })
+        .where('height', '<', blockHeight)
+        .orderBy('height', 'desc')
+        .first()
 
       const row = {
         id: exchangeRate.id,
