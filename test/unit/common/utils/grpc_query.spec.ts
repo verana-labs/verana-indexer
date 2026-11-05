@@ -73,6 +73,19 @@ describe('withAbciQueryClient', () => {
     expect(queryAbci).toHaveBeenCalledTimes(1)
   })
 
+  it('waits only for heights the retry window can cover', async () => {
+    const value = new Uint8Array([1])
+    queryAbci.mockRejectedValueOnce(FUTURE_HEIGHT).mockResolvedValue({ value })
+
+    const covered = query(321411)
+    await jest.advanceTimersByTimeAsync(500)
+    await expect(covered).resolves.toBe(value)
+
+    queryAbci.mockReset().mockRejectedValue(FUTURE_HEIGHT)
+    await expect(query(321412)).rejects.toBe(FUTURE_HEIGHT)
+    expect(queryAbci).toHaveBeenCalledTimes(1)
+  })
+
   it('does not retry other errors', async () => {
     queryAbci.mockRejectedValue(NOT_FOUND)
 

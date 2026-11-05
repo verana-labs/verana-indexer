@@ -21,7 +21,7 @@ export function getRpcBaseUrl(): string {
 }
 
 const FUTURE_HEIGHT_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 4000, 4000, 4000]
-const MAX_WAITED_HEIGHT_LAG = 10
+const MAX_WAITED_HEIGHT_LAG = 3
 
 export function isAbciNotFound(error: unknown): boolean {
   return /code = NotFound/.test((error as Error)?.message ?? '')
