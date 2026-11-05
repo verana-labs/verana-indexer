@@ -5,6 +5,7 @@ import {
 } from '@verana-labs/verana-types/codec/verana/xr/v1/query'
 import type { ExchangeRate as LedgerExchangeRate } from '@verana-labs/verana-types/codec/verana/xr/v1/tx'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import { serializeDuration } from '../../common/utils/duration'
 import { withAbciQueryClient } from '../../common/utils/grpc_query'
 import type { ExchangeRateRow } from '../../services/crawl-xr/xr_database.service'
 
@@ -17,7 +18,7 @@ export function serializeLedgerExchangeRate(rate: LedgerExchangeRate): ExchangeR
     quote_asset: rate.quoteAsset,
     rate: rate.rate,
     rate_scale: rate.rateScale,
-    validity_duration: rate.validityDuration ? Number(rate.validityDuration.seconds) : 0,
+    validity_duration: serializeDuration(rate.validityDuration),
     updated: dateToIsoOrNull(rate.updated),
     expires: dateToIsoOrNull(rate.expires),
     state: rate.state,

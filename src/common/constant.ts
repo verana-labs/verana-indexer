@@ -40,6 +40,7 @@ export const BULL_JOB_NAME = {
   CRAWL_VALIDATOR: 'crawl:validator',
   HANDLE_TRUST_DEPOSIT: 'handle:trust-deposit',
   HANDLE_DIGEST: 'handle:digest',
+  HANDLE_EXCHANGE_RATE: 'handle:exchange-rate',
   HANDLE_DELEGATION: 'handle:delegation',
   HANDLE_GROUP: 'handle:group',
   CRAWL_GENESIS_VALIDATOR: 'crawl:genesis-validator',

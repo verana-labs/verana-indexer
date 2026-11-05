@@ -11,7 +11,7 @@ export default class ExchangeRateHistory extends BaseModel {
   quote_asset!: string
   rate!: string
   rate_scale!: number
-  validity_duration!: number
+  validity_duration!: string | null
   updated!: string | null
   expires!: string | null
   state!: boolean
@@ -32,7 +32,7 @@ export default class ExchangeRateHistory extends BaseModel {
         quote_asset: { type: 'string', maxLength: 255 },
         rate: { type: 'string' },
         rate_scale: { type: 'integer' },
-        validity_duration: { type: 'integer' },
+        validity_duration: { type: ['string', 'null'] },
         updated: { type: ['string', 'null'] },
         expires: { type: ['string', 'null'] },
         state: { type: 'boolean' },

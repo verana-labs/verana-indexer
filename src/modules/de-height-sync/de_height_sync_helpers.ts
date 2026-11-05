@@ -26,6 +26,7 @@ import {
 import type { Timestamp } from 'cosmjs-types/google/protobuf/timestamp.js'
 import { fromTimestamp } from 'cosmjs-types/helpers.js'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
+import { serializeDuration } from '../../common/utils/duration'
 import { withAbciQueryClient } from '../../common/utils/grpc_query'
 
 const ALLOWED_MSG_ALLOWANCE_TYPE_URL = '/cosmos.feegrant.v1beta1.AllowedMsgAllowance'
@@ -69,16 +70,6 @@ export interface VSOperatorAuthorizationRow {
 function serializeCoins(coins: Coin[] | undefined): DenomAmount[] | null {
   if (!coins || coins.length === 0) return null
   return coins.map((coin) => ({ denom: coin.denom, amount: String(coin.amount) }))
-}
-
-// Protobuf JSON duration: integer seconds, at most nine fractional digits, no float rounding.
-function serializeDuration(duration: Duration | undefined): string | null {
-  if (!duration) return null
-  const seconds = Number(duration.seconds ?? 0)
-  const nanos = Number(duration.nanos ?? 0)
-  if (seconds === 0 && nanos === 0) return null
-  const fraction = nanos ? `.${String(nanos).padStart(9, '0').replace(/0+$/, '')}` : ''
-  return `${seconds}${fraction}s`
 }
 
 export function serializeLedgerOperatorAuthorization(

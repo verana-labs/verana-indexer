@@ -2,6 +2,7 @@ import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
 import { Context, ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import ApiResponder from '../../common/utils/apiResponse'
+import { resolveEvaluationTime } from '../../common/utils/block_time'
 import { getBlockHeight, getResolvedBlockHeight } from '../../common/utils/blockHeight'
 import { dateToIsoOrNull, parseDatetimeParam } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
@@ -29,7 +30,7 @@ function serializeExchangeRateRow(row: any) {
     quote_asset: row.quote_asset,
     rate: String(row.rate),
     rate_scale: Number(row.rate_scale),
-    validity_duration: Number(row.validity_duration),
+    ...(row.validity_duration ? { validity_duration: String(row.validity_duration) } : {}),
     updated: dateToIsoOrNull(row.updated),
     expires: dateToIsoOrNull(row.expires),
     state: Boolean(row.state),
@@ -328,7 +329,8 @@ export default class ExchangeRateApiService extends BaseService {
         return ApiResponder.error(ctx, 'Exchange rate not found', 404)
       }
 
-      const isExpired = !row.expires || new Date(row.expires) <= new Date()
+      const evaluatedAt = await resolveEvaluationTime(blockHeight, { logContext: '[xr:getPrice]', logger: this.logger })
+      const isExpired = !row.expires || new Date(row.expires) <= evaluatedAt
       if (!row.state || isExpired) {
         return ApiResponder.error(ctx, 'Exchange rate is disabled or expired', 410)
       }
