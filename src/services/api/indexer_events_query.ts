@@ -1027,15 +1027,8 @@ async function loadSubmitProposalContent(proposalId: number): Promise<Record<str
   return submitMessage?.content as Record<string, unknown> | undefined
 }
 
-// Falls back to the submit tx stored in the DB, so pruned proposals and not-yet-processed blocks still resolve.
-async function resolveProposalPolicyAddress(proposalId: number): Promise<string | undefined> {
-  const proposal = await knex('group_proposal').select('group_policy_address').where('id', proposalId).first()
-  if (proposal?.group_policy_address) return String(proposal.group_policy_address)
-  return readAddress((await loadSubmitProposalContent(proposalId))?.group_policy_address)
-}
-
-// Prefers the submit tx: group_proposal is filled by the group processor, which runs after this block's events.
-async function loadProposalMessages(
+// Submit tx first: group_proposal lags this block's events; it is the fallback when the submit tx is not indexed.
+async function loadProposal(
   proposalId: number
 ): Promise<{ policyAddress?: string; messages: Array<Record<string, unknown>> } | undefined> {
   const content = await loadSubmitProposalContent(proposalId)
@@ -1108,7 +1101,7 @@ async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEv
     if (shortExecutorResult(parseEventAttrValue(attributes.result)) !== 'SUCCESS') continue
     const proposalId = readPositiveInteger(parseEventAttrValue(attributes.proposal_id))
     if (!proposalId) continue
-    const proposal = await loadProposalMessages(proposalId)
+    const proposal = await loadProposal(proposalId)
     if (!proposal) continue
 
     for (const [index, message] of proposal.messages.entries()) {
@@ -1189,7 +1182,7 @@ async function toGroupEvent(row: EventRow): Promise<IndexerTxEvent> {
   } else if (groupId) {
     anchor = await loadCorporationByGroupId(groupId)
   } else if (proposalId) {
-    const resolvedAddress = await resolveProposalPolicyAddress(proposalId)
+    const resolvedAddress = (await loadProposal(proposalId))?.policyAddress
     if (resolvedAddress) anchor = await loadCorporationByPolicyAddress(resolvedAddress)
     entityType = 'GroupProposal'
     entityId = String(proposalId)
