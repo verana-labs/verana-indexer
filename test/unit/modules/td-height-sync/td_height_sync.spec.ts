@@ -1,5 +1,9 @@
 import type { ServiceBroker } from 'moleculer'
 import { withAbciQueryClient } from '../../../../src/common/utils/grpc_query'
+import {
+  buildDepositIdToEventTypeMapFromEvents,
+  extractImpactedTrustDepositIds,
+} from '../../../../src/modules/td-height-sync/td_height_sync_helpers'
 import { runHeightSyncTD } from '../../../../src/modules/td-height-sync/td_height_sync_service'
 
 jest.mock('../../../../src/common/utils/grpc_query', () => ({
@@ -50,11 +54,11 @@ describe('runHeightSyncTD', () => {
     })
   })
 
-  it('skips a corporation without a trust deposit', async () => {
+  it('fails the block when the ledger has no trust deposit for the corporation', async () => {
     mockAbci.mockRejectedValue(NOT_FOUND)
     const { broker, call } = mockBroker()
 
-    await expect(runHeightSyncTD(broker, payload, 500)).resolves.toBeUndefined()
+    await expect(runHeightSyncTD(broker, payload, 500)).rejects.toThrow('Failed to sync deposit(s) 7 at block=500')
     expect(call).not.toHaveBeenCalledWith(expect.stringContaining('syncFromLedger'), expect.anything())
   })
 
@@ -63,5 +67,52 @@ describe('runHeightSyncTD', () => {
     const { broker } = mockBroker()
 
     await expect(runHeightSyncTD(broker, payload, 500)).rejects.toThrow('Failed to sync deposit(s) 7 at block=500')
+  })
+})
+
+describe('trust deposit id extraction', () => {
+  const reclaim = {
+    type: 'reclaim_trust_deposit_yield',
+    attributes: [
+      { key: 'corporation_id', value: '7' },
+      { key: 'account', value: 'verana1corp' },
+      { key: 'claimed_yield', value: '1400' },
+    ],
+  }
+  const slash = {
+    type: 'slash_trust_deposit',
+    attributes: [
+      { key: 'corporation_id', value: '9' },
+      { key: 'amount', value: '1000' },
+    ],
+  }
+  const unrelated = [
+    { type: 'transfer', attributes: [{ key: 'recipient', value: 'verana1other' }] },
+    { type: 'create_participant_session', attributes: [{ key: 'payee_fees_to_account', value: '1000' }] },
+    { type: 'yield_transfer', attributes: [{ key: 'transfer_amount', value: '12' }] },
+  ]
+
+  it('reads only the corporation of trust deposit events and messages', () => {
+    const ids = extractImpactedTrustDepositIds(
+      [
+        {
+          type: '/verana.td.v1.MsgReclaimTrustDepositYield',
+          content: { corporation: 'verana1corp', operator: 'verana1op' },
+          txEvents: [reclaim, ...unrelated],
+        },
+      ],
+      [slash, ...unrelated]
+    )
+
+    expect(ids.sort()).toEqual(['9', 'verana1corp'])
+  })
+
+  it('maps each trust deposit event to its history type', () => {
+    const map = buildDepositIdToEventTypeMapFromEvents([reclaim, slash, ...unrelated])
+
+    expect([...map.entries()]).toEqual([
+      ['verana1corp', 'RECLAIM_YIELD'],
+      ['9', 'SLASH_TRUST_DEPOSIT'],
+    ])
   })
 })

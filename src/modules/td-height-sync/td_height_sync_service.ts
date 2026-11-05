@@ -118,10 +118,7 @@ export async function runHeightSyncTD(
   const outcomes = await runWithConcurrency(toProcess, TD_CONCURRENCY, async (depositId) => {
     try {
       const ledgerState = await fetchTrustDeposit(depositId, blockHeight)
-      if (!ledgerState) {
-        logger.warn?.(`[TD Height Sync] No ledger state for id=${depositId} at block=${blockHeight}`)
-        return true
-      }
+      if (!ledgerState) throw new Error('no ledger state')
       const eventType = depositIdToEventType.get(depositId) ?? 'SYNC_LEDGER'
       const result = (await broker.call(`${SERVICE.V1.TrustDepositDatabaseService.path}.syncFromLedger`, {
         ledgerTrustDeposit: ledgerState,

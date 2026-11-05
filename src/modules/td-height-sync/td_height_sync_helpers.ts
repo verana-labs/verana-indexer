@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import {
   QueryGetTrustDepositRequest,
   QueryClientImpl as TdQueryClientImpl,
@@ -58,31 +59,23 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>
 }
 
-function getEventAttributes(event: TxEventLike): Array<{ key: string; value: string }> {
-  return (event.attributes ?? []).map((attr) => ({ key: attr.key ?? '', value: attr.value ?? '' }))
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8')
 }
 
-const TD_EVENT_ATTR_KEYS = ['trust_deposit_id', 'account', 'owner', 'deposit_account']
+function getAttr(event: TxEventLike, key: string): string | undefined {
+  for (const attr of event.attributes ?? []) {
+    if (attr.key === undefined) continue
+    if (attr.key === key) return attr.value
+    if (decodeBase64(attr.key) === key) return attr.value === undefined ? undefined : decodeBase64(attr.value)
+  }
+  return undefined
+}
 
-function isPotentialTrustDepositEvent(event: TxEventLike): boolean {
-  const eventType = (event.type ?? '').trim()
-  if (TD_BLOCKCHAIN_EVENT_TYPES.has(eventType)) return true
-  const eventTypeLower = eventType.toLowerCase()
-  if (
-    eventTypeLower.includes('trust_deposit') ||
-    eventTypeLower.includes('trustdeposit') ||
-    eventTypeLower.includes('verana.td')
-  ) {
-    return true
-  }
-  const attrs = getEventAttributes(event)
-  for (const attr of attrs) {
-    const keyLower = attr.key.toLowerCase()
-    if (TD_EVENT_ATTR_KEYS.some((k) => keyLower.includes(k.toLowerCase()))) {
-      return true
-    }
-  }
-  return false
+function getTrustDepositIdFromEvent(event: TxEventLike): string | undefined {
+  if (!TD_BLOCKCHAIN_EVENT_TYPES.has((event.type ?? '').trim())) return undefined
+  const id = (getAttr(event, 'account') ?? getAttr(event, 'corporation_id'))?.trim()
+  return id || undefined
 }
 
 export function blockchainEventTypeToHistoryEventType(blockchainEventType: string): string {
@@ -167,15 +160,7 @@ export function extractTrustDepositIdsFromMessageContent(
 ): string[] {
   if (!content || typeof content !== 'object') return []
   const ids: string[] = []
-  const candidates = [
-    content.corporation,
-    content.corporationId,
-    content.account,
-    content.depositAccount,
-    content.owner,
-    content.trustDepositId,
-  ]
-  for (const raw of candidates) {
+  for (const raw of [content.corporation, content.corporationId, content.corporation_id]) {
     if (raw === null || raw === undefined) continue
     const s = String(raw).trim()
     if (s.length > 0) ids.push(s)
@@ -186,27 +171,8 @@ export function extractTrustDepositIdsFromMessageContent(
 export function extractTrustDepositIdsFromEvents(events: TxEventLike[]): string[] {
   const ids: string[] = []
   for (const ev of events) {
-    const attrs = getEventAttributes(ev)
-    if (attrs.length === 0) continue
-    if (!isPotentialTrustDepositEvent(ev)) continue
-    for (const attr of attrs) {
-      const keyLower = attr.key.toLowerCase()
-      const value = attr.value?.trim() ?? ''
-      if (value.length === 0) continue
-      if (
-        keyLower.includes('trust_deposit_id') ||
-        keyLower.includes('account') ||
-        keyLower.includes('owner') ||
-        keyLower.includes('deposit_account')
-      ) {
-        const num = Number(value)
-        if (Number.isInteger(num) && num > 0) {
-          ids.push(String(num))
-        } else {
-          ids.push(value)
-        }
-      }
-    }
+    const id = getTrustDepositIdFromEvent(ev)
+    if (id) ids.push(id)
   }
   return [...new Set(ids)]
 }
@@ -252,31 +218,8 @@ export function buildDepositIdToEventTypeMap(messages: TdMessageLike[]): Map<str
 export function buildDepositIdToEventTypeMapFromEvents(events: TxEventLike[]): Map<string, string> {
   const map = new Map<string, string>()
   for (const ev of events) {
-    if (!isPotentialTrustDepositEvent(ev)) continue
-    const historyEventType = blockchainEventTypeToHistoryEventType(ev.type ?? '')
-    const attrs = getEventAttributes(ev)
-    const ids: string[] = []
-    for (const attr of attrs) {
-      const keyLower = attr.key.toLowerCase()
-      const value = attr.value?.trim() ?? ''
-      if (value.length === 0) continue
-      if (
-        keyLower.includes('trust_deposit_id') ||
-        keyLower.includes('account') ||
-        keyLower.includes('owner') ||
-        keyLower.includes('deposit_account')
-      ) {
-        const num = Number(value)
-        if (Number.isInteger(num) && num > 0) {
-          ids.push(String(num))
-        } else {
-          ids.push(value)
-        }
-      }
-    }
-    for (const id of [...new Set(ids)]) {
-      if (!map.has(id)) map.set(id, historyEventType)
-    }
+    const id = getTrustDepositIdFromEvent(ev)
+    if (id && !map.has(id)) map.set(id, blockchainEventTypeToHistoryEventType(ev.type ?? ''))
   }
   return map
 }
