@@ -60,29 +60,14 @@ export async function runHeightSyncXR(
     return
   }
 
-  let ledgerRates: Awaited<ReturnType<typeof fetchExchangeRates>> = []
-  try {
-    ledgerRates = await fetchExchangeRates(blockHeight)
-  } catch (err: any) {
-    broker.logger.warn(
-      `[XR Height Sync] Failed to fetch exchange rates at block=${blockHeight}: ${err?.message || String(err)}`
-    )
-    return
-  }
-
+  const ledgerRates = await fetchExchangeRates(blockHeight)
   const resolveEventType = buildEventTypeResolverFromEvents(events)
 
   for (const ledgerRate of ledgerRates) {
-    try {
-      await broker.call(`${SERVICE.V1.ExchangeRateDatabaseService.path}.syncFromLedger`, {
-        exchangeRate: serializeLedgerExchangeRate(ledgerRate),
-        blockHeight,
-        eventType: resolveEventType(ledgerRate.id),
-      })
-    } catch (err: any) {
-      broker.logger.warn(
-        `[XR Height Sync] Sync failed id=${ledgerRate.id} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    await broker.call(`${SERVICE.V1.ExchangeRateDatabaseService.path}.syncFromLedger`, {
+      exchangeRate: serializeLedgerExchangeRate(ledgerRate),
+      blockHeight,
+      eventType: resolveEventType(ledgerRate.id),
+    })
   }
 }

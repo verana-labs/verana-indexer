@@ -55,10 +55,10 @@ export async function syncCredentialSchemas(
   broker: ServiceBroker,
   blockHeight: number,
   credentialSchemaIds: number[]
-): Promise<{ synced: number; failed: number }> {
+): Promise<number> {
   const logger = getCsHeightSyncLogger(broker)
   const ids = [...new Set(credentialSchemaIds)].filter((id): id is number => Number.isInteger(id) && id > 0)
-  if (ids.length === 0) return { synced: 0, failed: 0 }
+  if (ids.length === 0) return 0
   const blockHeightNum = Number(blockHeight) || 0
   const outcomes = await runWithConcurrency(ids, CS_CONCURRENCY, async (id) => {
     try {
@@ -85,9 +85,11 @@ export async function syncCredentialSchemas(
       return false
     }
   })
-  const synced = outcomes.filter(Boolean).length
-  const failed = ids.length - synced
-  return { synced, failed }
+  const failedIds = ids.filter((_, i) => !outcomes[i])
+  if (failedIds.length > 0) {
+    throw new Error(`[CS Height Sync] Failed to sync schema(s) ${failedIds.join(',')} at block=${blockHeightNum}`)
+  }
+  return ids.length
 }
 
 export async function runHeightSyncCS(
@@ -117,12 +119,6 @@ export async function runHeightSyncCS(
 
   logger.info?.(`[CS Height Sync] Starting sync at block=${blockHeight} for ${ids.length} schema(s): ${ids.join(',')}`)
 
-  try {
-    const result = await syncCredentialSchemas(broker, blockHeight, ids)
-    logger.info?.(
-      `[CS Height Sync] Completed sync at block=${blockHeight}: synced=${result.synced}, failed=${result.failed}`
-    )
-  } catch (error: unknown) {
-    logger.error?.(`[CS Height Sync] Failed sync at block=${blockHeight}: ${formatCsHeightSyncError(error)}`)
-  }
+  const synced = await syncCredentialSchemas(broker, blockHeight, ids)
+  logger.info?.(`[CS Height Sync] Completed sync at block=${blockHeight}: synced=${synced}`)
 }

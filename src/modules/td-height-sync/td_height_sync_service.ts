@@ -115,32 +115,30 @@ export async function runHeightSyncTD(
 
   const depositIdToEventType = buildDepositIdToEventTypeMap(messages)
 
-  try {
-    const outcomes = await runWithConcurrency(toProcess, TD_CONCURRENCY, async (depositId) => {
-      try {
-        const ledgerState = await fetchTrustDeposit(depositId, blockHeight)
-        if (!ledgerState) {
-          logger.warn?.(`[TD Height Sync] No ledger state for id=${depositId} at block=${blockHeight}`)
-          return false
-        }
-        const eventType = depositIdToEventType.get(depositId) ?? 'SYNC_LEDGER'
-        const result = (await broker.call(`${SERVICE.V1.TrustDepositDatabaseService.path}.syncFromLedger`, {
-          ledgerTrustDeposit: ledgerState,
-          blockHeight,
-          eventType,
-        })) as { success?: boolean }
-        return Boolean(result?.success)
-      } catch (error: unknown) {
-        logger.warn?.(
-          `[TD Height Sync] Sync failed id=${depositId} at block=${blockHeight}: ${formatTdHeightSyncError(error)}`
-        )
-        return false
+  const outcomes = await runWithConcurrency(toProcess, TD_CONCURRENCY, async (depositId) => {
+    try {
+      const ledgerState = await fetchTrustDeposit(depositId, blockHeight)
+      if (!ledgerState) {
+        logger.warn?.(`[TD Height Sync] No ledger state for id=${depositId} at block=${blockHeight}`)
+        return true
       }
-    })
-    const synced = outcomes.filter(Boolean).length
-    const failed = toProcess.length - synced
-    logger.info?.(`[TD Height Sync] Completed at block=${blockHeight}: synced=${synced}, failed=${failed}`)
-  } catch (error: unknown) {
-    logger.error?.(`[TD Height Sync] Failed at block=${blockHeight}: ${formatTdHeightSyncError(error)}`)
+      const eventType = depositIdToEventType.get(depositId) ?? 'SYNC_LEDGER'
+      const result = (await broker.call(`${SERVICE.V1.TrustDepositDatabaseService.path}.syncFromLedger`, {
+        ledgerTrustDeposit: ledgerState,
+        blockHeight,
+        eventType,
+      })) as { success?: boolean }
+      return Boolean(result?.success)
+    } catch (error: unknown) {
+      logger.warn?.(
+        `[TD Height Sync] Sync failed id=${depositId} at block=${blockHeight}: ${formatTdHeightSyncError(error)}`
+      )
+      return false
+    }
+  })
+  const failedIds = toProcess.filter((_, i) => !outcomes[i])
+  if (failedIds.length > 0) {
+    throw new Error(`[TD Height Sync] Failed to sync deposit(s) ${failedIds.join(',')} at block=${blockHeight}`)
   }
+  logger.info?.(`[TD Height Sync] Completed at block=${blockHeight} for ${toProcess.length} deposit(s)`)
 }

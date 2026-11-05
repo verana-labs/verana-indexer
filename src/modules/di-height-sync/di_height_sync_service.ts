@@ -59,27 +59,11 @@ export async function runHeightSyncDI(
   const digests = extractStoredDigests(events)
 
   for (const digest of digests) {
-    let ledgerDigest: Awaited<ReturnType<typeof fetchDigest>>
-    try {
-      ledgerDigest = await fetchDigest(digest, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DI Height Sync] Failed to fetch digest=${digest} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-      continue
-    }
-
+    const ledgerDigest = await fetchDigest(digest, blockHeight)
     if (!ledgerDigest) continue
-
-    try {
-      await broker.call(`${SERVICE.V1.DigestDatabaseService.path}.syncFromLedger`, {
-        digest: serializeLedgerDigest(ledgerDigest),
-        blockHeight,
-      })
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DI Height Sync] Sync failed digest=${digest} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    await broker.call(`${SERVICE.V1.DigestDatabaseService.path}.syncFromLedger`, {
+      digest: serializeLedgerDigest(ledgerDigest),
+      blockHeight,
+    })
   }
 }

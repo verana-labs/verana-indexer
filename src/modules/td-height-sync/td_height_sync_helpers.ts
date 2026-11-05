@@ -5,7 +5,7 @@ import {
 import { TrustDepositEventType } from '../../common/constant'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { withAbciQueryClient } from '../../common/utils/grpc_query'
+import { isAbciNotFound, withAbciQueryClient } from '../../common/utils/grpc_query'
 import { VeranaTrustDepositMessageTypes } from '../../common/verana-message-types'
 
 async function resolveCorporation(idOrAddress: string): Promise<{ corporationId: number; address: string } | null> {
@@ -152,8 +152,9 @@ export async function fetchTrustDeposit(
         slash_count: Number(td.slashCount ?? 0),
       }
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }
 

@@ -1758,23 +1758,15 @@ export default class CrawlTxService extends BullableService {
 
       const extraEcosystemIdsFromEvents = ecosystemIdsFromEvents.filter((id) => !handledEcosystemIds.has(id))
       if (extraEcosystemIdsFromEvents.length > 0) {
-        await runStage('ecosystem-events', async () => {
-          try {
-            await this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
-              ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
-                type: 'EVENT_SYNC_TR',
-                height: blockHeight,
-                content: { id },
-              })),
-            })
-          } catch (err: any) {
-            this.logger.warn(
-              `[processPayloads] Failed to run EC height-sync from events at block=${blockHeight}: ${
-                err?.message || String(err)
-              }`
-            )
-          }
-        })
+        await runStage('ecosystem-events', () =>
+          this.broker.call(`${SERVICE.V1.EcosystemMessageProcessorService.path}.handleEcosystemMessages`, {
+            ecosystemList: extraEcosystemIdsFromEvents.map((id: number) => ({
+              type: 'EVENT_SYNC_TR',
+              height: blockHeight,
+              content: { id },
+            })),
+          })
+        )
       }
     }
 

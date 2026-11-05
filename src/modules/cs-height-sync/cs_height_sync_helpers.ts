@@ -3,7 +3,7 @@ import {
   QueryGetCredentialSchemaRequest,
 } from '@verana-labs/verana-types/codec/verana/cs/v1/query'
 import { CredentialSchema } from '@verana-labs/verana-types/codec/verana/cs/v1/types'
-import { withAbciQueryClient } from '../../common/utils/grpc_query'
+import { isAbciNotFound, withAbciQueryClient } from '../../common/utils/grpc_query'
 import { VeranaCredentialSchemaMessageTypes } from '../../common/verana-message-types'
 import { CS_EVENT_TYPES } from '../../services/crawl-cs/cs_event_mapper'
 import { getHolderOnboardingModeString, getModeString } from '../../services/crawl-cs/cs_types'
@@ -123,8 +123,9 @@ export async function getCredentialSchema(
         ) ?? null
       )
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }
 
