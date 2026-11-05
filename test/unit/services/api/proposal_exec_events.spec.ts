@@ -1,5 +1,6 @@
 import { toBase64 } from '@cosmjs/encoding'
 import { MsgUpdateCorporation } from '@verana-labs/verana-types/codec/verana/co/v1/tx'
+import { MsgSlashTrustDeposit } from '@verana-labs/verana-types/codec/verana/td/v1/tx'
 
 const tables: Record<string, unknown[]> = {}
 
@@ -10,6 +11,10 @@ function chainable(rows: unknown[]) {
     if (args.length === 2 && typeof args[0] === 'string') {
       const column = String(args[0]).split('.').pop() as string
       current = current.filter((row: any) => String(row?.[column]) === String(args[1]))
+    } else if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+      for (const [column, value] of Object.entries(args[0] as Record<string, unknown>)) {
+        current = current.filter((row) => String((row as Record<string, unknown>)?.[column]) === String(value))
+      }
     }
     return qb
   }
@@ -43,6 +48,16 @@ const UPDATE_CORPORATION = '/verana.co.v1.MsgUpdateCorporation'
 function updateCorporationAny(did: string) {
   const value = MsgUpdateCorporation.encode({ corporation: POLICY, operator: POLICY, did }).finish()
   return { type_url: UPDATE_CORPORATION, value: toBase64(value) }
+}
+
+function slashAny(corporationId: number) {
+  const value = MsgSlashTrustDeposit.encode({
+    authority: POLICY,
+    corporationId,
+    deposit: '1000',
+    reason: 'e2e',
+  }).finish()
+  return { type_url: '/verana.td.v1.MsgSlashTrustDeposit', value: toBase64(value) }
 }
 
 // Carries the join columns the query filters on (block_height/code/type) next to the aliased output names.
@@ -118,6 +133,35 @@ describe('buildProposalExecEvents (IDX-INDEXER-SUB-1 group-executed Msgs)', () =
     expect(event.corporationId).toBe(3)
     expect(event.proposalId).toBe('12')
     expect(event.proposalMessageIndex).toBe(1)
+  })
+
+  it('routes a wrapped SlashTrustDeposit to the slashed Corporation, not the council', async () => {
+    tables.corporation.push({
+      id: 9,
+      did: 'did:example:slashed',
+      policy_address: 'verana1other',
+      corporation: 'verana1other',
+    })
+    tables.event = [execEvent()]
+    tables.event_attribute = [...execAttributes('PROPOSAL_EXECUTOR_RESULT_SUCCESS'), submitAttribute()]
+    tables.transaction_message = [
+      {
+        tx_id: 4,
+        index: 0,
+        type: '/cosmos.group.v1.MsgSubmitProposal',
+        content: { group_policy_address: POLICY, messages: [slashAny(9)] },
+      },
+    ]
+
+    const [event] = await buildProposalExecEventsForTest(60)
+
+    expect(event.module).toBe('trust-deposit')
+    expect(event.action).toBe('SlashTrustDeposit')
+    expect(event.sender).toBe(POLICY)
+    expect(event.corporationId).toBe(9)
+    expect(event.entityId).toBe('9')
+    expect(event.did).toBe('did:example:slashed')
+    expect(event.relatedDids).not.toContain('did:example:corp')
   })
 
   it('emits nothing when the execution failed', async () => {

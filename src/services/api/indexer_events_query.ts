@@ -620,8 +620,11 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   }
 
   if (meta.module === 'trust-deposit') {
-    const relation = await loadCorporation({ address: extractController(content, row.sender) })
-    corporationId = relation.corporationId
+    const slashedCorporationId = readNumber(content, ['corporation_id', 'corporationId'])
+    const relation = slashedCorporationId
+      ? await loadCorporationById(slashedCorporationId)
+      : await loadCorporation({ address: extractController(content, row.sender) })
+    corporationId = relation.corporationId ?? slashedCorporationId ?? undefined
     if (relation.did) collected.add(relation.did)
     entityId = corporationId !== undefined ? String(corporationId) : entityId
   }
