@@ -344,9 +344,10 @@ export default class CrawlTxService extends BullableService {
         break
       }
 
-      if (transactions.length === batchSize) {
-        const last = transactions[transactions.length - 1]
-        transactions.push(...(await selectTransactions().where('height', last.height).where('id', '>', last.id)))
+      for (let tail = transactions; tail.length === batchSize; ) {
+        const last = tail[tail.length - 1]
+        tail = await selectTransactions().where('height', last.height).where('id', '>', last.id).limit(batchSize)
+        transactions.push(...tail)
       }
 
       // Group transactions by block height for batch processing
