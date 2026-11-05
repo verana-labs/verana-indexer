@@ -20,6 +20,17 @@ export function getRpcBaseUrl(): string {
   return base.replace(/\/$/, '')
 }
 
+const FUTURE_HEIGHT_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 4000, 4000, 4000]
+const MAX_WAITED_HEIGHT_LAG = 10
+
+export function isAbciNotFound(error: unknown): boolean {
+  return /code = NotFound/.test((error as Error)?.message ?? '')
+}
+
+function isFutureHeightError(error: unknown): boolean {
+  return /cannot query with height in the future/.test((error as Error)?.message ?? '')
+}
+
 /**
  * Opens a Tendermint RPC connection, builds an ABCI-backed protobuf RPC client
  * pinned to `blockHeight` (when provided), runs `fn`, and always disconnects.
@@ -46,6 +57,18 @@ export async function withAbciQueryClient<T>(
         const response = await queryClient.queryAbci(path, data, withHeight ? blockHeight : undefined)
         return response.value
       },
+    }
+    const isHeightImminent = async (): Promise<boolean> => {
+      const status = await tmClient.status().catch(() => null)
+      return status !== null && status.syncInfo.latestBlockHeight + MAX_WAITED_HEIGHT_LAG >= Number(blockHeight)
+    }
+    for (const delayMs of FUTURE_HEIGHT_RETRY_DELAYS_MS) {
+      try {
+        return await fn(rpc)
+      } catch (error) {
+        if (!withHeight || !isFutureHeightError(error) || !(await isHeightImminent())) throw error
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
     }
     return await fn(rpc)
   } finally {

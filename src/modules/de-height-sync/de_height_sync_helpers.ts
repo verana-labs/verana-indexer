@@ -27,7 +27,7 @@ import type { Timestamp } from 'cosmjs-types/google/protobuf/timestamp.js'
 import { fromTimestamp } from 'cosmjs-types/helpers.js'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import { serializeDuration } from '../../common/utils/duration'
-import { withAbciQueryClient } from '../../common/utils/grpc_query'
+import { isAbciNotFound, withAbciQueryClient } from '../../common/utils/grpc_query'
 
 const ALLOWED_MSG_ALLOWANCE_TYPE_URL = '/cosmos.feegrant.v1beta1.AllowedMsgAllowance'
 const BASIC_ALLOWANCE_TYPE_URL = '/cosmos.feegrant.v1beta1.BasicAllowance'
@@ -111,11 +111,6 @@ export function serializeLedgerVSOperatorAuthorization(
     vs_operator: authorization.vsOperator,
     records: (authorization.records ?? []).map(serializeLedgerParticipantRecord),
   }
-}
-
-// Match the ABCI status only: a transport error like ENOTFOUND must never read as a deleted record
-function isAbciNotFound(error: unknown): boolean {
-  return /code = NotFound/.test((error as Error)?.message ?? '')
 }
 
 export async function fetchOperatorAuthorization(
