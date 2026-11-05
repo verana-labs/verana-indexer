@@ -6,6 +6,7 @@ import { MsgSlashTrustDeposit } from '@verana-labs/verana-types/codec/verana/td/
 import Long from 'long'
 
 const tables: Record<string, unknown[]> = {}
+const queried: string[] = []
 
 function chainable(rows: unknown[]) {
   let current = [...rows]
@@ -40,10 +41,16 @@ function chainable(rows: unknown[]) {
 
 jest.mock('../../../../src/common/utils/db_connection', () => ({
   __esModule: true,
-  default: (table: string) => chainable(tables[table.split(' ')[0]] ?? []),
+  default: (table: string) => {
+    queried.push(table)
+    return chainable(tables[table.split(' ')[0]] ?? [])
+  },
 }))
 
-import { buildProposalExecEventsForTest } from '../../../../src/services/api/indexer_events_query'
+import {
+  buildGroupEventsForTest,
+  buildProposalExecEventsForTest,
+} from '../../../../src/services/api/indexer_events_query'
 
 const POLICY = 'verana1policy'
 const UPDATE_CORPORATION = '/verana.co.v1.MsgUpdateCorporation'
@@ -115,6 +122,7 @@ function submitAttribute(proposalId = '12') {
 describe('buildProposalExecEvents (IDX-INDEXER-SUB-1 group-executed Msgs)', () => {
   beforeEach(() => {
     for (const key of Object.keys(tables)) delete tables[key]
+    queried.length = 0
     tables.corporation = [{ id: 3, did: 'did:example:corp', policy_address: POLICY, corporation: POLICY }]
   })
 
@@ -317,6 +325,39 @@ describe('buildProposalExecEvents (IDX-INDEXER-SUB-1 group-executed Msgs)', () =
 
     expect(events.map((event) => event.proposalMessageIndex)).toEqual([0, 1])
     expect(events.map((event) => event.messageIndex)).toEqual([1, 1])
+  })
+
+  it('reads a proposal once per block when a Vote and its Exec resolve it', async () => {
+    tables.event = [execEvent()]
+    tables.event_attribute = [...execAttributes('PROPOSAL_EXECUTOR_RESULT_SUCCESS'), submitAttribute()]
+    tables.transaction_message = [
+      {
+        tx_id: 4,
+        index: 0,
+        type: '/cosmos.group.v1.MsgSubmitProposal',
+        content: { group_policy_address: POLICY, messages: [updateCorporationAny('did:example:corp')] },
+      },
+      {
+        type: '/cosmos.group.v1.MsgVote',
+        height: 60,
+        code: 0,
+        message_index: 0,
+        message_type: '/cosmos.group.v1.MsgVote',
+        content: { proposal_id: '12', voter: 'verana1v' },
+        tx_hash: 'VOTEHASH',
+        tx_index: 1,
+        block_height: 60,
+        timestamp: '2026-11-05T10:00:00.000Z',
+      },
+    ]
+    const proposals = new Map()
+
+    const [vote] = await buildGroupEventsForTest(60, proposals)
+    const [wrapped] = await buildProposalExecEventsForTest(60, proposals)
+
+    expect(vote.corporationId).toBe(3)
+    expect(wrapped.action).toBe('UpdateCorporation')
+    expect(queried.filter((table) => table === 'event_attribute as ea')).toHaveLength(1)
   })
 
   it('returns nothing when the block executed no proposal', async () => {

@@ -1027,10 +1027,11 @@ async function loadSubmitProposalContent(proposalId: number): Promise<Record<str
   return submitMessage?.content as Record<string, unknown> | undefined
 }
 
+type LoadedProposal = { policyAddress?: string; messages: Array<Record<string, unknown>> }
+type ProposalCache = Map<number, Promise<LoadedProposal | undefined>>
+
 // Submit tx first: group_proposal lags this block's events; it is the fallback when the submit tx is not indexed.
-async function loadProposal(
-  proposalId: number
-): Promise<{ policyAddress?: string; messages: Array<Record<string, unknown>> } | undefined> {
+async function readProposal(proposalId: number): Promise<LoadedProposal | undefined> {
   const content = await loadSubmitProposalContent(proposalId)
   if (content) {
     return {
@@ -1059,8 +1060,21 @@ type ExecEventRow = {
   timestamp: Date | string
 }
 
+// One cache per block: several Exec and Vote events in a block often resolve the same proposal.
+function loadProposal(proposalId: number, cache: ProposalCache): Promise<LoadedProposal | undefined> {
+  let proposal = cache.get(proposalId)
+  if (!proposal) {
+    proposal = readProposal(proposalId)
+    cache.set(proposalId, proposal)
+  }
+  return proposal
+}
+
 // Msgs a proposal executes (MsgExec, or MsgSubmitProposal/MsgVote with EXEC_TRY) never get a transaction_message row.
-async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+async function buildProposalExecEvents(
+  blockHeight: number,
+  proposals: ProposalCache = new Map()
+): Promise<IndexerTxEvent[]> {
   const execRows = (await knex('event as e')
     .innerJoin('transaction as tx', 'tx.id', 'e.tx_id')
     .where('e.block_height', blockHeight)
@@ -1101,7 +1115,7 @@ async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEv
     if (shortExecutorResult(parseEventAttrValue(attributes.result)) !== 'SUCCESS') continue
     const proposalId = readPositiveInteger(parseEventAttrValue(attributes.proposal_id))
     if (!proposalId) continue
-    const proposal = await loadProposal(proposalId)
+    const proposal = await loadProposal(proposalId, proposals)
     if (!proposal) continue
 
     for (const [index, message] of proposal.messages.entries()) {
@@ -1121,7 +1135,7 @@ async function buildProposalExecEvents(blockHeight: number): Promise<IndexerTxEv
         tx_index: row.tx_index,
         timestamp: row.timestamp,
       }
-      const event = isGroupAdmin ? await toGroupEvent(eventRow) : await toIndexerEvent(eventRow)
+      const event = isGroupAdmin ? await toGroupEvent(eventRow, proposals) : await toIndexerEvent(eventRow)
       if (event) events.push({ ...event, proposalId: String(proposalId), proposalMessageIndex: index })
     }
   }
@@ -1144,7 +1158,7 @@ async function resolveSubmittedProposalId(txHash: string, messageIndex: number):
   return /^\d+$/.test(value) ? value : undefined
 }
 
-async function buildGroupEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+async function buildGroupEvents(blockHeight: number, proposals: ProposalCache = new Map()): Promise<IndexerTxEvent[]> {
   const rows = (await knex('transaction_message as tm')
     .innerJoin('transaction as tx', 'tx.id', 'tm.tx_id')
     .where('tx.height', blockHeight)
@@ -1163,11 +1177,11 @@ async function buildGroupEvents(blockHeight: number): Promise<IndexerTxEvent[]> 
     .orderBy('tx.index', 'asc')
     .orderBy('tm.index', 'asc')) as EventRow[]
   const events: IndexerTxEvent[] = []
-  for (const row of rows) events.push(await toGroupEvent(row))
+  for (const row of rows) events.push(await toGroupEvent(row, proposals))
   return events
 }
 
-async function toGroupEvent(row: EventRow): Promise<IndexerTxEvent> {
+async function toGroupEvent(row: EventRow, proposals: ProposalCache): Promise<IndexerTxEvent> {
   const content = row.content && typeof row.content === 'object' ? (row.content as Record<string, unknown>) : {}
   const action = toShortMessageType(row.message_type).replace(/^Msg/, '')
 
@@ -1182,7 +1196,7 @@ async function toGroupEvent(row: EventRow): Promise<IndexerTxEvent> {
   } else if (groupId) {
     anchor = await loadCorporationByGroupId(groupId)
   } else if (proposalId) {
-    const resolvedAddress = (await loadProposal(proposalId))?.policyAddress
+    const resolvedAddress = (await loadProposal(proposalId, proposals))?.policyAddress
     if (resolvedAddress) anchor = await loadCorporationByPolicyAddress(resolvedAddress)
     entityType = 'GroupProposal'
     entityId = String(proposalId)
@@ -1230,9 +1244,10 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   }
   const delegationEvents = await buildDelegationEvents(blockHeight)
   rows.push(...delegationEvents.map(toEventRow))
-  const groupEvents = await buildGroupEvents(blockHeight)
+  const proposals: ProposalCache = new Map()
+  const groupEvents = await buildGroupEvents(blockHeight, proposals)
   rows.push(...groupEvents.map(toEventRow))
-  const proposalExecEvents = await buildProposalExecEvents(blockHeight)
+  const proposalExecEvents = await buildProposalExecEvents(blockHeight, proposals)
   rows.push(...proposalExecEvents.map(toEventRow))
   let insertedIds: number[] = []
 
