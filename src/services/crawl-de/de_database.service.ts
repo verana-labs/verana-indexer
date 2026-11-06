@@ -1,4 +1,5 @@
 import { Action, Service } from '@ourparentcenter/moleculer-decorators-extended'
+import type { Knex } from 'knex'
 import { ServiceBroker } from 'moleculer'
 import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
@@ -11,6 +12,12 @@ import type {
   OperatorAuthorizationRow,
   VSOperatorAuthorizationRow,
 } from '../../modules/de-height-sync/de_height_sync_helpers'
+
+async function insertHistoryOnce(trx: Knex.Transaction, table: string, row: Record<string, unknown>): Promise<void> {
+  const match = Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined))
+  if (await trx(table).where(match).first()) return
+  await trx(table).insert(row)
+}
 
 function parseJsonb<T>(value: unknown): T | null {
   if (value == null) return null
@@ -64,7 +71,7 @@ export default class DelegationDatabaseService extends BaseService {
           'height',
         ])
 
-      await trx('operator_authorization_history').insert({
+      await insertHistoryOnce(trx, 'operator_authorization_history', {
         operator_authorization_id: row.id,
         corporation_id: row.corporation_id,
         operator: row.operator,
@@ -93,7 +100,7 @@ export default class DelegationDatabaseService extends BaseService {
     await knex.transaction(async (trx) => {
       await trx('operator_authorizations').where('id', id).delete()
 
-      await trx('operator_authorization_history').insert({
+      await insertHistoryOnce(trx, 'operator_authorization_history', {
         operator_authorization_id: id,
         corporation_id: corporationId,
         operator,
@@ -138,7 +145,7 @@ export default class DelegationDatabaseService extends BaseService {
         .merge(['msg_types', 'spend_limit', 'remaining_spend', 'expiration', 'period', 'modified', 'height'])
         .returning('id')
 
-      await trx('fee_grant_history').insert({
+      await insertHistoryOnce(trx, 'fee_grant_history', {
         fee_grant_id: upserted.id,
         ...row,
         revoked: false,
@@ -184,7 +191,7 @@ export default class DelegationDatabaseService extends BaseService {
           height: blockHeight,
         })
 
-      await trx('fee_grant_history').insert({
+      await insertHistoryOnce(trx, 'fee_grant_history', {
         fee_grant_id: existing.id,
         grantor_corporation_id: grantorCorporationId,
         grantee,
@@ -219,7 +226,7 @@ export default class DelegationDatabaseService extends BaseService {
     await knex.transaction(async (trx) => {
       await trx('fee_grants').where('id', existing.id).delete()
 
-      await trx('fee_grant_history').insert({
+      await insertHistoryOnce(trx, 'fee_grant_history', {
         fee_grant_id: existing.id,
         grantor_corporation_id: grantorCorporationId,
         grantee,
@@ -254,7 +261,7 @@ export default class DelegationDatabaseService extends BaseService {
         .onConflict('id')
         .merge(['corporation_id', 'vs_operator', 'records', 'modified', 'height'])
 
-      await trx('vs_operator_authorization_history').insert({
+      await insertHistoryOnce(trx, 'vs_operator_authorization_history', {
         vs_operator_authorization_id: authorization.id,
         corporation_id: authorization.corporation_id,
         vs_operator: authorization.vs_operator,
@@ -282,7 +289,7 @@ export default class DelegationDatabaseService extends BaseService {
     await knex.transaction(async (trx) => {
       await trx('vs_operator_authorizations').where('id', id).delete()
 
-      await trx('vs_operator_authorization_history').insert({
+      await insertHistoryOnce(trx, 'vs_operator_authorization_history', {
         vs_operator_authorization_id: id,
         corporation_id: existing.corporation_id,
         vs_operator: existing.vs_operator,

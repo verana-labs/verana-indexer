@@ -620,7 +620,8 @@ export default class EcosystemDatabaseService extends BaseService {
           process.env.USE_HEIGHT_SYNC_TR === 'true' &&
           updatedTr &&
           (await knex.schema.hasTable('ecosystem_snapshot')) &&
-          (await knex.schema.hasTable('ecosystem_snapshot_diff'))
+          (await knex.schema.hasTable('ecosystem_snapshot_diff')) &&
+          !(await knex('ecosystem_snapshot').where({ ecosystem_id: ecosystemId, height: blockHeightNum }).first())
         ) {
           const toJsonSafe = (x: any): string | number | null => {
             if (x === null || x === undefined) return null

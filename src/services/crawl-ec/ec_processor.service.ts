@@ -9,6 +9,7 @@ import {
   extractIncreaseGfActiveEvent,
   matchAddGfDocumentEvent,
 } from '../../common/utils/gf_events'
+import { isAbciNotFound } from '../../common/utils/grpc_query'
 import { finalizeEcosystemHistoryInsert } from '../../common/utils/installed_table_columns'
 import { MessageProcessorBase } from '../../common/utils/message_processor_base'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
@@ -223,6 +224,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         await processMessage(message, i)
         successCount++
       } catch (err: any) {
+        if (useHeightSyncTR) throw err
         failedMessages.push({ message, error: err.message || String(err) })
       }
     }
@@ -638,21 +640,17 @@ export default class EcosystemMessageProcessorService extends BullableService {
       })
 
       if (!syncResult || syncResult.success !== true) {
-        this.logger.warn(
+        throw new Error(
           `[EC Height-Sync] syncFromLedger reported failure for id=${actualEcosystemId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
         )
-        return null
       }
 
       if (!actualEcosystemId) {
         actualEcosystemId = ecosystemId
       }
     } catch (err: any) {
-      this.logger.warn(
-        `[EC Height-Sync] Failed to sync EC id=${ecosystemId} from ledger at height=${blockHeight}: ${
-          err?.message || String(err)
-        }`
-      )
+      if (!isAbciNotFound(err)) throw err
+      this.logger.warn(`[EC Height-Sync] Ledger has no ecosystem id=${ecosystemId} at height=${blockHeight}`)
       return null
     }
 
@@ -921,6 +919,20 @@ export default class EcosystemMessageProcessorService extends BullableService {
         await this.recordGFVHistory(trx, gfv.id, ec.id, 'AddGFV', blockHeight, null, gfv)
       } else if (docEvent?.gfvId && gfv.gfv_id == null) {
         await trx('governance_framework_version').where({ id: gfv.id }).update({ gfv_id: docEvent.gfvId })
+      }
+
+      const replayed = await trx('governance_framework_document')
+        .where({
+          gfv_id: gfv.id,
+          language: language ?? null,
+          url: message.doc_url ?? null,
+          digest_sri: digestSri ?? null,
+          created: timestamp,
+        })
+        .first()
+      if (replayed) {
+        await trx.commit()
+        return
       }
 
       const [gfd] = await trx('governance_framework_document')

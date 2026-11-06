@@ -28,30 +28,30 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>
 }
 
-function decodeAttr(v: string | undefined): string {
-  if (v == null || v === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(v) && v.length % 4 === 0) {
-      return Buffer.from(v, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return v
-}
-
 const TD_EVENT_ACCOUNT_KEYS = ['account', 'owner', 'deposit_account', 'creator', 'sender', 'validator']
 
-export function extractAccountAddressesFromEvents(events: TxEventLike[], decodeAttributes?: boolean): string[] {
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8')
+}
+
+function isAccountKey(key: string): boolean {
+  const lower = key.toLowerCase()
+  return TD_EVENT_ACCOUNT_KEYS.some((k) => lower.includes(k))
+}
+
+function getAccountAttrValue(attr: { key?: string; value?: string }): string | undefined {
+  if (!attr.key || !attr.value) return undefined
+  if (isAccountKey(attr.key)) return attr.value
+  if (isAccountKey(decodeBase64(attr.key))) return decodeBase64(attr.value)
+  return undefined
+}
+
+export function extractAccountAddressesFromEvents(events: TxEventLike[]): string[] {
   const out: string[] = []
   for (const ev of events ?? []) {
-    const attrs = ev.attributes ?? []
-    for (const attr of attrs) {
-      const key = (decodeAttributes ? decodeAttr(attr.key) : (attr.key ?? '')).toLowerCase()
-      const value = (decodeAttributes ? decodeAttr(attr.value) : (attr.value ?? '')).trim()
-      if (value.length === 0) continue
-      const matches = TD_EVENT_ACCOUNT_KEYS.some((k) => key.includes(k.toLowerCase()))
-      if (matches && isValidAccountAddress(value)) out.push(value)
+    for (const attr of ev.attributes ?? []) {
+      const value = getAccountAttrValue(attr)?.trim()
+      if (value && isValidAccountAddress(value)) out.push(value)
     }
   }
   return [...new Set(out)]
@@ -61,15 +61,14 @@ export function extractAccountAddressesFromTdSources(options: {
   messageContent?: Record<string, unknown> | null
   events?: TxEventLike[]
   ledgerAccount?: string | null
-  decodeEventAttributes?: boolean
 }): string[] {
-  const { messageContent, events, ledgerAccount, decodeEventAttributes = true } = options
+  const { messageContent, events, ledgerAccount } = options
   const set = new Set<string>()
   extractAccountAddressesFromContent(messageContent ?? null).forEach((a) => {
     set.add(a)
   })
   if (events?.length) {
-    extractAccountAddressesFromEvents(events, decodeEventAttributes).forEach((a) => {
+    extractAccountAddressesFromEvents(events).forEach((a) => {
       set.add(a)
     })
   }

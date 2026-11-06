@@ -33,6 +33,6 @@ export async function fetchCorporationById(corporationId: number, blockHeight?: 
 }
 
 export async function fetchParticipantDid(participantId: number, blockHeight?: number): Promise<string | undefined> {
-  const result = await fetchParticipant(participantId, blockHeight)
+  const result = await fetchParticipant(participantId, blockHeight).catch(() => null)
   return normalizeDid(result?.participant?.did)
 }

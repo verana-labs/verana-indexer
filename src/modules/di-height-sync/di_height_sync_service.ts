@@ -19,22 +19,15 @@ interface BlockEvent {
   attributes?: BlockEventAttribute[]
 }
 
-function decodeAttr(value: string | undefined): string {
-  if (value === undefined || value === null) return ''
-  try {
-    const decoded = Buffer.from(value, 'base64').toString('utf8')
-    if (Buffer.from(decoded, 'utf8').toString('base64') === value) {
-      return decoded
-    }
-  } catch {
-    // value was not base64-encoded
-  }
-  return value
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8')
 }
 
 function getAttr(event: BlockEvent, key: string): string | undefined {
   for (const attr of event.attributes ?? []) {
-    if (decodeAttr(attr.key) === key) return decodeAttr(attr.value)
+    if (attr.key === undefined) continue
+    if (attr.key === key) return attr.value
+    if (decodeBase64(attr.key) === key) return attr.value === undefined ? undefined : decodeBase64(attr.value)
   }
   return undefined
 }
@@ -66,27 +59,11 @@ export async function runHeightSyncDI(
   const digests = extractStoredDigests(events)
 
   for (const digest of digests) {
-    let ledgerDigest: Awaited<ReturnType<typeof fetchDigest>>
-    try {
-      ledgerDigest = await fetchDigest(digest, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DI Height Sync] Failed to fetch digest=${digest} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-      continue
-    }
-
+    const ledgerDigest = await fetchDigest(digest, blockHeight)
     if (!ledgerDigest) continue
-
-    try {
-      await broker.call(`${SERVICE.V1.DigestDatabaseService.path}.syncFromLedger`, {
-        digest: serializeLedgerDigest(ledgerDigest),
-        blockHeight,
-      })
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DI Height Sync] Sync failed digest=${digest} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    await broker.call(`${SERVICE.V1.DigestDatabaseService.path}.syncFromLedger`, {
+      digest: serializeLedgerDigest(ledgerDigest),
+      blockHeight,
+    })
   }
 }
