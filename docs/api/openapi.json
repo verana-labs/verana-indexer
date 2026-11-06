@@ -6368,6 +6368,14 @@
               },
               "entity_id": {
                 "type": "string"
+              },
+              "proposal_id": {
+                "type": "string",
+                "description": "Set only on a Msg executed by an x/group proposal: the id of that proposal."
+              },
+              "proposal_message_index": {
+                "type": "integer",
+                "description": "Set only on a Msg executed by an x/group proposal: its position in the proposal. A client that deduplicates on tx_hash and message_index must add proposal_id and proposal_message_index, since one executing Msg emits an event per wrapped Msg."
               }
             }
           }

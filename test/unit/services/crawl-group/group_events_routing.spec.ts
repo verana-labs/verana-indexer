@@ -131,6 +131,20 @@ describe('buildGroupEvents (IDX-INDEXER-SUB-1 x/group routing)', () => {
     expect(event.did).toBe('did:example:corp')
   })
 
+  it('resolves a Vote through the submit tx before group_proposal is written', async () => {
+    tables.transaction_message = [
+      messageRow({ message_type: VOTE, content: { proposal_id: '12', voter: 'verana1v' } }),
+      { tx_id: 4, index: 0, type: SUBMIT, content: { group_policy_address: 'verana1policy' } },
+    ]
+    tables.event_attribute = [
+      { type: 'cosmos.group.v1.EventSubmitProposal', key: 'proposal_id', value: '"12"', tx_id: 4, tx_msg_index: 0 },
+    ]
+    const vote = (await buildGroupEventsForTest(40)).find((event) => event.action === 'Vote')
+
+    expect(vote?.entityId).toBe('12')
+    expect(vote?.corporationId).toBe(3)
+  })
+
   it('leaves group events that anchor no Corporation unscoped (wildcard-only)', async () => {
     tables.corporation = []
     tables.corporation_group = []

@@ -1,3 +1,8 @@
+import { fromBase64 } from '@cosmjs/encoding'
+import { Registry } from '@cosmjs/proto-signing'
+import { defaultRegistryTypes } from '@cosmjs/stargate'
+import { veranaRegistry } from '../../common/utils/veranaChain.client'
+
 export const GROUP_MSG_TYPES = {
   CreateCorporation: '/verana.co.v1.MsgCreateCorporation',
   SubmitProposal: '/cosmos.group.v1.MsgSubmitProposal',
@@ -17,6 +22,17 @@ export const GROUP_MSG_TYPES = {
 export const GROUP_ROUTED_MESSAGE_TYPES: string[] = Object.entries(GROUP_MSG_TYPES)
   .filter(([key]) => key !== 'CreateCorporation')
   .map(([, type]) => type)
+
+// Signed by the group or policy admin, which defaults to the Corporation's policy account.
+export const GROUP_ADMIN_MESSAGE_TYPES: string[] = [
+  GROUP_MSG_TYPES.WithdrawProposal,
+  GROUP_MSG_TYPES.UpdateGroupMembers,
+  GROUP_MSG_TYPES.UpdateGroupMetadata,
+  GROUP_MSG_TYPES.UpdateGroupAdmin,
+  GROUP_MSG_TYPES.UpdateGroupPolicyDecisionPolicy,
+  GROUP_MSG_TYPES.UpdateGroupPolicyMetadata,
+  GROUP_MSG_TYPES.UpdateGroupPolicyAdmin,
+]
 
 export const GROUP_EVENT_TYPES = {
   CreateGroup: 'cosmos.group.v1.EventCreateGroup',
@@ -182,4 +198,29 @@ export function isUndecodedAny(message: AnyMessage): boolean {
   if (typeof message.value !== 'string') return false
   const keys = Object.keys(message).filter((key) => !['@type', 'type_url', 'typeUrl', 'value'].includes(key))
   return keys.length === 0
+}
+
+const proposalMessageRegistry = new Registry([...defaultRegistryTypes, ...veranaRegistry] as ConstructorParameters<
+  typeof Registry
+>[0])
+
+export function decodeProposalMessages(rawMessages: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(rawMessages)) return []
+  return rawMessages.map((raw) => {
+    const message = (raw ?? {}) as AnyMessage
+    const typeUrl = anyTypeUrl(message)
+    if (!typeUrl) return message as Record<string, unknown>
+    if (!isUndecodedAny(message)) {
+      const { type_url: _tu, typeUrl: _tuc, ...rest } = message
+      return { '@type': typeUrl, ...rest }
+    }
+    try {
+      const decoded = proposalMessageRegistry.decode({ typeUrl, value: fromBase64(String(message.value)) })
+      const generated = proposalMessageRegistry.lookupType(typeUrl) as { toJSON?: (value: unknown) => unknown }
+      const json = generated?.toJSON ? generated.toJSON(decoded) : decoded
+      return { '@type': typeUrl, ...(json as Record<string, unknown>) }
+    } catch {
+      return { '@type': typeUrl, value: message.value } as Record<string, unknown>
+    }
+  })
 }
