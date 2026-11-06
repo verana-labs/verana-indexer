@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { Network } from '../../network'
 
 const ACCOUNT_REGEX = /^verana1[0-9a-z]{10,}$/
@@ -29,16 +30,28 @@ export interface TxEventLike {
 
 const TD_EVENT_ACCOUNT_KEYS = ['account', 'owner', 'deposit_account', 'creator', 'sender', 'validator']
 
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8')
+}
+
+function isAccountKey(key: string): boolean {
+  const lower = key.toLowerCase()
+  return TD_EVENT_ACCOUNT_KEYS.some((k) => lower.includes(k))
+}
+
+function getAccountAttrValue(attr: { key?: string; value?: string }): string | undefined {
+  if (!attr.key || !attr.value) return undefined
+  if (isAccountKey(attr.key)) return attr.value
+  if (isAccountKey(decodeBase64(attr.key))) return decodeBase64(attr.value)
+  return undefined
+}
+
 export function extractAccountAddressesFromEvents(events: TxEventLike[]): string[] {
   const out: string[] = []
   for (const ev of events ?? []) {
-    const attrs = ev.attributes ?? []
-    for (const attr of attrs) {
-      const key = (attr.key ?? '').toLowerCase()
-      const value = (attr.value ?? '').trim()
-      if (value.length === 0) continue
-      const matches = TD_EVENT_ACCOUNT_KEYS.some((k) => key.includes(k.toLowerCase()))
-      if (matches && isValidAccountAddress(value)) out.push(value)
+    for (const attr of ev.attributes ?? []) {
+      const value = getAccountAttrValue(attr)?.trim()
+      if (value && isValidAccountAddress(value)) out.push(value)
     }
   }
   return [...new Set(out)]
