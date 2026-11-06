@@ -113,6 +113,8 @@ type EventRow = {
   tx_hash: string
   tx_index: number
   timestamp: Date | string
+  // Position among same-type Msgs sharing this tx message, set for Msgs wrapped in a proposal.
+  occurrence?: number
 }
 
 type EventMeta = {
@@ -378,6 +380,8 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   }
 
   if (meta.module === 'credential-schema') {
+    const createdId = await loadCreatedCredentialSchemaId(row)
+    if (createdId) return createdId
     const ecosystemId = readNumber(content, ID_ALIASES.ecosystem)
     const query = knex('credential_schema_history').select('credential_schema_id').where({ height })
     if (ecosystemId) query.andWhere({ ecosystem_id: ecosystemId })
@@ -394,6 +398,23 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   }
 
   return undefined
+}
+
+// The Msg carries no id; the chain reports it on create_credential_schema, one event per create in Msg order.
+async function loadCreatedCredentialSchemaId(row: EventRow): Promise<string | undefined> {
+  if (row.message_type !== VeranaCredentialSchemaMessageTypes.CreateCredentialSchema) return undefined
+  const attribute = await knex('event as e')
+    .innerJoin('event_attribute as ea', 'ea.event_id', 'e.id')
+    .where('e.tx_id', row.tx_id)
+    .where('e.type', 'create_credential_schema')
+    .whereRaw('COALESCE(e.tx_msg_index, 0) = ?', [Number(row.message_index)])
+    .where('ea.key', 'credential_schema_id')
+    .select('ea.value')
+    .orderBy('e.id', 'asc')
+    .offset(row.occurrence ?? 0)
+    .first()
+  const schemaId = readPositiveInteger(parseEventAttrValue(attribute?.value))
+  return schemaId ? String(schemaId) : undefined
 }
 
 function toCorporationId(value: unknown): number | undefined {
@@ -1123,6 +1144,9 @@ async function buildProposalExecEvents(
       if (!messageType) continue
       const isGroupAdmin = GROUP_ADMIN_MESSAGE_TYPES.includes(messageType)
       if (!EVENT_META[messageType] && !isGroupAdmin) continue
+      const occurrence = proposal.messages
+        .slice(0, index)
+        .filter((earlier) => anyTypeUrl(earlier) === messageType).length
       const eventRow: EventRow = {
         message_id: row.event_id,
         tx_id: row.tx_id,
@@ -1134,6 +1158,7 @@ async function buildProposalExecEvents(
         tx_hash: row.tx_hash,
         tx_index: row.tx_index,
         timestamp: row.timestamp,
+        occurrence,
       }
       const event = isGroupAdmin ? await toGroupEvent(eventRow, proposals) : await toIndexerEvent(eventRow)
       if (event) events.push({ ...event, proposalId: String(proposalId), proposalMessageIndex: index })

@@ -2,6 +2,7 @@ import { toBase64 } from '@cosmjs/encoding'
 import { Registry } from '@cosmjs/proto-signing'
 import { defaultRegistryTypes } from '@cosmjs/stargate'
 import { MsgUpdateCorporation } from '@verana-labs/verana-types/codec/verana/co/v1/tx'
+import { MsgCreateCredentialSchema } from '@verana-labs/verana-types/codec/verana/cs/v1/tx'
 import { MsgSlashTrustDeposit } from '@verana-labs/verana-types/codec/verana/td/v1/tx'
 import Long from 'long'
 
@@ -33,6 +34,10 @@ function chainable(rows: unknown[]) {
   for (const method of ['select', 'whereRaw', 'orWhere', 'orderBy', 'limit', 'innerJoin', 'leftJoin']) {
     qb[method] = () => qb
   }
+  qb.offset = (count: number) => {
+    current = current.slice(count)
+    return qb
+  }
   qb.first = jest.fn(async () => current[0])
   qb.then = (resolve: (v: unknown) => void, reject?: (e: unknown) => void) =>
     Promise.resolve(current).then(resolve, reject)
@@ -58,6 +63,24 @@ const UPDATE_CORPORATION = '/verana.co.v1.MsgUpdateCorporation'
 function updateCorporationAny(did: string) {
   const value = MsgUpdateCorporation.encode({ corporation: POLICY, operator: POLICY, did }).finish()
   return { type_url: UPDATE_CORPORATION, value: toBase64(value) }
+}
+
+function createSchemaAny(ecosystemId: number) {
+  const value = MsgCreateCredentialSchema.encode(
+    MsgCreateCredentialSchema.fromPartial({ corporation: POLICY, operator: POLICY, ecosystemId, jsonSchema: '{}' })
+  ).finish()
+  return { type_url: '/verana.cs.v1.MsgCreateCredentialSchema', value: toBase64(value) }
+}
+
+function createdSchemaEvent(eventId: number, schemaId: number) {
+  return {
+    id: eventId,
+    tx_id: 8,
+    tx_msg_index: 1,
+    type: 'create_credential_schema',
+    key: 'credential_schema_id',
+    value: String(schemaId),
+  }
 }
 
 function slashAny(corporationId: number) {
@@ -325,6 +348,27 @@ describe('buildProposalExecEvents (IDX-INDEXER-SUB-1 group-executed Msgs)', () =
 
     expect(events.map((event) => event.proposalMessageIndex)).toEqual([0, 1])
     expect(events.map((event) => event.messageIndex)).toEqual([1, 1])
+  })
+
+  it('gives each wrapped CreateCredentialSchema the id its own chain event reports', async () => {
+    tables.event = [execEvent(), createdSchemaEvent(51, 41), createdSchemaEvent(52, 42)]
+    tables.event_attribute = [...execAttributes('PROPOSAL_EXECUTOR_RESULT_SUCCESS'), submitAttribute()]
+    tables.credential_schema_history = [
+      { credential_schema_id: 42, height: 60, ecosystem_id: 5 },
+      { credential_schema_id: 41, height: 60, ecosystem_id: 5 },
+    ]
+    tables.transaction_message = [
+      {
+        tx_id: 4,
+        index: 0,
+        type: '/cosmos.group.v1.MsgSubmitProposal',
+        content: { group_policy_address: POLICY, messages: [createSchemaAny(5), createSchemaAny(5)] },
+      },
+    ]
+
+    const events = await buildProposalExecEventsForTest(60)
+
+    expect(events.map((event) => event.entityId)).toEqual(['41', '42'])
   })
 
   it('reads a proposal once per block when a Vote and its Exec resolve it', async () => {
