@@ -2496,12 +2496,7 @@ export default class ParticipantAPIService extends BullableService {
             )
           )
           .whereRaw('height <= ?', [Number(blockHeight)])
-          .where((qb) => {
-            qb.where('corporation_id', corporationId)
-            if (parentIdsAtHeightSubquery) {
-              qb.orWhereIn('validator_participant_id', parentIdsAtHeightSubquery.clone())
-            }
-          })
+          .whereIn('validator_participant_id', parentIdsAtHeightSubquery?.clone() ?? [])
           .as('ranked')
 
         const joined = await knex
@@ -2566,10 +2561,7 @@ export default class ParticipantAPIService extends BullableService {
         const fetchLimit = Math.min(Math.max(limit * 10, 500), 50_000)
         const rows = await knex('participants')
           .select(baseColumns)
-          .where((qb) => {
-            qb.where('corporation_id', corporationId)
-            qb.orWhereIn('validator_participant_id', validatorParentIdsSubquery.clone())
-          })
+          .whereIn('validator_participant_id', validatorParentIdsSubquery.clone())
           .limit(fetchLimit)
         participantsAtHeight = Array.isArray(rows)
           ? rows.map((participant: any) => ({
@@ -2587,18 +2579,12 @@ export default class ParticipantAPIService extends BullableService {
         now,
         50
       )
-      const filtered = enriched.filter((participant: any) => {
-        if (Number(participant.corporation_id ?? 0) === corporationId) {
-          if (pendingFlatMatchesOpPendingWithEligibleParticipantState(participant)) return true
-          if (participant.participant_state === 'SLASHED') return true
-          if (participant.participant_state === 'ACTIVE' && participant.expire_soon === true) return true
-        }
-        if (participant.validator_participant_id && parentIdSet.has(Number(participant.validator_participant_id))) {
-          if (pendingFlatMatchesOpPendingWithEligibleParticipantState(participant)) return true
-          if (participant.participant_state === 'SLASHED') return true
-        }
-        return false
-      })
+      const filtered = enriched.filter(
+        (participant: any) =>
+          Boolean(participant.validator_participant_id) &&
+          parentIdSet.has(Number(participant.validator_participant_id)) &&
+          pendingFlatMatchesOpPendingWithEligibleParticipantState(participant)
+      )
       const sortedFiltered = [...filtered].sort((a: any, b: any) => compareById(a.id, b.id, 'desc'))
       const participantsWithTrustData =
         trustDataMode === 'none'
