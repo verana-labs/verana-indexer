@@ -283,4 +283,23 @@ describe('🧪 ParticipantProcessorService', () => {
     ;(fetchParticipantSession as jest.Mock).mockReset()
     process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'false'
   })
+
+  it('✅ fails the batch when a fallback handler throws', async () => {
+    spyCreateRootParticipant.mockImplementationOnce(() => {
+      throw new Error('connection terminated')
+    })
+
+    await expect(
+      broker.call(`v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`, {
+        participantMessages: [
+          {
+            type: ParticipantMessageTypes.CreateRootParticipant,
+            content: { id: 102 },
+            height: 124,
+            timestamp: '2026-03-01T00:00:00Z',
+          },
+        ],
+      })
+    ).rejects.toThrow('connection terminated')
+  })
 })
