@@ -699,10 +699,11 @@ export default class EcosystemDatabaseService extends BaseService {
               rawLedger: raw as Record<string, unknown>,
             }
           )
-          const [snapshotRow] = await knex('ecosystem_snapshot').insert(snapshotInsertRow).returning('id')
-          const nextSnapshotId = snapshotRow?.id
-          if (nextSnapshotId) {
-            const prevSnapshot = await knex('ecosystem_snapshot')
+          await knex.transaction(async (trx) => {
+            const [snapshotRow] = await trx('ecosystem_snapshot').insert(snapshotInsertRow).returning('id')
+            const nextSnapshotId = snapshotRow?.id
+            if (!nextSnapshotId) return
+            const prevSnapshot = await trx('ecosystem_snapshot')
               .where({ ecosystem_id: ecosystemId })
               .where('height', '<', blockHeightNum)
               .orderBy('height', 'desc')
@@ -727,7 +728,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 }
               }
             }
-            await knex('ecosystem_snapshot_diff').insert({
+            await trx('ecosystem_snapshot_diff').insert({
               ecosystem_id: ecosystemId,
               height: blockHeightNum,
               event_type: eventType,
@@ -735,7 +736,7 @@ export default class EcosystemDatabaseService extends BaseService {
               next_snapshot_id: nextSnapshotId,
               diff: diffPayload,
             })
-          }
+          })
         }
       }
 
