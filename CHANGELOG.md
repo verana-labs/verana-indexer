@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.0.0](https://github.com/verana-labs/verana-indexer/compare/v2.1.0...v3.0.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **xr:** spec-compliant validity_duration, block-time getPrice expiry, working rate indexing ([#474](https://github.com/verana-labs/verana-indexer/issues/474))
+
+### Bug Fixes
+
+* **events:** emit VPR events for Msgs executed by group proposals ([#475](https://github.com/verana-labs/verana-indexer/issues/475)) ([a37684c](https://github.com/verana-labs/verana-indexer/commit/a37684c52298f3b5b42f2cafb34c143bb2db80b8))
+* open mode available actions ([#470](https://github.com/verana-labs/verana-indexer/issues/470)) ([c3614bc](https://github.com/verana-labs/verana-indexer/commit/c3614bc140d61c715ceb200fa7e5dee59a013647))
+* **pp:** scope pending/flat to the validator queue per IDX-PP-QRY-5 ([#477](https://github.com/verana-labs/verana-indexer/issues/477)) ([8bc6de1](https://github.com/verana-labs/verana-indexer/commit/8bc6de1f87a226c695fd8ba0def4ebe434c8d0e8))
+* **sync:** retry height-pinned ledger queries and fail the block instead of dropping state ([#473](https://github.com/verana-labs/verana-indexer/issues/473)) ([d93c40e](https://github.com/verana-labs/verana-indexer/commit/d93c40e9867e73e2dbc72b591af84222d5fa4918))
+* **xr:** spec-compliant validity_duration, block-time getPrice expiry, working rate indexing ([#474](https://github.com/verana-labs/verana-indexer/issues/474)) ([b9c4ebf](https://github.com/verana-labs/verana-indexer/commit/b9c4ebfbd27e49cd146e0099a93538f153b6d09e))
+
 ## [2.1.0](https://github.com/verana-labs/verana-indexer/compare/v2.0.0...v2.1.0) (2026-10-20)
 
 
