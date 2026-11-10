@@ -60,7 +60,7 @@ export async function runHeightSyncDI(
 
   for (const digest of digests) {
     const ledgerDigest = await fetchDigest(digest, blockHeight)
-    if (!ledgerDigest) continue
+    if (!ledgerDigest) throw new Error(`digest ${digest} not found on the ledger at block ${blockHeight}`)
     await broker.call(`${SERVICE.V1.DigestDatabaseService.path}.syncFromLedger`, {
       digest: serializeLedgerDigest(ledgerDigest),
       blockHeight,
