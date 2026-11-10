@@ -505,92 +505,88 @@ export default class EcosystemDatabaseService extends BaseService {
           const hasStatsChanges = Object.keys(statsChanges).length > 0
 
           if (!oldTr || hasCoreChanges || hasStatsChanges) {
-            await trx.transaction(async (trx) => {
-              const baseHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
-                trx,
-                {
+            const baseHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
+              trx,
+              {
+                ecosystem_id: ecosystemId,
+                did: updatedTr.did,
+                corporation_id: updatedTr.corporation_id,
+                created: updatedTr.created,
+                modified: updatedTr.modified,
+                archived: updatedTr.archived ?? null,
+                aka: updatedTr.aka ?? null,
+                language: updatedTr.language,
+                active_version: updatedTr.active_version ?? null,
+                participants: savedStats.participants ?? 0,
+                participants_ecosystem: savedStats.participants_ecosystem ?? 0,
+                participants_issuer_grantor: savedStats.participants_issuer_grantor ?? 0,
+                participants_issuer: savedStats.participants_issuer ?? 0,
+                participants_verifier_grantor: savedStats.participants_verifier_grantor ?? 0,
+                participants_verifier: savedStats.participants_verifier ?? 0,
+                participants_holder: savedStats.participants_holder ?? 0,
+                active_schemas: savedStats.active_schemas ?? 0,
+                archived_schemas: savedStats.archived_schemas ?? 0,
+                weight: savedStats.weight ?? 0,
+                issued: savedStats.issued ?? 0,
+                verified: savedStats.verified ?? 0,
+                ecosystem_slash_events: savedStats.ecosystem_slash_events ?? 0,
+                ecosystem_slashed_amount: savedStats.ecosystem_slashed_amount ?? 0,
+                ecosystem_slashed_amount_repaid: savedStats.ecosystem_slashed_amount_repaid ?? 0,
+                network_slash_events: savedStats.network_slash_events ?? 0,
+                network_slashed_amount: savedStats.network_slashed_amount ?? 0,
+                network_slashed_amount_repaid: savedStats.network_slashed_amount_repaid ?? 0,
+                event_type: oldTr ? 'Update' : 'Create',
+                height: blockHeightNum,
+                changes: Object.keys(trChanges).length > 0 ? JSON.stringify(trChanges) : null,
+                created_at: ledgerTrCreatedAt,
+              },
+              { ...updatedTr, ...savedStats }
+            )
+
+            if (!oldTr || hasCoreChanges) {
+              const existingSameBaseEvent = await trx('ecosystem_history')
+                .where({
                   ecosystem_id: ecosystemId,
-                  did: updatedTr.did,
-                  corporation_id: updatedTr.corporation_id,
-                  created: updatedTr.created,
-                  modified: updatedTr.modified,
-                  archived: updatedTr.archived ?? null,
-                  aka: updatedTr.aka ?? null,
-                  language: updatedTr.language,
-                  active_version: updatedTr.active_version ?? null,
-                  participants: savedStats.participants ?? 0,
-                  participants_ecosystem: savedStats.participants_ecosystem ?? 0,
-                  participants_issuer_grantor: savedStats.participants_issuer_grantor ?? 0,
-                  participants_issuer: savedStats.participants_issuer ?? 0,
-                  participants_verifier_grantor: savedStats.participants_verifier_grantor ?? 0,
-                  participants_verifier: savedStats.participants_verifier ?? 0,
-                  participants_holder: savedStats.participants_holder ?? 0,
-                  active_schemas: savedStats.active_schemas ?? 0,
-                  archived_schemas: savedStats.archived_schemas ?? 0,
-                  weight: savedStats.weight ?? 0,
-                  issued: savedStats.issued ?? 0,
-                  verified: savedStats.verified ?? 0,
-                  ecosystem_slash_events: savedStats.ecosystem_slash_events ?? 0,
-                  ecosystem_slashed_amount: savedStats.ecosystem_slashed_amount ?? 0,
-                  ecosystem_slashed_amount_repaid: savedStats.ecosystem_slashed_amount_repaid ?? 0,
-                  network_slash_events: savedStats.network_slash_events ?? 0,
-                  network_slashed_amount: savedStats.network_slashed_amount ?? 0,
-                  network_slashed_amount_repaid: savedStats.network_slashed_amount_repaid ?? 0,
                   event_type: oldTr ? 'Update' : 'Create',
                   height: blockHeightNum,
-                  changes: Object.keys(trChanges).length > 0 ? JSON.stringify(trChanges) : null,
-                  created_at: ledgerTrCreatedAt,
+                })
+                .orderBy('id', 'desc')
+                .first()
+              const existingBaseChanges = existingSameBaseEvent?.changes ? String(existingSameBaseEvent.changes) : null
+              const nextBaseChanges = baseHistoryPayload?.changes ? String(baseHistoryPayload.changes) : null
+              if (!(existingSameBaseEvent && existingBaseChanges === nextBaseChanges)) {
+                await trx('ecosystem_history').insert(baseHistoryPayload)
+              }
+            }
+
+            if (oldTr && hasStatsChanges) {
+              const statsHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
+                trx,
+                {
+                  ...baseHistoryPayload,
+                  event_type: 'StatsUpdate',
+                  height: blockHeightNum,
+                  changes: JSON.stringify(statsChanges),
                 },
-                { ...updatedTr, ...savedStats }
+                updatedTr
               )
 
-              if (!oldTr || hasCoreChanges) {
-                const existingSameBaseEvent = await trx('ecosystem_history')
-                  .where({
-                    ecosystem_id: ecosystemId,
-                    event_type: oldTr ? 'Update' : 'Create',
-                    height: blockHeightNum,
-                  })
-                  .orderBy('id', 'desc')
-                  .first()
-                const existingBaseChanges = existingSameBaseEvent?.changes
-                  ? String(existingSameBaseEvent.changes)
-                  : null
-                const nextBaseChanges = baseHistoryPayload?.changes ? String(baseHistoryPayload.changes) : null
-                if (!(existingSameBaseEvent && existingBaseChanges === nextBaseChanges)) {
-                  await trx('ecosystem_history').insert(baseHistoryPayload)
-                }
+              const existingSameStatsEvent = await trx('ecosystem_history')
+                .where({
+                  ecosystem_id: ecosystemId,
+                  event_type: 'StatsUpdate',
+                  height: blockHeightNum,
+                })
+                .orderBy('id', 'desc')
+                .first()
+              const existingStatsChanges = existingSameStatsEvent?.changes
+                ? String(existingSameStatsEvent.changes)
+                : null
+              const nextStatsChanges = String(statsHistoryPayload.changes)
+              if (!(existingSameStatsEvent && existingStatsChanges === nextStatsChanges)) {
+                await trx('ecosystem_history').insert(statsHistoryPayload)
               }
-
-              if (oldTr && hasStatsChanges) {
-                const statsHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
-                  trx,
-                  {
-                    ...baseHistoryPayload,
-                    event_type: 'StatsUpdate',
-                    height: blockHeightNum,
-                    changes: JSON.stringify(statsChanges),
-                  },
-                  updatedTr
-                )
-
-                const existingSameStatsEvent = await trx('ecosystem_history')
-                  .where({
-                    ecosystem_id: ecosystemId,
-                    event_type: 'StatsUpdate',
-                    height: blockHeightNum,
-                  })
-                  .orderBy('id', 'desc')
-                  .first()
-                const existingStatsChanges = existingSameStatsEvent?.changes
-                  ? String(existingSameStatsEvent.changes)
-                  : null
-                const nextStatsChanges = String(statsHistoryPayload.changes)
-                if (!(existingSameStatsEvent && existingStatsChanges === nextStatsChanges)) {
-                  await trx('ecosystem_history').insert(statsHistoryPayload)
-                }
-              }
-            })
+            }
           }
 
           if (
@@ -676,10 +672,9 @@ export default class EcosystemDatabaseService extends BaseService {
                 rawLedger: raw as Record<string, unknown>,
               }
             )
-            await trx.transaction(async (trx) => {
-              const [snapshotRow] = await trx('ecosystem_snapshot').insert(snapshotInsertRow).returning('id')
-              const nextSnapshotId = snapshotRow?.id
-              if (!nextSnapshotId) return
+            const [snapshotRow] = await trx('ecosystem_snapshot').insert(snapshotInsertRow).returning('id')
+            const nextSnapshotId = snapshotRow?.id
+            if (nextSnapshotId) {
               const prevSnapshot = await trx('ecosystem_snapshot')
                 .where({ ecosystem_id: ecosystemId })
                 .where('height', '<', blockHeightNum)
@@ -713,7 +708,7 @@ export default class EcosystemDatabaseService extends BaseService {
                 next_snapshot_id: nextSnapshotId,
                 diff: diffPayload,
               })
-            })
+            }
           }
         }
       })
