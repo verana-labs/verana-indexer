@@ -117,7 +117,6 @@ export default class EcosystemMessageProcessorService extends BullableService {
       return
     }
 
-    const failThreshold = 0.1
     const failedMessages: any[] = []
     const seenEcosystemIds: number[] = []
     const syncedEcosystemIds: number[] = []
@@ -223,6 +222,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         await processMessage(message, i)
         successCount++
       } catch (err: any) {
+        if (useHeightSyncTR) throw err
         failedMessages.push({ message, error: err.message || String(err) })
       }
     }
@@ -237,15 +237,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         this.logger.error(`  ${idx + 1}. Type: ${failed.message.type}, Error: ${failed.error}`)
       })
 
-      if (failedMessages.length > totalMessages * failThreshold) {
-        const failureRate = ((failedMessages.length / totalMessages) * 100).toFixed(2)
-        this.logger.error(
-          `CRITICAL: ${failureRate}% of EC messages failed (${failedMessages.length}/${totalMessages})! This indicates a serious issue.`
-        )
-        throw new Error(
-          `Failed to process ${failedMessages.length} out of ${totalMessages} Ecosystem messages (${failureRate}% failure rate). This exceeds the ${(failThreshold * 100).toFixed(0)}% threshold.`
-        )
-      }
+      throw new Error(`Failed to process ${failedMessages.length} out of ${totalMessages} Ecosystem messages`)
     }
   }
 
@@ -616,61 +608,32 @@ export default class EcosystemMessageProcessorService extends BullableService {
       )
     }
 
-    let actualEcosystemId: number | null = null
-    try {
-      const ledgerResponse = await getEcosystem(ecosystemId, blockHeight)
-      if (!ledgerResponse?.ecosystem) {
-        this.logger.warn(`[EC Height-Sync] Ledger returned no ecosystem for id=${ecosystemId} at height=${blockHeight}`)
-        return null
-      }
+    const ledgerResponse = await getEcosystem(ecosystemId, blockHeight)
+    if (!ledgerResponse?.ecosystem) {
+      throw new Error(`[EC Height-Sync] Ledger returned no ecosystem for id=${ecosystemId} at height=${blockHeight}`)
+    }
 
-      const ledgerTr = ledgerResponse.ecosystem
-      const extractedEcosystemId = Number(ledgerTr.id ?? ledgerTr.ecosystem_id ?? ecosystemId)
-      if (Number.isInteger(extractedEcosystemId) && extractedEcosystemId > 0) {
-        actualEcosystemId = extractedEcosystemId
-      } else {
-        actualEcosystemId = ecosystemId
-      }
+    const ledgerTr = ledgerResponse.ecosystem
+    const extractedEcosystemId = Number(ledgerTr.id ?? ledgerTr.ecosystem_id ?? ecosystemId)
+    const actualEcosystemId =
+      Number.isInteger(extractedEcosystemId) && extractedEcosystemId > 0 ? extractedEcosystemId : ecosystemId
 
-      const syncResult: any = await this.broker.call(`${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`, {
-        ledgerResponse: { ecosystem: ledgerResponse.ecosystem },
-        blockHeight,
-      })
+    const syncResult: any = await this.broker.call(`${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`, {
+      ledgerResponse: { ecosystem: ledgerResponse.ecosystem },
+      blockHeight,
+    })
 
-      if (!syncResult || syncResult.success !== true) {
-        this.logger.warn(
-          `[EC Height-Sync] syncFromLedger reported failure for id=${actualEcosystemId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
-        )
-        return null
-      }
-
-      if (!actualEcosystemId) {
-        actualEcosystemId = ecosystemId
-      }
-    } catch (err: any) {
-      this.logger.warn(
-        `[EC Height-Sync] Failed to sync EC id=${ecosystemId} from ledger at height=${blockHeight}: ${
-          err?.message || String(err)
-        }`
+    if (!syncResult || syncResult.success !== true) {
+      throw new Error(
+        `[EC Height-Sync] syncFromLedger reported failure for id=${actualEcosystemId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
       )
-      return null
     }
 
-    let newTr: any | null = null
-    if (actualEcosystemId != null) {
-      try {
-        newTr = await knex('ecosystem').where({ id: actualEcosystemId }).first()
-      } catch (err: any) {
-        this.logger.warn(
-          `[EC Height-Sync] Failed to load updated EC row for id=${actualEcosystemId}: ${err?.message || String(err)}`
-        )
-      }
-    }
+    const newTr = await knex('ecosystem').where({ id: actualEcosystemId }).first()
     if (!newTr) {
-      this.logger.warn(
+      throw new Error(
         `[EC Height-Sync] No persisted EC row found after sync for id=${actualEcosystemId} at height=${blockHeight}`
       )
-      return null
     }
     return actualEcosystemId
   }
@@ -921,6 +884,20 @@ export default class EcosystemMessageProcessorService extends BullableService {
         await this.recordGFVHistory(trx, gfv.id, ec.id, 'AddGFV', blockHeight, null, gfv)
       } else if (docEvent?.gfvId && gfv.gfv_id == null) {
         await trx('governance_framework_version').where({ id: gfv.id }).update({ gfv_id: docEvent.gfvId })
+      }
+
+      const replayed = await trx('governance_framework_document')
+        .where({
+          gfv_id: gfv.id,
+          language: language ?? null,
+          url: message.doc_url ?? null,
+          digest_sri: digestSri ?? null,
+          created: timestamp,
+        })
+        .first()
+      if (replayed) {
+        await trx.commit()
+        return
       }
 
       const [gfd] = await trx('governance_framework_document')

@@ -44,8 +44,6 @@ export default class ParticipantProcessorService extends BullableService {
       return { success: true }
     }
 
-    const failedMessages: Array<{ message: any; error: string }> = []
-
     const sortedMessages = [...participantMessages].sort((a, b) => {
       const heightDiff = (a.height || 0) - (b.height || 0)
       if (heightDiff !== 0) return heightDiff
@@ -79,23 +77,23 @@ export default class ParticipantProcessorService extends BullableService {
 
     for (let i = 0; i < sortedMessages.length; i++) {
       const msg = sortedMessages[i]
-      try {
-        this.logger.info(
-          ` Processing Participant message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`
-        )
-        const useHeightSyncParticipant = process.env.USE_HEIGHT_SYNC_PARTICIPANT !== 'false'
-        if (useHeightSyncParticipant) {
-          const { synced, attempted, syncedIds } = await runHeightSyncParticipant(this.broker, [msg])
-          const targetParticipantId = extractStartParticipantOpNewParticipantId(msg as ParticipantMessagePayload)
+      this.logger.info(
+        ` Processing Participant message ${i + 1}/${totalMessages}: type=${msg.type}, height=${msg.height}`
+      )
+      const useHeightSyncParticipant = process.env.USE_HEIGHT_SYNC_PARTICIPANT !== 'false'
+      if (useHeightSyncParticipant) {
+        const { synced, attempted, syncedIds } = await runHeightSyncParticipant(this.broker, [msg])
+        const targetParticipantId = extractStartParticipantOpNewParticipantId(msg as ParticipantMessagePayload)
 
-          if (targetParticipantId != null && syncedIds.includes(targetParticipantId)) {
-            continue
-          }
-          this.logger.warn(
-            `[participant] Height-sync synced ${synced}/${attempted} but did not cover target participant ${targetParticipantId ?? 'unknown'}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? 'unknown'}`
-          )
+        if (targetParticipantId != null && syncedIds.includes(targetParticipantId)) {
+          continue
         }
+        this.logger.warn(
+          `[participant] Height-sync synced ${synced}/${attempted} but did not cover target participant ${targetParticipantId ?? 'unknown'}. Falling back to direct message handlers for type=${msg.type} height=${msg.height} txHash=${msg.txHash ?? 'unknown'}`
+        )
+      }
 
+      try {
         const payload = {
           ...msg.content,
           timestamp: msg.timestamp,
@@ -187,19 +185,13 @@ export default class ParticipantProcessorService extends BullableService {
           this.logger.warn(` Participant message processing returned failure: ${result.reason}`)
         }
       } catch (err: any) {
-        failedMessages.push({ message: msg, error: err.message || String(err) })
         this.logger.error(`❌ Error processing Participant message ${i + 1}/${totalMessages}:`, err)
+        throw err
       }
     }
 
-    if (failedMessages.length > 0) {
-      this.logger.warn(` ${failedMessages.length}/${totalMessages} Participant messages failed to process`)
-    }
-
-    this.logger.info(
-      ` Participant processing complete: ${totalMessages - failedMessages.length}/${totalMessages} successful`
-    )
-    return { success: true, failed: failedMessages.length }
+    this.logger.info(` Participant processing complete: ${totalMessages}/${totalMessages} successful`)
+    return { success: true }
   }
 
   @Action({ name: 'getParticipant' })

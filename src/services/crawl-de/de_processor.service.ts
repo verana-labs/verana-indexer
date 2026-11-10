@@ -109,15 +109,21 @@ export default class DelegationProcessorService extends BullableService {
 
         if (!nextBlocks.length) break
 
-        for (const block of nextBlocks) {
-          if (!indexerStatusManager.isCrawlingActive()) break
-          await this.processBlockEventsInternal(block)
-        }
-
-        const newHeight = nextBlocks[nextBlocks.length - 1].height
-        if (newHeight > lastHeight) {
-          await this.checkpointManager.updateCheckpoint(jobName, newHeight, { logger: this.logger })
-          lastHeight = newHeight
+        let processedHeight = lastHeight
+        try {
+          for (const block of nextBlocks) {
+            if (!indexerStatusManager.isCrawlingActive()) break
+            await this.processBlockEventsInternal(block).catch((error) => {
+              this.logger.error(`Failed to process block ${block.height}:`, error)
+              throw error
+            })
+            processedHeight = block.height
+          }
+        } finally {
+          if (processedHeight > lastHeight) {
+            await this.checkpointManager.updateCheckpoint(jobName, processedHeight, { logger: this.logger })
+            lastHeight = processedHeight
+          }
         }
 
         if (nextBlocks.length < maxBlockBatch) hasMore = false

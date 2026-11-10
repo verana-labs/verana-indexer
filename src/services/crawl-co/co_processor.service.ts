@@ -122,7 +122,6 @@ export default class CorporationMessageProcessorService extends BullableService 
       return
     }
 
-    const failThreshold = 0.1
     const failedMessages: { message: DecodedCoMessage; error: string }[] = []
     const totalMessages = corporationList.length
 
@@ -146,10 +145,9 @@ export default class CorporationMessageProcessorService extends BullableService 
       `Corporation processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${totalMessages}`
     )
 
-    if (failedMessages.length > totalMessages * failThreshold) {
-      const failureRate = ((failedMessages.length / totalMessages) * 100).toFixed(2)
+    if (failedMessages.length > 0) {
       throw new Error(
-        `Failed to process ${failedMessages.length}/${totalMessages} Corporation messages (${failureRate}%). Exceeds ${(failThreshold * 100).toFixed(0)}% threshold.`
+        `Failed to process ${failedMessages.length}/${totalMessages} Corporation messages: ${failedMessages[0].error}`
       )
     }
   }
@@ -258,6 +256,11 @@ export default class CorporationMessageProcessorService extends BullableService 
     account: string | null,
     timestamp: string | Date
   ): Promise<void> {
+    const replayed = await trx('corporation_history')
+      .where({ corporation_id: corporation.id, event_type: eventType, height: Number(height) })
+      .whereRaw('changes = ?::jsonb', [JSON.stringify(changes)])
+      .first()
+    if (replayed) return
     await trx('corporation_history').insert({
       corporation_id: corporation.id,
       did: corporation.did ?? null,
@@ -290,6 +293,9 @@ export default class CorporationMessageProcessorService extends BullableService 
       const existing = ((chainCorporationId
         ? await trx('corporation').where({ id: chainCorporationId }).first()
         : undefined) ?? (await trx('corporation').where({ did }).first())) as CorporationRow | undefined
+      if (existing && blockHeight > 0 && Number(existing.height) === blockHeight) {
+        return `Corporation already indexed at height ${blockHeight}: id=${existing.id}`
+      }
 
       const row = {
         did,
@@ -355,7 +361,7 @@ export default class CorporationMessageProcessorService extends BullableService 
           .merge({ active_since: timestamp, gfv_id: seedEvent?.gfvId ?? null })
           .returning('*')) as GfvRow[]
 
-        await trx('co_governance_framework_document').insert({
+        await this.insertGfDocument(trx, {
           gfv_id: gfv.id,
           language: row.language ?? '',
           url: row.doc_url ?? '',
@@ -432,7 +438,7 @@ export default class CorporationMessageProcessorService extends BullableService 
         })
       }
 
-      await trx('co_governance_framework_document').insert({
+      const inserted = await this.insertGfDocument(trx, {
         gfv_id: gfv.id,
         language,
         url,
@@ -441,7 +447,7 @@ export default class CorporationMessageProcessorService extends BullableService 
         gfd_id: docEvent?.gfdId ?? null,
       })
 
-      if (ecosystemId === 0) {
+      if (inserted && ecosystemId === 0) {
         await this.recordCgfHistory(
           trx,
           corporation,
@@ -526,6 +532,24 @@ export default class CorporationMessageProcessorService extends BullableService 
 
       return `IncreaseActiveGovernanceFrameworkVersion OK: corporation_id=${corporation.id}, ecosystem_id=${ecosystemId}, version=${nextVersion}`
     })
+  }
+
+  private async insertGfDocument(
+    trx: Knex.Transaction,
+    doc: { gfv_id: number; language: string; url: string; digest_sri: string; created: string; gfd_id: number | null }
+  ): Promise<boolean> {
+    const existing = await trx('co_governance_framework_document')
+      .where({
+        gfv_id: doc.gfv_id,
+        language: doc.language,
+        url: doc.url,
+        digest_sri: doc.digest_sri,
+        created: doc.created,
+      })
+      .first()
+    if (existing) return false
+    await trx('co_governance_framework_document').insert(doc)
+    return true
   }
 
   // Materialize the corporation's active CGF version = highest activated version (ecosystem_id = 0).

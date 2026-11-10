@@ -21,22 +21,15 @@ interface BlockEvent {
   attributes?: BlockEventAttribute[]
 }
 
-function decodeAttr(value: string | undefined): string {
-  if (value === undefined || value === null) return ''
-  try {
-    const decoded = Buffer.from(value, 'base64').toString('utf8')
-    if (Buffer.from(decoded, 'utf8').toString('base64') === value) {
-      return decoded
-    }
-  } catch {
-    // value was not base64-encoded
-  }
-  return value
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8')
 }
 
 function getAttr(event: BlockEvent, key: string): string | undefined {
   for (const attr of event.attributes ?? []) {
-    if (decodeAttr(attr.key) === key) return decodeAttr(attr.value)
+    if (attr.key === undefined) continue
+    if (attr.key === key) return attr.value
+    if (decodeBase64(attr.key) === key) return attr.value === undefined ? undefined : decodeBase64(attr.value)
   }
   return undefined
 }
@@ -67,29 +60,14 @@ export async function runHeightSyncXR(
     return
   }
 
-  let ledgerRates: Awaited<ReturnType<typeof fetchExchangeRates>> = []
-  try {
-    ledgerRates = await fetchExchangeRates(blockHeight)
-  } catch (err: any) {
-    broker.logger.warn(
-      `[XR Height Sync] Failed to fetch exchange rates at block=${blockHeight}: ${err?.message || String(err)}`
-    )
-    return
-  }
-
+  const ledgerRates = await fetchExchangeRates(blockHeight)
   const resolveEventType = buildEventTypeResolverFromEvents(events)
 
   for (const ledgerRate of ledgerRates) {
-    try {
-      await broker.call(`${SERVICE.V1.ExchangeRateDatabaseService.path}.syncFromLedger`, {
-        exchangeRate: serializeLedgerExchangeRate(ledgerRate),
-        blockHeight,
-        eventType: resolveEventType(ledgerRate.id),
-      })
-    } catch (err: any) {
-      broker.logger.warn(
-        `[XR Height Sync] Sync failed id=${ledgerRate.id} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    await broker.call(`${SERVICE.V1.ExchangeRateDatabaseService.path}.syncFromLedger`, {
+      exchangeRate: serializeLedgerExchangeRate(ledgerRate),
+      blockHeight,
+      eventType: resolveEventType(ledgerRate.id),
+    })
   }
 }

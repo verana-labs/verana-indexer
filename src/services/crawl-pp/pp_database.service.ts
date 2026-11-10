@@ -444,6 +444,11 @@ async function pickParticipantSnapshot(record: any) {
   return snapshot
 }
 
+function sameInstant(a: unknown, b: unknown): boolean {
+  if (a == null || b == null) return a == null && b == null
+  return new Date(a as string).getTime() === new Date(b as string).getTime()
+}
+
 async function recordParticipantHistory(
   db: any,
   participantRecord: any,
@@ -1061,11 +1066,11 @@ export default class ParticipantIngestService extends Service {
 
           const stateInputsChanged =
             !previousParticipant ||
-            previousParticipant.repaid !== finalParticipant.repaid ||
-            previousParticipant.slashed !== finalParticipant.slashed ||
-            previousParticipant.revoked !== finalParticipant.revoked ||
-            previousParticipant.effective_from !== finalParticipant.effective_from ||
-            previousParticipant.effective_until !== finalParticipant.effective_until
+            !sameInstant(previousParticipant.repaid, finalParticipant.repaid) ||
+            !sameInstant(previousParticipant.slashed, finalParticipant.slashed) ||
+            !sameInstant(previousParticipant.revoked, finalParticipant.revoked) ||
+            !sameInstant(previousParticipant.effective_from, finalParticipant.effective_from) ||
+            !sameInstant(previousParticipant.effective_until, finalParticipant.effective_until)
 
           if (stateInputsChanged) {
             const prevVersion: number =
@@ -1245,13 +1250,19 @@ export default class ParticipantIngestService extends Service {
         finalParticipant = refreshed
       }
 
-      await recordParticipantHistory(
-        trx,
-        finalParticipant,
-        `SYNC_LEDGER${msgType ? `:${msgType}` : ''}${txHash ? `:${txHash}` : ''}`,
-        effectiveHeight,
-        previousParticipant ? await pickParticipantSnapshot(previousParticipant) : undefined
-      )
+      const historyEventType = `SYNC_LEDGER${msgType ? `:${msgType}` : ''}${txHash ? `:${txHash}` : ''}`
+      const recorded = await trx('participant_history')
+        .where({ participant_id: mapped.id, height: effectiveHeight, event_type: historyEventType })
+        .first()
+      if (!recorded) {
+        await recordParticipantHistory(
+          trx,
+          finalParticipant,
+          historyEventType,
+          effectiveHeight,
+          previousParticipant ? await pickParticipantSnapshot(previousParticipant) : undefined
+        )
+      }
     })
 
     await this.refreshSchemaAndEcosystemStats(mapped.schema_id, effectiveHeight)
@@ -1355,13 +1366,19 @@ export default class ParticipantIngestService extends Service {
         finalSession = await trx('participant_sessions').where({ id }).first()
       }
 
-      await recordParticipantSessionHistory(
-        trx,
-        finalSession,
-        `SYNC_LEDGER${msgType ? `:${msgType}` : ''}${txHash ? `:${txHash}` : ''}`,
-        effectiveHeight,
-        previous ? pickParticipantSessionSnapshot(previous) : undefined
-      )
+      const historyEventType = `SYNC_LEDGER${msgType ? `:${msgType}` : ''}${txHash ? `:${txHash}` : ''}`
+      const recorded = await trx('participant_session_history')
+        .where({ session_id: id, height: effectiveHeight, event_type: historyEventType })
+        .first()
+      if (!recorded) {
+        await recordParticipantSessionHistory(
+          trx,
+          finalSession,
+          historyEventType,
+          effectiveHeight,
+          previous ? pickParticipantSessionSnapshot(previous) : undefined
+        )
+      }
 
       const previousAuthzRaw = previous?.session_records ?? previous?.authz
       let previousAuthz: any[] = []

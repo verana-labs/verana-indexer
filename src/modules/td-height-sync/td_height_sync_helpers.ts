@@ -6,7 +6,7 @@ import {
 import { TrustDepositEventType } from '../../common/constant'
 import { dateToIsoOrNull } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
-import { withAbciQueryClient } from '../../common/utils/grpc_query'
+import { isAbciNotFound, withAbciQueryClient } from '../../common/utils/grpc_query'
 import { VeranaTrustDepositMessageTypes } from '../../common/verana-message-types'
 
 async function resolveCorporation(idOrAddress: string): Promise<{ corporationId: number; address: string } | null> {
@@ -59,61 +59,23 @@ export interface TxEventLike {
   attributes?: Array<{ key?: string; value?: string }>
 }
 
-function decodeAttributeValue(value: string | undefined): string {
-  if (value == null || value === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length % 4 === 0) {
-      return Buffer.from(value, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return value
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8')
 }
 
-function decodeAttributeKey(key: string | undefined): string {
-  if (key == null || key === '') return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(key) && key.length % 4 === 0) {
-      return Buffer.from(key, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
+function getAttr(event: TxEventLike, key: string): string | undefined {
+  for (const attr of event.attributes ?? []) {
+    if (attr.key === undefined) continue
+    if (attr.key === key) return attr.value
+    if (decodeBase64(attr.key) === key) return attr.value === undefined ? undefined : decodeBase64(attr.value)
   }
-  return key
+  return undefined
 }
 
-function getDecodedEventAttributes(
-  event: TxEventLike,
-  decodeAttributes?: boolean
-): Array<{ key: string; value: string }> {
-  return (event.attributes ?? []).map((attr) => ({
-    key: decodeAttributes ? decodeAttributeKey(attr.key) : (attr.key ?? ''),
-    value: decodeAttributes ? decodeAttributeValue(attr.value) : (attr.value ?? ''),
-  }))
-}
-
-const TD_EVENT_ATTR_KEYS = ['trust_deposit_id', 'account', 'owner', 'deposit_account']
-
-function isPotentialTrustDepositEvent(event: TxEventLike, decodeAttributes?: boolean): boolean {
-  const eventType = (event.type ?? '').trim()
-  if (TD_BLOCKCHAIN_EVENT_TYPES.has(eventType)) return true
-  const eventTypeLower = eventType.toLowerCase()
-  if (
-    eventTypeLower.includes('trust_deposit') ||
-    eventTypeLower.includes('trustdeposit') ||
-    eventTypeLower.includes('verana.td')
-  ) {
-    return true
-  }
-  const attrs = getDecodedEventAttributes(event, decodeAttributes)
-  for (const attr of attrs) {
-    const keyLower = attr.key.toLowerCase()
-    if (TD_EVENT_ATTR_KEYS.some((k) => keyLower.includes(k.toLowerCase()))) {
-      return true
-    }
-  }
-  return false
+function getTrustDepositIdFromEvent(event: TxEventLike): string | undefined {
+  if (!TD_BLOCKCHAIN_EVENT_TYPES.has((event.type ?? '').trim())) return undefined
+  const id = (getAttr(event, 'account') ?? getAttr(event, 'corporation_id'))?.trim()
+  return id || undefined
 }
 
 export function blockchainEventTypeToHistoryEventType(blockchainEventType: string): string {
@@ -183,8 +145,9 @@ export async function fetchTrustDeposit(
         slash_count: Number(td.slashCount ?? 0),
       }
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }
 
@@ -197,15 +160,7 @@ export function extractTrustDepositIdsFromMessageContent(
 ): string[] {
   if (!content || typeof content !== 'object') return []
   const ids: string[] = []
-  const candidates = [
-    content.corporation,
-    content.corporationId,
-    content.account,
-    content.depositAccount,
-    content.owner,
-    content.trustDepositId,
-  ]
-  for (const raw of candidates) {
+  for (const raw of [content.corporation, content.corporationId, content.corporation_id]) {
     if (raw === null || raw === undefined) continue
     const s = String(raw).trim()
     if (s.length > 0) ids.push(s)
@@ -213,39 +168,16 @@ export function extractTrustDepositIdsFromMessageContent(
   return [...new Set(ids)]
 }
 
-export function extractTrustDepositIdsFromEvents(events: TxEventLike[], decodeAttributes?: boolean): string[] {
+export function extractTrustDepositIdsFromEvents(events: TxEventLike[]): string[] {
   const ids: string[] = []
   for (const ev of events) {
-    const attrs = getDecodedEventAttributes(ev, decodeAttributes)
-    if (attrs.length === 0) continue
-    if (!isPotentialTrustDepositEvent(ev, decodeAttributes)) continue
-    for (const attr of attrs) {
-      const keyLower = attr.key.toLowerCase()
-      const value = attr.value?.trim() ?? ''
-      if (value.length === 0) continue
-      if (
-        keyLower.includes('trust_deposit_id') ||
-        keyLower.includes('account') ||
-        keyLower.includes('owner') ||
-        keyLower.includes('deposit_account')
-      ) {
-        const num = Number(value)
-        if (Number.isInteger(num) && num > 0) {
-          ids.push(String(num))
-        } else {
-          ids.push(value)
-        }
-      }
-    }
+    const id = getTrustDepositIdFromEvent(ev)
+    if (id) ids.push(id)
   }
   return [...new Set(ids)]
 }
 
-export function extractImpactedTrustDepositIds(
-  messages: TdMessageLike[],
-  events?: TxEventLike[],
-  decodeEventAttributes?: boolean
-): string[] {
+export function extractImpactedTrustDepositIds(messages: TdMessageLike[], events?: TxEventLike[]): string[] {
   const fromMessages: string[] = []
   for (const msg of messages) {
     if (!isTdMessageType(msg.type)) continue
@@ -253,10 +185,10 @@ export function extractImpactedTrustDepositIds(
     const fromContent = extractTrustDepositIdsFromMessageContent(msg.content ?? undefined)
     fromMessages.push(...fromContent)
     if (Array.isArray(msg.txEvents) && msg.txEvents.length > 0) {
-      fromMessages.push(...extractTrustDepositIdsFromEvents(msg.txEvents, decodeEventAttributes ?? true))
+      fromMessages.push(...extractTrustDepositIdsFromEvents(msg.txEvents))
     }
   }
-  const fromEvents = events?.length ? extractTrustDepositIdsFromEvents(events, decodeEventAttributes ?? true) : []
+  const fromEvents = events?.length ? extractTrustDepositIdsFromEvents(events) : []
   return [...new Set([...fromMessages, ...fromEvents])]
 }
 
@@ -265,10 +197,7 @@ export function extractImpactedTrustDepositIds(
  * Each ID is assigned the event type from the first message that references it.
  * IDs only present in events (not in any message) are not in the map; callers should use "SYNC_LEDGER" for those.
  */
-export function buildDepositIdToEventTypeMap(
-  messages: TdMessageLike[],
-  decodeEventAttributes: boolean = true
-): Map<string, string> {
+export function buildDepositIdToEventTypeMap(messages: TdMessageLike[]): Map<string, string> {
   const map = new Map<string, string>()
   for (const msg of messages) {
     if (!isTdMessageType(msg.type)) continue
@@ -276,7 +205,7 @@ export function buildDepositIdToEventTypeMap(
     const ids: string[] = []
     ids.push(...extractTrustDepositIdsFromMessageContent(msg.content ?? undefined))
     if (Array.isArray(msg.txEvents) && msg.txEvents.length > 0) {
-      ids.push(...extractTrustDepositIdsFromEvents(msg.txEvents, decodeEventAttributes))
+      ids.push(...extractTrustDepositIdsFromEvents(msg.txEvents))
     }
     const eventType = messageTypeToEventType(msg.type)
     for (const id of [...new Set(ids)]) {
@@ -286,37 +215,11 @@ export function buildDepositIdToEventTypeMap(
   return map
 }
 
-export function buildDepositIdToEventTypeMapFromEvents(
-  events: TxEventLike[],
-  decodeEventAttributes: boolean = true
-): Map<string, string> {
+export function buildDepositIdToEventTypeMapFromEvents(events: TxEventLike[]): Map<string, string> {
   const map = new Map<string, string>()
   for (const ev of events) {
-    if (!isPotentialTrustDepositEvent(ev, decodeEventAttributes)) continue
-    const historyEventType = blockchainEventTypeToHistoryEventType(ev.type ?? '')
-    const attrs = getDecodedEventAttributes(ev, decodeEventAttributes)
-    const ids: string[] = []
-    for (const attr of attrs) {
-      const keyLower = attr.key.toLowerCase()
-      const value = attr.value?.trim() ?? ''
-      if (value.length === 0) continue
-      if (
-        keyLower.includes('trust_deposit_id') ||
-        keyLower.includes('account') ||
-        keyLower.includes('owner') ||
-        keyLower.includes('deposit_account')
-      ) {
-        const num = Number(value)
-        if (Number.isInteger(num) && num > 0) {
-          ids.push(String(num))
-        } else {
-          ids.push(value)
-        }
-      }
-    }
-    for (const id of [...new Set(ids)]) {
-      if (!map.has(id)) map.set(id, historyEventType)
-    }
+    const id = getTrustDepositIdFromEvent(ev)
+    if (id && !map.has(id)) map.set(id, blockchainEventTypeToHistoryEventType(ev.type ?? ''))
   }
   return map
 }

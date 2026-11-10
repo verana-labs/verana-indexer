@@ -158,38 +158,45 @@ async function resolveCorporationPolicyAddress(corporationId: number): Promise<s
   return corporation?.policy_address ?? undefined
 }
 
-async function syncOperatorAuthorization(
+type LedgerWrite = () => Promise<unknown>
+
+async function loadOperatorAuthorization(
   broker: ServiceBroker,
   touch: OperatorAuthorizationTouch,
   blockHeight: number
-): Promise<void> {
+): Promise<LedgerWrite | undefined> {
   if (touch.revoked) {
-    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.revokeOperatorAuthorization`, {
-      id: touch.authzId,
-      corporationId: touch.corporationId,
-      operator: touch.grantee,
-      blockHeight,
-    })
-    return
+    return () =>
+      broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.revokeOperatorAuthorization`, {
+        id: touch.authzId,
+        corporationId: touch.corporationId,
+        operator: touch.grantee,
+        blockHeight,
+      })
   }
 
   const ledgerAuthorization = await fetchOperatorAuthorization(touch.authzId, blockHeight)
-  if (!ledgerAuthorization) return
+  if (!ledgerAuthorization) return undefined
 
-  await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
-    authorization: serializeLedgerOperatorAuthorization(ledgerAuthorization),
-    blockHeight,
-  })
-}
-
-async function syncFeeGrant(broker: ServiceBroker, touch: FeeGrantTouch, blockHeight: number): Promise<void> {
-  if (touch.revoked) {
-    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.revokeFeeGrant`, {
-      grantorCorporationId: touch.grantorCorporationId,
-      grantee: touch.grantee,
+  return () =>
+    broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncOperatorAuthorization`, {
+      authorization: serializeLedgerOperatorAuthorization(ledgerAuthorization),
       blockHeight,
     })
-    return
+}
+
+async function loadFeeGrant(
+  broker: ServiceBroker,
+  touch: FeeGrantTouch,
+  blockHeight: number
+): Promise<LedgerWrite | undefined> {
+  if (touch.revoked) {
+    return () =>
+      broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.revokeFeeGrant`, {
+        grantorCorporationId: touch.grantorCorporationId,
+        grantee: touch.grantee,
+        blockHeight,
+      })
   }
 
   // Chain fallback covers reindex ordering, where the corporation pipeline may lag this one.
@@ -200,7 +207,7 @@ async function syncFeeGrant(broker: ServiceBroker, touch: FeeGrantTouch, blockHe
     broker.logger.warn(
       `[DE Height Sync] No policy address for corporation=${touch.grantorCorporationId}; skipping fee grant sync at block=${blockHeight}`
     )
-    return
+    return undefined
   }
 
   const snapshot = await fetchFeeGrantAllowance(policyAddress, touch.grantee, blockHeight)
@@ -209,60 +216,66 @@ async function syncFeeGrant(broker: ServiceBroker, touch: FeeGrantTouch, blockHe
     broker.logger.warn(
       `[DE Height Sync] No fee allowance found granter=${policyAddress} grantee=${touch.grantee} at block=${blockHeight}`
     )
-    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.refreshFeeGrantSpend`, {
-      grantorCorporationId: touch.grantorCorporationId,
-      grantee: touch.grantee,
-      snapshot: null,
-      blockHeight,
-    })
-    return
+    return () =>
+      broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.refreshFeeGrantSpend`, {
+        grantorCorporationId: touch.grantorCorporationId,
+        grantee: touch.grantee,
+        snapshot: null,
+        blockHeight,
+      })
   }
 
-  await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncFeeGrant`, {
-    grantorCorporationId: touch.grantorCorporationId,
-    grantee: touch.grantee,
-    snapshot,
-    blockHeight,
-  })
+  return () =>
+    broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncFeeGrant`, {
+      grantorCorporationId: touch.grantorCorporationId,
+      grantee: touch.grantee,
+      snapshot,
+      blockHeight,
+    })
 }
 
-async function refreshFeeGrantUse(
+async function loadFeeGrantUse(
   broker: ServiceBroker,
   use: FeeGrantUse,
   blockHeight: number,
   touchedPairs: Set<string>
-): Promise<void> {
+): Promise<LedgerWrite | undefined> {
   const corporation = await Corporation.query().where('policy_address', use.granter).first()
-  if (!corporation?.id) return
+  if (!corporation?.id) return undefined
   // A grant/revoke in this block already synced the pair's end-of-block state.
-  if (touchedPairs.has(`${Number(corporation.id)}:${use.grantee}`)) return
+  if (touchedPairs.has(`${Number(corporation.id)}:${use.grantee}`)) return undefined
 
-  // Transport errors propagate to the caller's catch, so a failed fetch writes nothing.
   const snapshot = (await fetchFeeGrantAllowance(use.granter, use.grantee, blockHeight)) ?? null
 
-  await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.refreshFeeGrantSpend`, {
-    grantorCorporationId: Number(corporation.id),
-    grantee: use.grantee,
-    snapshot,
-    blockHeight,
-  })
+  return () =>
+    broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.refreshFeeGrantSpend`, {
+      grantorCorporationId: Number(corporation.id),
+      grantee: use.grantee,
+      snapshot,
+      blockHeight,
+    })
 }
 
-async function syncVSOperatorAuthorization(broker: ServiceBroker, vsoaId: number, blockHeight: number): Promise<void> {
+async function loadVSOperatorAuthorization(
+  broker: ServiceBroker,
+  vsoaId: number,
+  blockHeight: number
+): Promise<LedgerWrite> {
   const ledgerAuthorization = await fetchVSOperatorAuthorization(vsoaId, blockHeight)
 
   if (!ledgerAuthorization) {
-    await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.deleteVSOperatorAuthorization`, {
-      id: vsoaId,
-      blockHeight,
-    })
-    return
+    return () =>
+      broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.deleteVSOperatorAuthorization`, {
+        id: vsoaId,
+        blockHeight,
+      })
   }
 
-  await broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncVSOperatorAuthorization`, {
-    authorization: serializeLedgerVSOperatorAuthorization(ledgerAuthorization),
-    blockHeight,
-  })
+  return () =>
+    broker.call(`${SERVICE.V1.DelegationDatabaseService.path}.syncVSOperatorAuthorization`, {
+      authorization: serializeLedgerVSOperatorAuthorization(ledgerAuthorization),
+      blockHeight,
+    })
 }
 
 export async function runHeightSyncDE(
@@ -275,45 +288,23 @@ export async function runHeightSyncDE(
     return
   }
 
+  const writes: Array<LedgerWrite | undefined> = []
   for (const touch of extractOperatorAuthorizationTouches(events)) {
-    try {
-      await syncOperatorAuthorization(broker, touch, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DE Height Sync] Sync failed operator_authorization=${touch.authzId} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    writes.push(await loadOperatorAuthorization(broker, touch, blockHeight))
   }
-
   for (const vsoaId of extractVSOperatorAuthorizationIds(events)) {
-    try {
-      await syncVSOperatorAuthorization(broker, vsoaId, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DE Height Sync] Sync failed vs_operator_authorization=${vsoaId} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    writes.push(await loadVSOperatorAuthorization(broker, vsoaId, blockHeight))
   }
-
   const feeGrantTouches = extractFeeGrantTouches(events)
   const touchedPairs = new Set(feeGrantTouches.map((touch) => `${touch.grantorCorporationId}:${touch.grantee}`))
   for (const touch of feeGrantTouches) {
-    try {
-      await syncFeeGrant(broker, touch, blockHeight)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DE Height Sync] Sync failed fee_grant corporation=${touch.grantorCorporationId} grantee=${touch.grantee} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+    writes.push(await loadFeeGrant(broker, touch, blockHeight))
+  }
+  for (const use of extractFeeGrantUses(events)) {
+    writes.push(await loadFeeGrantUse(broker, use, blockHeight, touchedPairs))
   }
 
-  for (const use of extractFeeGrantUses(events)) {
-    try {
-      await refreshFeeGrantUse(broker, use, blockHeight, touchedPairs)
-    } catch (err: any) {
-      broker.logger.warn(
-        `[DE Height Sync] Refresh failed fee_grant granter=${use.granter} grantee=${use.grantee} at block=${blockHeight}: ${err?.message || String(err)}`
-      )
-    }
+  for (const write of writes) {
+    await write?.()
   }
 }

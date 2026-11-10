@@ -1,11 +1,10 @@
-import { Buffer } from 'node:buffer'
 import {
   QueryClientImpl as PpQueryClientImpl,
   QueryGetParticipantRequest,
   QueryGetParticipantSessionRequest,
 } from '@verana-labs/verana-types/codec/verana/pp/v1/query'
 import { Participant, ParticipantSession } from '@verana-labs/verana-types/codec/verana/pp/v1/types'
-import { withAbciQueryClient } from '../../common/utils/grpc_query'
+import { isAbciNotFound, withAbciQueryClient } from '../../common/utils/grpc_query'
 
 export type ParticipantMessagePayload = {
   type: string
@@ -18,26 +17,14 @@ export type ParticipantMessagePayload = {
   txEvents?: Array<{ type?: string; attributes?: Array<{ key?: string; value?: string }> }>
 }
 
-function decodeEventValue(raw: string | undefined): string {
-  if (!raw) return ''
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length % 4 === 0) {
-      return Buffer.from(raw, 'base64').toString('utf-8')
-    }
-  } catch {
-    //
-  }
-  return raw
-}
-
 export function extractIdsFromTxEvents(events: ParticipantMessagePayload['txEvents'], keyPatterns: string[]): number[] {
   if (!Array.isArray(events) || events.length === 0) return []
   const ids = new Set<number>()
   for (const event of events) {
     const attrs = event?.attributes || []
     for (const attr of attrs) {
-      const key = decodeEventValue(attr?.key).toLowerCase()
-      const value = decodeEventValue(attr?.value)
+      const key = (attr?.key ?? '').toLowerCase()
+      const value = attr?.value ?? ''
       if (!keyPatterns.some((pattern) => key.includes(pattern))) continue
       const id = Number(value)
       if (Number.isInteger(id) && id > 0) {
@@ -116,9 +103,9 @@ export function extractStartParticipantOpNewParticipantId(msg: ParticipantMessag
   if (Array.isArray(msg.txEvents)) {
     for (const event of msg.txEvents) {
       for (const attr of event?.attributes || []) {
-        const key = decodeEventValue(attr?.key).toLowerCase()
+        const key = (attr?.key ?? '').toLowerCase()
         if (!exactNewParticipantKeys.has(key)) continue
-        const id = Number(decodeEventValue(attr?.value))
+        const id = Number(attr?.value ?? '')
         if (Number.isInteger(id) && id > 0) {
           fromExactEvents.push(id)
         }
@@ -139,12 +126,12 @@ export function extractStartParticipantOpNewParticipantId(msg: ParticipantMessag
   if (Array.isArray(msg.txEvents)) {
     for (const event of msg.txEvents) {
       for (const attr of event?.attributes || []) {
-        const key = decodeEventValue(attr?.key).toLowerCase()
+        const key = (attr?.key ?? '').toLowerCase()
         if (!key.includes('participant_id') && !key.includes('participantid')) {
           continue
         }
         if (key.includes('validator')) continue
-        const id = Number(decodeEventValue(attr?.value))
+        const id = Number(attr?.value ?? '')
         if (Number.isInteger(id) && id > 0) {
           looseFromEvents.push(id)
         }
@@ -178,9 +165,9 @@ export function extractImpactedSessionIds(msg: ParticipantMessagePayload): strin
   if (Array.isArray(msg?.txEvents)) {
     for (const event of msg.txEvents) {
       for (const attr of event?.attributes || []) {
-        const key = decodeEventValue(attr?.key).toLowerCase()
+        const key = (attr?.key ?? '').toLowerCase()
         if (!key.includes('session_id') && !key.includes('sessionid') && !key.includes('session')) continue
-        const value = decodeEventValue(attr?.value).trim()
+        const value = (attr?.value ?? '').trim()
         if (value) ids.add(value)
       }
     }
@@ -202,8 +189,9 @@ export async function fetchParticipant(
         participant: Participant.toJSON(res.participant) as Record<string, unknown>,
       }
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }
 
@@ -220,7 +208,8 @@ export async function fetchParticipantSession(
         session: ParticipantSession.toJSON(res.participantSession) as Record<string, unknown>,
       }
     })
-  } catch {
-    return null
+  } catch (error) {
+    if (isAbciNotFound(error)) return null
+    throw error
   }
 }

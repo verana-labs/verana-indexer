@@ -255,4 +255,51 @@ describe('🧪 ParticipantProcessorService', () => {
     ;(fetchParticipantSession as jest.Mock).mockReset()
     process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'false'
   })
+
+  it('✅ fails the batch without the legacy fallback when the ledger query fails', async () => {
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'true'
+    spyCreateParticipant.mockClear()
+    const failure = new Error('Query failed with (26): cannot query with height in the future')
+    ;(fetchParticipant as jest.Mock).mockRejectedValue(failure)
+    ;(fetchParticipantSession as jest.Mock).mockResolvedValue(null)
+
+    await expect(
+      broker.call(`v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`, {
+        participantMessages: [
+          {
+            type: ParticipantMessageTypes.SelfCreateParticipant,
+            content: { id: 101 },
+            height: 123,
+            timestamp: '2026-03-01T00:00:00Z',
+            txHash: '0xabc',
+            txEvents: [],
+          },
+        ],
+      })
+    ).rejects.toThrow('cannot query with height in the future')
+
+    expect(spyCreateParticipant).not.toHaveBeenCalled()
+    ;(fetchParticipant as jest.Mock).mockReset()
+    ;(fetchParticipantSession as jest.Mock).mockReset()
+    process.env.USE_HEIGHT_SYNC_PARTICIPANT = 'false'
+  })
+
+  it('✅ fails the batch when a fallback handler throws', async () => {
+    spyCreateRootParticipant.mockImplementationOnce(() => {
+      throw new Error('connection terminated')
+    })
+
+    await expect(
+      broker.call(`v1.${SERVICE.V1.ParticipantProcessorService.key}.handleParticipantMessages`, {
+        participantMessages: [
+          {
+            type: ParticipantMessageTypes.CreateRootParticipant,
+            content: { id: 102 },
+            height: 124,
+            timestamp: '2026-03-01T00:00:00Z',
+          },
+        ],
+      })
+    ).rejects.toThrow('connection terminated')
+  })
 })

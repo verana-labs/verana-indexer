@@ -165,33 +165,8 @@ export default class EcosystemDatabaseService extends BaseService {
           height: blockHeightNum,
         }
 
-        // skip changing height (avoids 23505). Do NOT use try/catch — Postgres aborts the txn on error (25P02).
         if (existingTr) {
-          let payloadForUpdate = basePayload
-          if (
-            Number.isFinite(blockHeightNum) &&
-            blockHeightNum > 0 &&
-            Number(existingTr.height) !== Number(blockHeightNum)
-          ) {
-            const otherOwner = await trx('ecosystem')
-              .select('id')
-              .where('height', blockHeightNum)
-              .whereNot('id', ecosystemId)
-              .first()
-            if (otherOwner) {
-              const { height: originalHeight, ...ledgerFieldsOnly } = basePayload
-              payloadForUpdate = {
-                ...ledgerFieldsOnly,
-                height: existingTr.height ?? originalHeight,
-              }
-              this.logger.warn(
-                `[EC syncFromLedger] ecosystem_id=${ecosystemId}: cannot set height=${blockHeightNum} (legacy UNIQUE(height) ` +
-                  `held by id=${otherOwner.id}); kept height=${existingTr.height}. ` +
-                  'Consider dropping/relaxing the legacy UNIQUE(height) constraint on ecosystem via your normal migration process.'
-              )
-            }
-          }
-          await trx('ecosystem').where({ id: ecosystemId }).update(payloadForUpdate)
+          await trx('ecosystem').where({ id: ecosystemId }).update(basePayload)
         } else {
           const insertRow: Record<string, unknown> = {
             id: ecosystemId,
@@ -449,88 +424,87 @@ export default class EcosystemDatabaseService extends BaseService {
             }
           }
         }
-      })
 
-      const currentTr = await knex('ecosystem').where({ id: ecosystemId }).first()
-      if (!currentTr) {
-        return ApiResponder.error(ctx, 'EC not found after sync', 500)
-      }
+        const currentTr = await trx('ecosystem').where({ id: ecosystemId }).first()
+        if (!currentTr) {
+          throw new Error(`EC ${ecosystemId} not found after sync`)
+        }
 
-      let computedStats: any = null
-      try {
-        computedStats = await calculateEcosystemStats(ecosystemId, undefined)
-      } catch (statsErr: any) {
-        this.logger.warn(
-          `[EC syncFromLedger] Failed to calculate stats for ecosystem_id=${ecosystemId}: ${statsErr?.message || String(statsErr)}`
-        )
-      }
+        let computedStats: any = null
+        try {
+          computedStats = await calculateEcosystemStats(ecosystemId, undefined)
+        } catch (statsErr: any) {
+          this.logger.warn(
+            `[EC syncFromLedger] Failed to calculate stats for ecosystem_id=${ecosystemId}: ${statsErr?.message || String(statsErr)}`
+          )
+        }
 
-      const statsUpdatePayload: Record<string, number> = {}
-      for (const field of TR_STATS_FIELDS) {
-        const fromComputed = computedStats != null && field in computedStats ? Number(computedStats[field]) : undefined
-        const fromCurrent = currentTr[field] != null ? Number(currentTr[field]) : undefined
-        const value: number = Number.isFinite(fromComputed)
-          ? (fromComputed as number)
-          : Number.isFinite(fromCurrent)
-            ? (fromCurrent as number)
-            : 0
-        statsUpdatePayload[field] = value
-      }
-
-      await knex('ecosystem').where({ id: ecosystemId }).update(statsUpdatePayload)
-      const updatedTr = await knex('ecosystem').where({ id: ecosystemId }).first()
-      if (updatedTr) {
+        const statsUpdatePayload: Record<string, number> = {}
         for (const field of TR_STATS_FIELDS) {
-          ;(updatedTr as any)[field] = statsUpdatePayload[field] ?? Number(updatedTr[field] ?? 0)
+          const fromComputed =
+            computedStats != null && field in computedStats ? Number(computedStats[field]) : undefined
+          const fromCurrent = currentTr[field] != null ? Number(currentTr[field]) : undefined
+          const value: number = Number.isFinite(fromComputed)
+            ? (fromComputed as number)
+            : Number.isFinite(fromCurrent)
+              ? (fromCurrent as number)
+              : 0
+          statsUpdatePayload[field] = value
         }
-      }
 
-      if (updatedTr) {
-        const oldTr = preSyncTr
-        const trChanges: Record<string, any> = {}
-        const statsChanges: Record<string, any> = {}
-        const savedStats: Record<string, number> = { ...statsUpdatePayload }
-
-        if (oldTr) {
-          for (const [key, value] of Object.entries(updatedTr)) {
-            if (
-              key !== 'id' &&
-              key !== 'height' &&
-              !TR_STATS_FIELDS.includes(key) &&
-              !this.valuesEquivalent(oldTr[key], value)
-            ) {
-              trChanges[key] = value
-            }
-          }
+        await trx('ecosystem').where({ id: ecosystemId }).update(statsUpdatePayload)
+        const updatedTr = await trx('ecosystem').where({ id: ecosystemId }).first()
+        if (updatedTr) {
           for (const field of TR_STATS_FIELDS) {
-            const oldVal = oldTr[field] != null ? Number(oldTr[field]) : 0
-            const newVal = savedStats[field] ?? Number(updatedTr[field] ?? 0)
-            if (oldVal !== newVal) {
-              statsChanges[field] = newVal
-            }
-          }
-        } else {
-          for (const [key, value] of Object.entries(updatedTr)) {
-            if (
-              key !== 'id' &&
-              key !== 'height' &&
-              !TR_STATS_FIELDS.includes(key) &&
-              value !== null &&
-              value !== undefined
-            ) {
-              trChanges[key] = value
-            }
-          }
-          for (const field of TR_STATS_FIELDS) {
-            trChanges[field] = savedStats[field] ?? Number(updatedTr[field] ?? 0)
+            ;(updatedTr as any)[field] = statsUpdatePayload[field] ?? Number(updatedTr[field] ?? 0)
           }
         }
 
-        const hasCoreChanges = Object.keys(trChanges).length > 0
-        const hasStatsChanges = Object.keys(statsChanges).length > 0
+        if (updatedTr) {
+          const oldTr = preSyncTr
+          const trChanges: Record<string, any> = {}
+          const statsChanges: Record<string, any> = {}
+          const savedStats: Record<string, number> = { ...statsUpdatePayload }
 
-        if (!oldTr || hasCoreChanges || hasStatsChanges) {
-          await knex.transaction(async (trx) => {
+          if (oldTr) {
+            for (const [key, value] of Object.entries(updatedTr)) {
+              if (
+                key !== 'id' &&
+                key !== 'height' &&
+                !TR_STATS_FIELDS.includes(key) &&
+                !this.valuesEquivalent(oldTr[key], value)
+              ) {
+                trChanges[key] = value
+              }
+            }
+            for (const field of TR_STATS_FIELDS) {
+              const oldVal = oldTr[field] != null ? Number(oldTr[field]) : 0
+              const newVal = savedStats[field] ?? Number(updatedTr[field] ?? 0)
+              if (oldVal !== newVal) {
+                statsChanges[field] = newVal
+              }
+            }
+          } else {
+            for (const [key, value] of Object.entries(updatedTr)) {
+              if (
+                key !== 'id' &&
+                key !== 'height' &&
+                !TR_STATS_FIELDS.includes(key) &&
+                value !== null &&
+                value !== undefined
+              ) {
+                trChanges[key] = value
+              }
+            }
+            for (const field of TR_STATS_FIELDS) {
+              trChanges[field] = savedStats[field] ?? Number(updatedTr[field] ?? 0)
+            }
+          }
+
+          const hasCoreChanges = Object.keys(trChanges).length > 0
+          const hasStatsChanges = Object.keys(statsChanges).length > 0
+
+          if (!oldTr || hasCoreChanges || hasStatsChanges) {
             const baseHistoryPayload = await this.withDynamicEcosystemHistoryColumns(
               trx,
               {
@@ -613,130 +587,131 @@ export default class EcosystemDatabaseService extends BaseService {
                 await trx('ecosystem_history').insert(statsHistoryPayload)
               }
             }
-          })
-        }
-
-        if (
-          process.env.USE_HEIGHT_SYNC_TR === 'true' &&
-          updatedTr &&
-          (await knex.schema.hasTable('ecosystem_snapshot')) &&
-          (await knex.schema.hasTable('ecosystem_snapshot_diff'))
-        ) {
-          const toJsonSafe = (x: any): string | number | null => {
-            if (x === null || x === undefined) return null
-            if (typeof x === 'number' && Number.isFinite(x)) return x
-            if (typeof x === 'string') return x
-            if (x instanceof Date) return x.toISOString()
-            return String(x)
           }
-          const versionsForSnapshot: any[] = []
-          const rawVersions: any[] = Array.isArray((raw as any).versions) ? (raw as any).versions : []
-          for (const v of rawVersions) {
-            const vid = Number((v as any).id ?? (v as any).version_id ?? 0)
-            const docs: any[] = []
-            const rawDocs: any[] = Array.isArray((v as any).documents) ? (v as any).documents : []
-            for (const d of rawDocs) {
-              docs.push({
-                id: Number((d as any).id ?? (d as any).document_id ?? 0),
-                version_id: vid,
-                created: toJsonSafe((d as any).created),
-                language: toJsonSafe((d as any).language),
-                url: toJsonSafe((d as any).url),
-                digest_sri: toJsonSafe((d as any).digest_sri ?? (d as any).digestSri),
+
+          if (
+            process.env.USE_HEIGHT_SYNC_TR === 'true' &&
+            updatedTr &&
+            (await knex.schema.hasTable('ecosystem_snapshot')) &&
+            (await knex.schema.hasTable('ecosystem_snapshot_diff')) &&
+            !(await trx('ecosystem_snapshot').where({ ecosystem_id: ecosystemId, height: blockHeightNum }).first())
+          ) {
+            const toJsonSafe = (x: any): string | number | null => {
+              if (x === null || x === undefined) return null
+              if (typeof x === 'number' && Number.isFinite(x)) return x
+              if (typeof x === 'string') return x
+              if (x instanceof Date) return x.toISOString()
+              return String(x)
+            }
+            const versionsForSnapshot: any[] = []
+            const rawVersions: any[] = Array.isArray((raw as any).versions) ? (raw as any).versions : []
+            for (const v of rawVersions) {
+              const vid = Number((v as any).id ?? (v as any).version_id ?? 0)
+              const docs: any[] = []
+              const rawDocs: any[] = Array.isArray((v as any).documents) ? (v as any).documents : []
+              for (const d of rawDocs) {
+                docs.push({
+                  id: Number((d as any).id ?? (d as any).document_id ?? 0),
+                  version_id: vid,
+                  created: toJsonSafe((d as any).created),
+                  language: toJsonSafe((d as any).language),
+                  url: toJsonSafe((d as any).url),
+                  digest_sri: toJsonSafe((d as any).digest_sri ?? (d as any).digestSri),
+                })
+              }
+              versionsForSnapshot.push({
+                id: vid,
+                ecosystem_id: ecosystemId,
+                created: toJsonSafe((v as any).created),
+                version: Number((v as any).version ?? 0),
+                active_since: toJsonSafe((v as any).active_since ?? (v as any).activeSince),
+                documents: docs,
               })
             }
-            versionsForSnapshot.push({
-              id: vid,
-              ecosystem_id: ecosystemId,
-              created: toJsonSafe((v as any).created),
-              version: Number((v as any).version ?? 0),
-              active_since: toJsonSafe((v as any).active_since ?? (v as any).activeSince),
-              documents: docs,
-            })
-          }
-          const versionsSnapshotJson = versionsForSnapshot.length > 0 ? JSON.stringify(versionsForSnapshot) : null
-          const eventType = preSyncTr ? 'Update' : 'Create'
-          const snapshotStats = savedStats ?? statsUpdatePayload
-          const insertPayload: Record<string, any> = {
-            ecosystem_id: ecosystemId,
-            height: blockHeightNum,
-            event_type: eventType,
-            did: updatedTr.did,
-            created: updatedTr.created,
-            modified: updatedTr.modified,
-            archived: updatedTr.archived ?? null,
-            aka: updatedTr.aka ?? null,
-            language: updatedTr.language,
-            active_version: updatedTr.active_version ?? null,
-            participants: snapshotStats.participants ?? 0,
-            participants_ecosystem: snapshotStats.participants_ecosystem ?? 0,
-            participants_issuer_grantor: snapshotStats.participants_issuer_grantor ?? 0,
-            participants_issuer: snapshotStats.participants_issuer ?? 0,
-            participants_verifier_grantor: snapshotStats.participants_verifier_grantor ?? 0,
-            participants_verifier: snapshotStats.participants_verifier ?? 0,
-            participants_holder: snapshotStats.participants_holder ?? 0,
-            active_schemas: snapshotStats.active_schemas ?? 0,
-            archived_schemas: snapshotStats.archived_schemas ?? 0,
-            weight: snapshotStats.weight ?? 0,
-            issued: snapshotStats.issued ?? 0,
-            verified: snapshotStats.verified ?? 0,
-            ecosystem_slash_events: snapshotStats.ecosystem_slash_events ?? 0,
-            ecosystem_slashed_amount: snapshotStats.ecosystem_slashed_amount ?? 0,
-            ecosystem_slashed_amount_repaid: snapshotStats.ecosystem_slashed_amount_repaid ?? 0,
-            network_slash_events: snapshotStats.network_slash_events ?? 0,
-            network_slashed_amount: snapshotStats.network_slashed_amount ?? 0,
-            network_slashed_amount_repaid: snapshotStats.network_slashed_amount_repaid ?? 0,
-          }
-          if (versionsSnapshotJson !== null) {
-            insertPayload.versions_snapshot = knex.raw('?::jsonb', [versionsSnapshotJson])
-          }
-          const snapshotInsertRow = await prepareEcosystemSnapshotRowForInsert(
-            knex,
-            insertPayload as Record<string, unknown>,
-            {
-              ecosystemRow: updatedTr as Record<string, unknown>,
-              rawLedger: raw as Record<string, unknown>,
-            }
-          )
-          const [snapshotRow] = await knex('ecosystem_snapshot').insert(snapshotInsertRow).returning('id')
-          const nextSnapshotId = snapshotRow?.id
-          if (nextSnapshotId) {
-            const prevSnapshot = await knex('ecosystem_snapshot')
-              .where({ ecosystem_id: ecosystemId })
-              .where('height', '<', blockHeightNum)
-              .orderBy('height', 'desc')
-              .orderBy('id', 'desc')
-              .first()
-            const prevSnapshotId = prevSnapshot?.id ?? null
-            const diffPayload: any = { added: {}, removed: {}, changed: {} }
-            if (preSyncTr) {
-              for (const key of Object.keys(updatedTr)) {
-                if (key === 'id' || key === 'height') continue
-                const oldVal = preSyncTr[key]
-                const newVal = updatedTr[key]
-                if (!this.valuesEquivalent(oldVal, newVal)) {
-                  diffPayload.changed[key] = newVal
-                }
-              }
-            } else {
-              for (const key of Object.keys(updatedTr)) {
-                if (key === 'id' || key === 'height') continue
-                if (updatedTr[key] !== null && updatedTr[key] !== undefined) {
-                  diffPayload.added[key] = updatedTr[key]
-                }
-              }
-            }
-            await knex('ecosystem_snapshot_diff').insert({
+            const versionsSnapshotJson = versionsForSnapshot.length > 0 ? JSON.stringify(versionsForSnapshot) : null
+            const eventType = preSyncTr ? 'Update' : 'Create'
+            const snapshotStats = savedStats ?? statsUpdatePayload
+            const insertPayload: Record<string, any> = {
               ecosystem_id: ecosystemId,
               height: blockHeightNum,
               event_type: eventType,
-              prev_snapshot_id: prevSnapshotId,
-              next_snapshot_id: nextSnapshotId,
-              diff: diffPayload,
-            })
+              did: updatedTr.did,
+              created: updatedTr.created,
+              modified: updatedTr.modified,
+              archived: updatedTr.archived ?? null,
+              aka: updatedTr.aka ?? null,
+              language: updatedTr.language,
+              active_version: updatedTr.active_version ?? null,
+              participants: snapshotStats.participants ?? 0,
+              participants_ecosystem: snapshotStats.participants_ecosystem ?? 0,
+              participants_issuer_grantor: snapshotStats.participants_issuer_grantor ?? 0,
+              participants_issuer: snapshotStats.participants_issuer ?? 0,
+              participants_verifier_grantor: snapshotStats.participants_verifier_grantor ?? 0,
+              participants_verifier: snapshotStats.participants_verifier ?? 0,
+              participants_holder: snapshotStats.participants_holder ?? 0,
+              active_schemas: snapshotStats.active_schemas ?? 0,
+              archived_schemas: snapshotStats.archived_schemas ?? 0,
+              weight: snapshotStats.weight ?? 0,
+              issued: snapshotStats.issued ?? 0,
+              verified: snapshotStats.verified ?? 0,
+              ecosystem_slash_events: snapshotStats.ecosystem_slash_events ?? 0,
+              ecosystem_slashed_amount: snapshotStats.ecosystem_slashed_amount ?? 0,
+              ecosystem_slashed_amount_repaid: snapshotStats.ecosystem_slashed_amount_repaid ?? 0,
+              network_slash_events: snapshotStats.network_slash_events ?? 0,
+              network_slashed_amount: snapshotStats.network_slashed_amount ?? 0,
+              network_slashed_amount_repaid: snapshotStats.network_slashed_amount_repaid ?? 0,
+            }
+            if (versionsSnapshotJson !== null) {
+              insertPayload.versions_snapshot = knex.raw('?::jsonb', [versionsSnapshotJson])
+            }
+            const snapshotInsertRow = await prepareEcosystemSnapshotRowForInsert(
+              knex,
+              insertPayload as Record<string, unknown>,
+              {
+                ecosystemRow: updatedTr as Record<string, unknown>,
+                rawLedger: raw as Record<string, unknown>,
+              }
+            )
+            const [snapshotRow] = await trx('ecosystem_snapshot').insert(snapshotInsertRow).returning('id')
+            const nextSnapshotId = snapshotRow?.id
+            if (nextSnapshotId) {
+              const prevSnapshot = await trx('ecosystem_snapshot')
+                .where({ ecosystem_id: ecosystemId })
+                .where('height', '<', blockHeightNum)
+                .orderBy('height', 'desc')
+                .orderBy('id', 'desc')
+                .first()
+              const prevSnapshotId = prevSnapshot?.id ?? null
+              const diffPayload: any = { added: {}, removed: {}, changed: {} }
+              if (preSyncTr) {
+                for (const key of Object.keys(updatedTr)) {
+                  if (key === 'id' || key === 'height') continue
+                  const oldVal = preSyncTr[key]
+                  const newVal = updatedTr[key]
+                  if (!this.valuesEquivalent(oldVal, newVal)) {
+                    diffPayload.changed[key] = newVal
+                  }
+                }
+              } else {
+                for (const key of Object.keys(updatedTr)) {
+                  if (key === 'id' || key === 'height') continue
+                  if (updatedTr[key] !== null && updatedTr[key] !== undefined) {
+                    diffPayload.added[key] = updatedTr[key]
+                  }
+                }
+              }
+              await trx('ecosystem_snapshot_diff').insert({
+                ecosystem_id: ecosystemId,
+                height: blockHeightNum,
+                event_type: eventType,
+                prev_snapshot_id: prevSnapshotId,
+                next_snapshot_id: nextSnapshotId,
+                diff: diffPayload,
+              })
+            }
           }
         }
-      }
+      })
 
       return ApiResponder.success(ctx, { success: true }, 200)
     } catch (err: any) {

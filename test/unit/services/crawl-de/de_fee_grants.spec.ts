@@ -407,6 +407,27 @@ describe('DelegationDatabaseService fee grant actions', () => {
     expect(history).toHaveLength(2)
   })
 
+  it('syncFeeGrant writes one history row when a retried block syncs the same height again', async () => {
+    await knex('block').where({ height: 900 }).del()
+    await knex('block').insert({ height: 900, hash: 'retry-900', time: T1, proposer_address: 'p', data: {} })
+    await call('syncFeeGrant', {
+      grantorCorporationId: 1,
+      grantee: 'verana1op',
+      snapshot: snapshot(),
+      blockHeight: 900,
+    })
+    await call('syncFeeGrant', {
+      grantorCorporationId: 1,
+      grantee: 'verana1op',
+      snapshot: snapshot(),
+      blockHeight: 900,
+    })
+    await knex('block').where({ height: 900 }).del()
+
+    const grant = await knex('fee_grants').where({ grantor_corporation_id: 1, grantee: 'verana1op' }).first()
+    expect(await knex('fee_grant_history').where({ fee_grant_id: grant.id, height: 900 })).toHaveLength(1)
+  })
+
   it('refreshFeeGrantSpend updates remaining_spend, expiration, and modified from the snapshot', async () => {
     await call('refreshFeeGrantSpend', {
       grantorCorporationId: 1,
