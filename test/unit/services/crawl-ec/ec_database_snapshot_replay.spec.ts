@@ -53,6 +53,7 @@ describe('EcosystemDatabaseService.syncFromLedger snapshot replay', () => {
   afterAll(async () => {
     process.env.USE_HEIGHT_SYNC_TR = previousHeightSync
     await knex.raw('ALTER TABLE ecosystem_snapshot_diff DROP CONSTRAINT IF EXISTS fail_snapshot_diff')
+    await knex.raw('ALTER TABLE ecosystem_history DROP CONSTRAINT IF EXISTS fail_ecosystem_history')
     await broker.stop()
     await knex.destroy()
   })
@@ -75,6 +76,42 @@ describe('EcosystemDatabaseService.syncFromLedger snapshot replay', () => {
     await sync()
     expect(await rowsAtHeight('ecosystem_snapshot')).toHaveLength(1)
     expect(await rowsAtHeight('ecosystem_snapshot_diff')).toHaveLength(1)
+  })
+
+  it('writes no ecosystem row when its history insert fails, and the Create history on the retry', async () => {
+    const ecosystemId = ECO + 1
+    const syncOther = () =>
+      service.syncFromLedger({
+        params: {
+          ledgerResponse: {
+            ecosystem: {
+              ...ledgerEcosystem,
+              id: ecosystemId,
+              did: 'did:example:eco-history-replay',
+              versions: [
+                {
+                  ...ledgerEcosystem.versions[0],
+                  id: 43,
+                  documents: [{ ...ledgerEcosystem.versions[0].documents[0], id: 44 }],
+                },
+              ],
+            },
+          },
+          blockHeight: HEIGHT,
+        },
+        meta: {},
+      })
+
+    await knex.raw('ALTER TABLE ecosystem_history ADD CONSTRAINT fail_ecosystem_history CHECK (false) NOT VALID')
+    const failed = await syncOther()
+    expect(failed?.success).not.toBe(true)
+    expect(await knex('ecosystem').where({ id: ecosystemId }).first()).toBeUndefined()
+
+    await knex.raw('ALTER TABLE ecosystem_history DROP CONSTRAINT fail_ecosystem_history')
+    const retried = await syncOther()
+    expect(retried?.success).toBe(true)
+    const history = await knex('ecosystem_history').where({ ecosystem_id: ecosystemId, height: HEIGHT })
+    expect(history.map((row) => row.event_type)).toEqual(['Create'])
   })
 
   it('creates another ecosystem in a block that already wrote one', async () => {
